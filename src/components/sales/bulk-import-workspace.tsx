@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, Loader2, Search, Upload, X, XCircle } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
+import { isBulkSlotBlocking, type BulkSlotStage } from "@/lib/sales/bulk-import-gating";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import { cn } from "@/lib/utils";
 import {
@@ -14,7 +15,6 @@ import {
   money,
   num,
   type BreakdownRow,
-  type BulkSlotStage,
   type BulkSlotStatus,
   type MapOption,
   type MonthlyUploadHandle,
@@ -134,10 +134,7 @@ export function BulkImportWorkspace({ distributors, summaries, productOptions, b
     const stage = statuses[c]?.stage;
     return stage === "ready" || stage === "commit_failed";
   });
-  const blockingCodes = touchedCodes.filter((c) => {
-    const stage = statuses[c]?.stage;
-    return stage === "idle" || stage === "working" || stage === "rejected" || !stage;
-  });
+  const blockingCodes = touchedCodes.filter((c) => isBulkSlotBlocking(statuses[c]?.stage));
   const canConfirmAll = period !== "" && touchedCodes.length > 0 && blockingCodes.length === 0 && committableCodes.length > 0;
 
   async function confirmAll() {

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import type { BulkSlotStage } from "@/lib/sales/bulk-import-gating";
 import type { DistributorProfileSummary, SalesDistributorEntry } from "@/lib/sales/distributor-registry";
 import type { SourceOfSalesUploadBatch } from "@/lib/sales/monthly-distributor-import";
 import { resolveVerificationStep } from "@/lib/sales/upload-verification-step";
@@ -41,8 +42,10 @@ export type Breakdowns = { byProduct: BreakdownRow[]; byRegion: BreakdownRow[]; 
 
 // ── Bulk Import mode contract ───────────────────────────────────────────────────────────────────
 // A slot's lifecycle, reported upward so the bulk grid can color each distributor's card without
-// duplicating any of MonthlyUpload's own analyze/validate/commit logic.
-export type BulkSlotStage = "idle" | "working" | "rejected" | "ready" | "committed" | "commit_failed";
+// duplicating any of MonthlyUpload's own analyze/validate/commit logic. BulkSlotStage itself (plus
+// the "which stages block Confirm & Import All" rule) lives in @/lib/sales/bulk-import-gating —
+// domain logic, not UI — and is re-exported here for existing consumers.
+export type { BulkSlotStage };
 export type BulkSlotStatus = {
   stage: BulkSlotStage;
   canImport: boolean;
