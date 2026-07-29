@@ -5,7 +5,7 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DirectOrderSubmitForm } from "@/components/direct-orders/direct-order-submit-form";
 import { loadDirectOrderCaps } from "@/lib/direct-orders/caps";
 import {
-  listDirectOrderBrickOptions,
+  listDirectOrderAreaAndBrickOptions,
   listDirectOrderDistributorOptions,
   listDirectOrderProductOptions,
   listMyDirectOrderPharmacies,
@@ -21,9 +21,9 @@ export default async function AdminDirectOrdersPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders");
   const canSubmit = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
-  const [products, bricks, distributors, pharmacies, myRequests, capsData] = await Promise.all([
+  const [products, areaBrickOptions, distributors, pharmacies, myRequests, capsData] = await Promise.all([
     listDirectOrderProductOptions(access),
-    listDirectOrderBrickOptions(),
+    listDirectOrderAreaAndBrickOptions(access),
     listDirectOrderDistributorOptions(),
     listMyDirectOrderPharmacies(access),
     listMyDirectOrders(access),
@@ -43,7 +43,7 @@ export default async function AdminDirectOrdersPage() {
         icon={<ReceiptText className="h-3.5 w-3.5" />}
       />
       {canSubmit ? (
-        <DirectOrderSubmitForm products={products} bricks={bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
+        <DirectOrderSubmitForm products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
       ) : (
         <p className="border border-[#e4e9ec] bg-white px-4 py-6 text-sm text-slate-500">
           Your role cannot submit direct orders. Approvers review them under Approvals Hub › Direct Orders Approvals.
