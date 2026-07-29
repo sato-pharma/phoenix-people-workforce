@@ -206,6 +206,31 @@ async function loadNearMisses(params: {
     }
   }
 
+  // (4) unvalidated_batch — right pharmacy + distributor + product + period, but the sales sit in a
+  // batch that has NOT been validated yet, so attribution cannot count them. The lead is concrete:
+  // validate that batch and this request's ROI moves. Unlike probes 1-3 this must look OUTSIDE the
+  // validated set, so it cannot use `scan` (which is scoped to validatedBatchIds). The four exact
+  // attribution keys keep it selective; anything already in a validated batch is excluded below.
+  if (targetDistributorCodes.length > 0 && targetProductCodes.size > 0) {
+    const validatedBatchSet = new Set(validatedBatchIds.map((id) => String(id)));
+    const { data, error } = await supabase
+      .from("source_of_sales_import_rows")
+      .select("distributor_code, client_code, product_code, invoice_period, qty, discount, is_direct, value, batch_id")
+      .in("client_code", targetCodes)
+      .in("distributor_code", targetDistributorCodes)
+      .in("product_code", Array.from(targetProductCodes))
+      .in("invoice_period", windowPeriods)
+      .limit(NEAR_MISS_ROW_CAP + 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Array<NearMissScanRow & { batch_id: string | number | null }>;
+    if (rows.length > NEAR_MISS_ROW_CAP) truncated = true;
+    for (const row of rows.slice(0, NEAR_MISS_ROW_CAP)) {
+      if (validatedBatchSet.has(String(row.batch_id))) continue; // already attributable — not a near miss
+      if (!targetCodeSet.has(normalizePharmacyCode(row.client_code))) continue;
+      push("unvalidated_batch", row);
+    }
+  }
+
   const groups = (["outside_window", "other_product", "other_distributor", "unvalidated_batch"] as RoiNearMissKind[])
     .map((kind) => {
       const rows = rowsByKind.get(kind) ?? [];
