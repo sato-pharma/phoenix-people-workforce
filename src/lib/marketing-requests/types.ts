@@ -617,6 +617,14 @@ export type MarketingRequestDraftProductInput = {
 export type MarketingRequestDraftPharmacyInput = {
   distributorCodeId: string;
   notes?: string | null;
+  /**
+   * Written justification for using a pharmacy code the reference database cannot find.
+   *
+   * Required — and only consulted — when that specific code is `not_found`. Per-pharmacy rather
+   * than per-request on purpose: a request may target five pharmacies where only one code is bad,
+   * and a single request-level reason would say nothing about which.
+   */
+  unverifiedCodeReason?: string | null;
 };
 
 export type MarketingRequestDraftDetail = MarketingRequest & {

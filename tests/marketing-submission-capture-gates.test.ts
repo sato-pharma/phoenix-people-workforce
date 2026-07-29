@@ -43,6 +43,38 @@ function testNotFoundPharmacyCodeIsBlockedAtWriteTime() {
 }
 
 /**
+ * The override exists because a blanket block was unshippable: 87 of 154 production customers
+ * carry at least one `not_found` code. But it must never become a formality — the code may be
+ * used only with a written reason, and that reason has to be stored on the request.
+ */
+function testOverrideRequiresAWrittenReasonAndRecordsIt() {
+  const service = code(SERVICE);
+
+  assert.match(
+    service,
+    /UNVERIFIED_CODE_REASON_MIN_LENGTH/,
+    "an override reason must clear a minimum length — a one-word entry is not a reason",
+  );
+  assert.match(
+    service,
+    /unverifiedCodeReason/,
+    "the override reason must be carried per pharmacy, not per request",
+  );
+  assert.match(
+    service,
+    /Unverified pharmacy code[^\n]*accepted/,
+    "an accepted override must be written onto the request so the decision is auditable",
+  );
+  // Losing the requester's own note would be a silent data loss, and would also make the override
+  // note look like something they typed.
+  assert.match(
+    service,
+    /\[pharmacy\.notes,\s*overrideNote\]/,
+    "the override note must be combined with the requester's note, never replace it",
+  );
+}
+
+/**
  * The counterpart guard. `ambiguous` (a code registered against several distributors) and
  * `pending` (a new code the matcher has not processed yet) both still attribute, and both are
  * recoverable. Blocking them would stop a legitimate submission the day a new pharmacy is added —
@@ -65,5 +97,6 @@ function testRecoverableStatusesAreNotBlocked() {
 
 export function runMarketingSubmissionCaptureGateTests() {
   testNotFoundPharmacyCodeIsBlockedAtWriteTime();
+  testOverrideRequiresAWrittenReasonAndRecordsIt();
   testRecoverableStatusesAreNotBlocked();
 }

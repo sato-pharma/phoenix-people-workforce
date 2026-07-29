@@ -1048,11 +1048,18 @@ function normalizeDraftProducts(inputProducts: MarketingRequestDraftProductInput
   return Array.from(grouped.values());
 }
 
+/**
+ * Minimum length for an unverified-code justification. A one-word entry ("ok", "yes") is not a
+ * reason and would turn the gate into a formality — the repo already treats too-short cleanup
+ * reasons as blank elsewhere for the same reason.
+ */
+const UNVERIFIED_CODE_REASON_MIN_LENGTH = 10;
+
 function normalizeDraftPharmacies(inputPharmacies: MarketingRequestDraftPharmacyInput[] | null | undefined) {
   if (!Array.isArray(inputPharmacies)) return [];
 
   const seen = new Set<string>();
-  const rows: Array<{ distributorCodeId: string; notes: string | null }> = [];
+  const rows: Array<{ distributorCodeId: string; notes: string | null; unverifiedCodeReason: string | null }> = [];
   for (const pharmacy of inputPharmacies) {
     const distributorCodeId = cleanText(pharmacy?.distributorCodeId);
     if (!distributorCodeId) {
@@ -1063,6 +1070,7 @@ function normalizeDraftPharmacies(inputPharmacies: MarketingRequestDraftPharmacy
     rows.push({
       distributorCodeId,
       notes: cleanText(pharmacy?.notes),
+      unverifiedCodeReason: cleanText(pharmacy?.unverifiedCodeReason),
     });
   }
   return rows;
@@ -1349,16 +1357,33 @@ export function prepareMarketingRequestDraft(params: {
     // distributor) and `pending` (a genuinely new code the matcher has not processed yet) are both
     // recoverable and still attribute; blocking them would stop legitimate submissions the day a
     // new pharmacy is added. Those two stay visible as a warning and via the confidence score.
+    //
+    // OVERRIDE, added deliberately: a hard block alone was unshippable. 87 of 154 production
+    // customers carry at least one `not_found` code, and 112 of them sit under POS and Ibn sina
+    // where the reference data is large and healthy — meaning they need individual human
+    // verification that will not finish quickly. A blanket refusal would have stopped over half
+    // the customer base from submitting at all, and people would route around Phoenix rather than
+    // wait. So the code may still be used, but never silently: someone has to write down why, and
+    // the reason is stored on the request itself.
+    let overrideNote: string | null = null;
     if (code.reference_status === "not_found") {
-      throw validationError(
-        `Pharmacy code "${code.distributor_pharmacy_code ?? code.normalized_pharmacy_code ?? code.id}" is not recognised by the reference database, so no sale could ever be matched to it. Correct the code in Customer Validation before submitting.`,
-        "pharmacy_code_not_in_reference",
-      );
+      const label = code.distributor_pharmacy_code ?? code.normalized_pharmacy_code ?? code.id;
+      const reason = pharmacy.unverifiedCodeReason;
+      if (!reason || reason.length < UNVERIFIED_CODE_REASON_MIN_LENGTH) {
+        throw validationError(
+          `Pharmacy code "${label}" is not recognised by the reference database, so no sale can be matched to it. Correct it in Customer Validation, or record why it must be used as-is (at least ${UNVERIFIED_CODE_REASON_MIN_LENGTH} characters).`,
+          "pharmacy_code_not_in_reference",
+        );
+      }
+      overrideNote = `Unverified pharmacy code "${label}" accepted — ${reason}`;
     }
 
     return {
       distributor_code_id: code.id,
-      notes: pharmacy.notes,
+      // The override reason is kept alongside any note the requester wrote rather than replacing
+      // it, so neither is lost. It lives on the request row, which is what makes the decision
+      // auditable after the fact instead of existing only in the moment it was made.
+      notes: [pharmacy.notes, overrideNote].filter(Boolean).join(" | ") || null,
       pharmacy_id: code.pharmacy_id,
     };
   });
