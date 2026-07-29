@@ -141,6 +141,7 @@ import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
 import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
+import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runIdentityAliasesTests } from "./identity-aliases.test.ts";
@@ -650,6 +651,7 @@ await runTest("crm reads hr-id casing (door matches agent/double hr ids case-ins
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
 await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive both ends)", runCrmLiveSyncWindowTests);
 await runTest("crm duplicate double-visit submission collapse (burst dedup, comment-substance gate)", runCrmDuplicateVisitCollapseTests);
+await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("shared person identity (B-10 = PHX-1 = admin-HR, one primitive)", runIdentityAliasesTests);

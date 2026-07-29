@@ -19,9 +19,9 @@ import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/c
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 import { brickMatchConfidence, loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
-import { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
+import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
 
-export { CRM_MASTER_DATASETS, CRM_MASTER_EXPORT_MAX_ROWS, type CrmMasterDataset };
+export { CRM_MASTER_DATASETS, type CrmMasterDataset };
 
 /** Confidence labels for a detected triple visit — shared by the Triple Visits tab column and the
  * Double Visits "Triple?" flag so both read identically. */
@@ -1243,12 +1243,24 @@ function applyMasterFilters(
   return q;
 }
 
+/** Pre-loaded overlays that attachDerived would otherwise fetch itself. The streaming export loads
+ * them ONCE and hands the same instances to every page, so exporting tens of thousands of rows
+ * doesn't re-run the roster read / brick-mapping read / triple self-join per 1000-row page. The
+ * paginated view passes nothing (one page → one load), so its behaviour is unchanged. */
+type DeriveResources = {
+  agentMeta?: Map<string, AgentMeta>;
+  brickMapping?: Map<number, BrickMapping>;
+  triples?: Map<number, { third: string; unspecified: boolean }>;
+};
+
 /** Merge derived columns onto rows (nearest check-in for visit datasets, triple flag for double
- * visits). `range` scopes the triple detection to the same dates. */
+ * visits). `range` scopes the triple detection to the same dates. Pass `resources` to reuse
+ * pre-loaded overlays across many pages (see streamCrmMasterExportPages). */
 async function attachDerived(
   dataset: CrmMasterDataset,
   rows: CrmMasterRow[],
   range: { dateFrom: string | null; dateTo: string | null },
+  resources?: DeriveResources,
 ): Promise<void> {
   // Check-ins carry real GPS but no Phoenix geography — resolve their brick/area/region from the
   // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
@@ -1260,16 +1272,16 @@ async function attachDerived(
   else if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") attachSaveTierVisitTime(rows);
   if (dataset === "double_visits") {
     // Flag the double visits that are actually part of a triple (third person stacked that day).
-    const { byVisitId } = await computeTriplesInRange(range);
+    const byVisitId = resources?.triples ?? (await computeTriplesInRange(range)).byVisitId;
     attachTripleFlag(rows, byVisitId);
   }
   if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
-  attachAgentMeta(rows, await loadAgentMetaByHrId(), "agent_hr_id");
+  attachAgentMeta(rows, resources?.agentMeta ?? (await loadAgentMetaByHrId()), "agent_hr_id");
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to.
-  if (isVisitDataset(dataset)) attachBrickMapping(rows, await loadBrickMappingByRegionId());
+  if (isVisitDataset(dataset)) attachBrickMapping(rows, resources?.brickMapping ?? (await loadBrickMappingByRegionId()));
   // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
   if (isVisitDataset(dataset)) attachRecognitionScore(rows);
 }
@@ -1434,16 +1446,32 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
   return { ...echo, latestSyncRuns, rows, schemaReady: true, totalCount: count ?? 0 };
 }
 
+/** Column set for a dataset's export sheet — resolved from the dataset alone (no I/O), so the export
+ * route can build its header + sheet name up front, before the row stream begins. */
+export function crmMasterExportColumns(input: CrmMasterFilter = {}): readonly CrmMasterColumn[] {
+  return columnsForDataset(normalizeDataset(input.dataset));
+}
+
+/** Human sheet/file label for a dataset (e.g. "Regular · No Check-in") — used to name the export. */
+export function crmMasterExportLabel(input: CrmMasterFilter = {}): string {
+  const dataset = normalizeDataset(input.dataset);
+  return CRM_MASTER_DATASETS.find((tab) => tab.id === dataset)?.label ?? dataset;
+}
+
 /**
- * All matching rows for a dataset + filters, UNPAGINATED (capped at 50k) — powers the XLSX export.
- * Runs the same filters and derived columns as the paginated view; walks pages internally.
+ * Streams EVERY matching row for a dataset + filters as derived pages — no row cap. Same filters and
+ * derived columns as the paginated master view, but yielded page-by-page so the export route can
+ * write them straight into a streaming workbook and never hold the whole result set (nor a fully
+ * styled in-memory workbook) at once. This replaces the old "fetch up to 20k rows into one array,
+ * POST them back, style every cell in a single in-memory pass" export, which OOM'd/hung the 1Gi
+ * instance past ~20–50k rows and surfaced to the user as "Export failed". Yields nothing (never
+ * throws) when the mirror schema isn't present yet.
  */
-export async function getCrmMasterExportRows(
+export async function* streamCrmMasterExportPages(
   input: CrmMasterFilter = {},
-): Promise<{ columns: readonly CrmMasterColumn[]; dataset: CrmMasterDataset; rows: CrmMasterRow[]; truncated: boolean }> {
+): AsyncGenerator<CrmMasterRow[], void, unknown> {
   const dataset = normalizeDataset(input.dataset);
   const isCheckins = dataset === "checkins";
-  const columns = columnsForDataset(dataset);
   const agentHrId = input.agentHrId?.trim() || null;
   const search = input.search?.trim() || null;
   const line = input.line?.trim() || null;
@@ -1452,8 +1480,7 @@ export async function getCrmMasterExportRows(
   const minDuration = typeof input.minDuration === "number" && input.minDuration > 0 ? input.minDuration : null;
   const halfDaysOnly = input.halfDaysOnly === true;
 
-  const emptyResult = { columns, dataset, rows: [] as CrmMasterRow[], truncated: false };
-  if (!(await isCrmVisitsSchemaReady())) return emptyResult;
+  if (!(await isCrmVisitsSchemaReady())) return;
 
   const allowed = await resolveAllowedHrIds({ line, hireFrom, hireTo });
   const filterOpts = {
@@ -1470,41 +1497,62 @@ export async function getCrmMasterExportRows(
     visitType: input.visitType?.trim() || null,
   };
   const computedFilter = { agentHrId, allowed: allowed ? allowed.keys : null, halfDaysOnly, minDuration, search };
+  const range = { dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo };
 
-  // Triple visits: computed in memory (self-join), so export all detected triples for the range.
+  // Rows handed to the workbook writer per flush — bounded memory regardless of total export size.
+  const CHUNK = 2000;
+
+  // Triple visits: computed in memory (self-join). Compute once, then emit in chunks.
   if (dataset === "triple_visits") {
-    const [{ rows: allTriples, truncated }, agentMeta] = await Promise.all([
-      computeTriplesInRange({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
-      loadAgentMetaByHrId(),
-    ]);
-    const rows = filterComputedRows(allTriples, { ...computedFilter, agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"], halfDaysOnly: false, hrIdField: "base_hr_id", minDuration: null });
+    const [{ rows: allTriples }, agentMeta] = await Promise.all([computeTriplesInRange(range), loadAgentMetaByHrId()]);
+    const rows = filterComputedRows(allTriples, {
+      ...computedFilter,
+      agentHrIdFields: ["base_hr_id", "mid_hr_id", "top_hr_id"],
+      halfDaysOnly: false,
+      hrIdField: "base_hr_id",
+      minDuration: null,
+    });
     attachAgentMeta(rows, agentMeta, "base_hr_id");
-    return { columns, dataset, rows, truncated };
+    for (let i = 0; i < rows.length; i += CHUNK) yield rows.slice(i, i + CHUNK);
+    return;
   }
 
-  // Vacations: grouped into periods, so export all periods for the range.
+  // Vacations: grouped into periods. Compute once, then emit in chunks.
   if (dataset === "vacations") {
-    const [{ periods: allPeriods, truncated }, agentMeta] = await Promise.all([
-      computeVacationPeriods({ dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo }),
-      loadAgentMetaByHrId(),
-    ]);
+    const [{ periods: allPeriods }, agentMeta] = await Promise.all([computeVacationPeriods(range), loadAgentMetaByHrId()]);
     const rows = filterComputedRows(allPeriods, { ...computedFilter, hrIdField: "agent_hr_id" });
     attachAgentMeta(rows, agentMeta, "agent_hr_id");
-    return { columns, dataset, rows, truncated };
+    for (let i = 0; i < rows.length; i += CHUNK) yield rows.slice(i, i + CHUNK);
+    return;
   }
 
+  // DB-backed datasets — walk every page (NO cap) and derive per page. Pre-load the derive overlays
+  // ONCE so a large export doesn't re-query the roster / brick map / triple self-join per page.
+  const [agentMeta, brickMapping] = await Promise.all([
+    loadAgentMetaByHrId(),
+    isVisitDataset(dataset) ? loadBrickMappingByRegionId() : Promise.resolve(new Map<number, BrickMapping>()),
+  ]);
+  const triples = dataset === "double_visits" ? (await computeTriplesInRange(range)).byVisitId : undefined;
+  const resources: DeriveResources = { agentMeta, brickMapping, triples };
+
   const supabase = getSupabaseAdmin();
-  const table = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin" ? CRM_VISITS_EFFECTIVE_VIEW : isCheckins ? CRM_CHECKINS_TABLE : CRM_VISITS_TABLE;
+  const table =
+    dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin"
+      ? CRM_VISITS_EFFECTIVE_VIEW
+      : isCheckins
+        ? CRM_CHECKINS_TABLE
+        : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
   const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
-
   const excludedInList = await getEffectiveExcludedInList();
+
   const PAGE = 1000;
-  const MAX_ROWS = CRM_MASTER_EXPORT_MAX_ROWS;
-  const rows: CrmMasterRow[] = [];
-  let truncated = false;
-  for (let from = 0; from < MAX_ROWS; from += PAGE) {
+  // Pure runaway stop (NOT a product cap): far above the whole mirror (~108k visits today), so every
+  // real filtered export streams in full. Guards against an infinite loop if a query somehow returned
+  // full pages forever.
+  const MAX_EXPORT_ROWS = 1_000_000;
+  for (let from = 0; from < MAX_EXPORT_ROWS; from += PAGE) {
     const base = supabase.from(table).select(select);
     const filtered = applyMasterFilters(base as unknown as MasterQuery, filterOpts, excludedInList);
     const { data, error } = await (filtered as unknown as typeof base)
@@ -1512,18 +1560,13 @@ export async function getCrmMasterExportRows(
       .order(idColumn, { ascending: false })
       .range(from, from + PAGE - 1);
     if (error) {
-      if (isCrmSchemaMissingError(error)) return emptyResult;
+      if (isCrmSchemaMissingError(error)) return;
       throw new Error(error.message);
     }
     const pageRows = (data ?? []) as unknown as CrmMasterRow[];
-    rows.push(...pageRows);
-    if (pageRows.length < PAGE) break;
-    if (rows.length >= MAX_ROWS) {
-      truncated = true;
-      break;
-    }
+    if (pageRows.length === 0) return;
+    await attachDerived(dataset, pageRows, range, resources);
+    yield pageRows;
+    if (pageRows.length < PAGE) return;
   }
-
-  await attachDerived(dataset, rows, { dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo });
-  return { columns, dataset, rows, truncated };
 }
