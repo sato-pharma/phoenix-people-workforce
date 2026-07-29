@@ -8,7 +8,17 @@ import { readFileSync } from "node:fs";
 // idea.
 
 const SERVICE = "src/lib/marketing-requests/roi-tracker-service.ts";
-const COMPONENT = "src/components/marketing-requests/marketing-roi-tracker.tsx";
+/**
+ * BOTH tracker surfaces. They are deliberately shaped differently — the archive is a closed
+ * post-mortem organised by outcome, the live one is a pipeline organised by lifecycle stage and by
+ * the month a campaign becomes judgeable — but they share one service and must share one set of
+ * verdict labels. Guarding only one of them would leave the other free to fork its labels, which
+ * is precisely how the Excel export came to disagree with the screen in the first place.
+ */
+const COMPONENTS = [
+  "src/components/marketing-requests/marketing-roi-tracker.tsx",
+  "src/components/marketing-requests/marketing-roi-live-tracker.tsx",
+];
 const ROUTE = "app/api/marketing-requests/roi-tracker/route.ts";
 const PAGE = "app/(admin)/admin/marketing-roi-tracker/page.tsx";
 
@@ -97,21 +107,48 @@ function testTrackerDoesNotReimplementAccess() {
 
 /** Labels come from the shared module — a forked copy is what made Excel disagree with the screen. */
 function testTrackerUsesCanonicalLabels() {
-  const component = code(COMPONENT);
-  assert.match(
-    component,
-    /ROI_RESULT_STATUS_LABEL/,
-    "ROI Tracker must render verdicts via the shared ROI_RESULT_STATUS_LABEL map",
-  );
-  assert.doesNotMatch(
-    component,
-    /RESULT_LABELS\s*[:=]\s*\{/,
-    "ROI Tracker must not declare its own verdict label map",
-  );
-  // All four verdicts must be representable, including awaiting_data.
-  for (const verdict of ["on_track", "behind", "awaiting_data", "no_data"]) {
-    assert.match(component, new RegExp(`\\b${verdict}\\b`), `ROI Tracker must handle the ${verdict} verdict`);
+  for (const path of COMPONENTS) {
+    const component = code(path);
+    assert.match(
+      component,
+      /ROI_RESULT_STATUS_LABEL/,
+      `${path} must render verdicts via the shared ROI_RESULT_STATUS_LABEL map`,
+    );
+    assert.doesNotMatch(
+      component,
+      /RESULT_LABELS\s*[:=]\s*\{/,
+      `${path} must not declare its own verdict label map`,
+    );
+    // All four verdicts must be representable, including awaiting_data.
+    for (const verdict of ["on_track", "behind", "awaiting_data", "no_data"]) {
+      assert.match(component, new RegExp(`\\b${verdict}\\b`), `${path} must handle the ${verdict} verdict`);
+    }
   }
+}
+
+/**
+ * The two surfaces must stay two surfaces. If the live tracker ever just renders the archive
+ * component, the "separate modules" decision has silently been undone — and the live page would go
+ * back to answering the archive's question ("what happened?") instead of its own ("when will I
+ * know?").
+ */
+function testLiveAndArchiveStayDistinct() {
+  const live = code("src/components/marketing-requests/marketing-roi-live-tracker.tsx");
+  assert.doesNotMatch(
+    live,
+    /from\s+"@\/components\/marketing-requests\/marketing-roi-tracker"/,
+    "the live tracker must not import the archive component — they are deliberately separate surfaces",
+  );
+  // Its signature move: the judgement clock. Losing this means it has drifted back into being a
+  // copy of the outcome-bucket view.
+  assert.match(live, /judgementMonth\s*\(/, "the live tracker must organise around when a request becomes judgeable");
+
+  const archived = code("app/(admin)/admin/archived-marketing-requests/page.tsx");
+  assert.match(
+    archived,
+    /origin="xlsx_import"/,
+    "the archived page must stay pinned to imported requests",
+  );
 }
 
 /** The page must be reachable and must not repeat the CEO bounce that ROI Tracking has. */
@@ -134,4 +171,5 @@ export function runMarketingRoiTrackerTests() {
   testTrackerDoesNotReimplementAccess();
   testTrackerUsesCanonicalLabels();
   testTrackerPageIsReachable();
+  testLiveAndArchiveStayDistinct();
 }

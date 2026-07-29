@@ -246,6 +246,8 @@ import { runMarketingRoiSheetImportTests } from "./marketing-roi-sheet-import.te
 import { runMarketingRoiReportScopeTests } from "./marketing-roi-report-scope.test.ts";
 import { runMarketingRoiReportHelpersTests } from "./marketing-roi-report-helpers.test.ts";
 import { runMarketingRoiLabelingTests } from "./marketing-roi-labeling.test.ts";
+import { runMarketingRoiConfidenceTests } from "./marketing-roi-confidence.test.ts";
+import { runMarketingRoiLiveStagesTests } from "./marketing-roi-live-stages.test.ts";
 import { runMarketingRoiTrackerTests } from "./marketing-roi-tracker.test.ts";
 import { runMarketingRoiExplainTests } from "./marketing-roi-explain.test.ts";
 import { runMarketingRoiBusinessReportTests } from "./marketing-roi-business-report.test.ts";
@@ -741,6 +743,8 @@ await runTest("marketing ROI report scope + filter options", runMarketingRoiRepo
 await runTest("marketing ROI report helpers (date math + body parse)", runMarketingRoiReportHelpersTests);
 await runTest("marketing ROI forecast-vs-actual labeling", runMarketingRoiLabelingTests);
 await runTest("marketing ROI Tracker (composes the authoritative engine, adds no fifth)", runMarketingRoiTrackerTests);
+await runTest("marketing ROI live lifecycle stages (rejected never counts as committed)", runMarketingRoiLiveStagesTests);
+await runTest("marketing ROI confidence score (measurement trust, not performance)", runMarketingRoiConfidenceTests);
 await runTest("marketing ROI explain (diagnostic classifier + read-only guards)", runMarketingRoiExplainTests);
 await runTest("marketing ROI business report (requester/customer + read-only guards)", runMarketingRoiBusinessReportTests);
 await runTest("pharmacy master matching (Phase 1 candidate classifier + read-only guards)", runPharmacyMatchingTests);
