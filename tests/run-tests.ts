@@ -473,6 +473,7 @@ import { runAuSeatOccupantResolverTests } from "./au-seat-occupant-resolver.test
 import { runAuHireIntoSeatWiringTests } from "./au-hire-into-seat-wiring.test.ts";
 import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
+import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -964,6 +965,7 @@ await runTest("au seat-occupant resolution (period-aware, no newest-row wins)", 
 await runTest("au hire_into_seat wiring (replacement-hire vacancy fill trigger)", runAuHireIntoSeatWiringTests);
 await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly 1)", runSalesImsRatioTests);
 await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup keys)", runHrIdCoreHelpersTests);
+await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, multi-role fan-out)", runMarketingRoiCohortsTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

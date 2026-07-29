@@ -12,9 +12,11 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import {
   buildRoiBusinessRow,
+  buildRoiCohorts,
   groupRoiRowsByCustomer,
   groupRoiRowsByRequester,
   type RoiBusinessRow,
+  type RoiCohorts,
   type RoiCustomerOption,
   type RoiRequesterOption,
 } from "@/lib/marketing-requests/roi-business-report";
@@ -90,4 +92,12 @@ export async function getMarketingRoiBusinessRows(
   const report = await getMarketingRoiReport(access, emptyRoiFilterState(), generatedAtIso);
   const matched = report.rows.filter((row) => row.customerName === group.name);
   return { rows: await attachExplainReasons(access, matched, generatedAtIso) };
+}
+
+/** ROI-weighted cohorts over ALL role-scoped rows — the "Performance" view (which request type /
+ *  requester / approver role / line / region returns, and how efficiently). Same company-scoped
+ *  call the unfiltered ROI Tracking page makes, aggregated by the pure buildRoiCohorts. Read-only. */
+export async function getMarketingRoiCohorts(access: AccessContext): Promise<RoiCohorts> {
+  const report = await getMarketingRoiReport(access, emptyRoiFilterState(), new Date().toISOString());
+  return buildRoiCohorts(report.rows);
 }
