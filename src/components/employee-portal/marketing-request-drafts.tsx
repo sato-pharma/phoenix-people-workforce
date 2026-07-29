@@ -53,6 +53,7 @@ import type {
 } from "@/lib/marketing-requests/service";
 import type {
   MarketingApprovedRequestRow,
+  MarketingRequestPharmacyOption,
   MarketingCustomer,
   MarketingProduct,
   MarketingRequest,
@@ -70,6 +71,7 @@ type DraftWorkspacePayload = {
   canCreateDraft: boolean;
   customers: MarketingCustomer[];
   drafts: MarketingRequest[];
+  pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
   requestTypes: MarketingRequestType[];
@@ -242,6 +244,7 @@ function emptyPayload(): DraftWorkspacePayload {
     // server's explicit value applies once the workspace is fetched.
     canCreateDraft: true,
     customers: [],
+    pharmaciesByCustomer: {},
     drafts: [],
     inApproval: [],
     products: [],
@@ -625,6 +628,15 @@ function MarketingRequestDraftWorkspaceInner() {
   const [requestTypeId, setRequestTypeId] = useState("");
   const [requestDate, setRequestDate] = useState(todayDate);
   const [payDate, setPayDate] = useState("");
+  // Target pharmacies for this request. Tracked as DESELECTIONS rather than selections so the
+  // list is derived, not synced: switching customer then yields "all of the new customer's
+  // pharmacies" automatically, with no effect to keep in step and no window where a stale
+  // selection still points at the previous customer's pharmacies.
+  //
+  // Defaulting to all-selected is deliberate — the common case is "the whole customer", and an
+  // empty default would quietly reproduce the old behaviour where every request was saved with
+  // no targets at all and could never be credited a sale.
+  const [deselectedPharmacyIds, setDeselectedPharmacyIds] = useState<string[]>([]);
   const [estimatedCost, setEstimatedCost] = useState("");
   const [roiDurationMonths, setRoiDurationMonths] = useState("3");
   const [otherRequestType, setOtherRequestType] = useState("");
@@ -722,6 +734,7 @@ function MarketingRequestDraftWorkspaceInner() {
         approvedRequests: payload.approvedRequests ?? [],
         canCreateDraft: payload.canCreateDraft ?? true,
         customers: payload.customers ?? [],
+        pharmaciesByCustomer: payload.pharmaciesByCustomer ?? {},
         drafts: payload.drafts ?? [],
         inApproval: payload.inApproval ?? [],
         products: payload.products ?? [],
@@ -770,6 +783,19 @@ function MarketingRequestDraftWorkspaceInner() {
         workspace.products.map((product) => [String(product.id), product]),
       ),
     [workspace.products],
+  );
+
+  const pharmacyOptions = useMemo(
+    () => (customerId ? workspace.pharmaciesByCustomer[customerId] ?? [] : []),
+    [customerId, workspace.pharmaciesByCustomer],
+  );
+
+  const selectedPharmacyIds = useMemo(
+    () =>
+      pharmacyOptions
+        .map((option) => option.distributorCodeId)
+        .filter((id) => !deselectedPharmacyIds.includes(id)),
+    [pharmacyOptions, deselectedPharmacyIds],
   );
 
   const customerNameMap = useMemo(
@@ -1029,6 +1055,7 @@ function MarketingRequestDraftWorkspaceInner() {
       notes,
       otherRequestType,
       payDate: payDate || null,
+      pharmacies: selectedPharmacyIds.map((distributorCodeId) => ({ distributorCodeId })),
       products: productLines
         .filter((line) => line.productId && fieldNumber(line.quantity) > 0)
         .map((line) => ({
@@ -1462,6 +1489,65 @@ function MarketingRequestDraftWorkspaceInner() {
                     </SelectField>
                   </Field>
                 </div>
+
+                {/*
+                  Target pharmacies. This is what attribution matches sales against — a request
+                  with none can never be credited a single sale, so its ROI reads zero forever.
+                  Shown as a short explicit list because a customer has at most 8 pharmacies in
+                  production; a search box over the 45k-row master would be slower AND less
+                  accurate than picking from the customer's own.
+                */}
+                {customerId ? (
+                  <div className="sm:col-span-6">
+                    <Field label={`Target Pharmacies (${selectedPharmacyIds.length} of ${pharmacyOptions.length})`}>
+                      {pharmacyOptions.length === 0 ? (
+                        <p className="text-xs text-amber-700">
+                          This customer has no validated pharmacies yet, so nothing can be measured for it. Add one in
+                          Customer Validation before submitting.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-1 border border-slate-200 p-2">
+                          {pharmacyOptions.map((option) => {
+                            const checked = selectedPharmacyIds.includes(option.distributorCodeId);
+                            const unverified = option.referenceStatus === "not_found";
+                            return (
+                              <label
+                                className="flex cursor-pointer items-center gap-2 text-xs"
+                                key={option.distributorCodeId}
+                              >
+                                <input
+                                  checked={checked}
+                                  onChange={() =>
+                                    setDeselectedPharmacyIds((current) =>
+                                      current.includes(option.distributorCodeId)
+                                        ? current.filter((id) => id !== option.distributorCodeId)
+                                        : [...current, option.distributorCodeId],
+                                    )
+                                  }
+                                  type="checkbox"
+                                />
+                                <span className="text-slate-800">{option.pharmacyName}</span>
+                                <span className="text-slate-500">
+                                  {option.pharmacyCode} · {option.distributorName}
+                                </span>
+                                {unverified ? (
+                                  <span className="text-amber-700">
+                                    — code not recognised, sales here will not be counted
+                                  </span>
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {pharmacyOptions.length > 0 && selectedPharmacyIds.length === 0 ? (
+                        <p className="mt-1 text-xs text-amber-700">
+                          No pharmacies selected — this request could never be credited any sales.
+                        </p>
+                      ) : null}
+                    </Field>
+                  </div>
+                ) : null}
 
                 <div className="sm:col-span-3">
                   <Field label="Request Type">
