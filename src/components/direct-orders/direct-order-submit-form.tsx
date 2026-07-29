@@ -146,13 +146,6 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     if (dealType === "discount" && !hasPublicPrice) {
       return setError(`No public price is set for ${product.productName}. Ask an admin to set it, or use bonus mode.`);
     }
-    if (overCap && !overrideReason.trim()) {
-      return setError(
-        dealType === "discount"
-          ? `Discount ${discountNum}% exceeds the cap of ${discountCapPct}%. Provide a CEO-override reason, or lower it.`
-          : `Bonus ${bonusNum} exceeds the cap of ${maxBonus}. Provide a CEO-override reason, or lower the bonus.`,
-      );
-    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(collectionDate)) return setError("Enter the money-collection date.");
     setBusy(true);
     try {
@@ -167,13 +160,17 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           dealType,
           bonus: dealType === "bonus" ? bonusNum : 0,
           discountPct: dealType === "discount" ? discountNum : null,
-          bonusOverrideReason: overCap ? overrideReason.trim() : null,
+          bonusOverrideReason: overCap ? overrideReason.trim() || null : null,
           collectionDate,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the direct order.");
-      setOk("Direct order submitted — it is now with your first approver.");
+      setOk(
+        overCap
+          ? "Direct order submitted — flagged as over cap; it will need final CEO approval."
+          : "Direct order submitted — it is now with your first approver.",
+      );
       setProductCode("");
       setQty("");
       setBonus("");
@@ -253,9 +250,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           ) : null}
 
           {overCap ? (
-            <div>
-              <label className={labelClass()}>CEO-override reason (required — only the CEO can approve an over-cap {dealType})</label>
-              <textarea className={inputClass()} rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} />
+            <div className="space-y-2 border border-amber-300 bg-amber-50 px-3 py-2.5">
+              <p className="text-[12px] font-bold text-amber-800">
+                Over cap — this request will still submit and go through the normal approval chain, but only the CEO can give the final sign-off.
+              </p>
+              <div>
+                <label className={labelClass()}>Note for the CEO (optional)</label>
+                <textarea className={inputClass()} rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Why this exceeds the cap…" />
+              </div>
             </div>
           ) : null}
 
@@ -405,7 +407,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       <div className="text-[11px] text-slate-500">{r.line}</div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{r.qty.toLocaleString("en-US")}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{bonusCell(r)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {bonusCell(r)}
+                      {r.bonusOverCap ? (
+                        <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
+                          over cap
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                     <td className="px-3 py-2">{r.pharmacyName}</td>
                     <td className="px-3 py-2">

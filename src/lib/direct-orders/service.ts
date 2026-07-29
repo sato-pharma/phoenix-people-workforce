@@ -30,6 +30,7 @@ import {
   loadDirectOrderCaps,
   resolveBonusCapPct,
   resolveDiscountCapPct,
+  type DirectOrderCaps,
 } from "@/lib/direct-orders/caps";
 import {
   DIRECT_ORDER_REQUESTER_ROLES,
@@ -62,6 +63,22 @@ function requireActorHrId(access: AccessContext): string {
   const hrId = access.hrId;
   if (!hrId) badRequest("Your account has no HR ID; cannot act on direct orders.");
   return hrId;
+}
+
+/**
+ * True when a request's bonus (or discount) exceeds its product's configured cap —
+ * the single flag that (a) surfaces as "over cap" in every list/detail view and
+ * (b) gates final approval to the actual CEO in decideDirectOrder. Submission itself
+ * is NOT gated by this — an over-cap request still enters the normal approval chain,
+ * which always ends at the CEO rung regardless.
+ */
+function isRequestOverCap(
+  request: Pick<DirectOrderRequest, "dealType" | "discountPct" | "bonus" | "qty" | "productCode">,
+  caps: DirectOrderCaps,
+): boolean {
+  return request.dealType === "discount"
+    ? (request.discountPct ?? 0) > resolveDiscountCapPct(caps, request.productCode)
+    : request.bonus > maxBonusUnits({ qty: request.qty, capPct: resolveBonusCapPct(caps, request.productCode) });
 }
 
 // ── Recipient resolution ──────────────────────────────────────────────────────
@@ -501,6 +518,10 @@ export async function submitDirectOrder(
   let discountPct: number | null = null;
   let publicPrice: number | null = null;
   let salesValue: number;
+  // Over-cap no longer blocks submission — it just flags the request (list badge +
+  // notification) and, per the CEO-only gate in decideDirectOrder below, restricts who
+  // may finalize it. The chain already always ends at the CEO rung regardless.
+  let overCap: boolean;
 
   if (dealType === "discount") {
     // Discount uses the PUBLIC price; value = qty × public × (1 − disc%). No bonus.
@@ -517,19 +538,13 @@ export async function submitDirectOrder(
     }
     discountPct = Math.max(0, Math.min(100, Number(input.discountPct) || 0));
     const capPct = resolveDiscountCapPct(caps, product.productCode);
-    const check = validateDiscount({ discountPct, capPct });
-    if (!check.withinCap && !overrideReason) {
-      badRequest(`Discount ${discountPct}% exceeds the cap of ${capPct}%. A CEO override with a reason is required to exceed it.`);
-    }
+    overCap = !validateDiscount({ discountPct, capPct }).withinCap;
     salesValue = computeDiscountSalesValue({ qty, publicPrice: publicPrice as number, discountPct });
   } else {
     // Bonus: value = qty × factory price (bonus excluded); bonus capped by config.
     bonus = Math.floor(Number(input.bonus) || 0);
     const capPct = resolveBonusCapPct(caps, product.productCode);
-    const check = validateBonus({ qty, bonus, capPct });
-    if (!check.withinCap && !overrideReason) {
-      badRequest(`Bonus ${bonus} exceeds the cap of ${check.maxBonus} (${capPct}% of ${qty}). A CEO override with a reason is required to exceed it.`);
-    }
+    overCap = !validateBonus({ qty, bonus, capPct }).withinCap;
     salesValue = computeDirectOrderSalesValue({ qty, factoryPrice: product.factoryPrice });
   }
 
@@ -609,10 +624,13 @@ export async function submitDirectOrder(
 
   const firstStep = chain[0];
   const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+  const overCapTag = overCap ? (dealType === "discount" ? "[High Discount] " : "[High Bonus] ") : "";
   await notifyDirectOrder({
     recipients: [...firstApprovers, ...(await ccRecipients())],
-    title: "Direct order awaiting your approval",
-    message: `A direct order (${product.productName} × ${qty}) needs your approval.`,
+    title: `${overCapTag}Direct order awaiting your approval`,
+    message: overCap
+      ? `A direct order (${product.productName} × ${qty}) needs your approval — this ${dealType} exceeds the cap and can only be finalized by the CEO.`
+      : `A direct order (${product.productName} × ${qty}) needs your approval.`,
     eventType: "submitted",
     requestId: request.id,
     subjectHrId: actorHrId,
@@ -662,11 +680,7 @@ export async function decideDirectOrder(
   // Over-cap (bonus OR discount) can only be finalized by a CEO override.
   if (input.decision === "approve" && isCeoStep(activeStep)) {
     const caps = await loadDirectOrderCaps();
-    const overCap =
-      request.dealType === "discount"
-        ? (request.discountPct ?? 0) > resolveDiscountCapPct(caps, request.productCode)
-        : request.bonus > maxBonusUnits({ qty: request.qty, capPct: resolveBonusCapPct(caps, request.productCode) });
-    if (overCap && access.role !== "CEO" && !isSuperAdmin) {
+    if (isRequestOverCap(request, caps) && access.role !== "CEO" && !isSuperAdmin) {
       badRequest("This order's bonus/discount exceeds the cap; only the CEO can approve it.");
     }
   }
@@ -927,6 +941,7 @@ function toApprovalListItem(
   active: DirectOrderStepState | null,
   requesterName: string | null,
   pharmacy: DirectOrderPharmacy | null,
+  bonusOverCap: boolean,
 ): DirectOrderApprovalListItem {
   return {
     id: request.id,
@@ -947,6 +962,7 @@ function toApprovalListItem(
     decidedAt: request.decidedAt,
     activeStepLabel: active?.label ?? "",
     activeStepOrder: active?.order ?? null,
+    bonusOverCap,
   };
 }
 
@@ -975,12 +991,15 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   const stepsByReq = await loadStepsForRequests([...pending, ...historyRequests].map((r) => r.id));
   const pharmacies = await loadPharmaciesByIds([...pending, ...historyRequests].map((r) => r.pharmacyId));
   const nameOf = await nameLookup();
+  const caps = await loadDirectOrderCaps();
 
   const awaiting: DirectOrderApprovalListItem[] = [];
   for (const request of pending) {
     const active = resolveActiveStep(stepsByReq.get(request.id) ?? []);
     if (!viewerCanActOnStep(access, active)) continue;
-    awaiting.push(toApprovalListItem(request, active, nameOf(request.requesterHrId), pharmacies.get(request.pharmacyId) ?? null));
+    awaiting.push(
+      toApprovalListItem(request, active, nameOf(request.requesterHrId), pharmacies.get(request.pharmacyId) ?? null, isRequestOverCap(request, caps)),
+    );
   }
   const history: DirectOrderApprovalListItem[] = historyRequests.map((request) =>
     toApprovalListItem(
@@ -988,6 +1007,7 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
       resolveActiveStep(stepsByReq.get(request.id) ?? []),
       nameOf(request.requesterHrId),
       pharmacies.get(request.pharmacyId) ?? null,
+      isRequestOverCap(request, caps),
     ),
   );
   return { awaiting, history };
@@ -1012,12 +1032,14 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
   const stepsByReq = await loadStepsForRequests(requests.map((r) => r.id));
   const pharmacies = await loadPharmaciesByIds(requests.map((r) => r.pharmacyId));
   const nameOf = await nameLookup();
+  const caps = await loadDirectOrderCaps();
   return requests.map((request) =>
     toApprovalListItem(
       request,
       resolveActiveStep(stepsByReq.get(request.id) ?? []),
       nameOf(request.requesterHrId),
       pharmacies.get(request.pharmacyId) ?? null,
+      isRequestOverCap(request, caps),
     ),
   );
 }
@@ -1130,10 +1152,7 @@ export async function getDirectOrderApprovalDetail(
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
   const caps = await loadDirectOrderCaps();
-  const bonusOverCap =
-    request.dealType === "discount"
-      ? (request.discountPct ?? 0) > resolveDiscountCapPct(caps, request.productCode)
-      : request.bonus > maxBonusUnits({ qty: request.qty, capPct: resolveBonusCapPct(caps, request.productCode) });
+  const bonusOverCap = isRequestOverCap(request, caps);
   return {
     request,
     requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
