@@ -458,6 +458,7 @@ export type MarketingApproverInboxRow = {
   requestCode: string;
   requesterHrId: string;
   requesterName: string;
+  requesterRole: PhoenixRole;
   requestType: string;
   status: MarketingRequest["status"];
   stepSequence: number;
@@ -2030,6 +2031,13 @@ function employeeNameByHrId(employeeRows: EmployeeDirectoryRow[], hrId: string |
   const normalized = normalizeHrId(hrId);
   if (!normalized) return "";
   return employeeRowByHrId(employeeRows).get(normalized)?.displayName ?? normalized;
+}
+
+/** Display-only role classification (job title → PhoenixRole) — never for permissions. */
+function employeeRoleByHrId(employeeRows: EmployeeDirectoryRow[], hrId: string | null | undefined): PhoenixRole {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return "Employee";
+  return resolveJobFunctionRole(employeeRowByHrId(employeeRows).get(normalized)?.jobTitle);
 }
 
 /**
@@ -4208,6 +4216,7 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     requestCode: request.requestCode,
     requesterHrId: request.requesterHrId,
     requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+    requesterRole: employeeRoleByHrId(employeeRows, request.requesterHrId),
     requestType: typeNameById.get(request.requestTypeId) ?? "Marketing request",
     status: request.status,
     stepSequence: step.sequence,

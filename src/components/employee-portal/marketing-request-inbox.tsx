@@ -85,7 +85,7 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
             {row.customerName}
           </h3>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName}
+            {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
         <Badge variant="warning">{row.currentStepName}</Badge>
@@ -158,7 +158,7 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-600">{row.requestCode}</p>
           <h3 className="mt-0.5 whitespace-nowrap text-[15px] font-black tracking-tight text-slate-950">{row.customerName}</h3>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-            {row.requestType} · From {row.requesterName}
+            {row.requestType} · From {row.requesterName} ({row.requesterRole})
           </p>
         </div>
         <Badge variant="neutral">For your comment</Badge>
