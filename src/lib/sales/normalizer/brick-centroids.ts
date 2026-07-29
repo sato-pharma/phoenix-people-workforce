@@ -141,6 +141,8 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
         .select("customer_code, brick_id")
         .eq("active", true)
         .not("brick_id", "is", null)
+        // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+        .order("id", { ascending: true })
         .range(from, to);
       return error ? null : (data as { customer_code: string | null; brick_id: string | null }[] | null);
     });

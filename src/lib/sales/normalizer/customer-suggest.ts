@@ -46,6 +46,8 @@ async function loadActiveCustomerMap(): Promise<CustomerMapDbRow[]> {
       .select("customer_name,address,brick_id,customer_code,distributor_code")
       .eq("active", true)
       .not("brick_id", "is", null)
+      // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error || !data || data.length === 0) break;
     rows.push(...(data as CustomerMapDbRow[]));
