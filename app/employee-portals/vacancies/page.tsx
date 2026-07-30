@@ -125,7 +125,7 @@ export default async function EmployeePortalVacanciesPage({
   if (!(await canAccess(access, "vacancies", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Vacancies are available for District Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
+        message="Vacancies are available for District Manager, Regional Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
         title="Vacancies Unavailable"
       />
     );
@@ -136,7 +136,7 @@ export default async function EmployeePortalVacanciesPage({
   if (!data) {
     return (
       <EmployeePortalEmptyState
-        message="This page is available for District Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
+        message="This page is available for District Manager, Regional Manager, National Sales Manager, and Product / Group Product Manager roles when vacancy scope can be resolved."
         title="Vacancies Unavailable"
       />
     );

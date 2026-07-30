@@ -140,20 +140,25 @@ type EmployeePortalNavSection = {
   title: string;
 };
 
+/**
+ * Collapsed-rail icon per section. Every title below MUST map to a DISTINCT icon: the collapsed
+ * sidebar shows nothing but this strip of icons, so two sections sharing one are indistinguishable.
+ * Previously "Approvals Hub"/"Leave Management" both rendered CalendarDays and "Marketing & ROI"/
+ * "Team Operations"/"Recruitment & Hiring" all rendered BriefcaseBusiness.
+ */
 function sectionRailIcon(title: string): typeof Activity {
-  if (title === "Approvals Hub") return CalendarDays;
+  if (title === "Training Manager") return ClipboardCheck;
   if (title === "My Workspace") return Home;
-  if (title === "Marketing & ROI") return BriefcaseBusiness;
-  if (title === "Leave Management") return CalendarDays;
-  if (title === "Team Performance") return Users;
-  if (title === "Team Operations") return BriefcaseBusiness;
-  if (title === "Expenses") return FileText;
-  if (title === "Support" || title === "HR Support") return Headphones;
+  if (title === "Approvals Hub") return FileCheck2;
+  if (title === "Sales") return ChartColumnBig;
+  if (title === "My Team") return Users;
+  if (title === "Field Activity") return MapPinned;
   if (title === "Recruitment & Hiring") return BriefcaseBusiness;
   if (title === "People Management") return UsersRound;
-  if (title === "Pharmacovigilance") return FileText;
-  if (title === "Sales Intelligence") return Target;
-  if (title === "Sales Operations") return ChartColumnBig;
+  if (title === "Marketing & ROI") return Target;
+  if (title === "Pay & Expenses") return CircleDollarSign;
+  if (title === "Pharmacovigilance") return ShieldCheck;
+  if (title === "Leave & HR") return CalendarDays;
   return Activity;
 }
 
@@ -177,6 +182,7 @@ function buildEmployeePortalSections({
   showTeamCalendarTab = false,
   showTeamExpensesTab = false,
   showVacanciesTab = false,
+  showMyCandidatesTab = false,
   showProbationTab = false,
   showOrganogramTab = false,
   showPlansTab = false,
@@ -259,16 +265,14 @@ function buildEmployeePortalSections({
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox, navBadge: "approvals-hub-pending" as const }] : []),
       ],
     },
+    // Section order below is daily -> weekly -> occasional -> monthly/self-service. Sales and My
+    // Team (the actual job of a field-sales manager) now sit above the personal-admin sections;
+    // Payroll used to rank 3rd, above both. Merged sections: "Team Performance" + "Team Operations"
+    // -> "My Team" (they meant the same thing, and an RM's Team Performance held a single coaching
+    // link), "Payroll" + "Expenses" -> "Pay & Expenses", "Leave Management" + "HR Support" ->
+    // "Leave & HR". No item was added or removed by the merge — only regrouped and reordered.
     {
-      title: "Payroll",
-      items: [
-        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
-        { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
-        ...(showDeductionsTab ? [{ href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText }] : []),
-      ],
-    },
-    {
-      title: "Sales Operations",
+      title: "Sales",
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
@@ -282,8 +286,26 @@ function buildEmployeePortalSections({
         ...(showDirectOrdersReportTab ? [{ href: "/employee-portals/direct-orders/report", label: "Direct Orders Report", icon: FileSpreadsheet }] : []),
       ],
     },
+    // Merged from the old "Team Performance" + "Team Operations": performance views first, then
+    // the people-ops views (open seat -> candidate -> probation -> where they sit in the org).
     {
-      title: "Fieldforce",
+      title: "My Team",
+      items: [
+        ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
+        ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: ChartColumnBig }] : []),
+        ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: Users }] : []),
+        ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
+        ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
+        // Sits next to Vacancies on purpose: open seat -> assigned candidate -> probation is one
+        // lifecycle, and this page only ever shows candidates for THIS manager's own open seats.
+        ...(showMyCandidatesTab ? [{ href: "/employee-portals/recruitment-candidates", label: "My Candidates", icon: UsersRound }] : []),
+        ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
+        ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
+        ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
+      ],
+    },
+    {
+      title: "Field Activity",
       items: [
         // Every employee-portal role sees their own CRM visits except Talent Acquisition
         // (owner-requested exclusion — she is HR/office staff, not a field employee).
@@ -309,15 +331,6 @@ function buildEmployeePortalSections({
         // navigation.ts but never rendered here, so this page had no sidebar link at all. Distinct
         // from "ROI Dashboard" above, which is the Sales-Marketing-Intelligence module.
         ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }] : []),
-      ],
-    },
-    {
-      title: "Leave Management",
-      items: [
-        { href: "/employee-portals/vacation-request", label: "Vacation Request", icon: CalendarDays },
-        { href: "/employee-portals/vacation-report", label: "Vacation Report", icon: FileText },
-        ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
-        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
       ],
     },
     // Talent Acquisition's portal mirror of the admin-shell hrAuthorityNavigationRoles
@@ -348,27 +361,14 @@ function buildEmployeePortalSections({
         ...(showAccountActivationTab ? [{ href: "/employee-portals/account-activation", label: "Account Activation", icon: UserCog }] : []),
       ],
     },
+    // Merged from the old "Payroll" + "Expenses": what I am paid and what I claim back, in one
+    // place, below the team/sales work instead of interleaved with it.
     {
-      title: "Team Performance",
+      title: "Pay & Expenses",
       items: [
-        ...(showTeamPerformanceTab ? [{ href: "/employee-portals/team-performance", label: "Team Performance", icon: Trophy }] : []),
-        ...(showTeamCoachingTab ? [{ href: "/employee-portals/coaching", label: "Team Coaching Reports", icon: ClipboardCheck }] : []),
-        ...(showMedRepsPerformanceTab ? [{ href: "/employee-portals/med-reps-performance", label: "MRs Performance", icon: ChartColumnBig }] : []),
-        ...(showDsmsPerformanceTab ? [{ href: "/employee-portals/dsms-performance", label: "DSMs Performance", icon: Users }] : []),
-        ...(showTeamExpensesTab ? [{ href: "/employee-portals/team-expenses", label: "Team Expenses", icon: WalletCards }] : []),
-      ],
-    },
-    {
-      title: "Team Operations",
-      items: [
-        ...(showVacanciesTab ? [{ href: "/employee-portals/vacancies", label: "Vacancies", icon: BriefcaseBusiness }] : []),
-        ...(showProbationTab ? [{ href: "/employee-portals/probation", label: "Probation Tracker", icon: ClipboardCheck }] : []),
-        ...(showOrganogramTab ? [{ href: "/employee-portals/organogram", label: "Organogram", icon: Building2 }] : []),
-      ],
-    },
-    {
-      title: "Expenses",
-      items: [
+        ...(showIncentiveTab ? [{ href: "/employee-portals/incentive", label: "Incentive", icon: Gift }] : []),
+        { href: "/employee-portals/payslips", label: "Payslips", icon: FileText },
+        ...(showDeductionsTab ? [{ href: "/employee-portals/deductions", label: "Deductions", icon: ReceiptText }] : []),
         ...(showMedicalRepExpensesTab ? [{ href: "/employee-portals/expenses", label: "My Outstation Expenses", icon: ReceiptText }] : []),
         ...(showExpenseDashboardTab ? [{ href: "/employee-portals/expense-dashboard", label: "Expense Dashboard", icon: CircleDollarSign }] : []),
         ...(showExpenseActionTab ? [{ href: "/employee-portals/submit-expense", label: "Submit Expense", icon: Send }] : []),
@@ -382,9 +382,15 @@ function buildEmployeePortalSections({
           : []),
       ],
     },
+    // Merged from the old "Leave Management" + "HR Support" — time off, attendance and reaching HR
+    // are one errand-shaped group, and "HR Support" was a one-item section for most roles.
     {
-      title: "HR Support",
+      title: "Leave & HR",
       items: [
+        { href: "/employee-portals/vacation-request", label: "Vacation Request", icon: CalendarDays },
+        { href: "/employee-portals/vacation-report", label: "Vacation Report", icon: FileText },
+        ...(showExcusesTab ? [{ href: "/employee-portals/excuses", label: "Excuses", icon: CalendarClock }] : []),
+        ...(showFingerprintReportTab ? [{ href: "/employee-portals/fingerprint-analytics", label: "Attendance Analytics", icon: Fingerprint }] : []),
         ...(showReportItTab ? [{ href: "/employee-portals/report-it", label: "Report It", icon: FileText }] : []),
         ...(showSupportTab ? [{ href: "/employee-portals/contact-hr-support", label: "Request Support", icon: Headphones }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/support-requests", label: "HR Support Requests", icon: Headphones }] : []),

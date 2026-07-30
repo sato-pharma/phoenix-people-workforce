@@ -5063,7 +5063,13 @@ export async function getEmployeePortalVacancies(
       (isNsm ||
         currentRole === "Product Manager" ||
         currentRole === "Group Product Manager");
-    if (!isDsm && !isLineScoped && !isCompanyScoped) return null;
+    // Regional Manager is REGION-scoped: their own line, narrowed to the regions inside their
+    // own management subtree. Deliberately NOT folded into isLineScoped — that would show an RM
+    // every open seat on the line, including other regions they do not manage. This mirrors the
+    // RM branch fetchOpenVacancySummaryForScope already uses for the Command Center's open-seat
+    // count, so the card total and this page agree instead of one showing seats the other hides.
+    const isRegionScoped = !isCompanyScoped && !isLineScoped && currentRole === "Regional Manager";
+    if (!isDsm && !isLineScoped && !isCompanyScoped && !isRegionScoped) return null;
 
     const [directory, viewerAllowedLines] = await Promise.all([
       getEmployeeDirectory().catch(() => null),
@@ -5078,6 +5084,15 @@ export async function getEmployeePortalVacancies(
     });
 
     if (!currentEmployee) return null;
+
+    // The RM's authoritative region bound. Their own region_name is a coarse parent label that does
+    // not string-match the finer labels on their reports, so the set is derived from the subtree
+    // (same resolver, same argument order as fetchOpenVacancySummaryForScope). Empty set = fail
+    // closed below rather than silently widening to the whole line.
+    const regionalManagerRegionKeys =
+      isRegionScoped && currentCanonicalHrId
+        ? regionsWithinManagerHierarchy(directory.employees, currentCanonicalHrId, normalizeHrIdForAccess)
+        : null;
 
     // Multi-line override: when set, the viewer spans multiple lines (e.g. Ahmed Sharaf).
     const hasMultiLineOverride = isLineScoped && viewerAllowedLines && viewerAllowedLines.length > 1;
@@ -5099,6 +5114,9 @@ export async function getEmployeePortalVacancies(
         query = query.eq("manager_hr_id", currentUser.hrId);
       } else if (isLineScoped && !hasMultiLineOverride && typeof currentEmployee.lineId === "number") {
         query = query.eq("line_id", currentEmployee.lineId);
+      } else if (isRegionScoped && typeof currentEmployee.lineId === "number") {
+        // Coarse line pre-filter only; the region bound is applied in scopedRows below.
+        query = query.eq("line_id", currentEmployee.lineId);
       }
       // Multi-line: fetch unfiltered then scope in memory (avoids complex OR/IN on line_id)
       return query;
@@ -5106,6 +5124,13 @@ export async function getEmployeePortalVacancies(
 
     const scopedRows = vacancyRows.filter((row) => {
       if (isCompanyScoped) return true;
+      if (isRegionScoped) {
+        // Fail closed: an unresolvable region set shows nothing rather than the whole line.
+        if (!regionalManagerRegionKeys || regionalManagerRegionKeys.size === 0) return false;
+        if (typeof currentEmployee.lineId !== "number" || row.line_id !== currentEmployee.lineId) return false;
+        const region = normalizeRegionLabel(row.region_name);
+        return Boolean(region && regionalManagerRegionKeys.has(region));
+      }
       if (isLineScoped) {
         if (allowedLineNamesNormalized && allowedLineNamesNormalized.length > 0) {
           const rowLine = normalizeLineName(row.lines?.name ?? null);
@@ -5150,14 +5175,18 @@ export async function getEmployeePortalVacancies(
       // All line-scoped roles (NSM + Product/Group Product Manager) use the line view + line
       // label; only the District Manager uses the team/own-name view. Previously PM/GPM fell into
       // the "dsm" branch and were mislabeled "Team Vacancies / District view" with their own name.
-      roleView: isLineScoped || isCompanyScoped ? "nsm" : "dsm",
+      // The RM uses the roll-up ("nsm") view, not the DSM one: they span several districts, so the
+      // team/own-name view would mislabel a multi-district list with a single manager's name.
+      roleView: isLineScoped || isCompanyScoped || isRegionScoped ? "nsm" : "dsm",
       scopeLabel: isCompanyScoped
         ? "All lines"
         : isLineScoped
           ? hasMultiLineOverride
             ? viewerAllowedLines!.join(" + ")
             : currentEmployee.lineName ?? currentUser.line ?? "Your line"
-          : currentEmployee.displayName,
+          : isRegionScoped
+            ? `${currentEmployee.lineName ?? currentUser.line ?? "Your line"} — your regions`
+            : currentEmployee.displayName,
       summary: {
         districtManagerVacancies: vacancies.filter((row) => row.isDistrictManagerVacancy).length,
         openVacancies: vacancies.length,

@@ -52,6 +52,39 @@ export function runEmployeePortalBottomNavTests() {
     );
   }
 
+  // ── Reverse direction: every SIDEBAR destination must be in the registry ────────────────
+  // This half was missing until 2026-07-30 and the drift it allowed was real: Weekly Sales, Sales
+  // Analytics, Territory & Sales Drilldown, My Visits and Team Calendar all lived in the sidebar
+  // with no registry entry, so the mobile bottom bar and the profile quick-nav grid could not reach
+  // them on any device — a Regional Manager's default bottom bar contained zero sales tabs. Checking
+  // only registry -> sidebar (above) can never catch that: a missing entry is not a dead link.
+  const registryHrefSet = new Set(registryHrefs);
+  // Fixed bottom-bar anchors: present in the layout, intentionally not user-pinnable.
+  const bottomNavAnchors = new Set(["/employee-portals", "/employee-portals/profile"]);
+  // Talent-Acquisition-only desktop tools plus Private Calendar (deliberately unlinked for every
+  // other role). These are desktop-workflow pages, not mobile shortcuts; if one is ever wanted on
+  // mobile, add it to the registry and drop it from here — do not widen this set casually.
+  const desktopOnlyPortalRoutes = new Set([
+    "/employee-portals/private-calendar",
+    "/employee-portals/recruitment",
+    "/employee-portals/cv-database",
+    "/employee-portals/hiring-documents",
+    "/employee-portals/employees",
+    "/employee-portals/contracts",
+    "/employee-portals/resignations",
+    "/employee-portals/account-activation",
+    "/employee-portals/support-requests",
+  ]);
+
+  for (const href of new Set(extractHrefs(layoutSource))) {
+    if (!href.startsWith("/employee-portals")) continue;
+    if (bottomNavAnchors.has(href) || desktopOnlyPortalRoutes.has(href)) continue;
+    assert.ok(
+      registryHrefSet.has(href),
+      `sidebar href ${href} is missing from PORTAL_NAV_REGISTRY, so the mobile bottom nav and the profile quick-nav grid cannot reach it — add an entry (or add it to desktopOnlyPortalRoutes with a reason)`,
+    );
+  }
+
   // The bottom nav must remain mobile-only, safe-area aware, and preference-driven.
   assert.match(bottomNavSource, /lg:hidden/, "bottom nav must be hidden on lg+ (sidebar territory)");
   assert.match(

@@ -650,6 +650,13 @@ const defaultPermissionMatrix: PermissionMap = {
     weekly_sales: ["read", "export"],
     support_requests: ["read", "create"],
     team: ["read", "export"],
+    // Same undeclared-access correction as `deductions` above: getEmployeePortalVacancies already
+    // has an explicit Regional Manager branch that bounds open seats to the RM's own line AND the
+    // regions inside their management subtree (regionsWithinManagerHierarchy), but the grant was
+    // never declared — so the page's canAccess gate refused every RM and that branch was dead code.
+    // Read-only + export, matching District Manager (team-scoped) and National Sales Manager
+    // (line-scoped); every vacancy WRITE surface stays on `vacancies:create`, which RM does not have.
+    vacancies: ["read", "export"],
     weekly_plans: ["read", "create", "update", "approve"],
     hiring_interviews: ["read", "update"],
     report_it: ["read", "create"],

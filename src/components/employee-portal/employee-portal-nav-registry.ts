@@ -29,6 +29,7 @@ import {
   Trophy,
   User,
   Users,
+  UsersRound,
   WalletCards,
   Waypoints,
 } from "lucide-react";
@@ -71,10 +72,23 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
+  // The three sales destinations below plus My Visits/Team Calendar further down were in the
+  // sidebar but never in this registry, so the mobile bottom bar and the profile quick-nav grid
+  // could not reach them at all — for a Regional Manager that meant a default bottom bar with zero
+  // sales tabs. The sync test only checked registry -> sidebar, so the reverse drift stayed silent;
+  // it now checks both directions.
+  { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"] },
+  { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"] },
+  // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
+  // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
+  // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
+  { label: "Drilldown", fullLabel: "Territory & Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
   { label: "DO Report", fullLabel: "Direct Orders Report", href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, flags: ["showDirectOrdersReportTab"] },
+  { label: "Visits", fullLabel: "My Visits", href: "/employee-portals/visits", icon: MapPinned, flags: ["showMyVisitsTab"] },
+  { label: "Calendar", fullLabel: "Team Calendar", href: "/employee-portals/team-calendar", icon: CalendarRange, flags: ["showTeamCalendarTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },
   { label: "Double Visit", fullLabel: "Double-Visit Analytics", href: "/employee-portals/double-visit-analytics", icon: Activity, flags: ["showDoubleVisitAnalyticsTab"] },
   { label: "DV Planner", fullLabel: "DV Planner", href: "/employee-portals/dv-planner", icon: CalendarCheck2, flags: ["showDoubleVisitReportTab"] },
@@ -103,6 +117,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Team exp", fullLabel: "Team Expenses", href: "/employee-portals/team-expenses", icon: WalletCards, flags: ["showTeamExpensesTab"] },
   // Team Operations
   { label: "Vacancies", fullLabel: "Vacancies", href: "/employee-portals/vacancies", icon: BriefcaseBusiness, flags: ["showVacanciesTab"] },
+  { label: "Candidates", fullLabel: "My Candidates", href: "/employee-portals/recruitment-candidates", icon: UsersRound, flags: ["showMyCandidatesTab"] },
   { label: "Probation", fullLabel: "Probation Tracker", href: "/employee-portals/probation", icon: ClipboardCheck, flags: ["showProbationTab"] },
   { label: "Org", fullLabel: "Organogram", href: "/employee-portals/organogram", icon: Building2, flags: ["showOrganogramTab"] },
   // Expenses
@@ -120,10 +135,19 @@ export const PROFILE_ENTRY: PortalNavEntry = { label: "Profile", fullLabel: "Pro
 /** Max user-pinned shortcuts between Home and Profile in the bottom bar. */
 export const MAX_BOTTOM_NAV_CUSTOM = 4;
 
-/** Default priority of middle bottom-nav items when the user hasn't customized. */
+/**
+ * Default priority of middle bottom-nav items when the user hasn't customized.
+ *
+ * Source of Sales and Sales Analytics sit high on purpose: this list is filtered by visibility and
+ * then truncated to MAX_BOTTOM_NAV_CUSTOM, and before they were added it contained NO sales
+ * destination at all — so a District/Regional/National Sales Manager's default mobile bar was
+ * plans + planning + marketing + expenses, with nothing from the job they actually do all day.
+ */
 export const DEFAULT_BOTTOM_NAV_HREFS = [
   "/employee-portals/plans",
   "/employee-portals/plans/calendar",
+  "/employee-portals/source-of-sales",
+  "/employee-portals/sales-analytics",
   "/employee-portals/report-it",
   "/employee-portals/team-performance",
   "/employee-portals/marketing-requests",

@@ -441,7 +441,22 @@ export function runApprovalsHubTests() {
   const marketingSectionMatch = portalLayout.match(/title: "Marketing & ROI",\s*items: \[([\s\S]*?)\],\s*\}/);
   assert.ok(marketingSectionMatch, "Marketing & ROI section body is present");
   assert.doesNotMatch(marketingSectionMatch![1], /marketing-requests\/inbox/, "the Marketing Requests Inbox moved out of Marketing & ROI into the Approvals Hub section");
-  assert.match(portalLayout, /if \(title === "Approvals Hub"\) return CalendarDays;/, "the collapsed-rail icon map has an entry for the new section");
+  assert.match(portalLayout, /if \(title === "Approvals Hub"\) return \w+;/, "the collapsed-rail icon map has an entry for the new section");
+  // The collapsed rail renders ONLY these icons, so two sections sharing one are indistinguishable.
+  // Approvals Hub and Leave & HR both returned CalendarDays until 2026-07-30. Pin uniqueness rather
+  // than any specific icon — the icon choice is cosmetic, the distinctness is not.
+  {
+    const railIcons = Array.from(
+      portalLayout.matchAll(/if \(title === "[^"]+"\) return (\w+);/g),
+      (match) => match[1],
+    );
+    assert.ok(railIcons.length >= 10, "every portal sidebar section needs a rail icon entry");
+    assert.equal(
+      new Set(railIcons).size,
+      railIcons.length,
+      `collapsed-rail icons must be unique per section; duplicates found in [${railIcons.join(", ")}]`,
+    );
+  }
 
   // The rename applies to the portal route's own page heading too (not the separate admin-shell
   // "Approval Inbox" at /admin/marketing-requests/inbox, which is untouched).
