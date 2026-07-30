@@ -5,9 +5,11 @@ import { compactDeductionHrId } from "@/lib/deductions-governance/service";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
-import { hrIdsMatch, normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdsMatch, normalizeHrId, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
 
 export type EmployeeAttendanceSummary = {
   absentDays: number;
@@ -196,6 +198,16 @@ export async function assertCanViewEmployeeAttendance(
   if (canViewEmployeeAttendanceReport(context, { hrId: target, managerHrId: null })) {
     return;
   }
+  // A hierarchy-scoped viewer reaches their whole subtree, which the pure single-edge predicate
+  // below cannot express (it only ever sees the target's immediate manager). Checked before the
+  // single-row lookup so the common case still costs one query at most.
+  if (isHierarchyAttendanceViewer(context)) {
+    const subtree = new Set(
+      (await loadAttendanceSubtreeHrIds(context.hrId)).map((hrId) => normalizeAttendanceHrId(hrId) ?? hrId),
+    );
+    if (subtree.has(normalizeAttendanceHrId(target) ?? target)) return;
+  }
+
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
     .from("employees")
@@ -209,19 +221,65 @@ export async function assertCanViewEmployeeAttendance(
 }
 
 /**
- * Active DIRECT reports of `managerHrId` who are attendance-tracked (device-enrolled
- * or a field role) — used to populate the manager's report selector. Returns [] when
- * none. Terminated/resigned reports are excluded.
+ * True when this viewer's attendance reach follows their whole management subtree rather than just
+ * their direct reports — i.e. a `hierarchy`-scoped role (Regional Manager, see scopeForRole).
+ *
+ * A one-level rule is wrong for them in a way that matters: an RM owns the attendance-driven
+ * deduction days of every Medical Rep in their region, but those reps report to a DSM, so a
+ * direct-reports-only check showed the RM only their 3 DSMs and hid all 14 reps.
  */
-export async function loadAttendanceDirectReports(managerHrId: string): Promise<AttendanceReportTarget[]> {
+function isHierarchyAttendanceViewer(context: AccessContext): boolean {
+  return context.scope === "hierarchy";
+}
+
+/**
+ * Raw hrIds of everyone inside `managerHrId`'s management subtree, at any depth, seat-continuity
+ * aware (so a district whose DSM seat is mid-replacement is not dropped). Excludes the manager.
+ */
+async function loadAttendanceSubtreeHrIds(managerHrId: string | null | undefined): Promise<string[]> {
+  const viewerKey = normalizeHrIdForAccess(managerHrId ?? "");
+  if (!viewerKey) return [];
+  const directory = await getEmployeeDirectory();
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
+  for (const row of directory.employees) {
+    const key = normalizeHrIdForAccess(row.hrId);
+    if (key) byCanonicalHrId.set(key, row);
+  }
+  return directory.employees
+    .filter((row) =>
+      isWithinManagerHierarchy({
+        employee: row,
+        byCanonicalHrId,
+        viewerCanonicalHrId: viewerKey,
+        canonicalize: normalizeHrIdForAccess,
+      }),
+    )
+    .map((row) => row.hrId);
+}
+
+/**
+ * Active reports of `managerHrId` who are attendance-tracked (device-enrolled or a field role) —
+ * used to populate the manager's report selector. Returns [] when none. Terminated/resigned reports
+ * are excluded. `includeSubtree` widens from direct reports to the whole management subtree, for the
+ * hierarchy-scoped roles whose reach is not one level (see isHierarchyAttendanceViewer).
+ */
+export async function loadAttendanceDirectReports(
+  managerHrId: string,
+  options: { includeSubtree?: boolean } = {},
+): Promise<AttendanceReportTarget[]> {
   const normalized = normalizeHrId(managerHrId);
   if (!normalized) return [];
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
+  const subtreeHrIds = options.includeSubtree ? await loadAttendanceSubtreeHrIds(normalized) : null;
+  const query = supabase
     .from("employees")
-    .select("hr_id, full_name, nickname, job_title, employment_status, manager_hr_id")
-    .eq("manager_hr_id", normalized.toUpperCase());
+    .select("hr_id, full_name, nickname, job_title, employment_status, manager_hr_id");
+  const { data, error } = subtreeHrIds
+    ? await (subtreeHrIds.length === 0
+        ? Promise.resolve({ data: [] as unknown[], error: null })
+        : query.in("hr_id", subtreeHrIds.map((hrId) => hrId.toUpperCase())))
+    : await query.eq("manager_hr_id", normalized.toUpperCase());
   if (error || !data) return [];
 
   const deviceMapped = await loadActiveDeviceMappedHrIds();
@@ -233,7 +291,10 @@ export async function loadAttendanceDirectReports(managerHrId: string): Promise<
     employment_status: string | null;
     manager_hr_id: string | null;
   }>)
-    .filter((row) => hrIdsMatch(row.manager_hr_id, normalized))
+    // Direct-report mode re-asserts the manager edge in memory (defence in depth against a loose
+    // query). Subtree mode must NOT: those rows are matched by hrId and mostly report to a DSM, so
+    // re-checking manager_hr_id against the RM would filter every one of them back out.
+    .filter((row) => (subtreeHrIds ? true : hrIdsMatch(row.manager_hr_id, normalized)))
     .filter((row) => !isTerminalEmploymentStatus(row.employment_status))
     .filter((row) =>
       isAttendanceTracked({
@@ -279,6 +340,8 @@ export async function resolveAttendanceScopeHrIds(context: AccessContext): Promi
   if (!caller) {
     throw new Error("Forbidden: attendance access denied.");
   }
-  const directReports = await loadAttendanceDirectReports(caller);
-  return [caller, ...directReports.map((report) => normalizeAttendanceHrId(report.hrId) ?? report.hrId)];
+  const reports = await loadAttendanceDirectReports(caller, {
+    includeSubtree: isHierarchyAttendanceViewer(context),
+  });
+  return [caller, ...reports.map((report) => normalizeAttendanceHrId(report.hrId) ?? report.hrId)];
 }
