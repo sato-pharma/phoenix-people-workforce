@@ -601,21 +601,26 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
   // the same real-world day, so an exact candidate-key match alone would miss it and create a
   // duplicate candidate for the same violation instead of deciding the one that already exists.
   let candidateId: string | null = null;
-  const existingForDay = await listDeductionCandidates({
-    access: systemAccessContext,
-    filters: { monthKey, sourceModule: "ATTENDANCE_DEVICE" },
-    page: 1,
-    pageSize: 200,
-  });
-  const existingMatch = existingForDay.rows.find(
-    (row) => row.employeeHrIdCompact === compact && row.dates.includes(input.dateIso),
-  );
-  if (existingMatch) candidateId = existingMatch.id;
+  for (let page = 1; candidateId === null; page += 1) {
+    const existingForDay = await listDeductionCandidates({
+      access: systemAccessContext,
+      filters: { monthKey, sourceModule: "ATTENDANCE_DEVICE" },
+      page,
+      pageSize: 100,
+    });
+    const existingMatch = existingForDay.rows.find(
+      (row) => row.employeeHrIdCompact === compact && row.dates.includes(input.dateIso),
+    );
+    if (existingMatch) candidateId = existingMatch.id;
+    if (existingForDay.rows.length === 0 || page * 100 >= existingForDay.total) break;
+  }
 
-  if (candidateId && isManualDeduction) {
-    // Manual deductions have no system-detected value to protect as a ceiling -- keep the stored
-    // ceiling in sync with the admin's latest entry so a later increase isn't rejected against
-    // whatever was typed the very first time this day was decided.
+  if (candidateId) {
+    // `systemDays` is always the CURRENT, freshly-computed ceiling -- the admin's own entry for
+    // a manual deduction, or this day's live system-detected value otherwise (the day report is
+    // never cached, so it can legitimately differ from whatever a reused candidate, especially
+    // one created by the older Sync All connector, had stored). Keep the reused candidate's
+    // stored ceiling in sync so a correct, higher value isn't rejected against a stale one.
     const estimatedAmount =
       dayReport.baseSalary != null
         ? (calculateDeductionAmountFromBaseSalary({ baseSalary: dayReport.baseSalary, deductionDays: systemDays }) ?? null)
