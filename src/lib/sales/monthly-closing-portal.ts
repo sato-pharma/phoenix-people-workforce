@@ -51,6 +51,10 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
  */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
+  // "Manager" is the legacy alias for District Manager (see scopeForRole in permissions.ts and
+  // PORTAL_CORE_ANALYTICS_ROLES in analytics/portal-access.ts). A DM whose session role resolves to
+  // the alias must reach the same scoped closing, so it is listed alongside "District Manager".
+  "Manager",
   "Regional Manager",
   "National Sales Manager",
   "Product Manager",

@@ -204,6 +204,7 @@ function buildEmployeePortalSections({
   showRoiIntelligenceTab = false,
   showSourceOfSalesTab = false,
   showWeeklyTab = false,
+  showMonthlyClosingTab = false,
   showSalesAnalyticsTab = false,
   showTerritoryDrilldownTab = false,
   showTerritoryManagementTab = false,
@@ -278,6 +279,7 @@ function buildEmployeePortalSections({
       items: [
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
+        ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewS1Tab ? [{ href: "/employee-portals/business-review-s1", label: "S1 Business Review", icon: ChartColumnBig }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Territory & Sales Drilldown", icon: MapPinned }] : []),

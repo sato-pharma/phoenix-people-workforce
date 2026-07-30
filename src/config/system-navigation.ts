@@ -730,6 +730,10 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
+      // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
+      // PORTAL_CLOSING_ROLES: no Marketing Manager (Head-Office line) or Medical Rep (no line).
+      { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal counterpart of /business-review-s1, scoped per viewer. Medical Rep is deliberately
       // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it

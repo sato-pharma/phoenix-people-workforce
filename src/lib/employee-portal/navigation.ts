@@ -75,6 +75,11 @@ export type EmployeePortalNavVisibility = {
   showSourceOfSalesTab?: boolean;
   // Weekly Sales — de-cumulated weekly distributor sell-in, same role set as Source of Sales.
   showWeeklyTab?: boolean;
+  // Monthly Closing — the portal render of the admin /sales/monthly-closing Closing Matrix +
+  // Details, published-gated and scoped to the viewer (see loadPortalMonthlyClosing /
+  // canAccessPortalClosing). Shown to the field-sales management roles that own a line (DM/RM/NSM/
+  // PM/GPM) — NOT Marketing Manager (Head-Office line) or Medical Rep (no line).
+  showMonthlyClosingTab?: boolean;
   // Sales Analytics — the portal-native analytics module at /employee-portals/sales-analytics
   // (Source of Sales + Monthly Closing + Weekly for everyone; + Executive Comparison + Reconciliation
   // for RM and line managers). Every page enforces sales/weekly_sales read AND the per-viewer
@@ -435,6 +440,15 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager",
+    // Monthly Closing — mirrors PORTAL_CLOSING_ROLES (monthly-closing-portal.ts), the server-side
+    // gate this flag must stay in sync with. isDistrictManager already folds in the legacy "Manager"
+    // alias. Marketing Manager and Medical Rep are excluded (no resolvable product line).
+    showMonthlyClosingTab:
+      isDistrictManager ||
+      isRegionalManager ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager,
     // Portal Sales Analytics module (/employee-portals/sales-analytics) — NOT an /admin URL. Every
     // sales field/portal role gets it, scoped to their own line/region: Medical Rep + District Manager
     // see the 3 core dashboards; Regional Manager + the line managers additionally get Executive

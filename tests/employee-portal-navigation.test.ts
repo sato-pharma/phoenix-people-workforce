@@ -381,6 +381,29 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showProbationTab, true, "Group Product Manager should see the line-scoped Probation tab in nav");
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
+  // Monthly Closing -- portal render of /sales/monthly-closing, gated by PORTAL_CLOSING_ROLES
+  // (monthly-closing-portal.ts). Every line-owning field-sales management role sees it; Medical Rep
+  // (no line) and Marketing Manager (Head-Office line) do not. The layout/registry/catalog all gate
+  // the tab on showMonthlyClosingTab, so this flag is the single sidebar switch for the module.
+  assert.equal(districtManager.showMonthlyClosingTab, true, "District Manager should see Monthly Closing");
+  assert.equal(regionalManager.showMonthlyClosingTab, true, "Regional Manager should see Monthly Closing");
+  assert.equal(nationalSalesManager.showMonthlyClosingTab, true, "National Sales Manager should see Monthly Closing");
+  assert.equal(productManagerDefault.showMonthlyClosingTab, true, "Product Manager should see Monthly Closing");
+  assert.equal(groupProductManagerDefault.showMonthlyClosingTab, true, "Group Product Manager should see Monthly Closing");
+  assert.equal(medicalRep.showMonthlyClosingTab, false, "Medical Rep should NOT see Monthly Closing (no product line to resolve)");
+  // The legacy "Manager" alias for District Manager must resolve to the same access.
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Manager").showMonthlyClosingTab,
+    true,
+    "The legacy 'Manager' alias (District Manager) should see Monthly Closing",
+  );
+  // The sidebar item and its published-gated href must be wired behind the flag.
+  assert.match(
+    layoutSource,
+    /showMonthlyClosingTab \? \[\{ href: "\/employee-portals\/monthly-closing"/,
+    "Monthly Closing sidebar item must be gated behind showMonthlyClosingTab",
+  );
+
   // Direct Orders -- submit/report are the module's own requester-role set; approvals is
   // only the two roles that ever sit as a person-rung in the approval ladder.
   const districtManagerDefault = resolveEmployeePortalNavVisibility("District Manager");
@@ -415,12 +438,14 @@ export function runEmployeePortalNavigationTests() {
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
   assert.equal(marketingManagerDefault.showDirectOrdersTab, false, "Marketing Manager is NOT a Direct Orders requester role");
-  // MM mirrors GPM on every nav surface EXCEPT five intentional differences:
+  // MM mirrors GPM on every nav surface EXCEPT six intentional differences:
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
   // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
   // - Direct Orders submit/report are hidden: MM is NOT in DIRECT_ORDER_REQUESTER_ROLES,
   //   so the module's own server-side gate would reject an MM submission anyway
+  // - Monthly Closing is hidden: MM is NOT in PORTAL_CLOSING_ROLES (Head-Office line, so the portal
+  //   can never resolve a meaningful published closing for them — see monthly-closing-portal.ts)
   assert.deepEqual(
     {
       ...marketingManagerDefault,
@@ -429,9 +454,10 @@ export function runEmployeePortalNavigationTests() {
       showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
       showDirectOrdersReportTab: groupProductManagerDefault.showDirectOrdersReportTab,
+      showMonthlyClosingTab: groupProductManagerDefault.showMonthlyClosingTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, and Direct Orders submit/report)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, and Monthly Closing)",
   );
   assert.equal(groupProductManagerDefault.showDoubleVisitReportTab, true, "Group Product Manager sees the Double Visit Report tab (in DV_FOCUS_ROLES)");
   assert.equal(marketingManagerDefault.showDoubleVisitReportTab, false, "Marketing Manager does NOT get the Double Visit Report tab (not in DV_FOCUS_ROLES — its page would redirect)");
@@ -447,6 +473,7 @@ export function runEmployeePortalNavigationTests() {
     false,
     "Group Product Manager does not get the Attendance Analytics tab",
   );
+  assert.equal(marketingManagerDefault.showMonthlyClosingTab, false, "Marketing Manager does NOT get Monthly Closing (Head-Office line, not in PORTAL_CLOSING_ROLES)");
   assert.equal(marketingManagerDefault.showMyPerformanceTab, true, "Marketing Manager sees Sales Dashboard like GPM");
   assert.equal(marketingManagerDefault.showPlansTab, true, "Marketing Manager should see plans like PM/GPM");
   assert.equal(marketingManagerDefault.showVacanciesTab, true, "Marketing Manager should see Vacancies like PM/GPM");

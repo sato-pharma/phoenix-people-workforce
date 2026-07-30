@@ -78,6 +78,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // sales tabs. The sync test only checked registry -> sidebar, so the reverse drift stayed silent;
   // it now checks both directions.
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"] },
+  { label: "Closing", fullLabel: "Monthly Closing", href: "/employee-portals/monthly-closing", icon: CalendarRange, flags: ["showMonthlyClosingTab"] },
   { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"] },
   { label: "S1 Review", fullLabel: "S1 Business Review", href: "/employee-portals/business-review-s1", icon: ChartColumnBig, flags: ["showBusinessReviewS1Tab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
