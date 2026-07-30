@@ -112,7 +112,7 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     { crmId: "11", crmUsername: "Sys.Eleven", employmentStatus: "system_placeholder", fullName: "System Eleven", displayName: "System Eleven", hireDate: "2024-01-01", hrId: "A-11", jobTitle: "National Sales Manager", positionTitle: null },
   ];
 
-  const { matrix } = buildIReports360FieldWorkforceMatrix({
+  const { matrix, ownRegularCountByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     employees,
     month: 5,
     year: 2026,
@@ -146,6 +146,20 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   );
   // Mgr Seven only appears as a double — that joint visit on the 5th must be credited.
   assert.equal(mgrSevenRow[9], 1, "double-partner manager is credited the joint visit on 2026-05-05");
+
+  // Own (primary-agent) vs ride-along (double) split — the basis for the portal Team Calendar's
+  // "DV" coaching marker, which stops a manager's row duplicating the reps' visit counts.
+  // Rep One is the primary agent on both days; Mgr Seven is credited the 05-05 joint visit above,
+  // but only as the DOUBLE, so his OWN count that day is zero (no entry).
+  const ownOf = (hr: string, dateIso: string) =>
+    ownRegularCountByHrKeyAndDate.get(`${canonicalHrIdKey(hr)}|${dateIso}`);
+  assert.equal(ownOf("A-1", "2026-05-04"), 1, "Rep One's solo visit is an own (primary-agent) visit");
+  assert.equal(ownOf("A-1", "2026-05-05"), 1, "Rep One is the primary agent on the joint day, so it is still an own visit");
+  assert.equal(
+    ownOf("A-6", "2026-05-05"),
+    undefined,
+    "the ride-along manager has ZERO own visits on the joint day (double-credit only) — the portal renders this as a DV coaching day, never a duplicated visit count",
+  );
 
   // --- Mirror-row parity: visitFromMirrorRow -> buildIReports360FieldWorkforceMatrix must
   // produce IDENTICAL classification to feeding the equivalent IReports360Visit objects
