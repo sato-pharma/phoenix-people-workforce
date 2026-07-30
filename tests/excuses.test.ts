@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 import {
   excuseErrorMessage,
+  isExcuseExcludedRole,
   isExcusesSchemaMissing,
   isHeadOfficeExcuseEmployee,
   parseExcuseDecision,
@@ -125,6 +126,118 @@ export async function runExcusesTests() {
     /"Product Manager"[\s\S]*"Group Product Manager"[\s\S]*"Training Manager"/,
     "excuses must also be available to PM/GPM/TM",
   );
+
+  // --- District/Regional Managers are out of the excuse module ENTIRELY -----------------
+  // Owner decision 2026-07-30: a DSM or RM neither submits an excuse nor decides one. Excuse is a
+  // Head-Office / fingerprint-attendance module and is direct-manager-only, so the field ladder
+  // never routes one to them. isExcuseExcludedRole is the single source of truth every gate reads.
+  assert.equal(isExcuseExcludedRole("District Manager"), true);
+  assert.equal(isExcuseExcludedRole("Regional Manager"), true);
+  // The generic Head-Office "Manager" rung is a DIFFERENT role and keeps its excuse authority —
+  // it is the people-manager that HO staff actually report to.
+  assert.equal(isExcuseExcludedRole("Manager"), false, "the Head-Office Manager rung must keep excuse authority");
+  for (const keeps of ["National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "CEO", "Super Admin", "Employee"]) {
+    assert.equal(isExcuseExcludedRole(keeps), false, `${keeps} must not be caught by the DSM/RM exclusion`);
+  }
+  // normalizeRole falls back to "Employee" for junk, so nothing unknown may be excluded either.
+  assert.equal(isExcuseExcludedRole(null), false);
+  assert.equal(isExcuseExcludedRole(undefined), false);
+  assert.equal(isExcuseExcludedRole("not-a-role"), false);
+
+  // Submit side: the exclusion must be checked BEFORE the head-office branch, otherwise an
+  // Office-line DSM/RM would slip through isHeadOfficeExcuseEmployee.
+  assert.match(
+    serviceSource,
+    /function canUseExcuses\([\s\S]{0,200}if \(isExcuseExcludedRole\(access\.role\)\) return false;/,
+    "canUseExcuses must reject excuse-excluded roles before the head-office branch",
+  );
+  assert.match(
+    serviceSource,
+    /async function loadEligibleEmployee[\s\S]{0,700}isExcuseExcludedRole\(access\.role\)/,
+    "loadEligibleEmployee must give excuse-excluded roles their own Forbidden message",
+  );
+
+  // Approver side: the pending list, the in-app decide path, and the emailed token link.
+  assert.match(
+    serviceSource,
+    /export async function getManagerPendingExcuses[\s\S]{0,900}isExcuseExcludedRole\(access\.role\)\) return \[\]/,
+    "getManagerPendingExcuses must return nothing for an excuse-excluded role",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestAsManager[\s\S]{0,1400}isExcuseExcludedRole\(access\.role\)\) \{[\s\S]{0,200}Forbidden: District and Regional Managers cannot decide excuse requests\./,
+    "decideExcuseRequestAsManager must throw a Forbidden for an excuse-excluded role",
+  );
+  assert.match(
+    serviceSource,
+    /export async function decideExcuseRequestByToken[\s\S]{0,2200}await hrIdHoldsExcuseExcludedRole\(requestRow\.manager_hr_id\)/,
+    "the emailed approve/reject link carries no session, so it must resolve the manager's role itself rather than becoming a bypass",
+  );
+
+  // Never mint a request (or a resubmit) routed to an excluded manager — it would sit at
+  // pending_manager forever, recoverable only through reassignExcuseManager.
+  assert.match(
+    serviceSource,
+    /export async function createExcuseRequest[\s\S]{0,1400}await hrIdHoldsExcuseExcludedRole\(managerHrId\)/,
+    "createExcuseRequest must refuse to route a new request to an excuse-excluded manager",
+  );
+  assert.match(
+    serviceSource,
+    /export async function resubmitExcuseRequest[\s\S]{0,1800}await hrIdHoldsExcuseExcludedRole\(managerHrId\)/,
+    "resubmitExcuseRequest must refuse to re-route a returned request to an excuse-excluded manager",
+  );
+
+  // The role must come from app_auth_users — a job title is never a permission source — and the
+  // lookup must throw rather than fail open, because two callers use it as a gate.
+  assert.match(
+    serviceSource,
+    /async function hrIdHoldsExcuseExcludedRole[\s\S]{0,900}from\("app_auth_users"\)[\s\S]{0,300}\.in\("role", \[\.\.\.EXCUSE_EXCLUDED_ROLES\]\)/,
+    "the excluded-role lookup must resolve the access role from app_auth_users",
+  );
+  assert.match(
+    serviceSource,
+    /async function hrIdHoldsExcuseExcludedRole[\s\S]{0,900}if \(error\) throw error;/,
+    "the excluded-role lookup must throw on a query failure instead of failing open",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /async function hrIdHoldsExcuseExcludedRole[\s\S]{0,900}\.in\("hr_id"/,
+    "the excluded-role lookup must compare HR_IDs via normalizeHrId, not a case-sensitive .in()",
+  );
+
+  // Nav config: the Excuse link needs its OWN role list so a future vacation edit can never
+  // silently re-grant excuse to a DSM/RM (they were previously sharing one list).
+  const navConfigSource = readFileSync("src/config/system-navigation.ts", "utf8");
+  assert.match(
+    navConfigSource,
+    /approvals\/excuse"[^\n]*roles: excuseApproverPortalNavigationRoles/,
+    "the portal Excuse Approvals link must use the excuse-specific role list",
+  );
+  assert.match(
+    navConfigSource,
+    /approvals\/vacation"[^\n]*roles: vacationApproverPortalNavigationRoles/,
+    "Vacation Approvals must keep its own role list, which still includes DSM/RM",
+  );
+  const excuseNavRoles = navConfigSource.match(/const excuseApproverPortalNavigationRoles = \[([\s\S]*?)\]/);
+  assert.ok(excuseNavRoles, "excuseApproverPortalNavigationRoles must exist");
+  assert.doesNotMatch(
+    excuseNavRoles[1],
+    /District Manager|Regional Manager/,
+    "the portal Excuse Approvals link must not list District or Regional Manager",
+  );
+
+  // Direct URL hits must redirect, not render a permanently empty module.
+  for (const pagePath of [
+    "app/employee-portals/approvals/excuse/page.tsx",
+    "app/employee-portals/approvals/excuse/[id]/page.tsx",
+    "app/employee-portals/excuses/page.tsx",
+  ]) {
+    assert.match(
+      readFileSync(pagePath, "utf8"),
+      /isExcuseExcludedRole\(access\.role\)/,
+      `${pagePath} must redirect an excuse-excluded role instead of rendering the module`,
+    );
+  }
 
   // --- Notification workflow: policy channels, HR visibility, and dedicated template ----
   assert.match(

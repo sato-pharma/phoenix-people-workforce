@@ -240,6 +240,11 @@ export function resolveEmployeePortalNavVisibility(
   // the CNS line. This is a NAV-ONLY exclusion; it does not touch data access.
   const isCnsLine = normalizedLine === "cns";
   const isTrainingManager = resolvedRole === "Training Manager";
+  // Mirrors EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts, which is the enforcing gate.
+  // Spelled out here instead of imported: that module pulls in the Supabase server client and
+  // node:crypto, neither of which may reach this nav helper (it is consumed by client components).
+  const isExcuseExcludedPortalRole =
+    resolvedRole === "District Manager" || resolvedRole === "Regional Manager";
   const hideMyPerformanceTab = hideMyPerformanceTabRoles.has(resolvedRole);
   const showTeamPerformanceTab = isDistrictManager;
   const showMedRepsPerformanceTab = isNationalSalesManager;
@@ -292,14 +297,18 @@ export function resolveEmployeePortalNavVisibility(
     showDashboardTab: !isTrainingManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showTeamCalendarTab: isNationalSalesManager,
+    // The isHeadOffice branch is line/department-based, so a District or Regional Manager sitting
+    // on the Office line would otherwise be offered a submit form the server now rejects — mirror
+    // the EXCUSE_EXCLUDED_ROLES gate here so the tab never appears for those two roles.
     showExcusesTab:
-      isHeadOffice ||
-      isNationalSalesManager ||
-      isProductManager ||
-      isGroupProductManager ||
-      isMarketingManager ||
-      isTrainingManager ||
-      isTalentAcquisition,
+      !isExcuseExcludedPortalRole &&
+      (isHeadOffice ||
+        isNationalSalesManager ||
+        isProductManager ||
+        isGroupProductManager ||
+        isMarketingManager ||
+        isTrainingManager ||
+        isTalentAcquisition),
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
@@ -405,13 +414,13 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager" ||
       resolvedRole === "Manager",
-    // Excuse Approvals — same set MINUS National Sales Manager: reps under a District Manager
-    // never route an excuse up to the NSM (excuse is direct-manager-only, no manager-of-manager
-    // step, and NSM-level submissions go through Head Office instead) — so an NSM never has
-    // anything actionable here and the link is hidden for that role only.
+    // Excuse Approvals — same set MINUS National Sales Manager, District Manager and Regional
+    // Manager. Excuse is a Head-Office / fingerprint-attendance concept and is direct-manager-only
+    // (no manager-of-manager step), so nobody in the field ladder ever routes one upward: an NSM,
+    // DSM or RM never has anything actionable here. DSM/RM removed by owner decision 2026-07-30 —
+    // see EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts, which is the enforcing gate; this
+    // flag only hides the link. Note "Manager" stays: that is the Head-Office people-manager rung.
     showExcuseApprovalsTab:
-      resolvedRole === "District Manager" ||
-      resolvedRole === "Regional Manager" ||
       resolvedRole === "Product Manager" ||
       resolvedRole === "Group Product Manager" ||
       resolvedRole === "Marketing Manager" ||
