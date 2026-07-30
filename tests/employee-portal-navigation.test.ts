@@ -175,6 +175,64 @@ export function runEmployeePortalNavigationTests() {
     assert.equal(nav.showExcuseApprovalsTab, true, `${keepsExcuse} should keep Excuse Approvals`);
   }
 
+  // Two portal pages existed, were scope-guarded, and were catalogued for Modules Control — but had
+  // NO sidebar link, because the rendered sidebar (buildEmployeePortalSections) is a separate
+  // hand-maintained list from the system-navigation.ts catalog. Reachable only by URL or Cmd+K.
+  //
+  // Territory Management (/employee-portals/territory-management): had no flag at all. The role set
+  // must equal PORTAL_TERRITORY_MANAGEMENT_ROLES in src/lib/territory-management/service.ts, which is
+  // the enforcing gate — a role listed here but not there gets a link that redirects it straight back.
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager"]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showTerritoryManagementTab,
+      true,
+      `${role} should see Territory Management (page admits it via PORTAL_TERRITORY_MANAGEMENT_ROLES)`,
+    );
+  }
+  for (const role of ["Medical Rep", "Manager", "Employee", "Product Manager", "Talent Acquisition"]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showTerritoryManagementTab,
+      false,
+      `${role} must NOT see Territory Management — the page redirects it, so the link would dead-end`,
+    );
+  }
+  // "Manager" is the specific regression risk: isDistrictManager matches it, so using that helper
+  // instead of an exact "District Manager" check would hand the HO rung a bouncing link.
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Manager").showTerritoryManagementTab,
+    false,
+    "the Head-Office Manager rung must not see Territory Management (owns no field areas)",
+  );
+
+  // ROI Tracker (/employee-portals/roi-tracker): showMarketingRoiTrackingTab was already computed
+  // here but was never consumed by the layout, so the flag was dead code. Mirrors
+  // canUseEmployeePortalMarketingRoiTracking, which is the page guard's own role set.
+  for (const role of [
+    "Medical Rep",
+    "District Manager",
+    "Regional Manager",
+    "National Sales Manager",
+    "Product Manager",
+    "Group Product Manager",
+    "Marketing Manager",
+    "SFE Manager",
+    "CEO",
+    "Super Admin",
+  ]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showMarketingRoiTrackingTab,
+      true,
+      `${role} should see the ROI Tracker link (assertEmployeePortalMarketingPageAccess admits it)`,
+    );
+  }
+  for (const role of ["Employee", "Training Manager", "Talent Acquisition"]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showMarketingRoiTrackingTab,
+      false,
+      `${role} must NOT see the ROI Tracker link`,
+    );
+  }
+
   const a3Account = resolveEmployeePortalNavVisibility("Medical Rep", undefined, undefined, undefined, "A-3");
   assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");

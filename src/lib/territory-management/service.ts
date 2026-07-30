@@ -1,4 +1,4 @@
-import type { AccessContext } from "@/lib/auth/permissions";
+import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { haversineKm } from "@/lib/sales/normalizer/geo-validate";
@@ -150,6 +150,28 @@ async function loadLineAreaRows(lineCode: string): Promise<Row[]> {
  * offering it here would invite allocation analysis on areas nobody actually works.
  */
 const EXCLUDED_REGION_CODE = "OT";
+
+/**
+ * The employee-portal-shell roles that reach this module at /employee-portals/territory-management.
+ *
+ * Single source of truth for three call sites that previously each hardcoded the list (or forgot to):
+ * the portal page's own gate, the admin page's portal-mode redirect target, and the
+ * `showTerritoryManagementTab` sidebar flag in src/lib/employee-portal/navigation.ts. Medical Rep is
+ * deliberately absent: this module compares MULTIPLE areas' bricks against each other, which is a
+ * District-Manager-and-up decision, not a single rep's own-area view. The Head-Office "Manager" rung
+ * is absent too — it owns no field areas, so resolveTerritoryScope would fail it closed to nothing.
+ */
+export const PORTAL_TERRITORY_MANAGEMENT_ROLES = [
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+] as const satisfies readonly PhoenixRole[];
+
+const portalTerritoryManagementRoleSet = new Set<PhoenixRole>(PORTAL_TERRITORY_MANAGEMENT_ROLES);
+
+export function isPortalTerritoryManagementRole(role: PhoenixRole | string | null | undefined): boolean {
+  return portalTerritoryManagementRoleSet.has(String(role ?? "").trim() as PhoenixRole);
+}
 
 export type TerritoryScope = {
   /** null = every field line is visible (CEO / SFE Manager / Super Admin: company-wide). */
