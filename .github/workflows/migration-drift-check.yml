@@ -24,6 +24,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # `secrets` is NOT a valid context in a step-level `if:` — GitHub rejects it with
+    # "Unrecognized named-value: 'secrets'" and the ENTIRE workflow fails to parse, so every run
+    # goes red before any job starts (that is what happened from 2026-07-30, when the production
+    # leg below was added). Surface the key as a job-level env var instead — `env` CAN read
+    # secrets, and a step `if:` CAN read job-level `env` — and gate the two production steps on
+    # that. The secret's value is still injected only into the step that uses it (via `env:` on
+    # that step); this job-level copy exists solely so the `if:` can test whether it is set.
+    env:
+      HAS_PRODUCTION_SUPABASE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
+
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,7 +70,7 @@ jobs:
       # `always()` so a staging failure never hides the production answer — the two legs report
       # independently. Read-only: the script's only call is the phx_ci_migration_versions RPC.
       - name: Check migrations are actually applied (production)
-        if: ${{ always() && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
+        if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY == 'true' }}
         run: pnpm run check:migrations-applied
         env:
           NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
@@ -70,6 +80,6 @@ jobs:
       # "ran and passed" at a glance, which is the same class of silent-green this whole
       # workflow exists to prevent.
       - name: Warn when the production leg could not run
-        if: ${{ always() && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY == '' }}
+        if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY != 'true' }}
         run: |
           echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — production migration drift was NOT checked. Only staging was verified. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the production leg."
