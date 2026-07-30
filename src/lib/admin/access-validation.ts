@@ -46,6 +46,19 @@ export type PasswordSetupRequest = GovernanceRequest & {
   purpose: "reset" | "setup";
 };
 
+export type BulkPasswordSetupRequest = GovernanceRequest & {
+  deliveryMode: "copy" | "email";
+  loginIds: string[];
+  // Optional: when omitted each user's link purpose is derived per-user from
+  // their current force_password_reset state (setup vs reset).
+  purpose: "reset" | "setup" | null;
+};
+
+// Hard ceiling on how many login ids a single bulk request may carry. This is a
+// payload-shape guard only; the route applies a smaller, delivery-specific
+// processing cap (e.g. to respect the email provider's daily budget).
+const bulkPasswordSetupMaxLoginIds = 500;
+
 function asRecord(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw validationError("Request body must be a JSON object.");
@@ -162,6 +175,47 @@ export function parsePasswordSetupRequest(body: unknown): PasswordSetupRequest {
     deliveryMode,
     governanceReason: optionalReason(payload.governanceReason),
     loginId: requiredTrimmedString(payload.loginId, "loginId"),
+    purpose,
+  };
+}
+
+export function parseBulkPasswordSetupRequest(body: unknown): BulkPasswordSetupRequest {
+  const payload = asRecord(body);
+  const deliveryMode = requiredTrimmedString(payload.deliveryMode ?? "email", "deliveryMode");
+  if (deliveryMode !== "copy" && deliveryMode !== "email") {
+    throw validationError("deliveryMode must be 'copy' or 'email'.");
+  }
+
+  if (!Array.isArray(payload.loginIds)) {
+    throw validationError("loginIds must be an array.");
+  }
+  const loginIds = Array.from(
+    new Set(
+      payload.loginIds
+        .map((value) => optionalTrimmedString(value, "loginId"))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+  if (loginIds.length === 0) {
+    throw validationError("loginIds must contain at least one non-empty value.");
+  }
+  if (loginIds.length > bulkPasswordSetupMaxLoginIds) {
+    throw validationError(`loginIds cannot contain more than ${bulkPasswordSetupMaxLoginIds} entries.`);
+  }
+
+  let purpose: "reset" | "setup" | null = null;
+  const rawPurpose = optionalTrimmedString(payload.purpose, "purpose");
+  if (rawPurpose) {
+    if (rawPurpose !== "setup" && rawPurpose !== "reset") {
+      throw validationError("purpose must be 'setup' or 'reset'.");
+    }
+    purpose = rawPurpose;
+  }
+
+  return {
+    deliveryMode,
+    governanceReason: optionalReason(payload.governanceReason),
+    loginIds,
     purpose,
   };
 }

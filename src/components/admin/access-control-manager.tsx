@@ -89,6 +89,25 @@ type RowResult = {
   errors: string[];
 };
 
+type BulkSetupLinkResultItem = {
+  loginId: string;
+  status: "sent" | "failed";
+  message: string;
+  setupUrl?: string;
+};
+
+type BulkSetupLinkSummary = {
+  deliveryMode: "copy" | "email";
+  requested: number;
+  processed: number;
+  sent: number;
+  failed: number;
+  capped: number;
+  cap: number;
+  results: BulkSetupLinkResultItem[];
+  clipboardCopied?: boolean;
+};
+
 type Props = {
   capabilities?: {
     canBulkImportUsers: boolean;
@@ -310,6 +329,9 @@ export function AccessControlManager({
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
   const [setupLinkMessage, setSetupLinkMessage] = React.useState<string | null>(null);
   const [setupLinkSending, setSetupLinkSending] = React.useState<string | null>(null);
+  const [selectedLoginIds, setSelectedLoginIds] = React.useState<Set<string>>(() => new Set());
+  const [bulkSending, setBulkSending] = React.useState<"copy" | "email" | null>(null);
+  const [bulkResults, setBulkResults] = React.useState<BulkSetupLinkSummary | null>(null);
   const [showPermissions, setShowPermissions] = React.useState(false);
   const [showAudit, setShowAudit] = React.useState(false);
   const [pendingGovernanceAction, setPendingGovernanceAction] = React.useState<{
@@ -608,6 +630,140 @@ export function AccessControlManager({
     }
   }
 
+  function toggleSelect(loginId: string, checked: boolean) {
+    setSelectedLoginIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(loginId);
+      else next.delete(loginId);
+      return next;
+    });
+  }
+
+  function toggleSelectPage(checked: boolean) {
+    setSelectedLoginIds((current) => {
+      const next = new Set(current);
+      for (const user of visibleUsers) {
+        if (!user.isActive) continue;
+        if (checked) next.add(user.loginId);
+        else next.delete(user.loginId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelectedLoginIds((current) => {
+      const next = new Set(current);
+      for (const user of filteredUsers) {
+        if (user.isActive) next.add(user.loginId);
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedLoginIds(new Set());
+  }
+
+  function requestBulkSetupLink(deliveryMode: "copy" | "email") {
+    if (!canManageUsers) {
+      setError("You do not have permission to generate password links.");
+      return;
+    }
+    // Selection is a global set; resolve it against the full user list so a
+    // change to the on-screen filter never silently changes who gets a link.
+    const targets = users.filter((user) => user.isActive && selectedLoginIds.has(user.loginId));
+    if (targets.length === 0) {
+      setError("Select at least one active user to send links to.");
+      return;
+    }
+    const noun = targets.length === 1 ? "user" : "users";
+    // Every processed user is signed out and forced into password-setup mode —
+    // including those who already have a working password. Surface that blast
+    // radius so a "select all" cannot quietly reset active accounts.
+    const alreadyPasswordReady = targets.filter((user) => !user.forcePasswordReset).length;
+    requestGovernanceConfirmation({
+      body:
+        `${deliveryMode === "email" ? "Email" : "Generate copy-ready"} one-time password setup/reset links for ${targets.length} selected ${noun}. ` +
+        "This signs each of them out immediately and forces a new password on next sign-in; every link expires in 48h and every send is written to the governance audit log." +
+        (alreadyPasswordReady > 0
+          ? ` ${alreadyPasswordReady} of them already have a working password and will be reset too.`
+          : "") +
+        (deliveryMode === "email"
+          ? " Email delivery is bounded by the daily provider budget — any overflow beyond the per-batch cap is reported so you can re-run later."
+          : ""),
+      confirmLabel:
+        deliveryMode === "email"
+          ? `Email ${targets.length} link${targets.length === 1 ? "" : "s"}`
+          : `Generate ${targets.length} link${targets.length === 1 ? "" : "s"}`,
+      onConfirm: async (reason) => {
+        await performBulkSetupLink(deliveryMode, reason);
+      },
+      reasonPlaceholder: "Reason for bulk password setup/reset links",
+      title: "Confirm bulk password links",
+    });
+  }
+
+  async function performBulkSetupLink(deliveryMode: "copy" | "email", governanceReason: string) {
+    setError(null);
+    setSetupLinkMessage(null);
+    setBulkResults(null);
+    setBulkSending(deliveryMode);
+
+    const loginIds = users
+      .filter((user) => user.isActive && selectedLoginIds.has(user.loginId))
+      .map((user) => user.loginId);
+
+    try {
+      const response = await fetch("/api/admin/users/setup-link/bulk", {
+        body: JSON.stringify({ deliveryMode, governanceReason, loginIds }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | (BulkSetupLinkSummary & { message?: string })
+        | { message?: string }
+        | null;
+
+      if (!response.ok || !payload || !("results" in payload)) {
+        throw new Error((payload as { message?: string } | null)?.message ?? "Bulk password links could not be sent.");
+      }
+
+      const summary = payload as BulkSetupLinkSummary;
+      let clipboardCopied = false;
+      if (deliveryMode === "copy") {
+        const lines = summary.results
+          .filter((item) => item.status === "sent" && item.setupUrl)
+          .map((item) => `${item.loginId}\t${item.setupUrl}`);
+        if (lines.length > 0 && typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+          try {
+            await navigator.clipboard.writeText(lines.join("\n"));
+            clipboardCopied = true;
+          } catch {
+            clipboardCopied = false;
+          }
+        }
+      }
+
+      setBulkResults({ ...summary, clipboardCopied });
+      setSetupLinkMessage(
+        deliveryMode === "email"
+          ? `Emailed ${summary.sent} of ${summary.processed} link${summary.processed === 1 ? "" : "s"}` +
+              `${summary.failed ? `, ${summary.failed} failed` : ""}` +
+              `${summary.capped ? `, ${summary.capped} deferred over the ${summary.cap}/batch cap` : ""}.`
+          : `Generated ${summary.sent} link${summary.sent === 1 ? "" : "s"}` +
+              `${clipboardCopied ? " and copied them to your clipboard" : ""}` +
+              `${summary.failed ? `, ${summary.failed} failed` : ""}.`,
+      );
+      setSelectedLoginIds(new Set());
+      await loadUsers();
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : "Bulk password links could not be sent.");
+    } finally {
+      setBulkSending(null);
+    }
+  }
+
   function editUser(user: AccessUserRow) {
     if (!canManageUsers) {
       setError("You do not have permission to edit users.");
@@ -638,6 +794,12 @@ export function AccessControlManager({
   });
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
   const visibleUsers = filteredUsers.slice((page - 1) * pageSize, page * pageSize);
+  const selectedCount = users.filter((user) => user.isActive && selectedLoginIds.has(user.loginId)).length;
+  const selectableFilteredCount = filteredUsers.filter((user) => user.isActive).length;
+  const pageActiveUsers = visibleUsers.filter((user) => user.isActive);
+  const pageAllSelected =
+    pageActiveUsers.length > 0 && pageActiveUsers.every((user) => selectedLoginIds.has(user.loginId));
+  const pageSomeSelected = pageActiveUsers.some((user) => selectedLoginIds.has(user.loginId));
   const activeUsers = users.filter((user) => user.isActive).length;
   const companyPayrollUsers = users.filter((user) => user.payrollScope === "COMPANY").length;
   const salesOverrides = users.filter((user) => user.salesScopeOverride).length;
@@ -853,6 +1015,63 @@ export function AccessControlManager({
           <span className="break-all">{setupLinkMessage}</span>
         </AdminCallout>
       )}
+
+      {bulkResults &&
+        (bulkResults.failed > 0 ||
+          bulkResults.capped > 0 ||
+          (bulkResults.deliveryMode === "copy" && bulkResults.results.some((item) => item.setupUrl))) && (
+          <AdminCallout tone={bulkResults.failed > 0 || bulkResults.capped > 0 ? "warning" : "success"}>
+            <div className="min-w-0 space-y-2">
+              <p className="font-semibold">
+                Bulk {bulkResults.deliveryMode === "email" ? "email" : "copy"} links — {bulkResults.sent} sent
+                {bulkResults.failed > 0 ? `, ${bulkResults.failed} failed` : ""}
+                {bulkResults.capped > 0 ? `, ${bulkResults.capped} deferred` : ""}.
+              </p>
+              {bulkResults.capped > 0 && (
+                <p className="text-xs leading-5">
+                  Only the first {bulkResults.cap} were processed to stay within the{" "}
+                  {bulkResults.deliveryMode === "email" ? "daily email budget" : "per-batch limit"}. Re-run for the
+                  remaining {bulkResults.capped} once ready.
+                </p>
+              )}
+              {bulkResults.deliveryMode === "copy" && (
+                <p className="text-xs leading-5">
+                  {bulkResults.clipboardCopied
+                    ? "Links copied to your clipboard as HR_ID + URL rows — paste into a sheet or message to distribute."
+                    : "Copy the links below (HR_ID + URL) to distribute manually."}
+                </p>
+              )}
+              {bulkResults.failed > 0 && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-medium">Show {bulkResults.failed} failed</summary>
+                  <ul className="mt-1 space-y-0.5">
+                    {bulkResults.results
+                      .filter((item) => item.status === "failed")
+                      .map((item) => (
+                        <li className="break-all" key={item.loginId}>
+                          <span className="font-mono">{item.loginId}</span> — {item.message}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
+              {bulkResults.deliveryMode === "copy" && !bulkResults.clipboardCopied && (
+                <details className="text-xs">
+                  <summary className="cursor-pointer font-medium">Show links</summary>
+                  <ul className="mt-1 space-y-0.5">
+                    {bulkResults.results
+                      .filter((item) => item.status === "sent" && item.setupUrl)
+                      .map((item) => (
+                        <li className="break-all" key={item.loginId}>
+                          <span className="font-mono">{item.loginId}</span> — {item.setupUrl}
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          </AdminCallout>
+        )}
 
       {hasDashboard && (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -1268,10 +1487,75 @@ export function AccessControlManager({
 
               <div className="h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent shadow-[0_1px_0_0_rgba(0,0,0,0.02)]" />
 
+              {canManageUsers && (
+                <div className="flex flex-col gap-3 border-b border-slate-200/80 bg-gradient-to-r from-sky-50/50 via-white to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-semibold text-sky-700">
+                      <Mail className="h-3.5 w-3.5" />
+                      {selectedCount} selected
+                    </span>
+                    <button
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={selectableFilteredCount === 0}
+                      onClick={selectAllFiltered}
+                      type="button"
+                    >
+                      Select all filtered ({selectableFilteredCount})
+                    </button>
+                    {selectedCount > 0 && (
+                      <button
+                        className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                        onClick={clearSelection}
+                        type="button"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="hidden text-[11px] text-slate-400 sm:inline">One-time login links to selected</span>
+                    <button
+                      aria-label="Email one-time setup links to selected users"
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-700 transition-all duration-160 ease-out hover:bg-sky-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={selectedCount === 0 || bulkSending !== null}
+                      onClick={() => requestBulkSetupLink("email")}
+                      type="button"
+                    >
+                      {bulkSending === "email" ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Mail className="h-3.5 w-3.5" />}
+                      Email links{selectedCount > 0 ? ` (${selectedCount})` : ""}
+                    </button>
+                    <button
+                      aria-label="Generate copy-ready setup links for selected users"
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-700 transition-all duration-160 ease-out hover:bg-violet-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={selectedCount === 0 || bulkSending !== null}
+                      onClick={() => requestBulkSetupLink("copy")}
+                      type="button"
+                    >
+                      {bulkSending === "copy" ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      Copy links{selectedCount > 0 ? ` (${selectedCount})` : ""}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="hidden overflow-x-auto lg:block">
                 <table className="min-w-full text-left">
                   <thead className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/95 backdrop-blur-sm text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">
                     <tr>
+                      {canManageUsers && (
+                        <th className="w-10 px-3 py-3">
+                          <input
+                            aria-label="Select all active users on this page"
+                            checked={pageAllSelected}
+                            className="h-4 w-4 accent-orange-500"
+                            onChange={(event) => toggleSelectPage(event.target.checked)}
+                            ref={(el) => {
+                              if (el) el.indeterminate = pageSomeSelected && !pageAllSelected;
+                            }}
+                            type="checkbox"
+                          />
+                        </th>
+                      )}
                       <th className="px-4 py-3">User</th>
                       <th className="px-4 py-3">Role / Line</th>
                       <th className="px-4 py-3">Access</th>
@@ -1289,6 +1573,19 @@ export function AccessControlManager({
                             className={`group relative transition-all duration-160 ease-out hover:bg-gradient-to-r hover:from-orange-50/50 hover:via-orange-50/30 hover:to-transparent hover:shadow-[0_0_0_1px_rgba(249,115,22,0.12)_inset,0_2px_8px_rgba(249,115,22,0.06),0_1px_4px_rgba(15,23,42,0.03)] hover:-translate-y-0.5 ${isHighAuthority ? "bg-gradient-to-r from-violet-50/30 via-violet-50/10 to-transparent" : ""}`}
                             key={user.loginId}
                           >
+                          {canManageUsers && (
+                            <td className="px-3 py-3 align-top">
+                              <input
+                                aria-label={`Select ${user.name}`}
+                                checked={selectedLoginIds.has(user.loginId)}
+                                className="h-4 w-4 accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                disabled={!user.isActive}
+                                onChange={(event) => toggleSelect(user.loginId, event.target.checked)}
+                                title={!user.isActive ? "Inactive users cannot receive password links." : undefined}
+                                type="checkbox"
+                              />
+                            </td>
+                          )}
                           <td className="px-4 py-3 align-top">
                             <div className="flex items-start gap-2.5">
                               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-orange-100 to-orange-50 text-orange-700 font-semibold text-sm shadow-sm transition-all duration-160 ease-out group-hover:scale-110 group-hover:shadow-md group-hover:from-orange-200 group-hover:to-orange-100">
@@ -1341,7 +1638,7 @@ export function AccessControlManager({
                       })
                     ) : (
                       <tr>
-                        <td className="px-4 py-16" colSpan={6}>
+                        <td className="px-4 py-16" colSpan={canManageUsers ? 7 : 6}>
                           {renderEmptyUsers()}
                         </td>
                       </tr>
@@ -1355,10 +1652,23 @@ export function AccessControlManager({
                   visibleUsers.map((user) => (
                     <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" key={user.loginId}>
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold text-slate-900">{user.name}</p>
-                          <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"} / {user.loginId}</p>
-                          {user.email && <p className="mt-1 truncate text-xs text-slate-500">{user.email}</p>}
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          {canManageUsers && (
+                            <input
+                              aria-label={`Select ${user.name}`}
+                              checked={selectedLoginIds.has(user.loginId)}
+                              className="mt-1 h-4 w-4 shrink-0 accent-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
+                              disabled={!user.isActive}
+                              onChange={(event) => toggleSelect(user.loginId, event.target.checked)}
+                              title={!user.isActive ? "Inactive users cannot receive password links." : undefined}
+                              type="checkbox"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold text-slate-900">{user.name}</p>
+                            <p className="mt-1 font-mono text-xs text-slate-600">HR_ID {formatHrIdForDisplay(user.hrId) ?? "-"} / {user.loginId}</p>
+                            {user.email && <p className="mt-1 truncate text-xs text-slate-500">{user.email}</p>}
+                          </div>
                         </div>
                         <StatusBadge isActive={user.isActive} />
                       </div>

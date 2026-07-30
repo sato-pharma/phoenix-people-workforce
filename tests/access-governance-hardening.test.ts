@@ -17,6 +17,10 @@ const identitySource = readFileSync(
   new URL("../src/lib/auth/supabase-identity.ts", import.meta.url),
   "utf8",
 );
+const bulkSetupLinkRouteSource = readFileSync(
+  new URL("../app/api/admin/users/setup-link/bulk/route.ts", import.meta.url),
+  "utf8",
+);
 
 function assertContains(source: string, pattern: RegExp, message: string) {
   assert.match(source, pattern, message);
@@ -38,6 +42,16 @@ export function runAccessGovernanceHardeningTests() {
   assertContains(validationSource, /governanceReason must be 500 characters or fewer/, "governance reasons must be bounded");
   assertContains(validationSource, /deliveryMode must be 'copy' or 'email'/, "password link delivery must be strictly enumerated");
   assertContains(validationSource, /purpose must be 'setup' or 'reset'/, "password link purpose must be strictly enumerated");
+  assertContains(validationSource, /export function parseBulkPasswordSetupRequest/, "bulk password links must use a dedicated parser");
+  assertContains(validationSource, /loginIds must contain at least one non-empty value/, "bulk password links must reject empty selections");
+  assertContains(validationSource, /loginIds cannot contain more than/, "bulk password links must bound the number of login ids per request");
+
+  assertContains(bulkSetupLinkRouteSource, /assertPermission\(access, "user_admin", "update"\)/, "bulk setup-link route must enforce user_admin update permission");
+  assertContains(bulkSetupLinkRouteSource, /only Super Admin can manage user access/, "bulk setup-link route must remain Super Admin-only");
+  assertContains(bulkSetupLinkRouteSource, /parseBulkPasswordSetupRequest/, "bulk setup-link route must validate its payload with the dedicated parser");
+  assertContains(bulkSetupLinkRouteSource, /sendPasswordSetupLink/, "bulk setup-link route must reuse the audited single-link service (audit + token invalidation per user)");
+  assertContains(bulkSetupLinkRouteSource, /trustedOriginForRedirect/, "bulk setup-link route must build links from an allow-listed origin");
+  assertContains(bulkSetupLinkRouteSource, /MAX_BULK_EMAIL/, "bulk email delivery must be capped per request to respect the provider daily budget");
 
   assertContains(accessControlSource, /export function assertActorMayManageUser/, "role governance checks must remain directly testable");
   assertContains(accessControlSource, /You cannot deactivate your own active account/, "self-deactivation must be blocked");
