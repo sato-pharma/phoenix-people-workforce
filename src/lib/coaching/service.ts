@@ -98,8 +98,15 @@ const lineRoles = new Set<AccessContext["role"]>([
   "Group Product Manager",
   "SFE Manager",
 ]);
-const defaultCoachingReportLimit = 500;
-const maxCoachingReportLimit = 1000;
+// These bound a COMPANY-WIDE read whose per-viewer scope (filterSummariesForAccess) is applied
+// afterwards, in memory. The window therefore truncates the wrong end: once the company's report
+// count exceeds it, a scoped viewer's own rows can fall outside the window and silently disappear —
+// the page looks empty rather than truncated. Production held 104 coaching_reports when this was
+// raised, so the old 500 was not yet biting; it is lifted to keep a wide margin. If this table ever
+// approaches the ceiling, the fix is to push the scope filter into the query (scope-then-page), not
+// to raise these again. Same defect class as MARKETING_WORKSPACE_SAFETY_LIMIT.
+const defaultCoachingReportLimit = 5000;
+const maxCoachingReportLimit = 10000;
 
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();

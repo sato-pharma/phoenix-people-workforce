@@ -3058,6 +3058,24 @@ function emptyValidationSummary(): Record<MarketingValidationStatus, number> {
   };
 }
 
+/**
+ * Safety bound for the scoped marketing workspaces — NOT a page size.
+ *
+ * These queries fetch COMPANY-WIDE and the viewer's hierarchy filter is applied afterwards, in
+ * memory (canSeeMarketingRequest / canSeeMarketingCustomer). Any cap below the table size therefore
+ * truncates the wrong end: rows are dropped before the viewer's own rows are selected, so a Regional
+ * Manager's own draft could vanish from his own Drafts tab and the Customer Validation summary could
+ * report zero while his region had pending work — silently, looking exactly like "nothing to do".
+ *
+ * It was live, not theoretical: at the time of this fix production held 303 marketing_customer_pharmacies
+ * against a .limit(200) (≈34% dropped) and 217 marketing_requests against a .limit(200).
+ *
+ * The bound exists only so a pathological table can never become an unbounded scan; it must stay well
+ * above the real row counts (hundreds). If these tables ever approach it, the fix is to push the scope
+ * filter into the query (scope-then-limit), not to raise this number again.
+ */
+const MARKETING_WORKSPACE_SAFETY_LIMIT = 10000;
+
 function canSeeMarketingCustomer(access: AccessContext, row: MarketingCustomerDbRow, employeeRows: EmployeeDirectoryRow[]) {
   return canSeeMarketingHierarchyRecord(access, {
     employeeHrId: row.owner_hr_id,
@@ -3238,7 +3256,7 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
       .select("*")
       .eq("active", true)
       .order("created_at", { ascending: false })
-      .limit(200),
+      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
   ]);
 
   if (distributorsResult.error) throw distributorsResult.error;
@@ -3806,21 +3824,21 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .select("customer_id, distributor_code_id, pharmacy_id")
       .or("active.is.null,active.eq.true")
       .in("validation_status", ["system_validated", "sfe_validated"]),
-    supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(100),
+    supabase.from("marketing_requests").select("*").eq("status", "draft").order("created_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     supabase
       .from("marketing_requests")
       .select("*")
       .in("status", approvedMarketingRequestStatuses)
       .order("pay_date", { ascending: false, nullsFirst: false })
-      .limit(100),
+      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     // Display data for the target-pharmacy picker. Both tables are small reference sets.
     supabase.from("marketing_pharmacies").select("id, display_name, pharmacy_code"),
     supabase
       .from("marketing_pharmacy_distributor_codes")
       .select("id, pharmacy_id, distributor_id, distributor_pharmacy_code, reference_status")
       .or("active.is.null,active.eq.true"),
-    supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(100),
-    supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(200),
+    supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
   ]);
 
   if (typesResult.error) throw typesResult.error;
