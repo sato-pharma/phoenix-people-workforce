@@ -43,7 +43,7 @@ export function getS1Company(): S1Company {
   return companyData as unknown as S1Company;
 }
 
-/** Every brick across all three lines, tagged with the line it belongs to. Derived
+/** Every area across all three lines, tagged with the line it belongs to. Derived
  * from the per-line datasets rather than duplicated into company-s1.json, so a line
  * fix can never drift from the consolidated view. */
 export function getS1CompanyAreas(): (AreaSummary & { line: string; lineId: S1Line })[] {
@@ -54,7 +54,7 @@ export function getS1CompanyAreas(): (AreaSummary & { line: string; lineId: S1Li
 
 /** Every DM seat across all three lines. `keyProducts`/`families` come from that DM's
  * own line, since the product catalogue differs per line. Target-less catch-all
- * buckets ("Others") are excluded — they are unmanaged bricks, not managers. */
+ * buckets ("Others") are excluded — they are unmanaged areas, not managers. */
 export function getS1CompanyDms(): (DmSummary & {
   line: string;
   lineId: S1Line;

@@ -79,6 +79,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // it now checks both directions.
   { label: "Weekly", fullLabel: "Weekly Sales", href: "/employee-portals/weekly-sales", icon: CalendarRange, flags: ["showWeeklyTab"] },
   { label: "Sales", fullLabel: "Sales Analytics", href: "/employee-portals/sales-analytics", icon: Activity, flags: ["showSalesAnalyticsTab"] },
+  { label: "S1 Review", fullLabel: "S1 Business Review", href: "/employee-portals/business-review-s1", icon: ChartColumnBig, flags: ["showBusinessReviewS1Tab"] },
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.

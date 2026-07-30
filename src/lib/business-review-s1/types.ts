@@ -6,7 +6,7 @@ export type Slice = { sales: number; target: number; ach: number | null };
 export type AreaSummary = {
   area: string;
   dm: string;
-  /** Sales region this brick sits in (Alex-BHR, Cairo, Delta (1)/(2), Giza, UE…).
+  /** Sales region this area sits in (Alex-BHR, Cairo, Delta (1)/(2), Giza, UE…).
    * Drives Regional-Manager scoping in the employee portal. */
   region: string;
   vacant: boolean;

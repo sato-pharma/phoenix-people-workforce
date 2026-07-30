@@ -13,7 +13,7 @@ found: DATA vs TOTAL reconcile to within 1 unit of 559,016 total):
   - DM roster: 6 real DMs, canonicalized from a 3-label mid-semester rename for one
     person — 'Dakahlia DM' (Jan placeholder) -> 'Sally.Saeed' (Feb-Mar) -> 'Sally Saeed'
     (Apr-Jun) all resolve to ONE person at >=97% purity per area per month once merged.
-  - Vacant flag is per-BRICK (not a vacant DM-seat like Pedia's Cairo/Haitham): 4 areas
+  - Vacant flag is per-AREA (not a vacant DM-seat like Pedia's Cairo/Haitham): 4 areas
     flagged vacant in the source file's own status column, all under otherwise-active
     DMs. "Others" bucket (Bani suef, Fayoum, Ismailia-Suez, Main Store, no named DM) is
     itself marked ACTIVE in source data — trusted as-is, not treated as vacant.
@@ -72,7 +72,7 @@ s1ref = pd.read_excel(os.path.join(DL,"S1-2026 CNS-Line.xlsx"), sheet_name="Shee
 AREA_STATUS = {ngeo(a): str(s).strip().lower() for a, s in s1ref.iloc[1:, [13,14]].dropna(how="all").itertuples(index=False)}
 # Owner correction 2026-07-30: Sheet1 marks "Down town" (Sameh Shaaban) active, but the
 # owner says it's actually vacant — it was also the line's only >=90% earner (121.9%),
-# consistent with a vacant brick still carrying residual pharmacy-stock sales with no
+# consistent with a vacant area still carrying residual pharmacy-stock sales with no
 # rep driving it. Achievement number is untouched; this only changes display/filtering.
 AREA_STATUS[ngeo('Down town')] = 'vacant'
 def is_vac(area): return AREA_STATUS.get(ngeo(area)) == 'vacant'
@@ -101,7 +101,7 @@ t['dm']=t['D.M.'].apply(cdm)
 t['vac']=t['Sys'].apply(is_vac)
 t['Quarter']=t['Month'].map({m:('Q1' if MO.index(m)<3 else 'Q2') for m in MO})
 ti=t[t['inc']]
-tia=ti[~ti['vac']]  # all products (=include here), active (non-vacant) bricks
+tia=ti[~ti['vac']]  # all products (=include here), active (non-vacant) areas
 
 def agg(df):
     inc=df[df['inc']]
@@ -301,7 +301,7 @@ dataset=dict(
               thresholds=dict(repFailBelow=20, dsmFailBelow=50),
               rulings=dict(includeProducts=INCLUDE, exception="none found — DATA vs TOTAL reconcile to within 1 unit of 559,016",
                            marketing="Approved by GM only (committed spend), 5 of 6 CNS DMs mapped",
-                           vacant="4 bricks vacant per source status column; DMs all active; 'Others' bucket active but unmanaged")),
+                           vacant="4 areas vacant per source status column; DMs all active; 'Others' bucket active but unmanaged")),
     line=line, products=products, dms=dms, areas=areas,
     marketing=marketing, outstation=outstation, visits=visits, doubleVisits=doubles)
 with open(os.path.join(OUT_DIR,"cns-s1.json"),"w",encoding="utf-8") as f:

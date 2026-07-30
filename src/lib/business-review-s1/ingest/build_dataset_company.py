@@ -88,7 +88,7 @@ for key,label in LINES:
     areas_total  += len(d['areas']); areas_vacant += vac
     graded = [a for a in d['areas'] if a['hasTarget'] and a['allProducts']['ach'] is not None]
     # Count only real DM seats: the per-line "Others" bucket carries no target and is a
-    # catch-all for unmanaged bricks, not a manager, so it must not inflate the seat
+    # catch-all for unmanaged areas, not a manager, so it must not inflate the seat
     # count. Same target>0 filter the cross-line DSM table below uses, so the two agree.
     seats = [x for x in d['dms'] if x['allProducts']['target'] > 0]
     line_rows.append(dict(
@@ -151,14 +151,14 @@ print(f"        excl-vacant {T['exVacant']['sales']:,.0f}/{T['exVacant']['target
 print(f"        marketing {T['marketingCost']:,.0f} | outstation {T['outstationCost']:,.0f}")
 print(f"        visits {T['visits']:,} ({ped_n:,} Pedia + {cns_n:,} CNS + {ant_n:,} Anti) | doubles {T['doubleVisits']:,} | reps {T['reps']}")
 print(f"        doctors {T['customersTotal']:,} unique  (naive sum {naive_sum:,}, overlap removed {overlap:,})")
-print(f"        bricks {T['areas']} ({T['areasVacant']} vacant = {100*T['areasVacant']/T['areas']:.0f}%)")
+print(f"        areas {T['areas']} ({T['areasVacant']} vacant = {100*T['areasVacant']/T['areas']:.0f}%)")
 print()
 print("PER LINE:")
 for L in line_rows:
     print(f"  {L['label']:<15} ach {str(L['allProducts']['ach']):>7}%  "
           f"sales {L['allProducts']['sales']:>12,.0f}  mkt {L['marketingCost']:>9,.0f}  "
           f"exp {L['outstationCost']:>7,.0f}  earners {L['earners']:>2}  "
-          f"bricks {L['areas']:>2} ({L['areasVacant']} vac)  DMs {L['dms']}+{L['dmsVacant']}vac")
+          f"areas {L['areas']:>2} ({L['areasVacant']} vac)  DMs {L['dms']}+{L['dmsVacant']}vac")
 print()
 print("TOP 5 DSMs COMPANY-WIDE:")
 for x in dm_rows[:5]:
