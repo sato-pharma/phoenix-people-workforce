@@ -49,9 +49,26 @@ on:
           - "false"
           - "true"
 
+# PR branches: group by ref and cancel the superseded run — pushing a fixup should not pay for
+# CI on the commit it just replaced.
+#
+# Pushes to main: group by COMMIT and never cancel. Grouping by ref here was a real hazard, not
+# just wasted signal. `deploy-cloud-run.yml`'s gate ships a commit only if THAT exact SHA's CI
+# concluded `success`, so a merge landing while the previous merge's CI is still running used to
+# cancel it and leave that commit permanently un-deployable. Observed 2026-07-30: #1484, #1486
+# and #1487 merged ~1 minute apart and all three ended `cancelled`; only the last commit of the
+# train ever went green. It stayed shippable because main is cumulative — but if a train's LAST
+# CI run is the one cancelled (a manual cancel, or a merge that races the queue), then neither
+# the fast-deploy window nor the 2-hourly cron will ever ship it, and the gate says so only in a
+# `::notice::` nobody reads. Production silently stops receiving deploys until a human re-runs CI.
+#
+# Grouping by SHA rather than simply setting cancel-in-progress:false keeps the runs PARALLEL.
+# A shared main group with cancellation disabled would serialize the train instead (~4 min per
+# commit, queued), which would push merge->live latency back up — the exact thing #1480/#1483
+# were cutting.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

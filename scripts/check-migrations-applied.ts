@@ -7,13 +7,22 @@
 // 20260720000000_ci_migration_version_check_rpc.sql for why an RPC instead of a raw
 // Postgres credential).
 //
-// Runs against STAGING only (the only project with a CI-wired credential today) —
-// per the established "everything lands on staging before production" workflow,
-// staging drift is a reliable proxy: if a migration never reached staging, it almost
-// certainly never reached production either. Intended to run on a daily schedule
-// (see .github/workflows/ci.yml), NOT on pull_request/push — a PR introducing a new
-// migration is SUPPOSED to show it unapplied at review time; this checks for silent
-// drift that accumulates AFTER merge, which only a recurring check catches.
+// Runs against WHICHEVER project the NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY
+// pair points at, and prints that project ref up front — the workflow drives it once per
+// environment (see .github/workflows/migration-drift-check.yml).
+//
+// It used to run against STAGING ONLY, on the reasoning that "if a migration never reached
+// staging, it almost certainly never reached production either". That proxy is backwards for
+// the risk that actually bites. The documented workflow is staging-first, with production
+// apply requiring separate explicit approval (AGENTS.md), so the NORMAL failure mode is
+// applied-on-staging / missing-on-production — precisely the state a staging-only check
+// reports as green. Proven 2026-07-30: the staging leg had been passing daily while
+// production was missing 20260725180000_analytics_dim_products_exclude_head_office.sql,
+// leaving Head-Office-line products exposed to non-CEO analytics consumers for ~110h.
+//
+// Intended to run on a daily schedule, NOT on pull_request/push — a PR introducing a new
+// migration is SUPPOSED to show it unapplied at review time; this checks for silent drift
+// that accumulates AFTER merge, which only a recurring check catches.
 //
 // Known, honest limitation: this only proves "unknown as of the last scheduled
 // run", not a real-time guarantee — see the grace window below.
@@ -88,6 +97,33 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Revisit only if staging's employee dataset is ever made production-representative.
   "20260718120000_au_public_areas_cutover_phase9.sql",
   "20260718130000_au_occupancy_reconcile_from_master_phase9.sql",
+  // ── Added 2026-07-30, when this check was first pointed at PRODUCTION (see the
+  // production leg in .github/workflows/migration-drift-check.yml). Each was verified
+  // against production by direct schema inspection, not schema_migrations bookkeeping.
+  //
+  // Superseded by 20260724080655_ats_replatform_phase1, which renamed the whole domain
+  // recruitment_* -> ats_*. Verified on production: public.ats_candidate_cv_extractions
+  // exists, ats_candidates.position_specific_fields and
+  // ats_candidate_cv_extractions.position_key both exist, and 71 candidates were created
+  // in the 14 days to 2026-07-30. Re-running these files would recreate the pre-rename
+  // recruitment_* tables as dead duplicates.
+  "20260723175328_recruitment_candidate_cv_extraction.sql",
+  "20260723201106_recruitment_position_schema_framework.sql",
+  // Verified: the `recruitment-files` storage bucket exists on production.
+  "20260723181334_recruitment_files_storage_bucket_staging_parity.sql",
+  // Verified: production's public.ireports360_visits_effective already has the
+  // effective_visit_type/reclassified_no_checkin columns AND security_invoker=true. This
+  // file's own header says so — it was applied 2026-07-27 under the name
+  // reconcile_visits_effective_view_vstar and exists only to make the definition
+  // reproducible on a fresh reset.
+  "20260728000000_refresh_visits_effective_view.sql",
+  // DELIBERATELY NOT LISTED: 20260725180000_analytics_dim_products_exclude_head_office.sql.
+  // That one is REAL production drift, found by this check's first production run on
+  // 2026-07-30 (merged 110h earlier, applied to staging, never to production). Confirmed
+  // live: pg_get_viewdef('analytics.dim_products') on production still has no Head Office
+  // exclusion, so Head-Office-line products remain visible to non-CEO analytics consumers.
+  // Applying it to production needs explicit owner approval per AGENTS.md — leave it
+  // failing here until that happens. Do not silence it.
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
@@ -119,7 +155,12 @@ function loadLocalMigrations(): LocalMigration[] {
   return out;
 }
 
-async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: Set<string> }> {
+/** `https://<ref>.supabase.co` -> `<ref>`, so every run states which project it judged. */
+function projectRefFromUrl(url: string): string {
+  return /^https?:\/\/([a-z0-9]+)\./i.exec(url)?.[1] ?? url;
+}
+
+async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: Set<string>; projectRef: string }> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
@@ -127,6 +168,11 @@ async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: S
       "NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — cannot reach the target Supabase project.",
     );
   }
+  const projectRef = projectRefFromUrl(url);
+  // Printed BEFORE the query so a failure still tells you what was being checked. Both MCP
+  // servers and both env files can reach either project; the ref is the only thing that
+  // distinguishes staging from production (AGENTS.md).
+  console.log(`[migration-drift-check] target project ref: ${projectRef}`);
   const supabase = createClient(url, key);
   const { data, error } = await supabase.rpc("phx_ci_migration_versions");
   if (error) {
@@ -136,6 +182,7 @@ async function loadRemoteMigrations(): Promise<{ versions: Set<string>; names: S
   return {
     versions: new Set(rows.map((r) => r.version)),
     names: new Set(rows.map((r) => r.name)),
+    projectRef,
   };
 }
 
@@ -166,17 +213,19 @@ async function main() {
   }
 
   console.log(
-    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on target project.`,
+    `[migration-drift-check] ${local.length} local migrations, ${remote.versions.size} recorded on ${remote.projectRef}.`,
   );
 
   if (missing.length === 0) {
-    console.log("[migration-drift-check] OK — every migration outside the grace window is accounted for.");
+    console.log(
+      `[migration-drift-check] OK — every migration outside the grace window is accounted for on ${remote.projectRef}.`,
+    );
     process.exit(0);
   }
 
   console.error(
     `[migration-drift-check] ${missing.length} migration(s) merged to main but not found (by version or name) ` +
-      `in the target project's schema_migrations, and older than the ${GRACE_WINDOW_MS / 3_600_000}h grace window:`,
+      `in ${remote.projectRef}'s schema_migrations, and older than the ${GRACE_WINDOW_MS / 3_600_000}h grace window:`,
   );
   for (const m of missing) {
     const age = m.commitTimeMs ? `${Math.round((now - m.commitTimeMs) / 3_600_000)}h old` : "age unknown";

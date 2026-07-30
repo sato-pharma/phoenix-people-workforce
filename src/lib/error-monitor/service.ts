@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
 import { getBlockedIps, type BlockedIp } from "@/lib/auth/ip-blocklist";
-import { deriveAppErrorStatus, getCurrentReleaseTag, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
+import { deriveAppErrorStatus, getCurrentReleaseTag, shouldPersistErrorEvents, signatureKey, type IssueStatus } from "@/lib/error-monitor/derived-status";
 import { logError } from "@/lib/observability/log";
 
 export type ErrorEventSource = "server" | "client";
@@ -33,6 +33,24 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
     return { deleted: null, error: error instanceof Error ? error.message : "prune failed" };
   }
 }
+
+/**
+ * EVERY read of app_error_events must exclude this environment — add it to any new query.
+ *
+ * `.env.local` on the maintainer machines points at the PRODUCTION Supabase project, so until
+ * shouldPersistErrorEvents() started gating writes (2026-07-30) a local `next dev` server wrote
+ * its normal iterate-and-reload churn straight into the production error table. 275 of that
+ * table's 903 rows are `environment='development'`, spanning 2026-07-06..07-30, and they read
+ * exactly like an outage — bursts of `X is not defined` on whatever page was being built that
+ * day. Those historical rows still exist (deleting production data needs owner approval), so
+ * filtering them out on READ is what makes /admin/error-monitor and /admin/system-issues
+ * truthful. The write-side gate only stops new ones accumulating.
+ *
+ * Safe as a plain `neq`: logAppError is the sole writer and always sets `environment` from
+ * APP_ENV || NODE_ENV || "development", so the column has no NULLs (verified on production).
+ * Staging is unaffected — it builds with NODE_ENV=production and writes to its own project.
+ */
+const DEVELOPMENT_ENVIRONMENT = "development";
 
 function truncate(value: string | null | undefined, max: number): string | null {
   if (!value) return null;
@@ -74,6 +92,18 @@ function combineStack(stack: string | null | undefined, componentStack: string |
  * into a second, user-visible error on top of the one being reported.
  */
 export async function logAppError(input: LogAppErrorInput): Promise<void> {
+  // Local dev: keep the signal on the developer's own console and leave the shared
+  // (production) table alone. Returning here rather than at the API route covers every
+  // caller — the client reporter and instrumentation.ts's onRequestError both funnel
+  // through /api/errors/client into this one function.
+  if (!shouldPersistErrorEvents()) {
+    console.error(
+      `[app-error:not-persisted] ${input.route ?? "(no route)"} — ${input.message}`,
+      input.stack ?? "",
+    );
+    return;
+  }
+
   try {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase.from("app_error_events").insert({
@@ -147,6 +177,7 @@ export async function getErrorEvents(filter: ErrorEventFilter = {}): Promise<Err
       "id, created_at, source, hr_id, login_id, role, module_key, module_label, route, message, stack, digest, environment",
       { count: "exact" },
     )
+    .neq("environment", DEVELOPMENT_ENVIRONMENT)
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
 
@@ -194,6 +225,7 @@ export async function getActiveErrorSignatures(currentRelease: string): Promise<
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_key, route")
+      .neq("environment", DEVELOPMENT_ENVIRONMENT)
       .eq("release", currentRelease);
     if (error) throw error;
 
@@ -232,6 +264,7 @@ export async function getErrorClusterAggregates(days = 7): Promise<ErrorClusterA
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_label, route, release, message, created_at")
+      .neq("environment", DEVELOPMENT_ENVIRONMENT)
       .gte("created_at", since)
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -316,9 +349,17 @@ export async function getWeeklyHealthSummary(days = 7): Promise<WeeklyHealthSumm
     const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
     const supabase = getSupabaseAdmin();
     const [windowRes, baselineRes, activeSignatures] = await Promise.all([
-      supabase.from("app_error_events").select("module_key, module_label, route").gte("created_at", since),
+      supabase
+        .from("app_error_events")
+        .select("module_key, module_label, route")
+        .neq("environment", DEVELOPMENT_ENVIRONMENT)
+        .gte("created_at", since),
       // Signatures seen BEFORE the window — anything not here is genuinely new this week.
-      supabase.from("app_error_events").select("module_key, route").lt("created_at", since),
+      supabase
+        .from("app_error_events")
+        .select("module_key, route")
+        .neq("environment", DEVELOPMENT_ENVIRONMENT)
+        .lt("created_at", since),
       getActiveErrorSignatures(getCurrentReleaseTag()),
     ]);
     if (windowRes.error) throw windowRes.error;
@@ -637,6 +678,7 @@ export async function getDeployTimeline(currentRelease: string, days = 14): Prom
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_key, module_label, route, release, created_at")
+      .neq("environment", DEVELOPMENT_ENVIRONMENT)
       .gte("created_at", since)
       .order("created_at", { ascending: true });
     if (error) throw error;
@@ -871,6 +913,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
       let query = supabase
         .from("app_error_events")
         .select("hr_id, module_key, module_label, route, message, created_at")
+        .neq("environment", DEVELOPMENT_ENVIRONMENT)
         .not("hr_id", "is", null)
         .order("created_at", { ascending: false })
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);

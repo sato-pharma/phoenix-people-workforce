@@ -54,6 +54,43 @@ self-hosted: HR-ID/module-queryable errors, GCP log-based alerting, login-securi
 - **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → same endpoint, **and** `app/global-error.tsx` also calls `Sentry.captureException`.
 - **Retention:** `pruneOldAppErrorEvents()` runs in the daily cron (default 90 days, `PHOENIX_ERROR_EVENT_RETENTION_DAYS`).
 - **Access:** the table is service-role only (RLS-enabled, no policies); the admin error dashboard reads it via the admin client with an application permission check.
+- **Local dev never writes here (since 2026-07-30).** `shouldPersistErrorEvents()`
+  (`src/lib/error-monitor/derived-status.ts`) makes `logAppError()` skip the insert and log to
+  the console instead whenever `NODE_ENV !== "production"` — i.e. under `next dev` only. Both
+  Cloud Run services build with `NODE_ENV=production`, so **staging keeps its own error events**
+  (they land in the staging Supabase project). Override with
+  `PHOENIX_PERSIST_DEV_ERROR_EVENTS=true` when deliberately debugging ingestion.
+  - *Why:* `.env.local` on the maintainer machines points at the **production** Supabase project
+    (a deliberate, documented setup), so local iterate-and-reload churn was inserting straight
+    into the production error table — **275 of its 903 rows** were `environment='development'`
+    when this was found. They read exactly like an outage (bursts of `X is not defined` on
+    whatever page was being built), and cost a production go/no-go audit a false alarm.
+  - *Reading the table:* the historical dev rows are still there, so **every** read in
+    `service.ts` filters `environment != 'development'` (see `DEVELOPMENT_ENVIRONMENT` there —
+    add it to any new query). When triaging by hand, always filter on `environment='production'`;
+    the quick tell on an unfiltered row is `release`, which is `sha-XXXXXXXX` for real
+    production traffic and `unknown` for local dev.
+
+## Migration drift check
+
+`.github/workflows/migration-drift-check.yml` runs `pnpm run check:migrations-applied` daily
+against **both** staging and production, comparing every `supabase/migrations/*.sql` file to the
+target project's `supabase_migrations.schema_migrations` (via the `phx_ci_migration_versions`
+RPC). Each run prints the project ref it judged.
+
+The production leg was added 2026-07-30. Until then the check ran against **staging only**, on
+the reasoning that "if a migration never reached staging it never reached production either".
+That proxy runs backwards: the documented workflow is staging-**first**, with production apply
+gated on separate explicit approval (AGENTS.md), so the normal drift is applied-on-staging /
+missing-on-production — exactly what a staging-only check reports as green. It had been passing
+daily for over a week while production was missing
+`20260725180000_analytics_dim_products_exclude_head_office.sql`.
+
+**Operational requirement:** the production leg needs a `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY`
+GitHub Actions secret (production project ref `ozucdzovmcqvepbozvqf`). Without it the step is
+skipped and the job emits a `::warning::` saying production was **not** checked — a skipped step
+and a passing step look identical at a glance, which is the same silent-green failure this
+workflow exists to prevent.
 
 ## Structured logging
 
