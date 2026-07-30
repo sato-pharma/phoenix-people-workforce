@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 
 import {
   applyRegionScope,
+  canAccessPortalClosing,
   scopeMatrixToRegionNames,
   scopeMatrixToRegions,
 } from "../src/lib/sales/monthly-closing-portal.ts";
+import type { AccessContext, PhoenixRole } from "../src/lib/auth/permissions.ts";
 import type {
   MonthlyClosingCell,
   MonthlyClosingMatrix,
@@ -103,4 +105,29 @@ export function runMonthlyClosingRegionScopeTests() {
     ["Cairo"],
     "matched region scope narrows to that region",
   );
+
+  // ── Portal role gate (PORTAL_CLOSING_ROLES) — who may open the portal Monthly Closing page ──
+  // Only reads access.role, so a minimal context is enough. "Manager" is the legacy District Manager
+  // alias and must be allowed; CEO / Super Admin use the admin surface, not this portal page.
+  const gate = (role: PhoenixRole) => canAccessPortalClosing({ role } as unknown as AccessContext);
+  for (const allowed of [
+    "District Manager",
+    "Manager",
+    "Regional Manager",
+    "National Sales Manager",
+    "Product Manager",
+    "Group Product Manager",
+  ] as PhoenixRole[]) {
+    assert.equal(gate(allowed), true, `${allowed} may open the portal Monthly Closing`);
+  }
+  for (const denied of [
+    "Medical Rep",
+    "Marketing Manager",
+    "Employee",
+    "CEO",
+    "Super Admin",
+    "SFE Manager",
+  ] as PhoenixRole[]) {
+    assert.equal(gate(denied), false, `${denied} may NOT open the portal Monthly Closing`);
+  }
 }
