@@ -1110,9 +1110,15 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
   const ref = await loadSalesReferenceData({ includeCustomerBricks: false });
 
   let regionCodesInScope: Set<string> | null = null;
+  // A District / Regional Manager's own areas come from the organogram seat map and can sit outside
+  // their region label (see src/lib/sales/seat-area-scope.ts) — so when that seat resolved, bound the
+  // picker by AREA. Region-based trimming would drop such an area from the requester's own options.
+  let areaCodesInScopeOverride: Set<string> | null = null;
   if (access) {
     const salesScope = await resolveSalesAccessScope(access);
-    if (salesScope.allowedRegionNames) {
+    if (salesScope.allowedAreaCodes) {
+      areaCodesInScopeOverride = salesScope.allowedAreaCodes;
+    } else if (salesScope.allowedRegionNames) {
       regionCodesInScope =
         access.role === "Regional Manager"
           ? new Set(
@@ -1127,7 +1133,11 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
   }
 
   const areas = (ref.areas ?? [])
-    .filter((area) => !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()))
+    .filter((area) =>
+      areaCodesInScopeOverride
+        ? areaCodesInScopeOverride.has(area.areaCode.toUpperCase())
+        : !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()),
+    )
     .map((area) => ({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode }))
     .sort((a, b) => a.areaName.localeCompare(b.areaName));
   const areaCodesInScope = new Set(areas.map((area) => area.areaCode.toUpperCase()));

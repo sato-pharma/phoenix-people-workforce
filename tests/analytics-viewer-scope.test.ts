@@ -42,29 +42,29 @@ export function runAnalyticsViewerScopeTests() {
   assert.deepEqual(intersectDimension(["pedia"], new Set(["Pedia"])), { values: ["pedia"], empty: false }, "case-insensitive match");
 
   // ── scopeAnalyticsFilters ───────────────────────────────────────────────────
-  const allNull: AnalyticsViewerScope = { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedProductCodes: null };
+  const allNull: AnalyticsViewerScope = { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
   const passthrough = scopeAnalyticsFilters({ lines: ["Pedia"], regions: ["CAI"], products: ["P1"] }, allNull);
   assert.equal(passthrough.empty, false);
   assert.deepEqual(passthrough.filters.lines, ["Pedia"], "company scope = untouched filters");
 
-  const pmScope: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionCodes: null, allowedProductCodes: null };
+  const pmScope: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
   const pmNoSelection = scopeAnalyticsFilters({ lines: [], regions: [], products: [] }, pmScope);
   assert.deepEqual(pmNoSelection.filters.lines, ["Pedia"], "line-scoped viewer, no selection → scoped to their line");
   assert.equal(pmNoSelection.empty, false);
   const pmForeignLine = scopeAnalyticsFilters({ lines: ["Anti infective"], regions: [], products: [] }, pmScope);
   assert.equal(pmForeignLine.empty, true, "line-scoped viewer selecting a foreign line → empty (fail-closed)");
 
-  const emptyLineScope: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(), allowedRegionCodes: null, allowedProductCodes: null };
+  const emptyLineScope: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(), allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
   assert.equal(scopeAnalyticsFilters({ lines: [] }, emptyLineScope).empty, true, "empty allowed line set (unknown line) → fail-closed empty");
 
   // ── computeAnalyticsViewerScope: region NAME → CODE ─────────────────────────
   const regionScoped = computeAnalyticsViewerScope(
-    { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionNames: new Set(["cairo"]), allowedProductCodes: null },
+    { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionNames: new Set(["cairo"]), allowedAreaCodes: null, allowedAreaFactRegionCodes: null, allowedProductCodes: null },
     REGION_MAP,
   );
   assert.deepEqual([...(regionScoped.allowedRegionCodes ?? [])], ["CAI"], "region name resolved to code");
   const unknownRegion = computeAnalyticsViewerScope(
-    { canViewAllSales: false, allowedLineNames: null, allowedRegionNames: new Set(["atlantis"]), allowedProductCodes: null },
+    { canViewAllSales: false, allowedLineNames: null, allowedRegionNames: new Set(["atlantis"]), allowedAreaCodes: null, allowedAreaFactRegionCodes: null, allowedProductCodes: null },
     REGION_MAP,
   );
   assert.equal(unknownRegion.allowedRegionCodes?.size, 0, "unresolvable region → empty set (fail-closed), never null");

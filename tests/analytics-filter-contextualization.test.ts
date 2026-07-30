@@ -8,10 +8,10 @@ import {
   type AnalyticsViewerScope,
 } from "../src/lib/analytics/scope.ts";
 
-const company: AnalyticsViewerScope = { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedProductCodes: null };
-const oneLine: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionCodes: null, allowedProductCodes: null };
-const twoLines: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia", "CNS"]), allowedRegionCodes: null, allowedProductCodes: null };
-const oneRegion: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: null, allowedRegionCodes: new Set(["CAI"]), allowedProductCodes: null };
+const company: AnalyticsViewerScope = { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
+const oneLine: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia"]), allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
+const twoLines: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: new Set(["Pedia", "CNS"]), allowedRegionCodes: null, allowedAreaCodes: null, allowedProductCodes: null };
+const oneRegion: AnalyticsViewerScope = { canViewAllSales: false, allowedLineNames: null, allowedRegionCodes: new Set(["CAI"]), allowedAreaCodes: null, allowedProductCodes: null };
 
 const DIMS: AnalyticsDimensions = {
   periods: [],

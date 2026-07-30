@@ -12,6 +12,7 @@ import {
   OFFICIAL_LINE_VALUES,
   resolveOfficialLineValue,
 } from "@/lib/sales/official-lines";
+import { resolveSeatAreaScope } from "@/lib/sales/seat-area-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -175,6 +176,23 @@ export type SalesAccessScope = {
   /** Areas are shown by name but never used to over-restrict (taxonomy is unreliable). Always null. */
   allowedAreaNames: null;
   /**
+   * Area CODES the viewer's own organogram seat operationally owns (see ./seat-area-scope.ts).
+   * Non-null ONLY for a District / Regional Manager whose seat resolved; null for every other role
+   * and whenever the seat map can't answer, in which case `allowedRegionNames` remains the bound.
+   *
+   * When non-null this is the AUTHORITATIVE geography bound and MUST be applied as a row filter —
+   * it is the only signal that survives an area whose operational owner differs from its geography
+   * (e.g. CNS Kafr El-Sheikh 1 is owned by the Alex-BHR DM but its rows carry region Delta (1)).
+   */
+  allowedAreaCodes: Set<string> | null;
+  /**
+   * The geographic region codes the `allowedAreaCodes` rows actually carry. Exists purely to widen
+   * prefetch / RPC push-down so those out-of-region rows are fetched at all. NOT an authorization
+   * bound — it can include a region whose other areas belong to a sibling manager, so it is only
+   * ever safe alongside the `allowedAreaCodes` row filter. null whenever allowedAreaCodes is null.
+   */
+  allowedAreaFactRegionCodes: Set<string> | null;
+  /**
    * Per-user product-code allowlist (from product_scope_override). When set, only rows whose
    * productCode is in this set are visible. null = no product-code restriction (line scope only).
    * Empty set = sees nothing.
@@ -194,6 +212,11 @@ type ComputeScopeInput = {
   overseenLineNames?: string[];
   /** Per-user product code allowlist (from product_scope_override). null = no restriction. */
   allowedProductCodes?: Set<string> | null;
+  /**
+   * Seat-derived area scope for a District / Regional Manager (see ./seat-area-scope.ts). null when
+   * the role isn't seat-scoped or the seat map couldn't answer — the region-name bound then stands.
+   */
+  seatAreaScope?: { areaCodes: Set<string>; factRegionCodes: Set<string> } | null;
 };
 
 /**
@@ -222,6 +245,8 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
       allowedLineNames: null,
       allowedRegionNames: null,
       allowedAreaNames: null,
+      allowedAreaCodes: null,
+      allowedAreaFactRegionCodes: null,
       allowedProductCodes,
     };
   }
@@ -238,6 +263,8 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
       allowedLineNames: new Set(),
       allowedRegionNames: new Set(),
       allowedAreaNames: null,
+      allowedAreaCodes: new Set(),
+      allowedAreaFactRegionCodes: new Set(),
       allowedProductCodes,
     };
   }
@@ -263,6 +290,17 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
   const canonicalRegion = canonicalizeRegionName(viewerRegionName);
   const allowedRegionNames = regionScoped && canonicalRegion ? new Set<string>([canonicalRegion]) : null;
 
+  // A District / Regional Manager's real geography is their organogram seat's areas, which can
+  // legitimately sit outside their own region label (see ./seat-area-scope.ts). When the seat map
+  // answered, carry that area set — consumers must filter rows on it, and may use the paired
+  // fact-region set to widen prefetch so the out-of-region rows are fetched at all. When it did not
+  // answer (null), nothing changes: the region-name bound above remains the only geography bound.
+  const seatAreaScope = regionScoped ? input.seatAreaScope ?? null : null;
+  const allowedAreaCodes = seatAreaScope ? new Set([...seatAreaScope.areaCodes].map((c) => c.trim().toUpperCase())) : null;
+  const allowedAreaFactRegionCodes = seatAreaScope
+    ? new Set([...seatAreaScope.factRegionCodes].map((c) => c.trim().toUpperCase()))
+    : null;
+
   return {
     role,
     businessScope,
@@ -274,6 +312,8 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
     allowedLineNames,
     allowedRegionNames,
     allowedAreaNames: null,
+    allowedAreaCodes,
+    allowedAreaFactRegionCodes,
     allowedProductCodes,
   };
 }
@@ -343,26 +383,51 @@ export async function resolveSalesAccessScope(
       : [];
 
   const currentHrId = resolveEmployeeIdentityId(ctx);
-  let viewerLineName: string | null = null;
-  let viewerRegionName: string | null = null;
-  if (currentHrId) {
-    const directory = await getEmployeeDirectory();
-    const viewer = directory.employees.find(
-      (employee) => normalizeIdentity(employee.hrId) === normalizeIdentity(currentHrId),
-    );
-    viewerLineName = viewer?.lineName ?? null;
-    viewerRegionName = viewer?.regionName ?? null;
-  }
+  // The seat-derived area scope is resolved alongside the directory read (both are cached, and the
+  // resolver is a no-op for every role that isn't a District / Regional Manager).
+  const [viewer, seatAreaScope] = await Promise.all([
+    currentHrId
+      ? getEmployeeDirectory().then((directory) =>
+          directory.employees.find(
+            (employee) => normalizeIdentity(employee.hrId) === normalizeIdentity(currentHrId),
+          ) ?? null,
+        )
+      : Promise.resolve(null),
+    resolveSeatAreaScope(ctx),
+  ]);
 
   return computeSalesAccessScope({
     role: ctx.role,
     businessScope,
-    viewerLineName,
-    viewerRegionName,
+    viewerLineName: viewer?.lineName ?? null,
+    viewerRegionName: viewer?.regionName ?? null,
     includeRestricted: opts?.includeRestricted ?? false,
     overseenLineNames,
     allowedProductCodes,
+    seatAreaScope,
   });
+}
+
+/**
+ * The geography bound a consumer should actually apply, resolved once from a SalesAccessScope.
+ *
+ * - `areaCodes` non-null ⇒ the authoritative bound; filter rows on it. `regionCodes` is then the
+ *   PREFETCH widener (the regions those areas' rows carry) and must never be used on its own.
+ * - `areaCodes` null ⇒ legacy behaviour: `regionCodes` (resolved from the viewer's region name by
+ *   the caller's own name→code map) is the bound.
+ *
+ * Pure; the caller supplies the region name→code lookup it already has loaded.
+ */
+export function resolveSalesGeographyBound(
+  scope: Pick<SalesAccessScope, "canViewAllSales" | "allowedRegionNames" | "allowedAreaCodes" | "allowedAreaFactRegionCodes">,
+  regionCodesForNames: (names: Set<string>) => Set<string>,
+): { areaCodes: Set<string> | null; regionCodes: Set<string> | null } {
+  if (scope.canViewAllSales) return { areaCodes: null, regionCodes: null };
+  if (scope.allowedAreaCodes) {
+    return { areaCodes: scope.allowedAreaCodes, regionCodes: scope.allowedAreaFactRegionCodes ?? null };
+  }
+  if (!scope.allowedRegionNames) return { areaCodes: null, regionCodes: null };
+  return { areaCodes: null, regionCodes: regionCodesForNames(scope.allowedRegionNames) };
 }
 
 function normalizeIdentity(value: string | null | undefined): string {
@@ -460,15 +525,30 @@ export function stripRestrictedProductNames(
  * master). A null filter means "all". An empty set means "nothing" (fail closed).
  */
 export function applyLineRegionScope<
-  T extends { officialLine?: string | null; regionCode?: string | null },
+  T extends { officialLine?: string | null; regionCode?: string | null; areaCode?: string | null },
 >(
   rows: T[],
-  scope: { allowedLineNames: Set<string> | null; allowedRegionCodes: Set<string> | null },
+  scope: {
+    allowedLineNames: Set<string> | null;
+    allowedRegionCodes: Set<string> | null;
+    /**
+     * Seat-derived area bound (SalesAccessScope.allowedAreaCodes). When supplied, rows that carry an
+     * `areaCode` are filtered on it — this is what keeps a widened region set (needed to fetch an
+     * out-of-region area at all) from also exposing a sibling manager's areas in that region. Rows
+     * with no area dimension are unaffected, so callers whose fact grain has no area (e.g. Weekly
+     * Sales) get no behaviour change.
+     */
+    allowedAreaCodes?: Set<string> | null;
+  },
 ): T[] {
   const { allowedLineNames, allowedRegionCodes } = scope;
-  if (!allowedLineNames && !allowedRegionCodes) return rows;
+  const allowedAreaCodes = scope.allowedAreaCodes ?? null;
+  if (!allowedLineNames && !allowedRegionCodes && !allowedAreaCodes) return rows;
   const lineKeys = allowedLineNames ? new Set([...allowedLineNames].map(normalizeLineKey)) : null;
   return rows.filter((row) => {
+    if (allowedAreaCodes && row.areaCode != null) {
+      if (!allowedAreaCodes.has(row.areaCode.trim().toUpperCase())) return false;
+    }
     if (lineKeys) {
       if (row.officialLine === undefined) {
         // Row carries no line dimension (e.g. brick/customer aggregates) — line scope cannot be

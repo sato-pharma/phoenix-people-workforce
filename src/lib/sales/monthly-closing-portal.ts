@@ -78,6 +78,13 @@ export type PortalClosingScope = {
    * whole line, never a blank sheet).
    */
   regionNames: Set<string> | null;
+  /**
+   * Area codes from the viewer's organogram seat (see src/lib/sales/seat-area-scope.ts). Non-null for
+   * a District / Regional Manager whose seat resolved, and then the AUTHORITATIVE bound — it takes
+   * precedence over `regionNames` because an area's operational owner can differ from its geography.
+   * null for every other role and whenever the seat map couldn't answer (region bound then stands).
+   */
+  areaCodes: Set<string> | null;
 };
 
 /** Resolve the viewer's line from the employee directory (any role). */
@@ -107,6 +114,9 @@ export async function resolvePortalClosingScope(
     resolveSalesAccessScope(access),
   ]);
   const regionNames = salesScope.allowedRegionNames;
+  // A District / Regional Manager's real geography is their seat's areas, which can sit outside their
+  // own region label — so prefer it when the seat map answered.
+  const areaCodes = salesScope.allowedAreaCodes;
 
   if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
     const hrKey = canonicalHrIdKey(
@@ -114,12 +124,12 @@ export async function resolvePortalClosingScope(
     );
     const productCodes = await getWeeklyProductScopeCodes(hrKey);
     // No explicit assignment → fall back to showing their full line (null = whole line, no column filter).
-    return { line, productCodes: productCodes.size > 0 ? productCodes : null, regionNames };
+    return { line, productCodes: productCodes.size > 0 ? productCodes : null, regionNames, areaCodes };
   }
 
-  // Territory roles: DM/RM are narrowed to their own region (regionNames set by the scope engine);
-  // NSM is line-scoped so regionNames is null ⇒ the whole line.
-  return { line, productCodes: null, regionNames };
+  // Territory roles: DM/RM are narrowed to their own areas (seat map) or, failing that, their own
+  // region; NSM is line-scoped so both bounds are null ⇒ the whole line.
+  return { line, productCodes: null, regionNames, areaCodes };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -258,16 +268,67 @@ export function scopeMatrixToRegionNames(
 }
 
 /**
- * Apply the viewer's region scope to a matrix, failing OPEN. A region-bound viewer (DM/RM) is
- * narrowed to their region; but if their region name maps to no region in this matrix — a data gap,
- * e.g. a Regional Manager whose region is the aggregate "Alexandria + Delta" rather than a single SoS
- * region — fall back to the un-narrowed matrix rather than showing a blank sheet. The line filter
- * still applies upstream, so this only ever broadens WITHIN the viewer's own line, never across lines.
+ * Narrow a closing matrix to an explicit set of AREA codes — the seat-derived bound for a District /
+ * Regional Manager (see src/lib/sales/seat-area-scope.ts). Unlike the region-name version above this
+ * keeps an area whose region belongs to someone else (e.g. CNS Kafr El-Sheikh 1, owned by the
+ * Alex-BHR DM but sitting in Delta (1)) while dropping that region's other areas, and it recomputes
+ * every region subtotal from the surviving areas so the totals still tie out. A region left with no
+ * areas is dropped entirely. Pure — no IO.
+ */
+export function scopeMatrixToAreaCodes(
+  matrix: MonthlyClosingMatrix,
+  areaCodes: Set<string>,
+): MonthlyClosingMatrix {
+  const allowed = new Set([...areaCodes].map((code) => code.trim().toUpperCase()));
+  const columnCount = matrix.columns.length;
+  const cellsAt = (rows: Array<{ cells: MonthlyClosingCell[] }>) =>
+    Array.from({ length: columnCount }, (_, index) =>
+      sumCells(rows.map((row) => row.cells[index]).filter((cell): cell is MonthlyClosingCell => Boolean(cell))),
+    );
+
+  const regions = matrix.regions
+    .map((region) => {
+      // The synthetic per-region "Direct" row carries no real area code; a region-scoped viewer never
+      // saw national direct sales (scopeMatrixToRegionNames nulls directNational), so drop it here too.
+      const areas = region.areas.filter(
+        (area) => !area.isDirect && allowed.has(area.areaCode.trim().toUpperCase()),
+      );
+      if (areas.length === 0) return null;
+      const subtotalCells = cellsAt(areas);
+      return {
+        ...region,
+        areas,
+        subtotal: { ...region.subtotal, cells: subtotalCells, rowTotal: sumCells(subtotalCells) },
+      };
+    })
+    .filter((region): region is (typeof matrix.regions)[number] => region !== null);
+
+  const grandCells = cellsAt(regions.map((region) => region.subtotal));
+  const grandTotal: MonthlyClosingGrandTotalRow = {
+    kind: "grandTotal",
+    cells: grandCells,
+    rowTotal: sumCells(grandCells),
+  };
+  return { ...matrix, regions, grandTotal, directNational: null, companyTotal: null };
+}
+
+/**
+ * Apply the viewer's geography scope to a matrix, failing OPEN. A seat-scoped viewer (District /
+ * Regional Manager whose organogram seat resolved) is narrowed to their own AREAS; otherwise a
+ * region-bound viewer is narrowed to their region. If the bound maps to nothing in this matrix — a
+ * data gap, e.g. a Regional Manager whose region is the aggregate "Alexandria + Delta" rather than a
+ * single SoS region — fall back to the un-narrowed matrix rather than showing a blank sheet. The line
+ * filter still applies upstream, so this only ever broadens WITHIN the viewer's own line.
  */
 export function applyRegionScope(
   matrix: MonthlyClosingMatrix,
   regionNames: Set<string> | null,
+  areaCodes?: Set<string> | null,
 ): MonthlyClosingMatrix {
+  if (areaCodes && areaCodes.size > 0) {
+    const narrowedToAreas = scopeMatrixToAreaCodes(matrix, areaCodes);
+    if (narrowedToAreas.regions.length > 0) return narrowedToAreas;
+  }
   if (!regionNames) return matrix;
   const narrowed = scopeMatrixToRegionNames(matrix, regionNames);
   return narrowed.regions.length > 0 ? narrowed : matrix;
@@ -325,7 +386,7 @@ export async function loadPortalMonthlyClosing(input: {
   // otherwise see the raw matrix including LA003 / LA004.
   const safe = stripRestrictedColumns(locked);
   const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = applyRegionScope(productScoped, scope.regionNames);
+  const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
 
   return {
     matrix,
@@ -363,7 +424,7 @@ export async function loadPortalClosingTrend(input: {
       const raw = await loadMonthlyClosing({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
       const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-      const matrix = applyRegionScope(productScoped, scope.regionNames);
+      const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
       const salesUnits = matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
       return { period, salesValue: matrix.grandTotal.rowTotal.salesValue, salesUnits };
     }),
@@ -433,7 +494,7 @@ export async function loadPortalLiveMonthly(input: {
 
   const safe = stripRestrictedColumns(raw);
   const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
-  const matrix = applyRegionScope(productScoped, scope.regionNames);
+  const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
 
   return {
     matrix,
