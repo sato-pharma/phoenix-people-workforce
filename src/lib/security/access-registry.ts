@@ -549,7 +549,10 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET", "POST"], pattern: "/api/sales/weekly/pos-region-mappings", permission: { resource: "weekly_sales", action: "update" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/weekly/pos-region-mappings/template", permission: { resource: "weekly_sales", action: "update" } }),
   // Sales Targets (au monthly targets/achievement) — Super Admin + SFE Manager via sales:import.
-  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown", permission: { resource: "sales", action: "import" } }),
+  // The per-area drill-down READ is sales:read so the scoped read-only Targets view can expand a
+  // row, but it additionally enforces assertTargetsAreaInScope on the caller-supplied `area` — the
+  // permission alone would let any DM enumerate another area's distributor/brick/customer detail.
+  sessionApi({ audit: { classification: "access-read", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/breakdown/export", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/targets/template", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/targets/save", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only targets upsert (sales:import); map-or-reject validated server-side, rejects confidential products." }),

@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 
 import { TargetsWorkspace, type TargetGridRow } from "@/components/sales/targets-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canViewTargetsAdminPage } from "@/lib/sales/portal-targets";
 import {
   SALES_LINES,
   loadAllCanonicalAreaNames,
@@ -43,12 +44,18 @@ export default async function TargetsPage({
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }
-  // Edit access = sales:import, held only by Super Admin + SFE Manager (server-enforced).
+  // VIEW vs EDIT. Until 2026-07-30 this page asserted `sales:import` for both, which only Super
+  // Admin and SFE Manager hold — so even the CEO could not open a report on company target
+  // achievement. Viewing is now `sales:read` bounded by an explicit role list (a bare `sales:read`
+  // would also admit Finance Manager / Financial Advisor, which nobody asked for), and EDITING is
+  // still `sales:import`. Every write route remains `sales:import`-gated server-side.
   try {
-    await assertPermission(access, "sales", "import");
+    await assertPermission(access, "sales", "read");
   } catch {
     redirect(resolveLandingPathForRole(access.role));
   }
+  if (!canViewTargetsAdminPage(access)) redirect(resolveLandingPathForRole(access.role));
+  const canEdit = await canAccess(access, "sales", "import");
 
   const sp = await searchParams;
   const { periods, current } = buildPeriods();
@@ -126,6 +133,7 @@ export default async function TargetsPage({
       byDm={byDm}
       sourceFiles={sourceFiles}
       error={error}
+      canEdit={canEdit}
     />
   );
 }

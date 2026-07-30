@@ -562,7 +562,11 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-targets-module",
     items: [
-      { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "import", resource: "sales" }] },
+      // VIEW is sales:read bounded by TARGETS_ADMIN_VIEW_ROLES (the page's own gate); EDIT is still
+      // sales:import. Previously this whole entry was sales:import, so the CEO — who holds
+      // sales:read and lands in the ADMIN shell, hence cannot use the portal twin — had no way to
+      // see target achievement at all.
+      { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Targets",
   },
@@ -735,6 +739,9 @@ const employeePortalNavigationSectionSeeds = [
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.
       { href: "/employee-portals/territory-management", icon: Waypoints, label: "Territory Management", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
+      // Read-only Targets (owner decision 2026-07-30). Mirrors PORTAL_TARGETS_ROLES; editing and
+      // upload stay on the admin surface with SFE Manager / Super Admin.
+      { href: "/employee-portals/targets", icon: Target, label: "Targets", permissions: [{ resource: "sales", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager"] },
     ],
     label: "Sales Operations",
   },

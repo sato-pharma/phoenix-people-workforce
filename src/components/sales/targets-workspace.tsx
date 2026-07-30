@@ -11,8 +11,17 @@ import { Input } from "@/components/ui/input";
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 6 Targets workspace. Set targets per (area, product) for a line + month —
 // by bulk Excel upload or by editing the grid inline — and see achievement vs the
-// SoS actuals. Edit access is gated server-side (Super Admin + SFE Manager); this
-// component is only rendered when the caller may edit.
+// SoS actuals.
+//
+// EDIT vs VIEW: `canEdit` drives whether the write affordances render at all (bulk upload, template
+// download, inline target inputs, Save edits, and the line-wide audit export). It is PRESENTATION
+// ONLY — every write route still asserts `sales:import` server-side, so a tampered client gets a 403.
+// Never move a write behind `canEdit` alone.
+//
+// Read-only callers: the District / Regional / National Sales Manager portal view
+// (/employee-portals/targets) and the CEO on the admin page, both of which hold `sales:read` but not
+// `sales:import`. `basePath` exists because the period/line picker navigates by URL and the portal
+// surface lives at a different path than /sales/targets.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type TargetGridRow = {
@@ -60,6 +69,10 @@ export type TargetsWorkspaceProps = {
   byDm: DmRollup[];
   sourceFiles: SourceFile[];
   error: string | null;
+  /** Render the write affordances. Server still enforces `sales:import` on every write route. */
+  canEdit?: boolean;
+  /** Route the period/line picker navigates to. Defaults to the admin surface. */
+  basePath?: string;
 };
 
 type UploadPreview = { totalRows: number; validRows: number; errors: Array<{ rowNumber: number; field: string; code: string; message: string }> };
@@ -118,6 +131,8 @@ function groupSource(rows: BreakdownLine[]): BrickGroup[] {
 
 export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const router = useRouter();
+  const canEdit = props.canEdit !== false;
+  const basePath = props.basePath ?? "/sales/targets";
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [unitEdits, setUnitEdits] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
@@ -171,7 +186,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
     setUnitEdits({});
     setPreview(null);
     setMessage(null);
-    router.push(`/sales/targets?line=${encodeURIComponent(line)}&period=${encodeURIComponent(period)}`);
+    router.push(`${basePath}?line=${encodeURIComponent(line)}&period=${encodeURIComponent(period)}`);
   }
 
   async function runUpload(commit: boolean) {
@@ -291,47 +306,51 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             ))}
           </select>
         </label>
-        <a
-          className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
-          href={`/api/sales/targets/template?line=${encodeURIComponent(props.selectedLine)}`}
-        >
-          Download template
-        </a>
+        {canEdit ? (
+          <a
+            className="inline-flex h-9 items-center rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+            href={`/api/sales/targets/template?line=${encodeURIComponent(props.selectedLine)}`}
+          >
+            Download template
+          </a>
+        ) : null}
       </div>
 
-      {/* Upload panel */}
-      <Card className="space-y-3 p-4">
-        <div className="text-sm font-semibold">Bulk upload</div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Input
-            type="file"
-            accept=".xlsx"
-            className="max-w-xs"
-            onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); }}
-          />
-          <Button variant="outline" disabled={!file || busy !== null} onClick={() => runUpload(false)}>
-            {busy === "preview" ? "Checking…" : "Preview"}
-          </Button>
-          <Button disabled={!file || busy !== null} onClick={() => runUpload(true)}>
-            {busy === "commit" ? "Saving…" : "Commit upload"}
-          </Button>
-        </div>
-        {preview ? (
-          <div className="rounded-md border p-3 text-sm">
-            <div>
-              <span className="font-medium">{preview.validRows}</span> valid of {preview.totalRows} row(s)
-              {preview.errors.length > 0 ? <span className="text-red-600 dark:text-red-400"> · {preview.errors.length} rejected</span> : null}
-            </div>
-            {preview.errors.length > 0 ? (
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {preview.errors.slice(0, 50).map((issue, index) => (
-                  <li key={`${issue.rowNumber}-${index}`}>Row {issue.rowNumber}: {issue.message}</li>
-                ))}
-              </ul>
-            ) : null}
+      {/* Upload panel — authoring only. */}
+      {canEdit ? (
+        <Card className="space-y-3 p-4">
+          <div className="text-sm font-semibold">Bulk upload</div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              type="file"
+              accept=".xlsx"
+              className="max-w-xs"
+              onChange={(event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); }}
+            />
+            <Button variant="outline" disabled={!file || busy !== null} onClick={() => runUpload(false)}>
+              {busy === "preview" ? "Checking…" : "Preview"}
+            </Button>
+            <Button disabled={!file || busy !== null} onClick={() => runUpload(true)}>
+              {busy === "commit" ? "Saving…" : "Commit upload"}
+            </Button>
           </div>
-        ) : null}
-      </Card>
+          {preview ? (
+            <div className="rounded-md border p-3 text-sm">
+              <div>
+                <span className="font-medium">{preview.validRows}</span> valid of {preview.totalRows} row(s)
+                {preview.errors.length > 0 ? <span className="text-red-600 dark:text-red-400"> · {preview.errors.length} rejected</span> : null}
+              </div>
+              {preview.errors.length > 0 ? (
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                  {preview.errors.slice(0, 50).map((issue, index) => (
+                    <li key={`${issue.rowNumber}-${index}`}>Row {issue.rowNumber}: {issue.message}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
 
       {message ? <div className="rounded-md border bg-muted/40 p-3 text-sm">{message}</div> : null}
       {props.error ? <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{props.error}</div> : null}
@@ -379,21 +398,31 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
             <div className="text-sm font-semibold">Targets &amp; achievement — {props.lines.find((l) => l.code === props.selectedLine)?.label ?? props.selectedLine} · {props.selectedPeriod}</div>
             <div className="text-xs text-muted-foreground">Click a row to trace its sales to source (distributor &amp; brick).</div>
           </div>
-          <div className="flex items-center gap-2">
-            <a
-              className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
-              href={`/api/sales/targets/breakdown/export?line=${encodeURIComponent(props.selectedLine)}&period=${encodeURIComponent(props.selectedPeriod)}`}
-            >
-              Export audit (Excel)
-            </a>
-            <Button size="sm" disabled={editedKeys.length === 0 || busy !== null} onClick={saveEdits}>
-              {busy === "save" ? "Saving…" : `Save edits${editedKeys.length ? ` (${editedKeys.length})` : ""}`}
-            </Button>
-          </div>
+          {canEdit ? (
+            <div className="flex items-center gap-2">
+              {/* Line-WIDE audit export (no area parameter, so there is nothing to scope) — stays
+                  with the authoring roles. */}
+              <a
+                className="inline-flex h-8 items-center rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+                href={`/api/sales/targets/breakdown/export?line=${encodeURIComponent(props.selectedLine)}&period=${encodeURIComponent(props.selectedPeriod)}`}
+              >
+                Export audit (Excel)
+              </a>
+              <Button size="sm" disabled={editedKeys.length === 0 || busy !== null} onClick={saveEdits}>
+                {busy === "save" ? "Saving…" : `Save edits${editedKeys.length ? ` (${editedKeys.length})` : ""}`}
+              </Button>
+            </div>
+          ) : (
+            <span className="rounded-full border border-input px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              View only
+            </span>
+          )}
         </div>
         {props.rows.length === 0 ? (
           <div className="p-6 text-sm text-muted-foreground">
-            No targets or sales yet for this line and month. Download the template, fill it, and upload — or pick a month with loaded sales.
+            {canEdit
+              ? "No targets or sales yet for this line and month. Download the template, fill it, and upload — or pick a month with loaded sales."
+              : "No targets or sales for your territory in this line and month."}
           </div>
         ) : (
           <div className="max-h-[60vh] overflow-auto">
@@ -445,33 +474,41 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                         <td className="p-2">{row.repName ?? <span className="text-muted-foreground">vacant</span>}</td>
                         <td className="p-2 text-right tabular-nums">{fmtMoney(row.actualValue)}</td>
                         <td className="p-2 text-right">
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            className="h-8 w-24 text-right tabular-nums"
-                            placeholder="units"
-                            value={unitValue}
-                            onChange={(event) => {
-                              const raw = event.target.value;
-                              setUnitEdits((current) => ({ ...current, [key]: raw }));
-                              // Auto-fill Target value = units × unit price (still editable below).
-                              const units = Number(raw);
-                              if (row.unitPrice != null && raw !== "" && Number.isFinite(units)) {
-                                setEdits((current) => ({ ...current, [key]: String(Math.round(units * row.unitPrice!)) }));
-                              }
-                            }}
-                          />
+                          {canEdit ? (
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              className="h-8 w-24 text-right tabular-nums"
+                              placeholder="units"
+                              value={unitValue}
+                              onChange={(event) => {
+                                const raw = event.target.value;
+                                setUnitEdits((current) => ({ ...current, [key]: raw }));
+                                // Auto-fill Target value = units × unit price (still editable below).
+                                const units = Number(raw);
+                                if (row.unitPrice != null && raw !== "" && Number.isFinite(units)) {
+                                  setEdits((current) => ({ ...current, [key]: String(Math.round(units * row.unitPrice!)) }));
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span className="tabular-nums">{row.targetUnits == null ? "—" : row.targetUnits.toLocaleString("en-EG")}</span>
+                          )}
                         </td>
                         <td className="p-2 text-right tabular-nums text-muted-foreground">{fmtPrice(row.unitPrice)}</td>
                         <td className="p-2 text-right">
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            className="h-8 w-28 text-right tabular-nums"
-                            placeholder="value"
-                            value={editValue}
-                            onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
-                          />
+                          {canEdit ? (
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              className="h-8 w-28 text-right tabular-nums"
+                              placeholder="value"
+                              value={editValue}
+                              onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
+                            />
+                          ) : (
+                            <span className="tabular-nums">{row.targetValue == null ? "—" : fmtMoney(row.targetValue)}</span>
+                          )}
                         </td>
                         <td className={`p-2 text-right tabular-nums ${achievementTone(liveAch)}`}>{fmtPct(liveAch)}</td>
                       </tr>
@@ -547,7 +584,11 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
         )}
       </Card>
 
-      {/* Source files — provenance / paper trail */}
+      {/* Source files — provenance / paper trail. COMPANY-WIDE distributor-upload metadata (file
+          names, who uploaded, totals across every line), so it is an authoring concern only and is
+          hidden from the scoped read-only view. The portal page also passes an empty array, so this
+          panel could never leak even if it did render. */}
+      {!canEdit ? null : (
       <Card className="p-0">
         <button
           type="button"
@@ -592,6 +633,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           )
         ) : null}
       </Card>
+      )}
     </div>
   );
 }
