@@ -7,10 +7,10 @@ import { useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type {
-  FieldWorkforceCellStatus,
   FieldWorkforceDayCell,
   FieldWorkforceEmployeeSummary,
 } from "@/lib/field-workforce-compliance/types";
+import { isPortalRideAlongCoachingDay, portalOwnVisitCount } from "@/lib/employee-portal/team-calendar-cell";
 import { cn } from "@/lib/utils";
 
 const ALL_FILTER = "All";
@@ -44,11 +44,14 @@ function weekday(dateIso: string) {
   }).format(new Date(`${dateIso}T00:00:00Z`));
 }
 
-function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number, attendanceCrossCheck?: FieldWorkforceDayCell["attendanceCrossCheck"]) {
-  if (status === "N" && attendanceCrossCheck === "punch_no_visits") return "P";
-  if (status === "VISITS") return String(visitCount ?? 0);
-  if (status === "BLANK") return "-";
-  return status;
+function statusLabel(cell: FieldWorkforceDayCell) {
+  if (cell.status === "N" && cell.attendanceCrossCheck === "punch_no_visits") return "P";
+  // A pure ride-along (double-visit) day shows a "DV" coaching marker instead of a visit count —
+  // otherwise a manager's row would repeat the numbers of the reps they rode along with. Own
+  // visits still show as their own number.
+  if (cell.status === "VISITS") return isPortalRideAlongCoachingDay(cell) ? "DV" : String(portalOwnVisitCount(cell));
+  if (cell.status === "BLANK") return "-";
+  return cell.status;
 }
 
 /** Same status palette as the admin Field Workforce Compliance timeline. A "VISITS" day
@@ -57,8 +60,10 @@ function statusLabel(status: FieldWorkforceCellStatus, visitCount?: number, atte
  * with a same-day fingerprint punch (mainly Head Office staff who don't generate CRM visits)
  * shades teal instead of the alarming rose — punched in, not no activity. */
 function statusCellClass(cell: FieldWorkforceDayCell) {
-  const visitsClass =
-    cell.visitPeriod === "AM"
+  const visitsClass = isPortalRideAlongCoachingDay(cell)
+    ? // Ride-along / coaching ("DV") day — distinct fuchsia so it never reads as a rep's own visits.
+      "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 hover:bg-fuchsia-100"
+    : cell.visitPeriod === "AM"
       ? "border-cyan-300 bg-cyan-50 text-cyan-800 hover:bg-cyan-100"
       : cell.visitPeriod === "PM"
         ? "border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
@@ -102,6 +107,7 @@ function TimelineLegend() {
       <LegendChip className="border-emerald-300 bg-emerald-50 text-emerald-800" label="Visits, full/mixed day (click to open)">5</LegendChip>
       <LegendChip className="border-cyan-300 bg-cyan-50 text-cyan-800" label="Visits, AM only (click to open)">5</LegendChip>
       <LegendChip className="border-indigo-300 bg-indigo-50 text-indigo-800" label="Visits, PM only (click to open)">5</LegendChip>
+      <LegendChip className="border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800" label="Double-visit / coaching day — manager rode along (click to open)">DV</LegendChip>
       <LegendChip className="border-teal-300 bg-teal-50 text-teal-800" label="Punched in (fingerprint), no CRM activity — click to open">P</LegendChip>
       <LegendChip className="border-slate-200 bg-slate-100 text-slate-500" label="Friday">F</LegendChip>
       <LegendChip className="border-amber-300 bg-amber-50 text-amber-800 ring-2 ring-amber-300" label="Holiday">H</LegendChip>
@@ -110,35 +116,40 @@ function TimelineLegend() {
 }
 
 function TeamCalendarDayCell({ cell }: { cell: FieldWorkforceDayCell }) {
+  // A ride-along/coaching day's classifier explanation ("Worked day because N numeric visits…")
+  // reflects the double-credited total, which would be misleading here — describe it as coaching.
+  const explanation = isPortalRideAlongCoachingDay(cell)
+    ? "Double-visit / coaching day — rode along on the team's visits (no own primary visits logged)."
+    : cell.explanation;
   const baseClass = cn(
     "relative flex h-10 w-full items-center justify-center rounded-lg border text-xs font-black",
     statusCellClass(cell),
   );
   const content = (
     <>
-      {statusLabel(cell.status, cell.visitCount, cell.attendanceCrossCheck)}
+      {statusLabel(cell)}
       {cell.isPublicHoliday ? (
         <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
       ) : null}
     </>
   );
-  // Numeric-visit days, campaign days, AND fingerprint-punched "N" days deep-link to the portal
-  // day drill-down (all are real recorded activity, just categorized/sourced differently);
-  // other days are static.
+  // Numeric-visit days, campaign days, ride-along coaching days, AND fingerprint-punched "N" days
+  // deep-link to the portal day drill-down (all are real recorded activity, just categorized/
+  // sourced differently); other days are static.
   if (cell.status === "VISITS" || cell.status === "CP" || cell.attendanceCrossCheck === "punch_no_visits") {
     return (
       <Link
-        aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation} (open visits)`}
+        aria-label={`${cell.employeeName} ${cell.dateIso}: ${explanation} (open visits)`}
         className={cn(baseClass, "transition hover:ring-2 hover:ring-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-300")}
         href={`/employee-portals/team-calendar/visits/${encodeURIComponent(cell.hrId)}/${cell.dateIso}`}
-        title={`${cell.explanation} — open the day's visits`}
+        title={`${explanation} — open the day's visits`}
       >
         {content}
       </Link>
     );
   }
   return (
-    <div aria-label={`${cell.employeeName} ${cell.dateIso}: ${cell.explanation}`} className={baseClass} title={cell.explanation}>
+    <div aria-label={`${cell.employeeName} ${cell.dateIso}: ${explanation}`} className={baseClass} title={explanation}>
       {content}
     </div>
   );
@@ -154,6 +165,14 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
   const hierarchy = [employee.teamName, employee.areaName, employee.managerName]
     .filter(Boolean)
     .join(" / ");
+  // Show each person's OWN (primary-agent) visits — a ride-along (double-visit) day is a coaching
+  // day, tallied separately as "DV days" — so a manager's row never sums the reps' visits into a
+  // doubled total. For a rep with no ride-alongs this equals their full visit total, unchanged.
+  const ownVisits = employee.timeline.reduce(
+    (sum, cell) => sum + (cell.status === "VISITS" && !cell.ignored ? portalOwnVisitCount(cell) : 0),
+    0,
+  );
+  const coachingDays = employee.timeline.filter((cell) => !cell.ignored && isPortalRideAlongCoachingDay(cell)).length;
   return (
     <div className={cn("bg-white px-4 py-3", isFirst ? "" : "border-t border-slate-100")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -165,7 +184,8 @@ function RepMonthRow({ employee, isFirst }: { employee: FieldWorkforceEmployeeSu
           </p>
         </div>
         <div className="flex items-center gap-3 text-[11px] font-bold">
-          <span className="text-emerald-700">{employee.totalVisits} visits</span>
+          <span className="text-emerald-700">{ownVisits} visits</span>
+          {coachingDays > 0 ? <span className="text-fuchsia-700">{coachingDays} DV days</span> : null}
           <span className="text-slate-500">{employee.compliancePercent}% compliance</span>
         </div>
       </div>

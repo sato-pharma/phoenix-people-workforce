@@ -164,6 +164,18 @@ export type FieldWorkforceDayCell = {
   campaignOverlay?: boolean;
   visitCount?: number;
   /**
+   * Count of this day's REGULAR visits the employee logged as the PRIMARY agent (their OWN
+   * visits), as opposed to visits credited to them only as a double-visit (ride-along) partner.
+   * Set only on the live CRM-mirror path, and only for a "VISITS" day (0 when every credited
+   * visit that day was a ride-along). The employee-portal Team Calendar uses it to (a) show a
+   * manager's own visit count rather than one inflated by ride-alongs, and (b) render a pure
+   * ride-along day (ownVisitCount === 0 on a VISITS day) as a distinct "DV" coaching marker
+   * instead of a numeric count that would duplicate the rep's visits onto the manager's row.
+   * Undefined on the Excel-upload path and on non-VISITS days. Informational only — never affects
+   * severity, status, deduction candidates, or the admin Field Workforce Compliance surface.
+   */
+  ownVisitCount?: number;
+  /**
    * Whether this day's REGULAR (customer) visits were all logged AM, all PM, or a mix, from
    * the visits mirror's ampm column. Only set when status is "VISITS" and at least one that
    * day's regular visits carries an ampm tag; "MIXED" (both AM and PM present) renders the

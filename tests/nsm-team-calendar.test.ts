@@ -3,6 +3,10 @@ import { strict as assert } from "node:assert";
 import { buildFieldWorkforceCompliancePreview } from "../src/lib/field-workforce-compliance/classifier.ts";
 import { parseFieldWorkforceComplianceMatrix } from "../src/lib/field-workforce-compliance/parser.ts";
 import { buildDsmGroups } from "../src/lib/employee-portal/team-calendar.ts";
+import {
+  isPortalRideAlongCoachingDay,
+  portalOwnVisitCount,
+} from "../src/lib/employee-portal/team-calendar-cell.ts";
 
 /**
  * Regression coverage for a bug shipped and caught in production: the NSM Team Calendar
@@ -185,4 +189,23 @@ export async function runNsmTeamCalendarTests() {
   const nermeenGroup = rsmGroups.find((group) => group.managerHrId === "B-154");
   assert.ok(nermeenGroup);
   assert.deepEqual(nermeenGroup.members.map((member) => member.hrId), ["B-154"]);
+
+  // --- Portal cell interpretation: a manager's ride-along (double-visit) day is a "DV" coaching
+  // day, NOT a duplicated rep-visit count. Regression for the production report "visit numbers
+  // look doubled": every DSM's calendar was a numeric echo of their reps' visits because the
+  // shared engine double-credits a ride-along to both the rep and the manager. A day classified
+  // VISITS with ownVisitCount === 0 (all credit was ride-along) now renders as "DV" and adds 0 to
+  // the person's own visit total, so a manager's row never repeats the reps' numbers. ---
+  const rideAlongDay = { status: "VISITS", ownVisitCount: 0, visitCount: 7 } as const;
+  const ownVisitsDay = { status: "VISITS", ownVisitCount: 3, visitCount: 3 } as const;
+  const excelVisitsDay = { status: "VISITS", visitCount: 4 } as const; // Excel-upload path: no own-count signal
+  const noActivityDay = { status: "N", ownVisitCount: 0 } as const;
+
+  assert.equal(isPortalRideAlongCoachingDay(rideAlongDay), true, "a VISITS day with 0 own visits is a DV coaching day");
+  assert.equal(portalOwnVisitCount(rideAlongDay), 0, "a ride-along day adds 0 to the person's own visit total (no doubling)");
+  assert.equal(isPortalRideAlongCoachingDay(ownVisitsDay), false, "a rep's own visits are never a DV day");
+  assert.equal(portalOwnVisitCount(ownVisitsDay), 3, "a rep's own visit count is shown as-is");
+  assert.equal(isPortalRideAlongCoachingDay(excelVisitsDay), false, "with no own-count signal (Excel path) it is not a DV day — behaviour unchanged");
+  assert.equal(portalOwnVisitCount(excelVisitsDay), 4, "with no own-count signal the raw classified count is used, preserving prior behaviour");
+  assert.equal(isPortalRideAlongCoachingDay(noActivityDay), false, "a non-VISITS day is never a DV day");
 }

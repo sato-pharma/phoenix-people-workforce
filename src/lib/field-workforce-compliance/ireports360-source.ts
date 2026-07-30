@@ -351,6 +351,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   identityByHrKey: Map<string, FieldWorkforceCrmIdentity>;
   loggingTimingByHrKeyAndDate: Map<string, FieldWorkforceLoggingTiming>;
   matrix: unknown[][];
+  ownRegularCountByHrKeyAndDate: Map<string, number>;
   visitPeriodByHrKeyAndDate: Map<string, "AM" | "PM" | "MIXED">;
 } {
   const { employees, month, visits, year } = input;
@@ -387,6 +388,14 @@ export function buildIReports360FieldWorkforceMatrix(input: {
   // from genuinely unresolved ones.
   const visitsByHrKey = new Map<string, FieldWorkforceMatrixVisit[]>();
   const syncResolvedHrKeys = new Set<string>();
+  // Per (hrKey|day) count of the employee's OWN (primary-agent) regular visits — tracked
+  // separately from the ride-along (double-visit) credit below. A manager who only rides along
+  // as the double partner has 0 own visits on that day even though the day still classifies as a
+  // worked "VISITS" day. The employee-portal Team Calendar reads this (via cell.ownVisitCount) to
+  // show each person's own visit count and to mark a pure ride-along day as a "DV" coaching day,
+  // so a manager's row never duplicates the visit counts of the reps they rode along with. The
+  // admin matrix/preview is unchanged — this is an additional, purely informational signal.
+  const ownRegularCountByHrKeyAndDate = new Map<string, number>();
   const credit = (hrKey: string | null, visit: FieldWorkforceMatrixVisit) => {
     if (!hrKey) return;
     if (!visitsByHrKey.has(hrKey)) visitsByHrKey.set(hrKey, []);
@@ -402,6 +411,10 @@ export function buildIReports360FieldWorkforceMatrix(input: {
 
     const agentKey = resolveHrKey(visit.agentID, visit.agentHrId);
     credit(agentKey, visit);
+    if (agentKey && visit.visitType === 0) {
+      const ownKey = `${agentKey}|${dayIso}`;
+      ownRegularCountByHrKeyAndDate.set(ownKey, (ownRegularCountByHrKeyAndDate.get(ownKey) ?? 0) + 1);
+    }
     if (visit.doubleID != null && visit.doubleID !== visit.agentID) {
       const doubleKey = resolveHrKey(visit.doubleID, visit.doubleHrId);
       if (doubleKey && doubleKey !== agentKey) credit(doubleKey, visit);
@@ -496,7 +509,7 @@ export function buildIReports360FieldWorkforceMatrix(input: {
     ]);
   }
 
-  return { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate };
+  return { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, visitPeriodByHrKeyAndDate };
 }
 
 /** One day's CRM-logging-timing signal from its (unordered) visits' saveDate (crm_save_date).
@@ -790,7 +803,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
     };
   }
 
-  const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
+  const { avExcuseLabeledKeys, campaignOverlayKeys, customerAuthenticityByHrKey, identityByHrKey, loggingTimingByHrKeyAndDate, matrix, ownRegularCountByHrKeyAndDate, visitPeriodByHrKeyAndDate } = buildIReports360FieldWorkforceMatrix({
     deviceMappedHrKeys,
     employees: directory,
     month,
@@ -831,13 +844,21 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
       const isExcuseLabeledAv = hrKey ? avExcuseLabeledKeys.has(`${hrKey}|${cell.dateIso}`) : false;
       const visitPeriod = hrKey ? visitPeriodByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? null : null;
       const campaignOverlay = hrKey ? campaignOverlayKeys.has(`${hrKey}|${cell.dateIso}`) : false;
-      if (!timing && !isExcuseLabeledAv && !visitPeriod && !campaignOverlay) return cell;
+      // Own (primary-agent) regular-visit count for a worked "VISITS" day: 0 means the day is
+      // classified as VISITS purely from ride-along (double-visit) credit. Only meaningful on a
+      // VISITS day; left undefined elsewhere so it never widens a non-VISITS cell. The portal
+      // Team Calendar reads it; the admin surface ignores it (see FieldWorkforceDayCell.ownVisitCount).
+      const ownVisitCount = hrKey && cell.status === "VISITS"
+        ? ownRegularCountByHrKeyAndDate.get(`${hrKey}|${cell.dateIso}`) ?? 0
+        : undefined;
+      if (!timing && !isExcuseLabeledAv && !visitPeriod && !campaignOverlay && ownVisitCount === undefined) return cell;
       return {
         ...cell,
         ...(timing ? { loggingTiming: timing } : {}),
         ...(isExcuseLabeledAv ? { isExcuseLabeledAv: true } : {}),
         ...(visitPeriod ? { visitPeriod } : {}),
         ...(campaignOverlay ? { campaignOverlay: true } : {}),
+        ...(ownVisitCount !== undefined ? { ownVisitCount } : {}),
       };
     });
     const loggingTimingSummary = summarizeLoggingTiming(timeline);
