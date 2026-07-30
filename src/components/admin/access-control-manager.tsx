@@ -324,6 +324,7 @@ export function AccessControlManager({
   const [query, setQuery] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [lineFilter, setLineFilter] = React.useState("all");
+  const [passwordFilter, setPasswordFilter] = React.useState<"all" | "pending" | "ready">("all");
   const [page, setPage] = React.useState(1);
   const [uploadResults, setUploadResults] = React.useState<RowResult[] | null>(null);
   const [permissionSaving, setPermissionSaving] = React.useState<string | null>(null);
@@ -790,6 +791,8 @@ export function AccessControlManager({
     if (query && !haystack.includes(query.toLowerCase())) return false;
     if (roleFilter !== "all" && user.role !== roleFilter) return false;
     if (lineFilter !== "all" && user.line !== lineFilter) return false;
+    if (passwordFilter === "pending" && !user.forcePasswordReset) return false;
+    if (passwordFilter === "ready" && user.forcePasswordReset) return false;
     return true;
   });
   const pageCount = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
@@ -909,7 +912,7 @@ export function AccessControlManager({
   }
 
   function renderEmptyUsers() {
-    const filtered = query || roleFilter !== "all" || lineFilter !== "all";
+    const filtered = query || roleFilter !== "all" || lineFilter !== "all" || passwordFilter !== "all";
     return (
       <div className="mx-auto flex max-w-md flex-col items-center px-4 py-12 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200/80 bg-gradient-to-br from-slate-50 to-white text-slate-400 shadow-sm">
@@ -1439,7 +1442,7 @@ export function AccessControlManager({
               </div>
 
               <div className="border-b border-slate-200/80 bg-gradient-to-b from-white to-slate-50/50 p-4">
-                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px_160px]">
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px_140px_170px]">
                   <div className="relative group">
                     <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400 transition-colors duration-160 ease-out group-focus-within:text-orange-500" />
                     <Input
@@ -1481,6 +1484,18 @@ export function AccessControlManager({
                         {line}
                       </option>
                     ))}
+                  </SearchableSelect>
+                  <SearchableSelect
+                    className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition-all duration-160 ease-out outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 hover:border-slate-300 hover:shadow-sm"
+                    onChange={(e) => {
+                      setPasswordFilter(e.target.value as "all" | "pending" | "ready");
+                      setPage(1);
+                    }}
+                    value={passwordFilter}
+                  >
+                    <option value="all">All passwords</option>
+                    <option value="pending">Setup pending</option>
+                    <option value="ready">Password ready</option>
                   </SearchableSelect>
                 </div>
               </div>
