@@ -98,6 +98,36 @@ export function runApprovalsHubTests() {
     "My Requests reuses the existing cross-module getMyRequestItems (same data the old combined hub's tab showed), not a reimplementation",
   );
 
+  // ── Swallowed loader failures log at the RIGHT severity ──────────────────────
+  // A "Forbidden: …" rejection is the permission gate working, not a fault. Logging it at
+  // ERROR made a single unauthenticated GET of an approvals page emit ERROR-severity Cloud Run
+  // entries, polluting error dashboards and Sentry error-rate alerting. Every catch-and-log in
+  // this service must therefore go through logLoadFailure, which downgrades permission denials
+  // to DEBUG and keeps genuine failures at ERROR.
+  assert.doesNotMatch(
+    svc,
+    /\blogError\(/,
+    "no catch-and-log site may call logError directly — an expected Forbidden would be logged as an ERROR",
+  );
+  assert.match(
+    svc,
+    /logStructured\(forbidden \? "DEBUG" : "ERROR", message/,
+    "logLoadFailure downgrades forbidden failures to DEBUG and keeps everything else at ERROR",
+  );
+  assert.match(
+    svc,
+    /classification: forbidden \? "forbidden" : "error"/,
+    "downgraded failures stay searchable via a classification label",
+  );
+  assert.match(
+    svc,
+    /error\.message\.toLowerCase\(\)\.startsWith\("forbidden:"\)/,
+    "forbidden detection keys off the same 'Forbidden:' prefix as isForbiddenError in @/lib/auth/server",
+  );
+  // (The individual loader call sites — including the two confirmed emitting false-positive
+  // ERRORs on production revision phoenix-hr-00661-yuw, 2026-07-30 — are asserted further down,
+  // alongside the "never silently swallowed" guarantee.)
+
   // ── Grouped pending sections (Awaiting / Coming to you) + the My Requests tab ─
   const vacBody = readFileSync("src/components/approvals-hub/vacation-approvals-body.tsx", "utf8");
   assert.match(vacBody, /Awaiting your response/, "vacation pending shows an 'Awaiting your response' group");
@@ -234,12 +264,13 @@ export function runApprovalsHubTests() {
   assert.match(vacationSvc, shouldScopeMatch, "the report RPC's employee scoping is role/scope-gated, not hrId-gated");
 
   // Never silently collapse a real failure to an empty bucket without at least one server log line
-  // — a swallowed error must not look identical to "nothing pending" for this actor.
-  assert.match(svc, /logError\("Approvals hub vacation action-center data load failed"/, "vacation bucket failures are logged, not silently swallowed");
-  assert.match(svc, /logError\("Approvals hub vacation report data load failed"/, "vacation report failures are logged, not silently swallowed");
-  assert.match(svc, /logError\("Approvals hub count vacation awaiting failed"/, "vacation badge-count failures are logged, not silently swallowed");
-  assert.match(svc, /logError\("Approvals hub count excuse awaiting failed"/, "excuse badge-count failures are logged, not silently swallowed");
-  assert.match(svc, /logError\("Approvals hub manager pending excuses load failed"/, "excuse pending failures are logged, not silently swallowed");
+  // — a swallowed error must not look identical to "nothing pending" for this actor. (Severity is
+  // decided by logLoadFailure: DEBUG for an expected Forbidden, ERROR for everything else.)
+  assert.match(svc, /logLoadFailure\("Approvals hub vacation action-center data load failed"/, "vacation bucket failures are logged, not silently swallowed");
+  assert.match(svc, /logLoadFailure\("Approvals hub vacation report data load failed"/, "vacation report failures are logged, not silently swallowed");
+  assert.match(svc, /logLoadFailure\("Approvals hub count vacation awaiting failed"/, "vacation badge-count failures are logged, not silently swallowed");
+  assert.match(svc, /logLoadFailure\("Approvals hub count excuse awaiting failed"/, "excuse badge-count failures are logged, not silently swallowed");
+  assert.match(svc, /logLoadFailure\("Approvals hub manager pending excuses load failed"/, "excuse pending failures are logged, not silently swallowed");
 
   // ──────────────────────────────────────────────────────────────────────────
   // Weekly / Monthly Plan approvals (consolidation only — routing unchanged)
