@@ -1105,6 +1105,12 @@ function resolveProduct(
 type ResolvedRegion = {
   regionCode: string;
   regionName: string;
+  /**
+   * The single area this branch belongs to, when the owner mapped one. null is the norm — a branch is
+   * a depot, not a rep territory — and a null area simply leaves the row region-scoped, exactly as
+   * before areas existed. Never inferred from a name: only an explicit mapping sets it.
+   */
+  areaCode: string | null;
   /** excluded mapping → cell dropped from totals, not a failure */
   excluded: boolean;
   /** unmapped non-excluded branch → batch blocks */
@@ -1122,26 +1128,27 @@ function resolveRegion(
   if (obs.directRegionCodeRaw != null) {
     const raw = normalizeCode(obs.directRegionCodeRaw);
     if (!raw) {
-      return { regionCode: "", regionName: "", excluded: false, failure: { field: "regionCode", message: "Region ID is required." } };
+      return { regionCode: "", regionName: "", areaCode: null, excluded: false, failure: { field: "regionCode", message: "Region ID is required." } };
     }
     if (raw === "NATIONAL") {
-      return { regionCode: "NATIONAL", regionName: "National", excluded: false, failure: null };
+      return { regionCode: "NATIONAL", regionName: "National", areaCode: null, excluded: false, failure: null };
     }
     const name = indexes.regionNameByCode.get(raw);
     if (!name) {
       return {
         regionCode: raw,
         regionName: raw,
+        areaCode: null,
         excluded: false,
         failure: { field: "regionCode", message: `Region ID "${raw}" is not in the Source of Sales master region table.` },
       };
     }
-    return { regionCode: raw, regionName: name, excluded: false, failure: null };
+    return { regionCode: raw, regionName: name, areaCode: null, excluded: false, failure: null };
   }
 
   // PS unallocated reconciliation rows carry no branch → region left empty, never blocks.
   if (obs.unallocated) {
-    return { regionCode: "", regionName: "", excluded: false, failure: null };
+    return { regionCode: "", regionName: "", areaCode: null, excluded: false, failure: null };
   }
 
   // PS stock path. Prefer the column-index mapping (it disambiguates genuinely duplicated location
@@ -1153,20 +1160,21 @@ function resolveRegion(
   if (obs.posColumnIndex != null) {
     const entry = branchMapIndex.byColumnIndex.get(obs.posColumnIndex);
     if (entry) {
-      if (entry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
-      return { regionCode: entry.regionCode, regionName: entry.regionName, excluded: false, failure: null };
+      if (entry.excluded) return { regionCode: "", regionName: "", areaCode: null, excluded: true, failure: null };
+      return { regionCode: entry.regionCode, regionName: entry.regionName, areaCode: entry.areaCode, excluded: false, failure: null };
     }
     const stockName = normalizeKey(obs.posColumnHeaderRaw ?? obs.rawBranchCode ?? obs.rawBranchName);
     const byName = stockName
       ? branchMapIndex.byBranch.get(`stock|${stockName}`) ?? branchMapIndex.byBranch.get(`any|${stockName}`)
       : undefined;
     if (byName) {
-      if (byName.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
-      return { regionCode: byName.regionCode, regionName: byName.regionName, excluded: false, failure: null };
+      if (byName.excluded) return { regionCode: "", regionName: "", areaCode: null, excluded: true, failure: null };
+      return { regionCode: byName.regionCode, regionName: byName.regionName, areaCode: byName.areaCode, excluded: false, failure: null };
     }
     return {
       regionCode: "",
       regionName: "",
+      areaCode: null,
       excluded: false,
       failure: {
         field: "regionCode",
@@ -1178,7 +1186,7 @@ function resolveRegion(
   // Stock-only rows with no branch (e.g. a grand-total fallback) → allow without a region, never block.
   const branchKeyRaw = obs.rawBranchCode || obs.rawBranchName;
   if (!branchKeyRaw && obs.side === "stock") {
-    return { regionCode: "", regionName: "", excluded: false, failure: null };
+    return { regionCode: "", regionName: "", areaCode: null, excluded: false, failure: null };
   }
 
   const normalized = normalizeKey(branchKeyRaw);
@@ -1193,12 +1201,13 @@ function resolveRegion(
       ? (branchMapIndex.bySoftName.get(`${obs.branchFileType}|${softKey}`) ?? branchMapIndex.bySoftName.get(`any|${softKey}`))
       : undefined;
     if (softEntry) {
-      if (softEntry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
-      return { regionCode: softEntry.regionCode, regionName: softEntry.regionName, excluded: false, failure: null };
+      if (softEntry.excluded) return { regionCode: "", regionName: "", areaCode: null, excluded: true, failure: null };
+      return { regionCode: softEntry.regionCode, regionName: softEntry.regionName, areaCode: softEntry.areaCode, excluded: false, failure: null };
     }
     return {
       regionCode: "",
       regionName: "",
+      areaCode: null,
       excluded: false,
       failure: {
         field: "regionCode",
@@ -1206,8 +1215,8 @@ function resolveRegion(
       },
     };
   }
-  if (entry.excluded) return { regionCode: "", regionName: "", excluded: true, failure: null };
-  return { regionCode: entry.regionCode, regionName: entry.regionName, excluded: false, failure: null };
+  if (entry.excluded) return { regionCode: "", regionName: "", areaCode: null, excluded: true, failure: null };
+  return { regionCode: entry.regionCode, regionName: entry.regionName, areaCode: entry.areaCode, excluded: false, failure: null };
 }
 
 // Aggregation key = product_code + branch identity. Branch identity uses the verbatim raw branch
@@ -1220,6 +1229,7 @@ type Agg = {
   factoryPrice: number;
   regionCode: string;
   regionName: string;
+  areaCode: string | null;
   branchCode: string;
   branchName: string;
   itemCode: string;
@@ -1399,6 +1409,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
         factoryPrice: product.factoryPrice,
         regionCode: region.regionCode,
         regionName: region.regionName,
+        areaCode: region.areaCode,
         branchCode: obs.rawBranchCode,
         // Direct: branch maps directly to region — label it "Direct – <Region>" instead of the
         // raw Pharmacy Name (kept only in rawRow as audit context, never a dashboard dimension).
@@ -1512,6 +1523,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
       distributorName,
       regionCode: agg.regionCode,
       regionName: agg.regionName,
+      areaCode: agg.areaCode,
       branchCode: agg.branchCode,
       branchName: agg.branchName,
       itemCode: agg.itemCode,
@@ -1534,6 +1546,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
         branchName: agg.branchName,
         regionCode: agg.regionCode,
         regionName: agg.regionName,
+        ...(agg.areaCode ? { areaCode: agg.areaCode } : {}),
         grossSalesQty: String(grossForDisplay),
         returnQty: String(returnForDisplay),
         netQty: String(netQty),

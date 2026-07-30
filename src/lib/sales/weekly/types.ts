@@ -45,6 +45,12 @@ export type WeeklyParsedRow = {
   distributorName: string;
   regionCode: string;
   regionName: string;
+  /**
+   * The area this branch belongs to, when the owner explicitly mapped one (weekly_sales_branch_region_map).
+   * null is normal: a branch is a distributor depot, not a rep territory. A null area leaves the row
+   * region-scoped, exactly as before areas existed.
+   */
+  areaCode: string | null;
   branchCode: string;
   branchName: string;
   itemCode: string;

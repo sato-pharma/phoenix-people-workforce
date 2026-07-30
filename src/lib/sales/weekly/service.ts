@@ -324,6 +324,7 @@ async function persistWeeklyUpload(
     distributor_name: row.distributorName,
     region_code: row.regionCode,
     region_name: row.regionName,
+    area_code: row.areaCode,
     branch_code: row.branchCode,
     branch_name: row.branchName,
     item_code: row.itemCode,
@@ -501,6 +502,8 @@ type FactRow = {
   distributorName: string;
   regionCode: string;
   regionName: string;
+  /** Area from the branch mapping; null when the branch has no area mapping (then region-scoped). */
+  areaCode: string | null;
   branchCode: string;
   branchName: string;
   productCode: string;
@@ -960,7 +963,7 @@ export async function loadWeeklyDashboard(filters?: {
     let p0Query = supabase
       .from("weekly_sales_rows")
       .select(
-        "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+        "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, area_code, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
         { count: "exact" },
       )
       .order("id", { ascending: true })
@@ -982,6 +985,7 @@ export async function loadWeeklyDashboard(filters?: {
         distributorName: String(row.distributor_name ?? ""),
         regionCode: String(row.region_code ?? ""),
         regionName: String(row.region_name ?? ""),
+        areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
         branchCode: String(row.branch_code ?? ""),
         branchName: String(row.branch_name ?? ""),
         productCode: String(row.product_code ?? ""),
@@ -1001,7 +1005,7 @@ export async function loadWeeklyDashboard(filters?: {
         let q = supabase
           .from("weekly_sales_rows")
           .select(
-            "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
+            "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, area_code, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
           )
           .order("id", { ascending: true })
           .range(from, from + pageSize - 1)
@@ -1023,6 +1027,7 @@ export async function loadWeeklyDashboard(filters?: {
             distributorName: String(row.distributor_name ?? ""),
             regionCode: String(row.region_code ?? ""),
             regionName: String(row.region_name ?? ""),
+            areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
             branchCode: String(row.branch_code ?? ""),
             branchName: String(row.branch_name ?? ""),
             productCode: String(row.product_code ?? ""),

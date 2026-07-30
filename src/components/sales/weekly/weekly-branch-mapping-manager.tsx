@@ -11,9 +11,9 @@ import type {
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
-type DraftRow = { branchName: string; branchCode: string; columnIndex: string; regionCode: string; excluded: boolean };
+type DraftRow = { branchName: string; branchCode: string; columnIndex: string; regionCode: string; areaCode: string; excluded: boolean };
 
-const EMPTY_DRAFT: DraftRow = { branchName: "", branchCode: "", columnIndex: "", regionCode: "", excluded: false };
+const EMPTY_DRAFT: DraftRow = { branchName: "", branchCode: "", columnIndex: "", regionCode: "", areaCode: "", excluded: false };
 
 export function WeeklyBranchMappingManager({
   initial,
@@ -98,17 +98,26 @@ export function WeeklyBranchMappingManager({
       rawBranch: isStock ? draft.branchName : draft.branchCode || draft.branchName,
       branchName: draft.branchName || draft.branchCode,
       regionCode: draft.regionCode,
+      areaCode: draft.areaCode || null,
       branchColumnIndex: isStock && draft.columnIndex ? Number(draft.columnIndex) : null,
       excluded: draft.excluded,
     });
     if (ok) setDraft(EMPTY_DRAFT);
   }
 
-  function saveRow(row: WeeklyBranchRegionRow, patch: { regionCode?: string; excluded?: boolean }) {
+  function saveRow(
+    row: WeeklyBranchRegionRow,
+    patch: { regionCode?: string; areaCode?: string | null; excluded?: boolean },
+  ) {
+    // Changing the region invalidates any area sitting in the old one, so clear it rather than send a
+    // combination the server would (correctly) reject.
+    const regionChanged = patch.regionCode != null && patch.regionCode !== row.regionCode;
+    const areaCode = patch.areaCode !== undefined ? patch.areaCode : regionChanged ? null : row.areaCode;
     return mutate({
       rawBranch: row.rawBranch,
       branchName: row.branchHeaderRaw ?? row.rawBranch,
       regionCode: patch.regionCode ?? row.regionCode,
+      areaCode: areaCode || null,
       branchColumnIndex: row.branchColumnIndex,
       excluded: patch.excluded ?? row.excluded,
     });
@@ -153,6 +162,13 @@ export function WeeklyBranchMappingManager({
   }
 
   const regions = useMemo(() => data?.masterRegions ?? [], [data]);
+  const allAreas = useMemo(() => data?.masterAreas ?? [], [data]);
+  // An area may only be attached to a branch already mapped to that area's region.
+  const areasForRegion = useMemo(
+    () => (regionCode: string) =>
+      regionCode ? allAreas.filter((area) => area.regionCode.toUpperCase() === regionCode.toUpperCase()) : [],
+    [allAreas],
+  );
   const rows = data?.rows ?? [];
 
   if (!data) {
@@ -298,6 +314,21 @@ export function WeeklyBranchMappingManager({
             ))}
           </SearchableSelect>
         </Field>
+        <Field label="Area (optional)">
+          <SearchableSelect
+            className="h-9 w-48 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-60"
+            disabled={busy || draft.excluded || !draft.regionCode}
+            onChange={(event) => setDraft((prev) => ({ ...prev, areaCode: event.target.value }))}
+            value={draft.areaCode}
+          >
+            <option value="">Whole region</option>
+            {areasForRegion(draft.regionCode).map((area) => (
+              <option key={area.areaCode} value={area.areaCode}>
+                {area.areaName} ({area.areaCode})
+              </option>
+            ))}
+          </SearchableSelect>
+        </Field>
         <label className="flex h-9 items-center gap-1 text-xs font-bold text-[#64748B]">
           <input
             checked={draft.excluded}
@@ -326,6 +357,7 @@ export function WeeklyBranchMappingManager({
               <th className="px-3 py-2">Code / key</th>
               {isStock && <th className="px-3 py-2">Col #</th>}
               <th className="px-3 py-2">Region</th>
+              <th className="px-3 py-2">Area (optional)</th>
               <th className="px-3 py-2 text-center">Excluded</th>
               <th className="px-3 py-2 text-right" />
             </tr>
@@ -333,7 +365,7 @@ export function WeeklyBranchMappingManager({
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={isStock ? 6 : 5}>
+                <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={isStock ? 7 : 6}>
                   No branches mapped yet — add one above or upload the template.
                 </td>
               </tr>
@@ -354,6 +386,21 @@ export function WeeklyBranchMappingManager({
                     {regions.map((region) => (
                       <option key={region.regionCode} value={region.regionCode}>
                         {region.regionName} ({region.regionCode})
+                      </option>
+                    ))}
+                  </SearchableSelect>
+                </td>
+                <td className="px-3 py-2">
+                  <SearchableSelect
+                    className="h-8 w-48 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74] disabled:opacity-50"
+                    disabled={busy || row.excluded || !row.regionCode}
+                    onChange={(event) => void saveRow(row, { areaCode: event.target.value })}
+                    value={row.areaCode ?? ""}
+                  >
+                    <option value="">Whole region</option>
+                    {areasForRegion(row.regionCode).map((area) => (
+                      <option key={area.areaCode} value={area.areaCode}>
+                        {area.areaName} ({area.areaCode})
                       </option>
                     ))}
                   </SearchableSelect>

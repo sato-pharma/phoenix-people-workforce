@@ -45,6 +45,7 @@ export async function runWeeklySalesAccessTests() {
     tier: "territory",
     allowedLineNames: new Set(["Pedia"]),
     allowedRegionCodes: new Set(["AB"]),
+    allowedAreaCodes: null,
     canViewHeadOffice: true,
   };
   assert.deepEqual(codesOf(applyWeeklyAccessScope(rows, territory)), ["GU001"], "territory line+region bound");
@@ -54,6 +55,7 @@ export async function runWeeklySalesAccessTests() {
     tier: "territory",
     allowedLineNames: new Set(["Pedia"]),
     allowedRegionCodes: null,
+    allowedAreaCodes: null,
     canViewHeadOffice: true,
   };
   assert.deepEqual(codesOf(applyWeeklyAccessScope(rows, lineOnly)), ["GU001"], "territory line-only strips Lacto");

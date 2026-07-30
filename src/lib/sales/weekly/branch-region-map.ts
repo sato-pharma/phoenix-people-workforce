@@ -13,11 +13,21 @@ import type { WeeklyMappingImportResult } from "@/lib/sales/weekly/product-alias
 // The region target is a Source-of-Sales master region (controlled vocabulary, validated here).
 // Template mirrors the owner's EGD example: BRANCH_NAME | BRANCH_CODE | REFERENCE REGION ID
 // (PS stock additionally pins COLUMN_INDEX because its location headers can repeat).
+//
+// AREA is OPTIONAL and deliberately so. A branch is a distributor DEPOT, not a rep territory —
+// "Tanta Branch" ships to customers across several areas — so an area may only be asserted where the
+// branch genuinely belongs to one, and must sit inside the branch's own region. Left blank the branch
+// stays region-only, which is exactly the pre-existing behaviour. This is what lets a District Manager
+// be scoped by his real areas even when one of them sits in another region (CNS "Kafr El-Sheikh 1" is
+// owned by the Alex-BHR DM but lives in Delta (1)) without exposing that region's other areas.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type WeeklyBranchFileType = "any" | "sales" | "stock";
 
 export type WeeklyMasterRegion = { regionCode: string; regionName: string };
+
+/** A selectable area target, carrying its region so the UI/import can enforce area-inside-region. */
+export type WeeklyMasterArea = { areaCode: string; areaName: string; regionCode: string };
 
 export type WeeklyBranchRegionRow = {
   id: string;
@@ -28,6 +38,9 @@ export type WeeklyBranchRegionRow = {
   branchHeaderRaw: string | null;
   regionCode: string;
   regionName: string;
+  /** Optional area inside `regionCode`. null = region-only mapping (default). */
+  areaCode: string | null;
+  areaName: string | null;
   excluded: boolean;
   updatedAt: string;
 };
@@ -37,21 +50,30 @@ export type WeeklyBranchRegionAdmin = {
   fileType: WeeklyBranchFileType;
   distributors: { code: string; name: string }[];
   masterRegions: WeeklyMasterRegion[];
+  masterAreas: WeeklyMasterArea[];
   rows: WeeklyBranchRegionRow[];
 };
 
 export type WeeklyBranchRegionIndex = {
   /** key = `${sourceFileType}|${normalizedBranch}` */
-  byBranch: Map<string, { regionCode: string; regionName: string; excluded: boolean }>;
+  byBranch: Map<string, WeeklyBranchRegionEntry>;
   /** PS stock: keyed by column index */
-  byColumnIndex: Map<number, { regionCode: string; regionName: string; excluded: boolean; headerRaw: string }>;
+  byColumnIndex: Map<number, WeeklyBranchRegionEntry & { headerRaw: string }>;
   /**
    * Soft/fuzzy fallback keyed by `${sourceFileType}|${normalizeSoft(normalizedBranch)}`.
    * Tolerates the weekly PS header drift pattern: trailing digit suffixes, _ك variants,
    * parenthetical qualifiers. Only consulted when the exact byBranch lookup fails.
    * First registered entry wins (avoids overwriting an exact match that also soft-matches).
    */
-  bySoftName: Map<string, { regionCode: string; regionName: string; excluded: boolean }>;
+  bySoftName: Map<string, WeeklyBranchRegionEntry>;
+};
+
+/** What a branch resolves to: its region, and optionally the single area it belongs to. */
+export type WeeklyBranchRegionEntry = {
+  regionCode: string;
+  regionName: string;
+  areaCode: string | null;
+  excluded: boolean;
 };
 
 function fileTypeOf(value: unknown): WeeklyBranchFileType {
@@ -72,6 +94,54 @@ export async function listMasterRegions(): Promise<WeeklyMasterRegion[]> {
     .sort((left, right) => left.regionName.localeCompare(right.regionName) || left.regionCode.localeCompare(right.regionCode));
 }
 
+/** Active Source-of-Sales areas, each carrying its region — the controlled vocabulary for the
+ *  optional area target. Sorted by region then area so the admin picker groups naturally. */
+export async function listMasterAreas(): Promise<WeeklyMasterArea[]> {
+  const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const out: WeeklyMasterArea[] = [];
+  const seen = new Set<string>();
+  for (const area of references.areas ?? []) {
+    const areaCode = normalizeCode(area.areaCode);
+    const regionCode = normalizeCode(area.regionCode);
+    if (!areaCode || seen.has(areaCode)) continue;
+    seen.add(areaCode);
+    out.push({ areaCode, areaName: String(area.areaName ?? "").trim() || areaCode, regionCode });
+  }
+  return out.sort(
+    (left, right) => left.regionCode.localeCompare(right.regionCode) || left.areaCode.localeCompare(right.areaCode),
+  );
+}
+
+/**
+ * Validate an optional area target. Blank ⇒ null (region-only, the default). A non-blank value must be
+ * a known active area AND sit inside the branch's mapped region — a branch cannot be attributed to an
+ * area in a region it does not serve, which would silently mis-scope every manager downstream.
+ */
+export function resolveBranchArea(
+  areaCodeRaw: string | null | undefined,
+  regionCode: string,
+  masterAreas: WeeklyMasterArea[],
+): { areaCode: string | null; areaName: string | null } {
+  const key = normalizeCode(areaCodeRaw ?? "");
+  if (!key) return { areaCode: null, areaName: null };
+  const match = masterAreas.find((area) => area.areaCode === key);
+  if (!match) {
+    throw new SalesWorkflowError(
+      "unknown_area",
+      `Area ID "${String(areaCodeRaw ?? "").trim()}" is not an official Source of Sales area.`,
+      400,
+    );
+  }
+  if (normalizeCode(regionCode) && match.regionCode !== normalizeCode(regionCode)) {
+    throw new SalesWorkflowError(
+      "area_region_mismatch",
+      `Area "${match.areaCode}" belongs to region ${match.regionCode}, not the branch's region ${normalizeCode(regionCode)}.`,
+      400,
+    );
+  }
+  return { areaCode: match.areaCode, areaName: match.areaName };
+}
+
 function mapRow(row: Record<string, unknown>): WeeklyBranchRegionRow {
   return {
     id: String(row.id),
@@ -82,6 +152,8 @@ function mapRow(row: Record<string, unknown>): WeeklyBranchRegionRow {
     branchHeaderRaw: row.branch_header_raw == null ? null : String(row.branch_header_raw),
     regionCode: String(row.region_code ?? ""),
     regionName: String(row.region_name ?? ""),
+    areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code),
+    areaName: row.area_name == null || String(row.area_name).trim() === "" ? null : String(row.area_name),
     excluded: Boolean(row.excluded),
     updatedAt: String(row.updated_at ?? ""),
   };
@@ -93,11 +165,11 @@ export async function loadWeeklyBranchRegionAdmin(
 ): Promise<WeeklyBranchRegionAdmin> {
   const code = canonicalWeeklyDistributorCode(distributorCode);
   const supabase = getSupabaseAdmin();
-  const masterRegions = await listMasterRegions();
+  const [masterRegions, masterAreas] = await Promise.all([listMasterRegions(), listMasterAreas()]);
 
   let query = supabase
     .from("weekly_sales_branch_region_map")
-    .select("id, distributor_code, raw_branch, source_file_type, branch_column_index, branch_header_raw, region_code, region_name, excluded, updated_at")
+    .select("id, distributor_code, raw_branch, source_file_type, branch_column_index, branch_header_raw, region_code, region_name, area_code, area_name, excluded, updated_at")
     .eq("distributor_code", code)
     .order("raw_branch", { ascending: true });
   if (fileType !== "any") query = query.in("source_file_type", [fileType, "any"]);
@@ -110,6 +182,7 @@ export async function loadWeeklyBranchRegionAdmin(
     fileType,
     distributors: weeklyDistributorOptions(),
     masterRegions,
+    masterAreas,
     rows: (data ?? []).map(mapRow),
   };
 }
@@ -155,6 +228,8 @@ export async function upsertBranchRegionRow(input: {
   rawBranch: string;
   branchName?: string | null;
   regionCode: string;
+  /** Optional area inside regionCode. Blank/undefined keeps the branch region-only. */
+  areaCode?: string | null;
   sourceFileType?: WeeklyBranchFileType;
   branchColumnIndex?: number | null;
   excluded?: boolean;
@@ -171,8 +246,11 @@ export async function upsertBranchRegionRow(input: {
   const excluded = Boolean(input.excluded);
   const normalizedBranch = normalizeKey(rawBranch || headerRaw);
 
-  const masterByCode = new Map((await listMasterRegions()).map((region) => [region.regionCode, region.regionName]));
+  const [regions, masterAreas] = await Promise.all([listMasterRegions(), listMasterAreas()]);
+  const masterByCode = new Map(regions.map((region) => [region.regionCode, region.regionName]));
   const region = resolveRegion(input.regionCode, excluded, masterByCode);
+  // An excluded branch contributes no rows, so it carries no area either.
+  const area = excluded ? { areaCode: null, areaName: null } : resolveBranchArea(input.areaCode, region.regionCode, masterAreas);
 
   const supabase = getSupabaseAdmin();
   const existingId = await findExistingRow({ distributorCode, sourceFileType, normalizedBranch, branchColumnIndex });
@@ -186,6 +264,8 @@ export async function upsertBranchRegionRow(input: {
     branch_header_raw: headerRaw || null,
     region_code: region.regionCode,
     region_name: region.regionName,
+    area_code: area.areaCode,
+    area_name: area.areaName,
     excluded,
     updated_by: input.actorId,
     updated_at: new Date().toISOString(),
@@ -217,9 +297,10 @@ export async function buildBranchRegionTemplate(
   const code = canonicalWeeklyDistributorCode(distributorCode);
   const name = weeklyDistributorByCode(code)?.name ?? code;
   const isStock = fileType === "stock";
-  const [{ rows }, masterRegions] = await Promise.all([
+  const [{ rows }, masterRegions, masterAreas] = await Promise.all([
     loadWeeklyBranchRegionAdmin(code, fileType),
     listMasterRegions(),
+    listMasterAreas(),
   ]);
 
   const workbook = new ExcelJS.Workbook();
@@ -231,6 +312,8 @@ export async function buildBranchRegionTemplate(
     { header: "BRANCH_NAME", key: "branchName", width: 40 },
     { header: "BRANCH_CODE", key: "branchCode", width: 20 },
     { header: "REFERENCE REGION ID", key: "regionCode", width: 22 },
+    // Optional: leave blank to keep the branch region-only (the default).
+    { header: "REFERENCE AREA ID", key: "areaCode", width: 22 },
     { header: "EXCLUDED", key: "excluded", width: 12 },
   ];
   if (isStock) columns.splice(2, 0, { header: "COLUMN_INDEX", key: "columnIndex", width: 14 });
@@ -242,11 +325,12 @@ export async function buildBranchRegionTemplate(
       branchCode: row.branchColumnIndex != null ? "" : row.rawBranch,
       columnIndex: row.branchColumnIndex ?? "",
       regionCode: row.regionCode,
+      areaCode: row.areaCode ?? "",
       excluded: row.excluded ? "yes" : "",
     });
   }
   if (rows.length === 0) {
-    sheet.addRow({ branchName: "paste branch / outlet name", branchCode: "branch key", columnIndex: "", regionCode: "CA", excluded: "" });
+    sheet.addRow({ branchName: "paste branch / outlet name", branchCode: "branch key", columnIndex: "", regionCode: "CA", areaCode: "", excluded: "" });
   }
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF97316" } };
@@ -261,6 +345,21 @@ export async function buildBranchRegionTemplate(
   reference.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   reference.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
   reference.views = [{ state: "frozen", ySplit: 1 }];
+
+  // Areas are optional, so they get their own reference sheet showing which region each belongs to —
+  // an area may only be used on a branch mapped to that same region.
+  const areaReference = workbook.addWorksheet("Official Areas");
+  areaReference.columns = [
+    { header: "REFERENCE AREA ID", key: "areaCode", width: 22 },
+    { header: "AREA NAME", key: "areaName", width: 32 },
+    { header: "REGION ID", key: "regionCode", width: 16 },
+  ];
+  for (const area of masterAreas) {
+    areaReference.addRow({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode });
+  }
+  areaReference.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  areaReference.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0F172A" } };
+  areaReference.views = [{ state: "frozen", ySplit: 1 }];
 
   return workbook.xlsx.writeBuffer() as unknown as ArrayBuffer;
 }
@@ -306,13 +405,15 @@ export async function importBranchRegionWorkbook(input: {
   const colName = headers.get("BRANCHNAME") ?? 0;
   const colCode = headers.get("BRANCHCODE") ?? 0;
   const colRegion = headers.get("REFERENCEREGIONID") ?? headers.get("REGIONID") ?? headers.get("REGIONCODE") ?? 0;
+  const colArea = headers.get("REFERENCEAREAID") ?? headers.get("AREAID") ?? headers.get("AREACODE") ?? 0;
   const colIndex = headers.get("COLUMNINDEX") ?? 0;
   const colExcluded = headers.get("EXCLUDED") ?? 0;
   if (!colRegion) {
     throw new SalesWorkflowError("invalid_mapping_template", 'The mapping sheet must have a "REFERENCE REGION ID" column.', 400);
   }
 
-  const masterByCode = new Map((await listMasterRegions()).map((region) => [region.regionCode, region.regionName]));
+  const [regionsList, masterAreas] = await Promise.all([listMasterRegions(), listMasterAreas()]);
+  const masterByCode = new Map(regionsList.map((region) => [region.regionCode, region.regionName]));
   const blockedRows: WeeklyMappingImportResult["blockedRows"] = [];
   type Pending = {
     rawBranch: string;
@@ -321,6 +422,8 @@ export async function importBranchRegionWorkbook(input: {
     branchColumnIndex: number | null;
     regionCode: string;
     regionName: string;
+    areaCode: string | null;
+    areaName: string | null;
     excluded: boolean;
   };
   const pending: Pending[] = [];
@@ -331,6 +434,7 @@ export async function importBranchRegionWorkbook(input: {
     const branchName = cellString(row, colName);
     const branchCode = cellString(row, colCode);
     const regionRaw = cellString(row, colRegion);
+    const areaRaw = colArea ? cellString(row, colArea) : "";
     const indexRaw = cellString(row, colIndex);
     const excludedRaw = cellString(row, colExcluded).toLowerCase();
     const excluded = excludedRaw === "yes" || excludedRaw === "true" || excludedRaw === "1" || excludedRaw === "y";
@@ -338,7 +442,7 @@ export async function importBranchRegionWorkbook(input: {
     const branchColumnIndex = indexRaw ? Number(indexRaw) : null;
     const rawBranch = branchColumnIndex != null ? branchName || branchCode : branchCode || branchName;
 
-    if (!rawBranch && branchColumnIndex == null && !regionRaw) {
+    if (!rawBranch && branchColumnIndex == null && !regionRaw && !areaRaw) {
       skipped += 1;
       continue;
     }
@@ -355,6 +459,19 @@ export async function importBranchRegionWorkbook(input: {
       blockedRows.push({ rowNumber, reason: `Region ID "${regionRaw || "(blank)"}" is not an official Source of Sales region.`, values: rawBranch || branchName });
       continue;
     }
+    // The optional area must be a real area inside this branch's region. A bad value BLOCKS the row
+    // rather than being dropped silently — a wrong area mis-scopes a manager's dashboard invisibly.
+    let area: { areaCode: string | null; areaName: string | null };
+    try {
+      area = excluded ? { areaCode: null, areaName: null } : resolveBranchArea(areaRaw, regionKey, masterAreas);
+    } catch (error) {
+      blockedRows.push({
+        rowNumber,
+        reason: error instanceof SalesWorkflowError ? error.message : `Area ID "${areaRaw}" could not be validated.`,
+        values: rawBranch || branchName,
+      });
+      continue;
+    }
     pending.push({
       rawBranch: rawBranch || branchName,
       branchName: branchName || rawBranch,
@@ -362,6 +479,8 @@ export async function importBranchRegionWorkbook(input: {
       branchColumnIndex,
       regionCode: excluded ? "" : regionKey,
       regionName: excluded ? "" : masterByCode.get(regionKey) ?? "",
+      areaCode: area.areaCode,
+      areaName: area.areaName,
       excluded,
     });
   }
@@ -387,6 +506,8 @@ export async function importBranchRegionWorkbook(input: {
       branch_header_raw: item.branchName || null,
       region_code: item.regionCode,
       region_name: item.regionName,
+      area_code: item.areaCode,
+      area_name: item.areaName,
       excluded: item.excluded,
       updated_by: input.actorId,
       updated_at: new Date().toISOString(),
@@ -410,7 +531,7 @@ export async function loadBranchRegionIndex(distributorCode: string): Promise<We
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("weekly_sales_branch_region_map")
-    .select("raw_branch, normalized_branch, source_file_type, branch_column_index, branch_header_raw, region_code, region_name, excluded")
+    .select("raw_branch, normalized_branch, source_file_type, branch_column_index, branch_header_raw, region_code, region_name, area_code, excluded")
     .eq("distributor_code", code);
   if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
 
@@ -418,9 +539,10 @@ export async function loadBranchRegionIndex(distributorCode: string): Promise<We
   for (const row of data ?? []) {
     const fileType = fileTypeOf(row.source_file_type);
     const normalized = String(row.normalized_branch ?? "");
-    const entry = {
+    const entry: WeeklyBranchRegionEntry = {
       regionCode: String(row.region_code ?? ""),
       regionName: String(row.region_name ?? ""),
+      areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
       excluded: Boolean(row.excluded),
     };
     if (row.branch_column_index != null) {
