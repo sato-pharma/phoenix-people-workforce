@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { systemAuthEmailText } from "@/config/system-settings";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { persistSupabaseAuthIdentityLink, provisionSupabaseAuthIdentity } from "@/lib/auth/supabase-identity";
+import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -120,6 +121,36 @@ async function invalidateOutstandingTokens(loginId: string) {
   }
 }
 
+/**
+ * The address a password setup/reset link may actually be mailed to, or null.
+ *
+ * Candidate order mirrors the notification recipient resolver: the explicit
+ * `app_auth_users.email` override first, then the employee's real `employees.work_email`.
+ * `auth_email` is never a candidate — see the note at the call site.
+ *
+ * A failed employees lookup degrades to "no deliverable address" rather than throwing: the caller
+ * then either refuses the email send with a clear message or (in copy mode) proceeds normally, so
+ * a transient directory problem can never block link GENERATION.
+ */
+async function resolveDeliverableEmail(user: { email?: string | null; hr_id?: string | null }) {
+  const override = pickDeliverableEmail(user.email);
+  if (override) return override;
+
+  const hrId = String(user.hr_id ?? "").trim();
+  if (!hrId) return null;
+
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("employees")
+      .select("work_email")
+      .eq("hr_id", hrId)
+      .maybeSingle();
+    return pickDeliverableEmail((data as { work_email?: string | null } | null)?.work_email);
+  } catch {
+    return null;
+  }
+}
+
 export async function sendPasswordSetupLink(input: {
   actorLoginId?: string | null;
   deliveryMode?: "copy" | "email";
@@ -134,8 +165,21 @@ export async function sendPasswordSetupLink(input: {
     throw new Error(`User ${loginId} is inactive.`);
   }
   const deliveryMode = input.deliveryMode ?? "email";
-  if (deliveryMode === "email" && !user.email) {
-    throw new Error(`User ${loginId} does not have an email address.`);
+  // Same resolution the notification recipient resolver already uses (see resolveRecipient in
+  // src/lib/notifications/system.ts): app_auth_users.email is an optional override that is set for
+  // almost nobody, and the real mailbox lives on employees.work_email. Checking only the former
+  // rejected 107 of 112 active production users with "does not have an email address" while their
+  // @satopharma.com work address was on file the whole time.
+  //
+  // auth_email is deliberately NOT a candidate: every row has one, but it is the synthetic Supabase
+  // login key phx-<hex>@auth.phoenix.local, not a mailbox. Including it would turn this error into
+  // something far worse — a password link "sent" successfully into a hard bounce. pickDeliverableEmail
+  // rejects it (and any .local address) even if a future caller passes it in by mistake.
+  const deliverableEmail = await resolveDeliverableEmail(user);
+  if (deliveryMode === "email" && !deliverableEmail) {
+    throw new Error(
+      `User ${loginId} has no deliverable email address (checked app_auth_users.email and employees.work_email). Use the copy-link delivery mode instead.`,
+    );
   }
 
   const purpose = input.purpose ?? (user.force_password_reset ? "setup" : "reset");
@@ -155,7 +199,7 @@ export async function sendPasswordSetupLink(input: {
       expires_at: expiresAt,
       login_id: loginId,
       purpose,
-      sent_to_email: deliveryMode === "email" ? user.email : null,
+      sent_to_email: deliveryMode === "email" ? deliverableEmail : null,
       token_hash: tokenHash,
       updated_at: now,
     });
@@ -189,7 +233,7 @@ export async function sendPasswordSetupLink(input: {
           actorId: input.actorLoginId ?? "system",
           channels: ["email"],
           email: {
-            candidateEmail: user.email,
+            candidateEmail: deliverableEmail,
             ctaHref: setupUrl,
             ctaLabel: "Set your password",
             metrics: [
@@ -199,7 +243,7 @@ export async function sendPasswordSetupLink(input: {
             ],
             notificationType: purpose === "setup" ? "user_created" : "password_reset",
             recipientMode: "candidate",
-            recipients: user.email ? [user.email] : [],
+            recipients: deliverableEmail ? [deliverableEmail] : [],
             subject: purpose === "setup" ? systemAuthEmailText.accountSetupSubject : systemAuthEmailText.passwordResetSubject,
             summary:
               purpose === "setup"
@@ -239,7 +283,7 @@ export async function sendPasswordSetupLink(input: {
       expiresAt,
       reason: input.governanceReason ?? null,
       purpose,
-      sentTo: deliveryMode === "email" ? user.email : null,
+      sentTo: deliveryMode === "email" ? deliverableEmail : null,
       token: "[redacted]",
       url: "[redacted]",
     },
@@ -253,7 +297,7 @@ export async function sendPasswordSetupLink(input: {
         ? `Password ${purpose === "setup" ? "setup" : "reset"} link generated for copy/paste.`
         : !emailSent
           ? `Link generated but email was not delivered: ${emailDelivery?.reason ?? emailDelivery?.error ?? "Delivery did not complete."}`
-          : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${user.email}.`,
+          : `Password ${purpose === "setup" ? "setup" : "reset"} link sent to ${deliverableEmail}.`,
     deliveryMode,
     expiresAt,
     loginId,
