@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+import { countDirectOrderAwaiting } from "@/lib/direct-orders/service";
 import {
   getExcuseAwaitingBadge,
   getPlanAwaitingBadge,
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const [plan, vacation, excuse, hub] = await Promise.allSettled([
+    const [plan, vacation, excuse, hub, directOrders] = await Promise.allSettled([
       (async () => {
         await assertPermission(access, "weekly_plans", "read");
         return getPlanAwaitingBadge(access);
@@ -43,6 +44,14 @@ export async function GET(request: Request) {
         const items = await getAwaitingMyActionItems(access, audience);
         return { count: items.length };
       })(),
+      // Direct Orders Approvals was the only Approvals Hub tab with no badge, even though
+      // countDirectOrderAwaiting already existed (and had zero consumers). It is scoped to the
+      // caller's own rung via viewerCanActOnStep and asserts direct_orders:read itself, so a role
+      // without the resource falls back to {count: 0} exactly like every other domain here.
+      (async () => {
+        await assertPermission(access, "direct_orders", "read");
+        return { count: await countDirectOrderAwaiting(access) };
+      })(),
     ]);
     return NextResponse.json(
       {
@@ -50,6 +59,7 @@ export async function GET(request: Request) {
         vacation: vacation.status === "fulfilled" ? vacation.value : { count: 0, overdue: false },
         excuse: excuse.status === "fulfilled" ? excuse.value : { count: 0, overdue: false },
         hub: hub.status === "fulfilled" ? hub.value : { count: 0 },
+        directOrders: directOrders.status === "fulfilled" ? directOrders.value : { count: 0 },
       },
       { headers: { "Cache-Control": "no-store" } },
     );
@@ -59,6 +69,7 @@ export async function GET(request: Request) {
       vacation: { count: 0, overdue: false },
       excuse: { count: 0, overdue: false },
       hub: { count: 0 },
+      directOrders: { count: 0 },
     });
   }
 }
