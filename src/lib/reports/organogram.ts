@@ -5,7 +5,8 @@ import {
   normalizeLineName,
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
-import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
+import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
 import { applyOrganogramMirrorSafety, seatOccupancyKey } from "@/lib/reports/organogram-safety";
 import {
   getVacancyReport,
@@ -293,7 +294,63 @@ export async function getOrganogramReport(
     scopedRows = scopedRows.filter((row) => !isHeadOfficeRow(row));
   }
 
+  // Owner decision (2026-07-30): a Regional Manager sees THEIR OWN region subtree, not the whole
+  // product line. Line scope above admits every district on the line — for the live Pedia RM that
+  // meant Cairo, Giza and Upper Egypt, districts he does not own. It also made the organogram his
+  // WIDEST people view while contracts/attendance/directory were his narrowest. Narrowed here, after
+  // the line bound, so the line remains a hard outer limit and this can only ever subtract.
+  if (options.mode === "line" && access.role === "Regional Manager") {
+    scopedRows = await narrowOrganogramRowsToManagerSubtree(scopedRows, access);
+  }
+
   return { organogramRows: scopedRows, rows: [], summary: seatReport.summary };
+}
+
+/**
+ * Keep only the rows inside a manager's own reporting subtree, plus the manager's own row.
+ *
+ * Seat-continuity aware via isWithinManagerHierarchy, so a district whose manager seat is mid
+ * replacement is not dropped. Vacant-seat rows (which carry no occupant HR_ID) are kept when the seat
+ * hangs off someone inside the subtree, so an RM still sees the open seats they are accountable for.
+ * Fails CLOSED to the manager's own row if their HR_ID cannot be resolved — never to the whole line.
+ */
+async function narrowOrganogramRowsToManagerSubtree(
+  rows: OrganogramReportRow[],
+  access: AccessContext,
+): Promise<OrganogramReportRow[]> {
+  const viewerKey = normalizeHrIdForAccess(access.hrId);
+  if (!viewerKey) return [];
+
+  const directory = await getEmployeeDirectory();
+  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
+  for (const employee of directory.employees) {
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (key) byCanonicalHrId.set(key, employee);
+  }
+
+  const inSubtree = new Set<string>([viewerKey]);
+  for (const employee of directory.employees) {
+    const key = normalizeHrIdForAccess(employee.hrId);
+    if (!key) continue;
+    if (
+      isWithinManagerHierarchy({
+        employee,
+        byCanonicalHrId,
+        viewerCanonicalHrId: viewerKey,
+        canonicalize: normalizeHrIdForAccess,
+      })
+    ) {
+      inSubtree.add(key);
+    }
+  }
+
+  return rows.filter((row) => {
+    const occupant = normalizeHrIdForAccess(row.hrId ?? null);
+    if (occupant) return inSubtree.has(occupant);
+    // Vacant / structural row: keep it when the seat reports into the subtree.
+    const manager = normalizeHrIdForAccess(row.managerHrId ?? null);
+    return Boolean(manager && inSubtree.has(manager));
+  });
 }
 
 export function seatKeysOfActiveEmployees(rows: OrganogramReportRow[]): Set<string> {
