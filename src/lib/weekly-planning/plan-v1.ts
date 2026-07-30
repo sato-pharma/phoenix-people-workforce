@@ -132,12 +132,17 @@ export function resolvePlanWorkweek(input: {
   return HEAD_OFFICE_WORKWEEK;
 }
 
+// Positions that OWN and submit a weekly/monthly plan. Note this is a separate gate from both the
+// sidebar flag (showPlansTab) and the `weekly_plans` permission row — a role can hold those two and
+// still be rejected here, which is exactly what happened to Regional Manager (owner fix 2026-07-30:
+// the RM saw the builder link but got "Forbidden" on submit).
 export const WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES = [
   "Product Manager",
   "Group Product Manager",
   "Marketing Manager",
   "Training Manager",
   "National Sales Manager",
+  "Regional Manager",
   "District Manager",
 ] as const;
 

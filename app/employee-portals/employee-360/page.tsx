@@ -10,7 +10,7 @@ import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
-import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
+import { assertPermission, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   buildEmployee360Scope,
@@ -50,6 +50,57 @@ function Shell({
       {children}
     </EmployeePortalPageShell>
   );
+}
+
+/**
+ * The "Select Employee" picker: every role sees THEMSELVES plus everyone in their own reporting
+ * subtree, so a manager can open any of their people's 360 report. A Regional Manager gets their
+ * District Managers AND the Medical Reps under those DSMs; a District Manager gets their reps.
+ *
+ * The viewer is included when they are a viewable subject (EmployeeSearchList groups by role family
+ * into tabs, so they appear as a selectable option on their own family's tab beside the Medical Reps
+ * and District Mgrs tabs). An owner-excluded person (isEmployee360ExcludedSubject) is dropped by the
+ * gate below, so they simply do not appear — not even to themselves.
+ *
+ * Scope comes from resolveEmployee360VisibleRows, the same subtree-aware gate the [hrId] route and
+ * the admin index already enforce (canViewEmployee360Subject), so this only surfaces people the
+ * viewer could already open by direct URL: it widens navigation, never access.
+ *
+ * Never throws — the picker must not be able to break the report it sits above.
+ */
+async function buildEmployee360Picker(
+  access: AccessContext,
+  viewerHrId: string,
+): Promise<Employee360ListItem[]> {
+  try {
+    const activeRows = await getEmployeeDirectoryRows({ includeInactive: false });
+    const visibleRows = await resolveEmployee360VisibleRows(activeRows, access);
+    return visibleRows
+      .map((row) => {
+        const category = resolveEmployee360RoleCategory(row.jobTitle ?? row.positionTitle);
+        if (!category) return null;
+        return {
+          hrId: row.hrId,
+          displayName: row.displayName || row.fullName,
+          jobTitle: row.jobTitle,
+          // Canonical line spelling — collapses the duplicate "Anti Inf" / "Anti infective" master rows.
+          lineName: bridgeEmployeeLineToOfficial(row.lineName),
+          areaName: row.areaName,
+          regionName: row.regionName,
+          managerName: row.managerName,
+          employmentStatus: row.employmentStatus,
+          category,
+        } satisfies Employee360ListItem;
+      })
+      .filter((e): e is Employee360ListItem => e !== null)
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  } catch (rosterError) {
+    logPortalFailure(
+      { route: PORTAL_BASE_PATH, module: "employee-360-team-roster", role: access.role, hrId: viewerHrId },
+      rosterError,
+    );
+    return [];
+  }
 }
 
 export default async function EmployeePortalEmployee360Page({
@@ -119,10 +170,35 @@ export default async function EmployeePortalEmployee360Page({
     );
   }
 
-  // Self-view is always in scope (everyone may open their own record), but the
-  // shared 360 gate stays the single source of truth rather than assuming it inline.
+  // Every role sees themselves plus everyone in their own reporting subtree, so the picker below is
+  // built for both paths: the normal self report, and the case where the viewer's OWN record is not
+  // a viewable 360 subject (an owner-excluded person — see isEmployee360ExcludedSubject). In that
+  // second case there is no self report to render, but their team is still legitimately theirs to
+  // open, so we show the picker alone instead of bouncing them out of the module.
+  const teamRoster = await buildEmployee360Picker(access, target.hrId);
+
+  // The shared 360 gate stays the single source of truth rather than assuming self-view inline.
   if (!canViewEmployee360Subject(access, target, await buildEmployee360Scope(rows, access))) {
-    redirect("/employee-portals");
+    return (
+      <Shell description="Your team's field performance, roll-up, and coaching impact." title="Employee 360">
+        {teamRoster.length > 0 ? (
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
+              <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                {teamRoster.length} in your team
+              </span>
+            </div>
+            <EmployeeSearchList employees={teamRoster} basePath={PORTAL_BASE_PATH} defaultTab={roleCategory} />
+          </section>
+        ) : (
+          <EmployeePortalEmptyState
+            message="Your own Employee 360 report is not available. If you manage a team, their reports will appear here."
+            title="Employee 360"
+          />
+        )}
+      </Shell>
+    );
   }
 
   // Employee 360 covers only the six field-force role families. Anyone else (HR,
@@ -293,6 +369,21 @@ export default async function EmployeePortalEmployee360Page({
           hrId={subject.hrId}
           to={period.current.to}
         />
+        {teamRoster.length > 1 ? (
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
+              <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                you + {teamRoster.length - 1} in your team
+              </span>
+            </div>
+            {/* Open on the viewer's OWN role tab, not Medical Reps (which is first in
+                EMPLOYEE_360_ROLE_ORDER and would otherwise always win) — so a Regional Manager
+                lands on "Regional Mgrs" with themselves selectable, and reaches their DSMs and reps
+                on the neighbouring tabs. */}
+            <EmployeeSearchList employees={teamRoster} basePath={PORTAL_BASE_PATH} defaultTab={roleCategory} />
+          </section>
+        ) : null}
         <Employee360View
           category={roleCategory}
           comparison={comparison}

@@ -11,6 +11,16 @@ const dashboardSource = readFileSync(
   "utf8",
 );
 
+// Every overview/landing surface (the shared command center + every role-specific dashboard inside
+// it). Payslip data must never be rendered on any of them — see the assertions at the end.
+const landingSurfaceFiles = [
+  "../src/components/employee-portal/portal-command-center.tsx",
+  "../src/components/employee-portal/dashboards/rm-command-center.tsx",
+  "../src/components/employee-portal/dashboards/dsm-command-center.tsx",
+  "../src/components/employee-portal/dashboards/nsm-command-center.tsx",
+  "../src/components/employee-portal/dashboards/marketing-manager-command-center.tsx",
+] as const;
+
 export function runEmployeePortalPayslipSalaryTests() {
   const helperStart = serviceSource.indexOf("function resolveFixedSalaryReference");
   const helperEnd = serviceSource.indexOf("function pickText", helperStart);
@@ -130,4 +140,22 @@ export function runEmployeePortalPayslipSalaryTests() {
     /showTeamLeaveAndStructurePanels \? <TeamStructurePanel data=\{data\} \/> : null/,
     "Team Structure panel must be hidden for Medical Rep overview.",
   );
+
+  // OWNER RULE: never show a payslip on an overview/landing page, for ANY role. Not the net/gross
+  // amount and not the month label — the whole tile is gone. Payslips live only on
+  // /employee-portals/payslips (a plain "My Payslips" nav link is fine — it renders no data).
+  // Enforced as source assertions because these are server components rendering live payroll data.
+  for (const relativePath of landingSurfaceFiles) {
+    const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+    assert.doesNotMatch(
+      source,
+      /latestPayslip\s*\?/,
+      `${relativePath} must not render payslip data on a landing/overview surface (owner rule: no payslip on any overview page for any role).`,
+    );
+    assert.doesNotMatch(
+      source,
+      /netSalary/,
+      `${relativePath} must not render a salary amount on a landing/overview surface.`,
+    );
+  }
 }

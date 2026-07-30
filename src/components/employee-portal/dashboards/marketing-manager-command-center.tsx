@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   Stethoscope,
   TrendingUp,
-  Wallet,
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
@@ -37,14 +36,6 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
-function monthLabel(ym: string) {
-  const [y, m] = ym.split("-");
-  return new Date(Date.UTC(Number(y), Number(m) - 1, 1)).toLocaleString("en-US", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
 
 /** Whole days since an ISO timestamp (clamped at 0). null when the timestamp is missing. */
 function ageInDays(iso: string | null, now: number): number | null {
@@ -63,7 +54,7 @@ const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; d
 ];
 
 export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, latestPayslip, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval } =
+  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval } =
     snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
@@ -105,14 +96,9 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
             label: "in approval (company)",
             href: "/employee-portals/marketing-requests",
           },
-          {
-            // RULE (portal-no-salary-on-landing): never render a salary amount on any landing
-            // surface. The payslip tile shows the month label only; the figure lives on /payslips.
-            icon: Wallet,
-            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
-            label: "latest payslip",
-            href: "/employee-portals/payslips",
-          },
+          // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
+          // overview/landing surface for any role — owner rule. It lives only on
+          // /employee-portals/payslips.
         ]}
       />
 

@@ -29,7 +29,6 @@ import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import {
   isWithinManagerHierarchy,
   lineScopeIncludesEmployee,
-  reportsToManagerSeat,
   type SeatContinuitySubject,
 } from "@/lib/workforce/hierarchy-resolver";
 
@@ -38,6 +37,26 @@ const COMPANY_360_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Super Adm
 
 /** Roles restricted to Medical Reps only (+ self), company-wide — no line/hierarchy scope. */
 const MEDICAL_REP_ONLY_360_ROLES = new Set<PhoenixRole>(["Training Manager", "Talent Acquisition"]);
+
+/**
+ * Employees removed from Employee 360 entirely (owner-requested, 2026-07-30).
+ *
+ * Nobody may open these reports — not the whole-company roles, not their own manager, and not the
+ * person themselves. This is a per-person business decision, not a role rule, so it is keyed by
+ * HR_ID (same shape as TALENT_ACQUISITION_SALARY_REDACTED_HR_IDS in src/lib/auth/permissions.ts).
+ * Compared through canonicalHrIdKey so "PD-0001" and "PD0001" both match.
+ *
+ * PD-0001 — Regional Manager (owner-requested removal).
+ */
+const EMPLOYEE_360_EXCLUDED_HR_IDS: ReadonlySet<string> = new Set(
+  ["PD-0001"].map((hrId) => canonicalHrIdKey(hrId)).filter((key): key is string => Boolean(key)),
+);
+
+/** True when this person is excluded from Employee 360 for every viewer, including themselves. */
+export function isEmployee360ExcludedSubject(hrId: string | null | undefined): boolean {
+  const key = canonicalHrIdKey(hrId);
+  return key !== null && EMPLOYEE_360_EXCLUDED_HR_IDS.has(key);
+}
 
 /** The subset of an employee row the 360 scope check needs. */
 export type Employee360SubjectRow = Pick<
@@ -135,6 +154,15 @@ export function canViewEmployee360Subject(
   scope: Employee360Scope,
 ): boolean {
   if (context.source === "guest" || context.scope === "none") return false;
+
+  // Owner-requested exclusion (2026-07-30): these people are removed from Employee 360 entirely —
+  // no viewer may open their report, INCLUDING themselves and the company-wide roles. Checked before
+  // every other branch (above the system/CEO short-circuit and the self check) so nothing can
+  // re-admit them. Because this is the single gate behind the admin index, the admin detail route,
+  // the portal self report, the portal detail route AND resolveEmployee360VisibleRows, excluding
+  // here removes them from every list and every direct URL at once.
+  if (isEmployee360ExcludedSubject(subject.hrId)) return false;
+
   if (context.scope === "system" || COMPANY_360_ROLES.has(context.role)) return true;
 
   // Everyone can open their own record (field-force filter decides what renders).
@@ -167,10 +195,14 @@ export function canViewEmployee360Subject(
     });
   }
 
-  // District Manager / Manager: their direct team.
+  // District Manager / Manager: their team, at any depth. Owner rule (2026-07-30): every role sees
+  // themselves plus everyone reporting to them, so this walks the chain like the RM branch above
+  // rather than stopping at direct reports. A no-op on today's org shape (a DSM's reports are all
+  // leaf Medical Reps) but it stops silently truncating the moment a DSM gains a sub-manager.
   if (role === "District Manager" || role === "Manager") {
-    return reportsToManagerSeat({
+    return isWithinManagerHierarchy({
       employee: employeeSeat,
+      byCanonicalHrId: scope.byCanonicalHrId,
       viewerCanonicalHrId: viewerKey,
       canonicalize: canonicalHrIdKey,
     });

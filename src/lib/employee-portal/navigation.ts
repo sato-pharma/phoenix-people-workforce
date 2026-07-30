@@ -224,6 +224,10 @@ export function resolveEmployeePortalNavVisibility(
   const isMedicalRep = resolvedRole === "Medical Rep";
   const isDistrictManager = resolvedRole === "District Manager" || resolvedRole === "Manager";
   const isNationalSalesManager = resolvedRole === "National Sales Manager";
+  // Regional Manager sits between DSM and NSM: region-scoped (own line, narrowed to the regions in
+  // their management subtree — see regionsWithinManagerHierarchy). Their Probation, Team Coaching
+  // and Organogram data access already exists server-side; these tabs surface it.
+  const isRegionalManager = resolvedRole === "Regional Manager";
   // Product / Group Product / Marketing Managers get line-scoped Vacancies, Probation, and
   // Organogram views (see getEmployeePortalVacancies, probation service, and
   // isLineScopedOrganogramRole). The sidebar tabs must mirror that data access.
@@ -266,7 +270,14 @@ export function resolveEmployeePortalNavVisibility(
   const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
   const showMarketingCoverageReportTab = canUseEmployeePortalMarketingCoverageReport(resolvedRole);
-  const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab;
+  // Regional Manager included: canAccessCoachingEmployee (coaching/service.ts) already scopes an RM
+  // to their full management subtree via isWithinManagerHierarchy, so the reports exist — only the
+  // sidebar link was missing.
+  const showTeamCoachingTab = showTeamPerformanceTab || showMedRepsPerformanceTab || isRegionalManager;
+  // Must stay in lockstep with WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES (weekly-planning/plan-v1.ts):
+  // a role listed here but not there sees the builder link and gets "Forbidden" on submit, and a
+  // role eligible there but missing here can submit but has no way to reach the page. District
+  // Manager was the second case until 2026-07-30 (eligible to submit, no link).
   const showPlansTab = [
     "Product Manager",
     "Group Product Manager",
@@ -277,6 +288,7 @@ export function resolveEmployeePortalNavVisibility(
     "Super Admin",
     "Manager",
     "Regional Manager",
+    "District Manager",
     "Talent Acquisition",
   ].includes(resolvedRole);
   const baseShowMyPerformanceTab = !hideMyPerformanceTab;
@@ -325,13 +337,27 @@ export function resolveEmployeePortalNavVisibility(
     showReportItTab: isA3Account,
     showReportItDashboardTab: isProductManager || isGroupProductManager || isMarketingManager || isTrainingManager,
     showOrganogramTab:
-      showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
+      showMedRepsPerformanceTab ||
+      isRegionalManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager ||
+      isTalentAcquisition,
     // Talent Acquisition keeps the read-only Planning Calendar (HO-scoped) but not the
     // Weekly/Monthly Plan submission page — owner-requested removal, 2026-07-25.
     showPlanningCalendarTab: isA3Account || showPlansTab,
     showPlansTab: isA3Account || (showPlansTab && !isTalentAcquisition),
+    // Regional Manager included: canReadProbationEmployee already has an RM branch that walks the
+    // full management subtree (probation/service.ts), so an RM sees every med rep under every DSM
+    // in their region — the tab was the only thing missing.
     showProbationTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager || isTalentAcquisition,
+      showTeamPerformanceTab ||
+      showMedRepsPerformanceTab ||
+      isRegionalManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager ||
+      isTalentAcquisition,
     showSupportTab: true,
     showRecruitmentHiringTab: isTalentAcquisition,
     showPeopleManagementTab: isTalentAcquisition,

@@ -29,7 +29,10 @@ export function runWeeklyMonthlyPlansV1Tests() {
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Marketing Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("SFE Manager"), false);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("District Manager"), true);
-  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Regional Manager"), false);
+  // Owner fix (2026-07-30): the RM owns and submits a plan for their region, like the DSM below
+  // them and the NSM above them. Previously false, which made the portal's Plans link a dead end.
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Regional Manager"), true);
+  assert.equal(isWeeklyMonthlyPlanEligibleTitle("Regional Sales Manager"), true);
   assert.equal(isWeeklyMonthlyPlanEligibleTitle("Medical Rep"), false);
 
   assert.equal(getNextEmployeePlanStatus("draft", "submit"), "submitted");

@@ -6,6 +6,11 @@ const permissionsSource = readFileSync(
   "utf8",
 );
 
+const coachingPortalAccessSource = readFileSync(
+  new URL("../src/lib/coaching/portal-access.ts", import.meta.url),
+  "utf8",
+);
+
 function roleBlock(role: string) {
   const escapedRole = role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = permissionsSource.match(new RegExp(`  ${escapedRole.includes(" ") ? `"${escapedRole}"` : escapedRole}: \\{[\\s\\S]*?\\n  \\},`));
@@ -62,5 +67,17 @@ export function runCoachingPermissionTests() {
     "Manager",
   ] as const) {
     assertNoCoachingManagementPermission(role);
+  }
+
+  // resolveEmployeeCoachingPortalMode is a SEPARATE gate from the permission matrix and from the
+  // sidebar flag: it decides whether the portal renders the "team" view at all, and a role missing
+  // from it dead-ends on an empty state even with coaching:read + a visible tab. Regional Manager
+  // was exactly that case until 2026-07-30. Keep all three field-manager roles listed here.
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager"] as const) {
+    assert.match(
+      coachingPortalAccessSource,
+      new RegExp(`access\\.role === "${role}"`),
+      `resolveEmployeeCoachingPortalMode must return the "team" view for ${role} — otherwise the Team Coaching tab renders an empty state`,
+    );
   }
 }

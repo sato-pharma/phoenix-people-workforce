@@ -41,7 +41,7 @@ export default async function EmployeeCoachingReportsPage() {
   if (!coachingMode) {
     return (
       <EmployeePortalEmptyState
-        message="Coaching reports are available to Medical Reps for their own reports, and to DSM/NSM roles for team reports."
+        message="Coaching reports are available to Medical Reps for their own reports, and to DSM/RM/NSM roles for team reports."
         title="Coaching Access Unavailable"
       />
     );
