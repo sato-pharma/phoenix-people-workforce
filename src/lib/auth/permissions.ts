@@ -629,6 +629,12 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     overview: [],
+    // The portal Deductions page already shows a Regional Manager their whole management subtree
+    // (collectPortalDeductionScope in deductions-governance/service.ts has an explicit RM branch), so
+    // the grant is declared here to match: the access was real but undeclared, which meant the matrix
+    // — the thing an admin reads to reason about who can see what — was wrong. Read-only: every
+    // deduction WRITE surface stays gated on the admin resource (Super Admin / CEO / Finance Manager).
+    deductions: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

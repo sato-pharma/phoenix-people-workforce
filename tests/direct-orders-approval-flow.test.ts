@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   computeDirectOrderSalesValue,
@@ -27,6 +28,45 @@ function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; s
 }
 
 export function runDirectOrdersApprovalFlowTests() {
+  // ── Single-request READ is scope-gated, not permission-gated ────────────────
+  // `direct_orders:read` is held by every requester role (District / Regional / Product Manager …),
+  // so asserting the permission alone let any of them fetch ANY order company-wide by id — requester,
+  // pharmacy, doctor, quantities, factory/public price, bonus/discount and sales value. The guard must
+  // live inside getDirectOrderRequest (the single read choke point) and run BEFORE the value is
+  // returned, so every present and future caller inherits it.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.match(serviceSource, /async function canViewDirectOrderRequest\(/, "a per-request scope guard must exist");
+
+    const readerIdx = serviceSource.indexOf("export async function getDirectOrderRequest(");
+    assert.ok(readerIdx > -1, "getDirectOrderRequest must still be the single read entrypoint");
+    const readerBody = serviceSource.slice(readerIdx, readerIdx + 1600);
+    assert.match(
+      readerBody,
+      /if \(!\(await canViewDirectOrderRequest\(access, request, steps\)\)\) return null;/,
+      "getDirectOrderRequest must consult the scope guard and return null (not throw) for an out-of-scope id, so ids cannot be probed",
+    );
+
+    // The guard must admit an assigned approver: someone who has to DECIDE a request must be able to
+    // open it even when the requester sits outside their own reporting subtree.
+    const guardIdx = serviceSource.indexOf("async function canViewDirectOrderRequest(");
+    const guardBody = serviceSource.slice(guardIdx, serviceSource.indexOf("export async function getDirectOrderRequest(", guardIdx));
+    assert.match(guardBody, /resolveDirectOrderReportScope\(access\) === "all"/, "company-tier roles keep full read");
+    assert.match(guardBody, /step\.approverHrId/, "an assigned approver must always be able to open the request");
+    assert.match(guardBody, /resolveVisibleRequesterHrIds\(access\)/, "subtree tier must reuse the report's visible-requester set");
+  }
+
+  // The report's subtree walk must be seat-continuity aware, or a district's orders vanish while its
+  // DSM seat is being replaced (the resignation trigger reassigns reports UPWARD and stamps
+  // pending_manager_replacement_for_hr_id).
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const walkIdx = serviceSource.indexOf("async function resolveVisibleRequesterHrIds(");
+    const walkBody = serviceSource.slice(walkIdx, walkIdx + 1600);
+    assert.match(walkBody, /pendingManagerReplacementForHrId/, "the walk must follow the vacant-seat continuity edge too");
+    assert.match(walkBody, /resolveEmployeeIdentityId\(access\)/, "the viewer must be resolved by employee identity, not the raw session hrId");
+  }
+
   // ── Ladder per requester role (owner-locked) ────────────────────────────────
   assert.deepEqual(directOrderManagementLadder("District Manager"), ["Regional Manager", "National Sales Manager"]);
   assert.deepEqual(directOrderManagementLadder("Regional Manager"), ["National Sales Manager"]);
