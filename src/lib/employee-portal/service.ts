@@ -38,6 +38,7 @@ import {
   formatVacantSeatLabel,
   lineScopeIncludesEmployee,
   normalizeRegionLabel,
+  isWithinManagerHierarchy,
   regionsWithinManagerHierarchy,
   reportsToManagerSeat,
   resolveSeatGrouping,
@@ -3569,9 +3570,34 @@ export async function getMedicalRepPortalData(
     const directory = await getEmployeeDirectory();
     const currentEmployee = currentHrId ? findDirectoryEmployeeByHrId(directory, currentHrId) : null;
     const salesLineFilter = resolvePortalSalesLineFilter(currentUser, currentEmployee);
+    // HIERARCHY viewers (Regional Manager) must see their WHOLE subtree here, not just direct reports.
+    // canSeeEmployee is a one-level isDirectReport check, so an RM resolved to self + their 3 DSMs —
+    // and DSMs carry no sales rows of their own. targetSalesHrIds below therefore contained nobody who
+    // actually sells, which zeroed the incentive achievement and the team sales roll-up (reading
+    // "0.0%" and EGP 0 while the region was at ~105%). TEAM (DSM) and SELF keep canSeeEmployee, and
+    // LINE/COMPANY never reach targetSalesHrIds at all — getScopedEmployeePortalSalesDashboard
+    // special-cases LINE via the line filter — so this only changes the hierarchy case.
+    const hierarchyViewerKey =
+      salesScope === "HIERARCHY" || access.scope === "hierarchy" ? normalizeHrIdForAccess(currentHrId) : null;
+    const subtreeByCanonicalHrId = hierarchyViewerKey
+      ? new Map(
+          directory.employees
+            .map((row) => [normalizeHrIdForAccess(row.hrId), row] as const)
+            .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
+        )
+      : null;
     const visibleTeamMembers = directory.employees.filter((row) => {
       const rowHrId = normalizeHrId(row.hrId);
-      return rowHrId !== currentHrId && canSeeEmployee(access, row);
+      if (rowHrId === currentHrId) return false;
+      if (hierarchyViewerKey && subtreeByCanonicalHrId) {
+        return isWithinManagerHierarchy({
+          employee: row,
+          byCanonicalHrId: subtreeByCanonicalHrId,
+          viewerCanonicalHrId: hierarchyViewerKey,
+          canonicalize: normalizeHrIdForAccess,
+        });
+      }
+      return canSeeEmployee(access, row);
     });
 
     const targetSalesHrIds: string[] = currentHrId ? [currentHrId] : [];
