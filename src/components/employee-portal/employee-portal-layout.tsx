@@ -207,6 +207,7 @@ function buildEmployeePortalSections({
   showSalesAnalyticsTab = false,
   showTerritoryDrilldownTab = false,
   showTerritoryManagementTab = false,
+  showTargetsTab = false,
   showMarketingRoiTrackingTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
@@ -282,6 +283,9 @@ function buildEmployeePortalSections({
         // Drilldown above. The page and its API routes already existed and were scope-guarded, but
         // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
         ...(showTerritoryManagementTab ? [{ href: "/employee-portals/territory-management", label: "Territory Management", icon: Waypoints }] : []),
+        // Read-only Targets. /sales/targets keeps the authoring tools and bounces portal roles away,
+        // so without this twin a DM/RM/NSM had no targets surface at all.
+        ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
         ...(showDirectOrdersReportTab ? [{ href: "/employee-portals/direct-orders/report", label: "Direct Orders Report", icon: FileSpreadsheet }] : []),
       ],

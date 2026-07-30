@@ -1,6 +1,7 @@
 import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
+import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
 import { runErrorMonitorNewIssueDiffTests } from "./error-monitor-new-issue-diff.test.ts";
@@ -496,6 +497,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
+await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
 await runTest("error monitor message decode", runErrorMonitorMessageDecodeTests);

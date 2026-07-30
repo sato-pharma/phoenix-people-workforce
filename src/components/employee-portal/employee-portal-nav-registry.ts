@@ -84,6 +84,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
   { label: "Drilldown", fullLabel: "Territory & Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
+  { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"] },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
   { label: "DO Report", fullLabel: "Direct Orders Report", href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, flags: ["showDirectOrdersReportTab"] },

@@ -90,6 +90,10 @@ export type EmployeePortalNavVisibility = {
   // above: this one compares multiple areas' bricks against each other, which is why Medical Rep
   // is excluded. Must stay in sync with PORTAL_ROLES in that page (the server-side gate).
   showTerritoryManagementTab?: boolean;
+  // Targets — READ-ONLY scoped view at /employee-portals/targets (owner decision 2026-07-30:
+  // DM/RM/NSM view; editing and upload stay with SFE Manager / Super Admin on /sales/targets).
+  // Must stay in sync with PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts, the page gate.
+  showTargetsTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -451,6 +455,14 @@ export function resolveEmployeePortalNavVisibility(
     // also matches the Head-Office "Manager" rung, which the page does not admit. Medical Rep is
     // excluded by design (multi-area comparison is a District-Manager-and-up decision).
     showTerritoryManagementTab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager,
+    // Mirrors PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts (the enforcing gate). Spelled
+    // out rather than imported: that module reaches the Supabase server client via the sales scope
+    // resolver, which must not be pulled into this client-consumed nav helper. Medical Rep excluded
+    // by owner decision; the Head-Office "Manager" rung owns no areas, so exact-match again.
+    showTargetsTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
