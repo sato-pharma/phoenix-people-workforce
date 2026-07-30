@@ -19,6 +19,7 @@ import {
   isHeadOfficeLine,
   normalizeLineKey,
   resolveSalesAccessScope,
+  resolveSalesGeographyBound,
 } from "@/lib/sales/access-scope";
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { shiftPeriod } from "@/lib/sales/periods";
@@ -395,6 +396,13 @@ export type SosScopeOverrides = {
    * region set). null = no region restriction; a Set = restrict to those codes.
    */
   allowedRegionCodes?: Set<string> | null;
+  /**
+   * Override the scope-derived AREA codes. When the KEY is present it replaces the base area
+   * lockdown. Always paired with a region override wide enough to fetch those areas' rows — the
+   * area filter is what keeps that widening from exposing a sibling manager's areas. null = no area
+   * restriction; a Set = restrict to those codes. Server-resolved from the session, never user input.
+   */
+  allowedAreaCodes?: Set<string> | null;
 };
 
 /**
@@ -456,18 +464,30 @@ export async function getSosDashboard(
   // Region lockdown: a portal-supplied override (server-resolved) takes precedence over the
   // role's base region scope so e.g. a Regional Manager can be widened to his full managed
   // region set. Otherwise fall back to the base scope (company = all; else the viewer's region).
+  // The viewer's own geography bound: a District / Regional Manager's areas come from the organogram
+  // seat map (which can legitimately place an area outside their region label), everyone else keeps
+  // the region-name bound. `regionCodes` is then only wide enough to FETCH those areas' rows; the
+  // `areaCodes` filter in keepExec below is what stops that widening from leaking a sibling
+  // manager's areas in the same region. See src/lib/sales/seat-area-scope.ts.
+  const geographyBound = resolveSalesGeographyBound(salesScope, (names) =>
+    new Set(
+      references.regions
+        .filter((r) => names.has(canonicalizeRegionName(r.regionName)))
+        .map((r) => r.regionCode.toUpperCase()),
+    ),
+  );
   const scopeRegionCodes: Set<string> | null =
     options && "allowedRegionCodes" in options
       ? options.allowedRegionCodes
         ? new Set([...options.allowedRegionCodes].map((code) => code.trim().toUpperCase()))
         : null
-      : salesScope.canViewAllSales || !salesScope.allowedRegionNames
-        ? null
-        : new Set(
-            references.regions
-              .filter((r) => salesScope.allowedRegionNames!.has(canonicalizeRegionName(r.regionName)))
-              .map((r) => r.regionCode.toUpperCase()),
-          );
+      : geographyBound.regionCodes;
+  const scopeAreaCodes: Set<string> | null =
+    options && "allowedAreaCodes" in options
+      ? options.allowedAreaCodes
+        ? new Set([...options.allowedAreaCodes].map((code) => code.trim().toUpperCase()))
+        : null
+      : geographyBound.areaCodes;
   // Product lockdown (server-resolved): null/undefined = no restriction; empty Set = show
   // nothing (the strict "PM with no assigned products" case); non-empty = only those codes.
   const scopeProductCodes: Set<string> | null =
@@ -499,7 +519,14 @@ export async function getSosDashboard(
   // reads as poor coverage when they only own a handful. Company / line-only callers keep all areas.
   const masterAreas = (references.areas ?? [])
     .filter((a) => a.areaCode)
-    .filter((a) => !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()));
+    // A seat-scoped viewer measures coverage against exactly THEIR areas; otherwise fall back to
+    // every area in their regions. Using the region set alone for a seat-scoped viewer would inflate
+    // the denominator with sibling managers' areas in a shared region.
+    .filter((a) =>
+      scopeAreaCodes
+        ? scopeAreaCodes.has(a.areaCode.toUpperCase())
+        : !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()),
+    );
   const totalAreas = masterAreas.length;
 
   // Multi-month selection: the dashboard sums leaf rows across every selected month. `periods`
@@ -562,14 +589,21 @@ export async function getSosDashboard(
   const userLineNames = filters.lines?.length ? filters.lines : filters.line ? [filters.line] : null;
   const userRegionCodes = filters.regions?.length ? filters.regions.map((c) => c.toUpperCase()) : null;
   const userProductCodes = filters.products?.length ? filters.products.map((c) => c.toUpperCase()) : null;
+  const userAreaCodes = filters.areas?.length ? filters.areas.map((c) => c.toUpperCase()) : null;
 
   const scopeLineNamesArr = scopeLineKeys ? (salesScope.allowedLineNames ? [...salesScope.allowedLineNames] : []) : null;
   const scopeRegionArr = scopeRegionCodes ? [...scopeRegionCodes] : null;
   const scopeProductArr = scopeProductCodes ? [...scopeProductCodes] : null;
+  const scopeAreaArr = scopeAreaCodes ? [...scopeAreaCodes] : null;
 
   const trendLineNames = intersect(userLineNames, scopeLineNamesArr);
   const trendRegionCodes = intersect(userRegionCodes, scopeRegionArr);
   const trendProductCodes = intersect(userProductCodes, scopeProductArr);
+  // The AREA push-down carries the seat bound into SQL. This matters beyond latency: the 6-month
+  // trend RPC has no area dimension of its own, so without it a seat-scoped viewer whose region set
+  // was widened to reach an out-of-region area would see that whole foreign region in the trend line
+  // (and the trend would disagree with the area-filtered detail total below).
+  const trendAreaCodes = intersect(userAreaCodes, scopeAreaArr);
 
   // Head Office lock for the trend: exclude HO by PRODUCT CODE (matching the rollup's product_code)
   // instead of by line name — this sidesteps any product-master line vs official_line label
@@ -587,6 +621,7 @@ export async function getSosDashboard(
   const trendForcedEmpty =
     (trendLineNames !== null && trendLineNames.length === 0) ||
     (trendRegionCodes !== null && trendRegionCodes.length === 0) ||
+    (trendAreaCodes !== null && trendAreaCodes.length === 0) ||
     (trendProductCodes !== null && trendProductCodes.length === 0);
 
   // Month-over-month / year-over-year anchor months. Only meaningful for a SINGLE selected month —
@@ -616,7 +651,8 @@ export async function getSosDashboard(
       trendLineNames: sortedOrNull(trendLineNames),
       trendRegionCodes: sortedOrNull(trendRegionCodes),
       trendProductCodes: sortedOrNull(trendProductCodes),
-      filterAreas: [...(filters.areas ?? [])].sort(),
+      // scope ∩ user selection (null ⇒ no restriction ⇒ [] = "all" to the RPCs).
+      filterAreas: [...(trendAreaCodes ?? [])].sort(),
       filterDistributors: [...(filters.distributors ?? [])].sort(),
       excludeCodes: [...excludeCodes].sort(),
       trendExcludeCodes: [...trendExcludeCodes].sort(),
@@ -643,6 +679,9 @@ export async function getSosDashboard(
     // scoped caller can never widen past their own line/region/products via query params.
     if (scopeLineKeys && !scopeLineKeys.has(normalizeLineKey(row.officialLine))) return false;
     if (scopeRegionCodes && !scopeRegionCodes.has(row.regionCode.toUpperCase())) return false;
+    // Area lockdown — the tight half of a seat-derived geography bound. Rows with no area (the
+    // "DIRECT" national placeholder) are left to the region check above, exactly as before.
+    if (scopeAreaCodes && row.areaCode && !scopeAreaCodes.has(row.areaCode.toUpperCase())) return false;
     if (scopeProductCodes && !scopeProductCodes.has(row.productCode.toUpperCase())) return false;
     if (lineFilterSet) {
       if (!lineFilterSet.has(row.officialLine.toLowerCase())) return false;

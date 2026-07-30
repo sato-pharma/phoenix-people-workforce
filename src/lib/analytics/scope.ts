@@ -36,6 +36,13 @@ export type AnalyticsViewerScope = {
   allowedLineNames: Set<string> | null;
   /** Allowed region CODES (upper-cased, for the p_regions arg); null = all. Empty = nothing. */
   allowedRegionCodes: Set<string> | null;
+  /**
+   * Allowed area CODES (upper-cased, for the p_areas arg); null = all. Non-null only for a District /
+   * Regional Manager whose organogram seat resolved, in which case it is the AUTHORITATIVE geography
+   * bound and `allowedRegionCodes` is merely wide enough to reach those areas — see
+   * src/lib/sales/seat-area-scope.ts. Every analytics_* RPC accepts p_areas, so this scopes in SQL.
+   */
+  allowedAreaCodes: Set<string> | null;
   /** Per-user product-code allowlist (product_scope_override); null = all. Empty = nothing. */
   allowedProductCodes: Set<string> | null;
 };
@@ -48,15 +55,41 @@ export type AnalyticsViewerScope = {
 export function computeAnalyticsViewerScope(
   sales: Pick<
     SalesAccessScope,
-    "canViewAllSales" | "allowedLineNames" | "allowedRegionNames" | "allowedProductCodes"
+    | "canViewAllSales"
+    | "allowedLineNames"
+    | "allowedRegionNames"
+    | "allowedAreaCodes"
+    | "allowedAreaFactRegionCodes"
+    | "allowedProductCodes"
   >,
   regionCodeByCanonicalName: Map<string, string>,
 ): AnalyticsViewerScope {
   const allowedProductCodes = sales.allowedProductCodes ?? null;
   if (sales.canViewAllSales) {
-    return { canViewAllSales: true, allowedLineNames: null, allowedRegionCodes: null, allowedProductCodes };
+    return {
+      canViewAllSales: true,
+      allowedLineNames: null,
+      allowedRegionCodes: null,
+      allowedAreaCodes: null,
+      allowedProductCodes,
+    };
   }
   const allowedLineNames = sales.allowedLineNames ? new Set(sales.allowedLineNames) : null;
+
+  // Seat-derived AREA bound (District / Regional Manager): the area set is authoritative and the
+  // region set comes from the areas themselves, so an area operationally owned by this viewer but
+  // sitting in a foreign region is reachable — while that region's other areas stay filtered out by
+  // the area bound. Both are pushed into the RPC filter args (p_areas / p_regions).
+  if (sales.allowedAreaCodes) {
+    return {
+      canViewAllSales: false,
+      allowedLineNames,
+      allowedRegionCodes: new Set([...(sales.allowedAreaFactRegionCodes ?? [])].map((c) => c.trim().toUpperCase())),
+      allowedAreaCodes: new Set([...sales.allowedAreaCodes].map((c) => c.trim().toUpperCase())),
+      allowedProductCodes,
+    };
+  }
+
   let allowedRegionCodes: Set<string> | null = null;
   if (sales.allowedRegionNames) {
     allowedRegionCodes = new Set<string>();
@@ -66,14 +99,15 @@ export function computeAnalyticsViewerScope(
     }
     // A restricted-but-unresolvable region set stays an EMPTY set (fail-closed = nothing), never null.
   }
-  return { canViewAllSales: false, allowedLineNames, allowedRegionCodes, allowedProductCodes };
+  return { canViewAllSales: false, allowedLineNames, allowedRegionCodes, allowedAreaCodes: null, allowedProductCodes };
 }
 
 /** Resolve the analytics scope for a page/request: sales scope + region-name→code map from the master. */
 export async function resolveAnalyticsViewerScope(access: AccessContext): Promise<AnalyticsViewerScope> {
   const sales = await resolveSalesAccessScope(access);
-  // Region resolution is only needed when the viewer is region-scoped (HIERARCHY/TEAM/SELF).
-  if (sales.canViewAllSales || !sales.allowedRegionNames) {
+  // Region resolution is only needed when the viewer is region-scoped (HIERARCHY/TEAM/SELF) AND has
+  // no seat-derived area bound — a seat bound already carries its own region codes.
+  if (sales.canViewAllSales || !sales.allowedRegionNames || sales.allowedAreaCodes) {
     return computeAnalyticsViewerScope(sales, new Map());
   }
   const references = await loadSalesReferenceData({ includeCustomerBricks: false });
@@ -121,17 +155,31 @@ export type ScopedAnalyticsFilters<F> = {
  * allowed sets; `empty` signals the caller to skip the query and render an empty result.
  */
 export function scopeAnalyticsFilters<
-  F extends { lines?: string[]; regions?: string[]; products?: string[] },
+  F extends { lines?: string[]; regions?: string[]; products?: string[]; areas?: string[] },
 >(filters: F, scope: AnalyticsViewerScope): ScopedAnalyticsFilters<F> {
-  if (!scope.allowedLineNames && !scope.allowedRegionCodes && !scope.allowedProductCodes) {
+  if (
+    !scope.allowedLineNames &&
+    !scope.allowedRegionCodes &&
+    !scope.allowedAreaCodes &&
+    !scope.allowedProductCodes
+  ) {
     return { filters, empty: false };
   }
   const line = intersectDimension(filters.lines, scope.allowedLineNames);
   const region = intersectDimension(filters.regions, scope.allowedRegionCodes);
   const product = intersectDimension(filters.products, scope.allowedProductCodes);
+  // The area intersection is what makes a widened region set safe — without it, reaching an
+  // out-of-region owned area would also expose that region's other areas.
+  const area = intersectDimension(filters.areas, scope.allowedAreaCodes);
   return {
-    filters: { ...filters, lines: line.values, regions: region.values, products: product.values },
-    empty: line.empty || region.empty || product.empty,
+    filters: {
+      ...filters,
+      lines: line.values,
+      regions: region.values,
+      products: product.values,
+      areas: area.values,
+    },
+    empty: line.empty || region.empty || area.empty || product.empty,
   };
 }
 
@@ -170,9 +218,19 @@ export function scopeAnalyticsDimensions(
     ? new Set([...scope.allowedProductCodes].map((c) => c.trim().toUpperCase()))
     : null;
 
+  const areaSet = scope.allowedAreaCodes
+    ? new Set([...scope.allowedAreaCodes].map((c) => c.trim().toUpperCase()))
+    : null;
+
   const lines = lineSet ? dimensions.lines.filter((l) => lineSet.has(l.trim().toLowerCase())) : dimensions.lines;
   const regions = regionSet ? dimensions.regions.filter((r) => regionSet.has(r.code.trim().toUpperCase())) : dimensions.regions;
-  const areas = regionSet ? dimensions.areas.filter((a) => regionSet.has(a.regionCode.trim().toUpperCase())) : dimensions.areas;
+  // Prefer the explicit area bound: trimming areas by region would both hide an owned out-of-region
+  // area and offer a sibling manager's areas from a region this viewer only partly owns.
+  const areas = areaSet
+    ? dimensions.areas.filter((a) => areaSet.has(a.areaCode.trim().toUpperCase()))
+    : regionSet
+      ? dimensions.areas.filter((a) => regionSet.has(a.regionCode.trim().toUpperCase()))
+      : dimensions.areas;
   const products =
     lineSet || productSet
       ? dimensions.products.filter(

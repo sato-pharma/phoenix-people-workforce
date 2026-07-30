@@ -72,11 +72,18 @@ export function isPortalSosRole(role: PhoenixRole): boolean {
 export function computePortalSosVisibility(
   lineKeys: Set<string> | null,
   regionCodes: Set<string> | null,
+  /**
+   * The viewer owns exactly ONE district, even though `regionCodes` may list more than one region
+   * because one of that district's areas sits in a foreign region (see src/lib/sales/seat-area-scope.ts).
+   * Such a viewer still has nothing to choose between, so the region picker stays hidden — offering it
+   * would invite filtering to a "region" they only hold a single area in.
+   */
+  lockedToSingleDistrict = false,
 ): PortalSosFilterVisibility {
   return {
     period: true,
     line: lineKeys === null || lineKeys.size > 1,
-    region: !(regionCodes !== null && regionCodes.size === 1),
+    region: !lockedToSingleDistrict && !(regionCodes !== null && regionCodes.size === 1),
     area: true,
     product: true,
     distributor: true,
@@ -127,6 +134,14 @@ export type PortalSosScope = {
   regionOverride?: Set<string>;
   /** Region codes in scope (DSM single / RM subtree / null = unrestricted) — trims options. */
   regionCodes: Set<string> | null;
+  /**
+   * Area codes in scope, from the viewer's organogram seat (see src/lib/sales/seat-area-scope.ts).
+   * Non-null for a District / Regional Manager whose seat resolved; it is the AUTHORITATIVE bound
+   * and is what makes an area whose operational owner differs from its geography (e.g. CNS Kafr
+   * El-Sheikh 1, owned by the Alex-BHR DM but carrying region Delta (1)) visible to its real owner
+   * without also exposing that foreign region's other areas. null = no area restriction.
+   */
+  areaCodes: Set<string> | null;
   /** Normalized line keys in scope (null = all) — trims options. */
   lineKeys: Set<string> | null;
   /**
@@ -243,6 +258,8 @@ function buildScopeSummary(input: {
   regionCodes: Set<string> | null;
   allowedProductCodes: Set<string> | null;
   references: ReferenceData;
+  /** Seat-scoped to one district — summarise by area count, not by the (possibly 2) region codes. */
+  districtAreaCount?: number | null;
 }): string {
   const parts: string[] = [];
   const { salesScope, regionCodes, allowedProductCodes, references } = input;
@@ -253,7 +270,11 @@ function buildScopeSummary(input: {
     parts.push("All lines");
   }
 
-  if (regionCodes) {
+  // A one-district viewer reads "6 areas", not "2 regions" — his second region code is only there
+  // because one of his own areas happens to sit in it.
+  if (input.districtAreaCount != null) {
+    parts.push(`${input.districtAreaCount} area${input.districtAreaCount === 1 ? "" : "s"}`);
+  } else if (regionCodes) {
     if (regionCodes.size === 1) {
       const code = [...regionCodes][0];
       const region = references.regions.find((r) => r.regionCode.toUpperCase() === code);
@@ -290,53 +311,84 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     allowedProductCodes = await getWeeklyProductScopeCodes(hrKey);
   }
 
-  // Region scope.
+  // Geography scope. A District / Regional Manager whose organogram seat resolved is bounded by that
+  // seat's AREAS; the region set then only exists to reach those areas' rows (an area can sit in a
+  // foreign region) and to label/trim options — the area filter is what keeps it honest.
   let regionOverride: Set<string> | undefined;
   let regionCodes: Set<string> | null;
-  if (isRegionalManager) {
+  let areaCodes: Set<string> | null = salesScope.allowedAreaCodes ?? null;
+  if (areaCodes) {
+    // Seat-derived: forward BOTH bounds to the engine. The region override must be wide enough to
+    // fetch every one of the seat's areas, including any that sit outside the viewer's own region.
+    regionOverride = new Set(salesScope.allowedAreaFactRegionCodes ?? []);
+    regionCodes = regionOverride;
+  } else if (isRegionalManager) {
     regionOverride = await resolveRegionalManagerRegionCodes(ctx, salesScope, references);
     regionCodes = regionOverride;
   } else if (isDistrictManager) {
-    // DSM is already region-locked to his single own region by the base engine scope; surface
-    // that region set for visibility + option trimming, but no override is needed.
+    // Seat map couldn't answer — fall back to the legacy single-own-region lock (unchanged
+    // behaviour). No override is needed; the base engine scope already applies it.
     regionCodes = regionCodesForNames(salesScope.allowedRegionNames, references);
   } else {
     regionCodes = null; // NSM / PM / GPM / MM — all regions within their line scope.
+    areaCodes = null;
   }
 
   const lineKeys = salesScope.allowedLineNames
     ? new Set([...salesScope.allowedLineNames].map(normalizeLineKey))
     : null;
 
+  // NOTE: phx_sos_distinct_distributors filters by line/region only (it has no area argument), so a
+  // seat-scoped viewer whose region set was widened to reach an out-of-region area can see a few extra
+  // DISTRIBUTOR NAMES in the dropdown — ones active in that region but not in his own areas. Accepted
+  // deliberately: it is master-data naming, every row remains area-filtered, and the alternative
+  // (passing his narrow own-region set) would drop a distributor that only sells in his out-of-region
+  // area — reintroducing the bug this change fixes. Give the RPC an area argument to close it properly.
   const allowedDistributorCodes = await resolveAllowedDistributorCodes(lineKeys, regionCodes, salesScope);
 
-  const visibility = computePortalSosVisibility(lineKeys, regionCodes);
-  const isSingleRegion = regionCodes !== null && regionCodes.size === 1;
+  // A seat-scoped District Manager owns one district by definition, so keep treating him as
+  // "single region" for both the filter rule and the chart layout even when his area set reaches
+  // into a second region — otherwise the fix would silently un-hide a region picker and swap his
+  // "By area" chart for a two-bar "By region" chart where one bar is a single area.
+  const lockedToSingleDistrict = areaCodes !== null && isDistrictManager;
+  const visibility = computePortalSosVisibility(lineKeys, regionCodes, lockedToSingleDistrict);
+  const isSingleRegion = lockedToSingleDistrict || (regionCodes !== null && regionCodes.size === 1);
 
   return {
     role,
     allowedProductCodes,
     regionOverride,
     regionCodes,
+    areaCodes,
     lineKeys,
     allowedDistributorCodes,
     visibility,
     isSingleRegion,
-    scopeSummary: buildScopeSummary({ salesScope, regionCodes, allowedProductCodes, references }),
+    scopeSummary: buildScopeSummary({
+      salesScope,
+      regionCodes,
+      allowedProductCodes,
+      references,
+      districtAreaCount: lockedToSingleDistrict && areaCodes ? areaCodes.size : null,
+    }),
   };
 }
 
 /** Trim the engine's master-derived filter option lists to the viewer's in-scope universe. */
 function trimFilterOptions(filters: SosFilterOptions, scope: PortalSosScope): SosFilterOptions {
-  const { lineKeys, regionCodes, allowedProductCodes, allowedDistributorCodes } = scope;
+  const { lineKeys, regionCodes, areaCodes, allowedProductCodes, allowedDistributorCodes } = scope;
 
   const lines = lineKeys ? filters.lines.filter((line) => lineKeys.has(normalizeLineKey(line))) : filters.lines;
   const regions = regionCodes
     ? filters.regions.filter((region) => regionCodes.has(region.code.toUpperCase()))
     : filters.regions;
-  const areas = regionCodes
-    ? filters.areas.filter((area) => area.region != null && regionCodes.has(String(area.region).toUpperCase()))
-    : filters.areas;
+  // Areas are trimmed by the seat's AREA set when there is one. Trimming by region instead would both
+  // drop an owned out-of-region area and offer sibling managers' areas from a shared region.
+  const areas = areaCodes
+    ? filters.areas.filter((area) => areaCodes.has(area.code.toUpperCase()))
+    : regionCodes
+      ? filters.areas.filter((area) => area.region != null && regionCodes.has(String(area.region).toUpperCase()))
+      : filters.areas;
   const products = filters.products.filter((product) => {
     if (lineKeys && !(product.line != null && lineKeys.has(normalizeLineKey(product.line)))) return false;
     if (allowedProductCodes && !allowedProductCodes.has(product.code.toUpperCase())) return false;
@@ -422,9 +474,12 @@ export async function getPortalSosDashboard(
   const scope = await resolvePortalSosScope(ctx);
 
   const options: SosScopeOverrides = { allowedProductCodes: scope.allowedProductCodes };
-  // Only forward a region override when one was resolved (RM). Omitting the key lets the engine
-  // keep the role's base region scope (e.g. DSM's single-region lock).
+  // Only forward a region override when one was resolved (RM, or a seat-derived area bound whose
+  // regions must be reachable). Omitting the key lets the engine keep the role's base region scope
+  // (e.g. a DSM's single-region lock when the seat map couldn't answer).
   if (scope.regionOverride !== undefined) options.allowedRegionCodes = scope.regionOverride;
+  // The area bound must travel with any widened region set — never one without the other.
+  if (scope.areaCodes !== null) options.allowedAreaCodes = scope.areaCodes;
 
   const data = await getSosDashboard(filters, ctx, options);
   const [comparison, uploadStatus] = await Promise.all([

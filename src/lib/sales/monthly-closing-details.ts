@@ -497,6 +497,7 @@ export async function loadMonthlyClosingDetails(
 
   const scoped = applyDetailScope(mapped, {
     allowedRegionCodes,
+    allowedAreaCodes: scope.allowedAreaCodes,
     allowedProductCodes: scope.allowedProductCodes,
     dropConfidential: !confidentialIncluded,
   });
@@ -570,13 +571,23 @@ export function applyDetailScope(
   rows: ClosingDetailRow[],
   scope: {
     allowedRegionCodes: Set<string> | null;
+    /**
+     * Seat-derived AREA bound (see src/lib/sales/seat-area-scope.ts). When present it REPLACES the
+     * region check: a District / Regional Manager's own area can sit in a foreign region, so matching
+     * on region would drop it — and matching on the widened region instead would expose that region's
+     * other areas. Empty set = fail closed, same convention as the region bound.
+     */
+    allowedAreaCodes?: Set<string> | null;
     allowedProductCodes: Set<string> | null;
     dropConfidential: boolean;
   },
 ): ClosingDetailRow[] {
   let out = rows;
   if (scope.dropConfidential) out = out.filter((row) => !row.isConfidential);
-  if (scope.allowedRegionCodes) {
+  if (scope.allowedAreaCodes) {
+    const allowed = scope.allowedAreaCodes;
+    out = out.filter((row) => allowed.has(row.areaCode.trim().toUpperCase()));
+  } else if (scope.allowedRegionCodes) {
     const allowed = scope.allowedRegionCodes;
     // Empty set = the viewer's region resolved to no code — fail closed.
     out = out.filter((row) => allowed.has(row.regionCode.trim().toUpperCase()));
