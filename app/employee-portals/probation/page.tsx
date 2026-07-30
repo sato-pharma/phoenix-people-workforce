@@ -22,6 +22,7 @@ import {
   isEmployeeDirectoryTimeout,
 } from "@/lib/employees/employee-directory";
 import {
+  canExportProbation,
   canViewProbationAnalytics,
   getProbationRows,
   isProbationSchemaMissing,
@@ -171,6 +172,7 @@ export default async function EmployeePortalProbationPage({
         <>
           <ProbationFeedbackTasksPanel tasks={feedbackTasks} />
           <EmployeeProbationDashboard
+            canExport={canExportProbation(access)}
             canManageDvCheckboxes={canManageDvCheckboxes}
             canSubmitManagerFeedback={canSubmitManagerFeedback}
             feedbackCycle={feedbackCycle}

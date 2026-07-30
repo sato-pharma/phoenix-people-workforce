@@ -645,7 +645,12 @@ const defaultPermissionMatrix: PermissionMap = {
     organogram: ["read"],
     payroll: ["read", "export"],
     payslips: ["read", "export"],
-    probation: ["read"],
+    // `export` added 2026-07-30 alongside canExportProbation (src/lib/probation/service.ts), which
+    // is what actually enforces this. Matches District Manager and National Sales Manager, the rungs
+    // either side of the RM. Scoped, not company-wide: the export is built from getProbationRows,
+    // which filters every employee through canReadProbationEmployee, so an RM downloads exactly the
+    // med reps in their own subtree — the same rows the tracker already shows them.
+    probation: ["read", "export"],
     sales: ["read", "export"],
     weekly_sales: ["read", "export"],
     support_requests: ["read", "create"],
