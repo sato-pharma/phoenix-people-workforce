@@ -39,11 +39,43 @@ export function runProbationStabilizationTests() {
   assert.match(portalPageSource, /canSubmitManagerFeedback/);
   assert.match(permissionsSource, /Employee:\s*\{[\s\S]*?probation:\s*\["read"\]/);
   assert.match(permissionsSource, /"Medical Rep":\s*\{[\s\S]*?probation:\s*\["read"\]/);
-  assert.match(permissionsSource, /"Regional Manager":\s*\{[\s\S]*?probation:\s*\["read"\]/);
+  // Regional Manager gained `export` 2026-07-30 (owner-approved) together with canExportProbation.
+  // Scoped, not company-wide: the file is built from getProbationRows, which filters every employee
+  // through canReadProbationEmployee, so an RM downloads only their own subtree's med reps.
+  assert.match(permissionsSource, /"Regional Manager":\s*\{[\s\S]*?probation:\s*\["read", "export"\]/);
   assert.match(permissionsSource, /Manager:\s*\{[\s\S]*?probation:\s*\["read"\]/);
 
   assert.match(exportRouteSource, /assertCanExportProbation\(access\)/);
   assert.match(exportRouteSource, /getProbationRows\(access\)/);
+
+  // ── Scoped probation export (2026-07-30) ───────────────────────────────────────────────
+  // District/Regional/National Sales Manager may export, but ONLY their own scoped rows. Two
+  // invariants keep that honest and both must hold:
+  //   1. assertCanExportProbation gates on canExportProbation, NOT canViewAllProbation. Before this
+  //      it used canViewAllProbation, which excludes all three — so DM/NSM carried an `export`
+  //      grant in the matrix that the endpoint refused, and the matrix overstated their access.
+  //   2. canViewAllProbation itself must NOT gain those roles. It is the company-wide predicate; if
+  //      a field role leaked into it they would export every med rep in the company, not their own.
+  assert.match(serviceSource, /export function canExportProbation/);
+  assert.match(
+    serviceSource,
+    /assertCanExportProbation[\s\S]{0,320}if \(!canExportProbation\(access\)\)/,
+    "assertCanExportProbation must gate on canExportProbation (the scoped predicate), not canViewAllProbation",
+  );
+  const companyWideProbationBlock = serviceSource.match(
+    /export function canViewAllProbation[\s\S]*?\n\}/,
+  );
+  assert.ok(companyWideProbationBlock, "canViewAllProbation must still exist");
+  for (const fieldRole of ["District Manager", "Regional Manager", "National Sales Manager"]) {
+    assert.doesNotMatch(
+      companyWideProbationBlock![0],
+      new RegExp(fieldRole),
+      `${fieldRole} must never enter canViewAllProbation — that would turn a subtree-scoped export into a company-wide one`,
+    );
+  }
+  // The portal button must be driven by the same predicate the endpoint enforces, so it can never
+  // render for someone /api/exports would 403.
+  assert.match(portalPageSource, /canExport=\{canExportProbation\(access\)\}/);
 
   assert.match(serviceSource, /allowedWorkflowActions/);
   assert.match(serviceSource, /validateWorkflowTransition/);

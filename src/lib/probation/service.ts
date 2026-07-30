@@ -160,6 +160,28 @@ export function canReadAllProbation(access: Pick<AccessContext, "role" | "scope"
   return canViewAllProbation(access) || access.role === "CEO";
 }
 
+/**
+ * Field-ladder roles whose probation READ is subtree/line-scoped rather than company-wide.
+ *
+ * They may export, but only ever the rows getProbationRows already returns for them — that reader
+ * filters every employee through canReadProbationEmployee, so the workbook/PDF can never contain a
+ * person the exporter cannot already see on screen. This is the ONLY thing separating a scoped
+ * exporter from canViewAllProbation, which stays company-wide.
+ *
+ * Before this existed, District Manager and National Sales Manager carried `probation: ["export"]`
+ * in defaultPermissionMatrix but assertCanExportProbation keyed off canViewAllProbation, which
+ * excludes them — so the grant was inert and the matrix overstated their access.
+ */
+const scopedProbationExportRoles: ReadonlySet<AccessContext["role"]> = new Set([
+  "District Manager",
+  "Regional Manager",
+  "National Sales Manager",
+]);
+
+export function canExportProbation(access: Pick<AccessContext, "role" | "scope">) {
+  return canViewAllProbation(access) || scopedProbationExportRoles.has(access.role);
+}
+
 // Probation Analytics (historical outcomes) audience — owner rule 2026-07-17. The feedback-submitting
 // manager tiers (National Sales Manager, Product / Group Product Manager) plus SFE, admin, and the CEO
 // get the read-only outcomes dashboard. This is deliberately WIDER than canReadAllProbation (which
@@ -178,7 +200,9 @@ export function canViewProbationAnalytics(access: Pick<AccessContext, "role" | "
 }
 
 export function assertCanExportProbation(access: AccessContext) {
-  if (!canViewAllProbation(access)) {
+  // canExportProbation, not canViewAllProbation: the scoped field-ladder roles export only the rows
+  // getProbationRows hands them, which is already narrowed by canReadProbationEmployee.
+  if (!canExportProbation(access)) {
     throw new Error(`Forbidden: ${access.role} cannot export probation.`);
   }
 }

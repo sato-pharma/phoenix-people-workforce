@@ -29,6 +29,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type EmployeeProbationDashboardProps = {
   canManageDvCheckboxes?: boolean;
+  // Resolved server-side by canExportProbation (src/lib/probation/service.ts) — the SAME predicate
+  // /api/exports enforces, so the button never appears for someone the endpoint would 403. The file
+  // contains only the rows getProbationRows returns for this viewer (their own subtree), not the
+  // company-wide list the admin tracker exports.
+  canExport?: boolean;
   canSubmitManagerFeedback: boolean;
   feedbackCycle?: number | null;
   feedbackEmployeeHrId?: string | null;
@@ -129,6 +134,7 @@ function workflowBadgeColors(status: string | null | undefined) {
 
 export function EmployeeProbationDashboard({
   canManageDvCheckboxes = false,
+  canExport = false,
   canSubmitManagerFeedback,
   feedbackCycle: _feedbackCycle,
   feedbackEmployeeHrId: initialFeedbackHrId,
@@ -570,6 +576,22 @@ export function EmployeeProbationDashboard({
           >
             Reset
           </button>
+          {canExport ? (
+            <>
+              <a
+                className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                href="/api/exports?report=probation&format=xlsx"
+              >
+                Export Excel
+              </a>
+              <a
+                className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                href="/api/exports?report=probation&format=pdf"
+              >
+                Export PDF
+              </a>
+            </>
+          ) : null}
         </div>
       </Card>
 
