@@ -95,6 +95,28 @@ const ACTIONABLE_APPROVAL_NOTIFICATIONS: Record<string, { domain: "excuse" | "pl
 
 const VACATION_REQUEST_SUBMITTED_ACTIONABLE_STATUS = "Pending your approval";
 
+/**
+ * The ONLY valid ON CONFLICT arbiter for notification_user_states.
+ *
+ * The table used to carry two independent unique indexes over the same person —
+ * (notification_event_id, hr_id) and (notification_event_id, user_id) — and these upserts
+ * picked one or the other depending on whether the viewer had a loginId. ON CONFLICT only
+ * protects the index it arbitrates on, so any insert that missed the chosen index but
+ * collided on the *other* one raised 23505 and was swallowed by the fail-soft handlers
+ * below — meaning the write silently never persisted and was retried on every single bell
+ * poll, forever (production logged this ~2x/minute continuously).
+ *
+ * hr_id is the canonical employee key in this codebase; user_id is the loginId, which is NOT
+ * stable for one person (dev-auth writes "dev.preview" where a real login writes "A-16", and
+ * production still holds 8 such rows). So hr_id is the sole uniqueness key, user_id is kept
+ * as informational context only, and the redundant user_id unique index was dropped in
+ * 20260730120000_notification_user_states_single_conflict_key.sql.
+ *
+ * Every caller must therefore have a resolved hr_id before writing — with no unique index on
+ * user_id, a NULL hr_id would silently accumulate duplicate rows instead of upserting.
+ */
+const NOTIFICATION_STATE_CONFLICT_TARGET = "notification_event_id,hr_id";
+
 export type ApprovalCandidate = { id: string; requestId: string };
 export type ApprovalCandidatesByDomain = Record<"excuse" | "plan" | "vacation", ApprovalCandidate[]>;
 
@@ -175,8 +197,8 @@ async function archiveStaleApprovalNotifications(access: AccessContext, rows: In
           getSupabaseAdmin()
             .from("notification_user_states")
             .upsert(
-              { archived_at: now, hr_id: identity.hrId || null, notification_event_id: eventId, updated_at: now, user_id: identity.userId },
-              { onConflict: identity.userId ? "notification_event_id,user_id" : "notification_event_id,hr_id" },
+              { archived_at: now, hr_id: identity.hrId, notification_event_id: eventId, updated_at: now, user_id: identity.userId },
+              { onConflict: NOTIFICATION_STATE_CONFLICT_TARGET },
             ),
         ),
       );
@@ -450,7 +472,9 @@ export async function listInAppNotificationsForViewer(
 
 export async function markInAppNotificationRead(access: AccessContext, notificationId: string) {
   const identity = viewerIdentity(access);
-  if (!identity.hrId && !identity.userId) return { skipped: true };
+  // hr_id — not loginId — is what uniquely identifies the state row (see
+  // NOTIFICATION_STATE_CONFLICT_TARGET). Without one there is nothing to upsert against.
+  if (!identity.hrId) return { skipped: true };
 
   const cleanedId = cleanText(notificationId);
   if (!cleanedId) return { skipped: true };
@@ -482,7 +506,7 @@ export async function markInAppNotificationRead(access: AccessContext, notificat
   const now = new Date().toISOString();
   try {
     const payload = {
-      hr_id: identity.hrId || null,
+      hr_id: identity.hrId,
       notification_event_id: cleanedId,
       read_at: now,
       updated_at: now,
@@ -490,7 +514,7 @@ export async function markInAppNotificationRead(access: AccessContext, notificat
     };
     const { error } = await getSupabaseAdmin()
       .from("notification_user_states")
-      .upsert(payload, { onConflict: identity.userId ? "notification_event_id,user_id" : "notification_event_id,hr_id" });
+      .upsert(payload, { onConflict: NOTIFICATION_STATE_CONFLICT_TARGET });
     if (error) throw error;
     return { skipped: false };
   } catch (error) {
@@ -522,7 +546,9 @@ export async function markAllInAppNotificationsRead(access: AccessContext) {
 
 export async function archiveInAppNotification(access: AccessContext, notificationId: string) {
   const identity = viewerIdentity(access);
-  if (!identity.hrId && !identity.userId) return { skipped: true };
+  // hr_id — not loginId — is what uniquely identifies the state row (see
+  // NOTIFICATION_STATE_CONFLICT_TARGET). Without one there is nothing to upsert against.
+  if (!identity.hrId) return { skipped: true };
 
   const cleanedId = cleanText(notificationId);
   if (!cleanedId) return { skipped: true };
@@ -552,14 +578,14 @@ export async function archiveInAppNotification(access: AccessContext, notificati
   try {
     const payload = {
       archived_at: now,
-      hr_id: identity.hrId || null,
+      hr_id: identity.hrId,
       notification_event_id: cleanedId,
       updated_at: now,
       user_id: identity.userId,
     };
     const { error } = await getSupabaseAdmin()
       .from("notification_user_states")
-      .upsert(payload, { onConflict: identity.userId ? "notification_event_id,user_id" : "notification_event_id,hr_id" });
+      .upsert(payload, { onConflict: NOTIFICATION_STATE_CONFLICT_TARGET });
     if (error) throw error;
     return { skipped: false };
   } catch (error) {
