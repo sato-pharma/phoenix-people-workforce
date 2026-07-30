@@ -109,8 +109,15 @@ export function isLineScopedOrganogramRole(access: AccessContext) {
   // Marketing Manager is intentionally NOT here: it has company-wide oversight via
   // canAccessCompanyOrganogram, so a line-scoped entry was dead code that misrepresented
   // its scope. (Head-of-department company-wide org visibility is the intended behavior.)
+  //
+  // Regional Manager reads the org tree at LINE grain (same as the NSM above), not region grain:
+  // the organogram is a reporting-structure view whose value is seeing where your districts sit
+  // inside the whole line, and an RM already has line-wide people visibility through the
+  // organogram/team read grants. Sensitive per-person domains (payroll, expenses) stay bounded by
+  // their own role-keyed scope resolvers and are unaffected by this.
   return (
     access.role === "National Sales Manager" ||
+    access.role === "Regional Manager" ||
     access.role === "Product Manager" ||
     access.role === "Group Product Manager"
   );

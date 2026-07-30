@@ -8,6 +8,7 @@ import {
   getDsmTeamPerformance,
   getEmployeePortalShellData,
   getNsmDsmPerformance,
+  getRmRegionalPerformance,
   type EmployeePortalShellData,
 } from "@/lib/employee-portal/service";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
@@ -92,12 +93,44 @@ export type PortalHomeSnapshot = {
         crm: NsmCrmComplianceData | null;
       }
     | null;
+  /**
+   * Regional Manager only: the RM's region rolled up by district (DSM), plus the DSM leaderboard,
+   * the region's top med reps, and the region's CRM first-visit compliance board.
+   *
+   * Region membership is the RM's own product line NARROWED to the regions found within their
+   * management subtree (`regionsWithinManagerHierarchy`), never their own coarse `region_name`
+   * label — see getRmRegionalPerformance in employee-portal/service.ts for the owner rule.
+   */
+  rmRegional:
+    | {
+        achievementPercent: number;
+        dsmCount: number;
+        totalSales: number;
+        totalTarget: number;
+        pendingApprovals: number;
+        /** Districts (DSMs) inside the RM's region set, ranked by achievement % then sales. */
+        dsms: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
+        /** Top med reps inside the RM's region set, ranked the same way. */
+        topReps: Array<{
+          hrId: string;
+          name: string;
+          achievementPercent: number;
+          totalSales: number;
+          totalTarget: number;
+          managerName: string | null;
+        }>;
+        crm: NsmCrmComplianceData | null;
+      }
+    | null;
   plansAwaitingManagerApproval: number | null;
   /** DM/RM/NSM/PM/GPM/TM only: personal DV trend, scope coverage, and probation DV watchlist. */
   dvFocus: DoubleVisitPortalFocus | null;
 };
 
-type RoleSpecificExtras = Pick<PortalHomeSnapshot, "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational" | "nsmBoard">;
+type RoleSpecificExtras = Pick<
+  PortalHomeSnapshot,
+  "pmMarketing" | "mmOverview" | "dsmTeam" | "nsmNational" | "nsmBoard" | "rmRegional"
+>;
 
 const emptyRoleExtras: RoleSpecificExtras = {
   pmMarketing: null,
@@ -105,6 +138,7 @@ const emptyRoleExtras: RoleSpecificExtras = {
   dsmTeam: null,
   nsmNational: null,
   nsmBoard: null,
+  rmRegional: null,
 };
 
 /** Cheap, single-query "what's paying out soon" — real pay_date rows, no recomputation. */
@@ -262,6 +296,72 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           pendingApprovals: approvals.length,
         },
         nsmBoard: { dsms, topReps, crm },
+      };
+    }
+    if (role === "Regional Manager") {
+      const [regional, approvals, directoryRows] = await Promise.all([
+        getRmRegionalPerformance(access, {}),
+        getAwaitingMyActionItems(access, "portal").catch(() => []),
+        getEmployeeDirectoryRows().catch(() => []),
+      ]);
+      if (!regional) return emptyRoleExtras;
+
+      // Same nickname resolution as the DSM/NSM branches above: the performance services return
+      // raw full names, so resolve the directory's nickname-aware displayName by a
+      // hyphen-insensitive HR-ID key (canonical "B100" and stored "B-100" both match).
+      const nameKey = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const displayByKey = new Map<string, string>();
+      for (const row of directoryRows) {
+        const key = nameKey(row.hrId);
+        if (key) displayByKey.set(key, row.displayName);
+      }
+      const display = (hrId: string | null | undefined, fallback: string) =>
+        displayByKey.get(nameKey(hrId)) ?? fallback;
+
+      const dsms = regional.dsms.map((d) => ({
+        hrId: d.hrId,
+        name: display(d.hrId, d.name),
+        achievementPercent: d.achievementPercent,
+        totalSales: d.totalSales,
+        totalTarget: d.totalTarget,
+      }));
+
+      const topReps = regional.topReps.slice(0, 10).map((m) => ({
+        hrId: m.hrId,
+        name: display(m.hrId, m.name),
+        achievementPercent: m.achievementPercent,
+        totalSales: m.totalSales,
+        totalTarget: m.totalTarget,
+        managerName: m.managerName ? display(m.managerHrId, m.managerName) : m.managerName,
+      }));
+
+      // CRM first-visit compliance over the RM's FULL region roster (every rep + DSM in scope),
+      // not just the top 10 shown in the leaderboard. getNsmCrmCompliance is roster-driven, so
+      // passing the region-scoped roster reuses it as-is without widening access.
+      const crmInput = {
+        reps: regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+        dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+      };
+      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
+        logPortalFailure(
+          { hrId: access.hrId, module: "rm-crm-compliance", role: access.role, route: "/employee-portals" },
+          error,
+        );
+        return nsmCrmComplianceUnavailable(crmInput);
+      });
+
+      return {
+        ...emptyRoleExtras,
+        rmRegional: {
+          achievementPercent: regional.regionAchievementPercent,
+          dsmCount: regional.dsmCount,
+          totalSales: regional.regionTotalSales,
+          totalTarget: regional.regionTotalTarget,
+          pendingApprovals: approvals.length,
+          dsms,
+          topReps,
+          crm,
+        },
       };
     }
   } catch {

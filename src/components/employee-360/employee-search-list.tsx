@@ -135,6 +135,7 @@ function groupByLine(rows: Employee360ListItem[], subGroupByManager: boolean): L
 export function EmployeeSearchList({
   employees,
   basePath = "/employee-360",
+  defaultTab,
 }: {
   employees: Employee360ListItem[];
   /** Detail-link prefix — the admin index page links to `/employee-360/[hrId]`; the
@@ -142,6 +143,10 @@ export function EmployeeSearchList({
    * `/employee-portals/employee-360/[hrId]` instead, since the admin route redirects
    * portal-mode roles away. */
   basePath?: string;
+  /** Tab to open on. The portal self-report passes the VIEWER's own role family so a manager lands
+   * on their own tab instead of the Medical Reps tab (which is first in EMPLOYEE_360_ROLE_ORDER and
+   * would otherwise always win). Ignored when that family has nobody visible. */
+  defaultTab?: Employee360RoleCategory | null;
 }) {
   const countByCategory = useMemo(() => {
     const map = new Map<Employee360RoleCategory, number>();
@@ -155,7 +160,9 @@ export function EmployeeSearchList({
     [countByCategory],
   );
 
-  const [activeTab, setActiveTab] = useState<Employee360RoleCategory>(tabs[0] ?? "medical-rep");
+  const [activeTab, setActiveTab] = useState<Employee360RoleCategory>(
+    defaultTab && tabs.includes(defaultTab) ? defaultTab : (tabs[0] ?? "medical-rep"),
+  );
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Record<FilterKey, string>>({ lineName: "", areaName: "", managerName: "" });
   const [showFilters, setShowFilters] = useState(false);

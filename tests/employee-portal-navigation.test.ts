@@ -132,10 +132,30 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
 
+  // Regional Manager sits above the DSMs but previously saw NONE of the oversight tabs its own
+  // read-permissions already imply — the data layers were RM-ready and only the sidebar flags were
+  // missing (probation walks the RM subtree, coaching is RM=hierarchy, organogram is line-scoped).
+  const regionalManager = resolveEmployeePortalNavVisibility("Regional Manager");
+  assert.equal(regionalManager.showTeamCoachingTab, true, "RM should see Team Coaching Reports (coaching read is RM=hierarchy)");
+  assert.equal(regionalManager.showProbationTab, true, "RM should see the Probation Tracker (canReadProbationEmployee has an RM subtree branch)");
+  assert.equal(regionalManager.showOrganogramTab, true, "RM should see the Organogram (line-scoped, same grain as NSM)");
+  assert.equal(regionalManager.showMyCoachingTab, false, "RM should not see My Coaching Reports (that is the Medical Rep view)");
+  assert.equal(
+    regionalManager.showVacanciesTab,
+    false,
+    "RM must NOT gain Vacancies here — it has no `vacancies` permission and getEmployeePortalVacancies has no RM scope branch (owner deferred it)",
+  );
+  assert.equal(
+    regionalManager.showTeamPerformanceTab,
+    false,
+    "RM must NOT gain Team Performance — getDsmTeamPerformance still returns null for RM, so the tab would dead-end",
+  );
+
   // Owner decision 2026-07-30: DSM and RM are out of the Excuse module entirely — no submit tab
   // and no approvals tab. Excuse is a Head-Office / fingerprint-attendance module and is
   // direct-manager-only, so nobody in the field ladder ever routes one to them. Enforced
   // server-side by EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts; these flags hide the links.
+  // Independent of the RM oversight tabs asserted above — both must hold at once.
   for (const excludedRole of ["District Manager", "Regional Manager"]) {
     const fieldNav = resolveEmployeePortalNavVisibility(excludedRole, excludedRole, "Pedia", "Sales");
     assert.equal(fieldNav.showExcuseApprovalsTab, false, `${excludedRole} should not see Excuse Approvals`);

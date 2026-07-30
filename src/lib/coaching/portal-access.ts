@@ -14,7 +14,15 @@ function isMedicalRepTitle(value: string | null | undefined) {
 export async function resolveEmployeeCoachingPortalMode(
   access: AccessContext,
 ): Promise<EmployeeCoachingPortalMode | null> {
-  if (access.role === "District Manager" || access.role === "National Sales Manager") {
+  // Regional Manager gets the team view like DSM/NSM. The row-level scope is enforced downstream by
+  // canAccessCoachingEmployee (coaching/service.ts), which already bounds an RM to their own
+  // management subtree via isWithinManagerHierarchy — this only decides WHICH view renders, never
+  // which reports are visible in it.
+  if (
+    access.role === "District Manager" ||
+    access.role === "Regional Manager" ||
+    access.role === "National Sales Manager"
+  ) {
     return "team";
   }
 

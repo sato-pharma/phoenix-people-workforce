@@ -40,15 +40,6 @@ export function egp(n: number) {
   return new Intl.NumberFormat("en-EG", { style: "currency", currency: "EGP", maximumFractionDigits: 0 }).format(n);
 }
 
-function monthLabel(ym: string) {
-  const [y, m] = ym.split("-");
-  return new Date(Date.UTC(Number(y), Number(m) - 1, 1)).toLocaleString("en-US", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
-
 export function SectionShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
@@ -589,7 +580,7 @@ const PM_GPM_ACTIONS: readonly ActionStripItem[] = [
 ];
 
 function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, pmMarketing, plansAwaitingManagerApproval, dvFocus } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
 
@@ -618,14 +609,8 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
       accent: "bg-slate-900",
       valueClass: "text-slate-900",
     },
-    {
-      icon: Wallet,
-      label: "Latest Payslip",
-      value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
-      sub: "most recent issued",
-      accent: "bg-slate-900",
-      valueClass: "text-slate-900",
-    },
+    // NO PAYSLIP KEYCARD: payslip data (amount OR month) must never render on any overview/landing
+    // surface for any role — owner rule. It lives only on /employee-portals/payslips.
   ];
 
   return (
@@ -654,7 +639,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
+  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -731,12 +716,9 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
             label: "leave balance",
             href: "/employee-portals/vacation-request",
           },
-          {
-            icon: Wallet,
-            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
-            label: "latest payslip",
-            href: "/employee-portals/payslips",
-          },
+          // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
+          // overview/landing surface for any role — owner rule. It lives only on
+          // /employee-portals/payslips.
         ]}
       />
       <QuickActions
@@ -936,22 +918,11 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
         </SectionShell>
       )}
 
+      {/* My Status — NO PAYSLIP CARD: payslip data (amount OR month) must never render on any
+          overview/landing surface for any role — owner rule. It lives only on
+          /employee-portals/payslips, reachable from the My Payslips nav tile below. */}
       <SectionShell title="My Status">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Link href="/employee-portals/payslips" className="group overflow-hidden border border-slate-200 transition hover:border-orange-300">
-            <div className="flex items-center gap-2 bg-slate-900 px-4 py-2 transition-colors group-hover:bg-orange-600">
-              <Wallet className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover:text-white" />
-            </div>
-            <div className="bg-white px-3 py-3 transition-colors group-hover:bg-orange-50 sm:px-4 sm:py-4">
-              <p className="break-words text-2xl font-bold text-slate-900">
-                {latestPayslip ? monthLabel(latestPayslip.month) : "Not issued"}
-              </p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                latest payslip
-              </p>
-            </div>
-          </Link>
-
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Link href="/employee-portals/vacation-request" className="group overflow-hidden border border-slate-200 transition hover:border-orange-300">
             <div className="flex items-center gap-2 bg-slate-900 px-4 py-2 transition-colors group-hover:bg-orange-600">
               <CalendarDays className="h-3.5 w-3.5 text-slate-400 transition-colors group-hover:text-white" />
@@ -1029,7 +1000,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 // --- Standard / MR layout ---
 
 function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, latestPayslip, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
+  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, role, plansAwaitingManagerApproval } =
     snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -1084,12 +1055,9 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
             label: "leave balance",
             href: "/employee-portals/vacation-request",
           },
-          {
-            icon: Wallet,
-            value: latestPayslip ? monthLabel(latestPayslip.month) : "—",
-            label: "latest payslip",
-            href: "/employee-portals/payslips",
-          },
+          // NO PAYSLIP TILE: payslip data (amount OR month) must never render on any
+          // overview/landing surface for any role — owner rule. It lives only on
+          // /employee-portals/payslips.
         ]}
       />
       <QuickActions

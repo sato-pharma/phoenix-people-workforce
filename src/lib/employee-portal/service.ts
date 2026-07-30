@@ -5178,6 +5178,135 @@ export async function getNsmDsmPerformance(
   }
 }
 
+/** A Regional Manager's region roll-up: districts + reps inside their own line AND region subtree. */
+export type RmRegionalPerformanceData = {
+  dsms: DsmTeamMemberData[];
+  topReps: DsmTeamMemberData[];
+  periods: string[];
+  regionAchievementPercent: number;
+  dsmCount: number;
+  regionTotalSales: number;
+  regionTotalTarget: number;
+};
+
+/**
+ * Regional Manager region roll-up (district grain), for the RM portal command center.
+ *
+ * Deliberately built by REUSING the same two shared builders the NSM/DSM views use
+ * (buildDsmPerformanceForLineScope at DSM grain + buildTeamPerformanceForScope in "nsm-line" mode
+ * at med-rep grain) and then narrowing the result to the RM's regions. That ordering matters: the
+ * builders own all the seat-continuity and achievement math, so an RM's district numbers reconcile
+ * exactly with the same district as seen by its DSM and by the line's NSM — the same
+ * one-code-path guarantee documented on those builders.
+ *
+ * Region membership follows the owner rule in regionalManagerScopeRows: the RM's own coarse
+ * `region_name` (e.g. "Alexandria + Delta") is NOT used; the region set comes from the RM's own
+ * management subtree via regionsWithinManagerHierarchy (seat-continuity aware).
+ */
+export async function getRmRegionalPerformance(
+  access: AccessContext,
+  options: { period?: string | string[] | null } = {},
+): Promise<RmRegionalPerformanceData | null> {
+  try {
+    const currentUser = await resolvePortalCurrentUser(access);
+    if (!currentUser?.hrId) return null;
+
+    if (normalizeRole(currentUser.role) !== "Regional Manager") return null;
+
+    const directory = await getEmployeeDirectory().catch(() => null);
+    if (!directory) return null;
+
+    const rmCanonical = normalizeHrIdForAccess(currentUser.hrId);
+    if (!rmCanonical) return null;
+
+    const currentEmployee = findDirectoryEmployeeByHrId(directory, currentUser.hrId);
+    const lineScope = createPortalSalesLineScope({
+      fallbackLine: currentUser.line,
+      lineId: currentEmployee?.lineId ?? null,
+      lineName: currentEmployee?.lineName ?? null,
+    });
+
+    // The RM's region set, derived from their subtree (never their own coarse region label).
+    // Empty means we cannot place the RM in any region: fail CLOSED rather than showing the
+    // whole line as if it were "their region".
+    const regionKeys = regionsWithinManagerHierarchy(directory.employees, rmCanonical, normalizeHrIdForAccess);
+    if (regionKeys.size === 0) return null;
+
+    // Region label per employee, keyed the same way the perf builders key their nodes, so DSM /
+    // med-rep nodes (which carry no regionName of their own) can be narrowed to the region set.
+    const regionByCanonicalHrId = new Map<string, string>();
+    for (const employee of directory.employees) {
+      const key = normalizeHrIdForAccess(employee.hrId);
+      if (!key) continue;
+      const region = normalizeRegionLabel(employee.regionName);
+      if (region) regionByCanonicalHrId.set(key, region);
+    }
+    const isInRegion = (hrId: string | null | undefined) => {
+      const key = normalizeHrIdForAccess(hrId);
+      if (!key) return false;
+      const region = regionByCanonicalHrId.get(key);
+      return Boolean(region && regionKeys.has(region));
+    };
+
+    // The line's NSM anchors the vacant-DSM-seat fallback inside the shared builders (it must be
+    // the NSM, not the RM — see buildDsmPerformanceForLineScope's nsmCanonical contract).
+    const lineNsm = currentEmployee
+      ? directory.employees.find(
+          (employee) =>
+            isNationalSalesManagerDirectoryEmployee(employee) &&
+            lineScopeIncludesEmployee(currentEmployee, employee),
+        )
+      : undefined;
+
+    const [linePerformance, lineTeam] = await Promise.all([
+      buildDsmPerformanceForLineScope({
+        directory,
+        lineScope,
+        nsmCanonical: lineNsm ? toCanonicalPortalHrId(lineNsm.hrId) : null,
+        managerName: lineNsm?.displayName ?? currentEmployee?.lineName ?? "National Sales Manager",
+        period: options.period ?? null,
+      }),
+      buildTeamPerformanceForScope({
+        directory,
+        lineScope,
+        mode: "nsm-line",
+        anchorCanonical: lineNsm ? toCanonicalPortalHrId(lineNsm.hrId) : null,
+        period: options.period ?? null,
+      }).catch(() => null),
+    ]);
+
+    // Districts inside the RM's regions. Vacant-seat nodes carry a synthetic key
+    // ("vacant-seat:<code>") that never maps to a directory row, so they are dropped here rather
+    // than silently attributed to the wrong region.
+    const dsms = linePerformance.dsms
+      .filter((dsm) => isInRegion(dsm.hrId))
+      .slice()
+      .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
+
+    const topReps = (lineTeam?.members ?? [])
+      .filter((member) => isInRegion(member.hrId) || isInRegion(member.managerHrId))
+      .slice()
+      .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
+
+    // Region totals are the sum of the districts kept above — by construction the RM's region
+    // total is Σ(its districts), which is itself a subset-sum of the line total the NSM sees.
+    const regionTotalSales = dsms.reduce((sum, dsm) => sum + dsm.totalSales, 0);
+    const regionTotalTarget = dsms.reduce((sum, dsm) => sum + dsm.totalTarget, 0);
+
+    return {
+      dsms,
+      topReps,
+      periods: linePerformance.periods,
+      regionAchievementPercent: regionTotalTarget > 0 ? (regionTotalSales / regionTotalTarget) * 100 : 0,
+      dsmCount: dsms.length,
+      regionTotalSales,
+      regionTotalTarget,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Shared line-level DSM performance builder — the single implementation behind BOTH the
  * NSM portal view (getNsmDsmPerformance) and the company-wide executive rollup
