@@ -19,7 +19,7 @@ import {
 import { canonicalPersonHrId, isSamePerson } from "@/lib/auth/identity-aliases";
 import { getMyApprovalHistory, getMyRequestItems, decodeDecision } from "@/lib/action-center/service";
 import { getEmployeeDirectory, getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { logError } from "@/lib/observability/log";
+import { logStructured } from "@/lib/observability/log";
 import { reportsToManagerSeat } from "@/lib/workforce/hierarchy-resolver";
 import { listWeeklyPlanManagerGapRecords, type WeeklyPlanManagerGapRecord } from "@/lib/weekly-planning/drift-check";
 import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/excuses/drift-check";
@@ -63,6 +63,41 @@ import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sl
  */
 function isViewer(candidate: string | null | undefined, viewerHrId: string | null | undefined) {
   return hrIdsMatch(candidate, viewerHrId) || isSamePerson(viewerHrId, candidate);
+}
+
+// ── Diagnostic logging for swallowed loader failures ──────────────────────────
+//
+// Every loader below catches its own failure and degrades to an empty bucket rather than
+// blanking the page. Those failures must still be logged — but NOT all at ERROR.
+//
+// A `Forbidden: …` rejection from a domain permission gate is the access check WORKING, not a
+// fault: an anon or merely unauthorized caller is expected to be denied. Logging it at ERROR
+// meant a single unauthenticated GET of /employee-portals/approvals/vacation wrote two
+// ERROR-severity Cloud Run entries (confirmed live on revision phoenix-hr-00661-yuw,
+// 2026-07-30), polluting error dashboards and Sentry error-rate alerting with false positives.
+//
+// Permission denials are therefore emitted at DEBUG and labelled `classification=forbidden` so
+// they stay searchable; every other failure keeps ERROR severity. Observability only — this
+// changes nothing about who can read vacation, excuse, or plan data.
+
+/**
+ * Mirrors `isForbiddenError` from `@/lib/auth/server` (same `Forbidden:` message prefix).
+ * Kept local on purpose: this service is imported directly by the Node test runner, which
+ * cannot load the `next/headers` dependency that `@/lib/auth/server` pulls in.
+ */
+function isForbiddenLoadError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().startsWith("forbidden:");
+}
+
+function logLoadFailure(
+  message: string,
+  options: { labels: Record<string, string | number | boolean | null | undefined>; error: unknown },
+) {
+  const forbidden = isForbiddenLoadError(options.error);
+  logStructured(forbidden ? "DEBUG" : "ERROR", message, {
+    labels: { ...options.labels, classification: forbidden ? "forbidden" : "error" },
+    error: options.error,
+  });
 }
 
 // ── URL helpers (single source of truth for approval deep-links) ──────────────
@@ -158,14 +193,14 @@ export async function getVacationApprovalsForResponder(access: AccessContext): P
   // transient error looks identical to "nothing pending" for exactly this actor.
   const [center, report] = await Promise.all([
     getVacationActionCenterData(access).catch((error) => {
-      logError("Approvals hub vacation action-center data load failed", {
+      logLoadFailure("Approvals hub vacation action-center data load failed", {
         labels: { event: "approvals_hub_vacation_action_center_failed", hrId: access.hrId, role: access.role, scope: access.scope },
         error,
       });
       return null;
     }),
     getVacationReportData(access, { status: "all" }).catch((error) => {
-      logError("Approvals hub vacation report data load failed", {
+      logLoadFailure("Approvals hub vacation report data load failed", {
         labels: { event: "approvals_hub_vacation_report_data_failed", hrId: access.hrId, role: access.role, scope: access.scope },
         error,
       });
@@ -237,7 +272,7 @@ export async function countVacationAwaiting(access: AccessContext): Promise<numb
     const { awaiting } = await getVacationApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    logError("Approvals hub count vacation awaiting failed", {
+    logLoadFailure("Approvals hub count vacation awaiting failed", {
       labels: { event: "approvals_hub_count_vacation_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -252,7 +287,7 @@ export async function isVacationAwaitingOverdue(access: AccessContext): Promise<
     const { awaiting } = await getVacationApprovalsForResponder(access);
     return awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue");
   } catch (error) {
-    logError("Approvals hub vacation awaiting-overdue check failed", {
+    logLoadFailure("Approvals hub vacation awaiting-overdue check failed", {
       labels: { event: "approvals_hub_vacation_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -275,7 +310,7 @@ export async function getVacationAwaitingBadge(access: AccessContext): Promise<{
       overdue: awaiting.some((row) => slaTone(row.slaAgeDays, APPROVALS_SLA_THRESHOLDS.leave) === "overdue"),
     };
   } catch (error) {
-    logError("Approvals hub vacation awaiting badge computation failed", {
+    logLoadFailure("Approvals hub vacation awaiting badge computation failed", {
       labels: { event: "approvals_hub_vacation_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -292,7 +327,7 @@ export type ExcuseApprovalsBuckets = {
 export async function getExcuseApprovalsForResponder(access: AccessContext): Promise<ExcuseApprovalsBuckets> {
   const hrId = access.hrId?.trim() ?? "";
   const pending = await getManagerPendingExcuses(access).catch((error) => {
-    logError("Approvals hub manager pending excuses load failed", {
+    logLoadFailure("Approvals hub manager pending excuses load failed", {
       labels: { event: "approvals_hub_manager_pending_excuses_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -311,7 +346,7 @@ export async function countExcuseAwaiting(access: AccessContext): Promise<number
     const { awaiting } = await getExcuseApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    logError("Approvals hub count excuse awaiting failed", {
+    logLoadFailure("Approvals hub count excuse awaiting failed", {
       labels: { event: "approvals_hub_count_excuse_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -325,7 +360,7 @@ export async function isExcuseAwaitingOverdue(access: AccessContext): Promise<bo
     const { awaiting } = await getExcuseApprovalsForResponder(access);
     return awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue");
   } catch (error) {
-    logError("Approvals hub excuse awaiting-overdue check failed", {
+    logLoadFailure("Approvals hub excuse awaiting-overdue check failed", {
       labels: { event: "approvals_hub_excuse_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -342,7 +377,7 @@ export async function getExcuseAwaitingBadge(access: AccessContext): Promise<{ c
       overdue: awaiting.some((req) => slaTone(daysSinceCalendar(req.createdAt), APPROVALS_SLA_THRESHOLDS.excuse) === "overdue"),
     };
   } catch (error) {
-    logError("Approvals hub excuse awaiting badge computation failed", {
+    logLoadFailure("Approvals hub excuse awaiting badge computation failed", {
       labels: { event: "approvals_hub_excuse_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -928,7 +963,7 @@ async function buildApprovalScope(access: AccessContext): Promise<ApprovalScopeD
   if (!viewerCanonicalHrId) return { groups: [], totalPeople: 0 };
 
   const directory = await getEmployeeDirectory().catch((error) => {
-    logError("Approvals hub approval scope directory load failed", {
+    logLoadFailure("Approvals hub approval scope directory load failed", {
       labels: { event: "approvals_hub_build_approval_scope_directory_failed", role: access.role },
       error,
     });
@@ -1054,7 +1089,7 @@ export async function getCompanyVacationRequestsExcludingFieldForce(access: Acce
   }
   const [report, directory] = await Promise.all([
     getVacationReportData(access, { status: "all" }).catch((error) => {
-      logError("Approvals hub company vacation requests report load failed", {
+      logLoadFailure("Approvals hub company vacation requests report load failed", {
         labels: { event: "approvals_hub_company_vacation_requests_report_failed", role: access.role },
         error,
       });
@@ -1106,7 +1141,7 @@ export async function getCompanyExcuseRequestsExcludingFieldForce(access: Access
     getEmployeeDirectory().catch(() => null),
   ]);
   if (error) {
-    logError("Approvals hub company excuse requests query failed", {
+    logLoadFailure("Approvals hub company excuse requests query failed", {
       labels: { event: "approvals_hub_company_excuse_requests_query_failed", role: access.role },
       error,
     });
@@ -1212,7 +1247,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
     getEmployeeDirectory(),
   ]);
   if (error) {
-    logError("Approvals hub plan approvals query failed", {
+    logLoadFailure("Approvals hub plan approvals query failed", {
       labels: { event: "approvals_hub_plan_approvals_query_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -1278,7 +1313,7 @@ export async function isPlanAwaitingOverdue(access: AccessContext): Promise<bool
     const { awaiting } = await getPlanApprovalsForResponder(access);
     return awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue");
   } catch (error) {
-    logError("Approvals hub plan awaiting-overdue check failed", {
+    logLoadFailure("Approvals hub plan awaiting-overdue check failed", {
       labels: { event: "approvals_hub_plan_awaiting_overdue_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -1291,7 +1326,7 @@ export async function countPlanAwaiting(access: AccessContext): Promise<number> 
     const { awaiting } = await getPlanApprovalsForResponder(access);
     return awaiting.length;
   } catch (error) {
-    logError("Approvals hub count plan awaiting failed", {
+    logLoadFailure("Approvals hub count plan awaiting failed", {
       labels: { event: "approvals_hub_count_plan_awaiting_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -1308,7 +1343,7 @@ export async function getPlanAwaitingBadge(access: AccessContext): Promise<{ cou
       overdue: awaiting.some((item) => slaTone(item.ageDays, APPROVALS_SLA_THRESHOLDS.plan) === "overdue"),
     };
   } catch (error) {
-    logError("Approvals hub plan awaiting badge computation failed", {
+    logLoadFailure("Approvals hub plan awaiting badge computation failed", {
       labels: { event: "approvals_hub_plan_awaiting_badge_failed", hrId: access.hrId, role: access.role, scope: access.scope },
       error,
     });
@@ -1886,7 +1921,7 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
     getEmployeeDirectory(),
   ]);
   if (error) {
-    logError("Approvals hub company plan requests query failed", {
+    logLoadFailure("Approvals hub company plan requests query failed", {
       labels: { event: "approvals_hub_company_plan_requests_query_failed", role: access.role },
       error,
     });
