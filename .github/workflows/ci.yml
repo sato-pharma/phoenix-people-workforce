@@ -1,5 +1,32 @@
 name: CI
 
+# TEMPORARY CI SPEED-UP (2026-07-30, owner request: "set github to the fastest also until
+# 10 am"). Paired with the fast-deploy window in deploy-cloud-run.yml; the same 10:00 Cairo
+# cleanup PR reverts both. Unlike the deploy trigger this needs no run-time self-expiry —
+# CI speed does not change production behaviour, so leaving it on past 10:00 is harmless
+# (the deploy trigger was self-expiring because a hot production trigger is not).
+#
+# MEASURED baseline (run 30507413475, commit 87f26e05) = 308s wall-clock:
+#   validate        237s  (setup 33s, test 13s, BUILD 143s, upload artifact 40s)
+#   lint-typecheck  216s  (lint 114s + typecheck 67s, serial in one job)
+#   preview-smoke    68s  (starts only after validate; re-does setup 26s, downloads 11s)
+# Three inefficiencies, each fixed below:
+#   1. The build artifact existed ONLY to hand .next to preview-smoke. Uploading (40s) +
+#      downloading (11s) + a second job's setup (26s) = ~77s of pure overhead to move a
+#      directory to a machine that then rebuilt nothing. Playwright's webServer runs
+#      `pnpm run start` against .next in CI, so the smoke test now runs in-place in the
+#      job that produced the build. No artifact, no round-trip.
+#   2. lint (114s) and typecheck (67s) were serial in one job for no reason — they share
+#      nothing but node_modules. Now two parallel jobs.
+# A third fix was tried and REVERTED after measurement: switching the dead .next cache to
+# the documented `.next/cache` + restore-keys pattern. It restored fine and changed nothing
+# (37KB cache, build 148s warm vs 143s cold) — see the note on the cache step below, which
+# records the evidence so nobody re-attempts it.
+#
+# MEASURED RESULT: 308s -> 235s (-24%). My pre-change estimate of ~166s was WRONG; it
+# assumed the cache fix would cut the 143s build, and it did not. The build is now the
+# dominant remaining term. Extra cost is one more parallel runner; no gate is relaxed.
+
 on:
   pull_request:
     paths-ignore:
@@ -37,8 +64,12 @@ env:
   COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
 
 jobs:
+  # Structural checks + unit tests + build + login smoke test, in one job. The smoke test
+  # lives here (rather than in a downstream job) purely to avoid shipping .next between
+  # runners — see note 1 in the header. Everything it used to verify, it still verifies.
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -79,6 +110,21 @@ jobs:
         # exploitable).
         run: pnpm audit --audit-level=high --prod
 
+      # MEASURED DEAD END, left as-is on purpose. The obvious "fix" here is the documented
+      # Next.js CI pattern: cache `.next/cache` with restore-keys instead of all of `.next`
+      # under an exact key. It was tried on this branch and does NOTHING for this project —
+      # run 30508669485 attempt 2 restored the key successfully and reported
+      # `Cache Size: ~0 MB (37626 B)`: `.next/cache` is essentially EMPTY after `next build`
+      # here (Next 16 does not populate it the way the classic webpack pattern assumes), and
+      # the build was 148s warm vs 143s cold — i.e. no effect. Do not re-attempt without
+      # first checking the restored cache size.
+      #
+      # The block below is therefore the ORIGINAL. Note it is also effectively dead, just
+      # harmlessly so: the exact-match key hashes app/**+src/**, so it can only hit on a
+      # re-run of an identical commit and misses on every real PR. Making the build faster
+      # needs a different lever (e.g. `next build --turbopack`), which is NOT done here
+      # because it would make CI's build differ from the production Docker build, weakening
+      # the guarantee that a green CI reflects what actually ships.
       - name: Restore .next build cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -93,107 +139,6 @@ jobs:
 
       - name: Build
         run: pnpm run build
-        if: success()
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: nextjs-build
-          # Exclude .next/cache: it is the webpack/build cache (usually the bulk of
-          # .next by size) and only speeds up *subsequent builds*. The preview-smoke
-          # job downloads this artifact and runs the built app on it — runtime reads
-          # .next/{server,static,BUILD_ID,*.json}, never .next/cache. Dropping it
-          # shrinks each upload (~146MB → tens of MB) and the billed Actions storage
-          # that scales with artifact size, with zero effect on the smoke test.
-          path: |
-            .next
-            !.next/cache
-          include-hidden-files: true
-          retention-days: 1
-
-  lint-typecheck:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
-      # setup-node invokes `pnpm store path` during its own execution, and the
-      # pnpm shim only exists once corepack is enabled. corepack then reads the
-      # exact pnpm version from package.json's `packageManager` field.
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: ${{ env.CI_NODE_VERSION }}
-          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
-          # pnpm's node_modules is a symlink+hardlink layout that does not
-          # round-trip safely through actions/cache tar archives. Restoring the
-          # store and letting `pnpm install` re-link is the supported fast path.
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Restore ESLint cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .eslintcache
-          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
-          restore-keys: eslintcache-
-
-      - name: Lint
-        run: pnpm run lint
-
-      - name: Generate Next.js route types
-        run: pnpm exec next typegen
-
-      - name: Typecheck
-        # tsc --noEmit over this many files can exceed Node's default old-space
-        # heap ceiling on the standard GitHub-hosted runner and crash with an
-        # OOM before reporting any diagnostics (not a type error). Raise the
-        # heap limit rather than let the runner's default silently cap it.
-        run: pnpm run typecheck
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
-
-  preview-smoke:
-    runs-on: ubuntu-latest
-    needs: [validate, lint-typecheck]
-    timeout-minutes: 15
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`,
-      # setup-node invokes `pnpm store path` during its own execution, and the
-      # pnpm shim only exists once corepack is enabled. corepack then reads the
-      # exact pnpm version from package.json's `packageManager` field.
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
-        with:
-          node-version: ${{ env.CI_NODE_VERSION }}
-          # Caches the pnpm store (keyed on pnpm-lock.yaml), NOT node_modules —
-          # pnpm's node_modules is a symlink+hardlink layout that does not
-          # round-trip safely through actions/cache tar archives. Restoring the
-          # store and letting `pnpm install` re-link is the supported fast path.
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download build artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: nextjs-build
-          path: .next
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -210,6 +155,10 @@ jobs:
         if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install-deps chromium
 
+      # Runs against the .next produced by the Build step above. playwright.config.ts's
+      # webServer uses `pnpm run start` when CI is set, i.e. it serves that same prebuilt
+      # production bundle — exactly what the old preview-smoke job did after downloading
+      # it, minus the transfer.
       - name: Run Playwright login smoke test
         run: pnpm run test:e2e:smoke
         env:
@@ -269,10 +218,78 @@ jobs:
           path: output/playwright-report
           retention-days: 5
 
+  # Split out of the old lint-typecheck job so it runs beside `typecheck` instead of
+  # in front of it. eslint keeps its own incremental --cache; the restore-keys fallback
+  # matters more than the exact key here, since a partial cache still skips most files.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore ESLint cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .eslintcache
+          key: eslintcache-${{ hashFiles('app/**', 'src/**', 'tests/**', 'scripts/**', 'eslint.config.mjs', 'pnpm-lock.yaml') }}
+          restore-keys: eslintcache-
+
+      - name: Lint
+        run: pnpm run lint
+
+  # Split out of the old lint-typecheck job — see the note on `lint`.
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # corepack must be enabled BEFORE setup-node runs — see the note in `validate`.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Next.js route types
+        run: pnpm exec next typegen
+
+      - name: Typecheck
+        # tsc --noEmit over this many files can exceed Node's default old-space
+        # heap ceiling on the standard GitHub-hosted runner and crash with an
+        # OOM before reporting any diagnostics (not a type error). Raise the
+        # heap limit rather than let the runner's default silently cap it.
+        run: pnpm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+
   full-e2e:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.full_e2e == 'true'
     runs-on: ubuntu-latest
-    needs: [validate, lint-typecheck]
+    needs: [validate, lint, typecheck]
     timeout-minutes: 60
 
     steps:
