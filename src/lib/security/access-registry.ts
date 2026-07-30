@@ -268,6 +268,12 @@ export const accessRegistry = [
   sessionApi({ methods: readOnly, pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: ["POST"], pattern: "/api/attendance/holiday-calendar", permission: { resource: "employees", action: "update" }, guard: "domain-helper", csrfRequired: true }),
 
+  // S1 business-review workbook export. Gated by a direct allow-list of CEO / SFE Manager /
+  // Super Admin rather than the permission matrix — the same direct-role-check pattern as the
+  // vacation company-report export above — because the module is a fixed executive surface,
+  // not a permissioned resource. Reads only its own bundled snapshot, never a Phoenix table.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/business-review-s1/export", permission: null, guard: "domain-helper" }),
+
   sessionApi({ methods: allMethods, pattern: "/api/coaching/**", permission: { resource: "coaching", action: "read" }, guard: "domain-helper" }),
   sessionApi({ methods: allMethods, pattern: "/api/contracts/**", permission: { resource: "contracts", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/coaching/reports/export", permission: { resource: "coaching", action: "export" }, guard: "domain-helper" }),
