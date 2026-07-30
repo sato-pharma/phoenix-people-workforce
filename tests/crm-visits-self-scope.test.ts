@@ -18,7 +18,7 @@ export function runCrmVisitsSelfScopeTests() {
   const dataLayer = readFileSync("src/lib/employee-portal/my-crm-visits.ts", "utf8");
 
   assert.match(dataLayer, /agentHrIds:\s*\[hrId\]/, "fetchMyVisits/fetchMyCheckins must scope with agentHrIds: [hrId]");
-  assert.match(dataLayer, /doubleHrIds:\s*\[hrId\]/, "fetchMyJointVisits must scope with doubleHrIds: [hrId]");
+  assert.match(dataLayer, /doubleHrIds:\s*\[hrId\]/, "fetchMyDoubleVisits must scope with doubleHrIds: [hrId]");
   assert.doesNotMatch(
     dataLayer,
     /agentHrIdILike/,
@@ -33,7 +33,7 @@ export function runCrmVisitsSelfScopeTests() {
   // hrId must be a required, single, non-array function argument on every exported
   // fetcher — never a filter-object field a future edit could leave unset or widen.
   assert.match(dataLayer, /export async function fetchMyVisits\(hrId: string, window: MyCrmWindow\)/);
-  assert.match(dataLayer, /export async function fetchMyJointVisits\(hrId: string, window: MyCrmWindow\)/);
+  assert.match(dataLayer, /export async function fetchMyDoubleVisits\(hrId: string, window: MyCrmWindow\)/);
   assert.match(dataLayer, /export async function fetchMyCheckins\(hrId: string, window: MyCrmWindow\)/);
 
   // The exported row/window types must carry no hrId-shaped field — scope is only ever
@@ -50,7 +50,7 @@ export function runCrmVisitsSelfScopeTests() {
   assert.match(page, /if \(!hrId\) \{\s*redirect\(/, "the page must redirect when the caller has no hrId");
   assert.match(page, /canAccess\(access, "crm_visits", "read"\)/, "the page must gate on the crm_visits:read permission");
   assert.match(page, /fetchMyVisits\(hrId, window\)/, "the page must call fetchMyVisits with the resolved hrId");
-  assert.match(page, /fetchMyJointVisits\(hrId, window\)/, "the page must call fetchMyJointVisits with the resolved hrId");
+  assert.match(page, /fetchMyDoubleVisits\(hrId, window\)/, "the page must call fetchMyDoubleVisits with the resolved hrId");
   assert.match(page, /fetchMyCheckins\(hrId, window\)/, "the page must call fetchMyCheckins with the resolved hrId");
 
   // The nav entry and permission resource must exist, gated by permission only (no
@@ -76,4 +76,63 @@ export function runCrmVisitsSelfScopeTests() {
 
   const permissions = readFileSync("src/lib/auth/permissions.ts", "utf8");
   assert.match(permissions, /\| "crm_visits"/, "crm_visits must be a declared PermissionResource");
+
+  // ── Team Visits (manager tab) — the one deliberate exception to "single hrId" ──────────────
+  // A manager's tab is about OTHER people by definition, so fetchTeamVisits takes a set. The
+  // exception is only safe while these properties hold, so they are pinned here rather than left to
+  // a code comment.
+
+  // 1. The set is a required POSITIONAL argument the caller resolves — never derived in this file,
+  //    so the module still cannot widen its own scope.
+  assert.match(
+    dataLayer,
+    /export async function fetchTeamVisits\(hrIds: string\[\], window: MyCrmWindow\)/,
+    "fetchTeamVisits must take the hrId set as a required positional argument",
+  );
+  assert.doesNotMatch(
+    dataLayer,
+    /getEmployeeDirectory|isWithinManagerHierarchy|reportsToManagerSeat/,
+    "my-crm-visits.ts must NOT resolve a subtree itself — the caller passes the set in",
+  );
+
+  // 2. It FAILS CLOSED: an empty set must return before touching the database, so a caller that
+  //    forgets to resolve a subtree gets nothing rather than every visit in the company.
+  assert.match(
+    dataLayer,
+    /if \(agentHrIds\.length === 0\) return \[\];/,
+    "fetchTeamVisits must fail closed on an empty hrId set",
+  );
+
+  // 3. It is HARD-CAPPED. The live Regional Manager's 17-person subtree logged 9,253 visits in a
+  //    90-day window — an uncapped fetch rendered a 5.1 MB payload in 43s. Must use the bounded,
+  //    DB-ordered reader, never the full-scan queryVisits the self tabs use.
+  assert.match(dataLayer, /export const TEAM_VISIT_ROW_CAP = \d+;/, "the team feed must declare a row cap");
+  const teamFnIdx = dataLayer.indexOf("export async function fetchTeamVisits(");
+  const teamFnBody = dataLayer.slice(teamFnIdx, teamFnIdx + 1800);
+  assert.match(teamFnBody, /queryVisitsLimited</, "the team feed must use the bounded reader");
+  assert.match(teamFnBody, /limit: TEAM_VISIT_ROW_CAP/, "the team feed must pass the declared cap");
+
+  // 4. The page resolves the subtree with the canonical seat-continuity-aware helper, and only for
+  //    roles whose scope actually extends past themselves.
+  assert.match(page, /async function resolveVisitsTeamHrIds\(access: AccessContext\)/);
+  assert.match(page, /isWithinManagerHierarchy\(/, "hierarchy viewers must get their whole subtree");
+  assert.match(page, /reportsToManagerSeat\(/, "team viewers must get their direct reports");
+  assert.match(
+    page,
+    /access\.scope !== "hierarchy" && access\.scope !== "team"/,
+    "a viewer with neither scope must resolve to an empty team (no tab)",
+  );
+
+  // 5. A truncated list must never read as a complete one.
+  const workspace = readFileSync("src/components/employee-portal/my-visits-workspace.tsx", "utf8");
+  assert.match(
+    workspace,
+    /teamVisits\.length >= TEAM_VISIT_ROW_CAP/,
+    "the Team Visits tab must tell the viewer when the cap was hit",
+  );
+  assert.match(
+    workspace,
+    /TABS\.filter\(\(item\) => item\.id !== "team" \|\| hasTeam\)/,
+    "the Team Visits tab must not render for a viewer with no team",
+  );
 }

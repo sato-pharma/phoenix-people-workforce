@@ -12,17 +12,26 @@ import {
   PortalSection,
   PortalSegmentedTabs,
 } from "@/components/employee-portal/portal-primitives";
-import type { MyCrmCheckinRow, MyCrmJointVisitRow, MyCrmVisitRow } from "@/lib/employee-portal/my-crm-visits";
+import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits";
+import type {
+  MyCrmCheckinRow,
+  MyCrmDoubleVisitRow,
+  MyCrmVisitRow,
+  TeamCrmVisitRow,
+} from "@/lib/employee-portal/my-crm-visits";
 import type { VisitTimeSource } from "@/lib/crm/reads";
 
 const PAGE_SIZE = 25;
 
-type TabId = "visits" | "joint" | "checkins";
+type TabId = "visits" | "double" | "checkins" | "team";
 
+// "team" is appended last and only rendered for a viewer who actually has a team (see the filter on
+// TABS below), so a Medical Rep's tab strip is unchanged.
 const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "visits", label: "My Visits" },
-  { id: "joint", label: "Joint Visits" },
+  { id: "double", label: "Double Visits" },
   { id: "checkins", label: "Check-ins" },
+  { id: "team", label: "Team Visits" },
 ];
 
 function formatDateOnly(value: string | null): string {
@@ -95,7 +104,33 @@ function VisitCard({ row }: { row: MyCrmVisitRow }) {
   );
 }
 
-function JointVisitCard({ row }: { row: MyCrmJointVisitRow }) {
+/** A subordinate's visit. Same shape as VisitCard, but the rep's name leads — on a manager's list the
+ *  first question is always "whose visit is this?", which never arises on the self tabs. */
+function TeamVisitCard({ row }: { row: TeamCrmVisitRow }) {
+  return (
+    <PortalRecordCard
+      accent="emerald"
+      meta={<span>{formatDateOnly(row.visitDate)}{row.ampm ? ` · ${row.ampm}` : ""}</span>}
+      status={<VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />}
+      title={row.agentName || "Unnamed rep"}
+    >
+      <PortalRecordFields
+        fields={[
+          { label: "Contact", value: row.contactName || row.customerName || "—" },
+          { label: "Type", value: row.visitTypeDescription || "—" },
+          { label: "With", value: row.doubleName || "—" },
+        ]}
+      />
+      {row.comment ? (
+        <p className="mt-2 rounded border border-slate-100 bg-slate-50 px-2.5 py-2 text-xs font-semibold leading-5 text-slate-600">
+          {row.comment}
+        </p>
+      ) : null}
+    </PortalRecordCard>
+  );
+}
+
+function DoubleVisitCard({ row }: { row: MyCrmDoubleVisitRow }) {
   return (
     <PortalRecordCard
       accent="sky"
@@ -178,15 +213,21 @@ export function MyVisitsWorkspace({
   checkins,
   dateFrom,
   dateTo,
-  jointVisits,
+  doubleVisits,
+  teamVisits = [],
   visits,
 }: {
   checkins: MyCrmCheckinRow[];
   dateFrom: string;
   dateTo: string;
-  jointVisits: MyCrmJointVisitRow[];
+  doubleVisits: MyCrmDoubleVisitRow[];
+  /** A manager's subordinates' visits. Empty (the default) for a viewer with no team — the tab is
+   *  then not rendered at all, so non-managers see exactly the three tabs they saw before. */
+  teamVisits?: TeamCrmVisitRow[];
   visits: MyCrmVisitRow[];
 }) {
+  const hasTeam = teamVisits.length > 0;
+  const tabs = useMemo(() => TABS.filter((item) => item.id !== "team" || hasTeam), [hasTeam]);
   const [tab, setTab] = useState<TabId>("visits");
   const [page, setPage] = useState(1);
 
@@ -196,16 +237,24 @@ export function MyVisitsWorkspace({
   }
 
   const visitsPage = usePagedRows(visits, page);
-  const jointPage = usePagedRows(jointVisits, page);
+  const doublePage = usePagedRows(doubleVisits, page);
   const checkinsPage = usePagedRows(checkins, page);
+  const teamPage = usePagedRows(teamVisits, page);
   const rangeLabel = `${formatDateOnly(dateFrom)} – ${formatDateOnly(dateTo)}`;
 
   return (
     <PortalSection description={`Showing ${rangeLabel}`} eyebrow="CRM Visits" title="My Visits">
       <div className="space-y-4 p-4 sm:p-5">
         <PortalSegmentedTabs>
-          {TABS.map((item) => {
-            const count = item.id === "visits" ? visits.length : item.id === "joint" ? jointVisits.length : checkins.length;
+          {tabs.map((item) => {
+            const count =
+              item.id === "visits"
+                ? visits.length
+                : item.id === "double"
+                  ? doubleVisits.length
+                  : item.id === "team"
+                    ? teamVisits.length
+                    : checkins.length;
             return (
               <button
                 className={`flex-1 whitespace-nowrap rounded px-3 py-2 text-xs font-black uppercase tracking-wide transition ${
@@ -220,6 +269,65 @@ export function MyVisitsWorkspace({
             );
           })}
         </PortalSegmentedTabs>
+
+        {tab === "team" ? (
+          <>
+            {teamVisits.length >= TEAM_VISIT_ROW_CAP ? (
+              <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                Showing the {TEAM_VISIT_ROW_CAP} most recent team visits in this window. Older ones are not listed —
+                a silent cut here would read as &quot;my team stopped visiting&quot;.
+              </p>
+            ) : null}
+            <PortalResponsiveDataList
+              empty={<PortalEmptyState message="No visits recorded by your team in this window." title="No team visits yet" />}
+              getKey={(row) => row.id}
+              items={teamPage.paged}
+              renderCard={(row) => <TeamVisitCard row={row} />}
+              renderTable={() => (
+                <PortalDesktopTable minWidth="1040px">
+                  <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Rep</th>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">Time</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Contact</th>
+                      <th className="px-4 py-3">Customer</th>
+                      <th className="px-4 py-3">With</th>
+                      <th className="px-4 py-3">Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {teamPage.paged.map((row) => (
+                      <tr className="align-top" key={row.id}>
+                        <td className="px-4 py-3 font-black text-slate-950">{row.agentName || "—"}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">
+                          {formatDateOnly(row.visitDate)}
+                          {row.ampm ? ` (${row.ampm})` : ""}
+                        </td>
+                        <td className="px-4 py-3">
+                          <VisitTimeBadge source={row.visitTimeSource} value={row.visitTime} />
+                        </td>
+                        <td className="px-4 py-3 text-slate-700">{row.visitTypeDescription || "—"}</td>
+                        <td className="px-4 py-3 text-slate-700">{row.contactName || "—"}</td>
+                        <td className="px-4 py-3 text-slate-700">{row.customerName || "—"}</td>
+                        <td className="px-4 py-3 text-slate-700">{row.doubleName || "—"}</td>
+                        <td className="max-w-[280px] px-4 py-3 leading-5 text-slate-600">{row.comment || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </PortalDesktopTable>
+              )}
+            />
+            <TabPager
+              label={teamPage.label}
+              onNext={() => setPage((current) => Math.min(teamPage.totalPages, current + 1))}
+              onPrevious={() => setPage((current) => Math.max(1, current - 1))}
+              safePage={teamPage.safePage}
+              totalPages={teamPage.totalPages}
+            />
+          </>
+        ) : null}
 
         {tab === "visits" ? (
           <>
@@ -272,18 +380,18 @@ export function MyVisitsWorkspace({
           </>
         ) : null}
 
-        {tab === "joint" ? (
+        {tab === "double" ? (
           <>
             <PortalResponsiveDataList
               empty={
                 <PortalEmptyState
                   message="No visits where you accompanied a colleague were recorded in this window."
-                  title="No joint visits yet"
+                  title="No double visits yet"
                 />
               }
               getKey={(row) => row.id}
-              items={jointPage.paged}
-              renderCard={(row) => <JointVisitCard row={row} />}
+              items={doublePage.paged}
+              renderCard={(row) => <DoubleVisitCard row={row} />}
               renderTable={() => (
                 <PortalDesktopTable minWidth="980px">
                   <thead className="bg-slate-50 text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
@@ -297,7 +405,7 @@ export function MyVisitsWorkspace({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {jointPage.paged.map((row) => (
+                    {doublePage.paged.map((row) => (
                       <tr className="align-top" key={row.id}>
                         <td className="px-4 py-3 font-bold text-slate-800">
                           {formatDateOnly(row.visitDate)}
@@ -315,11 +423,11 @@ export function MyVisitsWorkspace({
               )}
             />
             <TabPager
-              label={jointPage.label}
-              onNext={() => setPage((current) => Math.min(jointPage.totalPages, current + 1))}
+              label={doublePage.label}
+              onNext={() => setPage((current) => Math.min(doublePage.totalPages, current + 1))}
               onPrevious={() => setPage((current) => Math.max(1, current - 1))}
-              safePage={jointPage.safePage}
-              totalPages={jointPage.totalPages}
+              safePage={doublePage.safePage}
+              totalPages={doublePage.totalPages}
             />
           </>
         ) : null}
