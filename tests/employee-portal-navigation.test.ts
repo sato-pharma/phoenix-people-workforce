@@ -68,6 +68,31 @@ export function runEmployeePortalNavigationTests() {
   assert.match(adminPageSource, /Access unavailable/);
   assert.match(vacanciesPageSource, /canAccess\(access, "vacancies", "read"\)/);
   assert.doesNotMatch(vacanciesPageSource, /assertPermission\(access, "vacancies", "read"\)/);
+
+  // ── Regional Manager vacancies: region-scoped, and it must FAIL CLOSED ──────────────────
+  // Four gates had to agree for RM Vacancies to work, and they were maintained separately:
+  // the `vacancies` grant, the showVacanciesTab flag, the command-palette roles list, and this
+  // reader. Granting the first three while getEmployeePortalVacancies still returned null for RM
+  // produced a visible tab that dead-ended on "Vacancies Unavailable" — verified live before the
+  // reader branch was added. These assertions pin the reader half.
+  const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
+  assert.match(
+    portalServiceSource,
+    /const isRegionScoped =[^;]*currentRole === "Regional Manager"/,
+    "getEmployeePortalVacancies must classify Regional Manager as region-scoped",
+  );
+  assert.match(
+    portalServiceSource,
+    /if \(!isDsm && !isLineScoped && !isCompanyScoped && !isRegionScoped\) return null;/,
+    "the early return must admit the region-scoped Regional Manager, or the tab dead-ends",
+  );
+  // The RM must never be folded into the LINE branch: that would show them every open seat on
+  // their line, including regions they do not manage (18 vs 6 on the live Pedia line).
+  assert.match(
+    portalServiceSource,
+    /isRegionScoped[\s\S]{0,400}regionalManagerRegionKeys\.size === 0\) return false;/,
+    "an unresolvable RM region set must return no rows, never fall through to the whole line",
+  );
   assert.match(teamPerformancePageSource, /canAccess\(access, "sales", "read"\)/);
   assert.doesNotMatch(teamPerformancePageSource, /assertPermission\(access, "sales", "read"\)/);
   assert.match(
@@ -140,10 +165,37 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(regionalManager.showProbationTab, true, "RM should see the Probation Tracker (canReadProbationEmployee has an RM subtree branch)");
   assert.equal(regionalManager.showOrganogramTab, true, "RM should see the Organogram (line-scoped, same grain as NSM)");
   assert.equal(regionalManager.showMyCoachingTab, false, "RM should not see My Coaching Reports (that is the Medical Rep view)");
+  // Owner-approved 2026-07-30. Both blockers named in the previous version of this assertion are
+  // gone: getEmployeePortalVacancies DOES have an RM branch (it bounds open seats to the RM's own
+  // line AND regionsWithinManagerHierarchy), and `vacancies: ["read","export"]` is now declared on
+  // the Regional Manager row of defaultPermissionMatrix. Before this, the RM branch was dead code —
+  // the page's canAccess gate refused every RM, so nobody could ever reach it.
   assert.equal(
     regionalManager.showVacanciesTab,
+    true,
+    "RM should see Vacancies (region-scoped RM branch in getEmployeePortalVacancies + the vacancies grant)",
+  );
+  // "My Candidates" shipped with a page, a hiring_interviews grant and a notification deep-link, but
+  // never a nav link on any surface — reachable only via the command palette until 2026-07-30.
+  assert.equal(
+    regionalManager.showMyCandidatesTab,
+    true,
+    "RM holds hiring_interviews:read, so My Candidates must be linked",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("District Manager").showMyCandidatesTab,
+    true,
+    "DSM is the primary hiring-manager role for Medical Rep candidates",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Medical Rep").showMyCandidatesTab,
     false,
-    "RM must NOT gain Vacancies here — it has no `vacancies` permission and getEmployeePortalVacancies has no RM scope branch (owner deferred it)",
+    "Medical Rep holds no hiring_interviews grant, so My Candidates must stay hidden",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Manager").showMyCandidatesTab,
+    false,
+    "Manager is in the command-palette list but has no hiring_interviews grant — a link would dead-end",
   );
   assert.equal(
     regionalManager.showTeamPerformanceTab,

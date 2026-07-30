@@ -29,6 +29,12 @@ export type EmployeePortalNavVisibility = {
   showTeamCalendarTab?: boolean;
   showTeamExpensesTab?: boolean;
   showVacanciesTab?: boolean;
+  // "My Candidates" (/employee-portals/recruitment-candidates) — candidates assigned to a hiring
+  // manager's own open seats, already scoped by canSeeApplication (src/lib/recruitment/access.ts).
+  // The page, the `hiring_interviews` grant and a notification deep-link into it
+  // (src/lib/recruitment/applications.ts) all shipped, but no sidebar/bottom-nav link ever did — so
+  // a manager notified about their candidate had no way back to the page except the command palette.
+  showMyCandidatesTab?: boolean;
   showProbationTab?: boolean;
   showOrganogramTab?: boolean;
   showPlansTab?: boolean;
@@ -377,8 +383,30 @@ export function resolveEmployeePortalNavVisibility(
     showTrainingManagerCreateCoachingTab: isTrainingManager,
     showTrainingManagerDashboardTab: isTrainingManager,
     showTrainingManagerFieldCoachingTab: isTrainingManager,
+    // Regional Manager included: getEmployeePortalVacancies already has an RM branch that bounds
+    // open seats to the RM's own line AND the regions in their management subtree, so the data was
+    // there — the missing `vacancies` grant (added to defaultPermissionMatrix) and this flag were
+    // the only two things keeping it unreachable. Same shape as the Probation/Organogram/Team
+    // Coaching RM fixes above.
     showVacanciesTab:
-      showTeamPerformanceTab || showMedRepsPerformanceTab || isProductManager || isGroupProductManager || isMarketingManager,
+      showTeamPerformanceTab ||
+      showMedRepsPerformanceTab ||
+      isRegionalManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
+    // Mirrors the roles that actually hold `hiring_interviews: ["read","update"]` in
+    // defaultPermissionMatrix (the page's own canAccess gate is the enforcing check), and the same
+    // set the command-palette entry in system-navigation.ts already declares. "Manager" is
+    // deliberately left out here: it is in that palette list but has no hiring_interviews grant, so
+    // a sidebar link would dead-end on the page's empty state.
+    showMyCandidatesTab:
+      resolvedRole === "District Manager" ||
+      isRegionalManager ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
     // Personally device-tracked employees see their own punch history; a head-of-department
     // Marketing Manager also gets the tab to review their team's attendance (self + direct reports,
     // gated server-side by canViewEmployeeAttendanceReport on /employee-portals/fingerprint-analytics).
