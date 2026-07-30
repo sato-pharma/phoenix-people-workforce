@@ -285,6 +285,30 @@ export function runEmployeePortalNavigationTests() {
     );
   }
 
+  // Scoped CRM Master (/employee-portals/crm) — new surface. Role set must equal PORTAL_CRM_ROLES in
+  // src/lib/crm/portal-crm-scope.ts (Medical Rep / DSM / RM / NSM), the page's own gate.
+  for (const role of ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showCrmMasterTab,
+      true,
+      `${role} should see the scoped CRM Master link`,
+    );
+  }
+  for (const role of ["Manager", "Employee", "Product Manager", "Marketing Manager", "Talent Acquisition"]) {
+    assert.equal(
+      resolveEmployeePortalNavVisibility(role).showCrmMasterTab,
+      false,
+      `${role} must NOT see the scoped CRM Master link`,
+    );
+  }
+  // "Manager" again: isDistrictManager matches it, so an exact "District Manager" check is required or
+  // the Head-Office rung (no field reps → empty grid) gets a dead tab.
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Manager").showCrmMasterTab,
+    false,
+    "the Head-Office Manager rung must not see the scoped CRM Master",
+  );
+
   const a3Account = resolveEmployeePortalNavVisibility("Medical Rep", undefined, undefined, undefined, "A-3");
   assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");

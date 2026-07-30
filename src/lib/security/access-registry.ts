@@ -216,6 +216,10 @@ export const accessRegistry = [
   // CRM master table XLSX export: returns all rows for the current dataset+filters. Super-Admin-gated
   // inline (same as the /admin/crm page), so guarded by the domain helper, not the permission matrix.
   sessionApi({ methods: ["GET"], pattern: "/api/admin/crm/master-export", permission: null, guard: "domain-helper" }),
+  // Portal-scoped CRM export — the portal twin of the admin route above. Enforces crm_visits:read
+  // plus the per-viewer row scope (isPortalCrmRole + resolvePortalCrmScope) inside the handler, so
+  // like its admin sibling the fine gate is the domain helper, not the permission matrix alone.
+  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/crm/master-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
   // Region Mapping tab resolver: assigns a CRM region to a real Phoenix brick. Same posture as
   // resolve-identity above — checks access.role === "Super Admin" directly.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/resolve-region", permission: null, guard: "domain-helper", csrfRequired: true }),

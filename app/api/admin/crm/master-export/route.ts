@@ -11,6 +11,7 @@ import {
   type CrmMasterMappingStatus,
 } from "@/lib/crm/master";
 import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
+import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,7 @@ export async function GET(request: NextRequest) {
     filename: exportFileName(label),
     sheetName: label,
     columns: crmMasterExportColumns(filter),
-    pages: streamCrmMasterExportPages(filter),
+    // Super-Admin only (gate above), one of exactly two places allowed to construct company scope.
+    pages: streamCrmMasterExportPages(filter, CRM_SCOPE_ALL),
   });
 }

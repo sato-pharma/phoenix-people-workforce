@@ -17,6 +17,11 @@ import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import {
+  intersectHrIdAllowLists,
+  intersectHrIdKeySets,
+  type CrmViewerScope,
+} from "@/lib/crm/viewer-scope";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 import { brickMatchConfidence, loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
 import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
@@ -1326,7 +1331,14 @@ async function attachDerived(
  * plus the full `raw_payload` for each row, ordered newest-first, with an exact total count.
  * Degrades to an empty result (never throws) when the mirror schema isn't present yet.
  */
-export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<CrmMasterData> {
+/**
+ * `scope` is REQUIRED, and company-wide access must be spelled out as CRM_SCOPE_ALL.
+ *
+ * It is not optional-defaulting-to-unrestricted on purpose: this function feeds a company-wide
+ * 108k-row mirror, so a future caller that forgot an optional scope would silently expose everyone.
+ * Required turns that mistake into a compile error. See src/lib/crm/viewer-scope.ts.
+ */
+export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerScope): Promise<CrmMasterData> {
   const dataset = normalizeDataset(input.dataset);
   const isCheckins = dataset === "checkins";
   const page = Math.max(1, input.page ?? 1);
@@ -1353,25 +1365,43 @@ export async function getCrmMasterData(input: CrmMasterFilter = {}): Promise<Crm
 
   // Line / hiring-date resolve to an employee-hr-id allow-set (applied to every tab); load the line
   // options for the dropdown alongside it.
-  const [allowed, lineOptions] = await Promise.all([
+  const [allowed, allLineOptions] = await Promise.all([
     resolveAllowedHrIds({ line, hireFrom, hireTo }),
     loadLineOptions(),
   ]);
+  // loadLineOptions() returns EVERY line including Head Office. A scoped viewer must only be offered
+  // the lines their own scope covers, so the dropdown cannot advertise data they can't reach.
+  const lineOptions =
+    scope.kind === "company" || !scope.lineNames
+      ? allLineOptions
+      : allLineOptions.filter((option) => {
+          const label = String(option ?? "").trim().toLowerCase();
+          return scope.lineNames!.some((name) => name.trim().toLowerCase() === label);
+        });
+  // The viewer scope and the Line/Hiring-date filter BOTH resolve to an hr-id allow-set and both land
+  // in the SAME `allowedHrIds` slot. They must be INTERSECTED, not one overwriting the other —
+  // otherwise a District Manager who picks "Line: Pedia" would see all of Pedia. Intersecting makes
+  // the UI filter narrow the scope; it can never widen it.
+  const scopeHrIds = scope.kind === "company" ? null : [...scope.hrIds];
+  const scopeKeys = scope.kind === "company" ? null : scope.keys;
   const filterOpts = {
     agentHrId,
-    allowedHrIds: allowed ? allowed.hrIds : null,
+    allowedHrIds: intersectHrIdAllowLists(scopeHrIds, allowed ? allowed.hrIds : null),
     ampm,
     dataset,
     dateFrom,
     dateTo,
-    mappingStatus,
+    // `agent_unmapped` selects rows where agent_hr_id IS NULL, which can never be in an allow-set —
+    // a scoped viewer would always get zero and it would just look broken. Force it off for them
+    // (the portal UI also hides the control, but this is the enforcing half).
+    mappingStatus: scope.kind === "company" ? mappingStatus : mappingStatus === "agent_unmapped" ? "all" : mappingStatus,
     search,
     visitType,
   };
   // For the computed tabs (vacations, triples), the advanced filters run in memory over the rows.
   const computedFilter = {
     agentHrId,
-    allowed: allowed ? allowed.keys : null,
+    allowed: intersectHrIdKeySets(scopeKeys, allowed ? allowed.keys : null),
     halfDaysOnly,
     minDuration,
     search,
@@ -1502,8 +1532,10 @@ export function crmMasterExportLabel(input: CrmMasterFilter = {}): string {
  * instance past ~20–50k rows and surfaced to the user as "Export failed". Yields nothing (never
  * throws) when the mirror schema isn't present yet.
  */
+/** Streaming export. `scope` is REQUIRED for the same fail-closed reason as getCrmMasterData. */
 export async function* streamCrmMasterExportPages(
-  input: CrmMasterFilter = {},
+  input: CrmMasterFilter,
+  scope: CrmViewerScope,
 ): AsyncGenerator<CrmMasterRow[], void, unknown> {
   const dataset = normalizeDataset(input.dataset);
   const isCheckins = dataset === "checkins";
@@ -1518,20 +1550,33 @@ export async function* streamCrmMasterExportPages(
   if (!(await isCrmVisitsSchemaReady())) return;
 
   const allowed = await resolveAllowedHrIds({ line, hireFrom, hireTo });
+  // Same intersection as getCrmMasterData: the viewer scope and the Line/Hiring filter share one
+  // slot, so a scoped export can never be widened by a UI filter. Resolved ONCE here, before the
+  // page loop — never per page.
+  const scopeHrIds = scope.kind === "company" ? null : [...scope.hrIds];
+  const scopeKeys = scope.kind === "company" ? null : scope.keys;
+  const rawMappingStatus = (input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped"
+    ? input.mappingStatus
+    : "all") as CrmMasterMappingStatus;
   const filterOpts = {
     agentHrId,
-    allowedHrIds: allowed ? allowed.hrIds : null,
+    allowedHrIds: intersectHrIdAllowLists(scopeHrIds, allowed ? allowed.hrIds : null),
     ampm: (input.ampm === "AM" || input.ampm === "PM" ? input.ampm : "all") as CrmMasterAmpm,
     dataset,
     dateFrom: input.dateFrom || null,
     dateTo: input.dateTo || null,
-    mappingStatus: (input.mappingStatus === "agent_mapped" || input.mappingStatus === "agent_unmapped"
-      ? input.mappingStatus
-      : "all") as CrmMasterMappingStatus,
+    mappingStatus:
+      scope.kind === "company" ? rawMappingStatus : rawMappingStatus === "agent_unmapped" ? "all" : rawMappingStatus,
     search,
     visitType: input.visitType?.trim() || null,
   };
-  const computedFilter = { agentHrId, allowed: allowed ? allowed.keys : null, halfDaysOnly, minDuration, search };
+  const computedFilter = {
+    agentHrId,
+    allowed: intersectHrIdKeySets(scopeKeys, allowed ? allowed.keys : null),
+    halfDaysOnly,
+    minDuration,
+    search,
+  };
   const range = { dateFrom: filterOpts.dateFrom, dateTo: filterOpts.dateTo };
 
   // Rows handed to the workbook writer per flush — bounded memory regardless of total export size.

@@ -208,6 +208,7 @@ function buildEmployeePortalSections({
   showSalesAnalyticsTab = false,
   showTerritoryDrilldownTab = false,
   showTerritoryManagementTab = false,
+  showCrmMasterTab = false,
   showTargetsTab = false,
   showMarketingRoiTrackingTab = false,
   showBusinessReviewS1Tab = false,
@@ -318,6 +319,9 @@ function buildEmployeePortalSections({
         // Every employee-portal role sees their own CRM visits except Talent Acquisition
         // (owner-requested exclusion — she is HR/office staff, not a field employee).
         ...(showMyVisitsTab ? [{ href: "/employee-portals/visits", label: "My Visits", icon: MapPinned }] : []),
+        // Full scoped CRM Master — self for a Medical Rep, the team's rows for DSM/RM/NSM. My Visits
+        // above stays: it is the always-on self view every portal role keeps.
+        ...(showCrmMasterTab ? [{ href: "/employee-portals/crm", label: "CRM", icon: Database }] : []),
         ...(showDoubleVisitAnalyticsTab ? [{ href: "/employee-portals/double-visit-analytics", label: "Double-Visit Analytics", icon: Activity }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/dv-planner", label: "DV Planner", icon: CalendarCheck2 }] : []),
         ...(showDoubleVisitReportTab ? [{ href: "/employee-portals/double-visit-report", label: "Double Visit Report", icon: FileSpreadsheet }] : []),

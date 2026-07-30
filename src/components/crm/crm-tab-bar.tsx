@@ -11,10 +11,13 @@ import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-dat
 
 export type CrmActiveTab = CrmMasterDataset | "unmapped" | "recovered" | "region_mapping" | "customer_mapping";
 
+export type CrmExtraTab = { id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping"; label: string };
+
 /** Aggregated/derived views that sit alongside the raw per-dataset tabs — not a CrmMasterDataset,
  * since they don't come from a paginated slice of one table (see CrmUnmappedIdentitiesPanel /
- * CrmRecoveredChainsPanel / CrmRegionMappingPanel / CrmCustomerMappingPanel). */
-const EXTRA_TABS: ReadonlyArray<{ id: "unmapped" | "recovered" | "region_mapping" | "customer_mapping"; label: string }> = [
+ * CrmRecoveredChainsPanel / CrmRegionMappingPanel / CrmCustomerMappingPanel). These four are
+ * UNSCOPED Super-Admin governance panels, so the portal CRM passes extraTabs={[]} to omit them. */
+const DEFAULT_EXTRA_TABS: ReadonlyArray<CrmExtraTab> = [
   { id: "unmapped", label: "Unmapped Agents" },
   { id: "region_mapping", label: "Region Mapping" },
   { id: "customer_mapping", label: "Customer Mapping" },
@@ -24,7 +27,7 @@ const EXTRA_TABS: ReadonlyArray<{ id: "unmapped" | "recovered" | "region_mapping
 /** One tab bar for the whole CRM hub — raw datasets + the two derived views — so switching between
  * "look at the raw mirror" and "resolve an identity" / "review recovered chains" never hides the
  * other destinations. Lives above whichever content the page renders for the active tab. */
-export function CrmTabBar({ active }: { active: CrmActiveTab }) {
+export function CrmTabBar({ active, extraTabs = DEFAULT_EXTRA_TABS }: { active: CrmActiveTab; extraTabs?: ReadonlyArray<CrmExtraTab> }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -62,7 +65,7 @@ export function CrmTabBar({ active }: { active: CrmActiveTab }) {
           onClick={() => switchTo(ds.id)}
         />
       ))}
-      {EXTRA_TABS.map((tab) => (
+      {extraTabs.map((tab) => (
         <TabButton
           isActive={activeDisplay === tab.id}
           isLoading={isPending && pendingTab === tab.id}

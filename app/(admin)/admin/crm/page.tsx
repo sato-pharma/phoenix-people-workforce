@@ -11,6 +11,7 @@ import { CrmRecoveredChainsPanel } from "@/components/crm/crm-recovered-chains-p
 import { CrmRegionMappingPanel } from "@/components/crm/crm-region-mapping-panel";
 import { CrmCustomerMappingPanel } from "@/components/crm/crm-customer-mapping-panel";
 import { getCrmMasterData, type CrmMasterAmpm, type CrmMasterDataset, type CrmMasterMappingStatus } from "@/lib/crm/master";
+import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 import { getLatestVisitsSyncRuns, getUnmappedCrmIdentities } from "@/lib/crm/admin";
 import { getUnmappedCrmRegions } from "@/lib/crm/region-brick";
 import { getUnmappedCrmCustomers } from "@/lib/crm/customer-brick";
@@ -134,7 +135,10 @@ export default async function CrmHubPage({
       pageSize,
       search,
       visitType,
-    });
+    },
+    // This page is Super-Admin-only (see the redirect above), so it is one of exactly two places
+    // allowed to construct the company-wide scope. A test pins that set.
+    CRM_SCOPE_ALL);
 
     activeTab = data.dataset;
     syncPanel = { configured: data.configured, latestSyncRuns: data.latestSyncRuns };
