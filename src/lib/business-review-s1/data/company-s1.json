@@ -1,0 +1,495 @@
+{
+ "meta": {
+  "period": "S1 2026 (Jan–Jun)",
+  "currency": "EGP",
+  "months": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "May",
+   "Jun"
+  ],
+  "lines": [
+   "Pedia",
+   "CNS",
+   "Anti-Infective"
+  ],
+  "doctorNote": "8,834 unique doctors company-wide. Summing the three lines' own counts gives 8,959; 125 of those are the same doctor covered by more than one line, so they are counted once here.",
+  "generatedFrom": [
+   "pedia-s1.json",
+   "cns-s1.json",
+   "anti-s1.json",
+   "phoenix-crm-visits x5",
+   "FFcrm-visits",
+   "Fcrm-visits"
+  ]
+ },
+ "total": {
+  "allProducts": {
+   "sales": 55225794.39,
+   "target": 93497380.57,
+   "ach": 59.07
+  },
+  "exVacant": {
+   "sales": 45099089.9,
+   "target": 71525575.66,
+   "ach": 63.05
+  },
+  "marketingCost": 496771.0,
+  "outstationCost": 99393.35,
+  "visits": 69682,
+  "doubleVisits": 6739,
+  "reps": 94,
+  "customersTotal": 8834,
+  "customersByMonth": {
+   "Jan": 1957,
+   "Feb": 2293,
+   "Mar": 3701,
+   "Apr": 5337,
+   "May": 6041,
+   "Jun": 6758
+  },
+  "customersNaiveSum": 8959,
+  "customersOverlap": 125,
+  "areas": 129,
+  "areasVacant": 50,
+  "byMonth": {
+   "Jan": {
+    "sales": 7462856.83,
+    "target": 13902842.95,
+    "ach": 53.68
+   },
+   "Feb": {
+    "sales": 10148317.08,
+    "target": 14122581.53,
+    "ach": 71.86
+   },
+   "Mar": {
+    "sales": 10378763.41,
+    "target": 15407236.6,
+    "ach": 67.36
+   },
+   "Apr": {
+    "sales": 8288707.2,
+    "target": 16320625.61,
+    "ach": 50.79
+   },
+   "May": {
+    "sales": 10684455.61,
+    "target": 17118143.69,
+    "ach": 62.42
+   },
+   "Jun": {
+    "sales": 8262694.27,
+    "target": 16625950.18,
+    "ach": 49.7
+   }
+  }
+ },
+ "lines": [
+  {
+   "id": "pedia",
+   "label": "Pedia",
+   "allProducts": {
+    "sales": 12262910.34,
+    "target": 20181064.58,
+    "ach": 60.76
+   },
+   "exVacant": {
+    "sales": 9514104.14,
+    "target": 11120745.22,
+    "ach": 85.55
+   },
+   "marketingCost": 277450.0,
+   "outstationCost": 37435.0,
+   "visits": 25064,
+   "visitsAvailable": true,
+   "doubleVisits": 2023,
+   "customersTotal": 3505,
+   "dms": 5,
+   "dmsVacant": 1,
+   "areas": 44,
+   "areasVacant": 21,
+   "earners": 9,
+   "repFails": 2
+  },
+  {
+   "id": "cns",
+   "label": "CNS",
+   "allProducts": {
+    "sales": 37498841.71,
+    "target": 63530881.0,
+    "ach": 59.02
+   },
+   "exVacant": {
+    "sales": 31442389.54,
+    "target": 54577571.63,
+    "ach": 57.61
+   },
+   "marketingCost": 68681.0,
+   "outstationCost": 31767.35,
+   "visits": 25058,
+   "visitsAvailable": true,
+   "doubleVisits": 2566,
+   "customersTotal": 3518,
+   "dms": 6,
+   "dmsVacant": 0,
+   "areas": 41,
+   "areasVacant": 5,
+   "earners": 0,
+   "repFails": 0
+  },
+  {
+   "id": "anti",
+   "label": "Anti-Infective",
+   "allProducts": {
+    "sales": 5464042.34,
+    "target": 9785434.99,
+    "ach": 55.84
+   },
+   "exVacant": {
+    "sales": 4142596.22,
+    "target": 5827258.81,
+    "ach": 71.09
+   },
+   "marketingCost": 150640.0,
+   "outstationCost": 30191.0,
+   "visits": 19560,
+   "visitsAvailable": true,
+   "doubleVisits": 2150,
+   "customersTotal": 1936,
+   "dms": 5,
+   "dmsVacant": 2,
+   "areas": 44,
+   "areasVacant": 24,
+   "earners": 7,
+   "repFails": 1
+  }
+ ],
+ "dms": [
+  {
+   "dm": "Nermeen Salah",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": false,
+   "allProducts": {
+    "sales": 2709823.27,
+    "target": 2590462.89,
+    "ach": 104.61
+   },
+   "marketingCost": 100300.0,
+   "outstationCost": 4858.0,
+   "visitsAvgPerMonth": 970.33,
+   "customersTotal": 784,
+   "doubleVisits": 520,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Dina Fadel",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": false,
+   "allProducts": {
+    "sales": 1554372.5,
+    "target": 1662467.87,
+    "ach": 93.5
+   },
+   "marketingCost": 46200.0,
+   "outstationCost": 13251.0,
+   "visitsAvgPerMonth": 705.17,
+   "customersTotal": 435,
+   "doubleVisits": 393,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Salim Gomaa",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": false,
+   "allProducts": {
+    "sales": 1404952.24,
+    "target": 1678718.19,
+    "ach": 83.69
+   },
+   "marketingCost": 33780.0,
+   "outstationCost": 6214.0,
+   "visitsAvgPerMonth": 750.33,
+   "customersTotal": 423,
+   "doubleVisits": 350,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Saad Salama",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 7569099.25,
+    "target": 10866712.39,
+    "ach": 69.65
+   },
+   "marketingCost": 21750.0,
+   "outstationCost": 15497.35,
+   "visitsAvgPerMonth": 966.17,
+   "customersTotal": 844,
+   "doubleVisits": 539,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Nosiba Salah",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": false,
+   "allProducts": {
+    "sales": 636841.25,
+    "target": 920045.45,
+    "ach": 69.22
+   },
+   "marketingCost": 22160.0,
+   "outstationCost": 0.0,
+   "visitsAvgPerMonth": 151.67,
+   "customersTotal": 93,
+   "doubleVisits": 80,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Ahmed Hekal",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": false,
+   "allProducts": {
+    "sales": 2335005.61,
+    "target": 3555233.84,
+    "ach": 65.68
+   },
+   "marketingCost": 12600.0,
+   "outstationCost": 7870.0,
+   "visitsAvgPerMonth": 805.0,
+   "customersTotal": 446,
+   "doubleVisits": 469,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Sameh Shaaban",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 6436800.51,
+    "target": 9880289.48,
+    "ach": 65.15
+   },
+   "marketingCost": 10400.0,
+   "outstationCost": 1675.0,
+   "visitsAvgPerMonth": 283.5,
+   "customersTotal": 273,
+   "doubleVisits": 193,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Yehya Kamal",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": false,
+   "allProducts": {
+    "sales": 2268201.51,
+    "target": 3491055.94,
+    "ach": 64.97
+   },
+   "marketingCost": 46100.0,
+   "outstationCost": 10757.0,
+   "visitsAvgPerMonth": 648.33,
+   "customersTotal": 485,
+   "doubleVisits": 131,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Ahmed Abdallah",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": false,
+   "allProducts": {
+    "sales": 2378751.36,
+    "target": 3766286.6,
+    "ach": 63.16
+   },
+   "marketingCost": 104700.0,
+   "outstationCost": 7717.0,
+   "visitsAvgPerMonth": 556.17,
+   "customersTotal": 451,
+   "doubleVisits": 209,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Amgad Ibrahim",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 7552919.91,
+    "target": 12053928.87,
+    "ach": 62.66
+   },
+   "marketingCost": 32600.0,
+   "outstationCost": 4496.0,
+   "visitsAvgPerMonth": 1060.17,
+   "customersTotal": 1082,
+   "doubleVisits": 522,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Taha Mohamed",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": false,
+   "allProducts": {
+    "sales": 1844481.3,
+    "target": 3323032.2,
+    "ach": 55.51
+   },
+   "marketingCost": 13750.0,
+   "outstationCost": 3749.0,
+   "visitsAvgPerMonth": 865.33,
+   "customersTotal": 1107,
+   "doubleVisits": 481,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Mina Farouk",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 4933301.67,
+    "target": 10165084.36,
+    "ach": 48.53
+   },
+   "marketingCost": 2000.0,
+   "outstationCost": 0,
+   "visitsAvgPerMonth": 401.0,
+   "customersTotal": 255,
+   "doubleVisits": 359,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Sally Saeed",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 5376401.39,
+    "target": 11100827.34,
+    "ach": 48.43
+   },
+   "marketingCost": 0,
+   "outstationCost": 7661.0,
+   "visitsAvgPerMonth": 461.83,
+   "customersTotal": 354,
+   "doubleVisits": 300,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Mahmoud El Husseinin",
+   "line": "CNS",
+   "lineId": "cns",
+   "vacant": false,
+   "allProducts": {
+    "sales": 4537759.66,
+    "target": 9464038.55,
+    "ach": 47.95
+   },
+   "marketingCost": 1931.0,
+   "outstationCost": 2068.0,
+   "visitsAvgPerMonth": 810.67,
+   "customersTotal": 715,
+   "doubleVisits": 431,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Giza (vacant)",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": true,
+   "allProducts": {
+    "sales": 522621.85,
+    "target": 1142815.98,
+    "ach": 45.73
+   },
+   "marketingCost": 0,
+   "outstationCost": 0,
+   "visitsAvgPerMonth": 0,
+   "customersTotal": 0,
+   "doubleVisits": 0,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Ahmed Nashaat",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": false,
+   "allProducts": {
+    "sales": 637461.45,
+    "target": 1712137.23,
+    "ach": 37.23
+   },
+   "marketingCost": 23000.0,
+   "outstationCost": 9131.0,
+   "visitsAvgPerMonth": 667.67,
+   "customersTotal": 466,
+   "doubleVisits": 313,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Momen.Abdelhady",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": false,
+   "allProducts": {
+    "sales": 314931.55,
+    "target": 1234953.15,
+    "ach": 25.5
+   },
+   "marketingCost": 10000.0,
+   "outstationCost": 0,
+   "visitsAvgPerMonth": 165.67,
+   "customersTotal": 128,
+   "doubleVisits": 234,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Alex-BHR (vacant)",
+   "line": "Anti-Infective",
+   "lineId": "anti",
+   "vacant": true,
+   "allProducts": {
+    "sales": 362464.55,
+    "target": 1434297.12,
+    "ach": 25.27
+   },
+   "marketingCost": 15500.0,
+   "outstationCost": 1595.0,
+   "visitsAvgPerMonth": 0,
+   "customersTotal": 0,
+   "doubleVisits": 0,
+   "visitsAvailable": true
+  },
+  {
+   "dm": "Cairo (vacant)",
+   "line": "Pedia",
+   "lineId": "pedia",
+   "vacant": true,
+   "allProducts": {
+    "sales": 652892.23,
+    "target": 3454993.12,
+    "ach": 18.9
+   },
+   "marketingCost": 0,
+   "outstationCost": 0,
+   "visitsAvgPerMonth": 0,
+   "customersTotal": 0,
+   "doubleVisits": 0,
+   "visitsAvailable": true
+  }
+ ]
+}

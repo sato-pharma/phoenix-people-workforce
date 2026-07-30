@@ -8,6 +8,7 @@ export type AuditEntityType =
   | "attendance_settlement"
   | "attendance_settlement_correction"
   | "auth_session"
+  | "business_review_s1_export"
   | "calendar_event"
   | "cron_job_control"
   | "deduction_candidate"

@@ -1,0 +1,6538 @@
+{
+ "meta": {
+  "line": "CNS",
+  "period": "S1 2026 (Jan–Jun)",
+  "currency": "EGP",
+  "months": [
+   "Jan",
+   "Feb",
+   "Mar",
+   "Apr",
+   "May",
+   "Jun"
+  ],
+  "generatedFrom": [
+   "S1-2026 CNS-Line.xlsx",
+   "Req jan june s1.xlsx",
+   "outstation-expense-command",
+   "FFcrm-visits-2026-07-29.xlsx",
+   "Dcrm-double-visits-2026-07-29.xlsx"
+  ],
+  "thresholds": {
+   "repFailBelow": 20,
+   "dsmFailBelow": 50
+  },
+  "rulings": {
+   "includeProducts": [
+    "Conviban 100 mg",
+    "Conviban 25 mg",
+    "Conviban 25mg/ml Syp",
+    "Conviban 50 mg",
+    "Dolabactin",
+    "Dopaminect 1mg",
+    "Dopaminict 1mg UPA",
+    "Rispadex 1mg Syp",
+    "Rispadex 3 mg",
+    "Rispadex 3 mg UPA",
+    "Tebofortin 120 mg Intens",
+    "Tebofortin 240 mg max",
+    "Tebofortine 40 mg",
+    "Tebofortine Forte 80",
+    "Tebofrtin drops"
+   ],
+   "exception": "none found — DATA vs TOTAL reconcile to within 1 unit of 559,016",
+   "marketing": "Approved by GM only (committed spend), 5 of 6 CNS DMs mapped",
+   "vacant": "4 bricks vacant per source status column; DMs all active; 'Others' bucket active but unmanaged"
+  }
+ },
+ "line": {
+  "includeOnly": {
+   "sales": 37498841.71,
+   "target": 63530881.0,
+   "ach": 59.02
+  },
+  "allProducts": {
+   "sales": 37498841.71,
+   "target": 63530881.0,
+   "ach": 59.02
+  },
+  "withException": {
+   "includeOnly": {
+    "sales": 37498841.71,
+    "target": 63530881.0,
+    "ach": 59.02
+   },
+   "allProducts": {
+    "sales": 37498841.71,
+    "target": 63530881.0,
+    "ach": 59.02
+   }
+  },
+  "exVacant": {
+   "includeOnly": {
+    "sales": 31442389.54,
+    "target": 54577571.63,
+    "ach": 57.61
+   }
+  },
+  "exceptionValue": 0.0,
+  "quarters": {
+   "Q1": {
+    "includeOnly": {
+     "sales": 20162315.0,
+     "target": 28478590.94,
+     "ach": 70.8
+    },
+    "allProducts": {
+     "sales": 20162315.0,
+     "target": 28478590.94,
+     "ach": 70.8
+    }
+   },
+   "Q2": {
+    "includeOnly": {
+     "sales": 17336526.71,
+     "target": 35052290.05,
+     "ach": 49.46
+    },
+    "allProducts": {
+     "sales": 17336526.71,
+     "target": 35052290.05,
+     "ach": 49.46
+    }
+   }
+  },
+  "byMonth": {
+   "Jan": {
+    "includeOnly": {
+     "sales": 5108281.35,
+     "target": 9003733.94,
+     "ach": 56.74
+    },
+    "allProducts": {
+     "sales": 5108281.35,
+     "target": 9003733.94,
+     "ach": 56.74
+    }
+   },
+   "Feb": {
+    "includeOnly": {
+     "sales": 7569335.54,
+     "target": 9088266.6,
+     "ach": 83.29
+    },
+    "allProducts": {
+     "sales": 7569335.54,
+     "target": 9088266.6,
+     "ach": 83.29
+    }
+   },
+   "Mar": {
+    "includeOnly": {
+     "sales": 7484698.11,
+     "target": 10386590.4,
+     "ach": 72.06
+    },
+    "allProducts": {
+     "sales": 7484698.11,
+     "target": 10386590.4,
+     "ach": 72.06
+    }
+   },
+   "Apr": {
+    "includeOnly": {
+     "sales": 6088624.07,
+     "target": 11684096.68,
+     "ach": 52.11
+    },
+    "allProducts": {
+     "sales": 6088624.07,
+     "target": 11684096.68,
+     "ach": 52.11
+    }
+   },
+   "May": {
+    "includeOnly": {
+     "sales": 7485549.16,
+     "target": 11684096.68,
+     "ach": 64.07
+    },
+    "allProducts": {
+     "sales": 7485549.16,
+     "target": 11684096.68,
+     "ach": 64.07
+    }
+   },
+   "Jun": {
+    "includeOnly": {
+     "sales": 3762353.48,
+     "target": 11684096.68,
+     "ach": 32.2
+    },
+    "allProducts": {
+     "sales": 3762353.48,
+     "target": 11684096.68,
+     "ach": 32.2
+    }
+   }
+  },
+  "marketingCost": 68681.0,
+  "outstationCost": 31767.35,
+  "visits": 25058,
+  "doubleVisits": 2566,
+  "visitsAvgPerRepPerMonth": 119.32,
+  "reps": 35,
+  "customersTotal": 3518,
+  "customersByMonth": {
+   "Jan": 1,
+   "Feb": 79,
+   "Mar": 1299,
+   "Apr": 2380,
+   "May": 2580,
+   "Jun": 3016
+  }
+ },
+ "products": [
+  {
+   "product": "Tebofortine Forte 80",
+   "family": "Tebofortin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 2836526.84,
+     "target": 3868481.02,
+     "ach": 73.32
+    },
+    "Feb": {
+     "sales": 4442648.13,
+     "target": 4513278.0,
+     "ach": 98.44
+    },
+    "Mar": {
+     "sales": 4162766.28,
+     "target": 5158032.0,
+     "ach": 80.7
+    },
+    "Apr": {
+     "sales": 4163547.8,
+     "target": 5177570.0,
+     "ach": 80.42
+    },
+    "May": {
+     "sales": 3715477.96,
+     "target": 5177570.0,
+     "ach": 71.76
+    },
+    "Jun": {
+     "sales": 1619211.75,
+     "target": 5177570.0,
+     "ach": 31.27
+    }
+   },
+   "total": {
+    "sales": 20940178.76,
+    "target": 29072501.02,
+    "ach": 72.03
+   }
+  },
+  {
+   "product": "Tebofortine 40 mg",
+   "family": "Tebofortin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 1114632.4,
+     "target": 2046225.79,
+     "ach": 54.47
+    },
+    "Feb": {
+     "sales": 1958777.45,
+     "target": 2387280.0,
+     "ach": 82.05
+    },
+    "Mar": {
+     "sales": 2302446.3,
+     "target": 2728320.0,
+     "ach": 84.39
+    },
+    "Apr": {
+     "sales": 831853.4,
+     "target": 2628850.0,
+     "ach": 31.64
+    },
+    "May": {
+     "sales": 2202388.72,
+     "target": 2628850.0,
+     "ach": 83.78
+    },
+    "Jun": {
+     "sales": 746309.2,
+     "target": 2628850.0,
+     "ach": 28.39
+    }
+   },
+   "total": {
+    "sales": 9156407.47,
+    "target": 15048375.79,
+    "ach": 60.85
+   }
+  },
+  {
+   "product": "Conviban 25 mg",
+   "family": "Conviban",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 315422.64,
+     "target": 269555.64,
+     "ach": 117.02
+    },
+    "Feb": {
+     "sales": 287777.88,
+     "target": 314496.0,
+     "ach": 91.5
+    },
+    "Mar": {
+     "sales": 340835.04,
+     "target": 359424.0,
+     "ach": 94.83
+    },
+    "Apr": {
+     "sales": 283242.96,
+     "target": 359424.0,
+     "ach": 78.8
+    },
+    "May": {
+     "sales": 267752.07,
+     "target": 359424.0,
+     "ach": 74.49
+    },
+    "Jun": {
+     "sales": 351393.12,
+     "target": 359424.0,
+     "ach": 97.77
+    }
+   },
+   "total": {
+    "sales": 1846423.71,
+    "target": 2021747.64,
+    "ach": 91.33
+   }
+  },
+  {
+   "product": "Conviban 50 mg",
+   "family": "Conviban",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 135937.44,
+     "target": 145398.72,
+     "ach": 93.49
+    },
+    "Feb": {
+     "sales": 314470.08,
+     "target": 169646.4,
+     "ach": 185.37
+    },
+    "Mar": {
+     "sales": 160099.2,
+     "target": 193881.6,
+     "ach": 82.58
+    },
+    "Apr": {
+     "sales": 123415.92,
+     "target": 183600.0,
+     "ach": 67.22
+    },
+    "May": {
+     "sales": 179476.34,
+     "target": 183600.0,
+     "ach": 97.75
+    },
+    "Jun": {
+     "sales": 118954.44,
+     "target": 183600.0,
+     "ach": 64.79
+    }
+   },
+   "total": {
+    "sales": 1032353.42,
+    "target": 1059726.72,
+    "ach": 97.42
+   }
+  },
+  {
+   "product": "Rispadex 3 mg",
+   "family": "Rispadex ",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 179524.08,
+     "target": 171844.75,
+     "ach": 104.47
+    },
+    "Feb": {
+     "sales": 139095.36,
+     "target": 200491.2,
+     "ach": 69.38
+    },
+    "Mar": {
+     "sales": 152388.0,
+     "target": 229132.8,
+     "ach": 66.51
+    },
+    "Apr": {
+     "sales": 160503.12,
+     "target": 238680.0,
+     "ach": 67.25
+    },
+    "May": {
+     "sales": 153932.44,
+     "target": 238680.0,
+     "ach": 64.49
+    },
+    "Jun": {
+     "sales": 140252.04,
+     "target": 238680.0,
+     "ach": 58.76
+    }
+   },
+   "total": {
+    "sales": 925695.04,
+    "target": 1317508.75,
+    "ach": 70.26
+   }
+  },
+  {
+   "product": "Conviban 100 mg",
+   "family": "Conviban",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 152964.0,
+     "target": 142567.06,
+     "ach": 107.29
+    },
+    "Feb": {
+     "sales": 97668.0,
+     "target": 166320.0,
+     "ach": 58.72
+    },
+    "Mar": {
+     "sales": 57204.0,
+     "target": 190080.0,
+     "ach": 30.09
+    },
+    "Apr": {
+     "sales": 38790.0,
+     "target": 180000.0,
+     "ach": 21.55
+    },
+    "May": {
+     "sales": 228510.0,
+     "target": 180000.0,
+     "ach": 126.95
+    },
+    "Jun": {
+     "sales": 166500.0,
+     "target": 180000.0,
+     "ach": 92.5
+    }
+   },
+   "total": {
+    "sales": 741636.0,
+    "target": 1038967.06,
+    "ach": 71.38
+   }
+  },
+  {
+   "product": "Rispadex 1mg Syp",
+   "family": "Rispadex ",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 69640.56,
+     "target": 171076.75,
+     "ach": 40.71
+    },
+    "Feb": {
+     "sales": 76032.0,
+     "target": 199584.0,
+     "ach": 38.1
+    },
+    "Mar": {
+     "sales": 96394.32,
+     "target": 228096.0,
+     "ach": 42.26
+    },
+    "Apr": {
+     "sales": 113976.72,
+     "target": 190080.0,
+     "ach": 59.96
+    },
+    "May": {
+     "sales": 97511.04,
+     "target": 190080.0,
+     "ach": 51.3
+    },
+    "Jun": {
+     "sales": 99708.84,
+     "target": 190080.0,
+     "ach": 52.46
+    }
+   },
+   "total": {
+    "sales": 553263.48,
+    "target": 1168996.75,
+    "ach": 47.33
+   }
+  },
+  {
+   "product": "Rispadex 3 mg UPA",
+   "family": "Rispadex ",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 159222.0,
+     "target": 427693.14,
+     "ach": 37.23
+    },
+    "Feb": {
+     "sales": 0.0,
+     "target": 499800.0,
+     "ach": 0.0
+    },
+    "Mar": {
+     "sales": 0.0,
+     "target": 571200.0,
+     "ach": 0.0
+    },
+    "Apr": {
+     "sales": 0.0,
+     "target": 571200.0,
+     "ach": 0.0
+    },
+    "May": {
+     "sales": 226038.12,
+     "target": 571200.0,
+     "ach": 39.57
+    },
+    "Jun": {
+     "sales": 161042.7,
+     "target": 571200.0,
+     "ach": 28.19
+    }
+   },
+   "total": {
+    "sales": 546302.82,
+    "target": 3212293.14,
+    "ach": 17.01
+   }
+  },
+  {
+   "product": "Tebofrtin drops",
+   "family": "Tebofortin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 57702.24,
+     "target": 191827.18,
+     "ach": 30.08
+    },
+    "Feb": {
+     "sales": 166127.04,
+     "target": 223776.0,
+     "ach": 74.24
+    },
+    "Mar": {
+     "sales": 52693.92,
+     "target": 255744.0,
+     "ach": 20.6
+    },
+    "Apr": {
+     "sales": 113193.36,
+     "target": 255744.0,
+     "ach": 44.26
+    },
+    "May": {
+     "sales": 74165.76,
+     "target": 255744.0,
+     "ach": 29.0
+    },
+    "Jun": {
+     "sales": 71555.04,
+     "target": 255744.0,
+     "ach": 27.98
+    }
+   },
+   "total": {
+    "sales": 535437.36,
+    "target": 1438579.18,
+    "ach": 37.22
+   }
+  },
+  {
+   "product": "Dolabactin",
+   "family": "Dolabactin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 56376.0,
+     "target": 194378.4,
+     "ach": 29.0
+    },
+    "Feb": {
+     "sales": 49356.0,
+     "target": 226800.0,
+     "ach": 21.76
+    },
+    "Mar": {
+     "sales": 109458.0,
+     "target": 259200.0,
+     "ach": 42.23
+    },
+    "Apr": {
+     "sales": 60804.0,
+     "target": 270000.0,
+     "ach": 22.52
+    },
+    "May": {
+     "sales": 83754.0,
+     "target": 270000.0,
+     "ach": 31.02
+    },
+    "Jun": {
+     "sales": 119232.0,
+     "target": 270000.0,
+     "ach": 44.16
+    }
+   },
+   "total": {
+    "sales": 478980.0,
+    "target": 1490378.4,
+    "ach": 32.14
+   }
+  },
+  {
+   "product": "Dopaminect 1mg",
+   "family": "Dopaminect",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 28102.95,
+     "target": 65620.94,
+     "ach": 42.83
+    },
+    "Feb": {
+     "sales": 31711.5,
+     "target": 76545.0,
+     "ach": 41.43
+    },
+    "Mar": {
+     "sales": 38090.25,
+     "target": 87480.0,
+     "ach": 43.54
+    },
+    "Apr": {
+     "sales": 69400.8,
+     "target": 91125.0,
+     "ach": 76.16
+    },
+    "May": {
+     "sales": 75141.68,
+     "target": 91125.0,
+     "ach": 82.46
+    },
+    "Jun": {
+     "sales": 24640.2,
+     "target": 91125.0,
+     "ach": 27.04
+    }
+   },
+   "total": {
+    "sales": 267087.38,
+    "target": 503020.94,
+    "ach": 53.1
+   }
+  },
+  {
+   "product": "Tebofortin 120 mg Intens",
+   "family": "Tebofortin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 0.0,
+     "target": 671390.17,
+     "ach": 0.0
+    },
+    "Feb": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Mar": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Apr": {
+     "sales": 52534.54,
+     "target": 808223.68,
+     "ach": 6.5
+    },
+    "May": {
+     "sales": 86915.13,
+     "target": 808223.68,
+     "ach": 10.75
+    },
+    "Jun": {
+     "sales": 92883.55,
+     "target": 808223.68,
+     "ach": 11.49
+    }
+   },
+   "total": {
+    "sales": 232333.22,
+    "target": 3096061.21,
+    "ach": 7.5
+   }
+  },
+  {
+   "product": "Tebofortin 240 mg max",
+   "family": "Tebofortin",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 0.0,
+     "target": 543179.64,
+     "ach": 0.0
+    },
+    "Feb": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Mar": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Apr": {
+     "sales": 47759.85,
+     "target": 603600.0,
+     "ach": 7.91
+    },
+    "May": {
+     "sales": 47231.7,
+     "target": 603600.0,
+     "ach": 7.82
+    },
+    "Jun": {
+     "sales": 23389.5,
+     "target": 603600.0,
+     "ach": 3.87
+    }
+   },
+   "total": {
+    "sales": 118381.05,
+    "target": 2353979.64,
+    "ach": 5.03
+   }
+  },
+  {
+   "product": "Conviban 25mg/ml Syp",
+   "family": "Conviban",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 2230.2,
+     "target": 81648.6,
+     "ach": 2.73
+    },
+    "Feb": {
+     "sales": 1209.6,
+     "target": 95256.0,
+     "ach": 1.27
+    },
+    "Mar": {
+     "sales": 12322.8,
+     "target": 108864.0,
+     "ach": 11.32
+    },
+    "Apr": {
+     "sales": 20034.0,
+     "target": 108864.0,
+     "ach": 18.4
+    },
+    "May": {
+     "sales": 17766.0,
+     "target": 108864.0,
+     "ach": 16.32
+    },
+    "Jun": {
+     "sales": 18427.5,
+     "target": 108864.0,
+     "ach": 16.93
+    }
+   },
+   "total": {
+    "sales": 71990.1,
+    "target": 612360.6,
+    "ach": 11.76
+   }
+  },
+  {
+   "product": "Dopaminict 1mg UPA",
+   "family": "Dopaminect",
+   "include": true,
+   "byMonth": {
+    "Jan": {
+     "sales": 0.0,
+     "target": 12846.15,
+     "ach": 0.0
+    },
+    "Feb": {
+     "sales": 4462.5,
+     "target": 14994.0,
+     "ach": 29.76
+    },
+    "Mar": {
+     "sales": 0.0,
+     "target": 17136.0,
+     "ach": 0.0
+    },
+    "Apr": {
+     "sales": 9567.6,
+     "target": 17136.0,
+     "ach": 55.83
+    },
+    "May": {
+     "sales": 29488.2,
+     "target": 17136.0,
+     "ach": 172.08
+    },
+    "Jun": {
+     "sales": 8853.6,
+     "target": 17136.0,
+     "ach": 51.67
+    }
+   },
+   "total": {
+    "sales": 52371.9,
+    "target": 96384.15,
+    "ach": 54.34
+   }
+  }
+ ],
+ "dms": [
+  {
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "areas": [
+    "Assiut 1",
+    "Assiut 2",
+    "Luxor - Aswan",
+    "Minia 1",
+    "Minia 2",
+    "Qena",
+    "Sohag 1",
+    "Sohag 2"
+   ],
+   "activeAreas": [
+    "Assiut 1",
+    "Assiut 2",
+    "Luxor - Aswan",
+    "Minia 1",
+    "Minia 2",
+    "Qena",
+    "Sohag 1",
+    "Sohag 2"
+   ],
+   "includeOnly": {
+    "sales": 7552919.91,
+    "target": 12053928.87,
+    "ach": 62.66
+   },
+   "activeIncludeOnly": {
+    "sales": 7552919.91,
+    "target": 12053928.87,
+    "ach": 62.66
+   },
+   "allProducts": {
+    "sales": 7552919.91,
+    "target": 12053928.87,
+    "ach": 62.66
+   },
+   "productAch": {
+    "Conviban 100 mg": 67.85,
+    "Conviban 25 mg": 101.89,
+    "Conviban 25mg/ml Syp": 26.82,
+    "Conviban 50 mg": 101.74,
+    "Dolabactin": 55.45,
+    "Dopaminect 1mg": 38.44,
+    "Dopaminict 1mg UPA": 11.32,
+    "Rispadex 1mg Syp": 54.11,
+    "Rispadex 3 mg": 83.09,
+    "Rispadex 3 mg UPA": 9.71,
+    "Tebofortin 120 mg Intens": 18.02,
+    "Tebofortin 240 mg max": 7.69,
+    "Tebofortine 40 mg": 69.71,
+    "Tebofortine Forte 80": 70.79,
+    "Tebofrtin drops": 63.9
+   },
+   "familyAch": {
+    "Conviban": 84.67,
+    "Dolabactin": 55.45,
+    "Dopaminect": 34.08,
+    "Rispadex ": 35.78,
+    "Tebofortin": 64.17
+   },
+   "trend": [
+    932993.66,
+    1551187.61,
+    1480129.17,
+    1210616.85,
+    1520187.92,
+    857804.69
+   ],
+   "achByMonth": {
+    "Jan": 55.08,
+    "Feb": 89.83,
+    "Mar": 75.0,
+    "Apr": 54.53,
+    "May": 68.48,
+    "Jun": 38.64
+   },
+   "achByMonthActive": {
+    "Jan": 55.08,
+    "Feb": 89.83,
+    "Mar": 75.0,
+    "Apr": 54.53,
+    "May": 68.48,
+    "Jun": 38.64
+   },
+   "marketingCost": 32600.0,
+   "marketingMonths": 2,
+   "marketingByMonth": {
+    "Apr": 14600.0,
+    "Jun": 18000.0
+   },
+   "outstationCost": 4496.0,
+   "outstationMonths": 5,
+   "outstationByMonth": {
+    "Feb": 625.0,
+    "Mar": 595.0,
+    "Apr": 1166.0,
+    "May": 1761.0,
+    "Jun": 349.0
+   },
+   "doubleVisits": 522,
+   "visits": 6361,
+   "visitsAvgPerMonth": 1060.17,
+   "visitsByMonth": {
+    "Jan": 0,
+    "Feb": 368,
+    "Mar": 1256,
+    "Apr": 1384,
+    "May": 1501,
+    "Jun": 1852
+   },
+   "customersTotal": 1082,
+   "customersByMonth": {
+    "Jan": 0,
+    "Feb": 21,
+    "Mar": 530,
+    "Apr": 674,
+    "May": 714,
+    "Jun": 924
+   }
+  },
+  {
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "areas": [
+    "Gharbia (Mahalla)",
+    "Gharbia (Tanta)",
+    "Menoufia 1",
+    "Menoufia 2",
+    "Qal"
+   ],
+   "activeAreas": [
+    "Gharbia (Mahalla)",
+    "Gharbia (Tanta)",
+    "Menoufia 1",
+    "Menoufia 2",
+    "Qal"
+   ],
+   "includeOnly": {
+    "sales": 4537759.66,
+    "target": 9464038.55,
+    "ach": 47.95
+   },
+   "activeIncludeOnly": {
+    "sales": 4537759.66,
+    "target": 9464038.55,
+    "ach": 47.95
+   },
+   "allProducts": {
+    "sales": 4537759.66,
+    "target": 9464038.55,
+    "ach": 47.95
+   },
+   "productAch": {
+    "Conviban 100 mg": 69.24,
+    "Conviban 25 mg": 73.74,
+    "Conviban 25mg/ml Syp": 4.79,
+    "Conviban 50 mg": 84.01,
+    "Dolabactin": 27.59,
+    "Dopaminect 1mg": 79.05,
+    "Dopaminict 1mg UPA": 44.64,
+    "Rispadex 1mg Syp": 53.05,
+    "Rispadex 3 mg": 116.45,
+    "Rispadex 3 mg UPA": 21.55,
+    "Tebofortin 120 mg Intens": 4.01,
+    "Tebofortin 240 mg max": 3.63,
+    "Tebofortine 40 mg": 45.32,
+    "Tebofortine Forte 80": 55.66,
+    "Tebofrtin drops": 23.96
+   },
+   "familyAch": {
+    "Conviban": 66.14,
+    "Dolabactin": 27.59,
+    "Dopaminect": 73.51,
+    "Rispadex ": 49.93,
+    "Tebofortin": 46.32
+   },
+   "trend": [
+    638277.92,
+    1005152.45,
+    899224.11,
+    623987.26,
+    858011.11,
+    513106.81
+   ],
+   "achByMonth": {
+    "Jan": 44.3,
+    "Feb": 69.12,
+    "Mar": 54.11,
+    "Apr": 38.15,
+    "May": 52.45,
+    "Jun": 31.37
+   },
+   "achByMonthActive": {
+    "Jan": 44.3,
+    "Feb": 69.12,
+    "Mar": 54.11,
+    "Apr": 38.15,
+    "May": 52.45,
+    "Jun": 31.37
+   },
+   "marketingCost": 1931.0,
+   "marketingMonths": 1,
+   "marketingByMonth": {
+    "Jun": 1931.0
+   },
+   "outstationCost": 2068.0,
+   "outstationMonths": 4,
+   "outstationByMonth": {
+    "Feb": 200.0,
+    "Mar": 357.0,
+    "Apr": 868.0,
+    "May": 643.0
+   },
+   "doubleVisits": 431,
+   "visits": 4864,
+   "visitsAvgPerMonth": 810.67,
+   "visitsByMonth": {
+    "Jan": 0,
+    "Feb": 314,
+    "Mar": 843,
+    "Apr": 1183,
+    "May": 1192,
+    "Jun": 1332
+   },
+   "customersTotal": 715,
+   "customersByMonth": {
+    "Jan": 0,
+    "Feb": 17,
+    "Mar": 160,
+    "Apr": 584,
+    "May": 637,
+    "Jun": 624
+   }
+  },
+  {
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "areas": [
+    "Cairo East 1",
+    "Cairo East 2",
+    "Cairo Others",
+    "Cairo West",
+    "Heliopolis",
+    "Nasr City"
+   ],
+   "activeAreas": [
+    "Cairo East 1",
+    "Cairo East 2",
+    "Cairo Others",
+    "Heliopolis",
+    "Nasr City"
+   ],
+   "includeOnly": {
+    "sales": 4933301.67,
+    "target": 10165084.36,
+    "ach": 48.53
+   },
+   "activeIncludeOnly": {
+    "sales": 4165123.31,
+    "target": 8335369.17,
+    "ach": 49.97
+   },
+   "allProducts": {
+    "sales": 4933301.67,
+    "target": 10165084.36,
+    "ach": 48.53
+   },
+   "productAch": {
+    "Conviban 100 mg": 41.08,
+    "Conviban 25 mg": 71.2,
+    "Conviban 25mg/ml Syp": 3.28,
+    "Conviban 50 mg": 65.39,
+    "Dolabactin": 22.72,
+    "Dopaminect 1mg": 25.38,
+    "Dopaminict 1mg UPA": 0.0,
+    "Rispadex 1mg Syp": 28.45,
+    "Rispadex 3 mg": 32.6,
+    "Rispadex 3 mg UPA": 15.33,
+    "Tebofortin 120 mg Intens": 3.02,
+    "Tebofortin 240 mg max": 2.46,
+    "Tebofortine 40 mg": 54.06,
+    "Tebofortine Forte 80": 61.77,
+    "Tebofrtin drops": 19.96
+   },
+   "familyAch": {
+    "Conviban": 54.5,
+    "Dolabactin": 22.72,
+    "Dopaminect": 21.3,
+    "Rispadex ": 22.01,
+    "Tebofortin": 52.02
+   },
+   "trend": [
+    718413.56,
+    1055010.58,
+    1242691.91,
+    660207.15,
+    741118.0,
+    515860.46
+   ],
+   "achByMonth": {
+    "Jan": 49.86,
+    "Feb": 72.55,
+    "Mar": 74.78,
+    "Apr": 35.32,
+    "May": 39.64,
+    "Jun": 27.59
+   },
+   "achByMonthActive": {
+    "Jan": 48.68,
+    "Feb": 73.99,
+    "Mar": 82.05,
+    "Apr": 37.92,
+    "May": 37.73,
+    "Jun": 28.05
+   },
+   "marketingCost": 2000.0,
+   "marketingMonths": 1,
+   "marketingByMonth": {
+    "Jun": 2000.0
+   },
+   "outstationCost": 0,
+   "outstationMonths": 0,
+   "outstationByMonth": {},
+   "doubleVisits": 359,
+   "visits": 2406,
+   "visitsAvgPerMonth": 401.0,
+   "visitsByMonth": {
+    "Jan": 0,
+    "Feb": 138,
+    "Mar": 321,
+    "Apr": 385,
+    "May": 553,
+    "Jun": 1009
+   },
+   "customersTotal": 255,
+   "customersByMonth": {
+    "Jan": 0,
+    "Feb": 12,
+    "Mar": 68,
+    "Apr": 134,
+    "May": 156,
+    "Jun": 211
+   }
+  },
+  {
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "areas": [
+    "Alex Center 2",
+    "Alex East",
+    "Alex West- Center 1",
+    "Behira 1",
+    "Behira 2",
+    "Kafr El-Sheikh"
+   ],
+   "activeAreas": [
+    "Alex Center 2",
+    "Alex East",
+    "Alex West- Center 1",
+    "Behira 1",
+    "Kafr El-Sheikh"
+   ],
+   "includeOnly": {
+    "sales": 7569099.25,
+    "target": 10866712.39,
+    "ach": 69.65
+   },
+   "activeIncludeOnly": {
+    "sales": 6720688.32,
+    "target": 9471060.18,
+    "ach": 70.96
+   },
+   "allProducts": {
+    "sales": 7569099.25,
+    "target": 10866712.39,
+    "ach": 69.65
+   },
+   "productAch": {
+    "Conviban 100 mg": 99.94,
+    "Conviban 25 mg": 118.71,
+    "Conviban 25mg/ml Syp": 8.21,
+    "Conviban 50 mg": 136.85,
+    "Dolabactin": 28.49,
+    "Dopaminect 1mg": 56.67,
+    "Dopaminict 1mg UPA": 157.12,
+    "Rispadex 1mg Syp": 25.96,
+    "Rispadex 3 mg": 71.32,
+    "Rispadex 3 mg UPA": 24.45,
+    "Tebofortin 120 mg Intens": 10.86,
+    "Tebofortin 240 mg max": 8.22,
+    "Tebofortine 40 mg": 73.36,
+    "Tebofortine Forte 80": 83.22,
+    "Tebofrtin drops": 52.41
+   },
+   "familyAch": {
+    "Conviban": 104.35,
+    "Dolabactin": 28.49,
+    "Dopaminect": 72.81,
+    "Rispadex ": 35.61,
+    "Tebofortin": 71.4
+   },
+   "trend": [
+    1086769.55,
+    1548728.58,
+    1454936.5,
+    1153016.05,
+    1582396.26,
+    743252.32
+   ],
+   "achByMonth": {
+    "Jan": 75.4,
+    "Feb": 106.51,
+    "Mar": 87.55,
+    "Apr": 54.82,
+    "May": 75.24,
+    "Jun": 35.34
+   },
+   "achByMonthActive": {
+    "Jan": 80.93,
+    "Feb": 110.09,
+    "Mar": 90.87,
+    "Apr": 54.96,
+    "May": 73.51,
+    "Jun": 35.92
+   },
+   "marketingCost": 21750.0,
+   "marketingMonths": 2,
+   "marketingByMonth": {
+    "May": 1600.0,
+    "Jun": 20150.0
+   },
+   "outstationCost": 15497.35,
+   "outstationMonths": 5,
+   "outstationByMonth": {
+    "Feb": 2022.0,
+    "Mar": 3724.0,
+    "Apr": 3967.0,
+    "May": 4085.35,
+    "Jun": 1699.0
+   },
+   "doubleVisits": 539,
+   "visits": 5797,
+   "visitsAvgPerMonth": 966.17,
+   "visitsByMonth": {
+    "Jan": 0,
+    "Feb": 364,
+    "Mar": 1223,
+    "Apr": 1400,
+    "May": 1235,
+    "Jun": 1575
+   },
+   "customersTotal": 844,
+   "customersByMonth": {
+    "Jan": 0,
+    "Feb": 8,
+    "Mar": 326,
+    "Apr": 658,
+    "May": 705,
+    "Jun": 749
+   }
+  },
+  {
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "areas": [
+    "Dakahlia 1",
+    "Dakahlia 2",
+    "Dakahlia 3",
+    "Port said - Domiat",
+    "Sharkia 1",
+    "Sharkia 2",
+    "Sharkia 3"
+   ],
+   "activeAreas": [
+    "Dakahlia 1",
+    "Dakahlia 2",
+    "Dakahlia 3",
+    "Port said - Domiat",
+    "Sharkia 1",
+    "Sharkia 2",
+    "Sharkia 3"
+   ],
+   "includeOnly": {
+    "sales": 5376401.39,
+    "target": 11100827.34,
+    "ach": 48.43
+   },
+   "activeIncludeOnly": {
+    "sales": 5376401.39,
+    "target": 11100827.34,
+    "ach": 48.43
+   },
+   "allProducts": {
+    "sales": 5376401.39,
+    "target": 11100827.34,
+    "ach": 48.43
+   },
+   "productAch": {
+    "Conviban 100 mg": 58.34,
+    "Conviban 25 mg": 80.52,
+    "Conviban 25mg/ml Syp": 15.74,
+    "Conviban 50 mg": 89.17,
+    "Dolabactin": 26.47,
+    "Dopaminect 1mg": 55.58,
+    "Dopaminict 1mg UPA": 75.19,
+    "Rispadex 1mg Syp": 56.48,
+    "Rispadex 3 mg": 44.34,
+    "Rispadex 3 mg UPA": 26.34,
+    "Tebofortin 120 mg Intens": 3.49,
+    "Tebofortin 240 mg max": 4.64,
+    "Tebofortine 40 mg": 44.22,
+    "Tebofortine Forte 80": 59.79,
+    "Tebofrtin drops": 25.7
+   },
+   "familyAch": {
+    "Conviban": 69.2,
+    "Dolabactin": 26.47,
+    "Dopaminect": 58.73,
+    "Rispadex ": 36.7,
+    "Tebofortin": 48.34
+   },
+   "trend": [
+    761671.89,
+    1083788.71,
+    1119676.78,
+    893661.65,
+    1004260.82,
+    513341.54
+   ],
+   "achByMonth": {
+    "Jan": 46.54,
+    "Feb": 66.25,
+    "Mar": 59.89,
+    "Apr": 44.99,
+    "May": 50.56,
+    "Jun": 25.84
+   },
+   "achByMonthActive": {
+    "Jan": 46.54,
+    "Feb": 66.25,
+    "Mar": 59.89,
+    "Apr": 44.99,
+    "May": 50.56,
+    "Jun": 25.84
+   },
+   "marketingCost": 0,
+   "marketingMonths": 0,
+   "marketingByMonth": {},
+   "outstationCost": 7661.0,
+   "outstationMonths": 4,
+   "outstationByMonth": {
+    "Mar": 1952.0,
+    "Apr": 2061.0,
+    "May": 2227.0,
+    "Jun": 1421.0
+   },
+   "doubleVisits": 300,
+   "visits": 2771,
+   "visitsAvgPerMonth": 461.83,
+   "visitsByMonth": {
+    "Jan": 0,
+    "Feb": 63,
+    "Mar": 253,
+    "Apr": 432,
+    "May": 801,
+    "Jun": 1222
+   },
+   "customersTotal": 354,
+   "customersByMonth": {
+    "Jan": 0,
+    "Feb": 23,
+    "Mar": 77,
+    "Apr": 170,
+    "May": 214,
+    "Jun": 287
+   }
+  },
+  {
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": false,
+   "areas": [
+    "Dokki - Mohandsen-Imbaba",
+    "Down town",
+    "Faisal & October",
+    "Haram- Giza Centers",
+    "Helwan-Maadi"
+   ],
+   "activeAreas": [
+    "Faisal & October",
+    "Helwan-Maadi"
+   ],
+   "includeOnly": {
+    "sales": 6436800.51,
+    "target": 9880289.48,
+    "ach": 65.15
+   },
+   "activeIncludeOnly": {
+    "sales": 1996937.61,
+    "target": 4152347.51,
+    "ach": 48.09
+   },
+   "allProducts": {
+    "sales": 6436800.51,
+    "target": 9880289.48,
+    "ach": 65.15
+   },
+   "productAch": {
+    "Conviban 100 mg": 79.31,
+    "Conviban 25 mg": 82.06,
+    "Conviban 25mg/ml Syp": 5.13,
+    "Conviban 50 mg": 82.49,
+    "Dolabactin": 15.16,
+    "Dopaminect 1mg": 50.67,
+    "Dopaminict 1mg UPA": 35.77,
+    "Rispadex 1mg Syp": 38.91,
+    "Rispadex 3 mg": 47.31,
+    "Rispadex 3 mg UPA": 2.21,
+    "Tebofortin 120 mg Intens": 2.51,
+    "Tebofortin 240 mg max": 2.13,
+    "Tebofortine 40 mg": 66.98,
+    "Tebofortine Forte 80": 88.79,
+    "Tebofrtin drops": 25.72
+   },
+   "familyAch": {
+    "Conviban": 71.6,
+    "Dolabactin": 15.16,
+    "Dopaminect": 48.28,
+    "Rispadex ": 20.16,
+    "Tebofortin": 71.22
+   },
+   "trend": [
+    821728.17,
+    1094488.79,
+    999260.14,
+    1386904.14,
+    1603511.17,
+    530908.1
+   ],
+   "achByMonth": {
+    "Jan": 60.84,
+    "Feb": 80.29,
+    "Mar": 64.14,
+    "Apr": 74.19,
+    "May": 85.77,
+    "Jun": 28.4
+   },
+   "achByMonthActive": {
+    "Jan": 50.81,
+    "Feb": 64.17,
+    "Mar": 48.52,
+    "Apr": 56.53,
+    "May": 43.17,
+    "Jun": 28.02
+   },
+   "marketingCost": 10400.0,
+   "marketingMonths": 1,
+   "marketingByMonth": {
+    "Jun": 10400.0
+   },
+   "outstationCost": 1675.0,
+   "outstationMonths": 5,
+   "outstationByMonth": {
+    "Feb": 178.0,
+    "Mar": 362.0,
+    "Apr": 458.0,
+    "May": 222.0,
+    "Jun": 455.0
+   },
+   "doubleVisits": 193,
+   "visits": 1701,
+   "visitsAvgPerMonth": 283.5,
+   "visitsByMonth": {
+    "Jan": 1,
+    "Feb": 171,
+    "Mar": 351,
+    "Apr": 363,
+    "May": 349,
+    "Jun": 466
+   },
+   "customersTotal": 273,
+   "customersByMonth": {
+    "Jan": 1,
+    "Feb": 3,
+    "Mar": 143,
+    "Apr": 165,
+    "May": 159,
+    "Jun": 226
+   }
+  },
+  {
+   "dm": "Others",
+   "region": "Others",
+   "vacant": false,
+   "areas": [
+    "Bani suef",
+    "Fayoum",
+    "Ismailia-Suez",
+    "Main Store"
+   ],
+   "activeAreas": [
+    "Bani suef",
+    "Fayoum",
+    "Ismailia-Suez",
+    "Main Store"
+   ],
+   "includeOnly": {
+    "sales": 1092559.34,
+    "target": 0.0,
+    "ach": null
+   },
+   "activeIncludeOnly": {
+    "sales": 1092559.34,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 1092559.34,
+    "target": 0.0,
+    "ach": null
+   },
+   "productAch": {
+    "Conviban 100 mg": null,
+    "Conviban 25 mg": null,
+    "Conviban 25mg/ml Syp": null,
+    "Conviban 50 mg": null,
+    "Dolabactin": null,
+    "Dopaminect 1mg": null,
+    "Dopaminict 1mg UPA": null,
+    "Rispadex 1mg Syp": null,
+    "Rispadex 3 mg": null,
+    "Rispadex 3 mg UPA": null,
+    "Tebofortin 120 mg Intens": null,
+    "Tebofortin 240 mg max": null,
+    "Tebofortine 40 mg": null,
+    "Tebofortine Forte 80": null,
+    "Tebofrtin drops": null
+   },
+   "familyAch": {
+    "Conviban": null,
+    "Dolabactin": null,
+    "Dopaminect": null,
+    "Rispadex ": null,
+    "Tebofortin": null
+   },
+   "trend": [
+    148426.61,
+    230978.82,
+    288779.5,
+    160230.97,
+    176063.89,
+    88079.55
+   ],
+   "achByMonth": {
+    "Jan": null,
+    "Feb": null,
+    "Mar": null,
+    "Apr": null,
+    "May": null,
+    "Jun": null
+   },
+   "achByMonthActive": {
+    "Jan": null,
+    "Feb": null,
+    "Mar": null,
+    "Apr": null,
+    "May": null,
+    "Jun": null
+   },
+   "marketingCost": 0,
+   "marketingMonths": 0,
+   "marketingByMonth": {},
+   "outstationCost": 0,
+   "outstationMonths": 0,
+   "outstationByMonth": {},
+   "doubleVisits": 0,
+   "visits": 0,
+   "visitsAvgPerMonth": 0,
+   "visitsByMonth": {},
+   "customersTotal": 0,
+   "customersByMonth": {}
+  }
+ ],
+ "areas": [
+  {
+   "area": "Alex Center 2",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1097054.95,
+    "target": 1955903.43,
+    "ach": 56.09
+   },
+   "allProducts": {
+    "sales": 1097054.95,
+    "target": 1955903.43,
+    "ach": 56.09
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 24072.79,
+     "target": 31866.05,
+     "ach": 75.54
+    },
+    "Conviban 25 mg": {
+     "sales": 50017.14,
+     "target": 62108.47,
+     "ach": 80.53
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 302.4,
+     "target": 18811.7,
+     "ach": 1.61
+    },
+    "Conviban 50 mg": {
+     "sales": 26910.36,
+     "target": 32503.37,
+     "ach": 82.79
+    },
+    "Dolabactin": {
+     "sales": 8160.02,
+     "target": 45839.52,
+     "ach": 17.8
+    },
+    "Dopaminect 1mg": {
+     "sales": 5280.29,
+     "target": 15470.84,
+     "ach": 34.13
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2961.1,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 2279.96,
+     "target": 35719.83,
+     "ach": 6.38
+    },
+    "Rispadex 3 mg": {
+     "sales": 6100.93,
+     "target": 40522.14,
+     "ach": 15.06
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 1570.8,
+     "target": 98703.36,
+     "ach": 1.59
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 15045.39,
+     "target": 97897.03,
+     "ach": 15.37
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3319.8,
+     "target": 74315.23,
+     "ach": 4.47
+    },
+    "Tebofortine 40 mg": {
+     "sales": 301928.11,
+     "target": 461785.21,
+     "ach": 65.38
+    },
+    "Tebofortine Forte 80": {
+     "sales": 641314.86,
+     "target": 893207.02,
+     "ach": 71.8
+    },
+    "Tebofrtin drops": {
+     "sales": 10752.11,
+     "target": 44192.56,
+     "ach": 24.33
+    }
+   },
+   "trend": [
+    178249.32,
+    265772.48,
+    214401.8,
+    143717.01,
+    197133.02,
+    97781.31
+   ]
+  },
+  {
+   "area": "Alex East",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1372693.42,
+    "target": 2047037.79,
+    "ach": 67.06
+   },
+   "allProducts": {
+    "sales": 1372693.42,
+    "target": 2047037.79,
+    "ach": 67.06
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 30016.86,
+     "target": 33462.72,
+     "ach": 89.7
+    },
+    "Conviban 25 mg": {
+     "sales": 73183.65,
+     "target": 65127.63,
+     "ach": 112.37
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 793.8,
+     "target": 19726.16,
+     "ach": 4.02
+    },
+    "Conviban 50 mg": {
+     "sales": 42753.62,
+     "target": 34131.97,
+     "ach": 125.26
+    },
+    "Dolabactin": {
+     "sales": 6846.82,
+     "target": 48016.8,
+     "ach": 14.26
+    },
+    "Dopaminect 1mg": {
+     "sales": 7884.67,
+     "target": 16205.67,
+     "ach": 48.65
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3105.04,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 7828.47,
+     "target": 37635.84,
+     "ach": 20.8
+    },
+    "Rispadex 3 mg": {
+     "sales": 23399.38,
+     "target": 42446.85,
+     "ach": 55.13
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 8175.3,
+     "target": 103501.44,
+     "ach": 7.9
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 5471.05,
+     "target": 100045.66,
+     "ach": 5.47
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 4376.1,
+     "target": 76053.6,
+     "ach": 5.75
+    },
+    "Tebofortine 40 mg": {
+     "sales": 385938.78,
+     "target": 484703.1,
+     "ach": 79.62
+    },
+    "Tebofortine Forte 80": {
+     "sales": 761967.54,
+     "target": 936534.49,
+     "ach": 81.36
+    },
+    "Tebofrtin drops": {
+     "sales": 14057.39,
+     "target": 46340.81,
+     "ach": 30.33
+    }
+   },
+   "trend": [
+    186572.7,
+    306768.07,
+    272843.02,
+    221048.6,
+    273893.42,
+    111567.62
+   ]
+  },
+  {
+   "area": "Alex West- Center 1",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1862512.07,
+    "target": 2082091.67,
+    "ach": 89.45
+   },
+   "allProducts": {
+    "sales": 1862512.07,
+    "target": 2082091.67,
+    "ach": 89.45
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 39166.79,
+     "target": 33810.05,
+     "ach": 115.84
+    },
+    "Conviban 25 mg": {
+     "sales": 101822.34,
+     "target": 65990.25,
+     "ach": 154.3
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1927.8,
+     "target": 19987.43,
+     "ach": 9.65
+    },
+    "Conviban 50 mg": {
+     "sales": 57208.81,
+     "target": 34486.25,
+     "ach": 165.89
+    },
+    "Dolabactin": {
+     "sales": 18091.34,
+     "target": 48755.52,
+     "ach": 37.11
+    },
+    "Dopaminect 1mg": {
+     "sales": 11708.64,
+     "target": 16454.99,
+     "ach": 71.16
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3146.17,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 9540.84,
+     "target": 37772.7,
+     "ach": 25.26
+    },
+    "Rispadex 3 mg": {
+     "sales": 57801.13,
+     "target": 43099.88,
+     "ach": 134.11
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 7354.2,
+     "target": 104872.32,
+     "ach": 7.01
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 10196.05,
+     "target": 106625.84,
+     "ach": 9.56
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 8752.2,
+     "target": 80834.11,
+     "ach": 10.83
+    },
+    "Tebofortine 40 mg": {
+     "sales": 540898.4,
+     "target": 490176.79,
+     "ach": 110.35
+    },
+    "Tebofortine Forte 80": {
+     "sales": 971117.08,
+     "target": 949124.78,
+     "ach": 102.32
+    },
+    "Tebofrtin drops": {
+     "sales": 26926.44,
+     "target": 46954.6,
+     "ach": 57.35
+    }
+   },
+   "trend": [
+    310997.11,
+    252753.93,
+    372470.87,
+    353948.37,
+    338951.17,
+    233390.62
+   ]
+  },
+  {
+   "area": "Assiut 1",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1157198.29,
+    "target": 1793546.85,
+    "ach": 64.52
+   },
+   "allProducts": {
+    "sales": 1157198.29,
+    "target": 1793546.85,
+    "ach": 64.52
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 17948.11,
+     "target": 29339.5,
+     "ach": 61.17
+    },
+    "Conviban 25 mg": {
+     "sales": 55883.09,
+     "target": 57107.98,
+     "ach": 97.86
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 3836.7,
+     "target": 17297.13,
+     "ach": 22.18
+    },
+    "Conviban 50 mg": {
+     "sales": 36574.8,
+     "target": 29926.29,
+     "ach": 122.22
+    },
+    "Dolabactin": {
+     "sales": 41119.39,
+     "target": 42107.04,
+     "ach": 97.65
+    },
+    "Dopaminect 1mg": {
+     "sales": 4914.75,
+     "target": 14211.13,
+     "ach": 34.58
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 892.5,
+     "target": 2722.7,
+     "ach": 32.78
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 20598.72,
+     "target": 32991.24,
+     "ach": 62.44
+    },
+    "Rispadex 3 mg": {
+     "sales": 22578.22,
+     "target": 37222.62,
+     "ach": 60.66
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 2338.35,
+     "target": 90756.54,
+     "ach": 2.58
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 31023.36,
+     "target": 86963.62,
+     "ach": 35.67
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 5507.85,
+     "target": 66057.98,
+     "ach": 8.34
+    },
+    "Tebofortine 40 mg": {
+     "sales": 311478.12,
+     "target": 424991.26,
+     "ach": 73.29
+    },
+    "Tebofortine Forte 80": {
+     "sales": 570483.89,
+     "target": 821217.31,
+     "ach": 69.47
+    },
+    "Tebofrtin drops": {
+     "sales": 32020.45,
+     "target": 40634.52,
+     "ach": 78.8
+    }
+   },
+   "trend": [
+    167375.9,
+    262021.55,
+    247159.78,
+    155022.47,
+    201990.01,
+    123628.58
+   ]
+  },
+  {
+   "area": "Assiut 2",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 795227.6,
+    "target": 1744056.3,
+    "ach": 45.6
+   },
+   "allProducts": {
+    "sales": 795227.6,
+    "target": 1744056.3,
+    "ach": 45.6
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 9663.8,
+     "target": 28584.36,
+     "ach": 33.81
+    },
+    "Conviban 25 mg": {
+     "sales": 32881.39,
+     "target": 55571.44,
+     "ach": 59.17
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 2381.4,
+     "target": 16831.74,
+     "ach": 14.15
+    },
+    "Conviban 50 mg": {
+     "sales": 20226.44,
+     "target": 29156.05,
+     "ach": 69.37
+    },
+    "Dolabactin": {
+     "sales": 13447.67,
+     "target": 40937.4,
+     "ach": 32.85
+    },
+    "Dopaminect 1mg": {
+     "sales": 2591.3,
+     "target": 13816.37,
+     "ach": 18.76
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 1178.1,
+     "target": 2649.44,
+     "ach": 44.47
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 12325.53,
+     "target": 32232.82,
+     "ach": 38.24
+    },
+    "Rispadex 3 mg": {
+     "sales": 16207.32,
+     "target": 36188.66,
+     "ach": 44.79
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 910.35,
+     "target": 88314.66,
+     "ach": 1.03
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 20454.28,
+     "target": 83632.5,
+     "ach": 24.46
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 2037.15,
+     "target": 63649.62,
+     "ach": 3.2
+    },
+    "Tebofortine 40 mg": {
+     "sales": 244941.44,
+     "target": 413894.67,
+     "ach": 59.18
+    },
+    "Tebofortine Forte 80": {
+     "sales": 397970.6,
+     "target": 799055.35,
+     "ach": 49.81
+    },
+    "Tebofrtin drops": {
+     "sales": 18010.83,
+     "target": 39541.22,
+     "ach": 45.55
+    }
+   },
+   "trend": [
+    89549.99,
+    158957.08,
+    173802.9,
+    162233.34,
+    150999.87,
+    59684.43
+   ]
+  },
+  {
+   "area": "Bani suef",
+   "dm": "Others",
+   "region": "Others",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 114658.68,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 114658.68,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 1623.89,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 3598.81,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 264.6,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 2270.89,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 2248.93,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 1519.69,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 4883.81,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 10728.34,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 20171.68,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 65609.3,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 1738.74,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    10109.15,
+    25467.04,
+    33292.07,
+    20423.63,
+    14658.02,
+    10708.77
+   ]
+  },
+  {
+   "area": "Behira 1",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1362309.87,
+    "target": 1693013.65,
+    "ach": 80.47
+   },
+   "allProducts": {
+    "sales": 1362309.87,
+    "target": 1693013.65,
+    "ach": 80.47
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 40861.38,
+     "target": 27527.04,
+     "ach": 148.44
+    },
+    "Conviban 25 mg": {
+     "sales": 80447.99,
+     "target": 53697.95,
+     "ach": 149.82
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 2986.2,
+     "target": 16264.28,
+     "ach": 18.36
+    },
+    "Conviban 50 mg": {
+     "sales": 55367.3,
+     "target": 28077.58,
+     "ach": 197.19
+    },
+    "Dolabactin": {
+     "sales": 6412.91,
+     "target": 39657.6,
+     "ach": 16.17
+    },
+    "Dopaminect 1mg": {
+     "sales": 10410.6,
+     "target": 13384.44,
+     "ach": 77.78
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 24990.0,
+     "target": 2560.12,
+     "ach": 976.13
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 10892.2,
+     "target": 30792.96,
+     "ach": 35.37
+    },
+    "Rispadex 3 mg": {
+     "sales": 21434.05,
+     "target": 35057.32,
+     "ach": 61.14
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 68044.2,
+     "target": 85337.28,
+     "ach": 79.74
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 8579.61,
+     "target": 85945.26,
+     "ach": 9.98
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3470.7,
+     "target": 65188.8,
+     "ach": 5.32
+    },
+    "Tebofortine 40 mg": {
+     "sales": 270938.1,
+     "target": 399016.8,
+     "ach": 67.9
+    },
+    "Tebofortine Forte 80": {
+     "sales": 727261.7,
+     "target": 772298.06,
+     "ach": 94.17
+    },
+    "Tebofrtin drops": {
+     "sales": 30212.94,
+     "target": 38208.15,
+     "ach": 79.07
+    }
+   },
+   "trend": [
+    186932.05,
+    267966.73,
+    230077.6,
+    152731.76,
+    388809.49,
+    135792.25
+   ]
+  },
+  {
+   "area": "Behira 2",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": true,
+   "includeOnly": {
+    "sales": 848410.92,
+    "target": 1395652.21,
+    "ach": 60.79
+   },
+   "allProducts": {
+    "sales": 848410.92,
+    "target": 1395652.21,
+    "ach": 60.79
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 24022.82,
+     "target": 22840.7,
+     "ach": 105.18
+    },
+    "Conviban 25 mg": {
+     "sales": 50388.5,
+     "target": 44424.81,
+     "ach": 113.42
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1625.4,
+     "target": 13455.59,
+     "ach": 12.08
+    },
+    "Conviban 50 mg": {
+     "sales": 33882.67,
+     "target": 23297.52,
+     "ach": 145.43
+    },
+    "Dolabactin": {
+     "sales": 5103.27,
+     "target": 32736.96,
+     "ach": 15.59
+    },
+    "Dopaminect 1mg": {
+     "sales": 5533.6,
+     "target": 11048.72,
+     "ach": 50.08
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2118.01,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 4965.37,
+     "target": 25729.23,
+     "ach": 19.3
+    },
+    "Rispadex 3 mg": {
+     "sales": 22772.56,
+     "target": 28939.47,
+     "ach": 78.69
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 36663.9,
+     "target": 70600.32,
+     "ach": 51.93
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 4351.97,
+     "target": 67413.32,
+     "ach": 6.46
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 6337.8,
+     "target": 51281.86,
+     "ach": 12.36
+    },
+    "Tebofortine 40 mg": {
+     "sales": 175362.85,
+     "target": 330774.7,
+     "ach": 53.02
+    },
+    "Tebofortine Forte 80": {
+     "sales": 451436.99,
+     "target": 639381.05,
+     "ach": 70.61
+    },
+    "Tebofrtin drops": {
+     "sales": 25963.22,
+     "target": 31609.96,
+     "ach": 82.14
+    }
+   },
+   "trend": [
+    84022.26,
+    171994.31,
+    156193.85,
+    135825.69,
+    221918.36,
+    78456.45
+   ]
+  },
+  {
+   "area": "Cairo East 1",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 926776.66,
+    "target": 2033016.87,
+    "ach": 45.59
+   },
+   "allProducts": {
+    "sales": 926776.66,
+    "target": 2033016.87,
+    "ach": 45.59
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 11196.62,
+     "target": 33246.72,
+     "ach": 33.68
+    },
+    "Conviban 25 mg": {
+     "sales": 41070.4,
+     "target": 64696.32,
+     "ach": 63.48
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 567.0,
+     "target": 19595.52,
+     "ach": 2.89
+    },
+    "Conviban 50 mg": {
+     "sales": 18380.09,
+     "target": 33911.65,
+     "ach": 54.2
+    },
+    "Dolabactin": {
+     "sales": 32830.5,
+     "target": 47692.8,
+     "ach": 68.84
+    },
+    "Dopaminect 1mg": {
+     "sales": 4004.94,
+     "target": 16096.32,
+     "ach": 24.88
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3084.48,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 13915.94,
+     "target": 37407.74,
+     "ach": 37.2
+    },
+    "Rispadex 3 mg": {
+     "sales": 17763.99,
+     "target": 42160.44,
+     "ach": 42.13
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 39605.58,
+     "target": 102816.0,
+     "ach": 38.52
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3842.17,
+     "target": 99075.79,
+     "ach": 3.88
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3304.71,
+     "target": 75329.28,
+     "ach": 4.39
+    },
+    "Tebofortine 40 mg": {
+     "sales": 224115.38,
+     "target": 481548.48,
+     "ach": 46.54
+    },
+    "Tebofortine Forte 80": {
+     "sales": 509099.94,
+     "target": 930321.41,
+     "ach": 54.72
+    },
+    "Tebofrtin drops": {
+     "sales": 7079.41,
+     "target": 46033.92,
+     "ach": 15.38
+    }
+   },
+   "trend": [
+    164090.13,
+    165775.31,
+    284586.29,
+    118044.1,
+    106542.91,
+    87737.92
+   ]
+  },
+  {
+   "area": "Cairo East 2",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 878133.49,
+    "target": 2033016.87,
+    "ach": 43.19
+   },
+   "allProducts": {
+    "sales": 878133.49,
+    "target": 2033016.87,
+    "ach": 43.19
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 16841.57,
+     "target": 33246.72,
+     "ach": 50.66
+    },
+    "Conviban 25 mg": {
+     "sales": 50995.19,
+     "target": 64696.32,
+     "ach": 78.82
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 945.0,
+     "target": 19595.52,
+     "ach": 4.82
+    },
+    "Conviban 50 mg": {
+     "sales": 22952.39,
+     "target": 33911.65,
+     "ach": 67.68
+    },
+    "Dolabactin": {
+     "sales": 5363.09,
+     "target": 47692.8,
+     "ach": 11.25
+    },
+    "Dopaminect 1mg": {
+     "sales": 6601.02,
+     "target": 16096.32,
+     "ach": 41.01
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3084.48,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 17562.25,
+     "target": 37407.74,
+     "ach": 46.95
+    },
+    "Rispadex 3 mg": {
+     "sales": 16817.85,
+     "target": 42160.44,
+     "ach": 39.89
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 714.0,
+     "target": 102816.0,
+     "ach": 0.69
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 4588.22,
+     "target": 99075.79,
+     "ach": 4.63
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 2399.31,
+     "target": 75329.28,
+     "ach": 3.19
+    },
+    "Tebofortine 40 mg": {
+     "sales": 214869.23,
+     "target": 481548.48,
+     "ach": 44.62
+    },
+    "Tebofortine Forte 80": {
+     "sales": 508553.41,
+     "target": 930321.41,
+     "ach": 54.66
+    },
+    "Tebofrtin drops": {
+     "sales": 8930.95,
+     "target": 46033.92,
+     "ach": 19.4
+    }
+   },
+   "trend": [
+    104441.59,
+    141614.61,
+    247151.87,
+    136762.14,
+    142035.82,
+    106127.45
+   ]
+  },
+  {
+   "area": "Cairo Others",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 40633.01,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 40633.01,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 16.57,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 713.85,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 416.41,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 4.65,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 15.03,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 98.25,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 77.02,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 6828.17,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 32347.27,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 115.79,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    0.0,
+    6796.12,
+    31558.35,
+    2278.54,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "area": "Cairo West",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": true,
+   "includeOnly": {
+    "sales": 768178.35,
+    "target": 1829715.18,
+    "ach": 41.98
+   },
+   "allProducts": {
+    "sales": 768178.35,
+    "target": 1829715.18,
+    "ach": 41.98
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 12803.76,
+     "target": 29922.05,
+     "ach": 42.79
+    },
+    "Conviban 25 mg": {
+     "sales": 30047.52,
+     "target": 58226.69,
+     "ach": 51.6
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 415.8,
+     "target": 17635.97,
+     "ach": 2.36
+    },
+    "Conviban 50 mg": {
+     "sales": 17303.27,
+     "target": 30520.49,
+     "ach": 56.69
+    },
+    "Dolabactin": {
+     "sales": 8507.55,
+     "target": 42923.52,
+     "ach": 19.82
+    },
+    "Dopaminect 1mg": {
+     "sales": 3187.5,
+     "target": 14486.69,
+     "ach": 22.0
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2776.03,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 10072.29,
+     "target": 33666.97,
+     "ach": 29.92
+    },
+    "Rispadex 3 mg": {
+     "sales": 17212.07,
+     "target": 37944.39,
+     "ach": 45.36
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 19449.36,
+     "target": 92534.4,
+     "ach": 21.02
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3842.17,
+     "target": 89168.21,
+     "ach": 4.31
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 890.31,
+     "target": 67796.35,
+     "ach": 1.31
+    },
+    "Tebofortine 40 mg": {
+     "sales": 184975.91,
+     "target": 433393.63,
+     "ach": 42.68
+    },
+    "Tebofortine Forte 80": {
+     "sales": 453170.9,
+     "target": 837289.27,
+     "ach": 54.12
+    },
+    "Tebofrtin drops": {
+     "sales": 6299.93,
+     "target": 41430.53,
+     "ach": 15.21
+    }
+   },
+   "trend": [
+    143341.82,
+    172783.49,
+    124516.38,
+    78911.71,
+    162710.89,
+    85914.06
+   ]
+  },
+  {
+   "area": "Dakahlia 1",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1075152.23,
+    "target": 1765305.7,
+    "ach": 60.9
+   },
+   "allProducts": {
+    "sales": 1075152.23,
+    "target": 1765305.7,
+    "ach": 60.9
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 18305.45,
+     "target": 29038.18,
+     "ach": 63.04
+    },
+    "Conviban 25 mg": {
+     "sales": 56452.75,
+     "target": 56366.67,
+     "ach": 100.15
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 5764.5,
+     "target": 17072.6,
+     "ach": 33.76
+    },
+    "Conviban 50 mg": {
+     "sales": 29089.79,
+     "target": 29618.94,
+     "ach": 98.21
+    },
+    "Dolabactin": {
+     "sales": 9078.16,
+     "target": 41475.24,
+     "ach": 21.89
+    },
+    "Dopaminect 1mg": {
+     "sales": 4783.96,
+     "target": 13997.89,
+     "ach": 34.18
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2687.35,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 17582.43,
+     "target": 32862.93,
+     "ach": 53.5
+    },
+    "Rispadex 3 mg": {
+     "sales": 9878.88,
+     "target": 36664.11,
+     "ach": 26.94
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 7869.3,
+     "target": 89578.44,
+     "ach": 8.78
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 4849.34,
+     "target": 82375.4,
+     "ach": 5.89
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 2263.5,
+     "target": 62798.54,
+     "ach": 3.6
+    },
+    "Tebofortine 40 mg": {
+     "sales": 215628.94,
+     "target": 420259.33,
+     "ach": 51.31
+    },
+    "Tebofortine Forte 80": {
+     "sales": 676211.29,
+     "target": 810403.03,
+     "ach": 83.44
+    },
+    "Tebofrtin drops": {
+     "sales": 17393.95,
+     "target": 40107.05,
+     "ach": 43.37
+    }
+   },
+   "trend": [
+    142282.53,
+    132149.66,
+    213175.13,
+    200365.94,
+    242480.13,
+    144698.83
+   ]
+  },
+  {
+   "area": "Dakahlia 2",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 960917.11,
+    "target": 1824894.6,
+    "ach": 52.66
+   },
+   "allProducts": {
+    "sales": 960917.11,
+    "target": 1824894.6,
+    "ach": 52.66
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 12594.46,
+     "target": 29956.18,
+     "ach": 42.04
+    },
+    "Conviban 25 mg": {
+     "sales": 48166.39,
+     "target": 58199.73,
+     "ach": 82.76
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 4214.7,
+     "target": 17627.8,
+     "ach": 23.91
+    },
+    "Conviban 50 mg": {
+     "sales": 32318.88,
+     "target": 30555.3,
+     "ach": 105.77
+    },
+    "Dolabactin": {
+     "sales": 8011.4,
+     "target": 42852.24,
+     "ach": 18.7
+    },
+    "Dopaminect 1mg": {
+     "sales": 6038.88,
+     "target": 14462.63,
+     "ach": 41.76
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2774.75,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 11195.58,
+     "target": 33832.34,
+     "ach": 33.09
+    },
+    "Rispadex 3 mg": {
+     "sales": 8261.28,
+     "target": 37881.38,
+     "ach": 21.81
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 1269.9,
+     "target": 92491.56,
+     "ach": 1.37
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3605.92,
+     "target": 86497.34,
+     "ach": 4.17
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3168.9,
+     "target": 65876.9,
+     "ach": 4.81
+    },
+    "Tebofortine 40 mg": {
+     "sales": 209479.51,
+     "target": 433666.46,
+     "ach": 48.3
+    },
+    "Tebofortine Forte 80": {
+     "sales": 598393.0,
+     "target": 836808.63,
+     "ach": 71.51
+    },
+    "Tebofrtin drops": {
+     "sales": 14198.3,
+     "target": 41411.35,
+     "ach": 34.29
+    }
+   },
+   "trend": [
+    56196.47,
+    280029.45,
+    259037.4,
+    151700.27,
+    168447.92,
+    45505.59
+   ]
+  },
+  {
+   "area": "Dakahlia 3",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 437144.91,
+    "target": 1297567.35,
+    "ach": 33.69
+   },
+   "allProducts": {
+    "sales": 437144.91,
+    "target": 1297567.35,
+    "ach": 33.69
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 11205.37,
+     "target": 21193.2,
+     "ach": 52.87
+    },
+    "Conviban 25 mg": {
+     "sales": 21593.89,
+     "target": 41312.42,
+     "ach": 52.27
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 453.6,
+     "target": 12517.24,
+     "ach": 3.62
+    },
+    "Conviban 50 mg": {
+     "sales": 12003.1,
+     "target": 21470.18,
+     "ach": 55.91
+    },
+    "Dolabactin": {
+     "sales": 7707.98,
+     "target": 30375.0,
+     "ach": 25.38
+    },
+    "Dopaminect 1mg": {
+     "sales": 3087.28,
+     "target": 10269.79,
+     "ach": 30.06
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 1964.36,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 13222.81,
+     "target": 23555.66,
+     "ach": 56.13
+    },
+    "Rispadex 3 mg": {
+     "sales": 5001.13,
+     "target": 26972.68,
+     "ach": 18.54
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 4748.1,
+     "target": 64966.86,
+     "ach": 7.31
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3481.58,
+     "target": 66889.84,
+     "ach": 5.2
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3018.0,
+     "target": 50430.78,
+     "ach": 5.98
+    },
+    "Tebofortine 40 mg": {
+     "sales": 90524.91,
+     "target": 305308.95,
+     "ach": 29.65
+    },
+    "Tebofortine Forte 80": {
+     "sales": 256150.47,
+     "target": 590917.04,
+     "ach": 43.35
+    },
+    "Tebofrtin drops": {
+     "sales": 4946.68,
+     "target": 29423.35,
+     "ach": 16.81
+    }
+   },
+   "trend": [
+    50244.17,
+    123274.22,
+    72281.99,
+    67546.69,
+    86354.72,
+    37443.11
+   ]
+  },
+  {
+   "area": "Dokki - Mohandsen-Imbaba",
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": true,
+   "includeOnly": {
+    "sales": 1037739.19,
+    "target": 1791816.54,
+    "ach": 57.92
+   },
+   "allProducts": {
+    "sales": 1037739.19,
+    "target": 1791816.54,
+    "ach": 57.92
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 17647.41,
+     "target": 29139.48,
+     "ach": 60.56
+    },
+    "Conviban 25 mg": {
+     "sales": 40653.17,
+     "target": 56838.41,
+     "ach": 71.52
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1171.8,
+     "target": 17215.48,
+     "ach": 6.81
+    },
+    "Conviban 50 mg": {
+     "sales": 25835.13,
+     "target": 29722.27,
+     "ach": 86.92
+    },
+    "Dolabactin": {
+     "sales": 4946.57,
+     "target": 41974.2,
+     "ach": 11.78
+    },
+    "Dopaminect 1mg": {
+     "sales": 7981.06,
+     "target": 14166.29,
+     "ach": 56.34
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2709.84,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 18257.3,
+     "target": 32603.47,
+     "ach": 56.0
+    },
+    "Rispadex 3 mg": {
+     "sales": 17646.45,
+     "target": 37105.19,
+     "ach": 47.56
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": -285.6,
+     "target": 90328.14,
+     "ach": -0.32
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 1977.04,
+     "target": 90831.91,
+     "ach": 2.18
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 739.41,
+     "target": 68900.94,
+     "ach": 1.07
+    },
+    "Tebofortine 40 mg": {
+     "sales": 284157.89,
+     "target": 422378.04,
+     "ach": 67.28
+    },
+    "Tebofortine Forte 80": {
+     "sales": 605473.82,
+     "target": 817460.15,
+     "ach": 74.07
+    },
+    "Tebofrtin drops": {
+     "sales": 11537.75,
+     "target": 40442.72,
+     "ach": 28.53
+    }
+   },
+   "trend": [
+    130093.68,
+    242191.25,
+    200628.92,
+    145293.73,
+    225094.17,
+    94437.44
+   ]
+  },
+  {
+   "area": "Down town",
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": true,
+   "includeOnly": {
+    "sales": 2474155.65,
+    "target": 2029515.63,
+    "ach": 121.91
+   },
+   "allProducts": {
+    "sales": 2474155.65,
+    "target": 2029515.63,
+    "ach": 121.91
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 47510.76,
+     "target": 32711.04,
+     "ach": 145.24
+    },
+    "Conviban 25 mg": {
+     "sales": 79725.87,
+     "target": 64049.36,
+     "ach": 124.48
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 302.4,
+     "target": 19399.56,
+     "ach": 1.56
+    },
+    "Conviban 50 mg": {
+     "sales": 34498.49,
+     "target": 33365.26,
+     "ach": 103.4
+    },
+    "Dolabactin": {
+     "sales": 9876.94,
+     "target": 47433.6,
+     "ach": 20.82
+    },
+    "Dopaminect 1mg": {
+     "sales": 10806.2,
+     "target": 16008.84,
+     "ach": 67.5
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3053.64,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 5920.39,
+     "target": 36267.26,
+     "ach": 16.32
+    },
+    "Rispadex 3 mg": {
+     "sales": 10743.92,
+     "target": 41931.3,
+     "ach": 25.62
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 8767.92,
+     "target": 101787.84,
+     "ach": 8.61
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 733.62,
+     "target": 109222.11,
+     "ach": 0.67
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 588.51,
+     "target": 82572.48,
+     "ach": 0.71
+    },
+    "Tebofortine 40 mg": {
+     "sales": 486757.62,
+     "target": 474727.68,
+     "ach": 102.53
+    },
+    "Tebofortine Forte 80": {
+     "sales": 1762422.12,
+     "target": 921412.08,
+     "ach": 191.27
+    },
+    "Tebofrtin drops": {
+     "sales": 15500.9,
+     "target": 45573.58,
+     "ach": 34.01
+    }
+   },
+   "trend": [
+    242481.71,
+    232211.94,
+    309160.16,
+    666139.79,
+    890974.21,
+    133187.84
+   ]
+  },
+  {
+   "area": "Faisal & October",
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 850003.72,
+    "target": 1949329.03,
+    "ach": 43.6
+   },
+   "allProducts": {
+    "sales": 850003.72,
+    "target": 1949329.03,
+    "ach": 43.6
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 19685.84,
+     "target": 32017.68,
+     "ach": 61.48
+    },
+    "Conviban 25 mg": {
+     "sales": 35306.66,
+     "target": 62189.34,
+     "ach": 56.77
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1020.6,
+     "target": 18836.19,
+     "ach": 5.42
+    },
+    "Conviban 50 mg": {
+     "sales": 23247.42,
+     "target": 32658.03,
+     "ach": 71.18
+    },
+    "Dolabactin": {
+     "sales": 5876.06,
+     "target": 45781.2,
+     "ach": 12.84
+    },
+    "Dopaminect 1mg": {
+     "sales": 8109.34,
+     "target": 15451.16,
+     "ach": 52.48
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2964.96,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 15331.12,
+     "target": 36181.73,
+     "ach": 42.37
+    },
+    "Rispadex 3 mg": {
+     "sales": 29928.52,
+     "target": 40470.58,
+     "ach": 73.95
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 98831.88,
+     "ach": 0.0
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 5334.28,
+     "target": 91988.29,
+     "ach": 5.8
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3304.71,
+     "target": 70077.96,
+     "ach": 4.72
+    },
+    "Tebofortine 40 mg": {
+     "sales": 215457.23,
+     "target": 463473.36,
+     "ach": 46.49
+    },
+    "Tebofortine Forte 80": {
+     "sales": 479702.87,
+     "target": 894156.57,
+     "ach": 53.65
+    },
+    "Tebofrtin drops": {
+     "sales": 7699.07,
+     "target": 44250.11,
+     "ach": 17.4
+    }
+   },
+   "trend": [
+    151409.94,
+    160739.22,
+    171960.92,
+    104755.74,
+    165308.99,
+    95828.91
+   ]
+  },
+  {
+   "area": "Fayoum",
+   "dm": "Others",
+   "region": "Others",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 395869.93,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 395869.93,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 5730.62,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 17800.59,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1247.4,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 16732.78,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 21083.99,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 3277.15,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 23976.76,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 23475.5,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 178.5,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 373.03,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 150.9,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 83922.64,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 193866.5,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 4053.56,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    26585.3,
+    91845.13,
+    135259.61,
+    53995.29,
+    52392.3,
+    35792.3
+   ]
+  },
+  {
+   "area": "Gharbia (Mahalla)",
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1136625.45,
+    "target": 1703526.94,
+    "ach": 66.72
+   },
+   "allProducts": {
+    "sales": 1136625.45,
+    "target": 1703526.94,
+    "ach": 66.72
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 17077.37,
+     "target": 27978.05,
+     "ach": 61.04
+    },
+    "Conviban 25 mg": {
+     "sales": 56759.38,
+     "target": 54344.91,
+     "ach": 104.44
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1701.0,
+     "target": 16460.24,
+     "ach": 10.33
+    },
+    "Conviban 50 mg": {
+     "sales": 33071.59,
+     "target": 28537.61,
+     "ach": 115.89
+    },
+    "Dolabactin": {
+     "sales": 7554.2,
+     "target": 40007.52,
+     "ach": 18.88
+    },
+    "Dopaminect 1mg": {
+     "sales": 7851.78,
+     "target": 13502.54,
+     "ach": 58.15
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 5355.0,
+     "target": 2590.96,
+     "ach": 206.68
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 26955.0,
+     "target": 31614.11,
+     "ach": 85.26
+    },
+    "Rispadex 3 mg": {
+     "sales": 36658.77,
+     "target": 35366.65,
+     "ach": 103.65
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 2177.7,
+     "target": 86365.44,
+     "ach": 2.52
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 2238.16,
+     "target": 80439.39,
+     "ach": 2.78
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3621.6,
+     "target": 61277.47,
+     "ach": 5.91
+    },
+    "Tebofortine 40 mg": {
+     "sales": 353435.28,
+     "target": 405002.05,
+     "ach": 87.27
+    },
+    "Tebofortine Forte 80": {
+     "sales": 571022.84,
+     "target": 781371.51,
+     "ach": 73.08
+    },
+    "Tebofrtin drops": {
+     "sales": 11145.8,
+     "target": 38668.49,
+     "ach": 28.82
+    }
+   },
+   "trend": [
+    202840.69,
+    195400.25,
+    216416.96,
+    108051.3,
+    294687.5,
+    119228.75
+   ]
+  },
+  {
+   "area": "Gharbia (Tanta)",
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1132888.48,
+    "target": 2082088.48,
+    "ach": 54.41
+   },
+   "allProducts": {
+    "sales": 1132888.48,
+    "target": 2082088.48,
+    "ach": 54.41
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 35878.05,
+     "target": 34195.39,
+     "ach": 104.92
+    },
+    "Conviban 25 mg": {
+     "sales": 53389.6,
+     "target": 66421.56,
+     "ach": 80.38
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 302.4,
+     "target": 20118.07,
+     "ach": 1.5
+    },
+    "Conviban 50 mg": {
+     "sales": 33616.54,
+     "target": 34879.3,
+     "ach": 96.38
+    },
+    "Dolabactin": {
+     "sales": 10603.88,
+     "target": 48898.08,
+     "ach": 21.69
+    },
+    "Dopaminect 1mg": {
+     "sales": 26305.91,
+     "target": 16503.1,
+     "ach": 159.4
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 1071.0,
+     "target": 3166.73,
+     "ach": 33.82
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 26747.4,
+     "target": 38639.46,
+     "ach": 69.22
+    },
+    "Rispadex 3 mg": {
+     "sales": 30327.29,
+     "target": 43225.9,
+     "ach": 70.16
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 79682.4,
+     "target": 105557.76,
+     "ach": 75.49
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 2362.5,
+     "target": 98314.82,
+     "ach": 2.4
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 301.8,
+     "target": 74894.69,
+     "ach": 0.4
+    },
+    "Tebofortine 40 mg": {
+     "sales": 249480.33,
+     "target": 495002.51,
+     "ach": 50.4
+    },
+    "Tebofortine Forte 80": {
+     "sales": 569690.74,
+     "target": 955009.62,
+     "ach": 59.65
+    },
+    "Tebofrtin drops": {
+     "sales": 13128.65,
+     "target": 47261.49,
+     "ach": 27.78
+    }
+   },
+   "trend": [
+    124057.39,
+    232126.76,
+    232854.35,
+    169746.33,
+    166580.06,
+    207523.6
+   ]
+  },
+  {
+   "area": "Haram- Giza Centers",
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": true,
+   "includeOnly": {
+    "sales": 927968.05,
+    "target": 1906609.8,
+    "ach": 48.67
+   },
+   "allProducts": {
+    "sales": 927968.05,
+    "target": 1906609.8,
+    "ach": 48.67
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 19059.44,
+     "target": 31269.24,
+     "ach": 60.95
+    },
+    "Conviban 25 mg": {
+     "sales": 37868.33,
+     "target": 60774.11,
+     "ach": 62.31
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1285.2,
+     "target": 18407.54,
+     "ach": 6.98
+    },
+    "Conviban 50 mg": {
+     "sales": 24603.28,
+     "target": 31894.62,
+     "ach": 77.14
+    },
+    "Dolabactin": {
+     "sales": 5816.39,
+     "target": 44760.6,
+     "ach": 12.99
+    },
+    "Dopaminect 1mg": {
+     "sales": 5798.6,
+     "target": 15106.7,
+     "ach": 38.38
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 892.5,
+     "target": 2897.48,
+     "ach": 30.8
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 18426.36,
+     "target": 35283.6,
+     "ach": 52.22
+    },
+    "Rispadex 3 mg": {
+     "sales": 15393.77,
+     "target": 39568.37,
+     "ach": 38.9
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 2570.4,
+     "target": 96582.78,
+     "ach": 2.66
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3469.14,
+     "target": 90981.12,
+     "ach": 3.81
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3153.81,
+     "target": 69263.1,
+     "ach": 4.55
+    },
+    "Tebofortine 40 mg": {
+     "sales": 250861.7,
+     "target": 452730.6,
+     "ach": 55.41
+    },
+    "Tebofortine Forte 80": {
+     "sales": 529694.57,
+     "target": 873846.82,
+     "ach": 60.62
+    },
+    "Tebofrtin drops": {
+     "sales": 9074.55,
+     "target": 43243.11,
+     "ach": 20.98
+    }
+   },
+   "trend": [
+    133473.4,
+    217704.36,
+    141747.25,
+    163310.5,
+    172730.6,
+    99001.95
+   ]
+  },
+  {
+   "area": "Heliopolis",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 757920.38,
+    "target": 1819198.7,
+    "ach": 41.66
+   },
+   "allProducts": {
+    "sales": 757920.38,
+    "target": 1819198.7,
+    "ach": 41.66
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 8845.96,
+     "target": 29856.38,
+     "ach": 29.63
+    },
+    "Conviban 25 mg": {
+     "sales": 42794.44,
+     "target": 58011.03,
+     "ach": 73.77
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 567.0,
+     "target": 17570.65,
+     "ach": 3.23
+    },
+    "Conviban 50 mg": {
+     "sales": 16566.05,
+     "target": 30453.51,
+     "ach": 54.4
+    },
+    "Dolabactin": {
+     "sales": 2159.85,
+     "target": 42716.16,
+     "ach": 5.06
+    },
+    "Dopaminect 1mg": {
+     "sales": 2188.69,
+     "target": 14416.7,
+     "ach": 15.18
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2765.75,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 3536.34,
+     "target": 33712.59,
+     "ach": 10.49
+    },
+    "Rispadex 3 mg": {
+     "sales": 4662.44,
+     "target": 37761.09,
+     "ach": 12.35
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 19028.1,
+     "target": 92191.68,
+     "ach": 20.64
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 733.62,
+     "target": 86363.05,
+     "ach": 0.85
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 1192.11,
+     "target": 65768.26,
+     "ach": 1.81
+    },
+    "Tebofortine 40 mg": {
+     "sales": 202770.78,
+     "target": 432234.1,
+     "ach": 46.91
+    },
+    "Tebofortine Forte 80": {
+     "sales": 444700.9,
+     "target": 834100.67,
+     "ach": 53.32
+    },
+    "Tebofrtin drops": {
+     "sales": 8174.1,
+     "target": 41277.08,
+     "ach": 19.8
+    }
+   },
+   "trend": [
+    122524.04,
+    132230.71,
+    140765.41,
+    158507.5,
+    127462.21,
+    76430.51
+   ]
+  },
+  {
+   "area": "Helwan-Maadi",
+   "dm": "Sameh Shaaban",
+   "region": "Giza",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1146933.89,
+    "target": 2203018.48,
+    "ach": 52.06
+   },
+   "allProducts": {
+    "sales": 1146933.89,
+    "target": 2203018.48,
+    "ach": 52.06
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 23983.22,
+     "target": 36106.56,
+     "ach": 66.42
+    },
+    "Conviban 25 mg": {
+     "sales": 64165.63,
+     "target": 70195.51,
+     "ach": 91.41
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1096.2,
+     "target": 21261.14,
+     "ach": 5.16
+    },
+    "Conviban 50 mg": {
+     "sales": 27493.82,
+     "target": 36828.69,
+     "ach": 74.65
+    },
+    "Dolabactin": {
+     "sales": 8604.8,
+     "target": 51710.4,
+     "ach": 16.64
+    },
+    "Dopaminect 1mg": {
+     "sales": 6924.6,
+     "target": 17452.26,
+     "ach": 39.68
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 4462.5,
+     "target": 3346.66,
+     "ach": 133.34
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 12519.86,
+     "target": 40715.14,
+     "ach": 30.75
+    },
+    "Rispadex 3 mg": {
+     "sales": 23164.63,
+     "target": 45711.99,
+     "ach": 50.68
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 111555.36,
+     "ach": 0.0
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 733.62,
+     "target": 105641.05,
+     "ach": 0.69
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 135.81,
+     "target": 80399.52,
+     "ach": 0.17
+    },
+    "Tebofortine 40 mg": {
+     "sales": 327421.34,
+     "target": 522814.32,
+     "ach": 62.63
+    },
+    "Tebofortine Forte 80": {
+     "sales": 632572.53,
+     "target": 1009333.08,
+     "ach": 62.67
+    },
+    "Tebofrtin drops": {
+     "sales": 13655.34,
+     "target": 49946.8,
+     "ach": 27.34
+    }
+   },
+   "trend": [
+    164269.44,
+    241642.02,
+    175762.89,
+    307404.38,
+    149403.2,
+    108451.97
+   ]
+  },
+  {
+   "area": "Ismailia-Suez",
+   "dm": "Others",
+   "region": "Others",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 354175.38,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 354175.38,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 8769.83,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 20229.93,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 982.8,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 11059.05,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 3948.76,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 4637.01,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 7471.31,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 15533.5,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 3570.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 124.34,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 79799.64,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 195052.72,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 2996.5,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    72289.29,
+    68503.94,
+    67662.05,
+    54710.27,
+    61038.13,
+    29971.69
+   ]
+  },
+  {
+   "area": "Kafr El-Sheikh",
+   "dm": "Saad Salama",
+   "region": "Alex-BHR",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1026118.02,
+    "target": 1693013.65,
+    "ach": 60.61
+   },
+   "allProducts": {
+    "sales": 1026118.02,
+    "target": 1693013.65,
+    "ach": 60.61
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 18784.76,
+     "target": 27527.04,
+     "ach": 68.24
+    },
+    "Conviban 25 mg": {
+     "sales": 53748.86,
+     "target": 53697.95,
+     "ach": 100.09
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 945.0,
+     "target": 16264.28,
+     "ach": 5.81
+    },
+    "Conviban 50 mg": {
+     "sales": 30999.29,
+     "target": 28077.58,
+     "ach": 110.41
+    },
+    "Dolabactin": {
+     "sales": 27938.65,
+     "target": 39657.6,
+     "ach": 70.45
+    },
+    "Dopaminect 1mg": {
+     "sales": 7888.59,
+     "target": 13384.44,
+     "ach": 58.94
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 856.8,
+     "target": 2560.12,
+     "ach": 33.47
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 16012.29,
+     "target": 30792.96,
+     "ach": 52.0
+    },
+    "Rispadex 3 mg": {
+     "sales": 29046.07,
+     "target": 35057.32,
+     "ach": 82.85
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 12245.1,
+     "target": 85337.28,
+     "ach": 14.35
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 15418.42,
+     "target": 85945.26,
+     "ach": 17.94
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 7695.9,
+     "target": 65188.8,
+     "ach": 11.81
+    },
+    "Tebofortine 40 mg": {
+     "sales": 206988.97,
+     "target": 399016.8,
+     "ach": 51.87
+    },
+    "Tebofortine Forte 80": {
+     "sales": 576789.02,
+     "target": 772298.06,
+     "ach": 74.68
+    },
+    "Tebofrtin drops": {
+     "sales": 20760.29,
+     "target": 38208.15,
+     "ach": 54.33
+    }
+   },
+   "trend": [
+    139996.11,
+    283473.06,
+    208949.36,
+    145744.62,
+    161690.8,
+    86264.07
+   ]
+  },
+  {
+   "area": "Luxor - Aswan",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 739482.47,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 739482.47,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 19599.73,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 45095.32,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 3704.4,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 25419.78,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 11372.91,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 3018.87,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 15559.04,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 39777.48,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 23276.4,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 994.74,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 301.8,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 155584.57,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 374511.58,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 21265.86,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    142014.1,
+    171646.33,
+    34632.04,
+    134812.55,
+    153609.24,
+    102768.21
+   ]
+  },
+  {
+   "area": "Main Store",
+   "dm": "Others",
+   "region": "Others",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 227855.35,
+    "target": 0.0,
+    "ach": null
+   },
+   "allProducts": {
+    "sales": 227855.35,
+    "target": 0.0,
+    "ach": null
+   },
+   "hasTarget": false,
+   "ungradeable": true,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 4942.65,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25 mg": {
+     "sales": 8928.73,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 415.8,
+     "target": 0.0,
+     "ach": null
+    },
+    "Conviban 50 mg": {
+     "sales": 5440.13,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dolabactin": {
+     "sales": 2763.41,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminect 1mg": {
+     "sales": 4030.44,
+     "target": 0.0,
+     "ach": null
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 12757.29,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg": {
+     "sales": 11166.78,
+     "target": 0.0,
+     "ach": null
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 8139.6,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3232.89,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 1509.0,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine 40 mg": {
+     "sales": 49160.1,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofortine Forte 80": {
+     "sales": 111362.49,
+     "target": 0.0,
+     "ach": null
+    },
+    "Tebofrtin drops": {
+     "sales": 4006.02,
+     "target": 0.0,
+     "ach": null
+    }
+   },
+   "trend": [
+    39442.87,
+    45162.7,
+    52565.77,
+    31101.79,
+    47975.44,
+    11606.79
+   ]
+  },
+  {
+   "area": "Menoufia 1",
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 710470.44,
+    "target": 2082088.48,
+    "ach": 34.12
+   },
+   "allProducts": {
+    "sales": 710470.44,
+    "target": 2082088.48,
+    "ach": 34.12
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 20854.43,
+     "target": 34195.39,
+     "ach": 60.99
+    },
+    "Conviban 25 mg": {
+     "sales": 32447.02,
+     "target": 66421.56,
+     "ach": 48.85
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 189.0,
+     "target": 20118.07,
+     "ach": 0.94
+    },
+    "Conviban 50 mg": {
+     "sales": 19047.93,
+     "target": 34879.3,
+     "ach": 54.61
+    },
+    "Dolabactin": {
+     "sales": 13692.76,
+     "target": 48898.08,
+     "ach": 28.0
+    },
+    "Dopaminect 1mg": {
+     "sales": 9991.15,
+     "target": 16503.1,
+     "ach": 60.54
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3166.73,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 13248.39,
+     "target": 38639.46,
+     "ach": 34.29
+    },
+    "Rispadex 3 mg": {
+     "sales": 62670.52,
+     "target": 43225.9,
+     "ach": 144.98
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 22669.5,
+     "target": 105557.76,
+     "ach": 21.48
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 6963.16,
+     "target": 98314.82,
+     "ach": 7.08
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 4074.3,
+     "target": 74894.69,
+     "ach": 5.44
+    },
+    "Tebofortine 40 mg": {
+     "sales": 122696.2,
+     "target": 495002.51,
+     "ach": 24.79
+    },
+    "Tebofortine Forte 80": {
+     "sales": 371939.48,
+     "target": 955009.62,
+     "ach": 38.95
+    },
+    "Tebofrtin drops": {
+     "sales": 9986.6,
+     "target": 47261.49,
+     "ach": 21.13
+    }
+   },
+   "trend": [
+    96564.27,
+    135246.96,
+    140916.04,
+    124600.25,
+    148364.76,
+    64778.17
+   ]
+  },
+  {
+   "area": "Menoufia 2",
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 534558.33,
+    "target": 1605380.53,
+    "ach": 33.3
+   },
+   "allProducts": {
+    "sales": 534558.33,
+    "target": 1605380.53,
+    "ach": 33.3
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 13221.55,
+     "target": 26466.05,
+     "ach": 49.96
+    },
+    "Conviban 25 mg": {
+     "sales": 22227.36,
+     "target": 51325.75,
+     "ach": 43.31
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 756.0,
+     "target": 15545.78,
+     "ach": 4.86
+    },
+    "Conviban 50 mg": {
+     "sales": 14205.84,
+     "target": 26995.37,
+     "ach": 52.62
+    },
+    "Dolabactin": {
+     "sales": 8871.7,
+     "target": 37739.52,
+     "ach": 23.51
+    },
+    "Dopaminect 1mg": {
+     "sales": 4917.41,
+     "target": 12737.09,
+     "ach": 38.61
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2447.02,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 4847.94,
+     "target": 30017.43,
+     "ach": 16.15
+    },
+    "Rispadex 3 mg": {
+     "sales": 20525.16,
+     "target": 33361.74,
+     "ach": 61.52
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 214.2,
+     "target": 81567.36,
+     "ach": 0.26
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 3605.92,
+     "target": 73650.32,
+     "ach": 4.9
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3018.0,
+     "target": 56207.23,
+     "ach": 5.37
+    },
+    "Tebofortine 40 mg": {
+     "sales": 96117.39,
+     "target": 382919.71,
+     "ach": 25.1
+    },
+    "Tebofortine Forte 80": {
+     "sales": 338249.05,
+     "target": 737879.92,
+     "ach": 45.84
+    },
+    "Tebofrtin drops": {
+     "sales": 3780.8,
+     "target": 36520.24,
+     "ach": 10.35
+    }
+   },
+   "trend": [
+    71095.01,
+    92355.85,
+    114961.78,
+    81861.82,
+    120674.12,
+    53609.75
+   ]
+  },
+  {
+   "area": "Minia 1",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 681408.81,
+    "target": 1689945.27,
+    "ach": 40.32
+   },
+   "allProducts": {
+    "sales": 681408.81,
+    "target": 1689945.27,
+    "ach": 40.32
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 12797.9,
+     "target": 27636.34,
+     "ach": 46.31
+    },
+    "Conviban 25 mg": {
+     "sales": 44621.35,
+     "target": 53778.82,
+     "ach": 82.97
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 2154.6,
+     "target": 16288.78,
+     "ach": 13.23
+    },
+    "Conviban 50 mg": {
+     "sales": 13992.14,
+     "target": 28189.06,
+     "ach": 49.64
+    },
+    "Dolabactin": {
+     "sales": 29423.61,
+     "target": 39644.64,
+     "ach": 74.22
+    },
+    "Dopaminect 1mg": {
+     "sales": 2804.33,
+     "target": 13380.07,
+     "ach": 20.96
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2563.97,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 16525.77,
+     "target": 31095.19,
+     "ach": 53.15
+    },
+    "Rispadex 3 mg": {
+     "sales": 29116.7,
+     "target": 35045.86,
+     "ach": 83.08
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 85465.8,
+     "ach": 0.0
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 10133.88,
+     "target": 82356.75,
+     "ach": 12.3
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 5960.55,
+     "target": 62617.46,
+     "ach": 9.52
+    },
+    "Tebofortine 40 mg": {
+     "sales": 194131.95,
+     "target": 400287.17,
+     "ach": 48.5
+    },
+    "Tebofortine Forte 80": {
+     "sales": 305015.31,
+     "target": 773329.67,
+     "ach": 39.44
+    },
+    "Tebofrtin drops": {
+     "sales": 14730.71,
+     "target": 38265.7,
+     "ach": 38.5
+    }
+   },
+   "trend": [
+    99399.42,
+    132591.93,
+    118603.83,
+    105113.71,
+    148275.4,
+    77424.52
+   ]
+  },
+  {
+   "area": "Minia 2",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 560522.26,
+    "target": 1689945.27,
+    "ach": 33.17
+   },
+   "allProducts": {
+    "sales": 560522.26,
+    "target": 1689945.27,
+    "ach": 33.17
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 8820.31,
+     "target": 27636.34,
+     "ach": 31.92
+    },
+    "Conviban 25 mg": {
+     "sales": 38203.78,
+     "target": 53778.82,
+     "ach": 71.04
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1512.0,
+     "target": 16288.78,
+     "ach": 9.28
+    },
+    "Conviban 50 mg": {
+     "sales": 11919.3,
+     "target": 28189.06,
+     "ach": 42.28
+    },
+    "Dolabactin": {
+     "sales": 10844.8,
+     "target": 39644.64,
+     "ach": 27.36
+    },
+    "Dopaminect 1mg": {
+     "sales": 2313.05,
+     "target": 13380.07,
+     "ach": 17.29
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2563.97,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 9830.36,
+     "target": 31095.19,
+     "ach": 31.61
+    },
+    "Rispadex 3 mg": {
+     "sales": 19236.26,
+     "target": 35045.86,
+     "ach": 54.89
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 85465.8,
+     "ach": 0.0
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 2673.36,
+     "target": 82356.75,
+     "ach": 3.25
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3395.25,
+     "target": 62617.46,
+     "ach": 5.42
+    },
+    "Tebofortine 40 mg": {
+     "sales": 168761.41,
+     "target": 400287.17,
+     "ach": 42.16
+    },
+    "Tebofortine Forte 80": {
+     "sales": 270518.6,
+     "target": 773329.67,
+     "ach": 34.98
+    },
+    "Tebofrtin drops": {
+     "sales": 12493.79,
+     "target": 38265.7,
+     "ach": 32.65
+    }
+   },
+   "trend": [
+    69617.34,
+    118533.57,
+    102240.43,
+    106178.85,
+    106656.99,
+    57295.08
+   ]
+  },
+  {
+   "area": "Nasr City",
+   "dm": "Mina Farouk",
+   "region": "Cairo",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1561659.78,
+    "target": 2450136.73,
+    "ach": 63.74
+   },
+   "allProducts": {
+    "sales": 1561659.78,
+    "target": 2450136.73,
+    "ach": 63.74
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 18578.92,
+     "target": 39961.73,
+     "ach": 46.49
+    },
+    "Conviban 25 mg": {
+     "sales": 64683.84,
+     "target": 77851.24,
+     "ach": 83.09
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 718.2,
+     "target": 23579.94,
+     "ach": 3.05
+    },
+    "Conviban 50 mg": {
+     "sales": 35254.39,
+     "target": 40760.96,
+     "ach": 86.49
+    },
+    "Dolabactin": {
+     "sales": 5305.77,
+     "target": 57438.72,
+     "ach": 9.24
+    },
+    "Dopaminect 1mg": {
+     "sales": 4430.67,
+     "target": 19385.57,
+     "ach": 22.86
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3711.66,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 8033.49,
+     "target": 44843.67,
+     "ach": 17.91
+    },
+    "Rispadex 3 mg": {
+     "sales": 12183.24,
+     "target": 50775.83,
+     "ach": 23.99
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 0.0,
+     "target": 123721.92,
+     "ach": 0.0
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 1977.04,
+     "target": 121696.11,
+     "ach": 1.62
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 1493.91,
+     "target": 92423.23,
+     "ach": 1.62
+    },
+    "Tebofortine 40 mg": {
+     "sales": 468134.81,
+     "target": 579017.71,
+     "ach": 80.85
+    },
+    "Tebofortine Forte 80": {
+     "sales": 925534.91,
+     "target": 1119574.29,
+     "ach": 82.67
+    },
+    "Tebofrtin drops": {
+     "sales": 15330.58,
+     "target": 55394.15,
+     "ach": 27.68
+    }
+   },
+   "trend": [
+    184015.98,
+    435810.35,
+    414113.61,
+    165703.16,
+    202366.16,
+    159650.52
+   ]
+  },
+  {
+   "area": "Port said - Domiat",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1327123.64,
+    "target": 1790283.15,
+    "ach": 74.13
+   },
+   "allProducts": {
+    "sales": 1327123.64,
+    "target": 1790283.15,
+    "ach": 74.13
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 18524.85,
+     "target": 29097.79,
+     "ach": 63.66
+    },
+    "Conviban 25 mg": {
+     "sales": 53581.77,
+     "target": 56771.02,
+     "ach": 94.38
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 756.0,
+     "target": 17195.07,
+     "ach": 4.4
+    },
+    "Conviban 50 mg": {
+     "sales": 32813.84,
+     "target": 29679.75,
+     "ach": 110.56
+    },
+    "Dolabactin": {
+     "sales": 15872.45,
+     "target": 41932.08,
+     "ach": 37.85
+    },
+    "Dopaminect 1mg": {
+     "sales": 7327.44,
+     "target": 14152.08,
+     "ach": 51.78
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 12673.5,
+     "target": 2706.63,
+     "ach": 468.24
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 15043.15,
+     "target": 32537.89,
+     "ach": 46.23
+    },
+    "Rispadex 3 mg": {
+     "sales": 15583.17,
+     "target": 37067.96,
+     "ach": 42.04
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 17778.6,
+     "target": 90221.04,
+     "ach": 19.71
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 4725.0,
+     "target": 91115.41,
+     "ach": 5.19
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 2112.6,
+     "target": 69100.13,
+     "ach": 3.06
+    },
+    "Tebofortine 40 mg": {
+     "sales": 333346.33,
+     "target": 421806.8,
+     "ach": 79.03
+    },
+    "Tebofortine Forte 80": {
+     "sales": 784741.88,
+     "target": 816504.74,
+     "ach": 96.11
+    },
+    "Tebofrtin drops": {
+     "sales": 12243.06,
+     "target": 40394.76,
+     "ach": 30.31
+    }
+   },
+   "trend": [
+    197146.58,
+    272259.48,
+    267550.95,
+    221772.99,
+    234055.93,
+    134337.71
+   ]
+  },
+  {
+   "area": "Qal",
+   "dm": "Mahmoud El Husseinin",
+   "region": "Delta (1)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1023216.95,
+    "target": 1990954.12,
+    "ach": 51.39
+   },
+   "allProducts": {
+    "sales": 1023216.95,
+    "target": 1990954.12,
+    "ach": 51.39
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 20588.07,
+     "target": 32598.72,
+     "ach": 63.16
+    },
+    "Conviban 25 mg": {
+     "sales": 57807.35,
+     "target": 63402.39,
+     "ach": 91.18
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1436.4,
+     "target": 19203.61,
+     "ach": 7.48
+    },
+    "Conviban 50 mg": {
+     "sales": 33242.5,
+     "target": 33250.69,
+     "ach": 99.98
+    },
+    "Dolabactin": {
+     "sales": 20605.55,
+     "target": 46720.8,
+     "ach": 44.1
+    },
+    "Dopaminect 1mg": {
+     "sales": 10230.84,
+     "target": 15768.27,
+     "ach": 64.88
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 3022.79,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 21366.62,
+     "target": 36723.46,
+     "ach": 58.18
+    },
+    "Rispadex 3 mg": {
+     "sales": 78621.31,
+     "target": 41301.19,
+     "ach": 190.36
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": -1328.04,
+     "target": 100759.68,
+     "ach": -1.32
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 2735.53,
+     "target": 96166.18,
+     "ach": 2.84
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 1358.1,
+     "target": 73156.32,
+     "ach": 1.86
+    },
+    "Tebofortine 40 mg": {
+     "sales": 197959.11,
+     "target": 472084.62,
+     "ach": 41.93
+    },
+    "Tebofortine Forte 80": {
+     "sales": 565163.26,
+     "target": 911682.16,
+     "ach": 61.99
+    },
+    "Tebofrtin drops": {
+     "sales": 13430.34,
+     "target": 45113.24,
+     "ach": 29.77
+    }
+   },
+   "trend": [
+    143720.56,
+    350022.64,
+    194074.98,
+    139727.56,
+    127704.67,
+    67966.55
+   ]
+  },
+  {
+   "area": "Qena",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1201473.0,
+    "target": 1515123.87,
+    "ach": 79.3
+   },
+   "allProducts": {
+    "sales": 1201473.0,
+    "target": 1515123.87,
+    "ach": 79.3
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 21902.4,
+     "target": 24714.29,
+     "ach": 88.62
+    },
+    "Conviban 25 mg": {
+     "sales": 77499.49,
+     "target": 48144.84,
+     "ach": 160.97
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 5027.4,
+     "target": 14582.33,
+     "ach": 34.48
+    },
+    "Conviban 50 mg": {
+     "sales": 35565.17,
+     "target": 25208.57,
+     "ach": 141.08
+    },
+    "Dolabactin": {
+     "sales": 11843.08,
+     "target": 35520.12,
+     "ach": 33.34
+    },
+    "Dopaminect 1mg": {
+     "sales": 6978.15,
+     "target": 11988.04,
+     "ach": 58.21
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2295.37,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 19361.47,
+     "target": 27736.47,
+     "ach": 69.81
+    },
+    "Rispadex 3 mg": {
+     "sales": 41702.87,
+     "target": 31399.79,
+     "ach": 132.81
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 17850.0,
+     "target": 76512.24,
+     "ach": 23.33
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 9450.0,
+     "target": 75198.38,
+     "ach": 12.57
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 12373.8,
+     "target": 57112.63,
+     "ach": 21.67
+    },
+    "Tebofortine 40 mg": {
+     "sales": 311352.09,
+     "target": 358087.74,
+     "ach": 86.95
+    },
+    "Tebofortine Forte 80": {
+     "sales": 606918.68,
+     "target": 692366.15,
+     "ach": 87.66
+    },
+    "Tebofrtin drops": {
+     "sales": 23648.41,
+     "target": 34256.91,
+     "ach": 69.03
+    }
+   },
+   "trend": [
+    132442.53,
+    200821.74,
+    314892.28,
+    203708.52,
+    219240.54,
+    130367.4
+   ]
+  },
+  {
+   "area": "Sharkia 1",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 831253.81,
+    "target": 1603190.66,
+    "ach": 51.85
+   },
+   "allProducts": {
+    "sales": 831253.81,
+    "target": 1603190.66,
+    "ach": 51.85
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 29443.99,
+     "target": 26323.92,
+     "ach": 111.85
+    },
+    "Conviban 25 mg": {
+     "sales": 49309.7,
+     "target": 51137.05,
+     "ach": 96.43
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1927.8,
+     "target": 15488.63,
+     "ach": 12.45
+    },
+    "Conviban 50 mg": {
+     "sales": 32977.01,
+     "target": 26850.4,
+     "ach": 122.82
+    },
+    "Dolabactin": {
+     "sales": 16254.51,
+     "target": 37648.8,
+     "ach": 43.17
+    },
+    "Dopaminect 1mg": {
+     "sales": 16239.29,
+     "target": 12706.47,
+     "ach": 127.8
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2438.02,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 30823.23,
+     "target": 29738.02,
+     "ach": 103.65
+    },
+    "Rispadex 3 mg": {
+     "sales": 42616.85,
+     "target": 33281.54,
+     "ach": 128.05
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 37449.3,
+     "target": 81267.48,
+     "ach": 46.08
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 373.03,
+     "target": 75836.25,
+     "ach": 0.49
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3470.7,
+     "target": 57764.52,
+     "ach": 6.01
+    },
+    "Tebofortine 40 mg": {
+     "sales": 194927.88,
+     "target": 381069.57,
+     "ach": 51.15
+    },
+    "Tebofortine Forte 80": {
+     "sales": 365664.25,
+     "target": 735254.02,
+     "ach": 49.73
+    },
+    "Tebofrtin drops": {
+     "sales": 9776.27,
+     "target": 36385.98,
+     "ach": 26.87
+    }
+   },
+   "trend": [
+    147804.15,
+    102981.03,
+    196744.87,
+    118904.81,
+    160685.54,
+    104133.41
+   ]
+  },
+  {
+   "area": "Sharkia 2",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 429314.14,
+    "target": 1603190.66,
+    "ach": 26.78
+   },
+   "allProducts": {
+    "sales": 429314.14,
+    "target": 1603190.66,
+    "ach": 26.78
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 8292.37,
+     "target": 26323.92,
+     "ach": 31.5
+    },
+    "Conviban 25 mg": {
+     "sales": 30258.0,
+     "target": 51137.05,
+     "ach": 59.17
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 415.8,
+     "target": 15488.63,
+     "ach": 2.68
+    },
+    "Conviban 50 mg": {
+     "sales": 14456.67,
+     "target": 26850.4,
+     "ach": 53.84
+    },
+    "Dolabactin": {
+     "sales": 3116.04,
+     "target": 37648.8,
+     "ach": 8.28
+    },
+    "Dopaminect 1mg": {
+     "sales": 4050.56,
+     "target": 12706.47,
+     "ach": 31.88
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2438.02,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 15556.48,
+     "target": 29738.02,
+     "ach": 52.31
+    },
+    "Rispadex 3 mg": {
+     "sales": 9774.01,
+     "target": 33281.54,
+     "ach": 29.37
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 68115.6,
+     "target": 81267.48,
+     "ach": 83.82
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 0.0,
+     "target": 75836.25,
+     "ach": 0.0
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 0.0,
+     "target": 57764.52,
+     "ach": 0.0
+    },
+    "Tebofortine 40 mg": {
+     "sales": 65034.47,
+     "target": 381069.57,
+     "ach": 17.07
+    },
+    "Tebofortine Forte 80": {
+     "sales": 206809.45,
+     "target": 735254.02,
+     "ach": 28.13
+    },
+    "Tebofrtin drops": {
+     "sales": 3434.71,
+     "target": 36385.98,
+     "ach": 9.44
+    }
+   },
+   "trend": [
+    123944.93,
+    129120.89,
+    37816.19,
+    55265.74,
+    64475.03,
+    18691.37
+   ]
+  },
+  {
+   "area": "Sharkia 3",
+   "dm": "Sally Saeed",
+   "region": "Delta (2)",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 315495.55,
+    "target": 1216395.22,
+    "ach": 25.94
+   },
+   "allProducts": {
+    "sales": 315495.55,
+    "target": 1216395.22,
+    "ach": 25.94
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 7742.79,
+     "target": 19957.54,
+     "ach": 38.8
+    },
+    "Conviban 25 mg": {
+     "sales": 25373.81,
+     "target": 38709.96,
+     "ach": 65.55
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 3326.4,
+     "target": 11724.65,
+     "ach": 28.37
+    },
+    "Conviban 50 mg": {
+     "sales": 11751.96,
+     "target": 20483.88,
+     "ach": 57.37
+    },
+    "Dolabactin": {
+     "sales": 8908.87,
+     "target": 28587.6,
+     "ach": 31.16
+    },
+    "Dopaminect 1mg": {
+     "sales": 7351.21,
+     "target": 9648.32,
+     "ach": 76.19
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 1845.55,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 12382.71,
+     "target": 22781.09,
+     "ach": 54.36
+    },
+    "Rispadex 3 mg": {
+     "sales": 10996.84,
+     "target": 25164.51,
+     "ach": 43.7
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 10638.6,
+     "target": 61518.24,
+     "ach": 17.29
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 1616.45,
+     "target": 55722.67,
+     "ach": 2.9
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 4828.8,
+     "target": 42855.6,
+     "ach": 11.27
+    },
+    "Tebofortine 40 mg": {
+     "sales": 55787.41,
+     "target": 290537.66,
+     "ach": 19.2
+    },
+    "Tebofortine Forte 80": {
+     "sales": 152115.73,
+     "target": 559314.33,
+     "ach": 27.2
+    },
+    "Tebofrtin drops": {
+     "sales": 2673.96,
+     "target": 27543.63,
+     "ach": 9.71
+    }
+   },
+   "trend": [
+    44053.06,
+    43973.98,
+    73070.24,
+    78105.21,
+    47761.55,
+    28531.52
+   ]
+  },
+  {
+   "area": "Sohag 1",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1013301.65,
+    "target": 1810655.65,
+    "ach": 55.96
+   },
+   "allProducts": {
+    "sales": 1013301.65,
+    "target": 1810655.65,
+    "ach": 55.96
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 19035.51,
+     "target": 29610.36,
+     "ach": 64.29
+    },
+    "Conviban 25 mg": {
+     "sales": 34779.22,
+     "target": 57620.16,
+     "ach": 60.36
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 1984.5,
+     "target": 17452.26,
+     "ach": 11.37
+    },
+    "Conviban 50 mg": {
+     "sales": 25411.59,
+     "target": 30202.57,
+     "ach": 84.14
+    },
+    "Dolabactin": {
+     "sales": 19934.97,
+     "target": 42476.4,
+     "ach": 46.93
+    },
+    "Dopaminect 1mg": {
+     "sales": 5579.17,
+     "target": 14335.78,
+     "ach": 38.92
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2747.12,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 9898.57,
+     "target": 33316.27,
+     "ach": 29.71
+    },
+    "Rispadex 3 mg": {
+     "sales": 16760.95,
+     "target": 37549.14,
+     "ach": 44.64
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 13066.2,
+     "target": 91570.5,
+     "ach": 14.27
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 13055.92,
+     "target": 88239.38,
+     "ach": 14.8
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 1584.45,
+     "target": 67090.14,
+     "ach": 2.36
+    },
+    "Tebofortine 40 mg": {
+     "sales": 263261.12,
+     "target": 428879.11,
+     "ach": 61.38
+    },
+    "Tebofortine Forte 80": {
+     "sales": 567557.83,
+     "target": 828567.5,
+     "ach": 68.5
+    },
+    "Tebofrtin drops": {
+     "sales": 21391.64,
+     "target": 40998.96,
+     "ach": 52.18
+    }
+   },
+   "trend": [
+    81816.1,
+    243417.58,
+    219323.7,
+    116088.97,
+    243251.44,
+    109403.86
+   ]
+  },
+  {
+   "area": "Sohag 2",
+   "dm": "Amgad Ibrahim",
+   "region": "UE",
+   "vacant": false,
+   "includeOnly": {
+    "sales": 1404305.82,
+    "target": 1810655.65,
+    "ach": 77.56
+   },
+   "allProducts": {
+    "sales": 1404305.82,
+    "target": 1810655.65,
+    "ach": 77.56
+   },
+   "hasTarget": true,
+   "ungradeable": false,
+   "hasReturns": false,
+   "products": {
+    "Conviban 100 mg": {
+     "sales": 23977.03,
+     "target": 29610.36,
+     "ach": 80.98
+    },
+    "Conviban 25 mg": {
+     "sales": 61901.62,
+     "target": 57620.16,
+     "ach": 107.43
+    },
+    "Conviban 25mg/ml Syp": {
+     "sales": 10565.1,
+     "target": 17452.26,
+     "ach": 60.54
+    },
+    "Conviban 50 mg": {
+     "sales": 35472.89,
+     "target": 30202.57,
+     "ach": 117.45
+    },
+    "Dolabactin": {
+     "sales": 18825.8,
+     "target": 42476.4,
+     "ach": 44.32
+    },
+    "Dopaminect 1mg": {
+     "sales": 8493.7,
+     "target": 14335.78,
+     "ach": 59.25
+    },
+    "Dopaminict 1mg UPA": {
+     "sales": 0.0,
+     "target": 2747.12,
+     "ach": 0.0
+    },
+    "Rispadex 1mg Syp": {
+     "sales": 15910.4,
+     "target": 33316.27,
+     "ach": 47.76
+    },
+    "Rispadex 3 mg": {
+     "sales": 22347.9,
+     "target": 37549.14,
+     "ach": 59.52
+    },
+    "Rispadex 3 mg UPA": {
+     "sales": 1785.0,
+     "target": 91570.5,
+     "ach": 1.95
+    },
+    "Tebofortin 120 mg Intens": {
+     "sales": 17967.43,
+     "target": 88239.38,
+     "ach": 20.36
+    },
+    "Tebofortin 240 mg max": {
+     "sales": 3168.9,
+     "target": 67090.14,
+     "ach": 4.72
+    },
+    "Tebofortine 40 mg": {
+     "sales": 341019.67,
+     "target": 428879.11,
+     "ach": 79.51
+    },
+    "Tebofortine Forte 80": {
+     "sales": 811999.37,
+     "target": 828567.5,
+     "ach": 98.0
+    },
+    "Tebofrtin drops": {
+     "sales": 30870.99,
+     "target": 40998.96,
+     "ach": 75.3
+    }
+   },
+   "trend": [
+    150778.27,
+    263197.84,
+    269474.21,
+    227458.45,
+    296164.44,
+    197232.63
+   ]
+  }
+ ],
+ "marketing": {
+  "pediaCost": 68681.0,
+  "byDM": {
+   "Amgad Ibrahim": {
+    "cost": 32600.0,
+    "requests": 4,
+    "months": 2,
+    "byMonth": {
+     "Apr": 14600.0,
+     "Jun": 18000.0
+    }
+   },
+   "Mahmoud El Husseinin": {
+    "cost": 1931.0,
+    "requests": 1,
+    "months": 1,
+    "byMonth": {
+     "Jun": 1931.0
+    }
+   },
+   "Mina Farouk": {
+    "cost": 2000.0,
+    "requests": 1,
+    "months": 1,
+    "byMonth": {
+     "Jun": 2000.0
+    }
+   },
+   "Saad Salama": {
+    "cost": 21750.0,
+    "requests": 5,
+    "months": 2,
+    "byMonth": {
+     "May": 1600.0,
+     "Jun": 20150.0
+    }
+   },
+   "Sameh Shaaban": {
+    "cost": 10400.0,
+    "requests": 1,
+    "months": 1,
+    "byMonth": {
+     "Jun": 10400.0
+    }
+   }
+  },
+  "note": "Approved by GM only (committed spend), 5 of 6 CNS DMs mapped (Sally Saeed absent from marketing legend, cost=0) — Req jan june s1.xlsx, owner-verified 2026-07-30."
+ },
+ "outstation": {
+  "pediaTotal": 31767.35,
+  "rows": 96,
+  "byDM": {
+   "Amgad Ibrahim": {
+    "cost": 4496.0,
+    "rows": 13,
+    "months": 5,
+    "byMonth": {
+     "Feb": 625.0,
+     "Mar": 595.0,
+     "Apr": 1166.0,
+     "May": 1761.0,
+     "Jun": 349.0
+    }
+   },
+   "Mahmoud El Husseinin": {
+    "cost": 2068.0,
+    "rows": 7,
+    "months": 4,
+    "byMonth": {
+     "Feb": 200.0,
+     "Mar": 357.0,
+     "Apr": 868.0,
+     "May": 643.0
+    }
+   },
+   "Saad Salama": {
+    "cost": 15497.35,
+    "rows": 48,
+    "months": 5,
+    "byMonth": {
+     "Feb": 2022.0,
+     "Mar": 3724.0,
+     "Apr": 3967.0,
+     "May": 4085.35,
+     "Jun": 1699.0
+    }
+   },
+   "Sally Saeed": {
+    "cost": 7661.0,
+    "rows": 19,
+    "months": 4,
+    "byMonth": {
+     "Mar": 1952.0,
+     "Apr": 2061.0,
+     "May": 2227.0,
+     "Jun": 1421.0
+    }
+   },
+   "Sameh Shaaban": {
+    "cost": 1675.0,
+    "rows": 7,
+    "months": 5,
+    "byMonth": {
+     "Feb": 178.0,
+     "Mar": 362.0,
+     "Apr": 458.0,
+     "May": 222.0,
+     "Jun": 455.0
+    }
+   },
+   "Unmapped": {
+    "cost": 370.0,
+    "rows": 2,
+    "months": 1,
+    "byMonth": {
+     "Feb": 370.0
+    }
+   }
+  },
+  "monthsCovered": [
+   "Feb",
+   "Mar",
+   "Apr",
+   "May",
+   "Jun"
+  ],
+  "components": {
+   "travel": 21452.35,
+   "meeting": 690.0,
+   "allowance": 9625.0,
+   "other": 0.0
+  },
+  "status": "Rejected excluded; rest Pending/Approved. Region-based DM attribution — 'Alex Center' (abbreviated, 2 rows) falls to Unmapped."
+ },
+ "visits": {
+  "available": true,
+  "totalDeduped": 25058,
+  "rawRowsAcross5": 25058,
+  "dropped": 0,
+  "reps": 35,
+  "avgPerRepPerMonth": 119.32,
+  "byMonth": {
+   "Jan": 10,
+   "Feb": 1509,
+   "Mar": 4443,
+   "Apr": 5419,
+   "May": 5863,
+   "Jun": 7814
+  },
+  "customersTotal": 3518,
+  "customersByMonth": {
+   "Jan": 1,
+   "Feb": 79,
+   "Mar": 1299,
+   "Apr": 2380,
+   "May": 2580,
+   "Jun": 3016
+  },
+  "byDM": {
+   "Amgad Ibrahim": {
+    "visits": 6361,
+    "avgPerMonth": 1060.17,
+    "byMonth": {
+     "Jan": 0,
+     "Feb": 368,
+     "Mar": 1256,
+     "Apr": 1384,
+     "May": 1501,
+     "Jun": 1852
+    },
+    "customersTotal": 1082,
+    "customersByMonth": {
+     "Jan": 0,
+     "Feb": 21,
+     "Mar": 530,
+     "Apr": 674,
+     "May": 714,
+     "Jun": 924
+    }
+   },
+   "Mahmoud El Husseinin": {
+    "visits": 4864,
+    "avgPerMonth": 810.67,
+    "byMonth": {
+     "Jan": 0,
+     "Feb": 314,
+     "Mar": 843,
+     "Apr": 1183,
+     "May": 1192,
+     "Jun": 1332
+    },
+    "customersTotal": 715,
+    "customersByMonth": {
+     "Jan": 0,
+     "Feb": 17,
+     "Mar": 160,
+     "Apr": 584,
+     "May": 637,
+     "Jun": 624
+    }
+   },
+   "Mina Farouk": {
+    "visits": 2406,
+    "avgPerMonth": 401.0,
+    "byMonth": {
+     "Jan": 0,
+     "Feb": 138,
+     "Mar": 321,
+     "Apr": 385,
+     "May": 553,
+     "Jun": 1009
+    },
+    "customersTotal": 255,
+    "customersByMonth": {
+     "Jan": 0,
+     "Feb": 12,
+     "Mar": 68,
+     "Apr": 134,
+     "May": 156,
+     "Jun": 211
+    }
+   },
+   "Saad Salama": {
+    "visits": 5797,
+    "avgPerMonth": 966.17,
+    "byMonth": {
+     "Jan": 0,
+     "Feb": 364,
+     "Mar": 1223,
+     "Apr": 1400,
+     "May": 1235,
+     "Jun": 1575
+    },
+    "customersTotal": 844,
+    "customersByMonth": {
+     "Jan": 0,
+     "Feb": 8,
+     "Mar": 326,
+     "Apr": 658,
+     "May": 705,
+     "Jun": 749
+    }
+   },
+   "Sally Saeed": {
+    "visits": 2771,
+    "avgPerMonth": 461.83,
+    "byMonth": {
+     "Jan": 0,
+     "Feb": 63,
+     "Mar": 253,
+     "Apr": 432,
+     "May": 801,
+     "Jun": 1222
+    },
+    "customersTotal": 354,
+    "customersByMonth": {
+     "Jan": 0,
+     "Feb": 23,
+     "Mar": 77,
+     "Apr": 170,
+     "May": 214,
+     "Jun": 287
+    }
+   },
+   "Sameh Shaaban": {
+    "visits": 1701,
+    "avgPerMonth": 283.5,
+    "byMonth": {
+     "Jan": 1,
+     "Feb": 171,
+     "Mar": 351,
+     "Apr": 363,
+     "May": 349,
+     "Jun": 466
+    },
+    "customersTotal": 273,
+    "customersByMonth": {
+     "Jan": 1,
+     "Feb": 3,
+     "Mar": 143,
+     "Apr": 165,
+     "May": 159,
+     "Jun": 226
+    }
+   }
+  },
+  "repToDmCoverage": 95.38,
+  "perRep": [
+   {
+    "agentHrId": "B-116",
+    "name": "Mina.Farouk",
+    "hiringDate": "04-Jan-2026",
+    "visits": 176,
+    "activeMonths": 6,
+    "avgPerMonth": 29.33,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-117",
+    "name": "Sameh.Shaaban",
+    "hiringDate": "12-Jan-2026",
+    "visits": 251,
+    "activeMonths": 6,
+    "avgPerMonth": 41.83,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-118",
+    "name": "Amgad.Ibrahim",
+    "hiringDate": "12-Jan-2026",
+    "visits": 143,
+    "activeMonths": 5,
+    "avgPerMonth": 28.6,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-119",
+    "name": "Saad.Mohamed",
+    "hiringDate": "06-Jan-2026",
+    "visits": 186,
+    "activeMonths": 6,
+    "avgPerMonth": 31.0,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-120",
+    "name": "Mahmoud. ElHassanein",
+    "hiringDate": "01-Jan-2026",
+    "visits": 235,
+    "activeMonths": 6,
+    "avgPerMonth": 39.17,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-122",
+    "name": "Amr.Naguib",
+    "hiringDate": "01-Jan-2026",
+    "visits": 47,
+    "activeMonths": 6,
+    "avgPerMonth": 7.83,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-124",
+    "name": "Mina.Masoud ( Sohag 2 / C )",
+    "hiringDate": "17-Jan-2026",
+    "visits": 844,
+    "activeMonths": 5,
+    "avgPerMonth": 168.8,
+    "customers": 139,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-125",
+    "name": "Amr.Gbr ( Behera 1 / C )",
+    "hiringDate": "17-Jan-2026",
+    "visits": 1062,
+    "activeMonths": 5,
+    "avgPerMonth": 212.4,
+    "customers": 166,
+    "dm": "Saad Salama"
+   },
+   {
+    "agentHrId": "B-126",
+    "name": "Sara.Mohy ( Menofia 2 / C )",
+    "hiringDate": "17-Jan-2026",
+    "visits": 1044,
+    "activeMonths": 5,
+    "avgPerMonth": 208.8,
+    "customers": 149,
+    "dm": "Mahmoud El Husseinin"
+   },
+   {
+    "agentHrId": "B-128",
+    "name": "Yomna.Salah ( Mahalla / C )",
+    "hiringDate": "18-Jan-2026",
+    "visits": 1183,
+    "activeMonths": 5,
+    "avgPerMonth": 236.6,
+    "customers": 183,
+    "dm": "Mahmoud El Husseinin"
+   },
+   {
+    "agentHrId": "B-129",
+    "name": "Nada.Saed ( Monofia 1 / C )",
+    "hiringDate": "18-Jan-2026",
+    "visits": 843,
+    "activeMonths": 5,
+    "avgPerMonth": 168.6,
+    "customers": 112,
+    "dm": "Mahmoud El Husseinin"
+   },
+   {
+    "agentHrId": "B-130",
+    "name": "Yasmine.Samy ( Qal / C )",
+    "hiringDate": "18-Jan-2026",
+    "visits": 1186,
+    "activeMonths": 5,
+    "avgPerMonth": 237.2,
+    "customers": 156,
+    "dm": "Mahmoud El Husseinin"
+   },
+   {
+    "agentHrId": "B-131",
+    "name": "Gehad.Ahmed ( Qena / C )",
+    "hiringDate": "24-Jan-2026",
+    "visits": 931,
+    "activeMonths": 5,
+    "avgPerMonth": 186.2,
+    "customers": 173,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-132",
+    "name": "Yassin.Samir ( Alex Center 2 / C )",
+    "hiringDate": "24-Jan-2026",
+    "visits": 1194,
+    "activeMonths": 5,
+    "avgPerMonth": 238.8,
+    "customers": 171,
+    "dm": "Saad Salama"
+   },
+   {
+    "agentHrId": "B-133",
+    "name": "Karen.George ( Minia 1 / C )",
+    "hiringDate": "25-Jan-2026",
+    "visits": 765,
+    "activeMonths": 5,
+    "avgPerMonth": 153.0,
+    "customers": 124,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-135",
+    "name": "Hagar.Noureldeen ( Alex East / C )",
+    "hiringDate": "27-Jan-2026",
+    "visits": 1103,
+    "activeMonths": 5,
+    "avgPerMonth": 220.6,
+    "customers": 187,
+    "dm": "Saad Salama"
+   },
+   {
+    "agentHrId": "B-136",
+    "name": "Fatma.Gharib ( Helwan-Maadi / C  ) ",
+    "hiringDate": "01-Feb-2026",
+    "visits": 819,
+    "activeMonths": 6,
+    "avgPerMonth": 136.5,
+    "customers": 133,
+    "dm": "Sameh Shaaban"
+   },
+   {
+    "agentHrId": "B-137",
+    "name": "Samir.Saad ( Faisal-October / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 882,
+    "activeMonths": 5,
+    "avgPerMonth": 176.4,
+    "customers": 141,
+    "dm": "Sameh Shaaban"
+   },
+   {
+    "agentHrId": "B-139",
+    "name": "Aya.Ashraf ( Minia 2 / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 984,
+    "activeMonths": 5,
+    "avgPerMonth": 196.8,
+    "customers": 166,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-140",
+    "name": "Mina.Khaled ( Assuit 1 / C  )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 955,
+    "activeMonths": 5,
+    "avgPerMonth": 191.0,
+    "customers": 157,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-141",
+    "name": "Bishoy.Bahaa ( Assuit 2 / C  )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 944,
+    "activeMonths": 5,
+    "avgPerMonth": 188.8,
+    "customers": 176,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-142",
+    "name": "Marian.Samir ( Sohag 1 / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 938,
+    "activeMonths": 5,
+    "avgPerMonth": 187.6,
+    "customers": 153,
+    "dm": "Amgad Ibrahim"
+   },
+   {
+    "agentHrId": "B-143",
+    "name": "Ahmed Ashraf ( Alex Center 1-West / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 1342,
+    "activeMonths": 5,
+    "avgPerMonth": 268.4,
+    "customers": 182,
+    "dm": "Saad Salama"
+   },
+   {
+    "agentHrId": "B-144",
+    "name": "Mariam.Mohamed ( KFS / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 1096,
+    "activeMonths": 5,
+    "avgPerMonth": 219.2,
+    "customers": 142,
+    "dm": "Saad Salama"
+   },
+   {
+    "agentHrId": "B-145",
+    "name": "Radwa.Ahmed ( Tanta / C )",
+    "hiringDate": "01-Feb-2026",
+    "visits": 608,
+    "activeMonths": 5,
+    "avgPerMonth": 121.6,
+    "customers": 119,
+    "dm": "Mahmoud El Husseinin"
+   },
+   {
+    "agentHrId": "B-146",
+    "name": "Ali.Shehata ( Cairo East 2 / C )",
+    "hiringDate": "07-Feb-2026",
+    "visits": 1375,
+    "activeMonths": 5,
+    "avgPerMonth": 275.0,
+    "customers": 190,
+    "dm": "Mina Farouk"
+   },
+   {
+    "agentHrId": "B-148",
+    "name": "Mohamed.Elmenshawy ( Sharkia 3 / C )",
+    "hiringDate": "08-Feb-2026",
+    "visits": 925,
+    "activeMonths": 5,
+    "avgPerMonth": 185.0,
+    "customers": 198,
+    "dm": "Sally Saeed"
+   },
+   {
+    "agentHrId": "B-172",
+    "name": "Yathreb.Elsayed ( Dakahlia 2 / C )",
+    "hiringDate": "07-Mar-2026",
+    "visits": 626,
+    "activeMonths": 5,
+    "avgPerMonth": 125.2,
+    "customers": 109,
+    "dm": "Sally Saeed"
+   },
+   {
+    "agentHrId": "B-182",
+    "name": "Georgette.Hany ( Heliopolis / C )",
+    "hiringDate": "06-Apr-2026",
+    "visits": 432,
+    "activeMonths": 3,
+    "avgPerMonth": 144.0,
+    "customers": 66,
+    "dm": "Mina Farouk"
+   },
+   {
+    "agentHrId": "B-184",
+    "name": "Sally.Saeed",
+    "hiringDate": "10-Mar-2026",
+    "visits": 120,
+    "activeMonths": 5,
+    "avgPerMonth": 24.0,
+    "customers": 1,
+    "dm": null
+   },
+   {
+    "agentHrId": "B-186",
+    "name": "Amr.Mohamed ( Sharkia 1 / C )",
+    "hiringDate": "14-Apr-2026",
+    "visits": 439,
+    "activeMonths": 3,
+    "avgPerMonth": 146.33,
+    "customers": 49,
+    "dm": "Sally Saeed"
+   },
+   {
+    "agentHrId": "CN-0001",
+    "name": "Mostafa.Elbadry ( Nasr City  / C )",
+    "hiringDate": "16-May-2026",
+    "visits": 300,
+    "activeMonths": 3,
+    "avgPerMonth": 100.0,
+    "customers": 1,
+    "dm": "Mina Farouk"
+   },
+   {
+    "agentHrId": "CN-0002",
+    "name": "Batool.Rafiq ( Dakahlia 1 / C ) ",
+    "hiringDate": "05-May-2026",
+    "visits": 524,
+    "activeMonths": 3,
+    "avgPerMonth": 174.67,
+    "customers": 1,
+    "dm": "Sally Saeed"
+   },
+   {
+    "agentHrId": "CN-0003",
+    "name": "Samia.Ali ( Domiat- Port Said / C )",
+    "hiringDate": "16-May-2026",
+    "visits": 257,
+    "activeMonths": 3,
+    "avgPerMonth": 85.67,
+    "customers": 1,
+    "dm": "Sally Saeed"
+   },
+   {
+    "agentHrId": "CN-0004",
+    "name": "Engy.Said ( Cairo East 1 / C )",
+    "hiringDate": "01-Jun-2026",
+    "visits": 299,
+    "activeMonths": 3,
+    "avgPerMonth": 99.67,
+    "customers": 1,
+    "dm": "Mina Farouk"
+   }
+  ]
+ },
+ "doubleVisits": {
+  "total": 2566,
+  "byManager": {
+   "Ahmed.Elkawass": 51,
+   "Amgad.Ibrahim": 522,
+   "Amr.Naguib": 158,
+   "Dr Ezzat Sedrak ": 13,
+   "Mahmoud. ElHassanein": 431,
+   "Mina.Farouk": 359,
+   "Saad.Mohamed": 539,
+   "Sally.Saeed": 300,
+   "Sameh.Shaaban": 193
+  }
+ }
+}
