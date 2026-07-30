@@ -160,6 +160,45 @@ jobs:
 
           echo "proceed=true" >> "$GITHUB_OUTPUT"
 
+          # 2. TEMPORARY (fast window): wait for prebuild-image.yml if it is still building
+          #    THIS commit's image. Without this wait the whole prebuild idea silently does
+          #    nothing useful: CI takes ~4 min and the Cloud Build ~5 min, so the deploy would
+          #    arrive while the prebuild is still WORKING, its preflight would find no image,
+          #    and it would start a SECOND concurrent build of the identical artifact — both
+          #    paying full build time and both polling Cloud Build's 60/min get-requests quota
+          #    (the 429 storm that scripts/retry-transient.sh exists for).
+          #
+          #    Same idiom as the CI check above: ask the API about the run for this exact SHA.
+          #    Everything here degrades to today's behaviour — no prebuild run, a failed
+          #    prebuild, or a wait that times out all simply fall through to the deploy job
+          #    building the image itself.
+          PREBUILD=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/prebuild-image.yml/runs?head_sha=$SHA&per_page=1" \
+            --jq '.workflow_runs[0] | "\(.status)"' 2>/dev/null || echo "")
+          if [ -z "$PREBUILD" ] || [ "$PREBUILD" = "null" ]; then
+            echo "No prebuild run for $SHA — the deploy will build the image itself (normal path)."
+          else
+            # Bounded at ~12 min: longer than any observed cold build (~5-6 min), short enough
+            # that a wedged prebuild cannot hold production back indefinitely.
+            for i in $(seq 1 48); do
+              PREBUILD=$(gh api \
+                "repos/${{ github.repository }}/actions/workflows/prebuild-image.yml/runs?head_sha=$SHA&per_page=1" \
+                --jq '.workflow_runs[0] | "\(.status)/\(.conclusion // "-")"' 2>/dev/null || echo "unknown/-")
+              case "$PREBUILD" in
+                completed/*)
+                  echo "Prebuild for $SHA finished: $PREBUILD"
+                  break
+                  ;;
+              esac
+              echo "Waiting for prebuild of $SHA ($PREBUILD) — attempt $i/48"
+              sleep 15
+            done
+            case "$PREBUILD" in
+              completed/*) : ;;
+              *) echo "::warning::Prebuild for $SHA did not finish in time ($PREBUILD) — deploying anyway; the build step will run inline." ;;
+            esac
+          fi
+
           # DELIBERATELY NOT CHECKED HERE: "is this commit already live?". The obvious
           # implementation — compare $SHA to the head SHA of the last successful run of this
           # workflow — is WRONG, and silently so: a run where this gate said proceed=false

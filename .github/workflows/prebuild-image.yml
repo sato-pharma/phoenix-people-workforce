@@ -1,0 +1,124 @@
+name: Prebuild production image
+
+# TEMPORARY (2026-07-30, owner request: "make the docker build run in parallel with CI").
+# Self-expires at PREBUILD_UNTIL — see the guard step below.
+#
+# WHAT THIS IS FOR. The production deploy is gated on CI success, so today the two long
+# stages run strictly SERIALLY: CI (~4 min) finishes, then the deploy job starts and spends
+# ~4-5 min inside Cloud Build before it can deploy anything. Total merge->live ~13 min.
+# Nothing about the image build actually depends on CI's verdict — it is the same Dockerfile
+# and the same commit either way — so this workflow starts that build on the SAME push that
+# starts CI. By the time CI goes green the image is already in Artifact Registry, and
+# deploy-cloud-run.yml's existing preflight step ("Image already exists — skipping build")
+# takes the fast path with no change needed there.
+#
+# WHY A SEPARATE WORKFLOW rather than a job inside ci.yml:
+#   - ci.yml runs on `pull_request`, and for that event GitHub uses the workflow file FROM
+#     THE PR BRANCH. A job with `id-token: write` + the production WIF credentials sitting in
+#     ci.yml could therefore be edited by any PR into something that exfiltrates them. This
+#     workflow triggers ONLY on push to main, so a PR can change the file but cannot run it.
+#   - It keeps ci.yml a pure verification workflow. A Cloud Build hiccup here must never turn
+#     CI red, because the deploy gate reads CI's conclusion — an infrastructure blip would
+#     otherwise block deploys entirely. Here it just means the deploy builds the image itself,
+#     exactly as it does today.
+#
+# DEGRADES SAFELY. If this workflow fails, is skipped, or is expired, nothing breaks: the
+# deploy's preflight finds no image and builds it inline, i.e. today's behaviour.
+on:
+  push:
+    branches:
+      - main
+
+# Deliberately NOT the `cloud-run-deploy-prod` group used by deploy-cloud-run.yml. Sharing it
+# would serialise these correctly, but GitHub keeps only the LATEST pending run per group, so
+# a prebuild for a newer commit could evict a *pending deploy* for an older one — which would
+# strand that commit if the newer one's CI then failed. Keeping the groups separate means the
+# only interaction is through Artifact Registry, and the deploy gate's wait handles ordering.
+concurrency:
+  group: prebuild-image-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: 'read'
+  id-token: 'write' # Required for Workload Identity Federation
+
+env:
+  PROJECT_ID: phoenix-workforce-498619
+  REGION: europe-west3
+  SERVICE_NAME: phoenix-hr
+
+jobs:
+  prebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # TEMPORARY self-expiry, mirroring deploy-cloud-run.yml's FAST_DEPLOY_UNTIL. This
+      # workflow spends a Cloud Build on EVERY push to main, including commits whose CI then
+      # fails, so it must stop on its own rather than depend on the cleanup PR being merged.
+      # 07:00Z = 10:00 Cairo.
+      - name: Fast-window guard
+        id: guard
+        env:
+          PREBUILD_UNTIL: "2026-07-30T07:00:00Z"
+        run: |
+          set -euo pipefail
+          if [ "$(date -u +%s)" -ge "$(date -u -d "$PREBUILD_UNTIL" +%s)" ]; then
+            echo "::notice::Prebuild window closed at $PREBUILD_UNTIL — skipping. The deploy will build its own image, as normal."
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Prebuild window OPEN (until $PREBUILD_UNTIL)."
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout Code
+        if: ${{ steps.guard.outputs.proceed == 'true' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Authenticate to Google Cloud
+        if: ${{ steps.guard.outputs.proceed == 'true' }}
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: '${{ secrets.WIF_PROVIDER }}'
+          service_account: '${{ secrets.WIF_SERVICE_ACCOUNT }}'
+
+      - name: Set up Cloud SDK
+        if: ${{ steps.guard.outputs.proceed == 'true' }}
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      # MUST produce byte-identical tagging to deploy-cloud-run.yml's preflight, or the deploy
+      # will look for a tag this never created and rebuild anyway. Same expression, same
+      # 8-character truncation.
+      - name: Resolve image tag
+        if: ${{ steps.guard.outputs.proceed == 'true' }}
+        id: preflight
+        run: |
+          set -euo pipefail
+          SHA_TAG="sha-$(echo "${{ github.sha }}" | cut -c1-8)"
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}:$SHA_TAG"
+          if gcloud artifacts docker images describe "$IMAGE" --project ${{ env.PROJECT_ID }} >/dev/null 2>&1; then
+            echo "Image $IMAGE already exists — nothing to prebuild."
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Image $IMAGE not found — prebuilding it now, in parallel with CI."
+            echo "skip_build=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "sha_tag=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      # Identical invocation to deploy-cloud-run.yml's build step — same config, same region,
+      # same substitutions including _NEXT_PUBLIC_COMMIT_SHA. If these ever diverge, the deploy
+      # would ship an image built with different NEXT_PUBLIC_* values than intended, which is
+      # exactly the class of bug cloudbuild.yaml's header documents. Change both together.
+      - name: Build image via Cloud Build (in parallel with CI)
+        if: ${{ steps.guard.outputs.proceed == 'true' && steps.preflight.outputs.skip_build != 'true' }}
+        run: |
+          set -euo pipefail
+          IMAGE="${{ steps.preflight.outputs.image }}"
+          echo "Prebuilding $IMAGE"
+          bash scripts/retry-transient.sh gcloud builds submit . \
+            --config cloudbuild.yaml \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT_ID }} \
+            --substitutions=_IMAGE="$IMAGE",_CACHE_REPO="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/cloud-run-source-deploy/${{ env.SERVICE_NAME }}",_NEXT_PUBLIC_APP_URL=${{ secrets.NEXT_PUBLIC_APP_URL }},_NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY }},_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }},_NEXT_PUBLIC_SMI_USE_FACT_TABLES=${{ secrets.NEXT_PUBLIC_SMI_USE_FACT_TABLES }},_NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }},_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }},_NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }},_NEXT_PUBLIC_ONESIGNAL_APP_ID=${{ secrets.NEXT_PUBLIC_ONESIGNAL_APP_ID }},_NEXT_PUBLIC_COMMIT_SHA=${{ steps.preflight.outputs.sha_tag }}
+          echo "Prebuild complete — the deploy for this commit will skip its build step."
