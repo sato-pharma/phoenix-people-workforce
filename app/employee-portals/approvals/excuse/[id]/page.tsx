@@ -5,6 +5,7 @@ import { ExcuseRequestDetail } from "@/components/approvals-hub/excuse-request-d
 import { getExcuseApprovalDetail } from "@/lib/approvals-hub/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { isExcuseExcludedRole } from "@/lib/excuses/service";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export default async function PortalExcuseApprovalDetailPage({ params }: { param
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect(`/admin/approvals/excuse/${encodeURIComponent(id)}`);
   }
+  // Same exclusion as the list page above — no excuse authority means no deep link either.
+  if (isExcuseExcludedRole(access.role)) redirect("/employee-portals");
   const detail = await getExcuseApprovalDetail(access, id);
   return (
     <EmployeePortalPageShell badge="Approvals Hub" title="Excuse Approval" description="Review and respond to this excuse request.">

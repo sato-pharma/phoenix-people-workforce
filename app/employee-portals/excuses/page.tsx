@@ -7,6 +7,7 @@ import { isForbiddenError, resolveAccessContextFromPage } from "@/lib/auth/serve
 import {
   excuseErrorMessage,
   getExcuseWorkspace,
+  isExcuseExcludedRole,
   isExcusesSchemaMissing,
 } from "@/lib/excuses/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
@@ -17,6 +18,12 @@ export default async function EmployeeExcusesPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin");
+  }
+  // District/Regional Managers are out of the excuse module entirely. Redirect rather than fall
+  // through to the catch below, whose fixed "Head Office employees and National Sales Managers
+  // only" copy would read as wrong for an Office-line DSM/RM.
+  if (isExcuseExcludedRole(access.role)) {
+    redirect("/employee-portals");
   }
 
   let data = null;

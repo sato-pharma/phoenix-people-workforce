@@ -318,13 +318,32 @@ export function runNavigationActivePathTests() {
   const employeeAdmin = adminHrefsFor("Employee");
   assertExcludesAll(employeeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs, "/payroll"], "Employee must not see admin-shell authority modules");
 
-  // Approvals Hub › Vacation & Excuse Approvals — visible to the confirmed portal-shell
-  // approver roles, hidden from individual contributors who only submit.
+  // Approvals Hub › Vacation Approvals — visible to the confirmed portal-shell approver roles,
+  // hidden from individual contributors who only submit.
   for (const role of ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] as const) {
     assertIncludesAll(
       employeePortalHrefsFor(role),
-      ["/employee-portals/approvals/vacation", "/employee-portals/approvals/excuse"],
-      `${role} must see the Vacation & Excuse Approvals links in the employee portal`,
+      ["/employee-portals/approvals/vacation"],
+      `${role} must see the Vacation Approvals link in the employee portal`,
+    );
+  }
+  // Excuse Approvals is a NARROWER list than vacation, and the two are deliberately kept as
+  // separate role lists in system-navigation.ts. Excuse is a Head-Office / fingerprint-attendance
+  // module and is direct-manager-only (no manager-of-manager step), so nobody in the field sales
+  // ladder ever has an excuse to decide: NSM never did, and DSM/RM were removed by owner decision
+  // on 2026-07-30. The enforcing gate is EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts.
+  for (const role of ["Product Manager", "Group Product Manager", "Marketing Manager", "Manager"] as const) {
+    assertIncludesAll(
+      employeePortalHrefsFor(role),
+      ["/employee-portals/approvals/excuse"],
+      `${role} must see the Excuse Approvals link in the employee portal`,
+    );
+  }
+  for (const role of ["District Manager", "Regional Manager", "National Sales Manager"] as const) {
+    assertExcludesAll(
+      employeePortalHrefsFor(role),
+      ["/employee-portals/approvals/excuse"],
+      `${role} is outside the excuse ladder and must not see the Excuse Approvals link`,
     );
   }
   for (const role of ["Employee", "Medical Rep"] as const) {

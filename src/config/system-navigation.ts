@@ -147,10 +147,22 @@ const leaveExcuseApproverAdminNavigationRoles = [
   "Finance Manager",
   "Financial Advisor",
 ] as const satisfies readonly PhoenixRole[];
-const leaveExcuseApproverPortalNavigationRoles = [
+const vacationApproverPortalNavigationRoles = [
   "District Manager",
   "Regional Manager",
   "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Manager",
+] as const satisfies readonly PhoenixRole[];
+// Excuse is deliberately its own list, NOT shared with vacation above: it drops National Sales
+// Manager, District Manager and Regional Manager. Excuse is a Head-Office / fingerprint-attendance
+// module and is direct-manager-only, so no field-ladder role ever has anything to decide here.
+// DSM/RM removed by owner decision 2026-07-30 — enforced server-side by EXCUSE_EXCLUDED_ROLES in
+// src/lib/excuses/service.ts; this list only controls the sidebar link. Keep the two lists split so
+// a future vacation change can never silently re-grant excuse (or vice versa).
+const excuseApproverPortalNavigationRoles = [
   "Product Manager",
   "Group Product Manager",
   "Marketing Manager",
@@ -660,8 +672,8 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "approvals-hub",
     items: [
-      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
-      { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
+      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: vacationApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: excuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
       { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },

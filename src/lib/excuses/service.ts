@@ -206,7 +206,43 @@ const EXCUSE_ELIGIBLE_ROLES = new Set([
   "Marketing Manager",
 ]);
 
+// Owner decision 2026-07-30: District (Sales) Managers and Regional Managers are out of the
+// Excuse module ENTIRELY — they neither submit excuses nor decide them. Excuse is a Head-Office
+// / fingerprint-attendance concept, so the field ladder at and below a DSM never uses it: the
+// DSM/RM "Excuse Approvals" surface was a permanently-empty link, and the Head-Office-line branch
+// of canUseExcuses was the only path by which one could ever have submitted. Verified against
+// production before locking this: no excuse request has ever been submitted by, or routed to, a
+// DSM or RM, and no excuse-eligible employee reports to one — so nothing is orphaned here.
+// This is a ROLE exclusion and deliberately does NOT include the generic "Manager" role, which is
+// the Head-Office people-manager rung that legitimately decides its own reports' excuses.
+const EXCUSE_EXCLUDED_ROLES = new Set(["District Manager", "Regional Manager"]);
+
+export function isExcuseExcludedRole(role: string | null | undefined): boolean {
+  return EXCUSE_EXCLUDED_ROLES.has(normalizeRole(role));
+}
+
+/**
+ * Does this HR_ID currently hold an excuse-excluded ACCESS role? Reads `app_auth_users` (the only
+ * permission source — a job title never is, see resolveEmployeeAccessRole) and throws on failure
+ * rather than fail-open, because the two callers use it as a gate.
+ */
+async function hrIdHoldsExcuseExcludedRole(hrId: string | null | undefined): Promise<boolean> {
+  const target = normalizeHrId(hrId);
+  if (!target) return false;
+  // Compare in JS via normalizeHrId rather than filtering on hr_id in the query: HR_ID casing and
+  // punctuation drift between tables, and a case-sensitive `.in()` would silently miss the match.
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("hr_id")
+    .in("role", [...EXCUSE_EXCLUDED_ROLES]);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ hr_id: string | null }>).some(
+    (row) => normalizeHrId(row.hr_id) === target,
+  );
+}
+
 function canUseExcuses(access: AccessContext, employee: EmployeeDirectoryRow) {
+  if (isExcuseExcludedRole(access.role)) return false;
   return EXCUSE_ELIGIBLE_ROLES.has(normalizeRole(access.role)) ||
     isHeadOfficeExcuseEmployee(employee);
 }
@@ -270,6 +306,11 @@ async function loadEligibleEmployee(access: AccessContext) {
   const employee = findCurrentEmployee(directory, access);
   if (!employee) {
     throw new Error("Forbidden: your employee profile is not linked yet.");
+  }
+  if (isExcuseExcludedRole(access.role)) {
+    // Own message: an Office-line DSM/RM would otherwise read the generic text below as "you are a
+    // Head Office employee, so this should work", which is exactly the case being removed here.
+    throw new Error("Forbidden: the excuse module is not available for District or Regional Managers.");
   }
   if (!canUseExcuses(access, employee)) {
     throw new Error("Forbidden: excuses are available for Head Office employees, National Sales Managers, Product Managers, Group Product Managers, and Training Managers only.");
@@ -571,6 +612,12 @@ export async function createExcuseRequest(
     throw new Error("Direct manager work email is missing. Please contact HR.");
   }
   const managerHrId = resolveStoredHrId(manager.hrId, byHrId) ?? manager.hrId;
+  // Refuse UP FRONT rather than minting a request (and an emailed approve/reject token) that the
+  // assigned manager is no longer allowed to decide. Without this the row would sit at
+  // pending_manager forever, only recoverable via reassignExcuseManager.
+  if (await hrIdHoldsExcuseExcludedRole(managerHrId)) {
+    throw new Error("Your direct manager cannot decide excuse requests. Please contact HR.");
+  }
   const submittedByHrId =
     resolveStoredHrId(access.hrId, byHrId) ??
     resolveStoredHrId(access.loginId, byHrId) ??
@@ -671,6 +718,13 @@ export async function decideExcuseRequestByToken(input: {
   if (normalizeHrId(tokenData.manager_hr_id) !== normalizeHrId(requestRow.manager_hr_id)) {
     throw new Error("Approval link does not match this request manager.");
   }
+  // The emailed approve/reject link carries no session, so the role check cannot come from an
+  // AccessContext — resolve the assigned manager's access role directly. Requests are no longer
+  // created for an excluded manager, but a link minted before this rule shipped is still live for
+  // up to 14 days, and that link must not be a way around the block.
+  if (await hrIdHoldsExcuseExcludedRole(requestRow.manager_hr_id)) {
+    throw new Error("Forbidden: District and Regional Managers cannot decide excuse requests.");
+  }
 
   const status = decisionToStatus(input.decision);
   const now = new Date().toISOString();
@@ -717,6 +771,11 @@ export async function getManagerPendingExcuses(access: AccessContext): Promise<E
   // actual assigned manager, or at a genuine HR step (which doesn't exist for excuses). scope
   // "system" is reserved for background/system-actor calls, never a real user session.
   const isSystemActor = access.scope === "system";
+  // District/Regional Managers hold no excuse authority at all (see EXCUSE_EXCLUDED_ROLES), so a
+  // real session in either role has nothing actionable here even if a legacy row still names them.
+  // This also empties their Action Center excuse cards and the excuse-approvals-pending nav badge.
+  if (!isSystemActor && isExcuseExcludedRole(access.role)) return [];
+
   let query = supabase
     .from("v2_excuse_requests")
     .select("id,employee_hr_id,employee_name,department_name,line_name,manager_hr_id,manager_name,excuse_date,excuse_type,duration_hours,status,manager_decision,manager_decision_by_hr_id,manager_decision_at,manager_decision_comment,created_at")
@@ -750,6 +809,9 @@ export async function decideExcuseRequestAsManager(
   }
 
   if (!isSystemActor) {
+    if (isExcuseExcludedRole(access.role)) {
+      throw new Error("Forbidden: District and Regional Managers cannot decide excuse requests.");
+    }
     if (!actorHrId) throw new Error("Your employee profile is not linked. Contact HR.");
     if (normalizeHrId(actorHrId) !== normalizeHrId(requestRow.manager_hr_id)) {
       throw new Error("You are not the assigned manager for this excuse request.");
@@ -942,6 +1004,11 @@ export async function resubmitExcuseRequest(
     throw new Error("Direct manager work email is missing. Please contact HR.");
   }
   const managerHrId = resolveStoredHrId(manager.hrId, byHrId) ?? manager.hrId;
+  // Same up-front refusal as createExcuseRequest: never re-route a returned request back to a
+  // manager who is no longer allowed to decide it.
+  if (await hrIdHoldsExcuseExcludedRole(managerHrId)) {
+    throw new Error("Your direct manager cannot decide excuse requests. Please contact HR.");
+  }
 
   const existingRequests = (await fetchEmployeeExcuseRequests(employeeHrId)).filter((request) => request.id !== input.requestId);
   const targetMonth = requestMonthKey(excuseDate);

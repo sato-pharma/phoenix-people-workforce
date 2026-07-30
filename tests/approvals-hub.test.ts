@@ -367,8 +367,16 @@ export function runApprovalsHubTests() {
     assert.match(vacationFlagMatch![1], /National Sales Manager/, "National Sales Manager still sees Vacation Approvals");
     const excuseFlagMatch = portalNav.match(/showExcuseApprovalsTab:\s*([\s\S]*?),\n\s*\/\//);
     assert.ok(excuseFlagMatch, "showExcuseApprovalsTab computation is present");
+    assert.match(vacationFlagMatch![1], /District Manager/, "District Manager still sees Vacation Approvals");
+    assert.match(vacationFlagMatch![1], /Regional Manager/, "Regional Manager still sees Vacation Approvals");
     assert.doesNotMatch(excuseFlagMatch![1], /National Sales Manager/, "National Sales Manager does NOT see Excuse Approvals (reps under a DM never route excuses to the NSM; NSM-level goes through Head Office)");
-    for (const role of ["District Manager", "Regional Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Manager"]) {
+    // Owner decision 2026-07-30: DSM and RM left the excuse ladder entirely (they cannot submit an
+    // excuse either) — the whole field sales ladder is now out of this module. Enforced server-side
+    // by EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts; this flag only hides the link.
+    for (const role of ["District Manager", "Regional Manager"]) {
+      assert.doesNotMatch(excuseFlagMatch![1], new RegExp(role), `${role} must NOT see Excuse Approvals`);
+    }
+    for (const role of ["Product Manager", "Group Product Manager", "Marketing Manager", "Manager"]) {
       assert.match(excuseFlagMatch![1], new RegExp(role), `${role} still sees Excuse Approvals`);
     }
   }

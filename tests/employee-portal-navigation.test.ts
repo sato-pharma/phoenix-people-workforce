@@ -132,6 +132,29 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(districtManager.showTeamCoachingTab, true, "DSM should see Team Coaching Reports");
   assert.equal(districtManager.showTrainingManagerCreateCoachingTab, false, "DSM should not see Create Coaching Report");
 
+  // Owner decision 2026-07-30: DSM and RM are out of the Excuse module entirely — no submit tab
+  // and no approvals tab. Excuse is a Head-Office / fingerprint-attendance module and is
+  // direct-manager-only, so nobody in the field ladder ever routes one to them. Enforced
+  // server-side by EXCUSE_EXCLUDED_ROLES in src/lib/excuses/service.ts; these flags hide the links.
+  for (const excludedRole of ["District Manager", "Regional Manager"]) {
+    const fieldNav = resolveEmployeePortalNavVisibility(excludedRole, excludedRole, "Pedia", "Sales");
+    assert.equal(fieldNav.showExcuseApprovalsTab, false, `${excludedRole} should not see Excuse Approvals`);
+    assert.equal(fieldNav.showExcusesTab, false, `${excludedRole} should not see the Excuses submit tab`);
+    // Vacation Approvals is a separate ladder and is deliberately untouched by this change.
+    assert.equal(fieldNav.showVacationApprovalsTab, true, `${excludedRole} should keep Vacation Approvals`);
+    // The isHeadOffice branch of showExcusesTab is line/department-based, so it must not re-open
+    // the submit tab for one of these roles sitting on the Office line.
+    const officeNav = resolveEmployeePortalNavVisibility(excludedRole, excludedRole, "Office", "Head Office");
+    assert.equal(officeNav.showExcusesTab, false, `an Office-line ${excludedRole} should still not see Excuses`);
+    assert.equal(officeNav.showExcuseApprovalsTab, false, `an Office-line ${excludedRole} should still not see Excuse Approvals`);
+  }
+  // The Head-Office "Manager" rung and the marketing roles are a different ladder and keep excuse
+  // approvals — HO staff genuinely report to them.
+  for (const keepsExcuse of ["Manager", "Product Manager", "Group Product Manager", "Marketing Manager"]) {
+    const nav = resolveEmployeePortalNavVisibility(keepsExcuse, keepsExcuse, "Office", "Head Office");
+    assert.equal(nav.showExcuseApprovalsTab, true, `${keepsExcuse} should keep Excuse Approvals`);
+  }
+
   const a3Account = resolveEmployeePortalNavVisibility("Medical Rep", undefined, undefined, undefined, "A-3");
   assert.equal(a3Account.showMyPerformanceTab, false, "A-3 should not see My Performance in employee portal");
   assert.equal(a3Account.showIncentiveTab, false, "A-3 should not see Incentive in employee portal");
