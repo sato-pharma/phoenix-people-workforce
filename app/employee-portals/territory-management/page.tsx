@@ -8,7 +8,11 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getBrowserKey } from "@/lib/google-maps/server";
-import { loadTerritoryFilters, type TerritoryFilters } from "@/lib/territory-management/service";
+import {
+  isPortalTerritoryManagementRole,
+  loadTerritoryFilters,
+  type TerritoryFilters,
+} from "@/lib/territory-management/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +22,14 @@ export const dynamic = "force-dynamic";
 // redirects them straight past this content. This is the SAME TerritoryMapWorkspace component and
 // the SAME scoped service call the admin surface uses; only the shell chrome differs, exactly like
 // Territory & Sales Drilldown's admin/portal split.
-const PORTAL_ROLES = new Set(["District Manager", "Regional Manager", "National Sales Manager"]);
+//
+// The admitted role set now lives with the service as PORTAL_TERRITORY_MANAGEMENT_ROLES so this gate,
+// the admin page's redirect target, and the sidebar flag cannot drift apart.
 
 export default async function TerritoryManagementPortalPage() {
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
-  if (!PORTAL_ROLES.has(access.role)) redirect(resolveLandingPathForRole(access.role));
+  if (!isPortalTerritoryManagementRole(access.role)) redirect(resolveLandingPathForRole(access.role));
   await assertPermission(access, "sales", "read");
 
   let filters: TerritoryFilters = { areas: [], lines: [], regions: [] };

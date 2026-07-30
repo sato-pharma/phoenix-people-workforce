@@ -46,6 +46,7 @@ import {
   CalendarRange,
   CalendarCheck2,
   MapPinned,
+  Waypoints,
 } from "lucide-react";
 import { EmployeePortalBottomNav } from "@/components/employee-portal/employee-portal-bottom-nav";
 import { SessionSecurityGuard } from "@/components/auth/session-security-guard";
@@ -194,6 +195,8 @@ function buildEmployeePortalSections({
   showWeeklyTab = false,
   showSalesAnalyticsTab = false,
   showTerritoryDrilldownTab = false,
+  showTerritoryManagementTab = false,
+  showMarketingRoiTrackingTab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
   showCoachingAnalyticsTab = false,
@@ -266,6 +269,10 @@ function buildEmployeePortalSections({
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Territory & Sales Drilldown", icon: MapPinned }] : []),
+        // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the
+        // Drilldown above. The page and its API routes already existed and were scope-guarded, but
+        // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
+        ...(showTerritoryManagementTab ? [{ href: "/employee-portals/territory-management", label: "Territory Management", icon: Waypoints }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
         ...(showDirectOrdersReportTab ? [{ href: "/employee-portals/direct-orders/report", label: "Direct Orders Report", icon: FileSpreadsheet }] : []),
       ],
@@ -292,6 +299,11 @@ function buildEmployeePortalSections({
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingCoverageReportTab ? [{ href: "/employee-portals/marketing-requests/coverage-report", label: "Coverage Report", icon: MapPinned }] : []),
         ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
+        // ROI Tracker — the marketing-ROI source of truth (portal twin of /admin/marketing-roi-tracker,
+        // its own URL by owner rule 2026-07-28). showMarketingRoiTrackingTab was computed in
+        // navigation.ts but never rendered here, so this page had no sidebar link at all. Distinct
+        // from "ROI Dashboard" above, which is the Sales-Marketing-Intelligence module.
+        ...(showMarketingRoiTrackingTab ? [{ href: "/employee-portals/roi-tracker", label: "ROI Tracker", icon: Target }] : []),
       ],
     },
     {

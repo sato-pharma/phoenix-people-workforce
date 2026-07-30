@@ -30,6 +30,7 @@ import {
   User,
   Users,
   WalletCards,
+  Waypoints,
 } from "lucide-react";
 
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
@@ -70,6 +71,8 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Sales Intelligence (Product / Group Product Managers)
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
+  { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
+  { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },
   { label: "Direct Order", fullLabel: "Direct Orders", href: "/employee-portals/direct-orders", icon: ReceiptText, flags: ["showDirectOrdersTab"] },
   { label: "DO Report", fullLabel: "Direct Orders Report", href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, flags: ["showDirectOrdersReportTab"] },
   { label: "Coaching", fullLabel: "Coaching Analytics", href: "/employee-portals/coaching-analytics", icon: ChartColumnBig, flags: ["showCoachingAnalyticsTab"] },

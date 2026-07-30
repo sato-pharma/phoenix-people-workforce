@@ -79,6 +79,11 @@ export type EmployeePortalNavVisibility = {
   // TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the server-side gate
   // this flag must stay in sync with).
   showTerritoryDrilldownTab?: boolean;
+  // Territory Management — the brick-allocation / rep-residence map at
+  // /employee-portals/territory-management. A DIFFERENT module from Territory & Sales Drilldown
+  // above: this one compares multiple areas' bricks against each other, which is why Medical Rep
+  // is excluded. Must stay in sync with PORTAL_ROLES in that page (the server-side gate).
+  showTerritoryManagementTab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -407,6 +412,17 @@ export function resolveEmployeePortalNavVisibility(
       isMarketingManager,
     showTerritoryDrilldownTab:
       isMedicalRep ||
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager,
+    // Mirrors PORTAL_TERRITORY_MANAGEMENT_ROLES in src/lib/territory-management/service.ts, which is
+    // the enforcing gate; this flag only surfaces the sidebar link. Spelled out rather than imported
+    // for the same reason as the excuse gate above — that module pulls in the Supabase server client,
+    // which must never reach this nav helper (it is consumed by client components).
+    // Note `resolvedRole === "District Manager"` deliberately, NOT `isDistrictManager`: the latter
+    // also matches the Head-Office "Manager" rung, which the page does not admit. Medical Rep is
+    // excluded by design (multi-area comparison is a District-Manager-and-up decision).
+    showTerritoryManagementTab:
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
