@@ -430,6 +430,7 @@ import { runAnalyticsMetabaseEmbedTests } from "./analytics-metabase-embed.test.
 import { runAnalyticsFilterIndependenceTests } from "./analytics-filter-independence.test.ts";
 import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
+import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
@@ -938,6 +939,7 @@ await runTest("analytics metabase embed signer", runAnalyticsMetabaseEmbedTests)
 await runTest("analytics filter independence (no cross-dimension leakage)", runAnalyticsFilterIndependenceTests);
 await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeTests);
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
+await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);

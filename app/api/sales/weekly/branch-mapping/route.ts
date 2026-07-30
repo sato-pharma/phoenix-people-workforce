@@ -91,6 +91,7 @@ export async function POST(request: Request) {
       rawBranch?: string;
       branchName?: string;
       regionCode?: string;
+      areaCode?: string | null;
       sourceFileType?: string;
       branchColumnIndex?: number | string | null;
       excluded?: boolean;
@@ -103,6 +104,8 @@ export async function POST(request: Request) {
         rawBranch: String(body?.rawBranch ?? ""),
         branchName: body?.branchName == null ? null : String(body.branchName),
         regionCode: String(body?.regionCode ?? ""),
+        // Optional: blank keeps the branch region-only (the default).
+        areaCode: body?.areaCode == null ? null : String(body.areaCode),
         sourceFileType: fileType(body?.sourceFileType),
         branchColumnIndex:
           body?.branchColumnIndex == null || body.branchColumnIndex === "" ? null : Number(body.branchColumnIndex),

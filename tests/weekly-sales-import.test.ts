@@ -67,11 +67,12 @@ function aliasIndex(distributor: string, codeMap: Record<string, string>, nameMa
   return index;
 }
 
-type BranchEntry = { regionCode: string; regionName: string; excluded: boolean };
+// areaCode mirrors WeeklyBranchRegionEntry: null = the branch is region-only (the default).
+type BranchEntry = { regionCode: string; regionName: string; areaCode: string | null; excluded: boolean };
 
 function branchIndex(input: {
-  branches?: { key: string; fileType: "sales" | "stock" | "any"; region: string; excluded?: boolean }[];
-  columns?: { colIndex: number; region: string; headerRaw: string; excluded?: boolean }[];
+  branches?: { key: string; fileType: "sales" | "stock" | "any"; region: string; area?: string; excluded?: boolean }[];
+  columns?: { colIndex: number; region: string; headerRaw: string; area?: string; excluded?: boolean }[];
 }): WeeklyBranchRegionIndex {
   const REGION_NAMES: Record<string, string> = { CA: "Cairo", GZ: "Giza", UE: "Upper Egypt", D1: "Delta (1)" };
   const byBranch = new Map<string, BranchEntry>();
@@ -79,6 +80,7 @@ function branchIndex(input: {
     byBranch.set(`${branch.fileType}|${normalizeKey(branch.key)}`, {
       regionCode: branch.excluded ? "" : branch.region,
       regionName: branch.excluded ? "" : REGION_NAMES[branch.region] ?? branch.region,
+      areaCode: branch.excluded ? null : branch.area ?? null,
       excluded: Boolean(branch.excluded),
     });
   }
@@ -87,6 +89,7 @@ function branchIndex(input: {
     byColumnIndex.set(column.colIndex, {
       regionCode: column.excluded ? "" : column.region,
       regionName: column.excluded ? "" : REGION_NAMES[column.region] ?? column.region,
+      areaCode: column.excluded ? null : column.area ?? null,
       excluded: Boolean(column.excluded),
       headerRaw: column.headerRaw,
     });
