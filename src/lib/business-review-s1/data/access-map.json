@@ -1,0 +1,1537 @@
+{
+  "generatedAt": "2026-07-30T04:34:10.650Z",
+  "sourceRef": "ozucdzovmcqvepbozvqf",
+  "lines": {
+    "pedia": {
+      "label": "Pedia",
+      "lineCode": "pedia",
+      "dmSeats": [
+        {
+          "seatId": "SEAT-PED-DM-CA",
+          "regionCode": "CA",
+          "hrId": "PD-0006",
+          "name": "Ahmed Mohamed Nagy",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-PED-OTHERS",
+          "regionCode": "OT",
+          "hrId": null,
+          "name": null,
+          "isVacant": true
+        },
+        {
+          "seatId": "SEAT-PED-DM-D2",
+          "regionCode": "D2",
+          "hrId": "B-5",
+          "name": "Ahmed Mohamed Ahmed Mohamed Heikal",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-PED-DM-GZ",
+          "regionCode": "GZ",
+          "hrId": "B-94",
+          "name": "Taha Mohamed Taha Elsayed AboElftouh",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-PED-DM-AB",
+          "regionCode": "AB",
+          "hrId": "B-74",
+          "name": "Ahmed Mohamed Ahmed Mohamed Abdallah",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-PED-DM-UE",
+          "regionCode": "UE",
+          "hrId": "B-23",
+          "name": "Yehya Mohamed Kamal eldeen Saad Mohamed",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-PED-DM-D1",
+          "regionCode": "D1",
+          "hrId": "B-154",
+          "name": "Nermeen Salah Abdelaty Abohussien",
+          "isVacant": false
+        }
+      ],
+      "rsmSeats": [
+        {
+          "seatId": "SEAT-PED-RSM",
+          "hrId": "PD-0001",
+          "name": "Hany Saad Mohamed Omar",
+          "dmSeatIds": [
+            "SEAT-PED-DM-D2",
+            "SEAT-PED-DM-AB",
+            "SEAT-PED-DM-D1"
+          ]
+        }
+      ],
+      "areas": {
+        "Alex East": {
+          "seatId": "SEAT-PED-REP-AB1",
+          "areaCode": "AB1",
+          "repHrId": "B-82",
+          "repName": "Mostafa Mamdouh Mohamed Ibrahim Kasem",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-AB",
+          "dmHrId": "B-74",
+          "s1Dm": "Ahmed Abdallah",
+          "s1Region": "Alex-BHR"
+        },
+        "Alex West": {
+          "seatId": "SEAT-PED-REP-AB3",
+          "areaCode": "AB3",
+          "repHrId": "B-188",
+          "repName": "Walid Fathy Abdelfattah Shafek Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-AB",
+          "dmHrId": "B-74",
+          "s1Dm": "Ahmed Abdallah",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 1": {
+          "seatId": "SEAT-PED-REP-AB4",
+          "areaCode": "AB4",
+          "repHrId": "B-167",
+          "repName": "Mahmoud Mohamed Hassan Eltanany",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-AB",
+          "dmHrId": "B-74",
+          "s1Dm": "Ahmed Abdallah",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 2": {
+          "seatId": "SEAT-PED-REP-AB5",
+          "areaCode": "AB5",
+          "repHrId": "B-14",
+          "repName": "Omnia Nader Ismael Hamed Elsherbiny",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-AB",
+          "dmHrId": "B-74",
+          "s1Dm": "Ahmed Abdallah",
+          "s1Region": "Alex-BHR"
+        },
+        "Kafr El-Sheikh": {
+          "seatId": "SEAT-PED-REP-D16",
+          "areaCode": "D16",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-AB",
+          "dmHrId": "B-74",
+          "s1Dm": "Ahmed Abdallah",
+          "s1Region": "Alex-BHR"
+        },
+        "Cairo East 1": {
+          "seatId": "SEAT-PED-REP-CA3",
+          "areaCode": "CA3",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Cairo (vacant)",
+          "s1Region": "Cairo"
+        },
+        "Cairo East 2": {
+          "seatId": "SEAT-PED-REP-CA4",
+          "areaCode": "CA4",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Cairo (vacant)",
+          "s1Region": "Cairo"
+        },
+        "Cairo West": {
+          "seatId": "SEAT-PED-REP-CA6",
+          "areaCode": "CA6",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Cairo (vacant)",
+          "s1Region": "Cairo"
+        },
+        "heliopolis": {
+          "seatId": "SEAT-PED-REP-CA1",
+          "areaCode": "CA1",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Cairo (vacant)",
+          "s1Region": "Cairo"
+        },
+        "Nasr City ": {
+          "seatId": "SEAT-PED-REP-CA2",
+          "areaCode": "CA2",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Cairo (vacant)",
+          "s1Region": "Cairo"
+        },
+        "Gharbia (Mahalla)": {
+          "seatId": "SEAT-PED-REP-D15",
+          "areaCode": "D15",
+          "repHrId": "B-158",
+          "repName": "Hassan Mohamed Raffat Mohamed Elsherbiny",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D1",
+          "dmHrId": "B-154",
+          "s1Dm": "Nermeen Salah",
+          "s1Region": "Delta (1)"
+        },
+        "Gharbia (Tanta)": {
+          "seatId": "SEAT-PED-REP-D14",
+          "areaCode": "D14",
+          "repHrId": "B-170",
+          "repName": "Khaled Saied Abdelhady elkamry",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D1",
+          "dmHrId": "B-154",
+          "s1Dm": "Nermeen Salah",
+          "s1Region": "Delta (1)"
+        },
+        "Menoufia 1": {
+          "seatId": "SEAT-PED-REP-D12",
+          "areaCode": "D12",
+          "repHrId": "B-113",
+          "repName": "Youssef Hesham Tawfik Mohamed Abokhedra",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D1",
+          "dmHrId": "B-154",
+          "s1Dm": "Nermeen Salah",
+          "s1Region": "Delta (1)"
+        },
+        "Menoufia 2": {
+          "seatId": "SEAT-PED-REP-D13",
+          "areaCode": "D13",
+          "repHrId": "B-91",
+          "repName": "Nada Abdullah Mohamed Deghady",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D1",
+          "dmHrId": "B-154",
+          "s1Dm": "Nermeen Salah",
+          "s1Region": "Delta (1)"
+        },
+        "Qalubeya": {
+          "seatId": "SEAT-PED-REP-D11",
+          "areaCode": "D11",
+          "repHrId": "B-100",
+          "repName": "Mohamed Ahmed Mohamed Hassan Salem",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D1",
+          "dmHrId": "B-154",
+          "s1Dm": "Nermeen Salah",
+          "s1Region": "Delta (1)"
+        },
+        "Dakahlia 1": {
+          "seatId": "SEAT-PED-REP-D21",
+          "areaCode": "D21",
+          "repHrId": "B-58",
+          "repName": "Ahmed Hemdan Ahmed Elsayed Abdallah",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Dakahlia 2": {
+          "seatId": "SEAT-PED-REP-D22",
+          "areaCode": "D22",
+          "repHrId": "B-115",
+          "repName": "Mohamed Nasr Elsayed Elawadi",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Dakahlia 3": {
+          "seatId": "SEAT-PED-REP-D23",
+          "areaCode": "D23",
+          "repHrId": "B-43",
+          "repName": "Mahmoud Mohamed Ahmed Ibrahim AlSlamony",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Port said - Domiat": {
+          "seatId": "SEAT-PED-REP-D26",
+          "areaCode": "D26",
+          "repHrId": "B-3",
+          "repName": "Ahmed Helal Eliwa Hussenin",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Sharkia 1": {
+          "seatId": "SEAT-PED-REP-D24",
+          "areaCode": "D24",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Sharkia 2": {
+          "seatId": "SEAT-PED-REP-D25",
+          "areaCode": "D25",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-D2",
+          "dmHrId": "B-5",
+          "s1Dm": "Ahmed Hekal",
+          "s1Region": "Delta (2)"
+        },
+        "Dokki - Mohandseen - Bolak": {
+          "seatId": "SEAT-PED-REP-GZ2",
+          "areaCode": "GZ2",
+          "repHrId": "B-164",
+          "repName": "Essam Mohamed Youssef Elsayed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-GZ",
+          "dmHrId": "B-94",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "Giza - Giza Centers": {
+          "seatId": "SEAT-PED-REP-GZ1",
+          "areaCode": "GZ1",
+          "repHrId": "B-59",
+          "repName": "Mostafa Galal Marghany Abdelwahed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-GZ",
+          "dmHrId": "B-94",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "Haram - Faisal ": {
+          "seatId": "SEAT-PED-REP-GZ4",
+          "areaCode": "GZ4",
+          "repHrId": "B-110",
+          "repName": "Hana Abdelaziz Samir Abdelaziz Ghoniem",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-GZ",
+          "dmHrId": "B-94",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "Helwan-Maadi": {
+          "seatId": "SEAT-PED-REP-GZ5",
+          "areaCode": "GZ5",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-CA",
+          "dmHrId": "PD-0006",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "Imbaba - Imbaba Centers": {
+          "seatId": "SEAT-PED-REP-GZ3",
+          "areaCode": "GZ3",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-GZ",
+          "dmHrId": "B-94",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "October - Zayed": {
+          "seatId": "SEAT-PED-REP-GZ7",
+          "areaCode": "GZ7",
+          "repHrId": "B-95",
+          "repName": "Hadeer Abdelnaser Osman Hassan",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-GZ",
+          "dmHrId": "B-94",
+          "s1Dm": "Taha Mohamed",
+          "s1Region": "Giza"
+        },
+        "Assiut 1": {
+          "seatId": "SEAT-PED-REP-UE3",
+          "areaCode": "UE3",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        },
+        "Assiut 2": {
+          "seatId": "SEAT-PED-REP-UE4",
+          "areaCode": "UE4",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        },
+        "Minia 1": {
+          "seatId": "SEAT-PED-REP-UE1",
+          "areaCode": "UE1",
+          "repHrId": "B-34",
+          "repName": "Sherouk Wael Khalaf Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        },
+        "Minia 2": {
+          "seatId": "SEAT-PED-REP-UE2",
+          "areaCode": "UE2",
+          "repHrId": "B-166",
+          "repName": "Gehad Alaaeldin Mohamed Aboelalla",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        },
+        "Sohag 1": {
+          "seatId": "SEAT-PED-REP-UE5",
+          "areaCode": "UE5",
+          "repHrId": "B-112",
+          "repName": "Gerges Sameh Khalil Mahwed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        },
+        "Sohag 2": {
+          "seatId": "SEAT-PED-REP-UE6",
+          "areaCode": "UE6",
+          "repHrId": "PD-0004",
+          "repName": "Aya Mohamed Abdelhamid Abdullah",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-PED-DM-UE",
+          "dmHrId": "B-23",
+          "s1Dm": "Yehya Kamal",
+          "s1Region": "UE"
+        }
+      },
+      "unmappedAreas": [
+        "Alex Center 1",
+        "Alex Center 2",
+        "Cairo Others",
+        "Down town",
+        "Dakahlia 4",
+        "Sharkia 3",
+        "Bani suef",
+        "Fayoum ",
+        "Ismailia-Suez",
+        "Others",
+        "Qena"
+      ]
+    },
+    "cns": {
+      "label": "CNS",
+      "lineCode": "cns",
+      "dmSeats": [
+        {
+          "seatId": "SEAT-CNS-OTHERS",
+          "regionCode": "OT",
+          "hrId": null,
+          "name": null,
+          "isVacant": true
+        },
+        {
+          "seatId": "SEAT-CNS-DM-D1",
+          "regionCode": "D1",
+          "hrId": "B-120",
+          "name": "Mahmoud El Husseinin Elemam Moslam El Husseinin",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-CNS-DM-CA",
+          "regionCode": "CA",
+          "hrId": "B-116",
+          "name": "Mina Farouk Nawar Rizkallah",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-CNS-DM-UE",
+          "regionCode": "UE",
+          "hrId": "B-118",
+          "name": "Amgad Ibrahim Tawfik Farag",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-CNS-DM-AB",
+          "regionCode": "AB",
+          "hrId": "B-119",
+          "name": "Saad Mohamed Saad Salama",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-CNS-DM-D2",
+          "regionCode": "D2",
+          "hrId": "B-184",
+          "name": "Sally Saied Sedhom Mankrios Sedhom",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-CNS-DM-GZ",
+          "regionCode": "GZ",
+          "hrId": "B-117",
+          "name": "Sameh Shabaan El Hoseiny El Hoseiny",
+          "isVacant": false
+        }
+      ],
+      "rsmSeats": [],
+      "areas": {
+        "Alex East": {
+          "seatId": "SEAT-CNS-REP-AB1",
+          "areaCode": "AB1",
+          "repHrId": "B-135",
+          "repName": "Hagar Noureldeen Ahmed Abelmaged",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-AB",
+          "dmHrId": "B-119",
+          "s1Dm": "Saad Salama",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 1": {
+          "seatId": "SEAT-CNS-REP-AB4",
+          "areaCode": "AB4",
+          "repHrId": "B-125",
+          "repName": "Amr Mohamed Ali Ibrahim Gbr",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-AB",
+          "dmHrId": "B-119",
+          "s1Dm": "Saad Salama",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 2": {
+          "seatId": "SEAT-CNS-REP-AB5",
+          "areaCode": "AB5",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-CNS-DM-AB",
+          "dmHrId": "B-119",
+          "s1Dm": "Saad Salama",
+          "s1Region": "Alex-BHR"
+        },
+        "Kafr El-Sheikh": {
+          "seatId": "SEAT-CNS-REP-D16",
+          "areaCode": "D16",
+          "repHrId": "B-144",
+          "repName": "Mariam Mohamed Abdelhalim Hamed Farahat",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-AB",
+          "dmHrId": "B-119",
+          "s1Dm": "Saad Salama",
+          "s1Region": "Alex-BHR"
+        },
+        "Cairo East 1": {
+          "seatId": "SEAT-CNS-REP-CA3",
+          "areaCode": "CA3",
+          "repHrId": "B-146",
+          "repName": "Ali Mohamed Shehata Hassan",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-CA",
+          "dmHrId": "B-116",
+          "s1Dm": "Mina Farouk",
+          "s1Region": "Cairo"
+        },
+        "Cairo East 2": {
+          "seatId": "SEAT-CNS-REP-CA4",
+          "areaCode": "CA4",
+          "repHrId": "CN-0004",
+          "repName": "Engy Said Mohamed Elsayed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-CA",
+          "dmHrId": "B-116",
+          "s1Dm": "Mina Farouk",
+          "s1Region": "Cairo"
+        },
+        "Cairo West": {
+          "seatId": "SEAT-CNS-REP-CA6",
+          "areaCode": "CA6",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-CNS-DM-CA",
+          "dmHrId": "B-116",
+          "s1Dm": "Mina Farouk",
+          "s1Region": "Cairo"
+        },
+        "Heliopolis": {
+          "seatId": "SEAT-CNS-REP-CA1",
+          "areaCode": "CA1",
+          "repHrId": "B-182",
+          "repName": "Georgette Hany Awad Aiad",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-CA",
+          "dmHrId": "B-116",
+          "s1Dm": "Mina Farouk",
+          "s1Region": "Cairo"
+        },
+        "Nasr City": {
+          "seatId": "SEAT-CNS-REP-CA2",
+          "areaCode": "CA2",
+          "repHrId": "CN-0001",
+          "repName": "Mostafa Mahmoud Mohamed Ali Elbadry",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-CA",
+          "dmHrId": "B-116",
+          "s1Dm": "Mina Farouk",
+          "s1Region": "Cairo"
+        },
+        "Gharbia (Mahalla)": {
+          "seatId": "SEAT-CNS-REP-D15",
+          "areaCode": "D15",
+          "repHrId": "B-128",
+          "repName": "Yomna Salah Abdelrazik Algafar Mahmoud",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D1",
+          "dmHrId": "B-120",
+          "s1Dm": "Mahmoud El Husseinin",
+          "s1Region": "Delta (1)"
+        },
+        "Gharbia (Tanta)": {
+          "seatId": "SEAT-CNS-REP-D14",
+          "areaCode": "D14",
+          "repHrId": "B-145",
+          "repName": "Radwa Ahmed Abdelkader Elsayed Mawed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D1",
+          "dmHrId": "B-120",
+          "s1Dm": "Mahmoud El Husseinin",
+          "s1Region": "Delta (1)"
+        },
+        "Menoufia 1": {
+          "seatId": "SEAT-CNS-REP-D12",
+          "areaCode": "D12",
+          "repHrId": "B-129",
+          "repName": "Nada Saed Said Elaraby Eisa",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D1",
+          "dmHrId": "B-120",
+          "s1Dm": "Mahmoud El Husseinin",
+          "s1Region": "Delta (1)"
+        },
+        "Menoufia 2": {
+          "seatId": "SEAT-CNS-REP-D13",
+          "areaCode": "D13",
+          "repHrId": "B-126",
+          "repName": "Sara Mohy Eldeen Helmy Mohamed Ebid",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D1",
+          "dmHrId": "B-120",
+          "s1Dm": "Mahmoud El Husseinin",
+          "s1Region": "Delta (1)"
+        },
+        "Dakahlia 1": {
+          "seatId": "SEAT-CNS-REP-D21",
+          "areaCode": "D21",
+          "repHrId": "CN-0002",
+          "repName": "Batool Rafiq Ali Abdelhady",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Dakahlia 2": {
+          "seatId": "SEAT-CNS-REP-D22",
+          "areaCode": "D22",
+          "repHrId": "B-172",
+          "repName": "Yathreb Elsayed Elsayed Elsayed Mohamed El ghannam",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Dakahlia 3": {
+          "seatId": "SEAT-CNS-REP-D23",
+          "areaCode": "D23",
+          "repHrId": "CN-0005",
+          "repName": "Amira Samy",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Port said - Domiat": {
+          "seatId": "SEAT-CNS-REP-D26",
+          "areaCode": "D26",
+          "repHrId": "CN-0003",
+          "repName": "Samia Ali Kasem Ali Gabr",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Sharkia 1": {
+          "seatId": "SEAT-CNS-REP-D24",
+          "areaCode": "D24",
+          "repHrId": "B-186",
+          "repName": "Amr Mohamed Hussien Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Sharkia 2": {
+          "seatId": "SEAT-CNS-REP-D25",
+          "areaCode": "D25",
+          "repHrId": "B-148",
+          "repName": "Mohamed Mohamed ElMenshawy Abdelmatty Mohamed Ismail",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-D2",
+          "dmHrId": "B-184",
+          "s1Dm": "Sally Saeed",
+          "s1Region": "Delta (2)"
+        },
+        "Down town": {
+          "seatId": "SEAT-CNS-REP-CA5",
+          "areaCode": "CA5",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-CNS-DM-GZ",
+          "dmHrId": "B-117",
+          "s1Dm": "Sameh Shaaban",
+          "s1Region": "Giza"
+        },
+        "Helwan-Maadi": {
+          "seatId": "SEAT-CNS-REP-GZ5",
+          "areaCode": "GZ5",
+          "repHrId": "B-136",
+          "repName": "Fatma Gharib Mohamed Ibrahim",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-GZ",
+          "dmHrId": "B-117",
+          "s1Dm": "Sameh Shaaban",
+          "s1Region": "Giza"
+        },
+        "Assiut 1": {
+          "seatId": "SEAT-CNS-REP-UE3",
+          "areaCode": "UE3",
+          "repHrId": "B-140",
+          "repName": "Mina Khaled Zareef Fahmy",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        },
+        "Assiut 2": {
+          "seatId": "SEAT-CNS-REP-UE4",
+          "areaCode": "UE4",
+          "repHrId": "B-141",
+          "repName": "Bishoy Bahaa Fathy Mahna",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        },
+        "Minia 1": {
+          "seatId": "SEAT-CNS-REP-UE1",
+          "areaCode": "UE1",
+          "repHrId": "B-133",
+          "repName": "Karen George Saleh Salama",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        },
+        "Minia 2": {
+          "seatId": "SEAT-CNS-REP-UE2",
+          "areaCode": "UE2",
+          "repHrId": "B-139",
+          "repName": "Aya Ashraf Kamel Abdo",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        },
+        "Sohag 1": {
+          "seatId": "SEAT-CNS-REP-UE5",
+          "areaCode": "UE5",
+          "repHrId": "B-142",
+          "repName": "Marian Samir Issac Beshay",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        },
+        "Sohag 2": {
+          "seatId": "SEAT-CNS-REP-UE6",
+          "areaCode": "UE6",
+          "repHrId": "B-124",
+          "repName": "Mina Masoud Lamy Atta",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-CNS-DM-UE",
+          "dmHrId": "B-118",
+          "s1Dm": "Amgad Ibrahim",
+          "s1Region": "UE"
+        }
+      },
+      "unmappedAreas": [
+        "Alex Center 2",
+        "Alex West- Center 1",
+        "Cairo Others",
+        "Qal",
+        "Sharkia 3",
+        "Dokki - Mohandsen-Imbaba",
+        "Faisal & October",
+        "Haram- Giza Centers",
+        "Bani suef",
+        "Fayoum",
+        "Ismailia-Suez",
+        "Main Store",
+        "Luxor - Aswan",
+        "Qena"
+      ]
+    },
+    "anti": {
+      "label": "Anti-Infective",
+      "lineCode": "anti_infective",
+      "dmSeats": [
+        {
+          "seatId": "SEAT-AIF-DM-GZ",
+          "regionCode": "GZ",
+          "hrId": null,
+          "name": null,
+          "isVacant": true
+        },
+        {
+          "seatId": "SEAT-AIF-OTHERS",
+          "regionCode": "OT",
+          "hrId": null,
+          "name": null,
+          "isVacant": true
+        },
+        {
+          "seatId": "SEAT-AIF-DM-CA",
+          "regionCode": "CA",
+          "hrId": "AI-0001",
+          "name": "Momen Abdelhady Mohamed Shehata",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-AIF-DM-AB",
+          "regionCode": "AB",
+          "hrId": "B-156",
+          "name": "Sara Samir Jacoub Yohana",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-AIF-DM-UE-2",
+          "regionCode": "UE-2",
+          "hrId": "B-175",
+          "name": "Ahmed Nashaat Ali Ahmed",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-AIF-DM-D1",
+          "regionCode": "D1",
+          "hrId": "B-12",
+          "name": "Dina Hamdy Fadel Mohamed Bdair",
+          "isVacant": false
+        },
+        {
+          "seatId": "SEAT-AIF-DM-D2",
+          "regionCode": "D2",
+          "hrId": "B-76",
+          "name": "Salim Salim Abdo Ibrahim Gomaa",
+          "isVacant": false
+        }
+      ],
+      "rsmSeats": [],
+      "areas": {
+        "Alex Center": {
+          "seatId": "SEAT-AIF-REP-AB2",
+          "areaCode": "AB2",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-AB",
+          "dmHrId": "B-156",
+          "s1Dm": "Alex-BHR (vacant)",
+          "s1Region": "Alex-BHR"
+        },
+        "Alex East": {
+          "seatId": "SEAT-AIF-REP-AB1",
+          "areaCode": "AB1",
+          "repHrId": "AI-0002",
+          "repName": "Ahmed Nabil Basim Abdelaziz Youssef Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-AB",
+          "dmHrId": "B-156",
+          "s1Dm": "Alex-BHR (vacant)",
+          "s1Region": "Alex-BHR"
+        },
+        "Alex West": {
+          "seatId": "SEAT-AIF-REP-AB3",
+          "areaCode": "AB3",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-AB",
+          "dmHrId": "B-156",
+          "s1Dm": "Alex-BHR (vacant)",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 1": {
+          "seatId": "SEAT-AIF-REP-AB4",
+          "areaCode": "AB4",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-AB",
+          "dmHrId": "B-156",
+          "s1Dm": "Alex-BHR (vacant)",
+          "s1Region": "Alex-BHR"
+        },
+        "Behira 2": {
+          "seatId": "SEAT-AIF-REP-AB5",
+          "areaCode": "AB5",
+          "repHrId": "B-177",
+          "repName": "Mostafa Saied Basiouny Hamd",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-AB",
+          "dmHrId": "B-156",
+          "s1Dm": "Alex-BHR (vacant)",
+          "s1Region": "Alex-BHR"
+        },
+        "Cairo East 1": {
+          "seatId": "SEAT-AIF-REP-CA3",
+          "areaCode": "CA3",
+          "repHrId": "AI-0003",
+          "repName": "Soad Atef",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-CA",
+          "dmHrId": "AI-0001",
+          "s1Dm": "Momen.Abdelhady",
+          "s1Region": "Cairo"
+        },
+        "Cairo East 2": {
+          "seatId": "SEAT-AIF-REP-CA4",
+          "areaCode": "CA4",
+          "repHrId": "B-161",
+          "repName": "Sherif Medhat Abdelwahed Abdelghany",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-CA",
+          "dmHrId": "AI-0001",
+          "s1Dm": "Momen.Abdelhady",
+          "s1Region": "Cairo"
+        },
+        "Cairo West": {
+          "seatId": "SEAT-AIF-REP-CA6",
+          "areaCode": "CA6",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-CA",
+          "dmHrId": "AI-0001",
+          "s1Dm": "Momen.Abdelhady",
+          "s1Region": "Cairo"
+        },
+        "Heliopolis": {
+          "seatId": "SEAT-AIF-REP-CA1",
+          "areaCode": "CA1",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-CA",
+          "dmHrId": "AI-0001",
+          "s1Dm": "Momen.Abdelhady",
+          "s1Region": "Cairo"
+        },
+        "Nasr City": {
+          "seatId": "SEAT-AIF-REP-CA2",
+          "areaCode": "CA2",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-CA",
+          "dmHrId": "AI-0001",
+          "s1Dm": "Momen.Abdelhady",
+          "s1Region": "Cairo"
+        },
+        "Dakahlia 1": {
+          "seatId": "SEAT-AIF-REP-D21",
+          "areaCode": "D21",
+          "repHrId": "B-40",
+          "repName": "Esraa Ahmed Elshahat Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D2",
+          "dmHrId": "B-76",
+          "s1Dm": "Salim Gomaa",
+          "s1Region": "Delta (1)"
+        },
+        "Dakahlia 2": {
+          "seatId": "SEAT-AIF-REP-D22",
+          "areaCode": "D22",
+          "repHrId": "B-108",
+          "repName": "Nahla Mahmoud Mohamed Abdelhamed Youssef",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D2",
+          "dmHrId": "B-76",
+          "s1Dm": "Salim Gomaa",
+          "s1Region": "Delta (1)"
+        },
+        "Dakahlia 3": {
+          "seatId": "SEAT-AIF-REP-D23",
+          "areaCode": "D23",
+          "repHrId": "B-96",
+          "repName": "Ayman Mohamed Elsaied Ali El Salhy",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D2",
+          "dmHrId": "B-76",
+          "s1Dm": "Salim Gomaa",
+          "s1Region": "Delta (1)"
+        },
+        "Port said - Domiat": {
+          "seatId": "SEAT-AIF-REP-D26",
+          "areaCode": "D26",
+          "repHrId": "B-15",
+          "repName": "Aml Mohamed Mohamed Eid elmashad",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D2",
+          "dmHrId": "B-76",
+          "s1Dm": "Salim Gomaa",
+          "s1Region": "Delta (1)"
+        },
+        "Gharbia (Mahalla)": {
+          "seatId": "SEAT-AIF-REP-D15",
+          "areaCode": "D15",
+          "repHrId": "B-179",
+          "repName": "Ashraf Maged Mohamed Abdelhameed Radwan",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D1",
+          "dmHrId": "B-12",
+          "s1Dm": "Dina Fadel",
+          "s1Region": "Delta (2)"
+        },
+        "Gharbia (Tanta)": {
+          "seatId": "SEAT-AIF-REP-D14",
+          "areaCode": "D14",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-D1",
+          "dmHrId": "B-12",
+          "s1Dm": "Dina Fadel",
+          "s1Region": "Delta (2)"
+        },
+        "Kafr El-Sheikh": {
+          "seatId": "SEAT-AIF-REP-D16",
+          "areaCode": "D16",
+          "repHrId": "B-107",
+          "repName": "Ragaa Moasad Mahmoud Ahmed Shabaan",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D1",
+          "dmHrId": "B-12",
+          "s1Dm": "Dina Fadel",
+          "s1Region": "Delta (2)"
+        },
+        "Menoufia 1": {
+          "seatId": "SEAT-AIF-REP-D12",
+          "areaCode": "D12",
+          "repHrId": "B-55",
+          "repName": "Warda Farhat Abdelsalam Abdelall Mohamed",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D1",
+          "dmHrId": "B-12",
+          "s1Dm": "Dina Fadel",
+          "s1Region": "Delta (2)"
+        },
+        "Menoufia 2": {
+          "seatId": "SEAT-AIF-REP-D13",
+          "areaCode": "D13",
+          "repHrId": "B-7",
+          "repName": "Aya Ibrahim Mohamed Salam",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-D1",
+          "dmHrId": "B-12",
+          "s1Dm": "Dina Fadel",
+          "s1Region": "Delta (2)"
+        },
+        "Dokki - Mohandseen - Bolak": {
+          "seatId": "SEAT-AIF-REP-GZ2",
+          "areaCode": "GZ2",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-GZ",
+          "dmHrId": null,
+          "s1Dm": "Giza (vacant)",
+          "s1Region": "Giza"
+        },
+        "Giza - Giza Centers": {
+          "seatId": "SEAT-AIF-REP-GZ1",
+          "areaCode": "GZ1",
+          "repHrId": "B-105",
+          "repName": "Mariem Hany Mohamed Ezzat",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-GZ",
+          "dmHrId": null,
+          "s1Dm": "Giza (vacant)",
+          "s1Region": "Giza"
+        },
+        "Haram - Faisal": {
+          "seatId": "SEAT-AIF-REP-GZ4",
+          "areaCode": "GZ4",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-GZ",
+          "dmHrId": null,
+          "s1Dm": "Giza (vacant)",
+          "s1Region": "Giza"
+        },
+        "Helwan-Maadi": {
+          "seatId": "SEAT-AIF-REP-GZ5",
+          "areaCode": "GZ5",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-GZ",
+          "dmHrId": null,
+          "s1Dm": "Giza (vacant)",
+          "s1Region": "Giza"
+        },
+        "Imbaba - Imbaba Centers": {
+          "seatId": "SEAT-AIF-REP-GZ3",
+          "areaCode": "GZ3",
+          "repHrId": "B-65",
+          "repName": "Nourhan Fawzy Ahmed Ali Moussa",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-GZ",
+          "dmHrId": null,
+          "s1Dm": "Giza (vacant)",
+          "s1Region": "Giza"
+        },
+        "Minia 1": {
+          "seatId": "SEAT-AIF-REP-UE1",
+          "areaCode": "UE1",
+          "repHrId": "B-1",
+          "repName": "Nosiba Salah Hussenin Moussa",
+          "seatVacantToday": false,
+          "dmSeatId": null,
+          "dmHrId": null,
+          "s1Dm": "Nosiba Salah",
+          "s1Region": "UE-1"
+        },
+        "Minia 2": {
+          "seatId": "SEAT-AIF-REP-UE2",
+          "areaCode": "UE2",
+          "repHrId": "B-79",
+          "repName": "Aisha Ehab Mamdouh Hussein",
+          "seatVacantToday": false,
+          "dmSeatId": null,
+          "dmHrId": null,
+          "s1Dm": "Nosiba Salah",
+          "s1Region": "UE-1"
+        },
+        "Assiut 1": {
+          "seatId": "SEAT-AIF-REP-UE3",
+          "areaCode": "UE3",
+          "repHrId": "B-187",
+          "repName": "Atef Sherif Mahmoud Kamel",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        },
+        "Assiut 2": {
+          "seatId": "SEAT-AIF-REP-UE4",
+          "areaCode": "UE4",
+          "repHrId": "B-13",
+          "repName": "Rana Adel Abdelmoly aly",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        },
+        "Qena 1": {
+          "seatId": "SEAT-AIF-REP-UE7",
+          "areaCode": "UE7",
+          "repHrId": "B-152",
+          "repName": "Nada Osama Nouby Hussein",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        },
+        "Qena 2": {
+          "seatId": "SEAT-AIF-REP-UE8",
+          "areaCode": "UE8",
+          "repHrId": "B-189",
+          "repName": "Ghada Mohamed Abdelwahab Ismaiel",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        },
+        "Sohag 1": {
+          "seatId": "SEAT-AIF-REP-UE5",
+          "areaCode": "UE5",
+          "repHrId": "B-151",
+          "repName": "Maria Sobhy Boshra Zakian",
+          "seatVacantToday": false,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        },
+        "Sohag 2": {
+          "seatId": "SEAT-AIF-REP-UE6",
+          "areaCode": "UE6",
+          "repHrId": null,
+          "repName": null,
+          "seatVacantToday": true,
+          "dmSeatId": "SEAT-AIF-DM-UE-2",
+          "dmHrId": "B-175",
+          "s1Dm": "Ahmed Nashaat",
+          "s1Region": "UE-2"
+        }
+      },
+      "unmappedAreas": [
+        "Cairo Others",
+        "Down town",
+        "Dakahlia 4",
+        "Sharkia",
+        "Giza Others",
+        "October - Zayed",
+        "Fayoum",
+        "Ismailia-Suez",
+        "Luxor - Aswan",
+        "Main Store",
+        "Qal",
+        "Bani suef"
+      ]
+    }
+  },
+  "viewers": {
+    "AA": {
+      "hrId": "AA",
+      "name": "Anwar Gaweesh",
+      "role": "CEO",
+      "scope": "company",
+      "line": null,
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "A-9": {
+      "hrId": "A-9",
+      "name": "Hossam Mohamed Reda AboElftouh",
+      "role": "Marketing Manager",
+      "scope": "company",
+      "line": null,
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "A-2": {
+      "hrId": "A-2",
+      "name": "Khaled Mohamed Ali Bedair",
+      "role": "SFE Manager",
+      "scope": "company",
+      "line": null,
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-10": {
+      "hrId": "B-10",
+      "name": "Omar Anwar Ibrahim Ahmed Gawish",
+      "role": "Super Admin",
+      "scope": "company",
+      "line": null,
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "PHX-1": {
+      "hrId": "PHX-1",
+      "name": "Phoenix System Administrator",
+      "role": "Super Admin",
+      "scope": "company",
+      "line": null,
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "PD-0001": {
+      "hrId": "PD-0001",
+      "name": "Hany Saad Mohamed Omar",
+      "role": "Regional Manager",
+      "scope": "dmSeats",
+      "line": "pedia",
+      "dmSeatId": null,
+      "rsmSeatId": "SEAT-PED-RSM",
+      "note": "scope = DM seats under their RSM node (org tree), not a region label — per PR #1479",
+      "dmSeatIds": [
+        "SEAT-PED-DM-D2",
+        "SEAT-PED-DM-AB",
+        "SEAT-PED-DM-D1"
+      ]
+    },
+    "B-175": {
+      "hrId": "B-175",
+      "name": "Ahmed Nashaat Ali Ahmed",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "anti",
+      "dmSeatId": "SEAT-AIF-DM-UE-2",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-12": {
+      "hrId": "B-12",
+      "name": "Dina Hamdy Fadel Mohamed Bdair",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "anti",
+      "dmSeatId": "SEAT-AIF-DM-D1",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "AI-0001": {
+      "hrId": "AI-0001",
+      "name": "Momen Abdelhady Mohamed Shehata",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "anti",
+      "dmSeatId": "SEAT-AIF-DM-CA",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-76": {
+      "hrId": "B-76",
+      "name": "Salim Salim Abdo Ibrahim Gomaa",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "anti",
+      "dmSeatId": "SEAT-AIF-DM-D2",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-156": {
+      "hrId": "B-156",
+      "name": "Sara Samir Jacoub Yohana",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "anti",
+      "dmSeatId": "SEAT-AIF-DM-AB",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-118": {
+      "hrId": "B-118",
+      "name": "Amgad Ibrahim Tawfik Farag",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-UE",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-120": {
+      "hrId": "B-120",
+      "name": "Mahmoud El Husseinin Elemam Moslam El Husseinin",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-D1",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-116": {
+      "hrId": "B-116",
+      "name": "Mina Farouk Nawar Rizkallah",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-CA",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-119": {
+      "hrId": "B-119",
+      "name": "Saad Mohamed Saad Salama",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-AB",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-184": {
+      "hrId": "B-184",
+      "name": "Sally Saied Sedhom Mankrios Sedhom",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-D2",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-117": {
+      "hrId": "B-117",
+      "name": "Sameh Shabaan El Hoseiny El Hoseiny",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "cns",
+      "dmSeatId": "SEAT-CNS-DM-GZ",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-74": {
+      "hrId": "B-74",
+      "name": "Ahmed Mohamed Ahmed Mohamed Abdallah",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "pedia",
+      "dmSeatId": "SEAT-PED-DM-AB",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-5": {
+      "hrId": "B-5",
+      "name": "Ahmed Mohamed Ahmed Mohamed Heikal",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "pedia",
+      "dmSeatId": "SEAT-PED-DM-D2",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-154": {
+      "hrId": "B-154",
+      "name": "Nermeen Salah Abdelaty Abohussien",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "pedia",
+      "dmSeatId": "SEAT-PED-DM-D1",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-94": {
+      "hrId": "B-94",
+      "name": "Taha Mohamed Taha Elsayed AboElftouh",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "pedia",
+      "dmSeatId": "SEAT-PED-DM-GZ",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-23": {
+      "hrId": "B-23",
+      "name": "Yehya Mohamed Kamal eldeen Saad Mohamed",
+      "role": "District Manager",
+      "scope": "ownDm",
+      "line": "pedia",
+      "dmSeatId": "SEAT-PED-DM-UE",
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "A-10": {
+      "hrId": "A-10",
+      "name": "Nahed Tarek Hassan Omar Hattab",
+      "role": "Product Manager",
+      "scope": "line",
+      "line": "anti",
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-122": {
+      "hrId": "B-122",
+      "name": "Amr Mohamed Naguib Elsabey",
+      "role": "National Sales Manager",
+      "scope": "line",
+      "line": "cns",
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "B-155": {
+      "hrId": "B-155",
+      "name": "Ahmed Sharaf Eldeen Ahmed Gad Elkareem",
+      "role": "Product Manager",
+      "scope": "line",
+      "line": "pedia",
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "A-12": {
+      "hrId": "A-12",
+      "name": "Ali Mohamed Ali Elsayed",
+      "role": "National Sales Manager",
+      "scope": "line",
+      "line": "pedia",
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    },
+    "A-8": {
+      "hrId": "A-8",
+      "name": "Rasha Sabry Sayed Khalifa",
+      "role": "Group Product Manager",
+      "scope": "line",
+      "line": "pedia",
+      "dmSeatId": null,
+      "rsmSeatId": null,
+      "note": ""
+    }
+  },
+  "roleGaps": [
+    {
+      "line": "Pedia",
+      "seat": "SEAT-PED-DM-CA",
+      "tier": "DM",
+      "hr": "PD-0006",
+      "name": "Ahmed Mohamed Nagy",
+      "job": "District Sales Manager",
+      "appRole": "Employee",
+      "active": "true",
+      "expected": "District Manager",
+      "note": "login role is \"Employee\" but the seat is DM — they will NOT get District Manager access"
+    }
+  ]
+}

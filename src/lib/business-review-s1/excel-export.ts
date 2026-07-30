@@ -158,13 +158,13 @@ function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) 
     r += 1;
   };
   kpi("Company achievement", T.allProducts.ach ?? 0, "sum(sales) / sum(target) — never an average of line %s", "pct", T.allProducts.ach);
-  kpi("Sales", T.allProducts.sales, "all products, all bricks", "egp");
+  kpi("Sales", T.allProducts.sales, "all products, all areas", "egp");
   kpi("Target", T.allProducts.target, "", "egp");
   kpi("Doctors reached", T.customersTotal, company.meta.doctorNote);
   kpi("Visits", T.visits, `${T.reps} reps · ${T.doubleVisits} double visits`);
   kpi("Marketing", T.marketingCost, "GM-approved only (committed spend)", "egp");
   kpi("Outstation expenses", T.outstationCost, "rejected claims excluded", "egp");
-  kpi("Bricks", T.areas, `${T.areasVacant} vacant (${Math.round((100 * T.areasVacant) / Math.max(1, T.areas))}%)`);
+  kpi("Areas", T.areas, `${T.areasVacant} vacant (${Math.round((100 * T.areasVacant) / Math.max(1, T.areas))}%)`);
 
   r += 1;
   const h = sheet.getCell(r, 1);
@@ -174,7 +174,7 @@ function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) 
   const notes = [
     "Achievement is always all-products (include + exclude) as stored in the verified dataset.",
     "≥ 90% unlocks incentive per the locked 2026 scheme; payout % comes from that same curve.",
-    "Vacant bricks are never counted as earners and never listed as rep failures — they are a",
+    "Vacant areas are never counted as earners and never listed as rep failures — they are a",
     "coverage gap, so they appear under 'Uncovered'. Their achievement is still shown unchanged.",
     "'N/A' means that line has no CRM visits export at all — it does not mean zero.",
     "Company doctor count is a true cross-line union, not the sum of the three lines.",
@@ -246,7 +246,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, company: S1Company) {
   ];
   const s2 = wb.addWorksheet("Company · DSM league");
   titleBand(s2, dl.length, "DSM LEAGUE TABLE — ALL LINES", `${company.dms.length} target-carrying seats · best first`,
-    "Catch-all 'Others' buckets are excluded: they hold unmanaged bricks, not a manager.");
+    "Catch-all 'Others' buckets are excluded: they hold unmanaged areas, not a manager.");
   headerRow(s2, 4, dl);
   r = 5;
   company.dms.forEach((d, i) => {
@@ -311,12 +311,12 @@ function addLineSheets(wb: ExcelJS.Workbook, line: S1Line, ds: S1Dataset) {
     { label: "Marketing", width: 13, kind: "egp" }, { label: "Mktg months", width: 11, kind: "num" },
     { label: "Expenses", width: 12, kind: "egp" }, { label: "Visits/mo", width: 11, kind: "num" },
     { label: "Doctors", width: 10, kind: "num" }, { label: "Doubles", width: 10, kind: "num" },
-    { label: "Bricks", width: 8, kind: "num" },
+    { label: "Areas", width: 8, kind: "num" },
   ];
   const s1 = wb.addWorksheet(`${label} · DSMs`.slice(0, 31));
   titleBand(s1, dl.length, `${label.toUpperCase()} — DSM LEAGUE TABLE`,
     `${ds.meta.period} · ${seats.length} target-carrying seats`,
-    `≥90% unlocks payout (locked 2026 curve). Fail thresholds: rep brick <${th.repFailBelow}%, DSM <${th.dsmFailBelow}%.`);
+    `≥90% unlocks payout (locked 2026 curve). Fail thresholds: rep area <${th.repFailBelow}%, DSM <${th.dsmFailBelow}%.`);
   headerRow(s1, 4, dl);
   let r = 5;
   seats.forEach((d, i) => {
@@ -330,20 +330,20 @@ function addLineSheets(wb: ExcelJS.Workbook, line: S1Line, ds: S1Dataset) {
     ], { achCols: [5], zebra: i % 2 === 1 });
   });
 
-  // -- Bricks: full list with per-product achievement --
+  // -- Areas: full list with per-product achievement --
   const keyProducts = ds.products.filter((p) => p.include).map((p) => p.product);
   const bc: Col[] = [
-    { label: "Brick / Area", width: 30 }, { label: "Region", width: 13 }, { label: "DSM", width: 24 },
+    { label: "Area", width: 30 }, { label: "Region", width: 13 }, { label: "DSM", width: 24 },
     { label: "Status", width: 10 }, { label: "Classification", width: 18 },
     { label: "Achievement %", width: 14, kind: "pct" }, { label: "Payout %", width: 11, kind: "num" },
     { label: "Sales", width: 14, kind: "egp" }, { label: "Target", width: 14, kind: "egp" },
     ...keyProducts.map((p) => ({ label: `${p} %`, width: 15, kind: "pct" as const })),
     { label: "Returns?", width: 10 },
   ];
-  const s2 = wb.addWorksheet(`${label} · Bricks`.slice(0, 31));
-  titleBand(s2, bc.length, `${label.toUpperCase()} — EVERY BRICK`,
-    `${ds.areas.length} bricks · ${ds.areas.filter((a) => a.vacant).length} vacant`,
-    "Classification uses the same rules as the dashboard: a vacant brick is never an earner or a rep failure.");
+  const s2 = wb.addWorksheet(`${label} · Areas`.slice(0, 31));
+  titleBand(s2, bc.length, `${label.toUpperCase()} — EVERY AREA`,
+    `${ds.areas.length} areas · ${ds.areas.filter((a) => a.vacant).length} vacant`,
+    "Classification uses the same rules as the dashboard: a vacant area is never an earner or a rep failure.");
   headerRow(s2, 4, bc);
   r = 5;
   const classify = (a: AreaSummary) => {
@@ -480,7 +480,7 @@ const fmt = (n: number) => `EGP ${Math.round(n).toLocaleString("en-US")}`;
 
 // ============================== SUMMARY (one page) ==============================
 /** Executive one-pager: the headline numbers, the line table and the full DSM ranking —
- * no per-brick, per-product or per-month detail. Same stored values as the full
+ * no per-area, per-product or per-month detail. Same stored values as the full
  * workbook, so the two can never disagree. */
 function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View) {
   const isCompany = view === "company";
@@ -492,7 +492,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View)
     isCompany ? "PHOENIX · S1 2026 BUSINESS REVIEW — EXECUTIVE SUMMARY"
               : `PHOENIX · S1 2026 — ${getS1Dataset(view).meta.line.toUpperCase()} EXECUTIVE SUMMARY`,
     `${company.meta.period} · ${isCompany ? "3 lines consolidated" : `${getS1Dataset(view).meta.line} line`}`,
-    "≥90% unlocks incentive (locked 2026 curve). Vacant bricks are a coverage gap, never an earner or a rep failure.",
+    "≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.",
   );
   [26, 16, 16, 14, 14, 13, 11, 11, 24].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
@@ -530,7 +530,7 @@ function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View)
   kpi("Sales", sales, `of ${fmt(target)} target`, "egp");
   kpi("Marketing + expenses", mkt + outn, `${fmt(mkt)} marketing + ${fmt(outn)} outstation`, "egp");
   kpi("Visits", visAvail ? visits : "N/A", visAvail ? `${docs.toLocaleString("en-US")} doctors reached` : "no CRM visits export for this line");
-  kpi("Bricks", areas, `${vac} vacant (${Math.round((100 * vac) / Math.max(1, areas))}% uncovered)`);
+  kpi("Areas", areas, `${vac} vacant (${Math.round((100 * vac) / Math.max(1, areas))}% uncovered)`);
 
   // line comparison (company scope only)
   if (isCompany) {

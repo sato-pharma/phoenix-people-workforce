@@ -23,7 +23,7 @@ Audit findings baked in (2026-07-30):
     like the Stores channel in other months (Stores is absent in June; Discount has the
     same 43-row-per-month shape). Treated as real revenue and included, consistent with
     Retail+Stores being included on the other two lines.
-  - DM seats: 5 real DMs + 2 VACANT DM SEATS (unlike CNS, where only bricks were
+  - DM seats: 5 real DMs + 2 VACANT DM SEATS (unlike CNS, where only areas were
     vacant). Sheet1's DM->DM2 map resolves 2 handovers and 2 spelling variants:
       Kareem.Gamal    -> Momen.Abdelhady   (Cairo, handover)
       Ahmed Abdelazeem-> Ahmed Nashaat     (UE-2, handover)
@@ -32,7 +32,7 @@ Audit findings baked in (2026-07-30):
       Heba Abdelbaset -> Giza              (seat VACANT, falls back to region label)
     Vacant seats are surfaced as '<Region> (vacant)' the same way Pedia shows
     'Cairo (vacant)' — no resigned employee's name is displayed.
-  - 24 of 44 bricks are vacant (Sheet1 Area/status block, which also lists 2 areas with
+  - 24 of 44 areas are vacant (Sheet1 Area/status block, which also lists 2 areas with
     no sales rows at all — harmless, and 2 whitespace-duplicate rows that normalize away).
   - Marketing: 6 Anti requesters in Req jan june s1.xlsx, all attributed by person name.
     Validation: 277,450 (Pedia) + 68,681 (CNS) + 150,640 (Anti) = 496,771 = the file's
@@ -171,7 +171,7 @@ for dm,g in t.groupby('dm'):
     ga=g[~g['vac']]; incSa,incTa,_,_=agg(ga)
     prod={p: slc(dps.loc[dm,p] if p in dps.columns else 0, dpt.loc[dm,p] if p in dpt.columns else 0) for p in INCLUDE}
     fam={f: ach(dfs.loc[dm,f] if (dm in dfs.index and f in dfs.columns) else 0, dft.loc[dm,f] if (dm in dft.index and f in dft.columns) else 0) for f in FAMILIES}
-    # A DM is vacant if the SEAT itself is vacant, or every one of its bricks is.
+    # A DM is vacant if the SEAT itself is vacant, or every one of its areas is.
     dmreg=str(g['Column2'].mode().iat[0]).strip() if not g['Column2'].mode().empty else ''
     dms.append(dict(dm=dm, region=dmreg, vacant=bool(dm in VACANT_SEATS or g['vac'].all()),
         areas=sorted(set(re.sub(r'\s+',' ',str(x).strip()) for x in g['Sys'].unique())),
@@ -354,7 +354,7 @@ dataset=dict(
                            family="derived from PRODUCT; source Family col mislabels Royafloxacin as 'Dolabactin' in Jan+Feb",
                            discount="June 'Discount' channel included — real discounted-price revenue, zero-target like Stores",
                            marketing="Approved by GM only; 5 of 6 Anti requesters map to seats",
-                           vacant="2 vacant DM seats (Alex-BHR, Giza) + 24 of 44 bricks vacant")),
+                           vacant="2 vacant DM seats (Alex-BHR, Giza) + 24 of 44 areas vacant")),
     line=line, products=products, dms=dms, areas=areas,
     marketing=marketing, outstation=outstation, visits=visits, doubleVisits=doubles)
 with open(os.path.join(OUT_DIR,"anti-s1.json"),"w",encoding="utf-8") as f:

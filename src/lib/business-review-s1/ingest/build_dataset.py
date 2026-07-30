@@ -24,9 +24,9 @@ INCLUDE = ['Guamusin','Ivyronc','Lacto Advanced 1','Lacto Advanced 2']
 SHORT = {'Guamusin':'Guamusin','Ivyronc':'Ivyronc','Lacto Advanced 1':'Lacto Advanced 1','Lacto Advanced 2':'Lacto Advanced 2'}
 EXC_VALUE = 20000 * 14.0
 VACANT_DM = 'Cairo (vacant)'
-# Rep-area (brick) vacancies in the Pedia line — owner-provided 2026-07-29, plus
-# 'Dokki - Mohandseen - Bolak' added 2026-07-30. These bricks have no assigned rep;
-# vacancy never changes an achievement number, it only reclassifies the brick out of
+# Rep-area (area) vacancies in the Pedia line — owner-provided 2026-07-29, plus
+# 'Dokki - Mohandseen - Bolak' added 2026-07-30. These areas have no assigned rep;
+# vacancy never changes an achievement number, it only reclassifies the area out of
 # rep-failure lists and into "uncovered territory" (and lets the toggle hide it).
 VACANT_AREAS = [
     'Assiut 1','Bani suef','Alex Center 1','Nasr City','Cairo East 2','Kafr El-Sheikh',
@@ -61,7 +61,7 @@ VAC_NORM={ngeo(x) for x in VACANT_AREAS}
 def is_vac(area): return ngeo(area) in VAC_NORM
 t['vac']=t['Med RepArea'].apply(is_vac)
 ti=t[t['inc']]
-tia=ti[~ti['vac']]  # include products, active (non-vacant) bricks
+tia=ti[~ti['vac']]  # include products, active (non-vacant) areas
 
 def agg(df):
     inc=df[df['inc']]

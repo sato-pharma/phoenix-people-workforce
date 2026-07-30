@@ -94,6 +94,11 @@ export type EmployeePortalNavVisibility = {
   // DM/RM/NSM view; editing and upload stay with SFE Manager / Super Admin on /sales/targets).
   // Must stay in sync with PORTAL_TARGETS_ROLES in src/lib/sales/portal-targets.ts, the page gate.
   showTargetsTab?: boolean;
+  // S1 Business Review — the portal-scoped view of /business-review-s1, at
+  // /employee-portals/business-review-s1. Same field-management role set as Source of Sales;
+  // the page itself resolves each viewer's scope from the seat map (portal-scope.ts) and denies
+  // anyone not in the access map, so this flag only surfaces the sidebar link.
+  showBusinessReviewS1Tab?: boolean;
   showCoachingAnalyticsTab?: boolean;
   showDoubleVisitAnalyticsTab?: boolean;
   showDoubleVisitReportTab?: boolean;
@@ -466,6 +471,16 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||
       isNationalSalesManager,
+    // Same role set as Source of Sales / Weekly Sales — every field-management role, no Medical
+    // Rep (owner ruling: this module is managers-only). CEO/SFE/Super Admin reach it through the
+    // admin shell instead.
+    showBusinessReviewS1Tab:
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
     showCoachingAnalyticsTab: showSalesIntelligence,
     showDoubleVisitAnalyticsTab: showSalesIntelligence || isTrainingManager,
     // Double Visit Report — sidebar link mirrors the page's own DV_FOCUS_ROLES access gate

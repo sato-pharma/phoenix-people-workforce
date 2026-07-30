@@ -209,6 +209,7 @@ function buildEmployeePortalSections({
   showTerritoryManagementTab = false,
   showTargetsTab = false,
   showMarketingRoiTrackingTab = false,
+  showBusinessReviewS1Tab = false,
   showDoubleVisitAnalyticsTab = false,
   showDoubleVisitReportTab = false,
   showCoachingAnalyticsTab = false,
@@ -278,6 +279,7 @@ function buildEmployeePortalSections({
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
+        ...(showBusinessReviewS1Tab ? [{ href: "/employee-portals/business-review-s1", label: "S1 Business Review", icon: ChartColumnBig }] : []),
         ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Territory & Sales Drilldown", icon: MapPinned }] : []),
         // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the
         // Drilldown above. The page and its API routes already existed and were scope-guarded, but

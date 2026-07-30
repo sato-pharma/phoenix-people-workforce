@@ -731,6 +731,12 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Portal counterpart of /business-review-s1, scoped per viewer. Medical Rep is deliberately
+      // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it
+      // through the admin entry instead, since that is the shell they land in.
+      // The real gate is the access map in src/lib/business-review-s1/portal-scope.ts; this list is
+      // UX only, and a role here with no seat in that map still resolves to no access.
+      { href: "/employee-portals/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.

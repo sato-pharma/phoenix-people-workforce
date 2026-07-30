@@ -41,7 +41,7 @@ export default async function BusinessReviewS1Page({ searchParams }: PageProps) 
   const view: S1View = isS1View(requested) ? requested : DEFAULT_S1_VIEW;
   const company = getS1Company();
 
-  // The company rollup is cross-line: it consolidates every line's bricks and DM seats
+  // The company rollup is cross-line: it consolidates every line's areas and DM seats
   // instead of loading a single per-line dataset.
   if (view === "company") {
     return (

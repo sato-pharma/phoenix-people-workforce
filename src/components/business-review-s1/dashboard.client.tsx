@@ -15,7 +15,7 @@ type CoDmRow = DmRow & LineTag & { keyProducts: string[]; families: string[]; vi
 type CoAreaRow = AreaRow & LineTag;
 type Thresholds = { repFailBelow: number; dsmFailBelow: number };
 type Shared = { viewerRole: string; company: S1Company };
-/** Discriminated on `view`: the company rollup consolidates every line's bricks and DM
+/** Discriminated on `view`: the company rollup consolidates every line's areas and DM
  * seats; a line view carries exactly one dataset. Keeps each branch free of null checks. */
 type Props =
   | ({
@@ -93,7 +93,7 @@ function ExportButtons({ view }: { view: S1View }) {
         Summary
       </a>
       <a href={`/api/business-review-s1/export?line=${view}`} className={base}
-        title="Full workbook: every brick, product, month and spend line">
+        title="Full workbook: every area, product, month and spend line">
         <Download className="size-4" aria-hidden />
         Full Excel
       </a>
@@ -152,7 +152,7 @@ function CompanyDashboard({
       </ReviewHeader>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="Company achievement" value={pct(T.allProducts.ach)} sub="all 3 lines · all bricks" accent={achColor(T.allProducts.ach)} />
+        <Kpi label="Company achievement" value={pct(T.allProducts.ach)} sub="all 3 lines · all areas" accent={achColor(T.allProducts.ach)} />
         <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={`of ${egp(T.allProducts.target)}`} />
         <Kpi label="Doctors reached" value={num(T.customersTotal)} sub="unique across all lines" />
         <Kpi label="Marketing + exp." value={egp(T.marketingCost + T.outstationCost)} sub={`${egp(T.marketingCost)} + ${egp(T.outstationCost)}`} />
@@ -182,8 +182,8 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine }: Extrac
 
   const vDms = useMemo(() => (excludeVacant ? dms.filter((d) => !d.vacant) : dms), [dms, excludeVacant]);
   const vAreas = useMemo(() => (excludeVacant ? areas.filter((a) => !a.vacant) : areas), [areas, excludeVacant]);
-  // Achievement % is ALWAYS computed on all bricks — vacancy never changes a number.
-  // The Exclude-vacant toggle only hides vacant bricks/DMs from the displayed lists.
+  // Achievement % is ALWAYS computed on all areas — vacancy never changes a number.
+  // The Exclude-vacant toggle only hides vacant areas/DMs from the displayed lists.
   const line = ds.line.allProducts;
   const rankedDms = useMemo(
     () => vDms.filter((d) => d.allProducts.target > 0).sort((a, b) => (b.allProducts.ach ?? -1) - (a.allProducts.ach ?? -1)),
@@ -207,7 +207,7 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine }: Extrac
       </ReviewHeader>
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Kpi label="Line achievement" value={pct(line.ach)} sub="all bricks · all products" accent={achColor(line.ach)} />
+        <Kpi label="Line achievement" value={pct(line.ach)} sub="all areas · all products" accent={achColor(line.ach)} />
         <Kpi label="Sales (total)" value={egp(line.sales)} sub={`of ${egp(line.target)}`} />
         <Kpi label="Doctors reached" value={numOrNA(ds.line.customersTotal, ds.visits.available)} sub={ds.visits.available ? `${num(ds.line.customersByMonth[M[0]])} → ${num(ds.line.customersByMonth[M[M.length - 1]])} /mo` : "no CRM export for this line"} />
         <Kpi label="Marketing cost" value={egp(ds.line.marketingCost)} sub="GM-approved only" />
@@ -257,9 +257,9 @@ const TD = "px-3 py-2 text-sm";
 const TDR = "px-3 py-2 text-sm text-right tabular-nums";
 
 function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: AreaRow[]; visitsAvailable: boolean }) {
-  // Vacant bricks never count as earners — no rep held the territory, so residual
+  // Vacant areas never count as earners — no rep held the territory, so residual
   // pharmacy-stock sales aren't an earned achievement. Mirrors how FailsTab excludes
-  // vacant bricks from failures and lists them separately as uncovered territory.
+  // vacant areas from failures and lists them separately as uncovered territory.
   const earners = areas.filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 0) >= 90).sort((a, b) => (b.allProducts.ach ?? 0) - (a.allProducts.ach ?? 0));
   return (
     <div className="space-y-4">
@@ -288,7 +288,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
         </table>
       </Section>
 
-      <Section title={`Incentive earners — bricks ≥ 90% (${earners.length})`} note="threshold to unlock payout">
+      <Section title={`Incentive earners — areas ≥ 90% (${earners.length})`} note="threshold to unlock payout">
         <table className="w-full min-w-[620px] border-collapse">
           <thead><tr className="border-b border-border"><th className={TH}>Area</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={TH}>Band</th><th className={THR}>Payout</th></tr></thead>
           <tbody>
@@ -301,7 +301,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
                 <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
               </tr>
             ))}
-            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={5}>No brick reached the 90% threshold in this view.</td></tr>}
+            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={5}>No area reached the 90% threshold in this view.</td></tr>}
           </tbody>
         </table>
       </Section>
@@ -310,7 +310,7 @@ function AchieversTab({ dms, areas, visitsAvailable }: { dms: DmRow[]; areas: Ar
 }
 
 function FailsTab({ dms, areas, thresholds, keyProducts }: { dms: DmRow[]; areas: AreaRow[]; thresholds: { repFailBelow: number; dsmFailBelow: number }; keyProducts: string[] }) {
-  // Vacant bricks are NEVER failures — always excluded from the fail lists and shown
+  // Vacant areas are NEVER failures — always excluded from the fail lists and shown
   // separately as uncovered territory (visible only when vacant rows aren't toggled off).
   const failDms = dms.filter((d) => !d.vacant && (d.allProducts.ach ?? 999) < thresholds.dsmFailBelow);
   const failAreas = areas.filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 999) < thresholds.repFailBelow).sort((a, b) => (a.allProducts.ach ?? 0) - (b.allProducts.ach ?? 0));
@@ -334,7 +334,7 @@ function FailsTab({ dms, areas, thresholds, keyProducts }: { dms: DmRow[]; areas
         </table>
       </Section>
 
-      <Section title={`Rep bricks below ${thresholds.repFailBelow}% (${failAreas.length})`} note="per-product achievement + trend">
+      <Section title={`Rep areas below ${thresholds.repFailBelow}% (${failAreas.length})`} note="per-product achievement + trend">
         <table className="w-full min-w-[880px] border-collapse">
           <thead><tr className="border-b border-border">
             <th className={TH}>Area</th><th className={TH}>DSM</th><th className={TH}>Total</th>
@@ -355,7 +355,7 @@ function FailsTab({ dms, areas, thresholds, keyProducts }: { dms: DmRow[]; areas
       </Section>
 
       {uncovered.length > 0 && (
-        <Section title={`Uncovered bricks — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
+        <Section title={`Uncovered areas — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
           <table className="w-full min-w-[520px] border-collapse">
             <thead><tr className="border-b border-border"><th className={TH}>Area</th><th className={TH}>DSM</th><th className={THR}>Achievement</th></tr></thead>
             <tbody>{uncovered.map((a) => (
@@ -538,7 +538,7 @@ const LineChip = ({ line }: { line: string }) => (
 
 function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms: CoDmRow[]; areas: CoAreaRow[] }) {
   const T = company.total;
-  // Same rule as a line view: vacant bricks never count as earners.
+  // Same rule as a line view: vacant areas never count as earners.
   const earners = areas
     .filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 0) >= 90)
     .sort((a, b) => (b.allProducts.ach ?? 0) - (a.allProducts.ach ?? 0));
@@ -611,7 +611,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms:
         </table>
       </Section>
 
-      <Section title={`Incentive earners — bricks ≥ 90% company-wide (${earners.length})`} note="threshold to unlock payout · vacant bricks excluded">
+      <Section title={`Incentive earners — areas ≥ 90% company-wide (${earners.length})`} note="threshold to unlock payout · vacant areas excluded">
         <table className="w-full min-w-[720px] border-collapse">
           <thead><tr className="border-b border-border">
             <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={TH}>Band</th><th className={THR}>Payout</th>
@@ -627,7 +627,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms:
                 <td className={cn(TDR, "font-semibold")}>{a.payoutPct.toFixed(0)}%</td>
               </tr>
             ))}
-            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No brick reached the 90% threshold in this view.</td></tr>}
+            {earners.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No area reached the 90% threshold in this view.</td></tr>}
           </tbody>
         </table>
       </Section>
@@ -637,7 +637,7 @@ function CompanyAchieversTab({ company, dms, areas }: { company: S1Company; dms:
 
 function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: CoAreaRow[]; thresholds: Thresholds }) {
   // Identical rules to a line view, applied across all three lines at once. Vacant
-  // bricks are never failures — they are surfaced separately as uncovered territory.
+  // areas are never failures — they are surfaced separately as uncovered territory.
   const failDms = dms.filter((d) => !d.vacant && (d.allProducts.ach ?? 999) < thresholds.dsmFailBelow);
   const failAreas = areas
     .filter((a) => !a.vacant && a.hasTarget && (a.allProducts.ach ?? 999) < thresholds.repFailBelow)
@@ -669,7 +669,7 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
       {/* Per-product columns are deliberately omitted here: the three lines sell
           different catalogues, so there is no shared product set to column on. The
           per-line Performance Gaps tab still shows them. */}
-      <Section title={`Rep bricks below ${thresholds.repFailBelow}% company-wide (${failAreas.length})`} note="worst first · per-product detail lives in each line's own tab">
+      <Section title={`Rep areas below ${thresholds.repFailBelow}% company-wide (${failAreas.length})`} note="worst first · per-product detail lives in each line's own tab">
         <table className="w-full min-w-[680px] border-collapse">
           <thead><tr className="border-b border-border">
             <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={TH}>Achievement</th><th className={THR}>Sales</th><th className={TH}>Flag</th>
@@ -685,13 +685,13 @@ function CompanyFailsTab({ dms, areas, thresholds }: { dms: CoDmRow[]; areas: Co
                 <td className={TD}>{a.hasReturns ? <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-600">RETURNS</span> : ""}</td>
               </tr>
             ))}
-            {failAreas.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No rep brick below threshold in this view.</td></tr>}
+            {failAreas.length === 0 && <tr><td className={cn(TD, "text-muted-foreground")} colSpan={6}>No rep area below threshold in this view.</td></tr>}
           </tbody>
         </table>
       </Section>
 
       {uncovered.length > 0 && (
-        <Section title={`Uncovered bricks — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
+        <Section title={`Uncovered areas — vacant, no rep (${uncovered.length})`} note="excluded from failures · coverage gap, not a rep failure">
           <table className="w-full min-w-[620px] border-collapse">
             <thead><tr className="border-b border-border">
               <th className={TH}>Area</th><th className={TH}>Line</th><th className={TH}>DSM</th><th className={THR}>Achievement</th>
