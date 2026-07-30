@@ -45,9 +45,31 @@ jobs:
       - name: Check migrations are actually applied (staging)
         run: pnpm run check:migrations-applied
         env:
-          # Staging is the only project with a CI-wired credential today. Per the
-          # established "everything lands on staging before production" workflow,
-          # staging drift is a reliable proxy — if a migration never reached
-          # staging, it almost certainly never reached production either.
           NEXT_PUBLIC_SUPABASE_URL: "https://cifwmndunmlxjhyjugxa.supabase.co"
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+
+      # Production is the leg that actually matters, and it was missing until 2026-07-30.
+      # Staging-only was justified as a proxy ("if it never reached staging it never reached
+      # production"), but the documented workflow is staging-FIRST — production apply needs
+      # separate explicit approval per AGENTS.md — so the normal drift is applied-on-staging /
+      # missing-on-production, which the staging leg reports as green. That is not theoretical:
+      # on 2026-07-30 the staging leg had been passing daily for days while production was
+      # missing 20260725180000_analytics_dim_products_exclude_head_office.sql, leaving
+      # Head-Office-line products readable by non-CEO analytics consumers.
+      #
+      # `always()` so a staging failure never hides the production answer — the two legs report
+      # independently. Read-only: the script's only call is the phx_ci_migration_versions RPC.
+      - name: Check migrations are actually applied (production)
+        if: ${{ always() && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
+        run: pnpm run check:migrations-applied
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://ozucdzovmcqvepbozvqf.supabase.co"
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY }}
+
+      # Without this the production leg would just show as "skipped" — indistinguishable from
+      # "ran and passed" at a glance, which is the same class of silent-green this whole
+      # workflow exists to prevent.
+      - name: Warn when the production leg could not run
+        if: ${{ always() && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY == '' }}
+        run: |
+          echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — production migration drift was NOT checked. Only staging was verified. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the production leg."
