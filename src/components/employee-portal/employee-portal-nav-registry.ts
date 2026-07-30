@@ -85,6 +85,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
   { label: "Drilldown", fullLabel: "Territory & Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
+  { label: "CRM", fullLabel: "CRM", href: "/employee-portals/crm", icon: Database, flags: ["showCrmMasterTab"] },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"] },
   { label: "ROI Tracker", fullLabel: "Marketing ROI Tracker", href: "/employee-portals/roi-tracker", icon: Target, flags: ["showMarketingRoiTrackingTab"] },

@@ -90,6 +90,10 @@ export type EmployeePortalNavVisibility = {
   // TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the server-side gate
   // this flag must stay in sync with).
   showTerritoryDrilldownTab?: boolean;
+  // Scoped CRM Master (/employee-portals/crm) — the full CRM grid + export, row-bounded to the
+  // caller's own scope. Mirrors PORTAL_CRM_ROLES in src/lib/crm/portal-crm-scope.ts (the enforcing
+  // gate); spelled out here because that module pulls in the Supabase server client.
+  showCrmMasterTab?: boolean;
   // Territory Management — the brick-allocation / rep-residence map at
   // /employee-portals/territory-management. A DIFFERENT module from Territory & Sales Drilldown
   // above: this one compares multiple areas' bricks against each other, which is why Medical Rep
@@ -462,6 +466,14 @@ export function resolveEmployeePortalNavVisibility(
       isGroupProductManager ||
       isMarketingManager,
     showTerritoryDrilldownTab:
+      isMedicalRep ||
+      resolvedRole === "District Manager" ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager,
+    // Mirrors PORTAL_CRM_ROLES exactly (Medical Rep / DSM / RM / NSM). Uses the explicit
+    // "District Manager" check, NOT isDistrictManager, so the Head-Office "Manager" rung — which has
+    // no field reps and would get an empty grid — is excluded, matching the page's own gate.
+    showCrmMasterTab:
       isMedicalRep ||
       resolvedRole === "District Manager" ||
       resolvedRole === "Regional Manager" ||

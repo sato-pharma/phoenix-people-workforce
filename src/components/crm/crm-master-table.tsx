@@ -70,7 +70,20 @@ function RecognitionBadge({ missing, score }: { missing: unknown; score: unknown
 const FILTER_FIELD = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
 const FILTER_INPUT = "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
 
-export function CrmMasterTable({ data }: { data: CrmMasterData }) {
+export function CrmMasterTable({
+  data,
+  // Defaults keep the admin page byte-for-byte unchanged; the portal page overrides both.
+  exportPath = "/api/admin/crm/master-export",
+  // The Mapping filter selects agent_mapped/agent_unmapped rows — a Super-Admin data-governance tool.
+  // `agent_unmapped` is agent_hr_id IS NULL, which can never be in a scoped allow-set, so a scoped
+  // viewer would always get zero. Hidden for the portal (the server also forces it off, so this is
+  // only the UX half).
+  showMappingFilter = true,
+}: {
+  data: CrmMasterData;
+  exportPath?: string;
+  showMappingFilter?: boolean;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -260,7 +273,7 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
       params.set("dataset", data.dataset);
       params.delete("page");
       params.delete("pageSize");
-      const response = await fetch(`/api/admin/crm/master-export?${params.toString()}`);
+      const response = await fetch(`${exportPath}?${params.toString()}`);
       if (!response.ok) {
         // The stream only starts after the server has passed auth + started the query, so a non-ok
         // response is always a JSON error body here — surface its message, not a bare status.
@@ -385,18 +398,20 @@ export function CrmMasterTable({ data }: { data: CrmMasterData }) {
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Mapping
-                <select
-                  className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-                  onChange={(event) => setMappingValue(event.target.value as CrmMasterMappingStatus)}
-                  value={mappingValue}
-                >
-                  <option value="all">All</option>
-                  <option value="agent_mapped">Agent mapped</option>
-                  <option value="agent_unmapped">Agent unmapped</option>
-                </select>
-              </label>
+              {showMappingFilter ? (
+                <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Mapping
+                  <select
+                    className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                    onChange={(event) => setMappingValue(event.target.value as CrmMasterMappingStatus)}
+                    value={mappingValue}
+                  >
+                    <option value="all">All</option>
+                    <option value="agent_mapped">Agent mapped</option>
+                    <option value="agent_unmapped">Agent unmapped</option>
+                  </select>
+                </label>
+              ) : null}
             </>
           ) : null}
           {isVacations ? (
