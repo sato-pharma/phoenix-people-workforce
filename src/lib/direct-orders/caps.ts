@@ -73,8 +73,16 @@ export function resolveDiscountCapPct(caps: DirectOrderCaps, productCode: string
 // ── Admin CRUD ────────────────────────────────────────────────────────────────
 
 const CAP_VIEW_ROLES = new Set(["Super Admin", "SFE Manager", "CEO"]);
-function canViewCaps(access: AccessContext): boolean {
+/**
+ * Exported so the /admin/direct-orders/caps PAGE can redirect an unauthorized caller instead of
+ * letting listDirectOrderCaps throw into an error boundary (which rendered a crash screen rather
+ * than a clean bounce). listDirectOrderCaps still enforces this itself — the page check is UX.
+ */
+export function canViewDirectOrderCaps(access: AccessContext): boolean {
   return access.scope === "system" || CAP_VIEW_ROLES.has(access.role);
+}
+function canViewCaps(access: AccessContext): boolean {
+  return canViewDirectOrderCaps(access);
 }
 function isSuperAdmin(access: AccessContext): boolean {
   return access.scope === "system" || access.role === "Super Admin";

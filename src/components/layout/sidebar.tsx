@@ -374,6 +374,8 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
       return <NavBadge compact={compact} src="/api/approvals/excuse/pending-count" />;
     case "plan-approvals-pending":
       return <NavBadge compact={compact} src="/api/approvals/plan/pending-count" />;
+    case "direct-orders-approvals-pending":
+      return <NavBadge compact={compact} src="/api/approvals/direct-orders/pending-count" />;
     default:
       return null;
   }

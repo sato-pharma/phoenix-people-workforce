@@ -126,7 +126,12 @@ type EmployeePortalNavItem = {
   icon: typeof Activity;
   // Live pending-count badge (mirrors the admin sidebar's navBadge) — the Vacation/
   // Excuse/Plan Approvals links plus the residual "Other Approvals" inbox carry one.
-  navBadge?: "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
+  navBadge?:
+    | "approvals-hub-pending"
+    | "vacation-approvals-pending"
+    | "excuse-approvals-pending"
+    | "plan-approvals-pending"
+    | "direct-orders-approvals-pending";
 };
 
 type EmployeePortalNavSection = {
@@ -249,7 +254,7 @@ function buildEmployeePortalSections({
         ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
-        ...(showDirectOrdersApprovalsTab ? [{ href: "/employee-portals/approvals/direct-orders", label: "Direct Orders Approvals", icon: ReceiptText }] : []),
+        ...(showDirectOrdersApprovalsTab ? [{ href: "/employee-portals/approvals/direct-orders", label: "Direct Orders Approvals", icon: ReceiptText, navBadge: "direct-orders-approvals-pending" as const }] : []),
         ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Requests Inbox", icon: Inbox }] : []),
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox, navBadge: "approvals-hub-pending" as const }] : []),
       ],
@@ -555,6 +560,7 @@ function EmployeePortalMenu({
                   {item.navBadge === "vacation-approvals-pending" ? <NavBadge src="/api/approvals/vacation/pending-count" /> : null}
                   {item.navBadge === "excuse-approvals-pending" ? <NavBadge src="/api/approvals/excuse/pending-count" /> : null}
                   {item.navBadge === "plan-approvals-pending" ? <NavBadge src="/api/approvals/plan/pending-count" /> : null}
+                  {item.navBadge === "direct-orders-approvals-pending" ? <NavBadge src="/api/approvals/direct-orders/pending-count" /> : null}
                   {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                 </Link>
               );

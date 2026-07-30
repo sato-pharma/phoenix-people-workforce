@@ -217,7 +217,13 @@ export const REJECTION_TEMPLATES: Record<ActionHubModule, Array<{ label: string;
 // with its live approval status. Read-only — the actual approve/reject happens in
 // the "Awaiting my action" inbox or the module's own page.
 
-export type MyRequestModule = "leave" | "excuse" | "outstation" | "weekly_plan" | "resignation";
+export type MyRequestModule =
+  | "leave"
+  | "excuse"
+  | "outstation"
+  | "weekly_plan"
+  | "resignation"
+  | "direct_order";
 
 export type MyRequestStatusTone = "pending" | "approved" | "rejected" | "returned" | "neutral";
 
@@ -244,6 +250,7 @@ export const MY_REQUEST_MODULE_LABELS: Record<MyRequestModule, string> = {
   outstation: "Outstation",
   weekly_plan: "Weekly Plan",
   resignation: "Resignation",
+  direct_order: "Direct Order",
 };
 
 // ── "Approval history" tab (decisions the caller has made) ────────────────────
@@ -258,7 +265,12 @@ export type HistoryApprovalModule =
   | "salary"
   | "sales_import"
   | "marketing_request"
-  | "payroll_expense";
+  | "payroll_expense"
+  // Direct orders belong in THIS wider union, not ActionHubModule: their approve/reject/return is
+  // owner-locked to the dedicated /approvals/direct-orders page as the SOLE gate (2026-07-18), so
+  // they must never appear as an actionable row in the shared inbox. History is read-only, so a
+  // person's cross-module decision record does include them, deep-linked to that native page.
+  | "direct_order";
 
 export const HISTORY_MODULE_LABELS: Record<HistoryApprovalModule, string> = {
   ...ACTION_HUB_MODULE_LABELS,
@@ -266,6 +278,7 @@ export const HISTORY_MODULE_LABELS: Record<HistoryApprovalModule, string> = {
   sales_import: "Sales Import",
   marketing_request: "Marketing",
   payroll_expense: "Expense",
+  direct_order: "Direct Order",
 };
 
 export type HistoricalApprovalItem = {

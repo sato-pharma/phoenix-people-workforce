@@ -568,10 +568,11 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/pending-count", permission: { resource: "leave", action: "read" } }),
   // Batched replacement for the four pending-count polls below (they stay registered
   // and live for other consumers). Each sub-count enforces its own domain guard.
-  sessionApi({ methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }] }),
+  sessionApi({ methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }, { resource: "direct_orders", action: "read" }] }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/vacation/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/excuse/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/plan/pending-count", permission: { resource: "weekly_plans", action: "read" } }),
+  sessionApi({ methods: ["GET"], pattern: "/api/approvals/direct-orders/pending-count", permission: { resource: "direct_orders", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/employee-context", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/hub-data", permission: { resource: "employees", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/managers", permission: { resource: "employees", action: "read" } }),

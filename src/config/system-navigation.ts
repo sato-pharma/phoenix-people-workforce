@@ -88,7 +88,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
+  navBadge?: "direct-orders-approvals-pending" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -260,7 +260,7 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
+      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -676,7 +676,7 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: vacationApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: excuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }] },
+      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",

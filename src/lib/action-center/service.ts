@@ -21,6 +21,8 @@ import {
 } from "@/lib/weekly-planning/service";
 import { getMyResignations, getResignationsDashboardData } from "@/lib/resignations/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { listMyDirectOrders } from "@/lib/direct-orders/service";
+import type { DirectOrderApprovalListItem } from "@/lib/direct-orders/types";
 import type { VacationActionCenterRow, VacationRequestRecord } from "@/lib/vacation/types";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ResignationRecord } from "@/lib/resignations/types";
@@ -142,6 +144,38 @@ function mapResignationRecord(row: ResignationRecord): MyRequestItem {
   };
 }
 
+/** EGP amount formatted the same way every other money line in this hub is. */
+function egp(amount: number): string {
+  return `${Number(amount || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
+}
+
+/** The deal term an approver actually has to judge: bonus units, or a discount percentage. */
+function directOrderDealLine(row: DirectOrderApprovalListItem): { label: string; value: string } {
+  return row.dealType === "discount"
+    ? { label: "Discount", value: `${Number(row.discountPct ?? 0)}%` }
+    : { label: "Bonus", value: `${row.bonus} unit(s)` };
+}
+
+function mapMyDirectOrder(row: DirectOrderApprovalListItem): MyRequestItem {
+  return {
+    id: `direct_order:${row.id}`,
+    module: "direct_order",
+    title: `Direct order · ${row.productName} → ${row.pharmacyName}`,
+    statusLabel: row.status === "pending_approval" && row.activeStepLabel ? `Awaiting ${row.activeStepLabel}` : humanize(row.status),
+    statusTone: toTone(row.status),
+    submittedAt: row.createdAt,
+    href: null,
+    lines: [
+      { label: "Quantity", value: String(row.qty) },
+      directOrderDealLine(row),
+      // Bonus units never enter value — see src/lib/direct-orders/approval-flow.ts.
+      { label: "Sales value", value: egp(row.salesValue) },
+      ...(row.bonusOverCap ? [{ label: "Over cap", value: "Yes — CEO decision required" }] : []),
+    ],
+    decisionNote: null,
+  };
+}
+
 /**
  * Aggregate every request the signed-in employee submitted themselves, across
  * modules, into one uniform list for the Actions "My requests" tab.
@@ -162,9 +196,13 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
     listMedicalRepExpenseRequests(access).catch(() => null),
     getEmployeePlansWorkspace(access).catch(() => null),
     getMyResignations(access).catch(() => null),
+    // listMyDirectOrders already filters to requester_hr_id = the caller and asserts
+    // direct_orders:read, so a role without the resource contributes nothing (catch -> null)
+    // rather than failing the tab — the same per-source tolerance every other entry here uses.
+    listMyDirectOrders(access).catch(() => null),
   ]);
 
-  const [vacation, excuse, outstation, plans, resignations] = settled;
+  const [vacation, excuse, outstation, plans, resignations, directOrders] = settled;
   const items: MyRequestItem[] = [];
 
   if (vacation.status === "fulfilled" && vacation.value) {
@@ -187,6 +225,11 @@ export async function getMyRequestItems(access: AccessContext): Promise<MyReques
   }
   if (resignations.status === "fulfilled" && resignations.value) {
     for (const row of resignations.value) items.push(mapResignationRecord(row));
+  }
+  if (directOrders.status === "fulfilled" && directOrders.value) {
+    for (const row of directOrders.value) {
+      if (hrIdsMatch(row.requesterHrId, hrId)) items.push(mapMyDirectOrder(row));
+    }
   }
 
   items.sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
@@ -456,7 +499,6 @@ export async function getAwaitingMyActionItems(
   if (plans.status === "fulfilled" && plans.value) {
     for (const plan of plans.value) items.push(mapWeeklyPlanItem(plan, employees));
   }
-
   items.sort((a, b) => a.submittedAt.localeCompare(b.submittedAt));
   // Never surface a requester's own submission in their own action inbox — the CEO
   // role can submit requests and those should only appear in "My Requests", not here.
@@ -524,8 +566,25 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
     payroll_expense: "/admin/outstation/expenses",
   } as const;
 
-  const [leaves, excuses, plans, resignations, salaries, salesImports, marketingSteps, expenses, momSteps, directoryResult] =
-    await Promise.allSettled([
+  // Direct orders deep-link to their own dedicated per-request page, which differs by shell.
+  const directOrderHistoryHref = (requestId: unknown) => {
+    const base = isPortal ? "/employee-portals/approvals/direct-orders" : "/admin/approvals/direct-orders";
+    return `${base}/${encodeURIComponent(String(requestId ?? ""))}`;
+  };
+
+  const [
+    leaves,
+    excuses,
+    plans,
+    resignations,
+    salaries,
+    salesImports,
+    marketingSteps,
+    expenses,
+    momSteps,
+    directOrderEvents,
+    directoryResult,
+  ] = await Promise.allSettled([
       db
         .from("v2_vacation_requests")
         .select("id,employee_name,employee_hr_id,vacation_type,start_date,status,manager_decision,manager_decision_at,manager_decision_by_hr_id,hr_decision,hr_decision_at,hr_decision_by_hr_id")
@@ -591,6 +650,17 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         .neq("status", "pending")
         .not("decided_at", "is", null)
         .order("decided_at", { ascending: false })
+        .limit(200),
+      // Direct orders read from the EVENT log, not direct_order_approval_steps: a `return` decision
+      // deliberately leaves the step row untouched (see phx_apply_direct_order_decision), so the
+      // steps table cannot attribute a return to the approver who made it. The event log records
+      // every transition with its actor, so returns show up here too.
+      db
+        .from("direct_order_events")
+        .select("id,request_id,actor_hr_id,event_type,created_at,direct_order_requests(product_name,qty,sales_value,requester_hr_id)")
+        .or(decidedByAnyOfMine("actor_hr_id"))
+        .in("event_type", ["approve", "reject", "return"])
+        .order("created_at", { ascending: false })
         .limit(200),
       getEmployeeDirectory(),
     ]);
@@ -783,6 +853,36 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
         decision: "approved",
         decidedAt: String(row.approved_at ?? ""),
         href: NATIVE_HREFS.payroll_expense,
+      });
+    }
+  }
+
+  if (directOrderEvents.status === "fulfilled" && !directOrderEvents.value.error) {
+    for (const row of directOrderEvents.value.data ?? []) {
+      // The embedded parent can come back as an object or a one-element array depending on how
+      // PostgREST resolves the relationship; normalize both rather than assuming one shape.
+      const rawParent = (row as Record<string, unknown>).direct_order_requests;
+      const parent = (Array.isArray(rawParent) ? rawParent[0] : rawParent) as Record<string, unknown> | null | undefined;
+      const eventType = String(row.event_type ?? "");
+      const decision =
+        eventType === "approve" ? ("approved" as const)
+        : eventType === "reject" ? ("rejected" as const)
+        : eventType === "return" ? ("returned" as const)
+        : null;
+      if (!decision) continue;
+      const requesterHrId = String(parent?.requester_hr_id ?? "");
+      const productName = String(parent?.product_name ?? "Direct order");
+      const qty = Number(parent?.qty ?? 0);
+      const salesValue = Number(parent?.sales_value ?? 0);
+      items.push({
+        id: `history:direct_order:${row.id}`,
+        module: "direct_order",
+        employeeName: liveEmployeeName(employees, requesterHrId, requesterHrId || "Direct order"),
+        employeeHrId: requesterHrId,
+        title: `Direct order · ${productName} · ${qty} unit(s) · ${egp(salesValue)}`,
+        decision,
+        decidedAt: String(row.created_at ?? ""),
+        href: directOrderHistoryHref(row.request_id),
       });
     }
   }

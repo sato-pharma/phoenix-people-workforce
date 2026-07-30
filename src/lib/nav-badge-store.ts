@@ -35,11 +35,14 @@ const channels = new Map<string, Channel>();
 export const BADGE_COUNTS_ENDPOINT = "/api/approvals/badge-counts";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
-const BATCH_KEY_BY_SRC: Record<string, "plan" | "vacation" | "excuse" | "hub"> = {
+const BATCH_KEY_BY_SRC: Record<string, "plan" | "vacation" | "excuse" | "hub" | "directOrders"> = {
   "/api/approvals/plan/pending-count": "plan",
   "/api/approvals/vacation/pending-count": "vacation",
   "/api/approvals/excuse/pending-count": "excuse",
   "/api/approvals-hub/pending-count": "hub",
+  // Without this entry the badge still works, but falls back to its own separate 30s poll
+  // instead of riding the single batched request.
+  "/api/approvals/direct-orders/pending-count": "directOrders",
 };
 
 /** Shared polling infrastructure for every batched channel (one poll serves all). */
@@ -97,7 +100,7 @@ function fetchAndBroadcastBatch(): void {
   batch.inFlight = globalThis
     .fetch(BADGE_COUNTS_ENDPOINT)
     .then((r) => r.json())
-    .then((d: Partial<Record<"plan" | "vacation" | "excuse" | "hub", { count?: number; overdue?: boolean }>>) => {
+    .then((d: Partial<Record<"plan" | "vacation" | "excuse" | "hub" | "directOrders", { count?: number; overdue?: boolean }>>) => {
       for (const [src, key] of Object.entries(BATCH_KEY_BY_SRC)) {
         const slot = d?.[key];
         if (!slot || typeof slot.count !== "number") continue;
