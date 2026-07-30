@@ -1,7 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { ceoHrIds } from "@/lib/employees/role-lookup";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
-import { assertPermission, normalizeHrId, systemAccessContext } from "@/lib/auth/permissions";
+import { assertPermission, normalizeHrId, resolveEmployeeIdentityId, systemAccessContext } from "@/lib/auth/permissions";
 import {
   getEmployeeDirectory,
   type EmployeeDirectoryData,
@@ -854,6 +854,34 @@ export async function reverseDirectOrder(
 
 // ── Reads ─────────────────────────────────────────────────────────────────────
 
+/**
+ * May this viewer READ this single request?
+ *
+ * `direct_orders:read` alone is NOT sufficient: it is held by every requester role, so on its own it
+ * would let any District/Regional/Product Manager fetch ANY order company-wide by id — requester,
+ * pharmacy, doctor, quantities, factory/public price, bonus/discount and sales value included. This
+ * mirrors the tiering the report already applies (resolveDirectOrderReportScope) and additionally
+ * always admits an assigned approver, since someone who must decide a request has to be able to open
+ * it even when the requester sits outside their own reporting subtree.
+ */
+async function canViewDirectOrderRequest(
+  access: AccessContext,
+  request: DirectOrderRequest,
+  steps: DirectOrderStepState[],
+): Promise<boolean> {
+  if (resolveDirectOrderReportScope(access) === "all") return true;
+
+  // An assigned approver (person rung, or the role-resolved CEO rung) may always open the request.
+  const viewerKey = canonicalHrIdKey(access.hrId ?? "");
+  if (viewerKey && steps.some((step) => canonicalHrIdKey(step.approverHrId ?? "") === viewerKey)) return true;
+  if (access.role === "CEO" && steps.some((step) => isCeoStep(step))) return true;
+
+  const requesterKey = canonicalHrIdKey(request.requesterHrId ?? "");
+  if (!requesterKey || !viewerKey) return false;
+  if (resolveDirectOrderReportScope(access) === "own") return requesterKey === viewerKey;
+  return (await resolveVisibleRequesterHrIds(access)).has(requesterKey);
+}
+
 export async function getDirectOrderRequest(
   access: AccessContext,
   requestId: string,
@@ -865,6 +893,10 @@ export async function getDirectOrderRequest(
   if (!data) return null;
   const request = mapRequestRow(data as Record<string, unknown>);
   const steps = await loadSteps(request.id);
+  // Scope guard lives here, at the single read choke point, so every current and future caller
+  // inherits it. Returns null (same as "no such request") rather than throwing, so an out-of-scope
+  // id cannot be used to probe which request ids exist.
+  if (!(await canViewDirectOrderRequest(access, request, steps))) return null;
   return { request, steps };
 }
 
@@ -1190,20 +1222,32 @@ export function resolveDirectOrderReportScope(access: AccessContext): DirectOrde
   return access.role === "Regional Manager" ? "hierarchy" : "own";
 }
 
-/** hrIds visible to the viewer: self + everyone below them in the reporting tree. */
+/**
+ * hrIds visible to the viewer: self + everyone below them in the reporting tree.
+ *
+ * Seat-continuity aware: a report whose own manager resigned is reassigned UPWARD by
+ * `phx_release_terminal_manager_ownership` and stamped with `pending_manager_replacement_for_hr_id`
+ * (the departed manager's HR_ID). Walking `manager_hr_id` alone would therefore drop a whole district
+ * mid-replacement — the orders would silently vanish from the RM's report. Both edges are followed,
+ * matching `isWithinManagerHierarchy` in src/lib/workforce/hierarchy-resolver.ts.
+ */
 async function resolveVisibleRequesterHrIds(access: AccessContext): Promise<Set<string>> {
   const directory = await getEmployeeDirectory();
   const children = new Map<string, string[]>();
+  const addEdge = (parentKey: string | null, childKey: string | null) => {
+    if (!parentKey || !childKey) return;
+    const list = children.get(parentKey) ?? [];
+    if (!list.includes(childKey)) list.push(childKey);
+    children.set(parentKey, list);
+  };
   for (const employee of directory.employees) {
-    const managerKey = canonicalHrIdKey(employee.managerHrId ?? "");
     const selfKey = canonicalHrIdKey(employee.hrId);
-    if (managerKey && selfKey) {
-      const list = children.get(managerKey) ?? [];
-      list.push(selfKey);
-      children.set(managerKey, list);
-    }
+    addEdge(canonicalHrIdKey(employee.managerHrId ?? ""), selfKey);
+    addEdge(canonicalHrIdKey(employee.pendingManagerReplacementForHrId ?? ""), selfKey);
   }
-  const viewer = canonicalHrIdKey(access.hrId ?? "");
+  // resolveEmployeeIdentityId, not access.hrId: a session whose login id differs from the employee
+  // HR_ID would otherwise resolve to an empty subtree and see only their own orders.
+  const viewer = canonicalHrIdKey(resolveEmployeeIdentityId(access) ?? access.hrId ?? "");
   const visible = new Set<string>();
   if (!viewer) return visible;
   visible.add(viewer);

@@ -120,11 +120,25 @@ export function runWeeklyPlanCalendarOwnerScopeTests() {
     "an unrecognized job title (e.g. Medical Rep) is never an allowed owner, regardless of viewer",
   );
 
+  // Owner decision 2026-07-30: the Regional Manager became a plan SUBMITTER (added to
+  // WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES in weekly-planning/plan-v1.ts). A submitted plan whose
+  // owner title is not calendar-eligible is invisible to EVERY viewer — including the RM who wrote it
+  // and the NSM who approves it — so the two lists must agree. Previously asserted false.
   const regionalManagerItem = planItem({ employeeHrId: "RM-1", employeeJobTitle: "Regional Manager", lineName: "Pedia" });
   assert.equal(
     isPlanItemVisibleToViewer(regionalManagerItem, UNRESTRICTED_VIEWER),
-    false,
-    "Regional Manager is not a calendar-eligible owner title — unchanged by the scope matrix",
+    true,
+    "Regional Manager is a calendar-eligible owner: they submit plans, so their plan must be visible",
+  );
+  const regionalSalesManagerItem = planItem({
+    employeeHrId: "RM-2",
+    employeeJobTitle: "Regional Sales Manager",
+    lineName: "Pedia",
+  });
+  assert.equal(
+    isPlanItemVisibleToViewer(regionalSalesManagerItem, UNRESTRICTED_VIEWER),
+    true,
+    "the real-world title 'Regional Sales Manager' must resolve too (that is what the live RM row carries)",
   );
 
   // --- Default: unrestricted for any role/line not named in the 2026-07-20 matrix ---

@@ -41,6 +41,12 @@ const ALLOWED_CALENDAR_OWNER_ROLES = new Set([
   "marketing manager",
   "district manager",
   "district sales manager",
+  // Regional / Regional Sales Manager: an RM is a plan SUBMITTER (see
+  // WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES in weekly-planning/plan-v1.ts), so their own plan must be
+  // able to appear on the shared Planning Calendar. Omitting them here meant an RM's submitted plan
+  // was invisible to every viewer — including the RM themselves and their approving NSM.
+  "regional manager",
+  "regional sales manager",
 ]);
 
 type PlanCalendarHeaderRow = {
