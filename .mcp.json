@@ -14,28 +14,6 @@
         "Authorization": "Bearer ${SUPABASE_PROD_TOKEN}"
       }
     },
-    "github": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-github"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"
-      }
-    },
-    "v0": {
-      "type": "http",
-      "url": "https://v0.app/api/mcp"
-    },
-    "shadcn": {
-      "command": "npx",
-      "args": [
-        "shadcn@latest",
-        "mcp"
-      ]
-    },
     "cloud-run": {
       "type": "stdio",
       "command": "npx",
