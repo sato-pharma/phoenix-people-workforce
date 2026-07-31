@@ -83,6 +83,37 @@
       "mcp__claude-in-chrome__read_console_messages",
       "mcp__supabase-production__get_project",
       "mcp__supabase-staging__list_tables"
+    ],
+    "deny": [
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__execute_sql",
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__apply_migration",
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec__execute_sql",
+      "mcp__45bb6356-8105-4482-9464-25bfd754baec__apply_migration",
+      "Bash(gh pr merge --auto*)"
+    ],
+    "ask": [
+      "mcp__supabase-production__execute_sql",
+      "mcp__supabase-production__apply_migration",
+      "mcp__supabase-staging__execute_sql",
+      "mcp__supabase-staging__apply_migration",
+      "Bash(gh pr merge *)",
+      "Bash(git push *)",
+      "Bash(npx supabase db push*)",
+      "PowerShell(npx supabase db push*)",
+      "mcp__github__merge_pull_request",
+      "mcp__github__push_files",
+      "mcp__github__create_or_update_file",
+      "mcp__github__delete_file",
+      "mcp__plugin_github_github__merge_pull_request",
+      "mcp__plugin_github_github__push_files",
+      "mcp__plugin_github_github__create_or_update_file",
+      "mcp__plugin_github_github__delete_file",
+      "Edit(src/lib/incentives/scheme-2026.ts)",
+      "Write(src/lib/incentives/scheme-2026.ts)",
+      "Edit(src/lib/payroll/policy.ts)",
+      "Write(src/lib/payroll/policy.ts)",
+      "Edit(src/components/employee-portal/identity-card.tsx)",
+      "Write(src/components/employee-portal/identity-card.tsx)"
     ]
   }
 }

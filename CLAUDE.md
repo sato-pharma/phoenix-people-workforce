@@ -215,12 +215,12 @@ keys used by their respective domains.
 - Parallel sessions must use isolated git worktrees and never re-clone over the primary
   `.git` — see AGENTS.md § Parallel Session and Git Worktree Safety.
 
-## Protected Files — OWNER UNLOCK REQUIRED
+## Protected Files — OWNER APPROVAL REQUIRED
 
-The following two files are **permanently locked** by the owner. No AI session,
+The following three files are **permanently locked** by the owner. No AI session,
 developer, or automated tool may read-then-edit, refactor, rename constants,
 adjust formulas, or change any value inside them without the owner explicitly
-providing the unlock phrase in the active conversation first.
+approving that specific change in the active conversation first.
 
 | File | What it protects |
 | --- | --- |
@@ -228,12 +228,19 @@ providing the unlock phrase in the active conversation first.
 | `src/lib/payroll/policy.ts` | `BASIC_SALARY_RATE` (70%), and all salary derivation formulas (base → basic → net → gross) |
 | `src/components/employee-portal/identity-card.tsx` | Employee portal identity banner design — must always use `PhoenixSignatureCard`; do NOT swap for any other component |
 
-**If any request would touch either file** (fix, refactor, rename, extend, delete):
+**If any request would touch one of these files** (fix, refactor, rename, extend, delete):
 
 1. STOP — do not proceed.
-2. Ask the owner: "This file is locked. Please provide the unlock phrase."
-3. Only continue after the owner supplies the correct phrase.
+2. Show the owner the exact change you intend to make, and why it is necessary.
+3. Only continue after the owner approves that specific change in the conversation.
 
-The unlock phrase is: **Sato-1997**
+Enforcement is a **permission gate, not a password.** `.claude/settings.json` lists
+`Edit(...)` and `Write(...)` for all three paths under `permissions.ask`, so every
+attempt raises an approval prompt the owner has to accept — it cannot be satisfied
+by anything written in a file.
 
-If the owner says "Sato-1997" in the conversation, you may proceed with the requested edit to the locked file. Without it, refuse and ask for the phrase.
+> A shared unlock passphrase used to be printed in this section. It was removed on
+> 2026-07-31: the phrase sat in a committed file, so anyone (or any tool) that could
+> read the repo could read the phrase and "unlock" the file. It authenticated nobody.
+> **Do not reintroduce a passphrase here** — approval belongs in the permission
+> prompt, not in version control.

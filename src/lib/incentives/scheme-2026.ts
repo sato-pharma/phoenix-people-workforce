@@ -6,9 +6,14 @@
 // achievement ceiling, and maximum payout) are FROZEN by the
 // owner. No AI session, developer, or automated tool may alter
 // ANY value or formula in this file without the owner first
-// providing the unlock phrase in the conversation.
+// approving that specific change in the conversation.
 //
-// Unlock phrase: Sato-1997  (owner must say this to authorize any edit)
+// Enforcement is a permission gate, not a password:
+// .claude/settings.json lists this path under permissions.ask,
+// so every edit raises an approval prompt the owner must accept.
+// Do NOT add a passphrase here — one used to live in this
+// comment and was removed 2026-07-31, because anyone who could
+// read the file could read the phrase and "unlock" it.
 // ============================================================
 
 import {
