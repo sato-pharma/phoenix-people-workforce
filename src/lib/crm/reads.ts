@@ -10,7 +10,6 @@
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
-import { fetchAllRows } from "@/lib/supabase/paginated";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
@@ -985,11 +984,57 @@ export async function queryVisitsPage<T = CrmVisitRow>(options: {
 }
 
 /**
- * Full offset-paginated scan (via {@link fetchAllRows}) of every visit in [dateFrom, dateTo],
- * resigned/excluded agents removed. Unlike {@link queryVisits} (keyset by `id`), it issues NO
- * `.order()`, so a covering index on `visit_date` can serve each `.range()` page as an index-only
- * scan — the access pattern the Field Workforce Compliance monthly-matrix build depends on to stay
- * under the Postgres statement timeout when a whole month (~90k rows) must be in memory at once.
+ * Shared keyset-by-`id` full scan for the two range scanners below (with / without the resigned
+ * exclusion). Keyset — NOT OFFSET — pagination: each page is a small bounded
+ * `.gt("id", cursor).order("id").limit(pageSize)` query, which is both REPRODUCIBLE and insert-safe.
+ * This replaced an unordered `.range()` (OFFSET) scan that had two problems the FWC monthly-matrix
+ * build (~90k rows) is exposed to: (1) a large OFFSET degrades and can hit the Postgres statement
+ * timeout even on an index-only scan (it still walks+discards `offset` entries), and (2) with no
+ * `ORDER BY`, page boundaries aren't stable, so a sync writing mid-scan can skip or duplicate rows.
+ * `id` is added to the projection for the cursor even when the caller didn't ask for it (it just
+ * rides along). Returns `[]` if the schema is missing.
+ */
+async function keysetScanVisitsForRange<T>(options: {
+  dateFrom: string;
+  dateTo: string;
+  columns: string;
+  excludedInList: string | null;
+}): Promise<T[]> {
+  const supabase = getSupabaseAdmin();
+  const projection = withIdColumn(options.columns);
+  const rows: T[] = [];
+  let cursor: string | null = null;
+  try {
+    for (;;) {
+      let query = supabase.from(CRM_VISITS_TABLE).select(projection);
+      if (options.excludedInList) query = query.not("agent_crm_id", "in", options.excludedInList);
+      query = query
+        .gte("visit_date", options.dateFrom)
+        .lte("visit_date", options.dateTo)
+        .order("id", { ascending: true })
+        .limit(DEFAULT_PAGE_SIZE);
+      if (cursor) query = query.gt("id", cursor);
+      const { data, error } = await query;
+      if (error) {
+        if (isCrmSchemaMissingError(error)) return [];
+        throw new Error(error.message);
+      }
+      const page = (data ?? []) as unknown as Array<T & { id: string }>;
+      rows.push(...page);
+      if (page.length < DEFAULT_PAGE_SIZE) break;
+      cursor = page[page.length - 1].id;
+    }
+    return rows;
+  } catch (error) {
+    if (isCrmSchemaMissingError(error)) return [];
+    throw error;
+  }
+}
+
+/**
+ * Full keyset scan of every visit in [dateFrom, dateTo], resigned/excluded agents removed. See
+ * {@link keysetScanVisitsForRange} for why this is keyset (not OFFSET) — the Field Workforce
+ * Compliance monthly-matrix build depends on it staying under the Postgres statement timeout.
  * Returns `[]` if the schema is missing.
  */
 export async function scanVisitsForRange<T = CrmVisitRow>(options: {
@@ -997,21 +1042,8 @@ export async function scanVisitsForRange<T = CrmVisitRow>(options: {
   dateTo: string;
   columns: string;
 }): Promise<T[]> {
-  const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
-  try {
-    return await fetchAllRows<T>(() =>
-      supabase
-        .from(CRM_VISITS_TABLE)
-        .select(options.columns)
-        .not("agent_crm_id", "in", excludedInList)
-        .gte("visit_date", options.dateFrom)
-        .lte("visit_date", options.dateTo),
-    );
-  } catch (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw error;
-  }
+  return keysetScanVisitsForRange<T>({ ...options, excludedInList });
 }
 
 /**
@@ -1028,19 +1060,7 @@ export async function scanVisitsForRangeIncludingDeparted<T = CrmVisitRow>(optio
   dateTo: string;
   columns: string;
 }): Promise<T[]> {
-  const supabase = getSupabaseAdmin();
-  try {
-    return await fetchAllRows<T>(() =>
-      supabase
-        .from(CRM_VISITS_TABLE)
-        .select(options.columns)
-        .gte("visit_date", options.dateFrom)
-        .lte("visit_date", options.dateTo),
-    );
-  } catch (error) {
-    if (isCrmSchemaMissingError(error)) return [];
-    throw error;
-  }
+  return keysetScanVisitsForRange<T>({ ...options, excludedInList: null });
 }
 
 /**
