@@ -5,6 +5,24 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * True only for a vendor timestamp that carries a REAL time-of-day.
+ *
+ * iReports360's `visit_date_time` is `00:00:00` on ~100% of rows, and `crm_save_date` is midnight
+ * on ~3% — a midnight value is a date-only placeholder with no usable clock, so it must be treated
+ * as "no time" rather than as midnight. Vendor timestamps are stored as Cairo wall-clock (see
+ * crm/sync.ts); this inspects only the time-of-day portion of the stored string, never a timezone.
+ *
+ * Lives here (rather than in crm/reads.ts, which historically owned it) so that crm/checkin-match.ts
+ * can use it too: reads.ts imports checkin-match.ts, so the reverse import would be circular.
+ * reads.ts re-exports it, so every existing import path keeps working.
+ */
+export function hasRealVendorTime(value: string | null | undefined): value is string {
+  if (!value) return false;
+  const time = String(value).slice(11, 19); // "HH:MM:SS" of "YYYY-MM-DD[ T]HH:MM:SS…"
+  return time.length === 8 && time !== "00:00:00";
+}
+
 /** `dateIso` shifted by `days` (may be negative), as YYYY-MM-DD (UTC). */
 export function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00Z`);

@@ -15,7 +15,7 @@ import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
 import { isIReports360Configured } from "@/lib/crm/config";
-import { addDaysIso, todayIso } from "@/lib/crm/dates";
+import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
@@ -525,9 +525,11 @@ function applyCheckinFilter(
  * - Without `limit`: a full-coverage scan, keyset-paginated by `check_date`. `check_date` (not
  *   the random uuid `id`) is part of the `(agent_crm_id, check_date)` composite index this table
  *   has, so ordering by it keeps each page an index range-scan rather than a full sort — 130ms
- *   vs 12.8s on a real 30-day/112-agent production query. `check_date` is not guaranteed unique,
- *   so a `.gt()` cursor could theoretically skip a row sharing an identical device timestamp;
- *   accepted as negligible for real GPS timestamps (never observed in production).
+ *   vs 12.8s on a real 30-day/112-agent production query. `check_date` is NOT unique, so the
+ *   cursor is `.gte` + an id de-dupe rather than `.gt`: this docstring previously claimed
+ *   duplicate timestamps were "never observed in production", but production actually has 1,797
+ *   timestamps shared by 2+ rows (up to 20 on one), so a `.gt()` cursor landing mid-group silently
+ *   dropped the remainder — which then reads downstream as "this visit has no check-in".
  *
  * Returns `[]` (never throws) when the mirror schema is missing.
  */
@@ -551,23 +553,40 @@ export async function queryCheckins<T = CrmCheckinRow>(
     return (data ?? []) as unknown as T[];
   }
 
-  const projection = withCheckDateColumn(options.columns ?? "*");
+  const projection = withIdColumn(withCheckDateColumn(options.columns ?? "*"));
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const rows: T[] = [];
+  const seenIds = new Set<string>();
   let cursor: string | null = null;
   for (;;) {
     let query = supabase.from(CRM_CHECKINS_TABLE).select(projection);
     query = applyCheckinFilter(query as unknown as CheckinFilterableQuery, options, excludedInList) as unknown as typeof query;
-    query = query.order("check_date", { ascending: true }).limit(pageSize);
-    if (cursor) query = query.gt("check_date", cursor);
+    // Secondary sort on the unique `id` makes the order within one timestamp deterministic.
+    query = query.order("check_date", { ascending: true }).order("id", { ascending: true }).limit(pageSize);
+    // `.gte` (NOT `.gt`) so a page boundary landing inside a group of rows that share a timestamp
+    // cannot skip the rest of that group — `check_date` is NOT unique: production has 1,797
+    // timestamps shared by 2+ check-ins, up to 20 rows on a single one, which disproves the
+    // "never observed in production" assumption this loop used to rely on. The re-read overlap is
+    // removed by the `seenIds` de-dupe below, so callers still get each row exactly once.
+    if (cursor) query = query.gte("check_date", cursor);
     const { data, error } = await query;
     if (error) {
       if (isCrmSchemaMissingError(error)) return [];
       throw new Error(error.message);
     }
-    const page = (data ?? []) as unknown as Array<T & { check_date: string }>;
-    rows.push(...page);
+    const page = (data ?? []) as unknown as Array<T & { check_date: string; id: string }>;
+    let added = 0;
+    for (const row of page) {
+      if (seenIds.has(row.id)) continue;
+      seenIds.add(row.id);
+      rows.push(row);
+      added += 1;
+    }
     if (page.length < pageSize) break;
+    // Pathological guard: a full page whose rows were ALL already seen means more than `pageSize`
+    // check-ins share one timestamp, so the `.gte` cursor cannot advance. Stop rather than loop
+    // forever (max observed in production is 20 rows on one timestamp, vs a 1000-row page).
+    if (added === 0) break;
     cursor = page[page.length - 1].check_date;
   }
   return rows;
@@ -627,17 +646,11 @@ export type { VisitTimeSource } from "@/lib/visits-report/types";
 export type ResolvedVisitTime = { time: string | null; source: VisitTimeSource };
 
 /**
- * True only for a vendor timestamp that carries a REAL time-of-day. iReports360's
- * `visit_date_time` is `00:00:00` on ~100% of rows, and `crm_save_date` is midnight on ~3% — a
- * midnight value is a date-only placeholder with no usable clock, so it is treated as "no time".
- * Vendor timestamps are stored as Cairo wall-clock (see crm/sync.ts); this inspects only the
- * time-of-day portion of the stored string, never a timezone.
+ * Re-exported from crm/dates.ts, which is now its home so crm/checkin-match.ts can share the same
+ * rule (reads.ts imports checkin-match.ts, so checkin-match.ts cannot import from here). Every
+ * existing `import { hasRealVendorTime } from "@/lib/crm/reads"` keeps working unchanged.
  */
-export function hasRealVendorTime(value: string | null | undefined): value is string {
-  if (!value) return false;
-  const time = String(value).slice(11, 19); // "HH:MM:SS" of "YYYY-MM-DD[ T]HH:MM:SS…"
-  return time.length === 8 && time !== "00:00:00";
-}
+export { hasRealVendorTime };
 
 /**
  * THE single authoritative "visit time" for a mirror visit row — used by every surface that shows
