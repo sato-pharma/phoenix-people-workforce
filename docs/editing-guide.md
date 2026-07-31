@@ -55,6 +55,21 @@ pnpm run check:harden
 
 Do not relax production-critical protections while editing. Authentication, permissions, RLS, payroll locks, employee lifecycle rules, and deployment checks stay protected even when the UI and configuration are being reshaped.
 
+## Connecting to a Database Locally
+
+The `db:*` and `phase*` scripts read a connection URL from `.env.production.rls.local` or `.env.staging.rls.local`. Use the **pooler** host, never `db.<ref>.supabase.co`:
+
+```
+postgresql://postgres.<ref>:<password>@aws-<n>-eu-central-1.pooler.supabase.com:5432/postgres
+```
+
+Two traps, both of which report something other than the real cause:
+
+- **The direct `db.<ref>.supabase.co` host publishes AAAA records only.** On any machine without IPv6, `psql` and `pg_dump` fail with `could not translate host name ... Name or service not known` — which reads like a typo or a dead project rather than a reachable server you cannot route to.
+- **The pooler cluster number differs per project**: staging is on `aws-0`, production is on `aws-1`. Using the wrong one returns `Tenant or user not found`, which reads like a bad password and sends you looking at credentials instead of the hostname.
+
+Note the username is `postgres.<ref>`, not `postgres` — the pooler routes on it. If the password itself is rejected, reset it in the Supabase dashboard under Settings → Database; it cannot be recovered from the project API.
+
 ## Domain Change Rule
 
 For business logic, start in `src/lib/<domain>/` before editing UI. The UI should call domain services instead of duplicating payroll, leave, expenses, outstation, HR, or sales rules inside components.
