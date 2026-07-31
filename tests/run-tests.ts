@@ -483,6 +483,7 @@ import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
 import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
+import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -984,6 +985,7 @@ await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup k
 await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, multi-role fan-out)", runMarketingRoiCohortsTests);
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
+await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
