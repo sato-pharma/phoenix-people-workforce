@@ -125,12 +125,4 @@ export function runEmailEngineHardeningTests() {
   // --- Source locks: scheduled wiring ----------------------------------------------
   const scheduledSource = readFileSync("src/lib/notifications/scheduled-processing.ts", "utf8");
   assert.match(scheduledSource, /processDeferredDeliveryRetries/, "deferred drain must run on the schedule");
-
-  // --- Source locks: orphan Sentry monitors removed --------------------------------
-  const _birthdaySource = readFileSync("app/api/notifications/birthdays/route.ts", "utf8");
-  const _renewalSource = readFileSync("app/api/notifications/contract-renewals/route.ts", "utf8");
-  
-  
-  
-  
 }

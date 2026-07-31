@@ -17,15 +17,8 @@ tests/synthetic/report/
 tsconfig.tsbuildinfo
 _junk/
 
-# Sentry
-.sentryclirc
-.env.sentry-build-plugin
-
 # Analytics local env (contains DB credentials for analytics_readonly)
 .env.analytics
-tmp-sentry-test*
-app/api/sentry-example-api/
-app/sentry-example-page/
 .claude/worktrees/
 .claude/settings.local.json
 .claude/settings.local.json.bak-*

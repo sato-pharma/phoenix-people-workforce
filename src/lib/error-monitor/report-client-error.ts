@@ -1,9 +1,8 @@
 "use client";
 
 // Best-effort client-side crash reporter. Sends to our own /api/errors/client
-// endpoint (self-hosted, free-forever) in addition to whatever Sentry already
-// does. Must never throw — a failed report should never surface as a second,
-// user-visible error on top of the one being reported.
+// endpoint (self-hosted, free-forever). Must never throw — a failed report should
+// never surface as a second, user-visible error on top of the one being reported.
 
 export type ReportClientErrorInput = {
   error: unknown;

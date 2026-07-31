@@ -44,7 +44,7 @@ pnpm run worktree:sync-env
 ```
 
 This copies `.env.local` and the other local-only env files (`.env.*.rls.local`,
-`.env.sentry-build-plugin`, ...) from the primary worktree (the original clone)
+`.env.analytics`, ...) from the primary worktree (the original clone)
 into the current one. It only fills in files that don't already exist here; pass
 `--force` to overwrite, or `--dry-run` to preview without changing anything. Run
 it once per new worktree, right after `git worktree add`.

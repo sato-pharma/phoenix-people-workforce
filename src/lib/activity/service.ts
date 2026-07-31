@@ -275,7 +275,7 @@ export async function recordPageView(input: RecordPageViewInput): Promise<void> 
   if (error) {
     // Activity tracking must never break the user's navigation; swallow + log.
     // Stay quiet if the table simply isn't there yet (migration applied separately)
-    // so we don't spam logs/Sentry on every navigation before deploy ordering settles.
+    // so we don't spam logs on every navigation before deploy ordering settles.
     if (!isMissingRelationError(error)) {
       logError("Activity page-view recording failed", {
         labels: { event: "activity_record_page_view_failed" },

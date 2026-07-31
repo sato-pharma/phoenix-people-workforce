@@ -51,8 +51,10 @@ shape, not just its two specific symptoms.
     problem this standard exists to catch.
 11. **Always check for exact-duplicate indexes before adding a new one** — several tables in
     this database have carried 2-3 byte-identical indexes from repeated migrations.
-12. **Always give a new cron job an explicit `maxDuration` and a Sentry monitor**
-    (`Sentry.withMonitor`, matching the existing `ireports360-visits-sync`/`-reconcile` pattern).
+12. **Always give a new cron job an explicit `maxDuration`, wrap its work in `withDeadMansSwitch`
+    with a new slug, and add a matching Healthchecks.io check** (Cron Expression mode,
+    `Africa/Cairo` timezone, grace >= 2x the job's max runtime — see the dead-man's-switch section
+    in `docs/observability.md`; Sentry monitors no longer exist).
 
 ## Data lifecycle
 
@@ -71,5 +73,5 @@ shape, not just its two specific symptoms.
 
 - [Database](database.md) - schema and migration conventions
 - [Migrations](migrations.md) - migration policy
-- [Observability](observability.md) - Sentry setup, cron monitors
+- [Observability](observability.md) - error capture, alerting, cron dead-man's-switch
 - [Editing Guide](editing-guide.md) - where to make edits, quality gate workflow

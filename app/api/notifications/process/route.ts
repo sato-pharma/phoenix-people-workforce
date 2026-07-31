@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { assertPermission } from "@/lib/auth/permissions";
@@ -58,14 +57,7 @@ export async function GET(request: Request) {
     // Slug matches the live Cloud Scheduler job name (phoenix-process-notifications) — the outbox
     // drain. Highest-value job for this monitor: a paused/broken drain leaves everything queued
     // silently undelivered, and this job fires every 5 minutes so a real outage is caught fast.
-    return await withDeadMansSwitch("phoenix-process-notifications", () =>
-      Sentry.withMonitor("notifications-process", () => runNotificationOutbox(limit), {
-        checkinMargin: 5,
-        maxRuntime: 5,
-        schedule: { type: "crontab", value: "*/5 * * * *" },
-        timezone: "Africa/Cairo",
-      }),
-    );
+    return await withDeadMansSwitch("phoenix-process-notifications", () => runNotificationOutbox(limit));
   } catch (error) {
     console.error(error, { tags: { cron: "notification-outbox-drain" } });
     const message = error instanceof Error ? error.message : "Notification processing failed.";

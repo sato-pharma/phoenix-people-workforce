@@ -130,7 +130,7 @@ Each upload flows through the Import Validation and Normalization engine — sch
 | Styling | Tailwind CSS v4 + shadcn/ui (Radix primitives, Lucide icons) |
 | Hosting | Vercel |
 | Email | Resend |
-| Observability | Sentry |
+| Observability | Self-hosted (app_error_events + Cloud Logging) |
 | E2E Testing | Playwright |
 | Runtime | Node.js 22+ |
 
@@ -220,7 +220,7 @@ Run `check:edit` during active development and `check:harden` before every commi
 | [Scripts Reference](docs/scripts.md) | All npm scripts with safety classifications |
 | [Editing Guide](docs/editing-guide.md) | Where to make edits, quality gate workflow |
 | [Security](docs/security/) | RLS validation, role alignment, production readiness |
-| [Observability](docs/observability.md) | Sentry setup, monitoring, alerting |
+| [Observability](docs/observability.md) | Error capture, monitoring, alerting |
 | [Development Workflow](docs/development-workflow.md) | Engineering operating rules and contributor governance |
 | [Attendance Agent](docs/attendance-agent.md) | Local attendance integration setup |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and solutions |

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Copies the gitignored local env files (.env.local, .env.*.rls.local,
-// .env.sentry-build-plugin, .env.analytics, etc.) from the primary worktree
-// into the CURRENT worktree.
+// .env.analytics, etc.) from the primary worktree into the CURRENT worktree.
 //
 // `git worktree add` never copies gitignored files — every new worktree starts
 // with none of them, so dev-auth (PHOENIX_AUTH_SECRET), Supabase, and other

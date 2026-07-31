@@ -53,11 +53,12 @@ Sending domain is **`mail.satopharma.com`**; Reply-To apex is **`satopharma.com`
    / `Resolve-DnsName -Type CNAME resend._domainkey.mail.satopharma.com`; send a real test
    and confirm received headers show `spf=pass dkim=pass dmarc=pass`.
 
-## 5. Sentry monitor cleanup (one-time)
+## 5. Sentry monitor cleanup (one-time) — obsolete (Sentry retired 2026-07-31)
 
-In the Sentry UI delete/disable the orphaned cron monitors **`birthday-notifications`** and
-**`contract-renewals`** (the code no longer checks them in; the authoritative monitor is
-`daily-notification-dispatcher`).
+This step is **obsolete**. It originally described deleting/disabling two orphaned Sentry cron
+monitors (`birthday-notifications`, `contract-renewals`) that no longer checked in. Sentry itself
+was retired from this codebase 2026-07-31 (see docs/observability.md) — cron liveness is now
+covered by the Healthchecks.io dead-man's-switch on all 8 scheduled routes. No action needed.
 
 ## 6. Post-rollout verification
 

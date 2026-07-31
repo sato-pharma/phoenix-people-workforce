@@ -1457,7 +1457,7 @@ type PushRetryPayload = {
 };
 
 // Shared logger for best-effort/fire-and-forget notification sends that must never
-// throw into their caller. Console + Sentry so a swallowed failure still leaves a trace.
+// throw into their caller. Structured console logging so a swallowed failure still leaves a trace.
 export function logNotificationSendFailure(context: string, error: unknown) {
   logError(`[notifications] ${context} failed`, {
     labels: { event: "notification_send_failed", context },

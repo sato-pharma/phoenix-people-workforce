@@ -17,7 +17,7 @@ name: Deploy to Google Cloud Run (Staging)
 # the staging service's own runtime env vars (staging Supabase project, staging
 # PHOENIX_AUTH_SECRET, etc.) are carried forward untouched — it ships new code,
 # never new secrets. The one exception is --update-env-vars COMMIT_SHA=$SHA_TAG
-# below (added for Sentry/app_error_events release tagging) — --update-env-vars
+# below (added for app_error_events release tagging) — --update-env-vars
 # only adds/overwrites the keys named, it never clears the rest, so this doesn't
 # disturb any of staging's existing secrets. No STAGING_* GitHub secrets exist or
 # are needed for this. Known
@@ -238,23 +238,6 @@ jobs:
             --region ${{ env.REGION }} \
             --project ${{ env.PROJECT_ID }} \
             --to-latest
-
-      - name: Mark Sentry release as deployed
-        # Mirrors deploy-cloud-run.yml's equivalent step. Best-effort: never fail an
-        # already-live staging deploy over a Sentry deploy-marker call.
-        continue-on-error: true
-        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: phoenix-workforce
-          SENTRY_PROJECT: phx-b9
-        with:
-          # `release` replaces the deprecated `version` input; ignore_missing stops sentry-cli
-          # from failing this step when the previous release's commit isn't resolvable in this
-          # clone's history (see the matching comment in deploy-cloud-run.yml).
-          environment: staging
-          release: ${{ steps.image.outputs.sha_tag || steps.image_fallback.outputs.sha_tag || steps.fallback_build.outputs.sha_tag }}
-          ignore_missing: true
 
       - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
         # Staging chains off every prod deploy (see header comment above), so it

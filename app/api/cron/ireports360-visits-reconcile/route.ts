@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
@@ -37,12 +36,7 @@ async function runReconcile() {
 
   let result: Awaited<ReturnType<typeof runWideIReports360Reconciliation>>;
   try {
-    result = await Sentry.withMonitor("ireports360-visits-reconcile", () => runWideIReports360Reconciliation(), {
-      checkinMargin: 15,
-      maxRuntime: 10,
-      schedule: { type: "crontab", value: "24 4 * * 0" },
-      timezone: "Africa/Cairo",
-    });
+    result = await runWideIReports360Reconciliation();
   } catch (error) {
     await notifyIReports360SyncResult({
       dateFrom,
@@ -88,7 +82,7 @@ export async function GET(request: Request) {
   }
   try {
     // Slug matches the live Cloud Scheduler job name (phoenix-reconcile-visits), not JOB_NAME
-    // above or the Sentry monitor slug inside runReconcile (both "ireports360-visits-reconcile").
+    // above ("ireports360-visits-reconcile") — the Healthchecks check uses this slug.
     return await withDeadMansSwitch("phoenix-reconcile-visits", () => runReconcile());
   } catch (error) {
     logError("iReports360 wide reconciliation failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });

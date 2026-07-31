@@ -13,7 +13,7 @@ see `docs/disaster-recovery-runbook.md` § Vercel retirement).
 | Database + Auth | Supabase | Separate production (`ozucdzovmcqvepbozvqf`) and staging (`cifwmndunmlxjhyjugxa`) projects |
 | Scheduled jobs | Google Cloud Scheduler | See "Cron Jobs" below |
 | Email delivery | Resend | — |
-| Error monitoring | Sentry | Developer (free) |
+| Error monitoring | Self-hosted (app_error_events + Cloud Logging) | Included in GCP |
 | Attendance agent | Local Windows machine | — |
 
 ## Branch Model
@@ -80,9 +80,9 @@ jobs share a firing minute):
 The Scheduler job **location** metadata stays `us-central1` regardless of which
 region the app itself runs in — jobs only fire HTTP requests, so the location is
 irrelevant to latency and moving it would mean delete+recreate for no benefit. Every
-cron carries an explicit `maxDuration = 300` and a named `Sentry.withMonitor`
-heartbeat — see [Observability](observability.md). The in-app `/admin/cron-control`
-dashboard can view/pause/resume/run/reschedule these live, but editing a schedule
+cron carries an explicit `maxDuration = 300` and a named Healthchecks.io dead-man's-switch
+heartbeat (`withDeadMansSwitch`) — see [Observability](observability.md). The in-app
+`/admin/cron-control` dashboard can view/pause/resume/run/reschedule these live, but editing a schedule
 there does **not** update `setup-gcp-cron.sh` — keep the script's `--schedule`/
 `--time-zone` flags in sync by hand, or a future re-run of the script will silently
 revert the change. Unlike the old Vercel-cron model, Cloud Scheduler has no

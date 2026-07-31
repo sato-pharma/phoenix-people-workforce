@@ -26,7 +26,7 @@ function maybeRecover(source: unknown, fallbackMessage: string) {
 
 // Mounted once in the root layout. React's own error boundaries never see
 // exceptions thrown in event handlers or unhandled promise rejections — this
-// closes that gap by mirroring what Sentry's browser SDK does under the hood.
+// closes that gap by forwarding them to reportClientError itself.
 export function GlobalErrorReporter() {
   useEffect(() => {
     function handleError(event: ErrorEvent) {

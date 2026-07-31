@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
@@ -47,12 +46,7 @@ async function runSync() {
 
   let mirrorSync: Awaited<ReturnType<typeof runScheduledIReports360Sync>>;
   try {
-    mirrorSync = await Sentry.withMonitor("ireports360-visits-sync", () => runScheduledIReports360Sync(), {
-      checkinMargin: 10,
-      maxRuntime: 10,
-      schedule: { type: "crontab", value: "7 9,12,19 * * *" },
-      timezone: "Africa/Cairo",
-    });
+    mirrorSync = await runScheduledIReports360Sync();
   } catch (error) {
     await notifyIReports360SyncResult({
       dateFrom,
@@ -105,7 +99,7 @@ export async function GET(request: Request) {
     // in UTC (Cloud Run), so any in-app "now" logic must still resolve via Africa/Cairo, not the
     // server clock.
     // Slug matches the live Cloud Scheduler job name (phoenix-ireports360-sync), not JOB_NAME
-    // above or the Sentry monitor slug inside runSync (both "ireports360-visits-sync").
+    // above ("ireports360-visits-sync") — the Healthchecks check uses this slug.
     return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync());
   } catch (error) {
     logError("iReports360 visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
