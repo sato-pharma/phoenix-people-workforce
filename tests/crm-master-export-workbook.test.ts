@@ -106,4 +106,45 @@ export async function runCrmMasterExportWorkbookTests() {
     },
     "a mid-stream error must reject the response body, not yield a partial workbook",
   );
+
+  // ── Scale: many pages, not three.
+  //
+  // PR #1464's streaming export shipped green and then corrupted files on LARGE exports in
+  // production; the recorded lesson was that the bug only showed at real volume. The 4,500-row
+  // case above spans 3 pages, which cannot sustain stream-buffer pressure — a full Visits export
+  // is ~111k rows across ~111 pages.
+  //
+  // 40,000 rows / 40 pages keeps this a few seconds while driving the writer through dozens of
+  // fill-and-drain cycles. Set CRM_EXPORT_SCALE_ROWS to rehearse the real ~111k locally.
+  //
+  // Asserted on STRUCTURE, not memory: bounded RSS is what #1527's `await once(pass, "drain")`
+  // actually buys, but an RSS assertion is flaky in CI. What this pins is the property a user
+  // notices — at volume the bytes still form a complete, openable workbook with every row present.
+  const SCALE_TOTAL = Number(process.env.CRM_EXPORT_SCALE_ROWS ?? 40_000);
+  const scaled = streamCrmMasterWorkbookResponse({
+    filename: "crm-visits-scale.xlsx",
+    sheetName: "Visits",
+    columns: COLUMNS,
+    pages: pagesOf(SCALE_TOTAL, 1000),
+  });
+  const scaledBuffer = await scaled.arrayBuffer();
+  assert.ok(isXlsx(scaledBuffer), "large export must still be a valid .xlsx (zip) buffer");
+
+  const scaledWorkbook = new ExcelJS.Workbook();
+  // Throws on a truncated or unterminated sheet — the exact shape of the #1464 corruption.
+  await scaledWorkbook.xlsx.load(scaledBuffer);
+  const scaledSheet = scaledWorkbook.getWorksheet("Visits");
+  assert.ok(scaledSheet, "large export must contain the Visits sheet");
+  assert.equal(
+    scaledSheet!.rowCount,
+    SCALE_TOTAL + 1,
+    `all ${SCALE_TOTAL} rows must survive across ${Math.ceil(SCALE_TOTAL / 1000)} pages (header + every data row)`,
+  );
+  // The tail is where a dropped page boundary shows first — an export truncated near the end still
+  // opens, still looks plausible, and is silently missing its most recent rows.
+  assert.equal(
+    String(scaledSheet!.getRow(SCALE_TOTAL + 1).getCell(1).value),
+    String(SCALE_TOTAL),
+    "the final row must be the final visit — a truncated tail is the silent failure mode",
+  );
 }
