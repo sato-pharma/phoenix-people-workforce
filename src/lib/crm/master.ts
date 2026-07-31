@@ -14,7 +14,7 @@ import { CRM_CHECKINS_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABL
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
-import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
+import { CRM_RESIGNED_IN_LIST, CRM_DOUBLE_VISIT_TYPE_CODES, expandHrIdFilterValues, getEffectiveExcludedInList, queryCheckins, resolveVisitTime } from "@/lib/crm/reads";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import {
@@ -1225,7 +1225,12 @@ function applyMasterFilters(
   }
   // Line / hiring-date filters resolve to a set of employee hr ids; empty set → match nobody.
   if (allowedHrIds) {
-    q = q.in("agent_hr_id", allowedHrIds.length > 0 ? allowedHrIds : ["__no_match__"]);
+    // Match agent_hr_id case-insensitively / alias-aware — the mirror stores whatever casing the
+    // roster used (asserted UPPERCASE but not enforced in the write path), so a raw exact `.in()`
+    // silently drops a scoped manager's rows whose casing diverges (under-complete view + export).
+    // Same expansion every other CRM door read applies, per the CrmViewerScope contract.
+    const expandedAllowed = expandHrIdFilterValues(allowedHrIds);
+    q = q.in("agent_hr_id", expandedAllowed.length > 0 ? expandedAllowed : ["__no_match__"]);
   }
   if (dateFrom) q = q.gte(dateColumn, isCheckins ? `${dateFrom}T00:00:00` : dateFrom);
   if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);
