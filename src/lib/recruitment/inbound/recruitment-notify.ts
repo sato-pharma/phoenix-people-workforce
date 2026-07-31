@@ -32,11 +32,12 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   created: boolean;
   matchReason?: "national_id" | "email" | "phone";
   fileAttached: boolean;
-  // How many fields the intake extraction actually found. Intake stores the AI's reading of every
-  // inbound CV but deliberately does not write it onto the candidate — a human reviews it first.
-  // Saying so here is what makes that review happen: without it the notification gave no hint that
-  // anything was waiting, and the stored fields sat unreviewed.
-  extractedFieldCount?: number;
+  // Fields the AI read that intake could NOT auto-apply — low confidence, jsonb storage, or the
+  // identity triple cv-auto-apply.ts deliberately never touches. Those are the ones still needing
+  // a human, and nothing else tells anyone they exist. Deliberately NOT the raw finding count:
+  // auto-apply has usually already written several of those, so reporting them would announce work
+  // that is already done.
+  fieldsAwaitingReview?: number;
 }): Promise<void> {
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
@@ -45,9 +46,10 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   const matchLabel = input.matchReason
     ? ` (matched by ${input.matchReason === "national_id" ? "National ID" : input.matchReason})`
     : "";
+  const awaiting = input.fieldsAwaitingReview ?? 0;
   const fieldsLabel =
-    input.fileAttached && (input.extractedFieldCount ?? 0) > 0
-      ? ` ${input.extractedFieldCount} fields were read from it — open the candidate to review and save them.`
+    input.fileAttached && awaiting > 0
+      ? ` ${awaiting} ${awaiting === 1 ? "field needs" : "fields need"} your review — the rest were filled in automatically.`
       : "";
   const message = input.fileAttached
     ? `${input.fullName} sent a CV via ${channelLabel}${matchLabel}.${fieldsLabel}`
@@ -64,7 +66,7 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
         candidateId: input.candidateId,
         channel: input.channel,
         created: input.created,
-        extractedFieldCount: input.extractedFieldCount ?? 0,
+        fieldsAwaitingReview: awaiting,
         fileAttached: input.fileAttached,
         matchReason: input.matchReason ?? null,
       },

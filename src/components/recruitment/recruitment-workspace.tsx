@@ -42,7 +42,7 @@ import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel"
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import {
-  countProposedCvFields,
+  countUnappliedCvFields,
   seedReviewFieldsFromCandidate,
   type ExtractedCandidateFields,
   type StoredCvExtraction,
@@ -1532,6 +1532,18 @@ function CandidatesTab({
     }
   };
 
+  // What is actually left for a human: findings the AI made that are still absent from the
+  // candidate. Intake already auto-applies the high-confidence ones without marking the row
+  // reviewed (cv-auto-apply.ts), so counting raw findings would nag on every inbound candidate
+  // forever with a number that overstates the work.
+  const storedSchema = storedExtraction
+    ? getCvPositionSchema(storedExtraction.positionKey) ?? getCvPositionSchema(defaultCvPositionKey)!
+    : null;
+  const pendingExtractionFieldCount =
+    storedExtraction && storedSchema && profile
+      ? countUnappliedCvFields(storedExtraction.fields, profile.candidate, storedSchema)
+      : 0;
+
   // Opens the review board on the extraction ALREADY stored for this candidate — no AI call, no
   // cost, because this CV was read once at intake. Empty slots are seeded from the saved record so
   // saving applies the AI's findings on top of what is known instead of replacing it (a direct
@@ -1816,14 +1828,16 @@ function CandidatesTab({
 
           {canManage && (storedExtraction || profile.files.some((file) => file.kind === "cv")) ? (
             <div className="space-y-2">
-              {!retryExtraction && storedExtraction && !storedExtraction.reviewed && countProposedCvFields(storedExtraction.fields) > 0 ? (
+              {!retryExtraction && storedExtraction && pendingExtractionFieldCount > 0 ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-orange-200 bg-orange-50/70 p-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
-                      {countProposedCvFields(storedExtraction.fields)} fields already read from this CV
+                      {pendingExtractionFieldCount} {pendingExtractionFieldCount === 1 ? "field" : "fields"} read from this CV
+                      {" "}still missing from this candidate
                     </p>
                     <p className="text-xs text-slate-600">
-                      Read automatically when the CV arrived — review and save them to fill this candidate in. No new read needed.
+                      Intake fills in what the AI was confident about; these are the rest. Review and save them — no new read
+                      needed.
                     </p>
                   </div>
                   <Button onClick={() => reviewStoredExtraction(profile.candidate, storedExtraction)} size="sm">

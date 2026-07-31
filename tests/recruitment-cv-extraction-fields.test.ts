@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   countProposedCvFields,
+  countUnappliedCvFields,
   normalizeStoredExtractionFields,
   seedReviewFieldsFromCandidate,
 } from "../src/lib/recruitment/cv-extraction-fields.ts";
@@ -77,6 +78,64 @@ export function runRecruitmentCvExtractionFieldsTests() {
     }),
     2,
     "a boolean false IS a finding (\"no medical rep experience\"); only null/blank is uncounted",
+  );
+
+  // --- countUnappliedCvFields (what the banner/notification must report) ---------------------
+  // Intake auto-applies the high-confidence findings (cv-auto-apply.ts) WITHOUT writing
+  // applied_fields, so "nobody reviewed this row" stays true forever. Counting raw findings would
+  // therefore nag on every inbound candidate with a number that overstates the remaining work.
+  const proposal = {
+    address: { confidence: "high", value: "El waha district, Nasr city" } as const,
+    faculty: { confidence: "low", value: null } as const,
+    fullName: { confidence: "high", value: "Mazen Hassan" } as const,
+    governorate: { confidence: "high", value: "Cairo" } as const,
+    hasMedicalRepExperience: { confidence: "low", value: false } as const,
+    university: { confidence: "low", value: "Misr International University" } as const,
+  };
+
+  assert.equal(
+    countUnappliedCvFields(proposal, candidate(), medicalRep),
+    4,
+    "an otherwise-empty record: address, governorate, university and the medical-rep judgment are " +
+      "outstanding. faculty is null in the proposal so it never counts, and fullName is never a gap — " +
+      "createCandidate requires a name, so every candidate already has one.",
+  );
+
+  assert.equal(
+    countUnappliedCvFields(
+      proposal,
+      // What the record looks like AFTER intake auto-applied the high-confidence column fields.
+      candidate({ address: "El waha district, Nasr city", fullName: "Mazen Hassan", governorate: "Cairo" }),
+      medicalRep,
+    ),
+    2,
+    "only the low-confidence leftovers auto-apply skipped still need a human",
+  );
+
+  assert.equal(
+    countUnappliedCvFields(
+      proposal,
+      candidate({
+        address: "El waha district, Nasr city",
+        fullName: "Mazen Hassan",
+        governorate: "Cairo",
+        hasMedicalRepExperience: false,
+        university: "Misr International University",
+      }),
+      medicalRep,
+    ),
+    0,
+    "everything landed — the banner must disappear rather than nag forever",
+  );
+
+  assert.equal(
+    countUnappliedCvFields(
+      { hasPriorWorkExperience: { confidence: "high", value: true } },
+      candidate({ hasPriorWorkExperience: false }),
+      medicalRep,
+    ),
+    0,
+    "a saved boolean false is an answer, not a gap — it must not be counted as outstanding",
   );
 
   // --- seedReviewFieldsFromCandidate ---------------------------------------------------------
