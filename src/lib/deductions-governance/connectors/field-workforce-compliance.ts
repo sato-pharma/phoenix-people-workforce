@@ -342,43 +342,71 @@ export async function syncFieldWorkforceApprovedDecisions(input: {
       );
       continue;
     }
+    let approvedCandidateId: string | null = null;
     if (Array.isArray(probe.data) && probe.data.length > 0) {
+      approvedCandidateId = (probe.data[0] as { id?: string }).id ?? null;
       skippedExisting += 1;
-      continue;
-    }
+    } else {
+      const insert = await client
+        .from("deduction_candidates")
+        .insert(payload)
+        .select("id")
+        .single();
 
-    const insert = await client
-      .from("deduction_candidates")
-      .insert(payload)
-      .select("id")
-      .single();
-
-    if (insert.error) {
-      const code = (insert.error as { code?: string }).code ?? "";
-      if (code === "23505") {
-        // Raced with another sync; treat as already-present.
-        skippedExisting += 1;
+      if (insert.error) {
+        const code = (insert.error as { code?: string }).code ?? "";
+        if (code === "23505") {
+          // Raced with another sync; treat as already-present.
+          skippedExisting += 1;
+        } else {
+          warnings.push(
+            `FWC row ${row.id} (${row.recommendation_key}): insert failed: ${insert.error.message}`,
+          );
+        }
         continue;
       }
-      warnings.push(
-        `FWC row ${row.id} (${row.recommendation_key}): insert failed: ${insert.error.message}`,
-      );
-      continue;
+
+      created += 1;
+      approvedCandidateId = (insert.data as { id?: string } | null)?.id ?? null;
+
+      try {
+        await auditLog({
+          actorLoginId: input.createdBy,
+          entityId: approvedCandidateId,
+          entityType: "deduction_candidate",
+          newValues: payload as unknown as Record<string, unknown>,
+          summary: "Deduction candidate created from Field Workforce Compliance",
+        });
+      } catch {
+        // writeAuditLog already swallows; defensive in case a custom logger throws.
+      }
     }
 
-    created += 1;
-    const insertedId = (insert.data as { id?: string } | null)?.id ?? null;
-
-    try {
-      await auditLog({
-        actorLoginId: input.createdBy,
-        entityId: insertedId,
-        entityType: "deduction_candidate",
-        newValues: payload as unknown as Record<string, unknown>,
-        summary: "Deduction candidate created from Field Workforce Compliance",
-      });
-    } catch {
-      // writeAuditLog already swallows; defensive in case a custom logger throws.
+    // Supersede this employee-month's live PENDING no-activity draft (source_record_id ends in
+    // ":pending", built by the live-month pending sync) so an APPROVED decision REPLACES its own
+    // pending draft instead of coexisting with it. The two syncs deliberately build different
+    // source_record_ids (…:pending vs …), so without this BOTH stay live (superseded_at IS NULL)
+    // and the same no-activity dates could be summed twice in approved deduction totals. Scoped to
+    // this employee+month+no_activity pending row (one per employee-month); best-effort — a failure
+    // here is warned, never fails the approved candidate that was just created/confirmed above.
+    if (approvedCandidateId) {
+      const supersede = await client
+        .from("deduction_candidates")
+        .update({
+          superseded_at: new Date().toISOString(),
+          superseded_by_candidate_id: approvedCandidateId,
+        })
+        .eq("source_module", payload.source_module)
+        .eq("employee_hr_id_compact", payload.employee_hr_id_compact)
+        .eq("month_key", payload.month_key)
+        .eq("deduction_type", payload.deduction_type)
+        .like("source_record_id", "%:pending")
+        .is("superseded_at", null);
+      if (supersede.error) {
+        warnings.push(
+          `FWC row ${row.id} (${row.recommendation_key}): pending-supersede failed: ${supersede.error.message}`,
+        );
+      }
     }
   }
 

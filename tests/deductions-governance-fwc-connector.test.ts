@@ -65,6 +65,8 @@ type FakeBuilderConfig = {
   selectError?: { message: string } | null;
   probeResults?: FakeProbeResult[];
   insertResults?: FakeInsertResult[];
+  supersedeError?: { message: string } | null;
+  recordedSupersedes?: Array<{ payload: Record<string, unknown>; filters: Array<[string, unknown]> }>;
   recordedFilters?: {
     decisionStatuses: string[][];
     importIds: string[];
@@ -126,12 +128,36 @@ function createFakeSupabase(config: FakeBuilderConfig) {
             return Promise.resolve(next);
           },
         };
+        let supersedePayload: Record<string, unknown> | null = null;
+        const supersedeFilters: Array<[string, unknown]> = [];
+        const updateBuilder = {
+          eq(col: string, value: unknown) {
+            supersedeFilters.push([col, value]);
+            return updateBuilder;
+          },
+          like(col: string, value: unknown) {
+            supersedeFilters.push([col, value]);
+            return updateBuilder;
+          },
+          is(col: string, value: unknown) {
+            supersedeFilters.push([col, value]);
+            return updateBuilder;
+          },
+          then(onFulfilled: (result: { data: unknown; error: unknown }) => unknown) {
+            config.recordedSupersedes?.push({ payload: supersedePayload ?? {}, filters: [...supersedeFilters] });
+            return Promise.resolve({ data: null, error: config.supersedeError ?? null }).then(onFulfilled);
+          },
+        };
         return {
           select() {
             return probeBuilder.select();
           },
           insert() {
             return insertBuilder;
+          },
+          update(payload: Record<string, unknown>) {
+            supersedePayload = payload;
+            return updateBuilder;
           },
         };
       }
@@ -340,5 +366,57 @@ export async function runDeductionsGovernanceFwcConnectorTests(): Promise<void> 
     // January wraps to December of the prior year.
     assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-01-15T06:30:00.000Z"), ["2026-01", "2025-12"]);
     assert.deepEqual(currentAndPreviousFieldWorkforceMonthKeys("2026-12-01T06:30:00.000Z"), ["2026-12", "2026-11"]);
+  }
+
+  // 11. Approving a decision SUPERSEDES this employee-month's live PENDING no-activity draft.
+  // The pending sync (…:pending) and the approved sync (…) deliberately build different
+  // source_record_ids, so without this both would stay live (superseded_at IS NULL) and the same
+  // no-activity dates could be summed twice in approved totals. Scoped to the pending row, and the
+  // approved candidate's id becomes superseded_by_candidate_id.
+  {
+    const recordedSupersedes: Array<{ payload: Record<string, unknown>; filters: Array<[string, unknown]> }> = [];
+    const fake = createFakeSupabase({
+      selectRows: [payrollRow({ import_id: null, month_key: "2026-06" }) as unknown as Record<string, unknown>],
+      probeResults: [{ data: [], error: null }],
+      insertResults: [{ data: { id: "approved-candidate-1" }, error: null }],
+      recordedSupersedes,
+    });
+    const result = await syncFieldWorkforceApprovedDecisions({
+      monthKey: "2026-06",
+      createdBy: "tester",
+      supabase: fake as never,
+    });
+    assert.equal(result.created, 1);
+    assert.equal(recordedSupersedes.length, 1, "approving runs exactly one pending-draft supersede");
+    const [supersede] = recordedSupersedes;
+    assert.equal(supersede.payload.superseded_by_candidate_id, "approved-candidate-1");
+    assert.ok(supersede.payload.superseded_at, "sets superseded_at");
+    const filters = new Map(supersede.filters);
+    assert.equal(filters.get("source_module"), "FIELD_WORKFORCE");
+    assert.equal(filters.get("deduction_type"), "no_activity");
+    assert.equal(filters.get("month_key"), "2026-06");
+    assert.equal(filters.get("source_record_id"), "%:pending", "targets ONLY pending drafts");
+    assert.equal(filters.get("superseded_at"), null, "targets ONLY live (not already-superseded) rows");
+    assert.ok(filters.has("employee_hr_id_compact"), "scoped to the employee");
+  }
+
+  // 12. Even when the approved candidate ALREADY exists (idempotent skip), its pending draft is
+  // still superseded — a re-sync must not leave the stale pending row live alongside the approved.
+  {
+    const recordedSupersedes: Array<{ payload: Record<string, unknown>; filters: Array<[string, unknown]> }> = [];
+    const fake = createFakeSupabase({
+      selectRows: [payrollRow({ import_id: null, month_key: "2026-06" }) as unknown as Record<string, unknown>],
+      probeResults: [{ data: [{ id: "already-there" }], error: null }],
+      recordedSupersedes,
+    });
+    const result = await syncFieldWorkforceApprovedDecisions({
+      monthKey: "2026-06",
+      createdBy: "tester",
+      supabase: fake as never,
+    });
+    assert.equal(result.created, 0);
+    assert.equal(result.skippedExisting, 1);
+    assert.equal(recordedSupersedes.length, 1, "pending draft is superseded even on the idempotent skip path");
+    assert.equal(recordedSupersedes[0].payload.superseded_by_candidate_id, "already-there");
   }
 }
