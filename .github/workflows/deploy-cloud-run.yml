@@ -17,34 +17,19 @@ name: Deploy to Google Cloud Run
 # TO SHIP SOMETHING IMMEDIATELY: use the "Run workflow" button (workflow_dispatch). It still
 # enforces the CI gate; tick `force` only to override it in an emergency.
 #
-# TEMPORARY FAST-DEPLOY WINDOW (added 2026-07-30 ~04:45 Cairo at the owner's request:
-# "make my deployments for the next 5 hours as fast as it could be even if extra cost,
-# but after 10 am return as it is normal"). The `workflow_run` trigger below makes a
-# green CI on main deploy IMMEDIATELY instead of waiting for the next 2-hourly cron,
-# which is the dominant term in merge->live latency by an order of magnitude:
-#   CI ~5-6 min + cron wait 0-120 min (+GitHub cron lag, ~16 min observed) + deploy ~9 min.
-# The window is SELF-EXPIRING: the gate job below compares the clock against
-# FAST_DEPLOY_UNTIL and refuses workflow_run-triggered deploys after it, so behaviour
-# returns to the normal 2-hourly cadence at 10:00 Cairo even if nobody reverts this file.
-# The follow-up cleanup PR just deletes dead config; it is not load-bearing.
-#
-# Two other speed levers were measured and RULED OUT, so they are not attempted here:
+# DEPLOY-SPEED LEVERS MEASURED AND RULED OUT (kept so they are not re-attempted):
 #   - Bigger Cloud Build machine (E2_HIGHCPU_8): still zero quota in europe-west3, not just
 #     the old us-central1 — probed 2026-07-30, FAILED_PRECONDITION. See cloudbuild.yaml.
 #   - Larger GitHub-hosted runners: require Team/Enterprise; this repo is on a personal
 #     `pro` account.
-# CI itself is NOT shortened and no quality gate is relaxed — a faster path to production
-# is only worth having if what it ships is still verified.
+#
+# HISTORY (2026-07-30 -> 2026-07-31): a temporary "fast-deploy window" briefly added a
+# `workflow_run: [CI]` trigger so a green CI on main deployed immediately instead of waiting
+# for the next 2-hourly cron. It was built to self-expire at 2026-07-30T07:00:00Z and it did
+# — after that every CI-triggered run woke a runner only to no-op (~17s each). This file has
+# now been returned to the scheduled-only cadence and that dead config removed. To ship
+# something immediately, use the "Run workflow" button (workflow_dispatch) as documented above.
 on:
-  # TEMPORARY (see the fast-deploy note above) — self-expires at FAST_DEPLOY_UNTIL.
-  # `branches: [main]` filters on the ORIGINATING run's head branch, so PR-triggered CI
-  # runs (head_branch = the PR branch) never reach this; only CI's push-to-main runs do.
-  # `types: [completed]` also fires on failure/cancellation, so the gate job carries an
-  # `if` that skips a non-success conclusion outright rather than paying for a runner.
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   schedule:
     # Every 2h: 00/02/04/.../22 UTC = 02/04/06/.../00 Cairo. Widened from the original
     # 4-hourly on 2026-07-26 — 4h meant a merge could sit unshipped for most of a working
@@ -97,10 +82,6 @@ jobs:
   # early, so guarding N steps inside one job would still pay for the whole job.
   gate:
     runs-on: ubuntu-latest
-    # A CI run that failed or was cancelled must not even start this job. Without this,
-    # `types: [completed]` would wake the gate on every red CI on main just to have it
-    # decide proceed=false a minute later.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: 'read'
       actions: 'read' # to read other workflows' run conclusions via the API
@@ -113,30 +94,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE: ${{ inputs.force }}
-          # TEMPORARY fast-deploy window (see the header note). After this instant,
-          # workflow_run-triggered deploys are refused and the 2-hourly schedule is
-          # once again the only automatic path to production. 07:00Z = 10:00 Cairo.
-          FAST_DEPLOY_UNTIL: "2026-07-30T07:00:00Z"
         run: |
           set -euo pipefail
-          # On workflow_run, github.sha is NOT the commit CI validated — take the exact
-          # head_sha of the CI run that woke us instead. Every other trigger keeps
-          # github.sha (the head of main at schedule/dispatch time).
-          SHA="${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}"
+          # The head of main at schedule/dispatch time.
+          SHA="${{ github.sha }}"
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "Candidate commit: $SHA (event: ${{ github.event_name }})"
-
-          # TEMPORARY fast-deploy window — self-expiry. Deliberately checked at RUN time
-          # rather than trusted to a later cleanup PR, so an unattended session, a missed
-          # revert, or a laptop that went to sleep still restores the normal cadence.
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            if [ "$(date -u +%s)" -ge "$(date -u -d "$FAST_DEPLOY_UNTIL" +%s)" ]; then
-              echo "::notice::Fast-deploy window closed at $FAST_DEPLOY_UNTIL — skipping. The 2-hourly schedule still ships this commit."
-              echo "proceed=false" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-            echo "Fast-deploy window is OPEN (until $FAST_DEPLOY_UNTIL) — deploying on CI success."
-          fi
 
           if [ "${FORCE:-false}" = "true" ]; then
             echo "::warning::force=true — bypassing the CI-success check for $SHA."
@@ -144,10 +107,10 @@ jobs:
             exit 0
           fi
 
-          # 1. CI must have SUCCEEDED for this exact commit. `--jq` picks the newest run for
-          #    the SHA; a re-run that later went green therefore counts. No CI run at all
-          #    (e.g. a docs-only commit that only matched ci-docs-fallback) is NOT success,
-          #    so we refuse rather than guess.
+          # CI must have SUCCEEDED for this exact commit. `--jq` picks the newest run for
+          # the SHA; a re-run that later went green therefore counts. No CI run at all
+          # (e.g. a docs-only commit that only matched ci-docs-fallback) is NOT success,
+          # so we refuse rather than guess.
           CI_CONCLUSION=$(gh api \
             "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
             --jq '.workflow_runs[0].conclusion // "none"')
@@ -159,45 +122,6 @@ jobs:
           fi
 
           echo "proceed=true" >> "$GITHUB_OUTPUT"
-
-          # 2. TEMPORARY (fast window): wait for prebuild-image.yml if it is still building
-          #    THIS commit's image. Without this wait the whole prebuild idea silently does
-          #    nothing useful: CI takes ~4 min and the Cloud Build ~5 min, so the deploy would
-          #    arrive while the prebuild is still WORKING, its preflight would find no image,
-          #    and it would start a SECOND concurrent build of the identical artifact — both
-          #    paying full build time and both polling Cloud Build's 60/min get-requests quota
-          #    (the 429 storm that scripts/retry-transient.sh exists for).
-          #
-          #    Same idiom as the CI check above: ask the API about the run for this exact SHA.
-          #    Everything here degrades to today's behaviour — no prebuild run, a failed
-          #    prebuild, or a wait that times out all simply fall through to the deploy job
-          #    building the image itself.
-          PREBUILD=$(gh api \
-            "repos/${{ github.repository }}/actions/workflows/prebuild-image.yml/runs?head_sha=$SHA&per_page=1" \
-            --jq '.workflow_runs[0] | "\(.status)"' 2>/dev/null || echo "")
-          if [ -z "$PREBUILD" ] || [ "$PREBUILD" = "null" ]; then
-            echo "No prebuild run for $SHA — the deploy will build the image itself (normal path)."
-          else
-            # Bounded at ~12 min: longer than any observed cold build (~5-6 min), short enough
-            # that a wedged prebuild cannot hold production back indefinitely.
-            for i in $(seq 1 48); do
-              PREBUILD=$(gh api \
-                "repos/${{ github.repository }}/actions/workflows/prebuild-image.yml/runs?head_sha=$SHA&per_page=1" \
-                --jq '.workflow_runs[0] | "\(.status)/\(.conclusion // "-")"' 2>/dev/null || echo "unknown/-")
-              case "$PREBUILD" in
-                completed/*)
-                  echo "Prebuild for $SHA finished: $PREBUILD"
-                  break
-                  ;;
-              esac
-              echo "Waiting for prebuild of $SHA ($PREBUILD) — attempt $i/48"
-              sleep 15
-            done
-            case "$PREBUILD" in
-              completed/*) : ;;
-              *) echo "::warning::Prebuild for $SHA did not finish in time ($PREBUILD) — deploying anyway; the build step will run inline." ;;
-            esac
-          fi
 
           # DELIBERATELY NOT CHECKED HERE: "is this commit already live?". The obvious
           # implementation — compare $SHA to the head SHA of the last successful run of this
