@@ -55,6 +55,29 @@ export function countProposedCvFields(fields: ExtractedCandidateFields): number 
   return Object.values(fields).filter((field) => field && field.value !== null && field.value !== "").length;
 }
 
+// How many of the AI's findings are still MISSING from the candidate — the number a reviewer
+// actually has to act on.
+//
+// This, not countProposedCvFields, is what a human-facing prompt must report. Inbound intake
+// auto-applies the high-confidence, column-storage findings (cv-auto-apply.ts) without writing
+// applied_fields, deliberately, so the analytics keep measuring only real human corrections. The
+// consequence is that "has anyone reviewed this" and "is there anything left to review" are
+// different questions: counting raw findings would announce work that intake already did, on every
+// inbound candidate, forever.
+export function countUnappliedCvFields(
+  fields: ExtractedCandidateFields,
+  candidate: Candidate,
+  schema: CvPositionSchema,
+): number {
+  let count = 0;
+  for (const field of schema.fields) {
+    const proposed = fields[field.key];
+    if (!proposed || proposed.value === null || proposed.value === "") continue;
+    if (candidateFieldValue(candidate, field) === null) count += 1;
+  }
+  return count;
+}
+
 function candidateFieldValue(candidate: Candidate, field: CvFieldDefinition): string | boolean | null {
   const raw =
     field.storage === "jsonb"
