@@ -13,6 +13,8 @@
  * "nearest in time" silently degrade to "earliest check-in of the day").
  */
 
+import { hasRealVendorTime } from "@/lib/crm/dates";
+
 /** Minimum shape the matcher needs from a check-in; callers pass richer rows and read extra fields
  * off the returned candidate. */
 export type CheckinForMatch = {
@@ -48,8 +50,14 @@ export function pickCheckinForVisit<C extends CheckinForMatch>(
   const candidates = index.get(`${visit.agentCrmId}|${contact}|${visit.visitDay}`);
   if (!candidates || candidates.length === 0) return null;
 
-  const anchorMs = visit.crmSaveDate ? new Date(visit.crmSaveDate).getTime() : Number.NaN;
-  if (!Number.isFinite(anchorMs)) return candidates[0];
+  // The anchor must carry a REAL clock. `crm_save_date` is a midnight placeholder on ~3% of rows
+  // (3,398 visits in production, 384 of them on an agent/contact/day that has more than one
+  // check-in), and `new Date("…T00:00:00").getTime()` is perfectly finite — so a truthiness check
+  // silently accepted midnight as "the visit was saved at 00:00" and collapsed "nearest in time"
+  // to "earliest check-in of the day". That is exactly the degradation this module's header says
+  // it exists to prevent for `visit_date_time`; hasRealVendorTime is the shared rule for both.
+  const anchorMs = hasRealVendorTime(visit.crmSaveDate) ? new Date(visit.crmSaveDate).getTime() : Number.NaN;
+  if (!Number.isFinite(anchorMs)) return earliestCheckin(candidates);
   let best = candidates[0];
   let bestDiff = Number.POSITIVE_INFINITY;
   for (const candidate of candidates) {
@@ -60,4 +68,19 @@ export function pickCheckinForVisit<C extends CheckinForMatch>(
     }
   }
   return best;
+}
+
+/**
+ * Deterministic fallback when the visit has no usable time anchor: the day's EARLIEST check-in.
+ * Chosen explicitly rather than taking `candidates[0]`, whose order is just however the rows
+ * arrived from the database — so the same visit could resolve to a different check-in between two
+ * renders. This is a day-level match, not a time-level one; it is the honest best available, and
+ * callers that display it as a precise GPS time should say "same day" rather than imply precision.
+ */
+function earliestCheckin<C extends CheckinForMatch>(candidates: readonly C[]): C {
+  let earliest = candidates[0];
+  for (const candidate of candidates) {
+    if (String(candidate.check_date) < String(earliest.check_date)) earliest = candidate;
+  }
+  return earliest;
 }

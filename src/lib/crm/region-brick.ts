@@ -7,6 +7,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRowsOrdered } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 
@@ -219,15 +220,21 @@ function isCurrentlyTaggedBrick(b: { effective_from: string | null; source_file:
  */
 export async function getActiveBricksForTemplateReference(): Promise<CrmBrickReferenceRow[]> {
   const supabase = getSupabaseAdmin();
-  const [bricksRes, blocksRes, areasRes, regionsRes] = await Promise.all([
-    supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, brick_name, block_code, area_code, region_code, active, effective_from, source_file"),
+  // Paginated: source_of_sales_bricks is 1,142 rows, so a single unpaginated read silently
+  // truncated the reference sheet at PostgREST's 1,000-row cap.
+  const [bricks, blocksRes, areasRes, regionsRes] = await Promise.all([
+    fetchAllRowsOrdered<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_bricks")
+          .select("brick_id, brick_name, block_code, area_code, region_code, active, effective_from, source_file"),
+      "brick_id",
+    ),
     supabase.from("source_of_sales_blocks").select("block_code, description"),
     supabase.from("source_of_sales_areas").select("area_code, area_name"),
     supabase.from("source_of_sales_regions").select("region_code, region_name"),
   ]);
-  if (bricksRes.error) throw new Error(bricksRes.error.message);
+  // fetchAllRowsOrdered throws on error, so there is no error branch to check here.
 
   const blockName = new Map<string, string>();
   for (const b of (blocksRes.data ?? []) as Array<{ block_code: string | null; description: string | null }>) {
@@ -242,7 +249,7 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
     if (r.region_code) regionName.set(r.region_code, r.region_name ?? "");
   }
 
-  const allBricks = (bricksRes.data ?? []) as Array<{
+  const allBricks = (bricks ?? []) as Array<{
     active: boolean | null;
     area_code: string | null;
     block_code: string | null;
@@ -305,10 +312,17 @@ export type CurrentBrickInfo = { areaCode: string | null; regionCode: string | n
  */
 export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; current: Map<string, CurrentBrickInfo> }> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id, area_code, region_code, active, effective_from, source_file");
-  if (error) throw new Error(error.message);
+  // Paginated: this index is the VALIDATION set for both the region and customer resolvers, so a
+  // silent 1,000-row truncation (the table is 1,142 rows) made legitimate brick ids fail the
+  // `allKnown` check and surfaced the flatly false 'no brick exists with that ID' error, blocking
+  // real mapping imports.
+  const data = await fetchAllRowsOrdered<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("source_of_sales_bricks")
+        .select("brick_id, area_code, region_code, active, effective_from, source_file"),
+    "brick_id",
+  );
 
   const allBricks = (data ?? []) as Array<{
     active: boolean | null;
@@ -431,7 +445,8 @@ function isIgnoredStatusText(statusText: string): boolean {
  *   - Brick ID blank + no ignore status -> skipped (no change) — a blank row never resets an
  *     existing decision back to pending; use the single-row "Keep Pending" action for that.
  * Validates every brick_id against ONE batch-fetched active-brick set (not one query per row) —
- * the brick master is small (~400 rows) and this can process hundreds of regions per upload.
+ * the brick master is ~1,150 rows (it outgrew the "~400" this comment used to claim, which is why
+ * the fetch is now paginated) and this can process hundreds of regions per upload.
  */
 export async function bulkImportCrmRegionBrickMappings(input: {
   resolvedByHrId: string | null;
@@ -439,10 +454,12 @@ export async function bulkImportCrmRegionBrickMappings(input: {
 }): Promise<CrmRegionBulkImportResult> {
   const supabase = getSupabaseAdmin();
 
-  const { data: bricks, error: bricksError } = await supabase
-    .from("source_of_sales_bricks")
-    .select("brick_id, active");
-  if (bricksError) throw new Error(bricksError.message);
+  // Paginated: truncation here made a valid brick id look unknown and produced the false
+  // 'does not exist in the brick master' blocked-row reason on a legitimate upload.
+  const bricks = await fetchAllRowsOrdered<{ active: boolean; brick_id: string }>(
+    () => supabase.from("source_of_sales_bricks").select("brick_id, active"),
+    "brick_id",
+  );
   const activeBrickIds = new Set(
     ((bricks ?? []) as Array<{ active: boolean; brick_id: string }>)
       .filter((b) => b.active)

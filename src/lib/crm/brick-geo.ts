@@ -24,6 +24,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { fetchAllRowsOrdered } from "@/lib/supabase/paginated";
 
 /** One brick with a known geographic centre, ready for distance comparison. */
 type BrickCentroid = {
@@ -87,18 +88,38 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.centroids;
   const supabase = getSupabaseAdmin();
   try {
-    const [pointsRes, bricksRes, areasRes, regionsRes] = await Promise.all([
-      supabase
-        .from("geo_locations")
-        .select("source_key, latitude, longitude")
-        .eq("source_type", "brick_centroid")
-        .not("latitude", "is", null)
-        .not("longitude", "is", null),
-      supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, region_code, active"),
+    // Both of these tables exceed PostgREST's 1,000-row cap, so an unpaginated read silently
+    // truncated them: production has 1,142 brick_centroid rows (446 of which are orphans whose
+    // brick no longer exists, and which therefore consumed the row budget for nothing) against
+    // 696 live bricks — roughly 12% of real bricks never reached the index. A check-in inside a
+    // dropped brick then snapped to the nearest SURVIVING centroid and still rendered a confident
+    // "High · 0.8 km", and which bricks vanished depended on heap order, so it varied per render.
+    // The same truncation also made brick VALIDATION reject legitimate brick ids elsewhere.
+    const [points, bricks, areasRes, regionsRes] = await Promise.all([
+      fetchAllRowsOrdered<{ latitude: number | null; longitude: number | null; source_key: string | null }>(
+        () =>
+          supabase
+            .from("geo_locations")
+            .select("source_key, latitude, longitude")
+            .eq("source_type", "brick_centroid")
+            .not("latitude", "is", null)
+            .not("longitude", "is", null),
+        "source_key",
+      ),
+      fetchAllRowsOrdered<{
+        active: boolean | null;
+        area_code: string | null;
+        brick_id: string | null;
+        brick_name: string | null;
+        region_code: string | null;
+      }>(
+        () => supabase.from("source_of_sales_bricks").select("brick_id, brick_name, area_code, region_code, active"),
+        "brick_id",
+      ),
+      // Small masters (~48 areas, ~6 regions) — comfortably inside one page.
       supabase.from("source_of_sales_areas").select("area_code, area_name"),
       supabase.from("source_of_sales_regions").select("region_code, region_name"),
     ]);
-    if (pointsRes.error || bricksRes.error) return [];
 
     const areaName = new Map<string, string>();
     for (const a of (areasRes.data ?? []) as Array<{ area_code: string | null; area_name: string | null }>) {
@@ -112,22 +133,12 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
       string,
       { active: boolean | null; area_code: string | null; brick_name: string | null; region_code: string | null }
     >();
-    for (const b of (bricksRes.data ?? []) as Array<{
-      active: boolean | null;
-      area_code: string | null;
-      brick_id: string | null;
-      brick_name: string | null;
-      region_code: string | null;
-    }>) {
+    for (const b of bricks) {
       if (b.brick_id) brickById.set(b.brick_id, b);
     }
 
     const centroids: BrickCentroid[] = [];
-    for (const point of (pointsRes.data ?? []) as Array<{
-      latitude: number | null;
-      longitude: number | null;
-      source_key: string | null;
-    }>) {
+    for (const point of points) {
       if (!point.source_key || point.latitude == null || point.longitude == null) continue;
       const brick = brickById.get(point.source_key);
       // Only bricks that still exist AND are active are valid targets — a retired brick must never
