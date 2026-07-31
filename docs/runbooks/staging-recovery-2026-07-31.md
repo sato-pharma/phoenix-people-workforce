@@ -199,34 +199,72 @@ Not a schema problem — a **data** problem that having no foreign keys had hidd
 | `public.app_auth_users` rows | 144 — **all 144 orphaned** |
 | `public.user_access_profiles` rows | 143 — **all 143 orphaned** |
 
-Staging's `public` data was cloned but its GoTrue `auth.users` was never
-populated to match, so essentially every application account points at an auth
-identity that does not exist there. This is very likely why staging logins fail
-and why the CI smoke test is written to expect a session rejection.
+Staging's `public` data was cloned but its GoTrue `auth.users` was never populated
+to match, so essentially every application account points at an auth identity that
+does not exist there.
 
-Do **not** "fix" this by deleting rows or nulling `auth_user_id` — that destroys
-staging's dataset to satisfy a constraint. The real fix is to repopulate
-`auth.users` (see the existing `resync_gotrue_password_hashes` pattern), after
-which both FKs can be added and staging reaches 278/278.
+**This does NOT break staging logins.** An earlier revision of this runbook claimed
+it did; that was wrong and is corrected here, because acting on it would have meant
+copying production password hashes into a lower environment for no gain.
+
+Auth in this app is application-managed: HR_ID + bcrypt against `app_auth_users`,
+plus an app-signed session cookie. The GoTrue bridge is explicitly **best-effort** —
+`shouldBlockLoginWhenSupabaseBridgeUnavailable()` in `src/lib/auth/app-sessions.ts`
+returns `PHOENIX_STRICT_SUPABASE_BRIDGE === 'true'`, which is opt-in and off, and its
+own comment records that the bridge "currently fails" on Cloud Run and that enforcing
+it locked out Super Admin/CEO/Finance/SFE/NSM (incident 2026-07-11). Login falls back
+to a fully-functional Phoenix-only session, and the login route self-repairs a missing
+`authUserId` by calling `provisionSupabaseAuthIdentity`. A failing bridge is the
+documented normal state on production too.
+
+### Decision (2026-08-01): leave the 2 foreign keys absent on staging
+
+Fixing this buys the 2 FKs and a working bridge on staging — **not** logins. Weighed
+against that:
+
+- Nulling the dangling pointers does not work: `user_access_profiles.auth_user_id`
+  is `NOT NULL` (only `app_auth_users.auth_user_id` is nullable), so that FK stays
+  uncreatable regardless.
+- Copying production's `auth.users` would move password hashes and employee PII into
+  a lower environment to satisfy a constraint the application does not depend on.
+  Rejected outright.
+- Provisioning 144 staging-only GoTrue identities via the supported admin API and
+  repointing both tables would reach 278/278, but writes new auth data for 144
+  accounts to solve a problem nothing is currently suffering from.
+
+So staging sits at **276 of 278** foreign keys, by decision rather than by accident.
+For reference production is fully linked: 147 `auth.users`, 144 `app_auth_users`,
+0 orphaned, 0 null.
+
+Revisit only if staging is ever needed to exercise the Supabase bridge itself —
+GoTrue sign-in, Storage, or anything relying on `auth.uid()`. The schema-shape
+monitor does not assert exact foreign-key counts (it uses floors), so this gap does
+not make it red.
 
 ---
 
 ## Still open after all of this
 
-1. **The drift check's production leg has never run.** Every run logs
-   `HAS_PRODUCTION_SUPABASE_KEY: false`. Add the
-   `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` repository secret (production ref
-   `ozucdzovmcqvepbozvqf`). Production drift was verified clean by hand on
-   2026-07-31, but nothing automated watches it.
-2. **Nothing asserts schema shape or grants.** Both faults here were invisible to
-   every existing check. The drift check compares migration *bookkeeping*, so it
-   caught Fault 1 only by accident and would never have caught Fault 2 at all —
-   staging's `schema_migrations` is fully populated. A scheduled job running the
-   comparison query above against both projects would catch this entire class,
-   and would have caught Fault 2 on 2026-07-11.
-3. **Staging's `auth.users` holds 12 rows against 144 application accounts.**
-   Until that is repopulated, 2 foreign keys cannot be created and staging logins
-   will not work for real users. See the section above.
+1. ~~The drift check's production leg has never run~~ — **CLOSED 2026-07-31.**
+   `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY` was added and the production leg now runs
+   on every scheduled pass. Both legs report clean.
+2. ~~Nothing asserts schema shape or grants~~ — **CLOSED 2026-08-01** by the
+   schema-shape monitor (PR #1518): `phx_ci_schema_shape()` plus
+   `scripts/check-schema-shape.ts`, wired into this same scheduled workflow for both
+   projects. It asserts invariants rather than a golden snapshot, so it does not rot
+   and get muted. It would have caught Fault 2 on 2026-07-11.
+
+   It earned its keep on the first production run, finding a live exposure nobody
+   was looking for: `email_backfill_backup_20260730` — `login_id`, `hr_id`,
+   `old_email`, `new_email` for 107 accounts — readable by the public anon key with
+   RLS never enabled. Because this app authenticates with HR_ID + password, that was
+   the complete username list for the login system. Closed by
+   `20260801090000_secure_email_backfill_backup_rls.sql`; rows visible to `anon` went
+   107 → 0 with all 107 rows retained. **Drop that table once the email backfill has
+   settled**, along with its `NO_PRIMARY_KEY_ALLOWED` entry.
+3. **Staging's `auth.users` gap is accepted, not outstanding** — see the decision
+   recorded above. Staging sits at 276 of 278 foreign keys deliberately. It does not
+   affect logins and does not make the monitor red.
 
 4. ~~`anon` and `authenticated` still revoked~~ — **RESTORED 2026-07-31**, after
    RLS was confirmed real. Final matrix: `anon` 96 relations, `authenticated` 149,
