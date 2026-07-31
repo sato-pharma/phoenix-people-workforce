@@ -1,8 +1,8 @@
 // ╔══════════════════════════════════════════════════════════════════╗
-// ║  DESIGN LOCK — OWNER UNLOCK REQUIRED (phrase: Sato-1997)        ║
+// ║  DESIGN LOCK — OWNER APPROVAL REQUIRED                           ║
 // ║  This file is permanently locked. The identity banner MUST use   ║
 // ║  PhoenixSignatureCard. Do NOT swap it for any other component,   ║
-// ║  refactor the render, or change props without the unlock phrase. ║
+// ║  refactor the render, or change props without owner approval.    ║
 // ╚══════════════════════════════════════════════════════════════════╝
 "use client";
 
