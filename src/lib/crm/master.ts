@@ -10,7 +10,14 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { CRM_CHECKINS_TABLE, CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
+import {
+  CRM_CHECKINS_TABLE,
+  CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE,
+  CRM_REGION_BRICK_RESOLUTIONS_TABLE,
+  CRM_VISITS_TABLE,
+} from "@/lib/crm/tables";
+import { addDaysIso } from "@/lib/crm/dates";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError, isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getLatestVisitsSyncRuns } from "@/lib/crm/admin";
@@ -826,13 +833,81 @@ async function loadBrickMappingByRegionId(): Promise<Map<number, BrickMapping>> 
   return map;
 }
 
-/** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id from its crm_region_id. Unmapped/
- * unset regions correctly show "—" throughout (crm_contact_grade comes straight from the SELECT
- * now — see VISIT_SELECT — so it needs no synthesized placeholder here). */
-function attachBrickMapping(rows: CrmMasterRow[], mapByRegionId: Map<number, BrickMapping>): void {
+/** Builds crm_contact_id -> {brickId, areaId, regionId} from every "mapped" CUSTOMER resolution.
+ * Same shape as {@link loadBrickMappingByRegionId}, but per individual customer, which is strictly
+ * more precise than the region-level mapping (a CRM region spans many bricks). Degrades to an empty
+ * map on any error — display overlay only, never load-bearing. */
+async function loadBrickMappingByContactId(): Promise<Map<number, BrickMapping>> {
+  const supabase = getSupabaseAdmin();
+  const map = new Map<number, BrickMapping>();
+  try {
+    // Paginated with an EXPLICIT order: this table is one row per resolved CRM contact and the
+    // migration sizes it at ~12.5k, so a single unpaginated read would silently stop at
+    // PostgREST's 1,000-row cap and quietly re-show already-mapped customers as unmapped. Offset
+    // paging is only exact when the order is stable, hence the `.order()` inside the builder.
+    const resolutions = await fetchAllRows<{ brick_id: string | null; crm_contact_id: number }>(() =>
+      supabase
+        .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
+        .select("crm_contact_id, brick_id")
+        .eq("status", "mapped")
+        .not("brick_id", "is", null)
+        .order("crm_contact_id", { ascending: true }),
+    );
+    if (resolutions.length === 0) return map;
+
+    const brickIds = Array.from(new Set(resolutions.map((r) => r.brick_id).filter((v): v is string => Boolean(v))));
+    const brickById = new Map<string, { area_code: string | null; brick_id: string; region_code: string | null }>();
+    // Chunked: the contact mapping can cover thousands of distinct bricks, and PostgREST folds an
+    // `.in()` list into the request URL, which overflows past a few hundred values.
+    for (let i = 0; i < brickIds.length; i += 200) {
+      const { data: bricks, error: bricksError } = await supabase
+        .from("source_of_sales_bricks")
+        .select("brick_id, area_code, region_code")
+        .in("brick_id", brickIds.slice(i, i + 200));
+      if (bricksError) return map;
+      for (const b of (bricks ?? []) as Array<{ area_code: string | null; brick_id: string; region_code: string | null }>) {
+        brickById.set(b.brick_id, b);
+      }
+    }
+
+    for (const row of resolutions) {
+      if (!row.brick_id) continue;
+      const brick = brickById.get(row.brick_id);
+      map.set(row.crm_contact_id, {
+        areaId: brick?.area_code ?? null,
+        brickId: row.brick_id,
+        regionId: brick?.region_code ?? null,
+      });
+    }
+  } catch {
+    return map;
+  }
+  return map;
+}
+
+/** Sets each visit row's phx_brick_id/phx_area_id/phx_region_id.
+ *
+ * Prefers the CUSTOMER-level mapping (by crm_contact_id) and falls back to the REGION-level one,
+ * which is what both the customer-mapping migration and customer-brick.ts always promised
+ * ("downstream readers prefer it and fall back to the region mapping") but nothing actually did:
+ * this function only ever read the region map, so every customer mapping an admin resolved — the
+ * finest geography available, across ~12.7k mappable contacts — had literally no effect on any
+ * displayed brick, and Regular visits were additionally docked 25% of their recognition score for
+ * a missing brick that had in fact been mapped.
+ *
+ * Unmapped/unset contacts and regions correctly show "—" throughout (crm_contact_grade comes
+ * straight from the SELECT now — see VISIT_SELECT — so it needs no synthesized placeholder here). */
+function attachBrickMapping(
+  rows: CrmMasterRow[],
+  mapByRegionId: Map<number, BrickMapping>,
+  mapByContactId: Map<number, BrickMapping> = new Map(),
+): void {
   for (const row of rows) {
+    const contactId = typeof row.contact_crm_id === "number" && row.contact_crm_id !== 0 ? row.contact_crm_id : null;
     const regionId = typeof row.crm_region_id === "number" ? row.crm_region_id : null;
-    const mapping = regionId != null ? mapByRegionId.get(regionId) : undefined;
+    const mapping =
+      (contactId != null ? mapByContactId.get(contactId) : undefined) ??
+      (regionId != null ? mapByRegionId.get(regionId) : undefined);
     row.phx_brick_id = mapping?.brickId ?? null;
     row.phx_area_id = mapping?.areaId ?? null;
     row.phx_region_id = mapping?.regionId ?? null;
@@ -1083,12 +1158,26 @@ function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
   const dates = run.map((r) => String(r.visit_date).slice(0, 10));
   const fromDate = dates.reduce((a, b) => (a < b ? a : b));
   const toDate = dates.reduce((a, b) => (a > b ? a : b));
+  // Collapse per calendar DATE before summing. The mirror really does carry duplicate rows for the
+  // same agent/date/AM-PM (39 such groups, 50 extra rows in production), and summing per ROW
+  // double-counted them — a single AM half-day logged twice read as a full day. Rule per date:
+  // any full-day marker => 1 day; otherwise 0.5 per DISTINCT half marker, capped at 1 (so a real
+  // AM + PM pair is still a full day, while AM + AM is still a half). half_days then counts DATES
+  // that resolved to half a day, which is what that column's own description promises.
+  const markersByDate = new Map<string, Set<string>>();
+  for (const r of run) {
+    const date = String(r.visit_date).slice(0, 10);
+    const marker = r.ampm === "AM" || r.ampm === "PM" ? r.ampm : "FULL";
+    const markers = markersByDate.get(date);
+    if (markers) markers.add(marker);
+    else markersByDate.set(date, new Set([marker]));
+  }
   let duration = 0;
   let halfDays = 0;
-  for (const r of run) {
-    const isHalf = r.ampm === "AM" || r.ampm === "PM";
-    duration += isHalf ? 0.5 : 1;
-    if (isHalf) halfDays += 1;
+  for (const markers of markersByDate.values()) {
+    const dayDuration = markers.has("FULL") ? 1 : Math.min(1, 0.5 * markers.size);
+    duration += dayDuration;
+    if (dayDuration === 0.5) halfDays += 1;
   }
   const ids = run.map((r) => r.crm_visit_id).filter((v): v is number => typeof v === "number");
   return {
@@ -1131,6 +1220,12 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
   const excludedInList = await getEffectiveExcludedInList();
   const PAGE = 1000;
   const MAX_ROWS = 60000;
+  // Widen the day fetch so a period straddling the filter boundary is grouped from ALL of its days
+  // (see the comment on the gte/lte below). 31 days comfortably covers any realistic continuous
+  // leave run; a longer one would still be clipped, which is the same behaviour as before.
+  const BOUNDARY_MARGIN_DAYS = 31;
+  const fetchFrom = range.dateFrom ? addDaysIso(range.dateFrom, -BOUNDARY_MARGIN_DAYS) : null;
+  const fetchTo = range.dateTo ? addDaysIso(range.dateTo, BOUNDARY_MARGIN_DAYS) : null;
   const days: VacationDayRow[] = [];
   for (let from = 0; from < MAX_ROWS; from += PAGE) {
     const base = supabase
@@ -1141,8 +1236,14 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
     if (excludedInList) {
       q = q.not("agent_crm_id", "in", excludedInList);
     }
-    if (range.dateFrom) q = q.gte("visit_date", range.dateFrom);
-    if (range.dateTo) q = q.lte("visit_date", range.dateTo);
+    // Fetch a MARGIN either side of the requested window. A vacation period is grouped from a run
+    // of consecutive days, so clipping the day rows at the filter boundary rebuilt a period from
+    // only its in-range half: a 28-Jun→3-Jul leave viewed with dateFrom=2026-07-01 reported
+    // Duration 3 instead of 6, and vacation_id (min visit id of the run) changed with the window,
+    // so the same real period could not be cross-referenced between two views. Periods that do not
+    // actually intersect the requested window are dropped after grouping, below.
+    if (fetchFrom) q = q.gte("visit_date", fetchFrom);
+    if (fetchTo) q = q.lte("visit_date", fetchTo);
     const { data, error } = await (q as unknown as typeof base)
       .order("agent_crm_id", { ascending: true })
       .order("visit_date", { ascending: true })
@@ -1186,8 +1287,16 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
     if (run.length > 0) periods.push(buildVacationPeriod(run));
   }
 
-  periods.sort((x, y) => String(y.from_date).localeCompare(String(x.from_date)));
-  return { periods, truncated: days.length >= MAX_ROWS };
+  // Keep only periods that genuinely overlap the requested window — the margin rows above exist to
+  // complete a straddling run's Duration, not to add periods the user did not ask for.
+  const inWindow = periods.filter((period) => {
+    if (range.dateFrom && String(period.to_date) < range.dateFrom) return false;
+    if (range.dateTo && String(period.from_date) > range.dateTo) return false;
+    return true;
+  });
+
+  inWindow.sort((x, y) => String(y.from_date).localeCompare(String(x.from_date)));
+  return { periods: inWindow, truncated: days.length >= MAX_ROWS };
 }
 
 /** Normalize the requested dataset to a known value. */
@@ -1294,6 +1403,8 @@ function applyMasterFilters(
 type DeriveResources = {
   agentMeta?: Map<string, AgentMeta>;
   brickMapping?: Map<number, BrickMapping>;
+  /** Customer-level (crm_contact_id) brick mapping — preferred over the region-level one. */
+  brickMappingByContact?: Map<number, BrickMapping>;
   triples?: Map<number, { third: string; unspecified: boolean }>;
   checkinsIndex?: Map<string, CheckinLite[]>;
 };
@@ -1326,7 +1437,13 @@ async function attachDerived(
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
   // crm_region_id), and only meaningful for the raw visits/regular-no-checkin tabs, which is what
   // isVisitDataset already scopes to.
-  if (isVisitDataset(dataset)) attachBrickMapping(rows, resources?.brickMapping ?? (await loadBrickMappingByRegionId()));
+  if (isVisitDataset(dataset)) {
+    const [byRegion, byContact] = await Promise.all([
+      resources?.brickMapping ? Promise.resolve(resources.brickMapping) : loadBrickMappingByRegionId(),
+      resources?.brickMappingByContact ? Promise.resolve(resources.brickMappingByContact) : loadBrickMappingByContactId(),
+    ]);
+    attachBrickMapping(rows, byRegion, byContact);
+  }
   // Recognition score reads phx_brick_id, so it must run after attachBrickMapping above.
   if (isVisitDataset(dataset)) attachRecognitionScore(rows);
 }
@@ -1618,13 +1735,14 @@ export async function* streamCrmMasterExportPages(
   // doesn't hit this table's index well into a multi-minute export that got its connection cut
   // before finishing, producing a corrupted .xlsx.
   const needsCheckins = dataset === "visits" || dataset === "double_visits";
-  const [agentMeta, brickMapping, checkinsIndex] = await Promise.all([
+  const [agentMeta, brickMapping, brickMappingByContact, checkinsIndex] = await Promise.all([
     loadAgentMetaByHrId(),
     isVisitDataset(dataset) ? loadBrickMappingByRegionId() : Promise.resolve(new Map<number, BrickMapping>()),
+    isVisitDataset(dataset) ? loadBrickMappingByContactId() : Promise.resolve(new Map<number, BrickMapping>()),
     needsCheckins ? preloadCheckinsIndexForExport(range) : Promise.resolve(new Map<string, CheckinLite[]>()),
   ]);
   const triples = dataset === "double_visits" ? (await computeTriplesInRange(range)).byVisitId : undefined;
-  const resources: DeriveResources = { agentMeta, brickMapping, triples, checkinsIndex };
+  const resources: DeriveResources = { agentMeta, brickMapping, brickMappingByContact, triples, checkinsIndex };
 
   const supabase = getSupabaseAdmin();
   const table =
