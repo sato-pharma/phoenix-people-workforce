@@ -23,7 +23,9 @@ import { createClient } from "@supabase/supabase-js";
 // is a defect, not an exception. Every entry below is a dated ad-hoc backup and is a
 // candidate for dropping outright.
 const NO_PRIMARY_KEY_ALLOWED = new Set<string>([
-  "email_backfill_backup_20260730",
+  // email_backfill_backup_20260730 was removed 2026-08-01 when the table itself was
+  // dropped (20260801100000). An allowlist that names tables which no longer exist
+  // quietly stops being a guard — retire entries with the table, not later.
   "geo_locations_brick_centroid_backup2_20260728",
   "geo_locations_brick_centroid_backup_20260728",
 ]);

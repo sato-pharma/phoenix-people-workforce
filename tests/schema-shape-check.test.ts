@@ -15,8 +15,11 @@ import { evaluateSchemaShape, type SchemaShape } from "../scripts/check-schema-s
 //   keys, 105/282 primary keys, 138/1096 indexes.
 
 const HEALTHY: SchemaShape = {
-  // Production, measured 2026-07-31.
-  tables_total: 285,
+  // Production, measured 2026-08-01 via phx_ci_schema_shape() — after
+  // email_backfill_backup_20260730 was dropped (285 -> 284 tables), which also emptied
+  // tables_rls_disabled. Real numbers, not invented ones: if this fixture drifts from
+  // production the test stops meaning anything.
+  tables_total: 284,
   tables_rls_enabled: 284,
   tables_force_rls: 26,
   policies_total: 359,
@@ -28,12 +31,14 @@ const HEALTHY: SchemaShape = {
   triggers_total: 33,
   schema_usage: { anon: true, authenticated: true, service_role: true },
   tables_exposed_without_rls: [],
-  tables_rls_disabled: ["email_backfill_backup_20260730"],
+  tables_rls_disabled: [],
   tables_without_primary_key: [
-    "email_backfill_backup_20260730",
     "geo_locations_brick_centroid_backup2_20260728",
     "geo_locations_brick_centroid_backup_20260728",
   ],
+  // Production actually has 61 of these; deliberately empty here so the "healthy schema
+  // raises nothing" assertion below stays meaningful. The deny-all warning has its own
+  // dedicated case at the bottom of this file.
   tables_rls_enabled_without_policy: [],
 };
 
