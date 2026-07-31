@@ -13,7 +13,7 @@
 //  - Impact windows report their sample size so a thin before/after isn't oversold.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
+import { CRM_DOUBLE_VISIT_TYPE_CODES, isCrmDoubleVisitRow, queryVisitsLimited } from "@/lib/crm/reads";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
@@ -1045,8 +1045,13 @@ async function getLeadershipActivity(
       doubleHrIds: [hrId],
       dateFrom: window.from,
       dateTo: window.to,
+      // Only real fieldwork double visits count as "double-visits conducted" — a manager tagged as
+      // a partner on a Meeting/Training/Vacation row is not one. And collapse burst-duplicate
+      // re-saves so the headline count matches the canonical double-visit definition.
+      visitTypes: CRM_DOUBLE_VISIT_TYPE_CODES,
       columns: "agent_hr_id, agent_name, visit_date, visit_type, visit_type_description, comment, contact_name, customer_name",
       limit: 8000,
+      collapseDoubleVisits: true,
     }),
   ]);
   if (coachRes.error) throw new Error(`Employee 360 coaching delivered: ${coachRes.error.message}`);

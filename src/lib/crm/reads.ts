@@ -386,13 +386,22 @@ export async function queryVisits<T = CrmVisitRow>(
      * everywhere coverage/scoring/reporting depends on that exclusion.
      */
     includeResignedAgents?: boolean;
+    /** Opt-in: collapse iReports360 burst-duplicate double-visit submissions (the same read-time
+     * dedup {@link getDoubleVisitRows} applies — see {@link collapseDuplicateDoubleVisitSubmissions}).
+     * Off by default so raw-mirror browsers are unaffected. When on, the duplicate-detection columns
+     * are added to the projection automatically and single-agent visits pass through unchanged, so a
+     * caller that SUMS/COUNTS visit rows gets the deduplicated total without re-deriving the dedup. */
+    collapseDoubleVisits?: boolean;
   },
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = options.includeResignedAgents ? "" : await getEffectiveExcludedInList();
-  const projection = withIdColumn(options.columns ?? "*");
+  // When collapsing, widen the projection so the duplicate-detection fingerprint columns are present
+  // even if the caller only asked for a subset (otherwise the collapse silently no-ops).
+  const requestedColumns = options.collapseDoubleVisits ? withDuplicateDetectionColumns(options.columns ?? "*") : options.columns;
+  const projection = withIdColumn(requestedColumns ?? "*");
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
   const rows: T[] = [];
   let cursor: string | null = null;
@@ -411,7 +420,9 @@ export async function queryVisits<T = CrmVisitRow>(
     if (page.length < pageSize) break;
     cursor = page[page.length - 1].id;
   }
-  return rows;
+  return options.collapseDoubleVisits
+    ? (collapseDuplicateDoubleVisitSubmissions(rows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
+    : rows;
 }
 
 /**
@@ -419,13 +430,15 @@ export async function queryVisits<T = CrmVisitRow>(
  * cap rather than a full scan. Returns `[]` (never throws) when the mirror schema is missing.
  */
 export async function queryVisitsLimited<T = CrmVisitRow>(
-  options: CrmVisitFilter & { columns?: string; orderBy?: string; ascending?: boolean; limit: number },
+  options: CrmVisitFilter & { columns?: string; orderBy?: string; ascending?: boolean; limit: number; collapseDoubleVisits?: boolean },
 ): Promise<T[]> {
   if (options.agentHrIds && options.agentHrIds.length === 0) return [];
   if (options.doubleHrIds && options.doubleHrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
-  let query = supabase.from(CRM_VISITS_TABLE).select(options.columns ?? "*");
+  // See queryVisits: widen the projection so the collapse fingerprint columns are present.
+  const limitedColumns = options.collapseDoubleVisits ? (withDuplicateDetectionColumns(options.columns ?? "*") ?? "*") : (options.columns ?? "*");
+  let query = supabase.from(CRM_VISITS_TABLE).select(limitedColumns);
   query = applyVisitFilter(query as unknown as VisitFilterableQuery, options, excludedInList) as unknown as typeof query;
   query = query
     .order(options.orderBy ?? "visit_date", { ascending: options.ascending ?? false })
@@ -435,7 +448,10 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
     if (isCrmSchemaMissingError(error)) return [];
     throw new Error(error.message);
   }
-  return (data ?? []) as unknown as T[];
+  const limitedRows = (data ?? []) as unknown as T[];
+  return options.collapseDoubleVisits
+    ? (collapseDuplicateDoubleVisitSubmissions(limitedRows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
+    : limitedRows;
 }
 
 /**

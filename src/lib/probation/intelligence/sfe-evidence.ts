@@ -154,6 +154,9 @@ export async function buildSfeEvidence(
       dateFrom: window.from ?? undefined,
       dateTo: window.to,
       columns: "visit_date, contact_crm_id",
+      // Collapse iReports360 burst-duplicate double-visit re-saves so totalVisits / call-rate /
+      // check-in-per-visit aren't inflated (this evidence is frozen into the SFE decision snapshot).
+      collapseDoubleVisits: true,
     }),
     queryCheckins<CheckinRow>({
       agentHrIdILike: hrId,

@@ -208,6 +208,10 @@ export async function fetchVisitRows(hrId: string, window: Employee360Window): P
     dateFrom: window.from,
     dateTo: window.to,
     columns: "visit_type,visit_type_description,visit_date,ampm,contact_crm_id,contact_name,customer_name,double_crm_id,double_hr_id,double_name,comment",
+    // Collapse iReports360 burst-duplicate double-visit re-saves so "doubles received" (summary
+    // card) and the double-visit history aren't inflated. No-op for single visits, so the rest of
+    // the activity mix is unchanged.
+    collapseDoubleVisits: true,
   });
 }
 
