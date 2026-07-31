@@ -27,7 +27,9 @@
 // WhatsApp message.
 
 import { systemAccessContext } from "@/lib/auth/permissions";
-import { createCandidate } from "@/lib/recruitment/candidates";
+import { logError } from "@/lib/observability/log";
+import { createCandidate, updateCandidate } from "@/lib/recruitment/candidates";
+import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
 import {
   candidateIdentityFromCvFields,
   extractCvFieldsFromBytes,
@@ -311,6 +313,37 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       }
     } catch {
       /* best-effort */
+    }
+
+    // Fill the candidate's still-empty columns from the high-confidence half of that same
+    // extraction. Without this the enrichment is invisible: the review UI is only reachable from
+    // the two manual upload paths, so an auto-intake candidate's proposal was never surfaced to
+    // anyone (see cv-auto-apply.ts). Gap-fill only — never an overwrite — so a human edit or an
+    // earlier extraction always wins, and anything low-confidence still waits for review.
+    //
+    // applied_fields is deliberately NOT written here. cv-extraction-analytics.ts reads
+    // "applied_fields is not null" as "Talent Acquisition reviewed and saved this one" and measures
+    // the AI's correction rate from the diff; recording an unattended write there would fake a
+    // perfect score and destroy the only signal we have on extraction quality.
+    //
+    // Best-effort, like the persist above: the candidate and file already exist and are the point
+    // of this function, so a failure to enrich must never fail the intake.
+    try {
+      if (extraction) {
+        const autoApply = selectAutoApplyFields({
+          candidate,
+          extractedFields: extraction.fields,
+          positionKey: extraction.positionKey,
+        });
+        if (Object.keys(autoApply).length > 0) {
+          await updateCandidate(candidate.id, autoApply);
+        }
+      }
+    } catch (autoApplyError) {
+      logError("CV auto-apply of high-confidence fields failed", {
+        error: autoApplyError,
+        labels: { candidateId: candidate.id, event: "cv_auto_apply_failed" },
+      });
     }
 
     const outcome: InboundCvIntakeOutcome = created ? "candidate_created" : "candidate_matched";
