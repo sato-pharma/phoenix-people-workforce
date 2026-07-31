@@ -1,0 +1,24 @@
+-- Retire the 2026-07-30 email backfill's rollback table now that the backfill has settled.
+--
+-- HISTORY. public.email_backfill_backup_20260730 held login_id, hr_id, old_email and
+-- new_email for 107 accounts. It was created with Supabase's default grants to
+-- anon/authenticated and RLS was never enabled, so the PUBLIC anon key could read every
+-- row — and because this app authenticates with HR_ID + password, that was the complete
+-- username list for the login system, not merely a list of email addresses. The
+-- schema-shape monitor (20260731210000) found it on its first production run and
+-- 20260801090000 closed the exposure by enabling RLS.
+--
+-- -- SAFE: the 107 rows were exported to CSV before this ran and the file was verified
+-- (COPY 107, 108 lines including header) — see the PR. Nothing references the table:
+-- inbound foreign keys checked and confirmed zero, so the drop cannot cascade. It carried
+-- no primary key and was never read by application code; its only purpose was to allow the
+-- email change to be reversed or audited, and that window has passed.
+--
+-- Dropping it also retires the matching entry in scripts/check-schema-shape.ts's
+-- NO_PRIMARY_KEY_ALLOWED, removed in the same change — the allowlist should only ever
+-- name tables that actually exist, or it quietly stops being a guard.
+--
+-- Guarded so it is a clean no-op anywhere the table was never created (staging never had
+-- it), which keeps this migration safe to replay on a rebuilt environment.
+
+drop table if exists public.email_backfill_backup_20260730;
