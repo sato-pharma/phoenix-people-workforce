@@ -10,6 +10,7 @@ import type { ProbationDvState, ProbationRow } from "@/lib/probation/types";
 import { buildReportSummaryMetrics, formatActiveFilters } from "@/lib/double-visit-analytics/report-filters";
 import { normalizeRegionLabel, regionsWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { getDoubleVisitRows } from "@/lib/crm/reads";
+import { getCrmIdentityResolutions } from "@/lib/crm/identity";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
@@ -392,38 +393,36 @@ async function paginateLiveMirrorVisits(
   });
 }
 
-// Hand-verified corrections for specific `agent_crm_id` values that currently
-// resolve to a RESIGNED employee (via `employees.crm_id`) but actually belong to
-// someone else now — whoever administers iReports360 reuses a resigned employee's
-// CRM account for their replacement instead of creating a new one (see memory
-// crm-resigned-slot-reused-for-new-hire). Add an entry here ONLY after manually
-// confirming the real person: the raw `agent_name` label's name AND current area
-// must both match the target employee — never guess from name alone.
+// RETIRED 2026-08-01: a hardcoded agent_crm_id -> hr_id corrections map used to live here, with two
+// owner-confirmed entries written straight into the source.
 //
-// 2026-07-22 (owner-confirmed against Private Calendar for A-7, July 2026):
-//   1391 -> AI-0003 "Soaf Atef" (area "Cairo East 1" matches the raw label exactly;
-//           no crm_id/crm_username on file yet for this employee at all).
-//   1536 -> B-164 "Essam Mohamed Youssef Elsayed" (area field is currently "Dokki -
-//           Mohandseen - Bolak", matching the raw label's "Dokki"; his crm_username
-//           still says "Nasr City" — a stale label from before he moved areas).
-const CRM_AGENT_ID_HR_ID_CORRECTIONS: Readonly<Record<number, string>> = {
-  1391: "AI-0003",
-  1536: "B-164",
-};
+// It fixed the same problem the identity override table fixes — a CRM slot reused for a departing
+// rep's replacement, so `employees.crm_id` keeps resolving to the person who left — but it fixed it
+// for DOUBLE VISIT ANALYTICS ONLY. That is exactly why the misattributed work stayed invisible on
+// every other surface (Team Calendar, Field Workforce Compliance, the portal) for months: this file
+// looked correct, so the underlying data never got fixed.
+//
+// Both entries now live in `ireports360_crm_identity_resolutions` (tier 1 of the shared identity
+// waterfall, written 2026-07-31), which every consumer reads. Reading the SAME table here — rather
+// than deleting the correction outright — is deliberate: the mirror's stored `agent_hr_id` is only
+// re-stamped when the sync next touches a row, so until then `visit.agent_hr_id` still holds the
+// leaver's id and dropping the correction would visibly regress this module.
+type CrmOverrideMap = ReadonlyMap<string, string>;
 
 function dbRowFromMirrorVisit(
   visit: MirrorVisitRow,
   employeeByHrKey: Map<string, EmployeeDirectoryRow>,
   managerHrIdKeys: Set<string>,
   resolution: DoubleVisitChainResolution | null,
+  crmIdentityOverrides: CrmOverrideMap,
 ): DoubleVisitDbRow {
   // When the same-day chain resolves this "manager-visited" row down to the real MR, the visited
   // party becomes that MR (the whole convoy actually saw them); otherwise it stays the recorded
-  // agent, unless a hand-verified correction above applies. Everything downstream — coverage, MR
-  // scores, calendar — then credits the real, correctly-identified person.
+  // agent, unless an admin's identity override says the CRM slot belongs to someone else. Everything
+  // downstream — coverage, MR scores, calendar — then credits the real, correctly-identified person.
   const rawVisitedHrId = resolution ? resolution.mrHrId : visit.agent_hr_id;
   const correctedHrId = !resolution && visit.agent_crm_id != null
-    ? CRM_AGENT_ID_HR_ID_CORRECTIONS[visit.agent_crm_id]
+    ? crmIdentityOverrides.get(String(visit.agent_crm_id))
     : undefined;
   const effectiveVisitedHrId = correctedHrId ?? rawVisitedHrId;
   const visitedKey = canonicalHrIdKey(effectiveVisitedHrId);
@@ -601,6 +600,16 @@ export async function getLiveDoubleVisitRows(
 ): Promise<DoubleVisitDbRow[]> {
   const mirrorRows = await paginateLiveMirrorVisits(dateFrom, dateTo, options);
   if (mirrorRows.length === 0) return [];
+  // Admin identity overrides (tier 1 of the shared CRM waterfall) — replaces the hardcoded
+  // corrections map that used to sit in this file. Deliberately NOT wrapped in a try/catch: this
+  // decides WHO a visit is credited to, and the module rule is that a failed read may blank an
+  // overlay but must never quietly change an attribution. A real read failure surfaces instead of
+  // silently reverting every corrected row to the departed employee it used to name.
+  const crmIdentityOverrides = new Map<string, string>(
+    (await getCrmIdentityResolutions())
+      .filter((row) => row.status === "mapped" && row.mappedHrId)
+      .map((row) => [String(row.crmId), row.mappedHrId as string]),
+  );
   const employeeByHrKey = new Map(
     employees
       .map((employee) => [canonicalHrIdKey(employee.hrId), employee] as const)
@@ -628,7 +637,7 @@ export async function getLiveDoubleVisitRows(
     (key) => medicalRepHrIdKeys.has(key),
   );
   return mirrorRows.map((visit) =>
-    dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys, chainResolutions.get(visit.id) ?? null),
+    dbRowFromMirrorVisit(visit, employeeByHrKey, managerHrIdKeys, chainResolutions.get(visit.id) ?? null, crmIdentityOverrides),
   );
 }
 

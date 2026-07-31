@@ -29,6 +29,9 @@ export type IReports360SyncNotifyInput =
       dateTo: string;
       runId: string;
       result: {
+        /** Visits the post-exit attribution guard refused: the CRM slot resolves to someone who had
+         * already left on the visit date. Optional so an older caller still type-checks. */
+        blockedPostExitAttributions?: number;
         /** Optional so an older caller still type-checks; see buildIReports360SyncMessage. */
         checkinsFailed?: boolean;
         checkinsFetched: number;
@@ -89,7 +92,8 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
     const truncatedFetch = (input.result.rowsSkippedReconcile ?? 0) > 0;
     const checkinsBroken = input.result.checkinsFailed === true;
     const quietFetch = input.result.rowsFetched === 0;
-    const degraded = truncatedFetch || checkinsBroken || quietFetch;
+    const postExitBlocked = input.result.blockedPostExitAttributions ?? 0;
+    const degraded = truncatedFetch || checkinsBroken || quietFetch || postExitBlocked > 0;
     lines.push(`${degraded ? "⚠️" : "✅"} iReports360 CRM Sync — ${label}${degraded ? " (with warnings)" : ""}`);
     lines.push(`Window: ${input.dateFrom} → ${input.dateTo}`);
     lines.push("");
@@ -104,6 +108,15 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
     }
     if (quietFetch) {
       lines.push("⚠️ ZERO visits returned for this window — verify the CRM integration is still healthy.");
+    }
+    if (postExitBlocked > 0) {
+      lines.push(
+        `⚠️ ${postExitBlocked} visit(s) NOT attributed — the CRM account resolves to someone who had already left.`,
+      );
+      lines.push(
+        "   That usually means the account was handed to a replacement. Map it on /admin/crm → Unmapped Agents,",
+      );
+      lines.push("   or the new rep's work stays invisible and can trigger a wrongful absence deduction.");
     }
     if (degraded) lines.push("");
     lines.push(`Visits fetched: ${input.result.rowsFetched}`);

@@ -20,6 +20,10 @@ export type CrmIdentityMaps = {
   hrIdByCrmId: Map<string, string>;
   hrIdByCrmUsername: Map<string, string>;
   hrIdByManualOverride: Map<string, string>;
+  /** `hr_id` -> `last_working_date` (YYYY-MM-DD) for everyone who has one. Feeds the post-exit
+   * attribution guard: work dated after someone left cannot be theirs. Only employees WITH a last
+   * working date appear, so an active employee is simply absent. */
+  lastWorkingDateByHrId: Map<string, string>;
 };
 
 /** A full `ireports360_visits` row (every persisted column). Reads that project a subset of
