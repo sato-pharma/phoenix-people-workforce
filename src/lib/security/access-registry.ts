@@ -215,11 +215,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/visits-report/resolve-identity", permission: null, guard: "domain-helper", csrfRequired: true }),
   // CRM master table XLSX export: returns all rows for the current dataset+filters. Super-Admin-gated
   // inline (same as the /admin/crm page), so guarded by the domain helper, not the permission matrix.
-  sessionApi({ methods: ["GET"], pattern: "/api/admin/crm/master-export", permission: null, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/admin/crm/master-export", permission: null, guard: "domain-helper" }),
   // Portal-scoped CRM export — the portal twin of the admin route above. Enforces crm_visits:read
   // plus the per-viewer row scope (isPortalCrmRole + resolvePortalCrmScope) inside the handler, so
   // like its admin sibling the fine gate is the domain helper, not the permission matrix alone.
-  sessionApi({ methods: ["GET"], pattern: "/api/employee-portals/crm/master-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/employee-portals/crm/master-export", permission: { resource: "crm_visits", action: "read" }, guard: "domain-helper" }),
   // Region Mapping tab resolver: assigns a CRM region to a real Phoenix brick. Same posture as
   // resolve-identity above — checks access.role === "Super Admin" directly.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/admin/crm/resolve-region", permission: null, guard: "domain-helper", csrfRequired: true }),
@@ -480,6 +480,12 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/save", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin JSON-only mapping save: writes selected product, territory, and customer aliases after server-side permission checks." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/mappings/template", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Read-only export: lists the distinct unmapped codes from the uploaded raw sheet as a fill-in XLSX; persists nothing." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/normalizer/import-validated", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin import: normalizes the uploaded raw sheet, builds the coded workbook in memory, and persists ONLY when it passes the Source-of-Sales validator." }),
+  // Had no entry of its own and fell through to the /api/sales/** blanket below, which carries no
+  // audit classification — so this download escaped the export-audit guard twice over (the guard's
+  // own regex also required a slash-delimited "template", missing the hyphenated name). The file is
+  // a BLANK per-distributor layout with no customer data, but download routes are audited here as a
+  // rule. Guarded on sales:import, matching the route's own assertPermission.
+  sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/source-of-sales/raw-template", permission: { resource: "sales", action: "import" } }),
   // Territory Management — read-only geographic view of brick allocation per line.
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/filters", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/scope", permission: { resource: "sales", action: "read" } }),

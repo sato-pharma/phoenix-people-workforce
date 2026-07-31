@@ -14,6 +14,8 @@ export type AuditEntityType =
   | "deduction_candidate"
   | "deduction_comment"
   | "deduction_decision"
+  | "crm_master_export"
+  | "sos_raw_template_export"
   | "deduction_export"
   | "deduction_finalization"
   | "deduction_payroll_import"

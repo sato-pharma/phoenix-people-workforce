@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isProductionRuntime } from "@/config/system-settings";
 
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
@@ -22,9 +21,13 @@ export const maxDuration = 300;
 
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
-  // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
-  // real local machine without it may bypass an unset CRON_SECRET during development.
-  if (!secret) return !isProductionRuntime();
+  // An unset CRON_SECRET may ONLY be bypassed on a real developer machine. This used to be
+  // `!isProductionRuntime()`, which is true for ANY non-production APP_ENV — including staging,
+  // a 1:1 clone of production. With CRON_SECRET unset there, all three iReports360 cron routes
+  // would have been callable unauthenticated by anyone, driving vendor syncs and mirror writes
+  // against production-grade data. Requiring NODE_ENV === "development" makes the bypass
+  // impossible anywhere it is actually deployed.
+  if (!secret) return process.env.NODE_ENV === "development";
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
