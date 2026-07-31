@@ -85,8 +85,8 @@ src/lib/notifications/scheduled-processing.ts
 
 Unlike the old Vercel-cron model, Cloud Scheduler has no plan-tier frequency limit —
 the 5-minute drain schedule is not gated on any paid tier. All five crons carry an
-explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat — see
-[Observability](observability.md). The in-app `/admin/cron-control` dashboard can
+explicit `maxDuration = 300` and a named Healthchecks.io dead-man's-switch heartbeat
+(`withDeadMansSwitch`) — see [Observability](observability.md). The in-app `/admin/cron-control` dashboard can
 view/pause/resume/run/reschedule these live, but does not update
 `setup-gcp-cron.sh` — keep that script's flags in sync by hand after any live
 reschedule.

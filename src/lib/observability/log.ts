@@ -5,13 +5,6 @@
 // `logging.googleapis.com/labels` becomes searchable labels. This lets log-based metrics
 // and alert policies match on stable labels (e.g. event="cron_unauthorized") instead of
 // brittle text substrings. Never pass secrets/PII in message or labels.
-//
-// Every call here ALSO emits via Sentry.logger, so the same structured fields land as a
-// trace/error-correlated log entry in Sentry's Logs view — coexistence, not a replacement:
-// this file remains the one call site application code uses everywhere, and GCP log-based
-// alerting (see docs/observability.md) keeps working unchanged.
-
-import * as Sentry from "@sentry/nextjs";
 
 export type LogSeverity = "DEBUG" | "INFO" | "NOTICE" | "WARNING" | "ERROR" | "CRITICAL";
 
@@ -42,15 +35,6 @@ function cleanLabels(labels?: LogLabels): Record<string, string> | undefined {
   return out;
 }
 
-const SENTRY_LOG_METHOD: Record<LogSeverity, "debug" | "info" | "warn" | "error" | "fatal"> = {
-  DEBUG: "debug",
-  INFO: "info",
-  NOTICE: "info",
-  WARNING: "warn",
-  ERROR: "error",
-  CRITICAL: "fatal",
-};
-
 export function logStructured(severity: LogSeverity, message: string, options: LogOptions = {}) {
   const entry: Record<string, unknown> = {
     severity,
@@ -69,16 +53,6 @@ export function logStructured(severity: LogSeverity, message: string, options: L
     console.error(line);
   } else {
     console.log(line);
-  }
-
-  // Best-effort: never let a Sentry SDK issue break the GCP-side logging path above.
-  try {
-    Sentry.logger[SENTRY_LOG_METHOD[severity]](message, {
-      ...options.labels,
-      ...(err ? { errorName: err.name, errorMessage: err.message } : undefined),
-    });
-  } catch {
-    // no-op
   }
 }
 

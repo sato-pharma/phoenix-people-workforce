@@ -99,7 +99,7 @@ Notification outbox and probation reminder processing are shared through
 `src/lib/notifications/scheduled-processing.ts` and run from the 5-minute
 outbox-drain job. Unlike the retired Vercel-cron model, Cloud Scheduler has no
 plan-tier frequency limit. All five crons carry an explicit `maxDuration = 300` and
-a named `Sentry.withMonitor` heartbeat.
+a named Healthchecks.io dead-man's-switch heartbeat (`withDeadMansSwitch`).
 
 ## Current Gaps
 

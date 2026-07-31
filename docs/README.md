@@ -46,7 +46,7 @@
 | Document | Description |
 |---|---|
 | [Attendance Agent](attendance-agent.md) | Local ZKTeco attendance integration |
-| [Observability](observability.md) | Sentry setup, monitoring, alerting |
+| [Observability](observability.md) | Error capture, monitoring, alerting |
 | [Development Workflow](development-workflow.md) | Engineering operating rules and contributor governance |
 
 ## Planning & Audits

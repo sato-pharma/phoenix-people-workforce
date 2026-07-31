@@ -1307,7 +1307,7 @@ function nextAttemptAtIso(attemptNumber: number) {
 
 /**
  * Notification types where a "no recipients resolved" outcome means a real escalation
- * (an approval/auth/lifecycle email) was silently dropped — worth a Sentry warning.
+ * (an approval/auth/lifecycle email) was silently dropped — worth flagging.
  */
 const highPriorityNotificationTypes = new Set<EmailNotificationType>([
   "password_reset",
@@ -1341,7 +1341,7 @@ export type OutboxSkipClass =
  * Deterministic skips were previously routed through markNotificationOutboxFailed,
  * burning all 5 retries and polluting the failure/terminalFailed metrics. They now go
  * to a terminal `skipped` state. A `no_recipients` skip on a high-priority type ALSO
- * escalates to Sentry because it means a real alert was dropped.
+ * sets `sentryEscalate` because it means a real alert was dropped.
  */
 export function classifyOutboxSkip(
   reason: string,

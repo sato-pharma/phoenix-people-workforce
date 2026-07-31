@@ -53,8 +53,8 @@ export const systemEmail = {
 } as const;
 
 /**
- * True when the runtime is the production deployment. Mirrors the env detection used
- * by observability (resolveSentryEnvironment): Vercel sets VERCEL_ENV to
+ * True when the runtime is the production deployment. Mirrors the env-detection logic
+ * used elsewhere for observability: Vercel sets VERCEL_ENV to
  * "production" | "preview" | "development"; Node sets NODE_ENV.
  */
 export function isProductionRuntime(): boolean {

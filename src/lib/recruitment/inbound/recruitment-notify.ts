@@ -66,7 +66,7 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
 
 /**
  * Pushes a WhatsApp-intake-down alert to the Talent Acquisition reviewers via Telegram + push (and
- * in-app), not just Sentry — so a Meta-side block on the number reaches a phone the way it never
+ * in-app) — so a Meta-side block on the number reaches a phone the way it never
  * did on 2026-07-26, when the channel was silently dead for ~19 hours.
  *
  * Throttled to one alert per status per Cairo day via a stable idempotencyKey: the health check
@@ -111,7 +111,7 @@ export async function notifyWhatsAppIntakeUnhealthy(health: WhatsAppIntakeHealth
 /**
  * Alerts Talent Acquisition that an inbound CV exhausted its retries and dead-lettered — a real
  * applicant the automated pipeline could not process, needing manual review. Reaches a phone
- * (Telegram + push), not just Sentry. A message dead-letters exactly once, and the idempotencyKey
+ * (Telegram + push). A message dead-letters exactly once, and the idempotencyKey
  * is per (channel, providerMessageId), so this fires exactly once per lost CV — no throttle needed,
  * no risk of spamming. Best-effort; never let alerting failure affect the worker.
  */

@@ -1,14 +1,15 @@
 import { isProductionRuntime } from "@/config/system-settings";
 import { logWarning } from "@/lib/observability/log";
 
-// An INDEPENDENT, EXTERNAL liveness monitor (Healthchecks.io) for the 7 Cloud Scheduler jobs —
-// separate from Sentry cron monitors and GCP log-based alerting, on purpose. On 2026-07-23 three
+// An INDEPENDENT, EXTERNAL liveness monitor (Healthchecks.io) for the 8 Cloud Scheduler jobs —
+// separate from GCP log-based alerting, on purpose, and since Sentry's retirement (2026-07-31)
+// this is the ONLY thing that detects a job that stopped running. On 2026-07-23 three
 // scheduler jobs were paused as an emergency stop after a mass-send incident and stayed silently
-// paused for ~2 days: Cloud Scheduler showed PAUSED (a state, not an alert), the app's own Sentry/
+// paused for ~2 days: Cloud Scheduler showed PAUSED (a state, not an alert), the app's own
 // GCP observability never fires because a paused job never even attempts a request, and nothing
 // external was watching for the ABSENCE of expected activity. A dead-man's-switch closes exactly
-// that gap: it alerts on a ping that DIDN'T arrive, so it still works if this app, its Cloud Run
-// service, or its own Sentry project is what's broken or paused.
+// that gap: it alerts on a ping that DIDN'T arrive, so it still works if this app or its Cloud Run
+// service is what's broken or paused.
 //
 // Uses Healthchecks.io's Ping Key + slug API (https://healthchecks.io/docs/http_api/,
 // https://healthchecks.io/docs/slug_urls/): one secret (the project's Ping Key) covers every

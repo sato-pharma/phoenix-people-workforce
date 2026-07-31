@@ -40,7 +40,6 @@ overrides:
 # - unrs-resolver (via eslint-config-next): napi-postinstall fallback for the
 #   prebuilt native binding.
 allowBuilds:
-  "@sentry/cli": true
   protobufjs: true
   sharp: true
   supabase: true

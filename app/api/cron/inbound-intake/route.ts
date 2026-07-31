@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
@@ -29,14 +28,7 @@ export async function GET(request: Request) {
     const limit = Number(new URL(request.url).searchParams.get("limit"));
     const maxItems = Number.isFinite(limit) && limit > 0 ? Math.min(25, Math.floor(limit)) : undefined;
     // Slug matches the live Cloud Scheduler job name (phoenix-inbound-intake).
-    const result = await withDeadMansSwitch("phoenix-inbound-intake", () =>
-      Sentry.withMonitor("inbound-intake", () => drainInboundIntake(maxItems), {
-        checkinMargin: 15,
-        maxRuntime: 5,
-        schedule: { type: "crontab", value: "*/2 * * * *" },
-        timezone: "Africa/Cairo",
-      }),
-    );
+    const result = await withDeadMansSwitch("phoenix-inbound-intake", () => drainInboundIntake(maxItems));
     const deadLettered = result.results.filter((r) => r.status === "dead").length;
     if (result.processed > 0) {
       logInfo("Inbound intake queue drained", {

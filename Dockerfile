@@ -52,8 +52,9 @@ ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_ONESIGNAL_APP_ID
-# Release identifier for Sentry (see next.config.ts's withSentryConfig `release` option and
-# all three Sentry.init calls) — same $SHA_TAG the deploy workflows use for the image tag.
+# Release identifier for the deployed build, tagging which revision a client/server error
+# came from (see app_error_events ingestion in instrumentation.ts / src/lib/error-monitor) —
+# same $SHA_TAG the deploy workflows use for the image tag.
 ARG NEXT_PUBLIC_COMMIT_SHA
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
@@ -65,14 +66,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_ONESIGNAL_APP_ID=$NEXT_PUBLIC_ONESIGNAL_APP_ID
 ENV NEXT_PUBLIC_COMMIT_SHA=$NEXT_PUBLIC_COMMIT_SHA
 
-# SENTRY_AUTH_TOKEN (source-map upload auth) is deliberately NOT an ARG/ENV like the
-# NEXT_PUBLIC_* values above — those persist in image layer history (including the
-# :deps-cache/:latest-cache tags cloudbuild.yaml pushes to Artifact Registry), which
-# would leak a real credential into a long-lived cached image. A BuildKit secret mount
-# only exists for this one RUN step and is never written to any layer. Missing/empty
-# is fine (Sentry's webpack plugin just skips the source-map upload without one).
-RUN --mount=type=secret,id=sentry_auth_token \
-    SENTRY_AUTH_TOKEN="$(cat /run/secrets/sentry_auth_token 2>/dev/null || true)" pnpm run build
+RUN pnpm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner

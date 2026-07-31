@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
@@ -62,7 +61,8 @@ class RecruitmentIntakePollError extends Error {
 /**
  * WhatsApp health is logged, never thrown. Failing this route on it would turn the email cron red
  * for a problem in a different channel and, worse, would stop reporting the mailbox result
- * accurately. logError puts it in Sentry as its own issue, which is the thing that actually pages.
+ * accurately. logError emits an ERROR-severity Cloud Logging entry, which is what the production
+ * error alert policy fires on.
  */
 async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
   const health = await checkWhatsAppIntakeHealth();
@@ -83,7 +83,8 @@ async function reportWhatsAppIntakeHealth(): Promise<WhatsAppIntakeHealth> {
       },
     });
     // Push to Telegram/OneSignal (throttled to once per status per Cairo day) so it reaches a
-    // phone, not just Sentry. Best-effort — never let an alerting failure break the poll.
+    // phone, not just the log-based email alert. Best-effort — never let an alerting failure
+    // break the poll.
     await notifyWhatsAppIntakeUnhealthy(health).catch((error) => {
       logError("Failed to push WhatsApp intake health alert", {
         error,
@@ -119,26 +120,15 @@ export async function GET(request: Request) {
 
   try {
     // Slug matches the live Cloud Scheduler job name (phoenix-recruitment-email-intake).
-    const summaries = await withDeadMansSwitch("phoenix-recruitment-email-intake", () =>
-      Sentry.withMonitor(
-        "recruitment-email-intake",
-        async () => {
-          const result = await pollAllRecruitmentMailboxes();
-          // Thrown, not returned: a mailbox that cannot be reached is a real outage of inbound CV
-          // intake. Reporting it as a 200 success (the previous behaviour) is what let a dead
-          // mailbox look healthy on every dashboard at once.
-          const failures = summarizePollFailures(result);
-          if (failures.length > 0) throw new RecruitmentIntakePollError(failures, result);
-          return result;
-        },
-        {
-          checkinMargin: 15,
-          maxRuntime: 5,
-          schedule: { type: "crontab", value: "4-59/10 * * * *" },
-          timezone: "Africa/Cairo",
-        },
-      ),
-    );
+    const summaries = await withDeadMansSwitch("phoenix-recruitment-email-intake", async () => {
+      const result = await pollAllRecruitmentMailboxes();
+      // Thrown, not returned: a mailbox that cannot be reached is a real outage of inbound CV
+      // intake. Reporting it as a 200 success (the previous behaviour) is what let a dead
+      // mailbox look healthy on every dashboard at once.
+      const failures = summarizePollFailures(result);
+      if (failures.length > 0) throw new RecruitmentIntakePollError(failures, result);
+      return result;
+    });
 
     const backlog = summaries.some((mailbox) => mailbox.folders.some((folder) => folder.backlogRemaining));
     if (backlog) {

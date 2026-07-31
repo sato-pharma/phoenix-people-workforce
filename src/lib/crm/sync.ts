@@ -470,7 +470,7 @@ export async function syncIReports360Visits(input: {
 /**
  * The recurring cron's window: always re-pulls the last N days so late CRM edits get caught.
  *
- * 2026-07-08: reverted 21 -> 10 (the pre-#796 value) after Sentry recorded 2 consecutive
+ * 2026-07-08: reverted 21 -> 10 (the pre-#796 value) after 2 consecutive
  * "ireports360-visits-sync" timeout check-ins (09:00 and 12:00 UTC), each exceeding the 300s
  * maxDuration ceiling. The 21-day window (plus the delete-reconciliation #796 added on top of
  * it) pushed the CRM fetch + upsert + reconcile wall-clock past what even the already-parallelized
@@ -510,7 +510,7 @@ export async function runLiveIReports360Sync() {
  * delete-reconciliation, but bounded to THIS call's own much wider [dateFrom, dateTo] — never
  * the daily cron's narrower one.
  *
- * 2026-07-06: the 2026-07-05 04:00 UTC run (Sentry monitor "ireports360-visits-reconcile") was
+ * 2026-07-06: the 2026-07-05 04:00 UTC run (cron job "ireports360-visits-reconcile") was
  * killed mid-run over a single 120-day window and left its ireports360_visits_sync_runs row
  * stuck at status="running" for ~17h (manually resolved to "failed"). Root cause: this now
  * layers delete-reconciliation + check-in reconciliation + an FWC snapshot refresh on top of the

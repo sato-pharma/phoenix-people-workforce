@@ -40,30 +40,11 @@ substitutions:
   # this to its own image path so a staging-args build never overwrites the
   # production cache tags.
   _CACHE_REPO: europe-west3-docker.pkg.dev/phoenix-workforce-498619/cloud-run-source-deploy/phoenix-hr
-# SENTRY_AUTH_TOKEN is a real credential (can upload releases/source maps to the
-# phoenix-workforce Sentry org), unlike the NEXT_PUBLIC_* values above which are
-# public client keys — so it's fetched from Secret Manager via availableSecrets
-# instead of a plain --substitutions value, keeping it out of Cloud Build logs.
-# It's also passed to `docker build` as a BuildKit `--secret` mount (see the
-# Dockerfile's --mount=type=secret RUN step), not a plain --build-arg — ARG/ENV
-# values persist in image layer history, including the :deps-cache/:latest-cache
-# tags this config pushes to Artifact Registry, which would leak the token into a
-# long-lived cached image. A secret mount never touches any layer.
-# Requires the build's service account (897559113412-compute@developer.gserviceaccount.com,
-# verified via `gcloud builds list --format="value(serviceAccount)"` — NOT the legacy
-# 897559113412@cloudbuild.gserviceaccount.com) to hold roles/secretmanager.secretAccessor
-# on the SENTRY_AUTH_TOKEN secret (already granted 2026-07-22).
-availableSecrets:
-  secretManager:
-    - versionName: projects/$PROJECT_ID/secrets/SENTRY_AUTH_TOKEN/versions/latest
-      env: SENTRY_AUTH_TOKEN
 steps:
   - name: gcr.io/cloud-builders/docker
     entrypoint: bash
     env:
       - DOCKER_BUILDKIT=1
-    secretEnv:
-      - SENTRY_AUTH_TOKEN
     args:
       - -c
       - |
@@ -92,7 +73,6 @@ steps:
           --build-arg "NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}" \
           --build-arg "NEXT_PUBLIC_ONESIGNAL_APP_ID=${_NEXT_PUBLIC_ONESIGNAL_APP_ID}" \
           --build-arg "NEXT_PUBLIC_COMMIT_SHA=${_NEXT_PUBLIC_COMMIT_SHA}" \
-          --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
           -t "${_IMAGE}" \
           .
         docker push "${_IMAGE}"

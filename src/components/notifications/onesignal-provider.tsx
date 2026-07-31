@@ -48,8 +48,8 @@ export function OneSignalProvider() {
       } catch (error) {
         // A misconfigured/unrecognized App ID (e.g. NEXT_PUBLIC_ONESIGNAL_APP_ID set to a
         // stale or wrong value) would otherwise become an unhandled rejection on every
-        // authenticated page load — swallow it here rather than letting it reach Sentry
-        // as recurring noise. It's console-visible for local debugging either way.
+        // authenticated page load — swallow it here rather than letting it become
+        // recurring noise. It's console-visible for local debugging either way.
         console.warn("[onesignal] init failed — push notifications unavailable this session", error);
         return;
       }

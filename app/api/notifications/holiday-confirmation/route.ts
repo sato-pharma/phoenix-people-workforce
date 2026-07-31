@@ -129,11 +129,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Holiday confirmation reminder run is not authorized." }, { status: 401 });
   }
   try {
-    // NOTE: no Sentry cron monitor here. This sub-route runs in-process from the single
-    // daily dispatcher (/api/notifications/daily), which calls
-    // runHolidayConfirmationReminder() directly — never this GET handler — so a per-route
-    // monitor would never check in and would raise false missed-run alerts.
-    // The dispatcher owns the cron monitor.
     return await runHolidayConfirmationReminder(request);
   } catch (error) {
     console.error(error, { tags: { cron: "holiday-confirmation" } });

@@ -349,30 +349,6 @@ jobs:
             --project ${{ env.PROJECT_ID }} \
             --to-latest
 
-      - name: Mark Sentry release as deployed
-        # Same $SHA_TAG used for the image tag / withSentryConfig release / Sentry.init
-        # release option (see next.config.ts, instrumentation-client.ts). This only adds
-        # the deploy-marker/suspect-commit UI in Sentry — release tagging itself already
-        # works without this step. Best-effort: never fail an already-live deploy over it.
-        continue-on-error: true
-        uses: getsentry/action-release@ff07929a6537bac57790c3451cf4d364aca38528 # v3.7.0
-        env:
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: phoenix-workforce
-          SENTRY_PROJECT: phx-b9
-        with:
-          environment: production
-          # `release` (not the deprecated `version`) is this action's current input name.
-          # ignore_missing: the action's default set_commits=auto asks sentry-cli to resolve the
-          # commits between the PREVIOUS Sentry release and this one. After the 2026-07-26
-          # repo-owner transfer that previous release's commit is no longer resolvable, so
-          # sentry-cli failed the step with "Could not find the SHA of the previous release in
-          # the git history". Harmless (the step is continue-on-error, and release tagging
-          # itself works without it) but it put a red X on every otherwise-green deploy. With
-          # this flag it creates the release using the default commit count instead of erroring.
-          release: ${{ steps.preflight.outputs.sha_tag }}
-          ignore_missing: true
-
       - name: Clean up stale SHA-tagged revisions (keep newest 3, never touch live)
         # Each sha-* tag was deployed with --min-instances 1, which reserves 1 vCPU
         # permanently even at 0% traffic. Left unpruned, these accumulate across every

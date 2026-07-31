@@ -1,57 +1,23 @@
 # Observability
 
-_Phoenix Workforce runs on GCP Cloud Run. Observability is **two intentionally parallel systems**,
-not a migration from one to the other: Sentry (issues, tracing, session replay, cron-monitor
-heartbeats) and a self-hosted, GCP-native pipeline (structured logging, log-based metrics/alerts,
-the `app_error_events` table). Every error/request-error capture point fans out to both — see
-`instrumentation.ts`'s `onRequestError`, which runs the self-hosted forward-to-`/api/errors/client`
-call and `Sentry.captureRequestError` together via `Promise.all` (neither blocks or depends on the
-other), and `app/global-error.tsx`, which calls both `reportClientError` and
-`Sentry.captureException`. Do not remove either side without discussing first — they serve
-different audiences (Sentry: trace/error-correlated search, cron-monitor alerting, session replay;
-self-hosted: HR-ID/module-queryable errors, GCP log-based alerting, login-security correlation)._
-
-## Sentry
-
-- **Config:** `next.config.ts` (`withSentryConfig`, org `phoenix-workforce`, project `phx-b9`) +
-  `instrumentation-client.ts` / `sentry.server.config.ts` / `sentry.edge.config.ts` (`Sentry.init`).
-  DSN reads `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` with a hardcoded fallback to the correct project.
-- **PII:** `dataCollection` is deliberately **omitted** from all three `Sentry.init` calls — passing
-  it at all (even `{}`) flips PII/body collection to its permissive default, which is wrong for an
-  HR platform. Do not re-add it without an explicit per-field opt-in.
-- **Sampling:** `tracesSampleRate` is 100% in dev, 20% in production (cost/noise tradeoff).
-- **Release:** `release` on both `withSentryConfig` and every `Sentry.init` call reads
-  `COMMIT_SHA`/`NEXT_PUBLIC_COMMIT_SHA`, set by the deploy workflows from the same `$SHA_TAG` used
-  for the Cloud Run image tag — see "Error capture" below, which shares this identifier.
-- **Source maps:** uploaded at build time via `@sentry/webpack-plugin`, authenticated with
-  `SENTRY_AUTH_TOKEN` sourced from GCP Secret Manager as a BuildKit `--secret` mount in
-  `Dockerfile`/`cloudbuild.yaml` (never a plain build-arg/env, so it never persists in the pushed
-  `:deps-cache`/`:latest-cache` image layers).
-- **Cron monitors:** all 7 GCP-scheduled cron routes (`app/api/notifications/{daily,process}`,
-  `app/api/cron/{background-jobs,ireports360-visits-sync,ireports360-visits-reconcile,ireports360-visits-live-sync,recruitment-email-intake}`)
-  wrap their real work in `Sentry.withMonitor(slug, fn, { schedule, timezone: "Africa/Cairo", ... })`,
-  matching `scripts/setup-gcp-cron.sh`'s `--schedule`/`--time-zone` exactly. Sentry alerts on missed/
-  failed check-ins independently of the app's own per-job notification logic.
-- **Alerts:** a basic "new issue → email" rule is configured in the Sentry dashboard (Alerts →
-  Rules). Slack/PagerDuty/MS Teams/webhook channels are dashboard-only (Settings → Integrations,
-  then add an action to the alert rule) — no app code involved.
-- **Feedback widget:** `Sentry.feedbackIntegration({ autoInject: false })` is registered, and
-  `src/components/admin/sentry-feedback-widget.tsx` manually mounts it only inside
-  `app/(admin)/layout.tsx` — never on employee-facing pages.
-- **GitHub integration:** the Sentry GitHub App is installed against this repo (suspect commits),
-  and `getsentry/action-release` runs in both deploy workflows after traffic promotion
-  (best-effort, `continue-on-error: true`) to mark each deploy as a Sentry release.
-- **Not enabled:** server-side CPU profiling (`@sentry/profiling-node`) was tried and reverted —
-  it breaks Next.js's instrumentation-hook loading under this app's production build (Turbopack;
-  see the `userAgent` note above), throwing `ERR_MODULE_NOT_FOUND` for `@sentry/core` at server
-  startup. `serverExternalPackages` did not fix it. Revisit only with a specific fix in hand, not
-  by re-adding the same config. Custom metrics (`Sentry.metrics`) also not enabled — low priority,
-  add only for specific counters if/when needed.
+_Phoenix Workforce runs on GCP Cloud Run. Sentry was retired 2026-07-31 — observability is now a
+single self-hosted pipeline: the `app_error_events` table (server errors via `instrumentation.ts`'s
+`onRequestError` → `/api/errors/client`; client errors via `reportClientError` → the same endpoint),
+structured JSON logging to Cloud Logging (`src/lib/observability/log.ts`), an external dead-man's-
+switch on all 8 Cloud Scheduler-triggered cron routes (Healthchecks.io — see below), and the GCP
+alert policy **"Phoenix HR production ERROR log alert"** (log-match on `severity>=ERROR` for the
+`phoenix-hr` Cloud Run service, throttled to at most one owner email every 30 minutes) — this
+replaces Sentry's "new issue → email" rule._
 
 ## Error capture
 
-- **Server errors:** `instrumentation.ts` `onRequestError` forwards to `/api/errors/client` (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table (`src/lib/error-monitor/service.ts`), **and** in parallel calls `Sentry.captureRequestError` (see Sentry section above) — neither path blocks or depends on the other. Fields include route, module, hr_id, message, stack, `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
-- **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → same endpoint, **and** `app/global-error.tsx` also calls `Sentry.captureException`.
+- **Server errors:** `instrumentation.ts`'s `onRequestError` forwards to `/api/errors/client`
+  (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table
+  (`src/lib/error-monitor/service.ts`). Fields include route, module, hr_id, message, stack,
+  `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
+- **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → the same
+  endpoint, called from `app/global-error.tsx` (React root error boundary) and
+  `src/components/layout/global-error-reporter.tsx` (`window.onerror` / `unhandledrejection`).
 - **Retention:** `pruneOldAppErrorEvents()` runs in the daily cron (default 90 days, `PHOENIX_ERROR_EVENT_RETENTION_DAYS`).
 - **Access:** the table is service-role only (RLS-enabled, no policies); the admin error dashboard reads it via the admin client with an application permission check.
 - **Local dev never writes here (since 2026-07-30).** `shouldPersistErrorEvents()`
@@ -120,25 +86,26 @@ Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notificati
 | Cloud Scheduler job failure | log-based metric `phoenix_scheduler_failures` |
 | App auth/cron/webhook failure spike | log-based metric `phoenix_app_auth_failures` |
 | Notification-config drift | log-based metric `phoenix_config_drift` — fires on any occurrence in a 5-minute window (`labels.event="config_drift"`, see Structured logging above) |
+| Production error log | **"Phoenix HR production ERROR log alert"** — log-match on `severity>=ERROR` for the `phoenix-hr` Cloud Run service, throttled to at most one owner email every 30 minutes. Replaces Sentry's "new issue → email" rule; catches anything `logError`/structured logging writes at ERROR/CRITICAL, not just `app_error_events` rows. |
 
 **Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
 
 ## External dead-man's-switch (Healthchecks.io)
 
-`src/lib/observability/dead-mans-switch.ts`, wired into all 7 Cloud Scheduler-triggered routes.
-**Deliberately separate from Sentry and GCP Monitoring above** — both of those are hosted by/run
-inside this same GCP project, so they structurally cannot alert on the case where the app, its
-Cloud Run service, or this project's own Sentry integration is what's paused or broken. That
-exact gap is what let 3 scheduler jobs (including the notification outbox drain) sit silently
-**PAUSED for ~2 days** after a 2026-07-23 emergency stop — Cloud Scheduler showed a state, not an
-alert, and nothing external was watching for the absence of an expected ping.
+`src/lib/observability/dead-mans-switch.ts`, wired into all 8 Cloud Scheduler-triggered routes.
+**Deliberately separate from GCP Monitoring above** — that's hosted by/runs inside this same GCP
+project, so it structurally cannot alert on the case where the app or its Cloud Run service itself
+is what's paused or broken. That exact gap is what let 3 scheduler jobs (including the notification
+outbox drain) sit silently **PAUSED for ~2 days** after a 2026-07-23 emergency stop — Cloud
+Scheduler showed a state, not an alert, and nothing external was watching for the absence of an
+expected ping.
 
 **How it works:** each route calls `pingDeadMansSwitch(jobSlug, "success" | "fail", detail?)` (via
 the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partial-sub-job-failure
 case — see that file's own comment) after its real work completes. Healthchecks.io alerts when an
 **expected ping doesn't arrive**, which is exactly the failure shape a paused/crashed/misconfigured
 job produces. Uses Healthchecks' [Ping Key + slug API](https://healthchecks.io/docs/http_api/) —
-one secret (`HEALTHCHECKS_PING_KEY`) covers all 7 jobs, addressed by slug instead of a per-check
+one secret (`HEALTHCHECKS_PING_KEY`) covers all 8 jobs, addressed by slug instead of a per-check
 UUID, with [auto-provisioning](https://healthchecks.io/docs/autoprovisioning/) (`?create=1`) so
 each check is created automatically on its job's first real ping. Fails silent by design: no key
 configured, or non-production runtime, means the code never attempts a network call at all — see
@@ -150,9 +117,15 @@ policy):
 
 1. Create a free account at [healthchecks.io](https://healthchecks.io/) (or use an existing one).
 2. Open the default project (or create one) → **Settings** → copy the **Ping Key**.
-3. Set `HEALTHCHECKS_PING_KEY` on the `phoenix-hr` Cloud Run service (production env var change —
-   needs its own approval per repo policy) and, if you also want staging heartbeats, on
-   `phoenix-hr-staging` too.
+3. Set `HEALTHCHECKS_PING_KEY` on the `phoenix-hr` Cloud Run service ONLY (production env var
+   change — needs its own approval per repo policy). **Never set this key on
+   `phoenix-hr-staging`** — Healthchecks slugs are not environment-namespaced (the same 8 slugs
+   below apply everywhere), so a staging ping would reset the exact same check production relies
+   on, masking a real production outage behind a healthy-looking staging heartbeat. Staging is
+   additionally covered by `APP_ENV=staging`, which makes `isProductionRuntime()` false there —
+   `withDeadMansSwitch`/`pingDeadMansSwitch` already no-op outside production (see
+   `tests/dead-mans-switch.test.ts`), so leaving the key unset on staging is also the
+   functionally-correct state, not just the safer one.
 4. Configure notification channels for the project (email is on by default; add Slack/Telegram/
    SMS/etc. under **Integrations** if wanted) — this is what actually pages you.
 5. Deploy. Each job's check auto-appears in the dashboard the first time it pings after step 3 —
@@ -167,13 +140,14 @@ policy):
    | `phoenix-notify-daily` | `36 6 * * *` | 1h |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m |
    | `phoenix-background-jobs` | `0 3 * * 5` | 2h |
+   | `phoenix-inbound-intake` | `*/2 * * * *` | 10m |
    | `phoenix-ireports360-sync` | `7 9,12,19 * * *` | 30m |
    | `phoenix-reconcile-visits` | `24 4 * * 0` | 2h |
    | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
 
-   These are the exact same cron expressions already live in `scripts/setup-gcp-cron.sh` and each
-   route's `Sentry.withMonitor` call — keep all three in sync if a schedule ever changes.
+   These are the exact same cron expressions already live in `scripts/setup-gcp-cron.sh` — keep
+   both in sync if a schedule ever changes.
 
 **What it does NOT replace:** the Confidence Gate (holds a suspicious send before it goes out),
 the held-notification alert (tells you when the gate held something), or fix #3's truthful

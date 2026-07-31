@@ -66,21 +66,17 @@ All environment variables are listed in `.env.example` at the repository root. C
 | ATTENDANCE_DEFAULT_DEVICE_ID | Default ZKTeco device ID | 1 |
 | ATTENDANCE_REPORT_TIME_ZONE | Timezone for attendance reports | Africa/Cairo |
 
-## Observability / Sentry
+## Observability
 
-Not optional in practice — Sentry is wired in by default (see docs/observability.md); a missing
-DSN just falls back to the hardcoded project DSN in source, it doesn't disable Sentry.
+`COMMIT_SHA` / `NEXT_PUBLIC_COMMIT_SHA` are the release identifier for the self-hosted
+`app_error_events` table (server + client error capture — see docs/observability.md), set by the
+deploy workflows from the same `$SHA_TAG` used for the Cloud Run image tag.
 
 | Variable | Description |
 |---|---|
-| NEXT_PUBLIC_SENTRY_DSN | Browser DSN. Falls back to the correct project's DSN if unset — never a real `.env.example` value needed. |
-| SENTRY_DSN | Server/edge DSN. Same fallback behavior. |
-| SENTRY_AUTH_TOKEN | Source-map upload auth token. **Build-time only**, sourced from GCP Secret Manager as a BuildKit secret mount (`cloudbuild.yaml`/`Dockerfile`) — never set as a plain env var anywhere, never a real `.env.example` value. |
-| COMMIT_SHA | Runtime release identifier, set by the deploy workflows from the same `$SHA_TAG` used for the Cloud Run image tag. Feeds both Sentry's `release` and the self-hosted `app_error_events.release` field. |
-| NEXT_PUBLIC_COMMIT_SHA | Build-time twin of `COMMIT_SHA`, baked into the client bundle (Sentry's client-side `release`). |
-
-`SENTRY_ORG`/`SENTRY_PROJECT` are not env vars in this repo — they're hardcoded directly in
-`next.config.ts`'s `withSentryConfig` call (org `phoenix-workforce`, project `phx-b9`).
+| COMMIT_SHA | Runtime release identifier, set by the deploy workflows from the same `$SHA_TAG` used for the Cloud Run image tag. Feeds the self-hosted `app_error_events.release` field for server errors. |
+| NEXT_PUBLIC_COMMIT_SHA | Build-time twin of `COMMIT_SHA`, baked into the client bundle and used as the release identifier for client-side error reports. |
+| HEALTHCHECKS_PING_KEY | External cron-liveness dead-man's-switch. Set on the `phoenix-hr` **production** Cloud Run service ONLY — never staging, never local (see the Dead-Man's-Switch section below for why, and for the full variable table). |
 
 See docs/observability.md for the full picture.
 
@@ -94,7 +90,7 @@ See docs/observability.md for the full picture.
 
 ## Dead-Man's-Switch Monitoring (Optional)
 
-External liveness alert for the 7 Cloud Scheduler jobs, independent of Sentry/GCP — see
+External liveness alert for the 8 Cloud Scheduler jobs, independent of GCP Monitoring — see
 docs/observability.md for what it catches and full setup steps.
 
 | Variable | Description | Default |

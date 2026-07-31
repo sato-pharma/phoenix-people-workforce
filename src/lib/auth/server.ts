@@ -1,5 +1,4 @@
 import { cache } from "react";
-import * as Sentry from "@sentry/nextjs";
 
 import {
   parseRoleStrict,
@@ -420,15 +419,6 @@ export async function resolveSessionAccessContext(token: string | null | undefin
   return state?.access ?? null;
 }
 
-// Tags the current Sentry scope with the resolved HR_ID only — never email/name/loginId.
-// This is deliberately narrow: HR_ID is an internal employee code, not PII like an email
-// address, and it's the minimum needed to unlock "Users Affected" counts on Sentry issues.
-// Adding this back is a scoped exception to the dataCollection PII lockdown (see
-// instrumentation-client.ts et al.), not a reversal of it.
-function tagSentryUser(access: AccessContext) {
-  Sentry.setUser(access.hrId ? { id: access.hrId } : null);
-}
-
 async function resolveAccessContextInner(request: Request): Promise<AccessContext> {
   const cookieHeader = request.headers.get("cookie");
   const sessionContext = await resolveSessionAccessContext(
@@ -468,7 +458,6 @@ async function resolveAccessContextInner(request: Request): Promise<AccessContex
 
 export async function resolveAccessContext(request: Request): Promise<AccessContext> {
   const access = await resolveAccessContextInner(request);
-  tagSentryUser(access);
   return access;
 }
 
@@ -517,7 +506,6 @@ const resolveAccessContextFromPageInner = cache(async (): Promise<AccessContext>
 
 export async function resolveAccessContextFromPage(): Promise<AccessContext> {
   const access = await resolveAccessContextFromPageInner();
-  tagSentryUser(access);
   return access;
 }
 

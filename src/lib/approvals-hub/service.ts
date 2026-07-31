@@ -74,7 +74,7 @@ function isViewer(candidate: string | null | undefined, viewerHrId: string | nul
 // fault: an anon or merely unauthorized caller is expected to be denied. Logging it at ERROR
 // meant a single unauthenticated GET of /employee-portals/approvals/vacation wrote two
 // ERROR-severity Cloud Run entries (confirmed live on revision phoenix-hr-00661-yuw,
-// 2026-07-30), polluting error dashboards and Sentry error-rate alerting with false positives.
+// 2026-07-30), polluting error dashboards and the production error alert with false positives.
 //
 // Permission denials are therefore emitted at DEBUG and labelled `classification=forbidden` so
 // they stay searchable; every other failure keeps ERROR severity. Observability only — this

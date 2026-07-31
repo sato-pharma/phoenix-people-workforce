@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
@@ -50,8 +49,8 @@ async function runDailyNotifications(request: Request) {
   // when it's broken"). Each job keeps its own .catch() and fallback so one failure can never abort
   // the other 21 — but a swallowed failure used to leave NO trace an alert could match: 18 of the
   // 22 handlers logged via console.error passing a second "tags" argument, which is not a
-  // console.error parameter at all (it is silently discarded, and no console-capture integration is
-  // registered in sentry.server.config.ts). So those failures carried no `event=cron_failed` label,
+  // console.error parameter at all (it is silently discarded, and nothing captures console output
+  // into structured logs). So those failures carried no `event=cron_failed` label,
   // matched no log-based metric, and the route still reported the run as successful.
   //
   // Now every failure goes through logError with the standard {event: "cron_failed", job} labels —
@@ -204,7 +203,7 @@ async function runDailyNotifications(request: Request) {
   ]);
 
   // One structured line per run that states the real outcome. This — not the HTTP status, and not
-  // the Sentry monitor check-in (which only proves the route executed) — is the signal to alert on:
+  // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
   const totalJobs = 22;
   if (failures.length > 0) {
@@ -227,8 +226,8 @@ async function runDailyNotifications(request: Request) {
     });
   }
 
-  // Slug matches the live Cloud Scheduler job name (phoenix-notify-daily), not the Sentry monitor
-  // slug above ("notifications-daily") or this route's own path — deliberately, so it lines up
+  // Slug matches the live Cloud Scheduler job name (phoenix-notify-daily), not this route's own
+  // path — deliberately, so it lines up
   // with what the owner sees in /admin/cron-control and `gcloud scheduler jobs list`. Called
   // directly (not via the generic withDeadMansSwitch wrapper) so a PARTIAL sub-job failure — which
   // never throws, by design — still pings /fail instead of reporting a false "success" externally.
@@ -276,12 +275,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized", message: "Daily notification run is not authorized." }, { status: 401 });
   }
   try {
-    return await Sentry.withMonitor("notifications-daily", () => runDailyNotifications(request), {
-      checkinMargin: 10,
-      maxRuntime: 10,
-      schedule: { type: "crontab", value: "36 6 * * *" },
-      timezone: "Africa/Cairo",
-    });
+    return await runDailyNotifications(request);
   } catch (error) {
     logError("Daily notification dispatcher failed", { labels: { event: "cron_failed", job: "notifications/daily" }, error });
     // A total dispatcher crash never reaches the per-run ping inside runDailyNotifications above,
