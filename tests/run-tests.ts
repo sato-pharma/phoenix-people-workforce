@@ -63,6 +63,7 @@ import { runProbationDateTests } from "./probation-date.test.ts";
 import { runProbationCaseProvisioningTests } from "./probation-case-provisioning.test.ts";
 import { runProbationDomainMigrationReadinessTests } from "./probation-domain-migration-readiness.test.ts";
 import { runCrmIdentityTests } from "./crm-identity.test.ts";
+import { runCrmPostExitAttributionTests } from "./crm-post-exit-attribution.test.ts";
 import { runProbationDvSourceTests } from "./probation-dv-source.test.ts";
 import { runProbationDvDetectionTests } from "./probation-dv-detection.test.ts";
 import { runProbationDvValidationTests } from "./probation-dv-validation.test.ts";
@@ -578,6 +579,7 @@ await runTest("probation date (hire+90 canonical, edge cases)", runProbationDate
 await runTest("probation case provisioning (idempotent ensureCase + hire trigger + backfill dry-run)", runProbationCaseProvisioningTests);
 await runTest("probation domain migration readiness (Phase 1 schema + Phase 2 trigger)", runProbationDomainMigrationReadinessTests);
 await runTest("crm identity waterfall (override>crm_id>unique username, no-guess) + double-visit predicate", runCrmIdentityTests);
+await runTest("crm post-exit attribution guard (work after an exit date is never filed under the leaver)", runCrmPostExitAttributionTests);
 await runTest("probation DV source definition (P3-T01 predicate + attribution + dedup key)", runProbationDvSourceTests);
 await runTest("probation DV-Day detection (P3-T02 grouping + visit_count + unresolved surfacing)", runProbationDvDetectionTests);
 await runTest("probation DV-Day validation (P3-T03/T04/T05/T06 dedup+identity+role+window)", runProbationDvValidationTests);

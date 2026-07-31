@@ -181,18 +181,29 @@ export function runDoubleVisitAnalyticsTests() {
     /"Name from CRM, unmatched to an employee record"/,
     "the unverified-identity flag must show inside the same chip/box as the double-visit entry, not as a separate item",
   );
-  // Hand-verified corrections (owner-confirmed 2026-07-22): a stale resigned-employee
-  // resolution can be overridden to the real, currently-active employee — but only
-  // through this explicit, documented, manually-verified map, never guessed at
-  // runtime from a fuzzy name/area match.
-  assert.match(
+  // A stale resigned-employee resolution can still be corrected to the real, currently-active
+  // employee — but the correction now comes from the SHARED identity override table
+  // (ireports360_crm_identity_resolutions, tier 1 of the CRM waterfall), never from a hardcoded map
+  // local to this module. The hardcoded version fixed Double Visit Analytics and only Double Visit
+  // Analytics, which is exactly why the same misattributed work stayed invisible everywhere else.
+  assert.doesNotMatch(
     service,
-    /const CRM_AGENT_ID_HR_ID_CORRECTIONS: Readonly<Record<number, string>> = \{\s*\n\s*1391: "AI-0003",\s*\n\s*1536: "B-164",\s*\n\s*\};/,
-    "the hand-verified CRM identity corrections map must exist with the owner-confirmed entries",
+    /const CRM_AGENT_ID_HR_ID_CORRECTIONS/,
+    "the hardcoded per-module corrections map must stay retired — corrections belong in the shared override table",
+  );
+  assert.doesNotMatch(
+    service,
+    /"AI-0003"|"B-164"/,
+    "no employee hr id may be hardcoded in this module; the override table is the source of truth",
   );
   assert.match(
     service,
-    /const correctedHrId = !resolution && visit\.agent_crm_id != null\s*\n\s*\? CRM_AGENT_ID_HR_ID_CORRECTIONS\[visit\.agent_crm_id\]\s*\n\s*: undefined;/,
+    /await getCrmIdentityResolutions\(\)/,
+    "corrections must be read from the shared CRM identity override table",
+  );
+  assert.match(
+    service,
+    /const correctedHrId = !resolution && visit\.agent_crm_id != null\s*\n\s*\? crmIdentityOverrides\.get\(String\(visit\.agent_crm_id\)\)\s*\n\s*: undefined;/,
     "a correction must only apply when the same-day chain resolver did not already resolve the row, keyed strictly by agent_crm_id",
   );
   assert.match(

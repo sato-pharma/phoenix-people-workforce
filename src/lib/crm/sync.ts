@@ -18,6 +18,7 @@ import { hasLocationIqKey, resolveCheckinAddress } from "@/lib/crm/checkin-geoco
 import {
   buildCrmIdentityMaps,
   getCrmIdentityResolutions,
+  resolveEmployeeAttribution,
   resolveEmployeeHrId,
   type CrmIdentityMaps,
 } from "@/lib/crm/identity";
@@ -113,9 +114,13 @@ export function normalizeContactGrade(value: string | null | undefined): string 
 // by resolveVisitTime (crm/reads.ts): GPS check-in → save time → none, never visit_date_time.
 export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
   const doubleCrmId = visit.doubleID && visit.doubleID !== 0 ? visit.doubleID : null;
+  // The visit's own date drives the post-exit attribution guard (see resolveEmployeeAttribution):
+  // a CRM slot reused for a departing rep's replacement must not keep stamping the leaver's hr id
+  // onto the new rep's work, which is what made 190 live visits invisible platform-wide.
+  const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
   return {
     agent_crm_id: visit.agentID,
-    agent_hr_id: resolveEmployeeHrId(visit.agentID, visit.agentName, maps),
+    agent_hr_id: resolveEmployeeHrId(visit.agentID, visit.agentName, maps, visitDay),
     agent_name: visit.agentName,
     ampm: visit.ampm,
     attendance: visit.attendance,
@@ -130,7 +135,7 @@ export function rowFromVisit(visit: IReports360Visit, maps: CrmIdentityMaps) {
     crm_visit_id: visit.id,
     customer_name: visit.customerName,
     double_crm_id: doubleCrmId,
-    double_hr_id: doubleCrmId ? resolveEmployeeHrId(doubleCrmId, visit.doubleName, maps) : null,
+    double_hr_id: doubleCrmId ? resolveEmployeeHrId(doubleCrmId, visit.doubleName, maps, visitDay) : null,
     double_name: visit.doubleName,
     speciality: visit.speciality,
     raw_payload: visit as unknown as Record<string, unknown>,
@@ -151,8 +156,9 @@ function rowFromCheckin(checkin: IReports360Checkin, maps: CrmIdentityMaps) {
     address: checkin.address,
     agent_crm_id: checkin.agentID,
     // Check-ins have no agent display-name field (crm_id only) — the crm_username fallback
-    // can't apply here, only the direct crm_id match.
-    agent_hr_id: resolveEmployeeHrId(checkin.agentID, null, maps),
+    // can't apply here, only the direct crm_id match. `checkDate` is the record's own date, so it
+    // drives the post-exit guard exactly as a visit's date does.
+    agent_hr_id: resolveEmployeeHrId(checkin.agentID, null, maps, (checkin.checkDate ?? "").slice(0, 10) || null),
     check_date: checkin.checkDate,
     contact_crm_id: checkin.contactID,
     contact_name: checkin.contactName,
@@ -296,6 +302,10 @@ export async function syncIReports360Visits(input: {
   dateTo: string;
   trigger: VisitsSyncTrigger;
 }): Promise<{
+  /** Visits whose CRM slot resolved to someone who had already left on the visit date, so the
+   * post-exit guard refused the attribution. >0 means a slot was probably handed to a replacement
+   * and needs an identity override — the recurrence signal for the invisible-work bug class. */
+  blockedPostExitAttributions: number;
   /** True when the check-ins fetch or reconciliation failed. Distinguishes "no check-ins today"
    * from "the check-ins endpoint is broken", which used to look identical from outside. */
   checkinsFailed: boolean;
@@ -367,6 +377,19 @@ export async function syncIReports360Visits(input: {
     const dedupedVisitRows = dedupeByKey(visitRows, (row) => row.crm_visit_id);
     const validVisitRows = dedupedVisitRows.filter((row) => isValidIsoDate(row.visit_date));
     const rowsSkippedInvalidDate = dedupedVisitRows.length - validVisitRows.length;
+
+    // DETECTION. How many visits the post-exit guard refused to attribute — i.e. the CRM slot still
+    // resolves to someone who had already left on the day the work happened. Almost always means the
+    // slot was handed to a replacement and needs an identity override. Counted in a second pure pass
+    // (map lookups only, no I/O) rather than widening rowFromVisit's return, which IS the upsert row
+    // shape and would try to write a non-existent column. A steady non-zero count here is the signal
+    // that used to be missing entirely — the previous behaviour silently filed the new rep's work
+    // under the leaver, where the departed-agent exclusion then hid it from every surface.
+    const blockedPostExitAttributions = visits.reduce((count, visit) => {
+      const visitDay = (visit.visitDate ?? "").slice(0, 10) || null;
+      const agent = resolveEmployeeAttribution(visit.agentID, visit.agentName, maps, visitDay);
+      return count + (agent.blockedHrId ? 1 : 0);
+    }, 0);
 
     const visitsUpserted = await upsertRowsConcurrently(
       supabase,
@@ -529,6 +552,7 @@ export async function syncIReports360Visits(input: {
       // the "we refused to delete >50% of the window, so the fetch was probably truncated"
       // tripwire, and checkinsFailed distinguishes "no check-ins today" from "check-ins broke".
       // Both were only visible to someone who happened to open /admin/crm.
+      blockedPostExitAttributions,
       checkinsFailed,
       checkinsFetched: checkins.length,
       checkinsUpserted,
@@ -709,13 +733,14 @@ export async function remapUnmatchedHrIds(): Promise<{ agentFixed: number; check
     double_hr_id: string | null;
     double_name: string | null;
     id: string;
+    visit_date: string;
   };
   const pageSize = 1000;
   const allRows: UnmappedRow[] = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from(visitsTable)
-      .select("id, agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name")
+      .select("id, agent_crm_id, agent_hr_id, agent_name, double_crm_id, double_hr_id, double_name, visit_date")
       .or("agent_hr_id.is.null,double_hr_id.is.null")
       .order("id", { ascending: true })
       .range(from, from + pageSize - 1);
@@ -730,14 +755,14 @@ export async function remapUnmatchedHrIds(): Promise<{ agentFixed: number; check
   for (const row of allRows) {
     const patch: { agent_hr_id?: string; double_hr_id?: string } = {};
     if (!row.agent_hr_id) {
-      const resolved = resolveEmployeeHrId(row.agent_crm_id, row.agent_name, maps);
+      const resolved = resolveEmployeeHrId(row.agent_crm_id, row.agent_name, maps, row.visit_date);
       if (resolved) {
         patch.agent_hr_id = resolved;
         agentFixed += 1;
       }
     }
     if (row.double_crm_id != null && !row.double_hr_id) {
-      const resolved = resolveEmployeeHrId(row.double_crm_id, row.double_name, maps);
+      const resolved = resolveEmployeeHrId(row.double_crm_id, row.double_name, maps, row.visit_date);
       if (resolved) {
         patch.double_hr_id = resolved;
         doubleFixed += 1;
