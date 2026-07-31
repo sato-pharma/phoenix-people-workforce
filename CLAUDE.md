@@ -150,23 +150,13 @@ notifications). Transitions validate against the registry and write audit logs.
 
 ### Notifications & cron
 
-Notifications use an outbox model. The project runs on **GCP Cloud Run** (see
-`docs/deployment.md`); Google Cloud Scheduler drives five jobs against the public
-domain, each authenticated via a `Bearer $CRON_SECRET` header and scheduled in
-Africa/Cairo time (see `scripts/setup-gcp-cron.sh`, last aligned 2026-07-17):
-`/api/notifications/daily` (6:36 AM), which internally calls
-`runBirthdayNotifications` / `runContractRenewalNotifications` plus the other daily
-SLA/digest jobs (vacation, marketing, outstation, recruitment, resignations,
-weekly-plan drift, Telegram HR digest); `/api/notifications/process?limit=50`
-(every 5 min), which drains the notification outbox, probation reminders, and
-deferred/Telegram delivery retries faster than once a day via
-`src/lib/notifications/scheduled-processing.ts`; `/api/cron/background-jobs?limit=10`
-(Fridays 3:00 AM), which drains queued admin-requested exports; and
-`/api/cron/ireports360-visits-sync` (9:07/12:07/19:07) /
-`/api/cron/ireports360-visits-reconcile` (Sundays 4:24 AM), which sync and
-periodically wide-reconcile iReports360 CRM visit data.
-Every cron carries an
-explicit `maxDuration = 300` and a named `Sentry.withMonitor` heartbeat (see
+Notifications use an outbox model. The project runs on **GCP Cloud Run**; Google
+Cloud Scheduler drives **8 cron jobs** against the public domain (Bearer
+`$CRON_SECRET`, Africa/Cairo time) — daily notifications, outbox processing (every
+5 min), background exports (Fri), inbound intake, recruitment email intake, and
+three iReports360 visit-sync jobs. `scripts/setup-gcp-cron.sh` is the schedule
+source of truth; `docs/deployment.md` + `docs/observability.md` describe the jobs.
+Every cron sets `maxDuration = 300` and carries an observability heartbeat (see
 `docs/observability.md`). The in-app `/admin/cron-control` dashboard can
 view/pause/resume/run/reschedule these live, but does not update
 `setup-gcp-cron.sh` — if you reschedule a job there, update that script's
@@ -200,20 +190,18 @@ keys used by their respective domains.
 
 ## Branch & deployment model
 
-- `main` is **production-only — never edit directly.**
-- `codex/work-from-production` is the active working branch for edits/features.
+- `main` is **production-only — never edit directly.** Work happens on fresh
+  `codex/<task>` branches cut from `origin/main` (the old
+  `codex/work-from-production` branch is dead — do not use it).
 - Production: `https://phoenix-hr.satopharma.com` (verify this exact public domain
   after every production deploy — workspace aliases can diverge from the public alias).
-- Production deploys as a new GCP Cloud Run revision (`phoenix-hr`, `europe-west3`)
-  with no traffic, smoke-tested, then promoted to 100% traffic — see
-  `.github/workflows/deploy-cloud-run.yml`. Staging is a separate, always-live
-  Cloud Run service (`phoenix-hr-staging`, `us-central1`) that auto-deploys from
-  `main` after CI passes, not a per-branch preview.
-- `.vercel/` may still exist locally as inert Vercel CLI leftovers; it stays
-  gitignored and uncommitted. Vercel itself is legacy/decommissioned for hosting —
-  see AGENTS.md's Stable Environment Facts.
-- Parallel sessions must use isolated git worktrees and never re-clone over the primary
-  `.git` — see AGENTS.md § Parallel Session and Git Worktree Safety.
+- Deploys: staging auto-deploys from `main` after CI; production ships as a
+  no-traffic Cloud Run revision, smoke-tested, then promoted — full model, rules,
+  and verification commands live in AGENTS.md (§ Stable Environment Facts,
+  § Hard-learned rules, § Preview/CI/Production Verification).
+- Vercel is legacy/decommissioned; `.vercel/` may exist locally, stays gitignored.
+- Parallel sessions use isolated git worktrees — routing model and safety rules in
+  AGENTS.md § Parallel Work Model.
 
 ## Protected Files — OWNER APPROVAL REQUIRED
 

@@ -18,7 +18,7 @@ import crypto from "node:crypto";
 const mode = process.argv[2]; // "start" | "end"
 const projectDir = process.argv[3] || process.cwd();
 const lockPath = path.join(projectDir, ".claude", "session.lock");
-const STALE_MS = 12 * 60 * 60 * 1000; // 12 hours
+const STALE_MS = 2 * 60 * 60 * 1000; // 2 hours — a crashed session's leftover lock self-expires after this
 
 function readHookInput() {
   try {
@@ -89,7 +89,9 @@ if (lock && lock.sessionId !== sessionId) {
       `staged file). Do NOT run git checkout/switch/reset/branch -D, do NOT commit or push, and do ` +
       `NOT edit files in this folder until you have explicitly confirmed with the user whether that ` +
       `other session is still running. If the user wants to start new work right now, create an ` +
-      `isolated worktree instead: git worktree add <path> -b <branch>, and do the new work there.`;
+      `isolated worktree instead: git worktree add <path> -b <branch>, and do the new work there. ` +
+      `Note: a session that crashed or was force-closed leaves its lock behind (it self-expires ` +
+      `after 2 hours) — if the reported PID is not a running process, the lock is stale.`;
     emit({
       systemMessage: `Warning: another session's lock (PID ${lock.pid ?? "unknown"}, ${when}) is active in this folder.`,
       hookSpecificOutput: {

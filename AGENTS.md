@@ -22,6 +22,15 @@
 - Automate inspection, implementation, validation, and reporting. Keep release authority with the user.
 - Passing tests proves technical readiness; it never grants permission to merge or change production.
 
+## Hard-Learned Rules (each cost a real incident — do not relearn them)
+
+- **Never use `gh pr merge --auto`.** `main` is not branch-protected, so `--auto` merges instantly and silently. Merge only with an explicit plain `gh pr merge` after separate owner approval.
+- **Production deploys ship in scheduled windows, not on push.** Merging to `main` deploys staging automatically but NOT production. Verify production after the deploy window runs — never assume a merge is live, and never conclude "deploy is broken" because production lags a merge.
+- **Full validation gates must not trust warm TypeScript caches.** `pnpm run check:harden` / CI are authoritative; a bare warm `tsc` can report a false green. For manual full checks use `tsc --incremental false`.
+- **Never foreground-watch a long pipeline** (CI run, deploy, big script). Launch it in the background and check at batched checkpoints.
+- **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), not the cookie flow — cookie-based role switching logs the real user out.
+- **Merged-branch checks must be squash-aware.** PRs merge by squash, so a merged branch is never an ancestor of `origin/main` — `git branch --merged` is always wrong here. Use `gh pr list --head <branch> --state merged` to test whether work landed.
+
 ## Stable Environment Facts
 
 - Production application: `https://phoenix-hr.satopharma.com`
@@ -32,8 +41,7 @@
   `.github/workflows/deploy-cloud-run-staging.yml` — same no-traffic/smoke-test/promote gate as
   production, reusing the env vars already configured on the Cloud Run service itself rather than
   any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.)
-- Vercel project: `phoenix-workforce` (legacy references only — hosting migrated to GCP Cloud Run)
-- Vercel scope: `phoenix-hr-workspace-s-projects`
+- Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1,
   created 2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
   ref `izhmxvgiktiafqusolot`, is GONE — as of 2026-07-27 `list_projects` returns only
@@ -78,34 +86,47 @@ git worktree list
 - Prefer creating worktrees as siblings of this repo (e.g. `git worktree add ../_wt-<task>`), not nested inside it. If a worktree must live inside the repo, its folder name must start with `_wt-` (or live under `.codex-worktrees/`, or `.claude/worktrees/` which Claude Code's own worktree feature uses) — `tsconfig.json`, `eslint.config.mjs`, and `.gitignore` all exclude those patterns so `typecheck`/`lint` don't redundantly walk full duplicate copies of the codebase. (`.claude/worktrees/` is currently excluded only incidentally, via the broader `.claude` exclude entry — if that entry is ever narrowed, add `.claude/worktrees` back explicitly.) A worktree folder inside the repo that doesn't match one of those patterns will silently make every local `typecheck`/`lint` run several times slower (confirmed: ~12x file count, 70s vs 8s). Do not remove or narrow those exclude patterns without confirming no in-repo worktrees would be missed.
 - Treat remote history as the source of truth for merged state, while protecting all unpushed local work.
 
-## Parallel Work Model (owner policy, 2026-07-17)
+## Parallel Work Model (owner policy, updated 2026-07-31)
 
-The owner runs multiple tasks concurrently. The division of labor that keeps sessions
-from colliding AND keeps the laptop responsive (16 GB RAM; 15+ simultaneous
-`node_modules` copies previously froze the machine):
+The owner runs many streams concurrently on a 16 GB laptop. The constraint is
+**processes, not disk**: pnpm hardlinks `node_modules` from one per-drive store
+(a parked worktree costs almost nothing), while each dev server or typecheck
+instance eats 1–2.5 GB of RAM. Collisions historically came from two sessions
+sharing one folder — never from parallel worktrees.
 
-- **One local interactive session at a time** — the "control tower". It holds owner
-  context, performs gcloud/DNS/Supabase actions with local credentials, does browser
-  verification, and makes merge/deploy decisions. Never run two interactive sessions
-  against the same checkout (this caused real git-corruption incidents; the
-  SessionStart hook warns about it — heed it).
-- **Independent parallel tasks go to cloud sessions** (Claude Code on the web), one
-  per task. Each cloud session has its own isolated clone and ends by opening a PR —
-  CI plus the auto-deploy pipeline take it from there. Zero local resource cost, zero
-  collision surface. Prefer this over spawning more local worktrees whenever the task
-  does not need local files, localhost browser checks, or locally-authenticated CLIs.
-- **Local worktrees: at most 2–3 alive at once.** Create per task as before, but:
-  - Run `pnpm install --frozen-lockfile` in a worktree only when the task actually
-    needs typecheck/build/dev server (docs/SQL/workflow-file tasks usually don't —
-    note the pre-push gate does need `node_modules`, so installing right before push
-    is the usual pattern). With pnpm this is cheap: every worktree hardlinks into the
-    shared per-drive store, so an extra worktree's `node_modules` costs seconds and
-    barely any real disk, instead of a full duplicate copy per worktree.
-  - **Delete-on-merge ritual**: after a worktree's PR merges, the session asks the
-    owner "CLEAN?" and, on confirmation, verifies (no uncommitted/untracked work +
-    branch is an ancestor of origin/main + xlsx/pdf rescue scan per the rule above),
-    then runs `git worktree remove` and `git branch -d`. Stale worktrees must not
-    accumulate — 26 folders with 15 node_modules copies was the failure mode.
+**Route every new task at creation:**
+
+| Tier | Where | Use for |
+| --- | --- | --- |
+| **A — Cloud session** (Claude Code on the web) — *the default* | Isolated cloud clone, ends in a PR | Any independent code task that does not need localhost browser verification, local files, or locally-authenticated CLIs. CI + staging auto-deploy validate it. Run these on Sonnet by default. |
+| **B — Local worktree** (max **2–3 woken** at once, one session per worktree) | Sibling `_wt-<task>` | Only tasks needing the browser preview, dev-auth role sweeps, or local creds. |
+| **C — Main checkout** (exactly **one** interactive session — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits here. |
+
+**RAM guardrails:** one dev server at a time, ever; one typecheck/build at a time
+locally (parallel validation belongs to CI). **Park/wake pattern:** a worktree not
+being validated needs no `node_modules` — wake = `pnpm install --frozen-lockfile`
+(seconds, hardlinked) + `pnpm run worktree:sync-env`; park = stop its processes.
+"Woken" (installed + processes running), not "existing", is what the 2–3 limit counts.
+
+**Concurrent-session rules:**
+
+- Never two interactive sessions in one folder — the SessionStart lock warning is a
+  hard stop, not advice. (A crashed session's lock self-expires after 2 hours; a
+  lock whose PID is not a running process is stale.)
+- Only the control-tower session rewrites or reorganizes the shared memory index;
+  worktree and cloud sessions may append individual memory files but never
+  consolidate or rewrite the index (parallel index rewrites have collided before).
+- Cloud sessions cannot see local state: put everything they need in the task
+  prompt; everything they produce lands in the PR for tower review.
+
+**Delete-on-merge ritual** (run via `/worktree-triage`): after a worktree's PR
+merges — verified with `gh pr list --head <branch> --state merged`, never an
+ancestry check (squash merges break it) — confirm no uncommitted/untracked work,
+run the xlsx/pdf rescue scan per the rule above, then `git worktree remove` and
+`git branch -d`, with owner approval. Stale worktrees must not accumulate — 26
+folders was the historical failure mode, and 24 recurred by 2026-07-31 because the
+ancestry check silently never passed.
+
 - Locked worktrees under `.claude/worktrees/` belong to other live sessions — never
   remove them.
 
@@ -203,8 +224,8 @@ git diff --cached
 ## Preview, CI, And Production Verification
 
 - For runtime changes, inspect the newest deployment for the branch; do not trust an older pasted URL.
-- Use `vercel ls phoenix-workforce --scope phoenix-hr-workspace-s-projects` when the CLI is available, or use the authoritative Vercel integration.
-- A PR is merge-ready only when required CI passes, the relevant preview is Ready, changed workflows pass smoke testing, and required staging migrations are verified.
+- Verify deploys with `gh run list --workflow=deploy-cloud-run.yml --limit 3` (production) / `--workflow=deploy-cloud-run-staging.yml` (staging), and `gcloud run revisions list --service phoenix-hr --region europe-west3` (or `phoenix-hr-staging`, `us-central1`) for what is actually serving traffic.
+- A PR is merge-ready only when required CI passes, staging is healthy, changed workflows pass smoke testing, and required staging migrations are verified.
 - When a page fails, capture the visible error, browser console, relevant network/API response, deployment logs, and database/RLS evidence before proposing a fix.
 - After a runtime-impacting production deployment, verify `https://phoenix-hr.satopharma.com`, smoke-test the changed workflow, and inspect production logs.
 
@@ -213,6 +234,7 @@ git diff --cached
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
 - Before any database action, print and verify the exact project ref. Staging is `cifwmndunmlxjhyjugxa`; production is `ozucdzovmcqvepbozvqf`. Resolve the ref with `list_projects` rather than trusting any ref pasted in a prompt or copied from an older doc — this line previously named a long-deleted staging project, so the "verify the ref" step confirmed a dead value and the obvious recovery ("staging must be the other one") pointed at production.
 - Both Supabase MCP servers (`supabase-staging` and `supabase-production`) can see BOTH projects. The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.
+- Use ONLY those two named servers for database access. Any UUID-named Supabase tool (a claude.ai account connector, e.g. `mcp__b345e47e-…`) has an unverifiable identity and is deny-listed in `.claude/settings.json` — never call it, and flag it to the owner if it reappears.
 - Applying any migration requires explicit approval. Production requires a separate production-specific approval.
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
 - Verify RLS, grants, RPC authorization, service-role boundaries, and browser-role exposure whenever permissions or data access change.
