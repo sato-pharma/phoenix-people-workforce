@@ -29,11 +29,15 @@ export type IReports360SyncNotifyInput =
       dateTo: string;
       runId: string;
       result: {
+        /** Optional so an older caller still type-checks; see buildIReports360SyncMessage. */
+        checkinsFailed?: boolean;
         checkinsFetched: number;
         checkinsUpserted: number;
         rowsDeleted: number;
         rowsFetched: number;
         rowsSkippedInvalidDate: number;
+        /** >0 means the reconciliation refused to delete because the fetch looked truncated. */
+        rowsSkippedReconcile?: number;
         rowsUpserted: number;
       };
     }
@@ -79,9 +83,29 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
   const label = JOB_LABELS[input.jobName];
   const lines: string[] = [];
   if (input.status === "success") {
-    lines.push(`✅ iReports360 CRM Sync — ${label}`);
+    // A run can succeed and still be carrying a warning the write path really wants a human to
+    // see. Both of these used to be invisible unless somebody opened /admin/crm, so the headline
+    // reflects them rather than always reading as an unqualified ✅.
+    const truncatedFetch = (input.result.rowsSkippedReconcile ?? 0) > 0;
+    const checkinsBroken = input.result.checkinsFailed === true;
+    const quietFetch = input.result.rowsFetched === 0;
+    const degraded = truncatedFetch || checkinsBroken || quietFetch;
+    lines.push(`${degraded ? "⚠️" : "✅"} iReports360 CRM Sync — ${label}${degraded ? " (with warnings)" : ""}`);
     lines.push(`Window: ${input.dateFrom} → ${input.dateTo}`);
     lines.push("");
+    if (truncatedFetch) {
+      lines.push(
+        `⚠️ Reconciliation SKIPPED — ${input.result.rowsSkippedReconcile} rows looked deleted (>50% of the window).`,
+      );
+      lines.push("   The CRM response was probably truncated. Nothing was deleted; re-run before trusting this window.");
+    }
+    if (checkinsBroken) {
+      lines.push("⚠️ Check-ins did not sync (fetch or reconciliation failed). Visit times fall back to logged/save time.");
+    }
+    if (quietFetch) {
+      lines.push("⚠️ ZERO visits returned for this window — verify the CRM integration is still healthy.");
+    }
+    if (degraded) lines.push("");
     lines.push(`Visits fetched: ${input.result.rowsFetched}`);
     lines.push(`Visits upserted: ${input.result.rowsUpserted}`);
     if (input.result.rowsDeleted > 0) lines.push(`Visits removed (voided in CRM): ${input.result.rowsDeleted}`);

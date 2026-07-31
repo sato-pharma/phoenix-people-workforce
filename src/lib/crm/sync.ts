@@ -213,12 +213,17 @@ async function backfillMissingCheckinAddresses(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   rows: CheckinDraftRow[],
 ): Promise<void> {
-  if (!hasLocationIqKey() && !hasGoogleServerKey()) return;
-
   const candidateIds = rows.filter(checkinNeedsAddress).map((row) => row.crm_checkin_id);
   if (candidateIds.length === 0) return;
 
+  // Restoring an ALREADY-STORED address happens unconditionally, before (and independently of) any
+  // geocoding. The vendor usually sends `address: null`, and the upsert overwrites every column —
+  // so whenever this restore was skipped, the next sync destroyed addresses the mirror had already
+  // paid Google/LocationIQ to resolve, right across the rolling window. It used to sit behind the
+  // API-key check below, which meant a key rotation, expiry, or a plain misconfiguration silently
+  // wiped them. This step is pure data preservation and needs no key at all.
   const existingById = new Map<number, string>();
+  let existingLookupFailed = false;
   try {
     for (let from = 0; from < candidateIds.length; from += 500) {
       const chunk = candidateIds.slice(from, from + 500);
@@ -231,8 +236,29 @@ async function backfillMissingCheckinAddresses(
         if (existing.address && existing.address.trim()) existingById.set(existing.crm_checkin_id, existing.address);
       }
     }
-  } catch {
-    // best-effort: if the lookup itself fails, fall through and just try a fresh geocode below
+  } catch (error) {
+    // Best-effort, but no longer silent: if this lookup fails we cannot tell which rows already
+    // have an address, so the upsert below may null some of them out. Worth a log line.
+    existingLookupFailed = true;
+    logError("CRM sync could not read existing check-in addresses; stored addresses may be overwritten", {
+      labels: { event: "crm_sync_existing_address_lookup_failed" },
+      error,
+    });
+  }
+
+  // Restore known addresses onto the draft rows even when no geocoding key is configured.
+  for (const row of rows) {
+    if (!checkinNeedsAddress(row)) continue;
+    const known = existingById.get(row.crm_checkin_id);
+    if (known) row.address = known;
+  }
+
+  // Fresh geocoding is the optional part — it is what actually needs an API key.
+  if (!hasLocationIqKey() && !hasGoogleServerKey()) return;
+  if (existingLookupFailed) {
+    // Without the existing-address map, selectCheckinsToGeocode cannot tell which rows are already
+    // resolved and would burn the per-run cap re-geocoding them. Skip the fresh pass this run.
+    return;
   }
 
   const toGeocode = selectCheckinsToGeocode(rows, existingById, maxNewCheckinGeocodesPerSync);
@@ -265,11 +291,17 @@ export async function syncIReports360Visits(input: {
   dateTo: string;
   trigger: VisitsSyncTrigger;
 }): Promise<{
+  /** True when the check-ins fetch or reconciliation failed. Distinguishes "no check-ins today"
+   * from "the check-ins endpoint is broken", which used to look identical from outside. */
+  checkinsFailed: boolean;
   checkinsFetched: number;
   checkinsUpserted: number;
   rowsDeleted: number;
   rowsFetched: number;
   rowsSkippedInvalidDate: number;
+  /** >0 means the reconciliation REFUSED to delete because the fetch looked truncated (it would
+   * have removed more than half the window). The single most important write-path warning. */
+  rowsSkippedReconcile: number;
   rowsUpserted: number;
   runId: string;
 }> {
@@ -287,14 +319,31 @@ export async function syncIReports360Visits(input: {
   const runId = runRow.id as string;
 
   try {
+    // Taken BEFORE the vendor fetch: it is the instant this run's view of the CRM was captured.
+    // Any mirror row synced at/after this is newer than our snapshot and must be excluded from the
+    // deletion set below, not treated as something the CRM deleted.
+    const runStartedAt = new Date().toISOString();
     const config = getIReports360Config();
     const token = await iReports360Login(config);
+    let checkinsFailed = false;
     const [visits, checkins] = await Promise.all([
       iReports360GetVisits(config, token, input.dateFrom, input.dateTo),
       // GPS check-ins are a best-effort overlay for visits, never required for the sync to
       // succeed — a check-ins API problem must not fail the whole run (same rule already
-      // applied to the single-rep FWC drill-down this pattern is mirrored from).
-      iReports360GetCheckins(config, token, input.dateFrom, input.dateTo).catch(() => [] as IReports360Checkin[]),
+      // applied to the single-rep FWC drill-down this pattern is mirrored from). But it must not
+      // be SILENT either: this used to swallow the error with no log and no counter, so a
+      // permanently-broken /checkins endpoint (auth scope, rename, 500) would stop check-in
+      // syncing forever while every run still reported success. Every visit's time then silently
+      // degrades from the GPS tier to the save tier (see resolveVisitTime) with no visible change
+      // of state. Now logged and flagged so "0 check-ins" can be told apart from "check-ins broke".
+      iReports360GetCheckins(config, token, input.dateFrom, input.dateTo).catch((error: unknown) => {
+        checkinsFailed = true;
+        logError("iReports360 check-ins fetch failed; visits still synced without the GPS overlay", {
+          labels: { event: "crm_sync_checkins_fetch_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+          error,
+        });
+        return [] as IReports360Checkin[];
+      }),
     ]);
 
     const [employees, resolutions] = await Promise.all([
@@ -346,6 +395,9 @@ export async function syncIReports360Visits(input: {
     if (dedupedVisitRows.length > 0) {
       const freshIds = new Set(dedupedVisitRows.map((row) => row.crm_visit_id));
       const existingIds: number[] = [];
+      // synced_at per row, so a row written by a CONCURRENT sync after this run took its snapshot
+      // can be protected from deletion below.
+      const syncedAtById = new Map<number, string>();
       const reconcilePageSize = 5000;
       // KEYSET, NOT OFFSET. This paged with `.range()` and no `.order()`; Postgres gives no stable
       // row order without ORDER BY, so pages could repeat rows and skip others. That is bad here in
@@ -357,7 +409,7 @@ export async function syncIReports360Visits(input: {
       for (;;) {
         let query = supabase
           .from(visitsTable)
-          .select("crm_visit_id")
+          .select("crm_visit_id, synced_at")
           .gte("visit_date", input.dateFrom)
           .lte("visit_date", input.dateTo)
           .order("crm_visit_id", { ascending: true })
@@ -365,15 +417,30 @@ export async function syncIReports360Visits(input: {
         if (cursor !== null) query = query.gt("crm_visit_id", cursor);
         const { data, error } = await query;
         if (error) throw new Error(error.message);
-        const page = (data ?? []) as Array<{ crm_visit_id: number }>;
+        const page = (data ?? []) as Array<{ crm_visit_id: number; synced_at: string | null }>;
         if (page.length === 0) break;
         existingIds.push(...page.map((row) => row.crm_visit_id));
+        for (const row of page) {
+          if (row.synced_at) syncedAtById.set(row.crm_visit_id, row.synced_at);
+        }
         if (page.length < reconcilePageSize) break;
         const last = Number(page[page.length - 1]?.crm_visit_id);
         if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
         cursor = last;
       }
-      const staleIds = existingIds.filter((id) => !freshIds.has(id));
+      // A row is stale only if this fetch didn't see it AND it was already in the mirror when this
+      // run took its snapshot. The second half closes a real race: `freshIds` comes from a fetch at
+      // T0, but `existingIds` is read minutes later, so any row a CONCURRENT sync inserted in
+      // between (the 9:07 daily run overlapping the 9:16 live run, or a manual backfill) is absent
+      // from freshIds and was therefore classified stale and DELETED — a genuine visit, removed
+      // seconds after being synced, on a board managers read live. Rows written at/after T0 are now
+      // structurally immune. Note this filters only the STALE set, never `existingIds` itself,
+      // which stays the full window so the 50%-truncation guard below keeps its real denominator.
+      const staleIds = existingIds.filter((id) => {
+        if (freshIds.has(id)) return false;
+        const syncedAt = syncedAtById.get(id);
+        return !syncedAt || syncedAt < runStartedAt;
+      });
       if (existingIds.length > 0 && staleIds.length / existingIds.length > 0.5) {
         rowsSkippedReconcile = staleIds.length;
       } else {
@@ -424,8 +491,14 @@ export async function syncIReports360Visits(input: {
           }
         }
       }
-    } catch {
-      // best-effort — a check-ins reconciliation problem must never fail an otherwise-successful sync.
+    } catch (error) {
+      // Best-effort — a check-ins reconciliation problem must never fail an otherwise-successful
+      // sync — but it is no longer silent (this was a bare `catch {}` with no logging at all).
+      checkinsFailed = true;
+      logError("iReports360 check-in reconciliation failed; visits sync was unaffected", {
+        labels: { event: "crm_sync_checkin_reconcile_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+        error,
+      });
     }
 
     await supabase
@@ -446,11 +519,18 @@ export async function syncIReports360Visits(input: {
     // new visit rows is immediately reflected with no separate refresh step needed.
 
     return {
+      // Surfaced so callers/notifications can see them. These two are the write path's most
+      // important safety signals and neither used to leave this function: rowsSkippedReconcile is
+      // the "we refused to delete >50% of the window, so the fetch was probably truncated"
+      // tripwire, and checkinsFailed distinguishes "no check-ins today" from "check-ins broke".
+      // Both were only visible to someone who happened to open /admin/crm.
+      checkinsFailed,
       checkinsFetched: checkins.length,
       checkinsUpserted,
       rowsDeleted,
       rowsFetched: visits.length,
       rowsSkippedInvalidDate,
+      rowsSkippedReconcile,
       rowsUpserted: visitsUpserted,
       runId,
     };
