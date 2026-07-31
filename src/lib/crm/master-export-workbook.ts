@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { once } from "node:events";
 import { PassThrough, Readable } from "node:stream";
 
 import { renderExportCell } from "@/lib/crm/master-cell-format";
@@ -65,6 +66,15 @@ export function streamCrmMasterWorkbookResponse(opts: {
         for (const row of page) {
           const record = row as unknown as Record<string, unknown>;
           sheet.addRow(opts.columns.map((col) => renderExportCell(record, col))).commit();
+        }
+        // Backpressure. `Row.commit()` writes into `pass` synchronously and returns nothing
+        // awaitable, and `Readable.toWeb(pass)` only propagates backpressure to the READER — so
+        // nothing throttled the producer. If the client or the Cloud Run proxy consumed slower
+        // than rows were generated (a ~110k-row export over a slow link), `pass` buffered without
+        // bound and the docstring's "server memory stays flat" quietly stopped being true. Waiting
+        // for `drain` between pages bounds it to roughly one page of rows.
+        if (pass.writableLength > pass.writableHighWaterMark) {
+          await once(pass, "drain");
         }
       }
 
