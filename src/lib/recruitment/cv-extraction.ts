@@ -10,6 +10,11 @@
 // ats_candidates itself — the caller reviews/corrects the proposal and saves it via
 // updateCandidate(); recordAppliedExtractionFields() only updates this module's own
 // audit-trail row (a correction log for future prompt tuning, not a training pipeline).
+//
+// Because applying is deliberately human, a stored proposal has to be reachable — otherwise the
+// automated intake path (which has no human in it) writes an extraction nobody can ever see.
+// getLatestCvExtraction below, with the pure helpers in cv-extraction-fields.ts, hands a saved
+// proposal back to the review board without spending a second AI call on a CV already read.
 
 import "@/lib/recruitment/pdf-dommatrix-polyfill";
 
@@ -26,6 +31,12 @@ import {
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
 import { getCandidate } from "@/lib/recruitment/candidates";
+import {
+  normalizeStoredExtractionFields,
+  type ExtractedCandidateFields,
+  type ExtractedField,
+  type StoredCvExtraction,
+} from "@/lib/recruitment/cv-extraction-fields";
 import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -42,13 +53,14 @@ export class CvExtractionError extends Error {
   }
 }
 
-export type ExtractedFieldConfidence = "high" | "low";
-export type ExtractedField<T> = { value: T; confidence: ExtractedFieldConfidence };
-
-// Generic (keyed by whatever the position's schema declares) rather than a fixed 12-key
-// type — a value is a string field's text or a boolean field's judgment; readStringField/
-// readBoolField below are the only code that needs to know which is which per key.
-export type ExtractedCandidateFields = Record<string, ExtractedField<string | boolean | null>>;
+// Declared in cv-extraction-fields.ts (isomorphic, so client components can use the logic around
+// them) and re-exported here so every existing importer keeps its import path.
+export type {
+  ExtractedCandidateFields,
+  ExtractedField,
+  ExtractedFieldConfidence,
+  StoredCvExtraction,
+} from "@/lib/recruitment/cv-extraction-fields";
 
 export type CvExtractionResult = {
   extractionId: string;
@@ -411,6 +423,50 @@ export async function extractCvFieldsFromBytes(input: {
   // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
   // treated as "yes, it's a CV" so an AI quirk never drops a real applicant.
   return { fields, isCv: parsed.is_cv !== false, model, positionKey: schema.positionKey };
+}
+
+// ---------------------------------------------------------------------------
+// Reading a stored extraction back.
+//
+// Inbound intake (email/WhatsApp) persists a full extraction per CV but has no human in the loop
+// to review it — see cv-intake-service.ts. Until this read existed the proposal was written and
+// never looked at again: every review surface re-ran a fresh AI call to obtain fields that were
+// already on record, so an inbound candidate's university/faculty/governorate stayed null unless
+// someone paid OpenAI a second time for the same document. The pure half (normalizing, counting,
+// seeding empty slots from the saved record) lives in cv-extraction-fields.ts so the browser can
+// use it too.
+// ---------------------------------------------------------------------------
+
+// The candidate's most recent extraction, whether or not anyone has reviewed it yet. Returns null
+// when the candidate has never had a CV read — the ordinary case for a manually typed record.
+export async function getLatestCvExtraction(candidateId: string): Promise<StoredCvExtraction | null> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidate_cv_extractions")
+    .select("id,ai_model,position_key,extracted_fields,applied_fields,created_at")
+    .eq("candidate_id", candidateId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as {
+    id: unknown;
+    ai_model?: unknown;
+    position_key?: unknown;
+    extracted_fields?: unknown;
+    applied_fields?: unknown;
+    created_at?: unknown;
+  };
+  return {
+    createdAt: row.created_at ? String(row.created_at) : null,
+    extractionId: String(row.id),
+    fields: normalizeStoredExtractionFields(row.extracted_fields),
+    model: row.ai_model ? String(row.ai_model) : null,
+    positionKey: typeof row.position_key === "string" && row.position_key ? row.position_key : defaultCvPositionKey,
+    reviewed: row.applied_fields !== null && row.applied_fields !== undefined,
+  };
 }
 
 // Writes an already-computed extraction to the audit table against a candidate + file.

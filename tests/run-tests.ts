@@ -96,6 +96,7 @@ import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
 import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
 import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extraction-analytics.test.ts";
+import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
@@ -608,6 +609,7 @@ await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseI
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy/line scope wiring)", runRecruitmentNsmRmCeoScopingTests);
 await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionAnalyticsTests);
+await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules)", runRecruitmentCvAutoApplyTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);

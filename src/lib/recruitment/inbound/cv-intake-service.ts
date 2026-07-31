@@ -36,6 +36,7 @@ import {
   persistCvExtraction,
   type CvFieldExtraction,
 } from "@/lib/recruitment/cv-extraction";
+import { countProposedCvFields } from "@/lib/recruitment/cv-extraction-fields";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { uploadCandidateFile } from "@/lib/recruitment/files";
@@ -328,6 +329,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     //
     // Best-effort, like the persist above: the candidate and file already exist and are the point
     // of this function, so a failure to enrich must never fail the intake.
+    let autoAppliedFieldCount = 0;
     try {
       if (extraction) {
         const autoApply = selectAutoApplyFields({
@@ -337,6 +339,7 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         });
         if (Object.keys(autoApply).length > 0) {
           await updateCandidate(candidate.id, autoApply);
+          autoAppliedFieldCount = Object.keys(autoApply).length;
         }
       }
     } catch (autoApplyError) {
@@ -358,6 +361,18 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       candidateId: candidate.id,
       channel: input.channel,
       created,
+      // Applying these to the candidate is a human decision by design (see cv-extraction.ts), so
+      // the notification has to say they exist — otherwise the extraction is stored and no one
+      // ever learns there is anything to review.
+      //
+      // Count only what is STILL waiting: the high-confidence half was already written onto the
+      // candidate by the auto-apply above, so counting the whole extraction would send Talent
+      // Acquisition to "review and save" fields that are already saved — and, when everything
+      // auto-applied, to review nothing at all. A notification that is wrong that often stops
+      // being read, which would defeat the reason this count was added.
+      extractedFieldCount: extraction
+        ? Math.max(0, countProposedCvFields(extraction.fields) - autoAppliedFieldCount)
+        : 0,
       fileAttached: true,
       fullName: candidate.fullName,
       matchReason,

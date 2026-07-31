@@ -32,6 +32,11 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   created: boolean;
   matchReason?: "national_id" | "email" | "phone";
   fileAttached: boolean;
+  // How many fields the intake extraction actually found. Intake stores the AI's reading of every
+  // inbound CV but deliberately does not write it onto the candidate — a human reviews it first.
+  // Saying so here is what makes that review happen: without it the notification gave no hint that
+  // anything was waiting, and the stored fields sat unreviewed.
+  extractedFieldCount?: number;
 }): Promise<void> {
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
@@ -40,19 +45,26 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   const matchLabel = input.matchReason
     ? ` (matched by ${input.matchReason === "national_id" ? "National ID" : input.matchReason})`
     : "";
+  const fieldsLabel =
+    input.fileAttached && (input.extractedFieldCount ?? 0) > 0
+      ? ` ${input.extractedFieldCount} fields were read from it — open the candidate to review and save them.`
+      : "";
   const message = input.fileAttached
-    ? `${input.fullName} sent a CV via ${channelLabel}${matchLabel}.`
+    ? `${input.fullName} sent a CV via ${channelLabel}${matchLabel}.${fieldsLabel}`
     : `${input.fullName} reached out via ${channelLabel}${matchLabel}, but their CV file could not be attached — check the candidate record.`;
 
   await createSystemNotificationForRecipients(
     {
-      actionUrl: "/recruitment",
+      // Deep-links to this candidate's profile (the workspace reads ?candidate=) rather than the
+      // module landing page — the fields to review are on the profile, not findable from a list.
+      actionUrl: `/recruitment?candidate=${encodeURIComponent(input.candidateId)}`,
       eventType: "recruitment_inbound_cv",
       message,
       metadata: {
         candidateId: input.candidateId,
         channel: input.channel,
         created: input.created,
+        extractedFieldCount: input.extractedFieldCount ?? 0,
         fileAttached: input.fileAttached,
         matchReason: input.matchReason ?? null,
       },
