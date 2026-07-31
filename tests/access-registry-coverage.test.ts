@@ -94,7 +94,11 @@ export function runAccessRegistryCoverageTests() {
         missingCsrf.push(`${method} ${route}`);
       }
 
-      const exportLikeRoute = /\/(export|download|template)(\/|$)|events-csv$|payslips\/image$/.test(route);
+      // The `export|download|template` alternation used to require a SLASH-delimited segment, so a
+      // hyphenated route name slipped through entirely: `/api/admin/crm/master-export` and its
+      // portal twin — the two most sensitive exports in the app — never matched, and this guard
+      // silently never fired for them. Accept a `-` boundary as well as `/` or start-of-string.
+      const exportLikeRoute = /(^|\/|-)(export|download|template)(\/|$)|events-csv$|payslips\/image$/.test(route);
       if (exportLikeRoute && !entry.audit.required) {
         missingExportAudit.push(`${method} ${route}`);
       }

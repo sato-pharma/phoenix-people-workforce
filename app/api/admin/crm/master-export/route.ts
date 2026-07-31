@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
+import { resolveEmployeeIdentityId } from "@/lib/auth/permissions";
+import { writeAuditLog } from "@/lib/admin/audit";
 import {
   crmMasterExportColumns,
   crmMasterExportLabel,
@@ -66,6 +68,27 @@ export async function GET(request: NextRequest) {
   };
 
   const label = crmMasterExportLabel(filter);
+
+  // Forensic record for the single most sensitive export in the app: this streams the ENTIRE
+  // company CRM mirror (every rep's field movements, customers, comments, and GPS coordinates on
+  // the check-ins dataset) and previously wrote no audit row at all. Logged before streaming since
+  // the row count isn't known until the stream completes.
+  await writeAuditLog({
+    actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
+    entityId: `${filter.dataset ?? "visits"}:${filter.dateFrom ?? "all"}:${filter.dateTo ?? "all"}`,
+    entityType: "crm_master_export",
+    newValues: {
+      dataset: filter.dataset ?? "visits",
+      dateFrom: filter.dateFrom,
+      dateTo: filter.dateTo,
+      role: access.role,
+      scope: "company-wide",
+      search: filter.search,
+      surface: "admin",
+    },
+    summary: "CRM master data exported company-wide from the admin console.",
+  });
+
   return streamCrmMasterWorkbookResponse({
     filename: exportFileName(label),
     sheetName: label,
