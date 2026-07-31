@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteCandidate, getCandidateProfile, updateCandidate } from "@/lib/recruitment/candidates";
-import { recordAppliedExtractionFields } from "@/lib/recruitment/cv-extraction";
+import { getLatestCvExtraction, recordAppliedExtractionFields } from "@/lib/recruitment/cv-extraction";
 import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 import {
   assertSameOriginMutation,
@@ -24,7 +24,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!profile) {
       return NextResponse.json({ error: "not_found", message: "Candidate not found.", success: false }, { status: 404 });
     }
-    return NextResponse.json({ success: true, profile });
+    // Returned alongside the profile rather than inside it: the extraction audit trail is this
+    // module's own record, not part of a candidate. Automated intake writes one per inbound CV
+    // and nothing else ever read it back, so the fields the AI already found stayed invisible —
+    // the UI now opens the review board on this instead of paying for a second extraction.
+    const latestCvExtraction = await getLatestCvExtraction(id).catch(() => null);
+    return NextResponse.json({ latestCvExtraction, profile, success: true });
   } catch (error) {
     return recruitmentApiError(error, "Failed to load candidate profile.");
   }

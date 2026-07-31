@@ -2,7 +2,7 @@
 
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BriefcaseBusiness,
   CheckCircle2,
@@ -41,7 +41,12 @@ import { CandidateFieldsPanel } from "@/components/recruitment/candidate-fields-
 import { CvExtractionPanel } from "@/components/recruitment/cv-extraction-panel";
 import { CvExtractionReviewBoard } from "@/components/recruitment/cv-extraction-review-board";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
-import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction";
+import {
+  countProposedCvFields,
+  seedReviewFieldsFromCandidate,
+  type ExtractedCandidateFields,
+  type StoredCvExtraction,
+} from "@/lib/recruitment/cv-extraction-fields";
 import { defaultCvPositionKey, getCvPositionSchema, listCvPositionSchemas } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
@@ -470,8 +475,11 @@ function FinalSelectionCard({
 export function RecruitmentWorkspace(props: Props) {
   const { dashboard, initialError } = props;
   const router = useRouter();
+  // The inbound-CV notification deep-links to ?candidate=<id> so a reviewer lands on the profile
+  // holding the extracted fields, not on a module landing page they'd have to search from.
+  const linkedCandidateId = useSearchParams().get("candidate");
   const [pending, startTransition] = useTransition();
-  const [tab, setTab] = useState<TabKey>("pipeline");
+  const [tab, setTab] = useState<TabKey>(linkedCandidateId ? "candidates" : "pipeline");
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -580,6 +588,7 @@ export function RecruitmentWorkspace(props: Props) {
           canImport={props.canImport}
           canManage={props.canManageCandidates}
           candidates={props.candidates}
+          linkedCandidateId={linkedCandidateId}
           openRequisitions={requisitions.filter((requisition) =>
             ["req_open", "req_published"].includes(requisition.status),
           )}
@@ -1449,6 +1458,7 @@ function CandidatesTab({
   canImport,
   canManage,
   candidates,
+  linkedCandidateId,
   openRequisitions,
   pending,
   run,
@@ -1459,6 +1469,7 @@ function CandidatesTab({
   canImport: boolean;
   canManage: boolean;
   candidates: Candidate[];
+  linkedCandidateId: string | null;
   openRequisitions: Requisition[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
@@ -1483,6 +1494,10 @@ function CandidatesTab({
   const [retryBusy, setRetryBusy] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [retryPositionKey, setRetryPositionKey] = useState(defaultCvPositionKey);
+  // The extraction already on record for this candidate. Automated email/WhatsApp intake reads
+  // every inbound CV and stores the result, so for those candidates the fields are waiting here
+  // before anyone opens the profile — reviewing them costs nothing, unlike "Extract from CV".
+  const [storedExtraction, setStoredExtraction] = useState<StoredCvExtraction | null>(null);
 
   const q = query.trim().toLowerCase();
   const visibleCandidates = q
@@ -1500,15 +1515,35 @@ function CandidatesTab({
     setRetryExtraction(null);
     setRetryError(null);
     setRetryPositionKey(defaultCvPositionKey);
+    setStoredExtraction(null);
     try {
       const res = await fetch(`/api/recruitment/candidates/${id}`);
-      const data = (await res.json().catch(() => ({}))) as { profile?: CandidateProfile; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        profile?: CandidateProfile;
+        latestCvExtraction?: StoredCvExtraction | null;
+        message?: string;
+      };
       if (!res.ok || !data.profile) throw new Error(data.message ?? "Failed to load candidate profile.");
       setProfile(data.profile);
       setStatusDraft(data.profile.candidate.status);
+      setStoredExtraction(data.latestCvExtraction ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
     }
+  };
+
+  // Opens the review board on the extraction ALREADY stored for this candidate — no AI call, no
+  // cost, because this CV was read once at intake. Empty slots are seeded from the saved record so
+  // saving applies the AI's findings on top of what is known instead of replacing it (a direct
+  // WhatsApp applicant's phone comes from the sender, and no CV field would restore it).
+  const reviewStoredExtraction = (candidate: Candidate, extraction: StoredCvExtraction) => {
+    const schema = getCvPositionSchema(extraction.positionKey) ?? getCvPositionSchema(defaultCvPositionKey)!;
+    setRetryError(null);
+    setRetryPositionKey(schema.positionKey);
+    setRetryExtraction({
+      extractionId: extraction.extractionId,
+      fields: seedReviewFieldsFromCandidate(extraction.fields, candidate, schema),
+    });
   };
 
   // The profile panel renders below the (often long) candidate table — without this it opens
@@ -1516,6 +1551,17 @@ function CandidatesTab({
   useEffect(() => {
     if (profile) profilePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [profile]);
+
+  // Follow the ?candidate= deep link from the inbound-CV notification, once. Ref-guarded rather
+  // than keyed on `profile` so closing the panel doesn't immediately reopen it.
+  const autoOpenedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!linkedCandidateId || autoOpenedRef.current === linkedCandidateId) return;
+    autoOpenedRef.current = linkedCandidateId;
+    void openProfile(linkedCandidateId);
+    // openProfile is recreated every render; re-running on it would fight the ref guard.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedCandidateId]);
 
   // Re-run extraction on a candidate that already has a CV on file — for one manually
   // created, or where the first extraction pass wasn't saved as-is. Reuses the same
@@ -1746,6 +1792,7 @@ function CandidatesTab({
                 setRetryExtraction(null);
                 setRetryError(null);
                 setRetryPositionKey(defaultCvPositionKey);
+                setStoredExtraction(null);
               }}
             >
               Close
@@ -1767,9 +1814,24 @@ function CandidatesTab({
             </div>
           ) : null}
 
-          {canManage && profile.files.some((file) => file.kind === "cv") ? (
+          {canManage && (storedExtraction || profile.files.some((file) => file.kind === "cv")) ? (
             <div className="space-y-2">
-              {!retryExtraction ? (
+              {!retryExtraction && storedExtraction && !storedExtraction.reviewed && countProposedCvFields(storedExtraction.fields) > 0 ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-orange-200 bg-orange-50/70 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">
+                      {countProposedCvFields(storedExtraction.fields)} fields already read from this CV
+                    </p>
+                    <p className="text-xs text-slate-600">
+                      Read automatically when the CV arrived — review and save them to fill this candidate in. No new read needed.
+                    </p>
+                  </div>
+                  <Button onClick={() => reviewStoredExtraction(profile.candidate, storedExtraction)} size="sm">
+                    Review extracted fields
+                  </Button>
+                </div>
+              ) : null}
+              {!retryExtraction && profile.files.some((file) => file.kind === "cv") ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <select
                     className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
@@ -1789,7 +1851,7 @@ function CandidatesTab({
                     size="sm"
                     variant="secondary"
                   >
-                    {retryBusy ? "Reading CV…" : "Extract from CV"}
+                    {retryBusy ? "Reading CV…" : storedExtraction ? "Read the CV again" : "Extract from CV"}
                   </Button>
                 </div>
               ) : null}
@@ -1805,7 +1867,7 @@ function CandidatesTab({
                   }}
                   onSave={(values) => saveRetryExtraction(profile.candidate.id, values)}
                   saveLabel="Save extracted fields"
-                  schema={getCvPositionSchema(retryPositionKey)!}
+                  schema={getCvPositionSchema(retryPositionKey) ?? getCvPositionSchema(defaultCvPositionKey)!}
                 />
               ) : null}
             </div>
