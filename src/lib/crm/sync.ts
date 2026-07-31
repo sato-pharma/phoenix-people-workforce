@@ -65,7 +65,7 @@ export function dedupeByKey<T>(rows: T[], keyOf: (row: T) => number | string): T
  * why sequential chunking alone was the cause of repeated cron timeouts. Returns the total row
  * count upserted; throws (aborting remaining chunks) on the first chunk error, same failure
  * behavior as the sequential loop it replaces. */
-async function upsertRowsConcurrently<T>(
+async function upsertRowsConcurrently<T extends Record<string, unknown>>(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   table: string,
   rows: T[],
@@ -81,7 +81,12 @@ async function upsertRowsConcurrently<T>(
     Array.from({ length: Math.min(concurrency, chunks.length) }, async () => {
       while (cursor < chunks.length) {
         const chunk = chunks[cursor++];
-        const { error } = await supabase.from(table).upsert(chunk, { onConflict });
+        // The widening cast is required by postgrest-js >= 2.110, which wraps upsert's argument
+        // in RejectExcessProperties<Row, T>. That is a conditional type, so against an unresolved
+        // generic `T` it never reduces and NOTHING satisfies it — constraining T does not help;
+        // only a concrete type does. No safety is lost: `from(table)` takes a runtime string, so
+        // Row is already `any` here and the excess-property check has nothing to check against.
+        const { error } = await supabase.from(table).upsert(chunk as Record<string, unknown>[], { onConflict });
         if (error) throw new Error(error.message);
         upserted += chunk.length;
       }
