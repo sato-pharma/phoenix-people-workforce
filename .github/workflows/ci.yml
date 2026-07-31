@@ -1,10 +1,11 @@
 name: CI
 
-# TEMPORARY CI SPEED-UP (2026-07-30, owner request: "set github to the fastest also until
-# 10 am"). Paired with the fast-deploy window in deploy-cloud-run.yml; the same 10:00 Cairo
-# cleanup PR reverts both. Unlike the deploy trigger this needs no run-time self-expiry —
-# CI speed does not change production behaviour, so leaving it on past 10:00 is harmless
-# (the deploy trigger was self-expiring because a hot production trigger is not).
+# CI SPEED-UP (2026-07-30). Originally landed alongside a temporary fast-deploy window in
+# deploy-cloud-run.yml. That window has since expired and its dead config was removed
+# (2026-07-31) — but these CI changes are KEPT PERMANENTLY and deliberately were not
+# reverted with it: they remove wasted work rather than trade away verification, so there is
+# nothing to revert to. No gate is relaxed and no step is skipped; the same checks run, with
+# one fewer artifact round-trip and one more parallel runner.
 #
 # MEASURED baseline (run 30507413475, commit 87f26e05) = 308s wall-clock:
 #   validate        237s  (setup 33s, test 13s, BUILD 143s, upload artifact 40s)
@@ -58,9 +59,9 @@ on:
 # cancel it and leave that commit permanently un-deployable. Observed 2026-07-30: #1484, #1486
 # and #1487 merged ~1 minute apart and all three ended `cancelled`; only the last commit of the
 # train ever went green. It stayed shippable because main is cumulative — but if a train's LAST
-# CI run is the one cancelled (a manual cancel, or a merge that races the queue), then neither
-# the fast-deploy window nor the 2-hourly cron will ever ship it, and the gate says so only in a
-# `::notice::` nobody reads. Production silently stops receiving deploys until a human re-runs CI.
+# CI run is the one cancelled (a manual cancel, or a merge that races the queue), the 2-hourly
+# cron will never ship it, and the gate says so only in a `::notice::` nobody reads. Production
+# silently stops receiving deploys until a human re-runs CI.
 #
 # Grouping by SHA rather than simply setting cancel-in-progress:false keeps the runs PARALLEL.
 # A shared main group with cancellation disabled would serialize the train instead (~4 min per

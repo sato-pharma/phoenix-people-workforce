@@ -96,3 +96,17 @@ cloud-run-env-all.yaml
 
 .env*
 .vercel
+
+# Next.js regenerates this on every dev/build and rewrites its import target
+# depending on which one ran last:
+#   next dev   -> import "./.next/dev/types/routes.d.ts"
+#   next build -> import "./.next/types/routes.d.ts"
+# Tracking it therefore left every worktree permanently "modified" with a file
+# whose own header says "This file should not be edited" (6 of 7 dirty worktrees
+# in the 2026-07-31 audit differed by nothing else), and one `git commit -a` away
+# from committing whichever variant the last command happened to produce.
+# Verified safe to untrack on 2026-07-31: `pnpm run typecheck` passes with the
+# file absent, on a COLD tsbuildinfo, with no .next present — this tsconfig's
+# `include` already covers `.next/types/**` and `.next/dev/types/**`, so the
+# reference directives were redundant. Next recreates it on dev/build/typegen.
+next-env.d.ts
