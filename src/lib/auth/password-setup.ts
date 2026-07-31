@@ -234,6 +234,12 @@ export async function sendPasswordSetupLink(input: {
           channels: ["email"],
           email: {
             candidateEmail: deliverableEmail,
+            // Greet the person by their real name. Without this the notification recipient
+            // resolver (system.ts) falls back to recipient.name, which for a by-email "candidate"
+            // send is the login/HR_ID — so the Welcome/Account-Setup and Password-Reset emails
+            // opened with "Dear B-10" instead of "Dear <name>". user.name is the display name on
+            // the auth record (mirrors employees.full_name).
+            recipientName: user.name?.trim() || undefined,
             ctaHref: setupUrl,
             ctaLabel: "Set your password",
             metrics: [
