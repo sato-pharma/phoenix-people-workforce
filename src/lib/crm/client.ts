@@ -166,7 +166,21 @@ export async function iReports360GetVisits(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 visits request failed."), 502);
   }
-  return Array.isArray(payload?.data) ? payload.data : [];
+  // A missing/non-array `data` is a BROKEN response, not an empty one, and the two must never look
+  // alike: coercing it to [] made the sync record a green "success, 0 rows fetched" run, ping the
+  // dead-man's switch as healthy, and send a ✅ notification — so a renamed field, an auth-scope
+  // change, or a nested-shape change could stop the integration for days with no signal anywhere.
+  // `data: []` is still perfectly valid and returns [] (a genuinely quiet day).
+  if (!payload || !Array.isArray(payload.data)) {
+    throw new IReports360ApiError(
+      messageFromPayload(
+        payload,
+        "iReports360 visits response contained no `data` array — the response shape changed or the request was rejected.",
+      ),
+      502,
+    );
+  }
+  return payload.data;
 }
 
 /** Returns GPS check-in records within an inclusive date range (YYYY-MM-DD). */
@@ -188,5 +202,18 @@ export async function iReports360GetCheckins(
   if (payload?.success === false) {
     throw new IReports360ApiError(messageFromPayload(payload, "iReports360 checkins request failed."), 502);
   }
-  return Array.isArray(payload?.data) ? payload.data : [];
+  // See iReports360GetVisits: a broken response must not be indistinguishable from an empty one.
+  // This one matters even more, because the sync's check-in fetch is wrapped in `.catch(() => [])`,
+  // so a permanently-broken /checkins endpoint would otherwise degrade every visit's GPS time tier
+  // to save-time silently and forever.
+  if (!payload || !Array.isArray(payload.data)) {
+    throw new IReports360ApiError(
+      messageFromPayload(
+        payload,
+        "iReports360 checkins response contained no `data` array — the response shape changed or the request was rejected.",
+      ),
+      502,
+    );
+  }
+  return payload.data;
 }
