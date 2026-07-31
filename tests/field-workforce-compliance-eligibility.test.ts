@@ -395,6 +395,72 @@ export function runFieldWorkforceComplianceEligibilityTests() {
     "device-mapped-only employee (non-field-eligible title) NEVER generates a payroll-deduction recommendation, even with a resolved CRM identity",
   );
 
+  // --- Holiday-source guard (money safety): national holidays are fetched live from Google
+  // Calendar. When that lookup degrades, the month's public holidays are missing, so every rep's
+  // holiday reads as an ordinary working day with no activity — which would generate a payroll
+  // deduction for the WHOLE field force off a third-party outage. Payroll must be suppressed;
+  // the advisory leave recommendation is unaffected and still surfaces the days for review. ---
+  {
+    // A field-eligible title is required or the existing title gate would make every case pass
+    // vacuously (guardEmployee's default roleName is null, which is NOT field-eligible).
+    const holidayEmployee = { ...guardEmployee("HD-1", "crm_id"), roleName: "Medical Representative" };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const holidayArchive = (metadata: Record<string, unknown>): any => ({
+      archive: { ...guardArchive.archive, id: "live:2026-07", monthKey: "2026-07", month: 7, year: 2026 },
+      preview: {
+        employees: [holidayEmployee], errors: [],
+        metadata: { dateRange: { start: "2026-07-01", end: "2026-07-31" }, ...metadata },
+        reviewCandidates: [], severityCounts: { High: 0, Low: 0, Medium: 1, Review: 0 }, warnings: [],
+      },
+    });
+
+    // Positive control — healthy holiday source: the payroll recommendation IS produced.
+    const healthy = buildFieldWorkforceRecommendationsReportFromArchive(
+      holidayArchive({ holidayCalendarReachable: true, holidayConnected: true }), [], undefined,
+    );
+    assert.ok(
+      healthy.payrollRecommendations.some((rec) => rec.employeeCode === "HD-1"),
+      "healthy holiday source still produces the payroll recommendation (guard must not fire)",
+    );
+    assert.equal(healthy.integrationStatus.holidaySource, "connected");
+
+    // THE case the old holidayConnected-only check would have missed: the Google calendar was
+    // unreachable, but a hardcoded company/fixed-date holiday overlapped the month, so
+    // `connected` is still true. Only `calendarReachable` reveals the outage.
+    const unreachable = buildFieldWorkforceRecommendationsReportFromArchive(
+      holidayArchive({ holidayCalendarReachable: false, holidayConnected: true }), [], undefined,
+    );
+    assert.ok(
+      !unreachable.payrollRecommendations.some((rec) => rec.employeeCode === "HD-1"),
+      "calendar unreachable -> NO payroll deduction, even though holidayConnected was true",
+    );
+    assert.ok(
+      unreachable.leaveRecommendations.some((rec) => rec.employeeCode === "HD-1"),
+      "the advisory leave recommendation survives — the days are still surfaced for human review",
+    );
+    assert.equal(unreachable.integrationStatus.holidaySource, "degraded", "suppression is visible, not silent");
+    assert.ok(unreachable.integrationStatus.holidaySourceMessage, "degraded state carries an explanatory message");
+
+    // No holidays at all resolved for the month.
+    const noHolidays = buildFieldWorkforceRecommendationsReportFromArchive(
+      holidayArchive({ holidayCalendarReachable: false, holidayConnected: false }), [], undefined,
+    );
+    assert.ok(
+      !noHolidays.payrollRecommendations.some((rec) => rec.employeeCode === "HD-1"),
+      "no holiday data at all -> NO payroll deduction",
+    );
+
+    // Legacy/Excel archives predate these fields. Absent (undefined) must mean "not asserted",
+    // NOT "degraded" — otherwise every historical archive silently stops producing payroll
+    // recommendations. This is why the guard compares against `false` explicitly.
+    const legacy = buildFieldWorkforceRecommendationsReportFromArchive(holidayArchive({}), [], undefined);
+    assert.ok(
+      legacy.payrollRecommendations.some((rec) => rec.employeeCode === "HD-1"),
+      "archive without the holiday-source fields is treated as not-degraded (no regression for legacy archives)",
+    );
+    assert.equal(legacy.integrationStatus.holidaySource, "connected");
+  }
+
   // --- 1.1 CRM-logging timing: first/last LOGGED time, active window, late-start flag ---
   // Sourced from saveDate (crm_save_date) — NOT visitDate/visit_date_time, which is a fixed
   // midnight placeholder on every production row (verified 2026-07: 100% of 93,742 rows) and

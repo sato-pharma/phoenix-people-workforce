@@ -606,6 +606,7 @@ function toEmployeeReference(employee: DirectoryRow): FieldWorkforceEmployeeRefe
 }
 
 async function loadHolidays(month: number, year: number): Promise<{
+  calendarReachable: boolean;
   connected: boolean;
   holidays: FieldWorkforceHoliday[];
   message: string | null;
@@ -614,6 +615,7 @@ async function loadHolidays(month: number, year: number): Promise<{
   try {
     const result = await getConfirmedNationalHolidays({ month, year });
     return {
+      calendarReachable: result.calendarReachable,
       connected: result.connected,
       holidays: result.holidays.map((holiday) => ({
         endDate: holiday.endDate,
@@ -625,6 +627,8 @@ async function loadHolidays(month: number, year: number): Promise<{
     };
   } catch (error) {
     return {
+      // A thrown lookup is the most degraded state of all — no holidays at all.
+      calendarReachable: false,
       connected: false,
       holidays: [],
       message: error instanceof Error ? error.message : "National holiday lookup failed.",
@@ -822,6 +826,7 @@ export async function buildFieldWorkforceCompliancePreviewFromVisitsReport(input
 
   const preview = buildFieldWorkforceCompliancePreview({
     employeeReferences: directory.map(toEmployeeReference),
+    holidayCalendarReachable: holidays.calendarReachable,
     holidayConnected: holidays.connected,
     holidayMessage: holidays.message,
     holidaySourceLabel: holidays.sourceLabel,
