@@ -702,6 +702,7 @@ const employeePortalNavigationSectionSeeds = [
     id: "recruitment-hiring",
     items: [
       { href: "/employee-portals/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/cv-review-queue", icon: ClipboardList, label: "CV Review Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
@@ -1707,6 +1708,14 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     label: "Hiring Documents",
     description: "Manage hiring-related employee documents.",
     permissions: [{ resource: "employee_documents" }],
+    roles: hrAuthorityNavigationRoles,
+  },
+  {
+    href: "/recruitment/cv-review-queue",
+    icon: ClipboardList,
+    label: "CV Review Queue",
+    description: "CV fields the AI read but wasn't confident enough to apply — auto-intake never surfaced these.",
+    permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },
   {

@@ -67,6 +67,10 @@ export function runEmployeePortalBottomNavTests() {
   const desktopOnlyPortalRoutes = new Set([
     "/employee-portals/private-calendar",
     "/employee-portals/recruitment",
+    // CV Review Queue: same Talent-Acquisition-only class as its neighbours here, and its core
+    // interaction is the drag-and-drop extraction board (dnd-kit chips into per-field slots) —
+    // a pointer workflow, not something to hand someone on a phone.
+    "/employee-portals/cv-review-queue",
     "/employee-portals/cv-database",
     "/employee-portals/hiring-documents",
     "/employee-portals/employees",

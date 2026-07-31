@@ -23,6 +23,7 @@ import {
   ChartColumnBig,
   FileCheck2,
   FilePlus2,
+  ClipboardList,
   ShieldCheck,
   Database,
   Settings2,
@@ -354,6 +355,7 @@ function buildEmployeePortalSections({
       title: "Recruitment & Hiring",
       items: [
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/recruitment", label: "Recruitment", icon: BriefcaseBusiness }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-review-queue", label: "CV Review Queue", icon: ClipboardList }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
       ],

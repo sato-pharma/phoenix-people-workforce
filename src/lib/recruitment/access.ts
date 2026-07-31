@@ -50,6 +50,16 @@ export function canViewCvExtractionAnalytics(access: Pick<AccessContext, "role" 
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
+// The CV-extraction review queue (src/lib/recruitment/cv-review-queue.ts). Same role set as the
+// analytics dashboard today, but deliberately its OWN helper rather than reusing
+// canViewCvExtractionAnalytics: this capability WRITES (a saved review patches the candidate and
+// records applied_fields), so the two must be able to diverge without one silently widening the
+// other. The page gate is UX; PATCH /api/recruitment/candidates/[id] still enforces
+// candidates:update server-side on every save.
+export function canReviewCvExtractions(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
 // Roles whose hiring-manager visibility extends beyond their own requisitions to an
 // org-scoped set (resolved via resolveHiringManagerScopeHrIds). Every other role
 // (District Manager included) stays on the exact hrIdsMatch check only.
