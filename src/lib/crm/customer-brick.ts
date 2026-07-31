@@ -45,14 +45,29 @@ type StoredResolution = { brickId: string | null; status: string };
  * before the migration ships, matching the identity/region-resolutions read pattern. */
 async function loadResolutionsByContactId(): Promise<Map<number, StoredResolution>> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from(resolutionsTable).select("crm_contact_id, brick_id, status");
-  if (error) {
-    if (isCrmSchemaMissingError(error)) return new Map();
-    throw new Error(error.message);
-  }
   const map = new Map<number, StoredResolution>();
-  for (const row of (data ?? []) as Array<{ brick_id: string | null; crm_contact_id: number; status: string }>) {
-    map.set(row.crm_contact_id, { brickId: row.brick_id, status: row.status });
+  // PAGINATED, and ordered so the paging is exact. This table holds one row per resolved CRM
+  // contact and production has ~12.7k distinct contacts, so an unpaginated read would silently
+  // stop at PostgREST's 1,000-row cap once the admin passes ~1,000 decisions: already-mapped
+  // customers would reappear on the unmapped punch-list and re-export as status "pending", so an
+  // admin editing and re-uploading that template would see their own work counted as "skipped"
+  // and conclude it had been lost. Which 1,000 survived would be non-deterministic.
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from(resolutionsTable)
+      .select("crm_contact_id, brick_id, status")
+      .order("crm_contact_id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      if (isCrmSchemaMissingError(error)) return new Map();
+      throw new Error(error.message);
+    }
+    const rows = (data ?? []) as Array<{ brick_id: string | null; crm_contact_id: number; status: string }>;
+    for (const row of rows) {
+      map.set(row.crm_contact_id, { brickId: row.brick_id, status: row.status });
+    }
+    if (rows.length < PAGE) break;
   }
   return map;
 }

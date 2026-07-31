@@ -295,6 +295,17 @@ const CHECKIN_SELECT =
 
 export type CrmMasterRow = Record<string, unknown> & { id: string; raw_payload: Record<string, unknown> | null };
 
+/** Drops `raw_payload` from a select list. Used by the export, which never renders it — see the
+ * comment at its call site for why that matters at scale. Splits on commas rather than doing a
+ * string replace so it can't be broken by a whitespace change in the constants. */
+function withoutRawPayload(select: string): string {
+  return select
+    .split(",")
+    .map((column) => column.trim())
+    .filter((column) => column && column !== "raw_payload")
+    .join(", ");
+}
+
 /** Agent-mapping filter (visits): show all, only rows with a resolved agent_hr_id, or only unmapped. */
 export type CrmMasterMappingStatus = "all" | "agent_mapped" | "agent_unmapped";
 
@@ -601,10 +612,44 @@ type TripleDvRow = {
  * per-triple rows (for the Triple Visits tab) plus a visit-id → third-person map (for the Double
  * Visits "Triple?" flag). Bounded to 50k double-visit rows in range (ample; prod has ~dozens).
  */
+type TriplesResult = {
+  rows: CrmMasterRow[];
+  byVisitId: Map<number, { third: string; unspecified: boolean }>;
+  truncated: boolean;
+};
+
+/**
+ * Short-TTL memo for {@link computeTriplesUncached}, keyed by the date range.
+ *
+ * The Double Visits tab passes NO precomputed resources on the view path, so every page render —
+ * and every Next/Prev click — re-ran the full self-join below: up to 60 sequential 1000-row pages,
+ * over the ENTIRE mirror history, because both entry pages default the date range to null. All of
+ * that to populate one flag column for the ~50 rows actually on screen. The export path already
+ * did this correctly by computing once and passing it via `resources`; the view path now gets the
+ * same benefit. Same cache-with-TTL shape as getEffectiveExclusion in crm/reads.ts.
+ */
+const TRIPLES_CACHE_TTL_MS = 60_000;
+const TRIPLES_CACHE_MAX = 20;
+const triplesCache = new Map<string, { at: number; value: TriplesResult }>();
+
 async function computeTriplesInRange(range: {
   dateFrom: string | null;
   dateTo: string | null;
-}): Promise<{ rows: CrmMasterRow[]; byVisitId: Map<number, { third: string; unspecified: boolean }>; truncated: boolean }> {
+}): Promise<TriplesResult> {
+  const key = `${range.dateFrom ?? ""}|${range.dateTo ?? ""}`;
+  const cached = triplesCache.get(key);
+  if (cached && Date.now() - cached.at < TRIPLES_CACHE_TTL_MS) return cached.value;
+  const value = await computeTriplesUncached(range);
+  // Bounded: distinct date ranges are few in practice, but never let this grow without limit.
+  if (triplesCache.size >= TRIPLES_CACHE_MAX) triplesCache.clear();
+  triplesCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
+async function computeTriplesUncached(range: {
+  dateFrom: string | null;
+  dateTo: string | null;
+}): Promise<TriplesResult> {
   const supabase = getSupabaseAdmin();
   const excludedInList = await getEffectiveExcludedInList();
   // Walk pages of double-visit rows (PostgREST caps a single request's row count, so a lone
@@ -1753,7 +1798,14 @@ export async function* streamCrmMasterExportPages(
         : CRM_VISITS_TABLE;
   const dateColumn = isCheckins ? "check_date" : "visit_date";
   const idColumn = isCheckins ? "crm_checkin_id" : "crm_visit_id";
-  const select = isCheckins ? CHECKIN_SELECT : VISIT_SELECT;
+  // The export never renders raw_payload: its column set comes from crmMasterExportColumns, which
+  // has no such column, and renderExportCell only ever reads row[col.key]. No attach* helper reads
+  // it either. But it is ~62% of a row's bytes (measured when it was removed from the Visits
+  // Report for exactly this reason), so a full-mirror export was serializing, transferring and
+  // JSON.parsing tens of MB of unused JSON per page, ~22 pages over — pure waste on the very code
+  // path that produced the 2026-07-29 corrupted workbook. The paginated on-screen view keeps it,
+  // because that one really does render a JSON expander.
+  const select = withoutRawPayload(isCheckins ? CHECKIN_SELECT : VISIT_SELECT);
   const excludedInList = await getEffectiveExcludedInList();
 
   // 5000, not the master view's usual 1000: fewer outer round trips for the same total row count.
