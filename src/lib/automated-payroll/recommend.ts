@@ -32,7 +32,7 @@ import {
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
-import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
+import { getMappedAgentHrIds, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -468,6 +468,16 @@ async function computeLeaverCrmDates(input: {
 
     const hrKey = compactHrKey(input.hrId);
     const crmIdText = input.crmId != null ? String(input.crmId).trim() : "";
+
+    // Money-safety — mirrors the Field Workforce Compliance "unresolved CRM identity" skip
+    // (recommendations.ts): a field leaver we cannot tie to a CRM account (no crm_id AND never
+    // present as an agent_hr_id anywhere in the visits mirror) has no verifiable CRM activity, so
+    // treating their whole exit span as "no CRM activity" would recommend deducting ~their entire
+    // final settlement from a pure data-mapping gap. Skip instead. A genuinely-absent-but-mapped
+    // leaver (crm_id present, or seen in the mirror) is unaffected and still gets the recommendation.
+    if (!crmIdText && (await getMappedAgentHrIds([input.hrId])).length === 0) {
+      return empty;
+    }
 
     const [visits, holidayResult] = await Promise.all([
       scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
