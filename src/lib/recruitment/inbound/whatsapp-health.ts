@@ -11,13 +11,15 @@
 //   1. API probe (deterministic). One cheap authenticated GET against the phone-number node. An
 //      app-level block, a revoked/expired token, or a deleted number all fail here immediately
 //      and unambiguously. This is what actually catches the incident above.
-//   2. Inbound silence (heuristic, business-hours gated). Catches the cases the probe cannot: the
-//      WABA quietly unsubscribed from the app, or the callback URL pointing somewhere else — the
-//      credentials still work, the messages just never arrive. Volume on this channel is low, so
-//      the threshold is a full day by default and it never fires outside Cairo working hours.
+//   2. Inbound silence (heuristic, gated to Cairo working time). Catches the cases the probe
+//      cannot: the WABA quietly unsubscribed from the app, or the callback URL pointing somewhere
+//      else — the credentials still work, the messages just never arrive. Volume on this channel
+//      is low, so the threshold is generous and it only ever fires during Cairo working hours on a
+//      Cairo working day.
 //
 // Read-only and side-effect free: it reports, the caller decides what to log or fail.
 
+import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 import { recruitmentDb } from "@/lib/recruitment/db";
 
@@ -47,7 +49,7 @@ export type WhatsAppNumberProbe = {
 /**
  * Whether one line is "silent" — the API says the number is healthy, yet it has stopped receiving.
  * Only counts when the line HAS received before (no history = a freshly-added line, not a
- * regression) and only during Cairo business hours. Pure, so the rule is testable. A down line is
+ * regression) and only inside the Cairo alert window. Pure, so the rule is testable. A down line is
  * NOT "silent" here — that is already reported as api_unreachable, and double-reporting one incident
  * is just noise.
  */
@@ -59,7 +61,7 @@ export function isNumberSilent(input: {
 }): boolean {
   if (!input.ok || !input.lastInboundAt) return false;
   const hours = (input.now.getTime() - input.lastInboundAt.getTime()) / (60 * 60 * 1000);
-  return hours > input.thresholdHours && isCairoBusinessHours(input.now);
+  return hours > input.thresholdHours && isSilenceAlertWindow(input.now);
 }
 
 export type WhatsAppIntakeHealthCore = {
@@ -128,6 +130,34 @@ export function isCairoBusinessHours(now: Date): boolean {
 }
 
 /**
+ * A Cairo working DAY — i.e. not the Egyptian weekend. Delegates to the company weekend policy
+ * (no job title = the office rule: Friday and Saturday off) so this check and attendance cannot
+ * drift apart on what "the weekend" means.
+ */
+export function isCairoBusinessDay(now: Date): boolean {
+  return !isFieldWorkforceWeeklyOff({ dateIso: cairoDateKey(now) });
+}
+
+/**
+ * The window in which inbound silence is worth alerting on: Cairo working hours ON a Cairo working
+ * day.
+ *
+ * The day half was missing until 2026-07-31 and it mattered: with only the hours gate, a channel
+ * that is simply quiet over the Friday-Saturday weekend logs the "not healthy" error on all six
+ * cron ticks an hour, for the full ten-hour window — 60 errors per weekend day, each one also
+ * waking the production ERROR log alert. That happened for real (Thu 07-30 and Fri 07-31, 120
+ * errors) while every Meta-side check — subscription active, callback URL correct, number
+ * CONNECTED — passed. Nobody had sent a CV; the alert was measuring the weekend.
+ *
+ * Note this gates WHEN we alert, not how the gap is measured: hours since the last CV still
+ * accumulate across the weekend, so a webhook that genuinely dies on Thursday night is reported on
+ * Sunday morning — the first working hour a human would act on it — rather than being forgotten.
+ */
+export function isSilenceAlertWindow(now: Date): boolean {
+  return isCairoBusinessDay(now) && isCairoBusinessHours(now);
+}
+
+/**
  * Africa/Cairo YYYY-MM-DD. Used as the once-per-day throttle bucket for the push alert, so the
  * every-10-minute cron raises at most one Telegram/push notification per status per day instead
  * of spamming while an outage persists.
@@ -180,7 +210,7 @@ export function evaluateWhatsAppIntakeHealth(input: {
     return { ...base, detail: "No inbound WhatsApp message recorded yet.", status: "ok" };
   }
 
-  if (hoursSinceLastInbound > input.silenceThresholdHours && isCairoBusinessHours(input.now)) {
+  if (hoursSinceLastInbound > input.silenceThresholdHours && isSilenceAlertWindow(input.now)) {
     return {
       ...base,
       detail: `No inbound WhatsApp message for ${Math.floor(hoursSinceLastInbound)}h (threshold ${input.silenceThresholdHours}h) while the API is healthy — check the WABA's webhook subscription and callback URL.`,

@@ -5,8 +5,10 @@ import {
   cairoDateKey,
   cairoHour,
   evaluateWhatsAppIntakeHealth,
+  isCairoBusinessDay,
   isCairoBusinessHours,
   isNumberSilent,
+  isSilenceAlertWindow,
   resolveConfiguredPhoneNumberIds,
   type WhatsAppNumberProbe,
 } from "../src/lib/recruitment/inbound/whatsapp-health.ts";
@@ -15,8 +17,14 @@ import { autoReplyConfig, isWhatsAppAutoReplyEnabled } from "../src/lib/recruitm
 // 2026-07-27 is inside Egypt's summer time (UTC+3 since the DST reinstatement), so 09:00 UTC is
 // 12:00 Cairo. Using a real instant rather than a hand-built offset keeps this honest if the
 // rules change.
-const CAIRO_NOON = new Date("2026-07-27T09:00:00.000Z");
+const CAIRO_NOON = new Date("2026-07-27T09:00:00.000Z"); // Monday
 const CAIRO_MIDNIGHT_ISH = new Date("2026-07-27T01:00:00.000Z"); // 04:00 Cairo
+
+// Same 12:00 Cairo instant on each surrounding day, so only the weekday differs between them.
+const CAIRO_THURSDAY_NOON = new Date("2026-07-30T09:00:00.000Z");
+const CAIRO_FRIDAY_NOON = new Date("2026-07-31T09:00:00.000Z");
+const CAIRO_SATURDAY_NOON = new Date("2026-08-01T09:00:00.000Z");
+const CAIRO_SUNDAY_NOON = new Date("2026-08-02T09:00:00.000Z");
 
 export function runRecruitmentWhatsAppHealthTests() {
   // --- Cairo business-hours gate -----------------------------------------------------------
@@ -24,6 +32,26 @@ export function runRecruitmentWhatsAppHealthTests() {
   assert.equal(cairoHour(CAIRO_MIDNIGHT_ISH), 4);
   assert.equal(isCairoBusinessHours(CAIRO_NOON), true);
   assert.equal(isCairoBusinessHours(CAIRO_MIDNIGHT_ISH), false, "quiet nights must never page anyone");
+
+  // --- Cairo business-DAY gate (Egyptian weekend is Friday + Saturday) -------------------------
+  assert.equal(isCairoBusinessDay(CAIRO_SUNDAY_NOON), true, "Sunday is the first Egyptian working day");
+  assert.equal(isCairoBusinessDay(CAIRO_NOON), true, "Monday is a working day");
+  assert.equal(isCairoBusinessDay(CAIRO_THURSDAY_NOON), true, "Thursday is a working day");
+  assert.equal(isCairoBusinessDay(CAIRO_FRIDAY_NOON), false, "Friday is the weekend");
+  assert.equal(isCairoBusinessDay(CAIRO_SATURDAY_NOON), false, "Saturday is the weekend");
+
+  // The day is read in Cairo, not UTC: this instant is still Thursday in UTC but already Friday in
+  // Cairo, so it must count as weekend.
+  assert.equal(
+    isCairoBusinessDay(new Date("2026-07-30T21:30:00.000Z")),
+    false,
+    "00:30 Cairo Friday is the weekend even though UTC still says Thursday",
+  );
+
+  // --- The combined alert window ----------------------------------------------------------------
+  assert.equal(isSilenceAlertWindow(CAIRO_NOON), true, "working day + working hours = alertable");
+  assert.equal(isSilenceAlertWindow(CAIRO_FRIDAY_NOON), false, "working hours on the weekend are still not alertable");
+  assert.equal(isSilenceAlertWindow(CAIRO_MIDNIGHT_ISH), false, "a working day outside working hours is not alertable");
 
   // --- cairoDateKey (once-per-day push throttle bucket) ----------------------------------------
   assert.equal(cairoDateKey(CAIRO_NOON), "2026-07-27");
@@ -96,6 +124,55 @@ export function runRecruitmentWhatsAppHealthTests() {
     silenceThresholdHours: 24,
   });
   assert.equal(withinThreshold.status, "ok");
+
+  // --- Weekend silence is not an incident -------------------------------------------------------
+  // The real 2026-07-31 false positive: the last CV arrived Wednesday 06:36 UTC and nothing came in
+  // over the Egyptian weekend. With only the hours gate this logged the "not healthy" error on all
+  // six cron ticks an hour for the whole ten-hour window — 120 errors across Thu+Fri — while every
+  // Meta-side check passed. Nobody had sent a CV; the alert was measuring the weekend.
+  const LAST_REAL_CV = new Date("2026-07-29T06:36:06.905Z"); // Wednesday
+  const firstTickOf = (day: Date) => new Date(day.getTime() - 2 * 3_600_000 + 4 * 60_000); // 10:04 Cairo
+
+  const quietSaturday = evaluateWhatsAppIntakeHealth({
+    apiError: null,
+    configured: true,
+    lastInboundAt: LAST_REAL_CV,
+    now: firstTickOf(CAIRO_SATURDAY_NOON),
+    silenceThresholdHours: 24,
+  });
+  assert.equal(quietSaturday.status, "ok", "72h of weekend quiet is normal, not an outage");
+  assert.ok((quietSaturday.hoursSinceLastInbound ?? 0) > 24, "the gap is still measured, it just does not alert");
+
+  const quietFriday = evaluateWhatsAppIntakeHealth({
+    apiError: null,
+    configured: true,
+    lastInboundAt: LAST_REAL_CV,
+    now: firstTickOf(CAIRO_FRIDAY_NOON),
+    silenceThresholdHours: 24,
+  });
+  assert.equal(quietFriday.status, "ok", "Friday is the other weekend day");
+
+  // ...but the check must not simply be muted. The same gap on the first WORKING day still fires,
+  // so a webhook that genuinely died on Thursday night is reported Sunday morning.
+  const quietSunday = evaluateWhatsAppIntakeHealth({
+    apiError: null,
+    configured: true,
+    lastInboundAt: LAST_REAL_CV,
+    now: firstTickOf(CAIRO_SUNDAY_NOON),
+    silenceThresholdHours: 24,
+  });
+  assert.equal(quietSunday.status, "silent", "silence carried into a working day is a real signal");
+
+  // Same instant against the threshold actually deployed in production (96h): 96.5h has elapsed,
+  // so Sunday morning is exactly when it reports.
+  const sundayAtDeployedThreshold = evaluateWhatsAppIntakeHealth({
+    apiError: null,
+    configured: true,
+    lastInboundAt: LAST_REAL_CV,
+    now: firstTickOf(CAIRO_SUNDAY_NOON),
+    silenceThresholdHours: 96,
+  });
+  assert.equal(sundayAtDeployedThreshold.status, "silent");
 
   // --- Never-received ----------------------------------------------------------------------
   // A freshly connected number has no baseline, so "no messages ever" cannot be called a
@@ -203,6 +280,28 @@ export function runRecruitmentWhatsAppHealthTests() {
     isNumberSilent({ lastInboundAt: new Date(CAIRO_NOON.getTime() - 23 * 3_600_000), now: CAIRO_NOON, ok: true, thresholdHours: 24 }),
     false,
     "just under the threshold is still fine",
+  );
+  // Per-line silence carries the same weekend gate as the channel-wide one, or a quiet weekend
+  // would page per number instead of once.
+  assert.equal(
+    isNumberSilent({
+      lastInboundAt: new Date(CAIRO_SATURDAY_NOON.getTime() - 30 * 3_600_000),
+      now: CAIRO_SATURDAY_NOON,
+      ok: true,
+      thresholdHours: 24,
+    }),
+    false,
+    "a line quiet over the Egyptian weekend is normal",
+  );
+  assert.equal(
+    isNumberSilent({
+      lastInboundAt: new Date(CAIRO_SUNDAY_NOON.getTime() - 30 * 3_600_000),
+      now: CAIRO_SUNDAY_NOON,
+      ok: true,
+      thresholdHours: 24,
+    }),
+    true,
+    "the same 30h gap on a working day is still flagged",
   );
 
   // --- WhatsApp auto-reply gate (OFF by default) ------------------------------------------------
