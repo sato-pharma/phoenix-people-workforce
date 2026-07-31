@@ -266,6 +266,19 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"
           echo "Smoke passed."
 
+      - name: Assert no secret is pinned to a fixed version
+        # A secretKeyRef pinned to a number cannot pick up a rotation and breaks outright
+        # once that version is disabled — this 401'd all 8 crons on 2026-07-31. Nothing in
+        # this repo emits such a pin (deploys pass --image and inherit the service's
+        # existing wiring), so they arrive by hand during rotations and would otherwise sit
+        # unnoticed until the next rotation fires them. Runs BEFORE promotion so a pin
+        # blocks the rollout instead of being reported once it is already live.
+        env:
+          CLOUD_RUN_SERVICE: ${{ env.SERVICE_NAME }}
+          CLOUD_RUN_REGION: ${{ env.REGION }}
+          GCP_PROJECT_ID: ${{ env.PROJECT_ID }}
+        run: pnpm run check:secret-pins
+
       - name: Promote validated revision to 100% traffic
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \

@@ -81,6 +81,7 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
+    "check:secret-pins": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-secret-pins.ts",
     "check:routes": "node scripts/check-routes.mjs",
     "check:no-stale-domains": "node scripts/check-no-stale-domains.mjs",
     "validate:env": "node scripts/validate-env.mjs",
