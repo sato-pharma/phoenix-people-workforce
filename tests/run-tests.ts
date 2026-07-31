@@ -98,6 +98,7 @@ import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-sco
 import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extraction-analytics.test.ts";
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
+import { runRecruitmentCvReviewQueueTests } from "./recruitment-cv-review-queue.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
@@ -612,6 +613,7 @@ await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy
 await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionAnalyticsTests);
 await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules)", runRecruitmentCvAutoApplyTests);
+await runTest("recruitment cv review queue (pending-proposal selection)", runRecruitmentCvReviewQueueTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);

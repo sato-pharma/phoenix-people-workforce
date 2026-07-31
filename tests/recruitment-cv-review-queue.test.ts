@@ -1,0 +1,143 @@
+import assert from "node:assert/strict";
+
+import { buildReviewBoardFields, selectPendingReviewFields } from "../src/lib/recruitment/cv-review-queue.ts";
+
+const high = (value: string | boolean | null) => ({ confidence: "high" as const, value });
+const low = (value: string | boolean | null) => ({ confidence: "low" as const, value });
+
+// A candidate as it looks straight out of automated intake AFTER cv-auto-apply has run: identity
+// written by createCandidate, the confident fields already filled, the hedged ones still empty.
+function autoIntakeCandidate(overrides: Record<string, unknown> = {}) {
+  return {
+    address: null,
+    email: "yousab@example.com",
+    faculty: null,
+    fullName: "Yousab Ezzat",
+    governorate: "Assiut",
+    hasMedicalRepExperience: false,
+    hasPriorWorkExperience: true,
+    medicalRepEmployer: null,
+    medicalRepExperienceFrom: null,
+    medicalRepExperienceTo: null,
+    phone: "01229035737",
+    university: "Assiut university",
+    ...overrides,
+  };
+}
+
+export function runRecruitmentCvReviewQueueTests() {
+  // --- The point of the queue: low-confidence proposals ARE surfaced ------------------------------
+  // cv-auto-apply declines these on purpose; before this module nothing ever showed them to anyone.
+  const pending = selectPendingReviewFields({
+    candidate: autoIntakeCandidate(),
+    extractedFields: {
+      address: low("New Cairo"),
+      faculty: low("Faculty of Pharmacy"),
+      fullName: high("Yousab Ezzat"),
+      governorate: low("Cairo"),
+      university: high("Assiut university"),
+    },
+    positionKey: "medical_rep",
+  });
+  const keys = pending.map((field) => field.key).sort();
+  assert.deepEqual(keys, ["address", "faculty"], "only blank, non-identity, valued fields are pending");
+
+  const address = pending.find((field) => field.key === "address");
+  assert.equal(address?.value, "New Cairo");
+  assert.equal(address?.confidence, "low");
+  assert.equal(address?.type, "string");
+  assert.ok(address?.label, "the label is carried through for display");
+
+  // `governorate` is dropped because the candidate already HAS a value — a settled field is not a
+  // decision. `university` is dropped for the same reason (auto-apply wrote it).
+
+  // --- Identity is never offered, even when the column is blank ----------------------------------
+  // The queue shares CV_IDENTITY_FIELD_KEYS with cv-auto-apply precisely so it cannot drift and
+  // start offering to repoint an existing candidate's identity + dedupe norms.
+  const identityBlank = selectPendingReviewFields({
+    candidate: autoIntakeCandidate({ email: null, fullName: "", phone: null }),
+    extractedFields: { email: high("other@example.com"), fullName: high("Someone Else"), phone: high("0100") },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(identityBlank, [], "identity fields are never queued for review");
+
+  // --- High confidence still surfaces when it was NOT applied -----------------------------------
+  // An extraction predating cv-auto-apply, or one whose best-effort apply failed, leaves a
+  // high-confidence value with a blank column. Filtering the queue on confidence would hide it.
+  const unappliedHigh = selectPendingReviewFields({
+    candidate: autoIntakeCandidate({ university: null }),
+    extractedFields: { university: high("Assiut university") },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(
+    unappliedHigh.map((field) => field.key),
+    ["university"],
+    "an unapplied high-confidence field still needs a human",
+  );
+
+  // --- Empty / null / mistyped proposals are not decisions ---------------------------------------
+  const noise = selectPendingReviewFields({
+    candidate: autoIntakeCandidate({ address: null, faculty: null, hasPriorWorkExperience: null }),
+    extractedFields: {
+      address: low(""),
+      faculty: low(null),
+      // A malformed model response must never reach the UI shaped like a boolean field.
+      hasPriorWorkExperience: low("yes"),
+    },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(noise, [], "empty, null, and type-mismatched proposals are dropped");
+
+  // A real boolean in a blank boolean column IS a decision, including `false`.
+  const boolPending = selectPendingReviewFields({
+    candidate: autoIntakeCandidate({ hasMedicalRepExperience: null }),
+    extractedFields: { hasMedicalRepExperience: low(false) },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(boolPending.map((field) => field.key), ["hasMedicalRepExperience"]);
+  assert.equal(boolPending[0]?.value, false, "a proposed false is a reviewable answer, not an absence");
+
+  // --- Unknown position / missing extraction -----------------------------------------------------
+  assert.deepEqual(
+    selectPendingReviewFields({ candidate: autoIntakeCandidate(), extractedFields: {}, positionKey: "nope" }),
+    [],
+    "an unregistered position yields nothing rather than throwing",
+  );
+  assert.deepEqual(
+    selectPendingReviewFields({ candidate: autoIntakeCandidate(), extractedFields: null, positionKey: "medical_rep" }),
+    [],
+  );
+
+  // --- buildReviewBoardFields: identity is seeded from the CANDIDATE, not the CV -----------------
+  // The board writes every field it renders. Prefilling identity from the extraction would show a
+  // competing identity a reviewer could save without noticing, overwriting the one createCandidate
+  // resolved (and the dedupe norms derived from it).
+  const board = buildReviewBoardFields({
+    candidate: { email: "stored@example.com", fullName: "Stored Name", phone: "01000000000" },
+    extractedFields: {
+      email: high("cv@example.com"),
+      fullName: high("CV Name"),
+      governorate: low("Cairo"),
+      phone: high("01199999999"),
+    },
+  });
+  assert.equal(board.fullName?.value, "Stored Name", "board shows the stored identity");
+  assert.equal(board.email?.value, "stored@example.com");
+  assert.equal(board.phone?.value, "01000000000");
+  // Non-identity proposals pass through untouched — those are what the reviewer is here to judge.
+  assert.equal(board.governorate?.value, "Cairo");
+  assert.equal(board.governorate?.confidence, "low");
+
+  // A candidate with no stored email/phone yields null rather than leaking the CV's value in.
+  const boardNulls = buildReviewBoardFields({
+    candidate: { email: null, fullName: "Stored Name", phone: null },
+    extractedFields: { email: high("cv@example.com"), phone: high("01199999999") },
+  });
+  assert.equal(boardNulls.email?.value, null);
+  assert.equal(boardNulls.phone?.value, null);
+
+  // The source extraction object is not mutated — it is the audit trail.
+  const source = { governorate: low("Cairo") };
+  buildReviewBoardFields({ candidate: { email: null, fullName: "X", phone: null }, extractedFields: source });
+  assert.deepEqual(Object.keys(source), ["governorate"], "buildReviewBoardFields must not mutate its input");
+}

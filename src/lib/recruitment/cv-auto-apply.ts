@@ -26,7 +26,10 @@ export type AutoApplyExtractedFields = Record<string, { value: string | boolean 
 // national_id_norm/email_norm/phone_norm dedupe keys from the result. Re-applying it here would at
 // best be redundant, and at worst would rewrite the identity of an EXISTING candidate that intake
 // matched rather than created — silently repointing someone else's record.
-const IDENTITY_KEYS = new Set(["fullName", "email", "phone"]);
+// Exported because cv-review-queue.ts must apply the SAME exclusion. Two copies of this set
+// could drift, and a queue that offered identity fields for an unattended-created candidate
+// would reintroduce exactly the repointing hazard described above.
+export const CV_IDENTITY_FIELD_KEYS: ReadonlySet<string> = new Set(["fullName", "email", "phone"]);
 
 /**
  * A candidate column counts as free to fill only when it currently holds nothing.
@@ -74,7 +77,7 @@ export function selectAutoApplyFields(input: {
   const applied: Record<string, string | boolean> = {};
   for (const definition of schema.fields) {
     if (definition.storage !== "column") continue;
-    if (IDENTITY_KEYS.has(definition.key)) continue;
+    if (CV_IDENTITY_FIELD_KEYS.has(definition.key)) continue;
 
     const proposal = input.extractedFields[definition.key];
     if (!proposal || proposal.confidence !== "high") continue;
