@@ -340,6 +340,14 @@ export type FieldWorkforcePreviewMetadata = {
   };
   employeeCount: number;
   fileName: string;
+  /**
+   * Whether the Google Egypt holiday calendar was actually READ for this month.
+   * `false` means the month's public holidays are incomplete (degraded fallback), so any day
+   * marked "no activity" may in fact be a national holiday — payroll deduction recommendations
+   * are suppressed in that state (see recommendations.ts). `null` = not asserted (Excel-upload
+   * path / archives predating this field), which is treated as "not degraded".
+   */
+  holidayCalendarReachable: boolean | null;
   holidayConnected: boolean;
   holidayMessage: string | null;
   holidaySourceLabel: string;
@@ -517,6 +525,11 @@ export type FieldWorkforceRecommendationsReport = {
   archive: FieldWorkforceArchiveListItem;
   finalActions: FieldWorkforceFinalAction[];
   integrationStatus: {
+    /** "degraded" when this month's national-holiday data is missing/incomplete. In that state
+     * payroll deduction recommendations are deliberately suppressed (a missing public holiday
+     * would otherwise be misread as a no-activity day for the whole field force). */
+    holidaySource: "connected" | "degraded";
+    holidaySourceMessage: string | null;
     leaveSource: "connected" | "not_connected";
     leaveSourceMessage: string;
     payrollAmount: "available" | "requires_calculation";

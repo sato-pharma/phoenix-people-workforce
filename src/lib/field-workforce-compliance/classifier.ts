@@ -593,6 +593,9 @@ function orderEmployeesByHierarchy(
 
 export function buildFieldWorkforceCompliancePreview(input: {
   employeeReferences?: FieldWorkforceEmployeeReference[];
+  /** See FieldWorkforcePreviewMetadata.holidayCalendarReachable. Optional so the Excel-upload
+   * path and existing callers/fixtures are unaffected; undefined means "not asserted". */
+  holidayCalendarReachable?: boolean;
   holidayConnected: boolean;
   holidayMessage?: string | null;
   holidaySourceLabel: string;
@@ -663,6 +666,7 @@ export function buildFieldWorkforceCompliancePreview(input: {
       },
       employeeCount: employees.length,
       fileName: parsed.fileName,
+      holidayCalendarReachable: input.holidayCalendarReachable ?? null,
       holidayConnected: input.holidayConnected,
       holidayMessage: input.holidayMessage ?? null,
       holidaySourceLabel: input.holidaySourceLabel,

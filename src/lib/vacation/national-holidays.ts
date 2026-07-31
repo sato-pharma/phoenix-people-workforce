@@ -1,4 +1,4 @@
-import { getCompanyHolidaysForMonth } from "@/lib/vacation/company-holidays";
+import { getCompanyHolidaysForMonth, getEgyptFixedPublicHolidaysForMonth } from "@/lib/vacation/company-holidays";
 import { listHolidayOverridesOverlappingRange } from "@/lib/vacation/holiday-override-store";
 
 export type EgyptianNationalHoliday = {
@@ -14,6 +14,15 @@ export type EgyptianNationalHoliday = {
 export type EgyptianNationalHolidayResult = {
   calendarId: string | null;
   connected: boolean;
+  /**
+   * True only when the Google Egypt holiday calendar was actually READ (iCal feed or Calendar
+   * API). Distinct from `connected`, which is also true when the calendar was unreachable but a
+   * hardcoded COMPANY_HOLIDAYS entry happens to overlap the requested month — in that case the
+   * result silently contains ONLY the company entries and every public holiday is missing.
+   * Money-safe consumers (Field Workforce Compliance payroll deductions) must gate on THIS flag,
+   * because a missing public holiday reads downstream as a normal working day with no activity.
+   */
+  calendarReachable: boolean;
   holidays: EgyptianNationalHoliday[];
   message: string | null;
   month: number;
@@ -161,6 +170,23 @@ function companyHolidayRows(month: number, year: number): EgyptianNationalHolida
       startDate: holiday.startDate,
     };
   });
+}
+
+/**
+ * DEGRADED-MODE ONLY: Egypt's fixed-date public holidays for the month, shaped like company rows.
+ * Used when the Google calendar could not be read, so a national holiday is not silently treated
+ * as an ordinary working day. Never merged into a successful lookup — Google already returns these.
+ */
+function fixedPublicHolidayRows(month: number, year: number): EgyptianNationalHoliday[] {
+  return getEgyptFixedPublicHolidaysForMonth({ month, year }).map((holiday) => ({
+    description: null,
+    durationDays: 1,
+    endDate: holiday.startDate,
+    id: `fixed-public-${holiday.startDate}`,
+    name: holiday.name,
+    source: "company" as const,
+    startDate: holiday.startDate,
+  }));
 }
 
 /** Merges company-defined holidays into the Google calendar holidays for a month. */
@@ -354,6 +380,7 @@ export async function getEgyptianNationalHolidays(input: {
         );
         const result = {
           calendarId: candidateCalendarId,
+          calendarReachable: true,
           connected: true,
           holidays,
           message: null,
@@ -383,6 +410,7 @@ export async function getEgyptianNationalHolidays(input: {
       const payload = await apiResponse.json() as { items?: GoogleCalendarEvent[] };
       const result = {
         calendarId: candidateCalendarId,
+        calendarReachable: true,
         connected: true,
         holidays: withCompanyHolidays(googleEventsToHolidays(payload.items ?? [], monthStart, monthEnd), company),
         message: null,
@@ -395,13 +423,24 @@ export async function getEgyptianNationalHolidays(input: {
     }
   }
 
+  // Every path to here means the Google calendar could NOT be read, so `calendarReachable` is
+  // false even when `connected` is true off the back of a company-holiday entry. The message is
+  // now always populated: it used to be null whenever a COMPANY_HOLIDAYS entry overlapped the
+  // month, which made a total calendar outage indistinguishable from a healthy lookup.
+  // Degraded mode: fall back to company holidays PLUS Egypt's fixed-date public holidays, so a
+  // national holiday is not silently reclassified as an ordinary working day. Moving Islamic /
+  // Coptic holidays still cannot be derived here — hence calendarReachable: false, which money-safe
+  // consumers gate on.
+  const degradedHolidays = mergeHolidayRows([...company, ...fixedPublicHolidayRows(month, year)]);
+  const unreachableMessage =
+    `Google Calendar Egypt holiday calendar could not be loaded from the public iCal feed${apiKey.trim() ? " or Calendar API" : ""}. Last status: ${lastStatus || "unknown"}.` +
+    " Falling back to company + fixed-date public holidays only; moving Islamic/Coptic holidays are missing for this month.";
   const result = {
     calendarId: calendarCandidates[0] ?? null,
-    connected: company.length > 0,
-    holidays: company,
-    message: company.length > 0
-      ? null
-      : `Google Calendar Egypt holiday calendar could not be loaded from the public iCal feed${apiKey.trim() ? " or Calendar API" : ""}. Last status: ${lastStatus || "unknown"}.`,
+    calendarReachable: false,
+    connected: degradedHolidays.length > 0,
+    holidays: degradedHolidays,
+    message: unreachableMessage,
     month,
     sourceLabel: "Google Calendar Egypt public holidays",
     year,

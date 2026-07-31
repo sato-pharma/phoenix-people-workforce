@@ -327,6 +327,22 @@ function buildRecommendation(input: {
   };
 }
 
+/**
+ * True when this month's national-holiday data is missing or incomplete, so a "no activity" day
+ * cannot be trusted to be a real working day.
+ *
+ * `holidayCalendarReachable === false` means the Google Egypt calendar could not be read at all —
+ * the degraded fallback carries only company + fixed-date holidays, so every MOVING Islamic/Coptic
+ * holiday is absent. `holidayConnected === false` means there are no holidays at all. Both are
+ * checked explicitly against `false`, never truthiness: `null`/`undefined` means "not asserted"
+ * (Excel-upload path, or an archive predating these fields) and must NOT be treated as degraded,
+ * or every legacy archive would silently stop producing payroll recommendations.
+ */
+function isHolidaySourceDegraded(archiveDetail: FieldWorkforceArchiveDetail): boolean {
+  const metadata = archiveDetail.preview?.metadata;
+  return metadata?.holidayCalendarReachable === false || metadata?.holidayConnected === false;
+}
+
 function generatedRecommendations(
   archiveDetail: FieldWorkforceArchiveDetail,
   decisions: Map<string, FieldWorkforceDecisionRow>,
@@ -334,6 +350,13 @@ function generatedRecommendations(
 ) {
   const leaveRecommendations: FieldWorkforceRecommendation[] = [];
   const payrollRecommendations: FieldWorkforceRecommendation[] = [];
+  // Money guard (sibling of the per-employee "unresolved CRM identity" skip below): when the
+  // national-holiday source degraded, this month's public holidays are missing or incomplete, so
+  // every rep's holiday reads as an ordinary working day with no activity — which would generate a
+  // payroll deduction for the whole field force off a third-party outage. Suppress payroll only;
+  // the advisory leave_reconciliation recommendation is unaffected (holiday degradation does not
+  // corrupt it) and still surfaces the days for human review.
+  const holidaySourceDegraded = isHolidaySourceDegraded(archiveDetail);
 
   for (const employee of archiveDetail.preview.employees) {
     // Tier 0 guard: an employee we could never tie to a CRM identity has an all-"N" month
@@ -504,7 +527,7 @@ function generatedRecommendations(
       // inclusion is informational only and must never itself create a payroll consequence, so
       // only the ORIGINAL, title-eligible population can ever reach a payroll_deduction
       // recommendation — this is the only place payroll_deduction is generated in the codebase.
-      if (!isSfeManagerTitle(employee.roleName) && isFieldWorkforceComplianceEligibleTitle(employee.roleName)) {
+      if (!holidaySourceDegraded && !isSfeManagerTitle(employee.roleName) && isFieldWorkforceComplianceEligibleTitle(employee.roleName)) {
         payrollRecommendations.push(buildRecommendation({
           archive: archiveDetail.archive,
           dates: normalNoActivityDates,
@@ -700,10 +723,18 @@ export function buildFieldWorkforceRecommendationsReportFromArchive(
   ];
   const finalActions = finalActionsFromRecommendations(allRecommendations);
 
+  const holidaySourceDegraded = isHolidaySourceDegraded(archiveDetail);
+
   return {
     archive: archiveDetail.archive,
     finalActions,
     integrationStatus: {
+      // Surfaced so a suppressed month is visibly explained rather than looking like a clean
+      // "no deductions this month" — the whole point of the guard is to fail loudly.
+      holidaySource: holidaySourceDegraded ? "degraded" : "connected",
+      holidaySourceMessage: holidaySourceDegraded
+        ? `${archiveDetail.preview?.metadata?.holidayMessage ?? "National holiday data is incomplete for this month."} Payroll deduction recommendations are suppressed for this month because a missing public holiday would be misread as a no-activity day.`
+        : null,
       leaveSource: leaveCoverage.connected ? "connected" : "not_connected",
       leaveSourceMessage: leaveCoverage.message,
       payrollAmount: "requires_calculation",
