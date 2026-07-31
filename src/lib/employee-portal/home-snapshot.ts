@@ -536,6 +536,9 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
             orderBy: "visit_date",
             ascending: false,
             limit: 500,
+            // Collapse burst-duplicate re-saves so the "DVs this month / last 90 days" pulse matches
+            // the collapsed numbers on the Double Visit Analytics page for the same rep.
+            collapseDoubleVisits: true,
           }),
         )
       : Promise.resolve(null);

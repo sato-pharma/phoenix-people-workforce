@@ -240,6 +240,9 @@ export async function fetchMyDoubleVisits(hrId: string, window: MyCrmWindow): Pr
     dateFrom: window.dateFrom,
     dateTo: window.dateTo,
     doubleHrIds: [hrId],
+    // Collapse burst-duplicate re-saves so the "Double Visits (N)" tab badge/list doesn't show the
+    // same ride-along stop multiple times.
+    collapseDoubleVisits: true,
   });
   return rows
     .map((row): MyCrmDoubleVisitRow => {
