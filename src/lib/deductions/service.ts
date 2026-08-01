@@ -374,7 +374,7 @@ export async function insertCandidateDrafts(input: {
   // Collapse duplicates WITHIN the batch. The per-draft version could never see
   // these (each probe ran before its own insert); a bulk insert would send both
   // rows in one statement and lose the whole chunk to the unique index.
-  const pairKey = (categoryValue: string, candidateKey: string) => `${categoryValue} ${candidateKey}`;
+  const pairKey = (categoryValue: string, candidateKey: string) => `${categoryValue}\u0000${candidateKey}`;
   const seenInBatch = new Set<string>();
   const deduped: CandidateInsertPayload[] = [];
   for (const payload of payloads) {

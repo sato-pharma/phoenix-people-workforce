@@ -607,7 +607,7 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
   const buckets = new Map<string, RepAggBucket>();
   for (const r of filtered) {
     if (!r.rep_hr_id) continue;
-    const key = `${r.period} ${r.line_code} ${r.rep_hr_id}`;
+    const key = `${r.period}\u0000${r.line_code}\u0000${r.rep_hr_id}`;
     const bucket = buckets.get(key) ?? {
       areaCode: r.area_code,
       dmHrId: r.dm_hr_id,
