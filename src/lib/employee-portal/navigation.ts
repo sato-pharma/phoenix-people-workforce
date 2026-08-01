@@ -53,9 +53,10 @@ export type EmployeePortalNavVisibility = {
   // Report) — Talent Acquisition's company-wide HR tooling, separate from the
   // Recruitment & Hiring group above. See employee-portal-layout.tsx.
   showPeopleManagementTab?: boolean;
-  // Private Calendar is deliberately hidden from every portal role's nav by default
-  // (owner decision — see app/employee-portals/private-calendar/page.tsx, which has no
-  // role gate). This flag is a scoped, Talent-Acquisition-only exception to that default.
+  // Private Calendar (self-scoped — each employee sees only their own recognized activity; the
+  // page has no role gate and every portal role holds the employee_profile:read + attendance:read
+  // that getPrivateCalendarWorkspace asserts). Shown to every role as of the 2026-08-01 owner
+  // decision, reversing the earlier Talent-Acquisition-only default.
   showPrivateCalendarTab?: boolean;
   // Narrow account activate/deactivate tool — see src/lib/recruitment/account-activation.ts.
   showAccountActivationTab?: boolean;
@@ -392,7 +393,7 @@ export function resolveEmployeePortalNavVisibility(
     showSupportTab: true,
     showRecruitmentHiringTab: isTalentAcquisition,
     showPeopleManagementTab: isTalentAcquisition,
-    showPrivateCalendarTab: isTalentAcquisition,
+    showPrivateCalendarTab: true,
     showAccountActivationTab: isTalentAcquisition,
     showTeamCoachingTab,
     // Team Expenses was an NSM-only surface. It is retired from the portal nav:

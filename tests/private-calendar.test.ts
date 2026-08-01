@@ -610,15 +610,16 @@ export function runPrivateCalendarTests() {
   assert.match(accessRegistrySource, /\/admin\/private-calendars/, "private calendar admin page must be in access registry");
 
   const portalLayoutSource = readFileSync("src/components/employee-portal/employee-portal-layout.tsx", "utf8");
-  // Private Calendar stays hidden from the sidebar by default for every role — owner-approved
-  // 2026-07-24 exception: Talent Acquisition gets it via a dedicated, narrowly-gated flag
-  // (showPrivateCalendarTab), not a blanket unlock. Assert the gate exists rather than banning
-  // the label outright now that one role legitimately has it.
+  // Private Calendar is self-scoped and, as of the 2026-08-01 owner decision, shown to EVERY
+  // portal role (it was a narrowly-gated Talent-Acquisition-only exception, owner-approved
+  // 2026-07-24). It stays behind the showPrivateCalendarTab flag rather than rendering
+  // unconditionally, so Modules Control can still curate it per role/person — assert the gate
+  // exists, not that any one role is excluded.
   assert.match(portalLayoutSource, /showPrivateCalendarTab \? \[\{ href: "\/employee-portals\/private-calendar"/, "Private Calendar must stay behind the showPrivateCalendarTab flag, not render unconditionally");
   assert.match(portalLayoutSource, /\/employee-portals\/plans\/calendar/, "plan users must get the Planning Calendar route");
 
   const navigationSource = readFileSync("src/lib/employee-portal/navigation.ts", "utf8");
-  assert.match(navigationSource, /showPrivateCalendarTab: isTalentAcquisition,/, "showPrivateCalendarTab must stay scoped to Talent Acquisition only, not widened to every role");
+  assert.match(navigationSource, /showPrivateCalendarTab: true,/, "showPrivateCalendarTab is granted to every portal role (2026-08-01 owner decision); the page is self-scoped and every role holds attendance:read");
 
   const navRegistrySource = readFileSync("src/components/employee-portal/employee-portal-nav-registry.ts", "utf8");
   assert.doesNotMatch(navRegistrySource, /\/employee-portals\/private-calendar/, "Private Calendar is removed from the bottom-nav registry for all roles");
