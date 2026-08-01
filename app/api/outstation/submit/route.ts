@@ -83,7 +83,12 @@ export async function POST(request: Request) {
         typeof body.medicalTripName === "string" ? body.medicalTripName : undefined,
       meetingAmount: typeof body.meetingAmount === "number" ? body.meetingAmount : 0,
       notes: typeof body.notes === "string" ? body.notes : undefined,
-      offlineCaptured: Boolean(body.offlineCaptured),
+      // Never taken from the request body. An offline capture is what exempts a
+      // train/bus claim from carrying its ticket up front, so a client that could
+      // set this flag could self-declare "offline" and land an evidence-free claim
+      // in payroll. A genuinely offline draft is queued locally and replayed
+      // through POST /api/outstation/sync-offline, which sets the flag server-side.
+      offlineCaptured: false,
       otherAmount: typeof body.otherAmount === "number" ? body.otherAmount : 0,
       pmWorkload: typeof body.pmWorkload === "number" ? body.pmWorkload : 0,
       returnTicketAmount: Number(body.returnTicketAmount ?? 0),

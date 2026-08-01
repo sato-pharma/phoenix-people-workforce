@@ -23,7 +23,11 @@ import {
 } from "@/lib/outstation/car-evidence-storage";
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
-import { CAMPAIGN_RULE_ROLES, MAX_CAMPAIGN_VISITS } from "@/lib/outstation/decision";
+import {
+  CAMPAIGN_RULE_ROLES,
+  MAX_CAMPAIGN_VISITS,
+  outstationTicketEvidenceRejection,
+} from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { formatDateValue } from "@/lib/i18n/format";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
@@ -1324,46 +1328,83 @@ export async function submitOutstationRequest(
     expenseType: calculation.expenseType,
     evidence: workloadPayload.workload_evidence_snapshot,
   });
-  // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
-  // campaign rule; HOLD for Super Admin review when a governorate could not be confirmed;
-  // otherwise accept. Rejected AND held requests are PERSISTED (not thrown) so the employee
-  // sees them in their expense list, and a Super Admin can decide/override.
-  const systemRejectionReason =
-    calculation.eligibilityStatus === "not_eligible"
-      ? calculation.eligibilityReason
-      : campaignRejectionReason;
-  const requiresGovernorateReview =
-    !systemRejectionReason && Boolean(calculation.governorateReviewRequired);
-  const governorateReviewReason =
-    "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
-  const decisionStatus = systemRejectionReason
-    ? "rejected_by_system"
-    : requiresGovernorateReview
-      ? "submitted"
-      : "accepted_by_system";
-  const decisionReason = systemRejectionReason
-    ? systemRejectionReason
-    : requiresGovernorateReview
-      ? governorateReviewReason
-      : calculation.approvalReason;
-
-  // Ticket attachments: train/bus requests MUST include at least one ticket, and the
-  // uploaded files are persisted to the request (previously the manager flow discarded
-  // them entirely — only a boolean count was sent). Car uses the live photo instead.
-  const isTicketBasedTransport =
-    calculation.transportationType === "train" || calculation.transportationType === "bus";
+  // Ticket attachments: train/bus requests MUST carry ticket evidence, and the uploaded
+  // files are persisted to the request (previously the manager flow discarded them
+  // entirely — only a boolean count was sent). Car uses the live photo instead.
+  // Evidence is counted from files the SERVER received, never a client-supplied boolean.
   const ticketAttachmentInputs = options.ticketAttachments ?? [];
-  // Mandatory on the online path only — the offline resilience path cannot carry files,
-  // so it stays exempt (unchanged degraded behavior) rather than blocking offline capture.
-  if (
-    isTicketBasedTransport &&
-    !calculation.offlineCaptured &&
-    ticketAttachmentInputs.length === 0
-  ) {
+  const submitPolicy = await getActivePolicyForRole(calculation.employeeRole);
+  const ticketEvidenceRejection = outstationTicketEvidenceRejection({
+    hasTicketAttachments: ticketAttachmentInputs.length > 0,
+    requiresTicketAttachment: submitPolicy.requiresTicketAttachment,
+    transportationType: calculation.transportationType,
+  });
+  // Online: block the submission outright so the employee attaches the ticket now.
+  // Offline: the resilience path genuinely cannot carry files, so the claim is still
+  // accepted into the system but HELD for Super Admin review below — it is never
+  // auto-paid without evidence, which is what this exemption used to allow.
+  if (ticketEvidenceRejection && !calculation.offlineCaptured) {
     throw new Error(
       "A ticket attachment is required for train and bus expense requests. Upload the ticket before submitting.",
     );
   }
+
+  // Admin-editable policy limits. Both were previously stored and rendered in the
+  // policy editor but enforced nowhere, so a kilometre-inaccurate GPS fix or an
+  // offline capture synced days later auto-paid exactly like a clean one. Neither
+  // rejects — a fuzzy or stale capture is a review signal, not proof of abuse.
+  const capturedAccuracyMeters = numberValue(calculation.capturedAccuracyMeters);
+  const gpsAccuracyLimit = numberValue(submitPolicy.gpsAccuracyThresholdMeters);
+  const gpsAccuracyHoldReason =
+    gpsAccuracyLimit > 0 && capturedAccuracyMeters > gpsAccuracyLimit
+      ? `The captured GPS accuracy (${Math.round(capturedAccuracyMeters)} m) is outside the ${gpsAccuracyLimit} m policy limit, so this request is held for Super Admin review before it moves to payroll.`
+      : null;
+
+  const offlineSyncLimitHours = numberValue(submitPolicy.maxOfflineSyncDelayHours);
+  const capturedAtMs = calculation.capturedAt ? Date.parse(calculation.capturedAt) : Number.NaN;
+  const offlineSyncDelayHours =
+    calculation.offlineCaptured && Number.isFinite(capturedAtMs)
+      ? (Date.now() - capturedAtMs) / 3_600_000
+      : null;
+  const offlineSyncHoldReason =
+    offlineSyncDelayHours !== null &&
+    offlineSyncLimitHours > 0 &&
+    offlineSyncDelayHours > offlineSyncLimitHours
+      ? `This offline capture synced ${Math.round(offlineSyncDelayHours)} hours after it was taken, beyond the ${offlineSyncLimitHours}-hour policy window, so it is held for Super Admin review before it moves to payroll.`
+      : null;
+
+  // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
+  // campaign rule; HOLD for Super Admin review when a governorate could not be confirmed,
+  // when an offline claim arrived without its mandated ticket, or when a policy limit was
+  // exceeded; otherwise accept. Rejected AND held requests are PERSISTED (not thrown) so
+  // the employee sees them in their expense list, and a Super Admin can decide/override.
+  const systemRejectionReason =
+    calculation.eligibilityStatus === "not_eligible"
+      ? calculation.eligibilityReason
+      : campaignRejectionReason;
+  const governorateReviewReason =
+    "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
+  const offlineTicketHoldReason =
+    "This train or bus claim was captured offline and could not carry its ticket attachment, so it is held for Super Admin review before it moves to payroll.";
+  const reviewHoldReasons = systemRejectionReason
+    ? []
+    : [
+        calculation.governorateReviewRequired ? governorateReviewReason : null,
+        ticketEvidenceRejection ? offlineTicketHoldReason : null,
+        gpsAccuracyHoldReason,
+        offlineSyncHoldReason,
+      ].filter((reason): reason is string => Boolean(reason));
+  const decisionStatus = systemRejectionReason
+    ? "rejected_by_system"
+    : reviewHoldReasons.length > 0
+      ? "submitted"
+      : "accepted_by_system";
+  const decisionReason = systemRejectionReason
+    ? systemRejectionReason
+    : reviewHoldReasons.length > 0
+      ? reviewHoldReasons.join(" ")
+      : calculation.approvalReason;
+
   let uploadedTicketAttachments: OutstationTicketAttachmentMetadata[] = [];
   if (ticketAttachmentInputs.length > 0) {
     const ticketRequestDraftId = `outstation-${randomUUID()}`;

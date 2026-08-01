@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
-import { decideOutstationRequest, type OutstationDecisionInput } from "../src/lib/outstation/decision.ts";
+import {
+  decideOutstationRequest,
+  outstationTicketEvidenceRejection,
+  type OutstationDecisionInput,
+} from "../src/lib/outstation/decision.ts";
 
 // The system decision engine: distance floor + governorate rule + DM/TM campaign
 // cap + ticket evidence -> accepted_by_system / rejected_by_system.
@@ -169,5 +174,75 @@ export function runOutstationDecisionTests() {
     decideOutstationRequest({ ...base, actualDistanceKm: 10, destinationGovernorate: "Assiut", residenceGovernorate: "Assiut" }).reason,
     /distance|policy/i,
     "distance rejection wins over governorate when both fail",
+  );
+
+  // Rule 4 is exported on its own because the live submit path must apply the
+  // SAME rule; decideOutstationRequest is a pure engine production does not call
+  // end-to-end (rules 1-3 are computed upstream in calculateOutstationExpense).
+  assert.equal(
+    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "train" }),
+    "Train or bus expenses require an attached ticket before they can be accepted.",
+    "ticket rule rejects a ticketless train claim",
+  );
+  assert.equal(
+    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "bus" }),
+    "Train or bus expenses require an attached ticket before they can be accepted.",
+    "ticket rule rejects a ticketless bus claim",
+  );
+  assert.equal(
+    outstationTicketEvidenceRejection({ hasTicketAttachments: true, requiresTicketAttachment: true, transportationType: "train" }),
+    null,
+    "a train claim carrying a ticket passes",
+  );
+  assert.equal(
+    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: true, transportationType: "car" }),
+    null,
+    "car transport is not ticket-based and is unaffected",
+  );
+  assert.equal(
+    outstationTicketEvidenceRejection({ hasTicketAttachments: false, requiresTicketAttachment: false, transportationType: "train" }),
+    null,
+    "the mandate is policy-driven — a role whose policy does not require tickets is unaffected",
+  );
+
+  // The live money path. These pin the submit pipeline in service.ts, because a
+  // green decision.ts alone proved nothing: production never called it, and an
+  // offline train/bus claim with no ticket was written straight to payroll as
+  // accepted_by_system.
+  const serviceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
+  assert.match(
+    serviceSource,
+    /outstationTicketEvidenceRejection\(/,
+    "submitOutstationRequest must apply the shared ticket rule, not re-implement or skip it",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /!calculation\.offlineCaptured &&\s*\n?\s*ticketAttachmentInputs\.length === 0/,
+    "the ticket mandate must not be silently exempted for offline captures — offline claims hold for review instead of auto-accepting",
+  );
+  assert.match(
+    serviceSource,
+    /gpsAccuracyThresholdMeters/,
+    "the admin-editable GPS accuracy threshold must be enforced, not decorative",
+  );
+  assert.match(
+    serviceSource,
+    /maxOfflineSyncDelayHours/,
+    "the admin-editable offline sync-delay window must be enforced, not decorative",
+  );
+
+  // The online submit route must not let a caller self-declare an offline
+  // capture: that flag is what exempts a request from the ticket mandate, and
+  // the genuine offline path posts to /api/outstation/sync-offline instead.
+  const submitRouteSource = readFileSync("app/api/outstation/submit/route.ts", "utf8");
+  assert.doesNotMatch(
+    submitRouteSource,
+    /offlineCaptured:\s*Boolean\(body\.offlineCaptured\)/,
+    "the online submit route must not trust a client-supplied offlineCaptured flag",
+  );
+  assert.match(
+    submitRouteSource,
+    /offlineCaptured:\s*false/,
+    "the online submit route must pin offlineCaptured to false",
   );
 }

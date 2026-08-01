@@ -42,6 +42,34 @@ export const CAMPAIGN_RULE_ROLES: ReadonlySet<string> = new Set([
 export const MAX_CAMPAIGN_VISITS = 2;
 
 /**
+ * Rule 4 in isolation: ticket-based transport must carry ticket evidence.
+ * Returns the rejection reason, or null when the rule is satisfied / does not apply.
+ *
+ * Exported because the live submit path in src/lib/outstation/service.ts must
+ * apply the SAME rule — it computes rules 1-3 upstream (distance and governorate
+ * are folded into `eligibilityStatus`, the campaign cap into
+ * `campaignRuleRejection`) but previously enforced the ticket mandate only as a
+ * pre-submit throw that the offline path skipped, so an offline train/bus claim
+ * with no ticket was auto-accepted straight into payroll. One implementation,
+ * two callers: the rule can no longer be true here and false in production.
+ *
+ * `hasTicketAttachments` MUST be derived from files the server actually stored,
+ * never from a client-supplied boolean.
+ */
+export function outstationTicketEvidenceRejection(input: {
+  hasTicketAttachments: boolean;
+  requiresTicketAttachment: boolean;
+  transportationType: OutstationTransportationType;
+}): string | null {
+  const isTicketBasedTransport =
+    input.transportationType === "train" || input.transportationType === "bus";
+  if (!isTicketBasedTransport) return null;
+  if (!input.requiresTicketAttachment) return null;
+  if (input.hasTicketAttachments) return null;
+  return "Train or bus expenses require an attached ticket before they can be accepted.";
+}
+
+/**
  * Pure system decision for an outstation expense request. Rules, in order:
  *   1. Distance floor — must meet the policy minimum (60 km, 58 km tolerance).
  *   2. Governorate — the destination must be OUTSIDE the residence governorate.
@@ -94,15 +122,13 @@ export function decideOutstationRequest(input: OutstationDecisionInput): Outstat
   }
 
   // 4. Ticket-based transport must carry ticket evidence.
-  if (
-    (input.transportationType === "train" || input.transportationType === "bus") &&
-    input.requiresTicketAttachment &&
-    !input.hasTicketAttachments
-  ) {
-    return {
-      status: "rejected_by_system",
-      reason: "Train or bus expenses require an attached ticket before they can be accepted.",
-    };
+  const ticketRejection = outstationTicketEvidenceRejection({
+    hasTicketAttachments: input.hasTicketAttachments,
+    requiresTicketAttachment: input.requiresTicketAttachment,
+    transportationType: input.transportationType,
+  });
+  if (ticketRejection) {
+    return { status: "rejected_by_system", reason: ticketRejection };
   }
 
   return {
