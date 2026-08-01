@@ -12,9 +12,22 @@ export type OfficePivotRow = {
   rowNumber: number;
 };
 
+/** A row whose product name is present but whose units cell could not be read as a number. */
+export type OfficePivotBadUnitsRow = {
+  productName: string;
+  rawUnits: string;
+  rowNumber: number;
+};
+
 export type OfficePivotParseResult = {
   rows: OfficePivotRow[];
   sheetName: string;
+  /**
+   * Named-product rows whose units cell was non-empty but unparseable. These used to be coerced to
+   * 0 units and pushed as ordinary rows — a silent loss of a real product's sales. The caller
+   * surfaces them so the operator can fix the sheet rather than import a zero.
+   */
+  badUnitsRows: OfficePivotBadUnitsRow[];
 };
 
 const PRODUCT_HEADERS = ["row labels", "product", "product name", "item", "item name"];
@@ -65,24 +78,38 @@ export async function parseOfficePivotBuffer(buffer: ArrayBuffer | Buffer): Prom
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const sheet = workbook.worksheets[0];
-  if (!sheet) return { rows: [], sheetName: "" };
+  if (!sheet) return { rows: [], sheetName: "", badUnitsRows: [] };
 
   const header = findHeaderColumns(sheet);
-  if (!header) return { rows: [], sheetName: sheet.name };
+  if (!header) return { rows: [], sheetName: sheet.name, badUnitsRows: [] };
 
   const rows: OfficePivotRow[] = [];
+  const badUnitsRows: OfficePivotBadUnitsRow[] = [];
   for (let r = header.headerRow + 1; r <= sheet.rowCount; r += 1) {
     const row = sheet.getRow(r);
-    // Stop at the first fully-blank row — everything below the pivot block is unrelated junk.
+    // Stop at the first fully-blank row. This is a PIVOT export: Excel pivots have no interior
+    // blank rows, and everything below the block is unrelated junk (grand-total captions, notes),
+    // so a blank row is the reliable end-of-data marker. This is deliberately NOT a general-purpose
+    // "skip blanks" — for the pivot shape, stopping is correct and continuing would ingest junk.
     let anyValue = false;
     row.eachCell({ includeEmpty: false }, () => { anyValue = true; });
     if (!anyValue) break;
 
     const productName = cellText(row.getCell(header.productCol));
-    if (!productName) continue; // skip stray rows with no product name (e.g. a grand-total label)
-    const units = parseUnits(cellText(row.getCell(header.unitsCol)));
-    rows.push({ productName, units: Number.isFinite(units) ? units : 0, rowNumber: r });
+    if (!productName) continue; // stray row with no product name (e.g. a grand-total label)
+
+    const rawUnits = cellText(row.getCell(header.unitsCol));
+    const units = parseUnits(rawUnits);
+    if (!Number.isFinite(units)) {
+      // A NAMED product whose units cell cannot be read is a data error, not zero units. Coercing
+      // it to 0 (the old behaviour) silently dropped that product's entire office contribution.
+      // Empty is treated as end-of-meaningful-data by the blank-row break above, so anything that
+      // reaches here and fails to parse is a non-empty, unreadable cell worth surfacing.
+      badUnitsRows.push({ productName, rawUnits, rowNumber: r });
+      continue;
+    }
+    rows.push({ productName, units, rowNumber: r });
   }
 
-  return { rows, sheetName: sheet.name };
+  return { rows, sheetName: sheet.name, badUnitsRows };
 }

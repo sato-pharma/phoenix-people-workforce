@@ -208,15 +208,24 @@ export function validateNormalizedUpload(result: NormalizeResult, ctx: Validatio
     }
   }
 
-  if (s.totalRows > 0 && s.blankCustomerSkipped / s.totalRows > HIGH_BLANK_CUSTOMER_RATE) {
+  if (s.totalRows > 0 && s.blankCustomerSkipped > 0) {
+    // Any skipped blank-customer row drops its quantity from the import, so the fact it happened is
+    // always worth surfacing — the previous code only did so above 20%, which silently swallowed a
+    // real customer whenever the mapping was mostly right. Above the threshold it is a warning
+    // (likely a wrong customer/territory column); below it, an info line so the count is never
+    // invisible, only quieter.
+    const rate = s.blankCustomerSkipped / s.totalRows;
+    const high = rate > HIGH_BLANK_CUSTOMER_RATE;
     add({
       code: "high_blank_customer",
-      severity: "warning",
-      title: "Many rows have no customer",
-      detail: `${s.blankCustomerSkipped.toLocaleString()} row(s) (${pct(s.blankCustomerSkipped / s.totalRows)}%) were skipped for carrying no customer, territory, or brick — they will NOT be imported.`,
+      severity: high ? "warning" : "info",
+      title: high ? "Many rows have no customer" : "Some rows have no customer",
+      detail: `${s.blankCustomerSkipped.toLocaleString()} row(s) (${pct(rate)}%) were skipped for carrying no customer, territory, or brick — they will NOT be imported.`,
       count: s.blankCustomerSkipped,
       sampleRows: sampleRows(result.blankCustomerRows),
-      fixHint: "If these are real sales, the customer/territory column mapping is likely wrong — check the profile. If they are summary rows, this is expected.",
+      fixHint: high
+        ? "If these are real sales, the customer/territory column mapping is likely wrong — check the profile. If they are summary rows, this is expected."
+        : "Usually summary/footer rows. Check the samples: if any is a real sale, the customer/territory column mapping is wrong.",
     });
   }
 
