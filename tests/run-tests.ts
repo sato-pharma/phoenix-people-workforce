@@ -510,6 +510,7 @@ import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-res
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
+import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1038,6 +1039,7 @@ await runTest("password setup email resolution (work_email fallback, never the s
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
+await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

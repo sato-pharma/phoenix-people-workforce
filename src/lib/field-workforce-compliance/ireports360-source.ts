@@ -10,10 +10,11 @@
  *
  * Day-cell mapping (owner-confirmed default; the parity test validates it):
  *   - Regular visit (visitType 0)        -> numeric count for that day (VISITS)
- *   - Annual Vacation (-4), Health (-15) -> "AV" (leave / absence signal)
+ *   - Annual Vacation (-4)               -> "AV" (leave / absence signal)
  *   - Campaign (-8), Conference (-1),
  *     Group Meeting (-2), Training (-9),
- *     Meeting (-11), Traveling (-12)     -> "CP" (worked day, non-numeric activity)
+ *     Meeting (-11), Traveling (-12),
+ *     Health Day (-15)                   -> "CP" (worked day, non-numeric activity)
  *   - eligible working day with no record -> "N" (no-activity candidate)
  *   - Friday                              -> left blank (classifier ignores Fridays)
  *   - future day (current month)          -> left blank (not yet occurred)
@@ -54,17 +55,41 @@ const MONTH_LABELS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/** Non-regular visit types -> compliance status. Regular (0) is handled as a count. */
+/**
+ * Non-regular visit types -> compliance status. Regular (0) is handled as a count.
+ *
+ * AV means "away, not working" (leave). CP means "working, just not a regular
+ * customer visit" — conferences, training, meetings, travel.
+ *
+ * Health Day (-15) is CP, NOT AV (owner ruling 2026-08-01): "health day is a
+ * normal working day, it's an activity they do for patients in the dr clinic."
+ * It used to map to AV, so every health day read as vacation — it consumed the
+ * employee's annual leave balance and, once that ran out, was deducted from
+ * salary on the payroll Vacation step. In July 2026 that was 22 days across 11
+ * employees (33 in June, 22 in May): people charged leave for days they worked.
+ */
 const VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
   [-1, "CP"], // Conference
   [-2, "CP"], // Group Meeting
-  [-4, "AV"], // Annual Vacation
+  [-4, "AV"], // Annual Vacation — the only genuine leave type here
   [-8, "CP"], // Campaign (Prospection)
   [-9, "CP"], // Training
   [-11, "CP"], // Meeting
   [-12, "CP"], // Traveling
-  [-15, "AV"], // Health Day
+  [-15, "CP"], // Health Day — clinic work, see the note above
 ]);
+
+/**
+ * Visit types iReports360 also uses to log EXCUSES — there is no dedicated
+ * excuse visit_type (see EXCUSE_COMMENT_PATTERN below).
+ *
+ * Deliberately its own set rather than derived from VISIT_TYPE_TO_STATUS:
+ * excuse detection has always considered both -4 and -15, and must keep doing
+ * so now that -15 classifies as CP instead of AV. Deriving it from the status
+ * map would have silently stopped excuse-labelled health days being held back
+ * from the fingerprint-contradiction recommendation.
+ */
+const EXCUSE_CAPABLE_VISIT_TYPES = new Set<number>([-4, -15]);
 
 /** Subset of the employee directory that the matrix builder reads. */
 export type FieldWorkforceEmployeeInput = Pick<
@@ -134,18 +159,20 @@ function mixedDayHasCampaign(visits: IReports360Visit[]): boolean {
   return regularCount > 0 && hasCp;
 }
 
-/** CRM comment pattern for an AV-type visit that is actually an excuse (e.g. "Afternoon
+/** CRM comment pattern for a visit that is actually an excuse (e.g. "Afternoon
  * Excuse", "Morning Excuse"), not real vacation. iReports360 has no separate visit_type for
- * excuses — both are logged under the same AV-mapped types (-4/-15), distinguished only by
- * this free-text comment. */
+ * excuses — they are logged under types -4/-15, distinguished only by this free-text
+ * comment. */
 const EXCUSE_COMMENT_PATTERN = /excuse/i;
 
-/** True when ANY AV-mapped visit that day carries an excuse-labeled comment. Used only to
+/** True when ANY excuse-capable visit that day carries an excuse-labeled comment. Used only to
  * exclude excuse days from the fingerprint-contradiction recommendation — never affects the
- * base AV classification/severity, which stays visit_type-driven as before. */
+ * base AV/CP classification/severity, which stays visit_type-driven as before. Keyed on
+ * EXCUSE_CAPABLE_VISIT_TYPES (-4/-15) rather than on the AV status, so it still catches an
+ * excuse logged as -15 now that health days classify as CP. */
 function dayHasExcuseLabeledAv(visits: IReports360Visit[]): boolean {
   return visits.some((visit) =>
-    VISIT_TYPE_TO_STATUS.get(visit.visitType) === "AV" &&
+    EXCUSE_CAPABLE_VISIT_TYPES.has(visit.visitType) &&
     EXCUSE_COMMENT_PATTERN.test(visit.comment ?? ""));
 }
 
