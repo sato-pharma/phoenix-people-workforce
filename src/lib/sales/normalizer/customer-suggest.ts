@@ -6,6 +6,7 @@ import { buildPropagationIndex, propagateSuggestions, type MappedCustomerRow, ty
 import { NO_KEY_CONFIDENCE, scoreCustomerBrick, type GeoSignals } from "@/lib/sales/normalizer/geo-validate";
 import { pharmacyGeoKey, resolvePharmacyGeo } from "@/lib/sales/normalizer/pharmacy-geocode";
 import { loadSalesReferenceData, type SalesBrickReference } from "@/lib/sales/monthly-distributor-import";
+import { fetchAllRowsKeyset } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // The full customer suggestion pipeline, shared by the suggest-only ai-suggest route and the
@@ -26,10 +27,8 @@ export type CustomerSuggestion = {
   signals?: GeoSignals;
 };
 
-const CUSTOMER_MAP_MAX_ROWS = 20000;
-const PAGE = 1000;
-
 type CustomerMapDbRow = {
+  id: number;
   customer_name: string | null;
   address: string | null;
   brick_id: string | null;
@@ -37,23 +36,29 @@ type CustomerMapDbRow = {
   distributor_code: string | null;
 };
 
+/**
+ * Every active customer→brick mapping.
+ *
+ * This used to stop after 20,000 rows (`for (from = 0; from < CUSTOMER_MAP_MAX_ROWS; …)`). Production
+ * holds 49,745 active mappings, every one with a brick, so 29,745 of them — 59.8% — never reached
+ * the resolver. Because the walk is ordered by ascending id, the discarded rows were always the
+ * NEWEST: every mapping an admin had recently corrected was invisible, and the customer fell through
+ * to the AI branch or stayed unmapped, sending that customer's sales to the wrong area or nowhere.
+ *
+ * It also treated a query error as end-of-data (`if (error || !data …) break`), which turned a
+ * transient failure into a silently short map that looked complete.
+ */
 async function loadActiveCustomerMap(): Promise<CustomerMapDbRow[]> {
   const supabase = getSupabaseAdmin();
-  const rows: CustomerMapDbRow[] = [];
-  for (let from = 0; from < CUSTOMER_MAP_MAX_ROWS; from += PAGE) {
-    const { data, error } = await supabase
-      .from("source_of_sales_customer_map")
-      .select("customer_name,address,brick_id,customer_code,distributor_code")
-      .eq("active", true)
-      .not("brick_id", "is", null)
-      // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error || !data || data.length === 0) break;
-    rows.push(...(data as CustomerMapDbRow[]));
-    if (data.length < PAGE) break;
-  }
-  return rows;
+  return fetchAllRowsKeyset<CustomerMapDbRow>(
+    () =>
+      supabase
+        .from("source_of_sales_customer_map")
+        .select("id,customer_name,address,brick_id,customer_code,distributor_code")
+        .eq("active", true)
+        .not("brick_id", "is", null),
+    { cursorColumn: "id", cursorOf: (row) => row.id },
+  );
 }
 
 export async function suggestCustomerBricks(unknowns: AiUnknown[]): Promise<{ suggestions: CustomerSuggestion[]; bricks: Map<string, SalesBrickReference> }> {

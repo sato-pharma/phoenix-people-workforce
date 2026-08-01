@@ -29,9 +29,24 @@ export async function POST(request: Request) {
     const actorLoginId = resolveEmployeeIdentityId(access) ?? access.loginId ?? "system";
 
     const body = (await request.json().catch(() => ({}))) as { mappings?: AcceptMapping[] };
-    const mappings = Array.isArray(body.mappings) ? body.mappings.slice(0, MAX_BATCH) : [];
+    const mappings = Array.isArray(body.mappings) ? body.mappings : [];
     if (mappings.length === 0) {
       return NextResponse.json({ error: "No mappings to accept.", success: false }, { status: 400 });
+    }
+    // The per-request cap is a legitimate bound, but it used to be applied with a silent
+    // `.slice(0, MAX_BATCH)`: submitting 501+ mappings saved the first 500 and discarded the rest
+    // while reporting success, so the operator believed every mapping had been accepted. Refuse
+    // instead, and say exactly how many to send.
+    if (mappings.length > MAX_BATCH) {
+      return NextResponse.json(
+        {
+          error: `Too many mappings in one request — ${mappings.length} sent, ${MAX_BATCH} is the maximum. Accept them in smaller batches so none are dropped.`,
+          limit: MAX_BATCH,
+          submitted: mappings.length,
+          success: false,
+        },
+        { status: 400 },
+      );
     }
 
     // Each result carries distributorCode so the client can reconcile by the composite

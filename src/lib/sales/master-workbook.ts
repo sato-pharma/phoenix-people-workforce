@@ -39,7 +39,7 @@ async function selectAllOneBatch(
   supabase: SupabaseAdmin,
   table: string,
   columns: string,
-  order: string | undefined,
+  order: string,
   inFilter: { column: string; values: string[] } | undefined,
 ): Promise<Row[]> {
   const pageSize = 1000;
@@ -60,11 +60,20 @@ async function selectAllOneBatch(
   for (let i = 0; i < offsets.length; i += concurrency) {
     const slice = offsets.slice(i, i + concurrency);
     const fetched = await Promise.all(slice.map(async (from) => {
-      let query = supabase.from(table).select(columns).range(from, from + pageSize - 1);
-      if (order) query = query.order(order, { ascending: true });
+      // `order` is REQUIRED. It used to be optional, and six offset pages are fetched CONCURRENTLY —
+      // without a total order Postgres may return any row in any page, so rows are both duplicated
+      // and dropped between pages. Ordering is load-bearing here, not cosmetic.
+      let query = supabase
+        .from(table)
+        .select(columns)
+        .order(order, { ascending: true })
+        .range(from, from + pageSize - 1);
       if (inFilter && inFilter.values.length > 0) query = query.in(inFilter.column, inFilter.values);
       const result = await query;
-      return result.error ? [] : ((result.data ?? []) as unknown as Row[]);
+      // A failed page used to become `[]`, silently dropping up to 1,000 rows from an export that
+      // still reported success. An export that cannot be complete must fail loudly.
+      if (result.error) throw result.error;
+      return (result.data ?? []) as unknown as Row[];
     }));
     fetched.forEach((page, j) => { pages[i + j] = page; });
   }
@@ -79,7 +88,8 @@ async function selectAll(
   supabase: SupabaseAdmin,
   table: string,
   columns: string,
-  order?: string,
+  /** Required — see selectAllOneBatch. Concurrent offset pages without a total order lose rows. */
+  order: string,
   inFilter?: { column: string; values: string[] },
 ): Promise<Row[]> {
   if (!inFilter || inFilter.values.length === 0) return selectAllOneBatch(supabase, table, columns, order, inFilter);
@@ -244,7 +254,7 @@ export async function buildMasterWorkbookBuffer(
       "id",
       validatedBatchIds.length > 0 ? { column: "batch_id", values: validatedBatchIds } : undefined,
     ),
-    selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period"),
+    selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period", "id"),
     buildAliasDistributorMaps(supabase, validatedBatchIds),
   ]);
 

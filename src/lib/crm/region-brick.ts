@@ -7,7 +7,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { fetchAllRowsOrdered } from "@/lib/supabase/paginated";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_REGION_BRICK_RESOLUTIONS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 
@@ -223,7 +223,7 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
   // Paginated: source_of_sales_bricks is 1,142 rows, so a single unpaginated read silently
   // truncated the reference sheet at PostgREST's 1,000-row cap.
   const [bricks, blocksRes, areasRes, regionsRes] = await Promise.all([
-    fetchAllRowsOrdered<Record<string, unknown>>(
+    fetchAllRows<Record<string, unknown>>(
       () =>
         supabase
           .from("source_of_sales_bricks")
@@ -234,7 +234,7 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
     supabase.from("source_of_sales_areas").select("area_code, area_name"),
     supabase.from("source_of_sales_regions").select("region_code, region_name"),
   ]);
-  // fetchAllRowsOrdered throws on error, so there is no error branch to check here.
+  // fetchAllRows throws on error, so there is no error branch to check here.
 
   const blockName = new Map<string, string>();
   for (const b of (blocksRes.data ?? []) as Array<{ block_code: string | null; description: string | null }>) {
@@ -322,7 +322,7 @@ export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; c
   // silent 1,000-row truncation (the table is 1,142 rows) made legitimate brick ids fail the
   // `allKnown` check and surfaced the flatly false 'no brick exists with that ID' error, blocking
   // real mapping imports.
-  const data = await fetchAllRowsOrdered<Record<string, unknown>>(
+  const data = await fetchAllRows<Record<string, unknown>>(
     () =>
       supabase
         .from("source_of_sales_bricks")

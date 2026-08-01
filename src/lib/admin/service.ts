@@ -290,30 +290,30 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     getEmployeeDirectory(),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase.from("app_auth_users").select("hr_id,is_active,login_id"),
-    ),
+    "hr_id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
-    ),
+    "hr_id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("sales_records")
         .select("id,batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state,month,year"),
-    ),
+    "id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("position_vacancies")
         .select("id,vacancy_code,area_id,line_id,manager_hr_id,status,areas(name),lines(name)"),
-    ),
+    "id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("attendance_device_user_map")
         .select("employee_hr_id,is_active"),
-    ),
+    "id"),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("v2_vacation_requests")
         .select("employee_hr_id,status,payment_status,duration_days,manager_decision"),
-    ).catch(() => []),
+    "id").catch(() => []),
     supabase.from("v_hr_id_orphan_audit").select("*"),
   ]);
 

@@ -6,6 +6,7 @@ import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
 import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 
 export type SalesDistributorOption = {
@@ -1714,6 +1715,22 @@ export async function validateDistributorSalesWorkbookBuffer(input: {
   };
 }
 
+/**
+ * Page a reference master in full while preserving the `{ data, error }` shape the callers below
+ * branch on (several tolerate an error as a schema-drift signal and fall back to a legacy table).
+ */
+async function selectAllReference<T = Record<string, unknown>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  build: () => any,
+  tiebreakColumn: string,
+): Promise<{ data: T[] | null; error: unknown }> {
+  try {
+    return { data: await fetchAllRows<T>(build, tiebreakColumn), error: null };
+  } catch (error) {
+    return { data: null, error };
+  }
+}
+
 export async function loadSalesReferenceData(
   options?: { includeCustomerBricks?: boolean },
 ): Promise<SalesReferenceData> {
@@ -1754,37 +1771,43 @@ export async function loadSalesReferenceData(
         return collected;
       })()
     : Promise.resolve([] as { brickId: string; customerCode: string; distributorCode: string }[]);
+  // These six masters are the reference set EVERY import row is attributed through, and they were
+  // read unpaginated — so PostgREST's 1000-row cap silently truncated them. The brick master was
+  // over that cap as recently as 2026-07-28 (696 active today), and a truncated brick list does not
+  // fail: it just makes the missing bricks unresolvable, sending those customers' sales nowhere.
+  // selectAllReference pages while preserving the { data, error } shape the schema-drift fallbacks
+  // below depend on.
   const [newRegionsResult, areasResult, blocksResult, bricksResult, productsResult, distributorsResult] = await Promise.all([
-    supabase
-      .from("source_of_sales_regions")
-      .select("region_code,region_name")
-      .eq("active", true)
-      .order("region_code", { ascending: true }),
-    supabase
-      .from("source_of_sales_areas")
-      .select("area_code,area_name,region_code")
-      .eq("active", true)
-      .order("area_code", { ascending: true }),
-    supabase
-      .from("source_of_sales_blocks")
-      .select("block_code,description,area_code,region_code")
-      .eq("active", true)
-      .order("block_code", { ascending: true }),
-    supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id,brick_name,block_code,area_code,region_code")
-      .eq("active", true)
-      .order("brick_id", { ascending: true }),
-    supabase
-      .from("source_of_sales_products")
-      .select("product_code,product_name,factory_price,family,family_code,source,line")
-      .eq("active", true)
-      .order("product_name", { ascending: true }),
-    supabase
-      .from("source_of_sales_distributors")
-      .select("distributor_code,distributor_name")
-      .eq("active", true)
-      .order("distributor_name", { ascending: true }),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_regions")
+        .select("region_code,region_name")
+        .eq("active", true), "region_code"),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_areas")
+        .select("area_code,area_name,region_code")
+        .eq("active", true), "area_code"),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_blocks")
+        .select("block_code,description,area_code,region_code")
+        .eq("active", true), "block_code"),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_bricks")
+        .select("brick_id,brick_name,block_code,area_code,region_code")
+        .eq("active", true), "brick_id"),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_products")
+        .select("product_code,product_name,factory_price,family,family_code,source,line")
+        .eq("active", true), "product_code"),
+    selectAllReference(() =>
+      supabase
+        .from("source_of_sales_distributors")
+        .select("distributor_code,distributor_name")
+        .eq("active", true), "distributor_code"),
   ]);
 
   if (productsResult.error) throw toQueryError(productsResult.error);
