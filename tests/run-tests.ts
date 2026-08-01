@@ -520,6 +520,7 @@ import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
+import { runMigrationsCairoDateGuardTests } from "./migrations-cairo-date-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1067,6 +1068,7 @@ await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the ske
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
+await runTest("migrations Cairo date guard (no unzoned current_date in new SQL function bodies)", runMigrationsCairoDateGuardTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
