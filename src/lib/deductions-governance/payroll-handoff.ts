@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import {
+  DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_DISABLED_MESSAGE,
+  DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED,
+} from "@/lib/deductions-governance/feature-flags";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   assertDeductionsGovernanceDecisionActor,
@@ -291,6 +295,11 @@ export async function previewDeductionsPayrollImport(input: {
   monthKey?: string;
   summaryId?: string;
 }): Promise<DeductionsPayrollPreview> {
+  // Closed for the Deductions-module cutover. Gated here as well as in confirm
+  // (which calls this) so neither entry point can be reopened on its own.
+  if (!DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED) {
+    throw new Error(DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_DISABLED_MESSAGE);
+  }
   assertDeductionsGovernanceDecisionActor(input.access);
   const { lines, summary } = await loadSummaryAndLines(input);
   const batch = await loadPayrollBatchForSummary(summary);
@@ -320,6 +329,12 @@ export async function confirmDeductionsPayrollImport(input: {
   monthKey?: string;
   summaryId?: string;
 }) {
+  // This is the one that actually writes salary_records. Gated explicitly rather
+  // than relying on the preview call below, so removing that call could never
+  // silently reopen the write path.
+  if (!DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED) {
+    throw new Error(DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_DISABLED_MESSAGE);
+  }
   const preview = await previewDeductionsPayrollImport(input);
   if (!preview.canImport) {
     throw new Error(preview.blockers.join(" "));
