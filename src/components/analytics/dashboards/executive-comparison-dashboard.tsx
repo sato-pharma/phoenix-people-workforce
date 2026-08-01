@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
@@ -45,6 +47,8 @@ async function ExecComparisonContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, EXECUTIVE_FILTERS);
 
   const sosFilters = {
@@ -71,13 +75,13 @@ async function ExecComparisonContent({
     byLine = [];
     byProduct = [];
     byArea = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [byLine, byProduct, byArea, dimensions] = await Promise.all([
-      loadSosByLine(scoped.filters).catch(() => []),
-      loadSosByProduct(scoped.filters).catch(() => []),
-      loadSosByArea(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadSosByLine(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by line", [])),
+      loadSosByProduct(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by product", [])),
+      loadSosByArea(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by area", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
   }
 
@@ -128,6 +132,7 @@ async function ExecComparisonContent({
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={EXECUTIVE_FILTERS}

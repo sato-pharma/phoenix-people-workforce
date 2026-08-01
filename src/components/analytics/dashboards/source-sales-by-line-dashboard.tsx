@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
@@ -34,6 +36,8 @@ async function ByLineContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
 
   const sosFilters = {
@@ -60,11 +64,11 @@ async function ByLineContent({
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
     byLine = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [byLine, dimensions] = await Promise.all([
-      loadSosByLine(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadSosByLine(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by line", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
   }
 
@@ -82,6 +86,7 @@ async function ByLineContent({
   return (
     <div className="space-y-5">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={SOS_FILTERS}

@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
 import { AnalyticsFilterBar } from "@/components/analytics/analytics-filter-bar";
@@ -40,6 +42,8 @@ async function ByDistributorContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, WEEKLY_FILTERS);
 
   const weeklyFilters = {
@@ -62,11 +66,11 @@ async function ByDistributorContent({
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
     rows = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [rows, dimensions] = await Promise.all([
-      loadWeeklyFact(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadWeeklyFact(scoped.filters).catch(trackFailure(analyticsFailures, "Weekly sales", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
   }
 
@@ -87,6 +91,7 @@ async function ByDistributorContent({
   return (
     <div className="space-y-5">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={WEEKLY_FILTERS}

@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
@@ -34,6 +36,8 @@ async function ReconciliationContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, RECONCILIATION_FILTERS);
 
   const crossSourceFilters = {
@@ -52,11 +56,11 @@ async function ReconciliationContent({
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
     rows = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [rows, dimensions] = await Promise.all([
-      loadCrossSource(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadCrossSource(scoped.filters).catch(trackFailure(analyticsFailures, "Cross-source reconciliation", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
   }
 
@@ -82,6 +86,7 @@ async function ReconciliationContent({
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={RECONCILIATION_FILTERS}

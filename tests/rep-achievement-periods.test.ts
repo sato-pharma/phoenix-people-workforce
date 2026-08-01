@@ -64,12 +64,31 @@ export async function runRepAchievementPeriodsTests() {
     assert.deepEqual(result, ["2026-07"]);
   }
 
-  // ── No period filter at all defaults to the current calendar month ─────────
+  // ── No period filter falls back to the newest period WITH DATA ─────────────
+  // It used to default to the current calendar month, which showed a single month while the Period
+  // filter still read "All" — and rendered a confident EGP 0 whenever the current month had not been
+  // uploaded (2026-07 today; 2026-05 was never uploaded at all).
   {
-    const now = new Date();
-    const expected = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+    const result = resolveRepAchievementPeriods({}, "2026-06");
+    assert.deepEqual(result, ["2026-06"], "unfiltered ⇒ newest period that actually has data");
+  }
+  {
+    const result = resolveRepAchievementPeriods({}, null);
+    assert.deepEqual(result, [], "nothing loaded ⇒ no periods, so the caller reports no data instead of inventing a zero");
+  }
+  {
     const result = resolveRepAchievementPeriods({});
-    assert.deepEqual(result, [expected]);
+    assert.deepEqual(result, [], "omitting the argument must not silently resurrect a calendar-month default");
+  }
+
+  // ── An explicit selection still wins over the fallback ──────────────────────
+  {
+    const result = resolveRepAchievementPeriods({ period: ["2026-03"] }, "2026-06");
+    assert.deepEqual(result, ["2026-03"], "explicit period beats the newest-with-data fallback");
+  }
+  {
+    const result = resolveRepAchievementPeriods({ periodFrom: "2026-01", periodTo: "2026-02" }, "2026-06");
+    assert.deepEqual(result, ["2026-01", "2026-02"], "explicit range beats the fallback");
   }
 
   console.log("rep-achievement-periods: ok");
