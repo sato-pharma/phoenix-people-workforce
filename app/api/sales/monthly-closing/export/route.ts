@@ -6,6 +6,7 @@ import { loadMonthlyClosingComparison } from "@/lib/sales/monthly-closing-compar
 import { loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { buildClosingDetailsWorkbook, buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
 import {
+  filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
   listMonthlyClosingPeriods,
   loadMonthlyClosing,
@@ -37,9 +38,23 @@ export async function POST(request: Request) {
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:monthly-closing" });
 
     const body = (await request.json().catch(() => ({}))) as {
+      areaCodes?: string[];
       includeConfidential?: boolean;
       line?: string | null;
       period?: string | null;
+      productCodes?: string[];
+      regionCodes?: string[];
+      search?: string;
+    };
+
+    // The on-screen matrix filter, applied server-side with the SAME pure function the table uses
+    // (filterMonthlyClosingMatrix) so the workbook and the screen cannot diverge. It narrows only —
+    // what the caller is allowed to see is still decided by the loaders below.
+    const matrixFilter = {
+      areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
+      productCodes: Array.isArray(body.productCodes) ? body.productCodes : [],
+      regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
+      search: typeof body.search === "string" ? body.search : "",
     };
 
     // Only the admin account gets the full 6-sheet workbook (Matrix, Distributor Comparison,
@@ -49,7 +64,8 @@ export async function POST(request: Request) {
     if (access.role === "Super Admin" || access.scope === "system") {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
-      const matrix = await loadMonthlyClosing({ line: body.line ?? null, period: body.period ?? null });
+      const fullMatrix = await loadMonthlyClosing({ line: body.line ?? null, period: body.period ?? null });
+      const matrix = filterMonthlyClosingMatrix(fullMatrix, matrixFilter);
       const comparison = await loadMonthlyClosingComparison(matrix.line, matrix.period);
 
       // Raw invoice lines behind the closing, for the visible Data + Total audit sheets. Unpaged —

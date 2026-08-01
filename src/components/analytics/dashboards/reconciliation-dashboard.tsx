@@ -51,6 +51,27 @@ async function ReconciliationContent({
   let rows: CrossSourceRow[];
   let dimensions: AnalyticsDimensions;
 
+  // analytics_cross_source takes ONLY p_lines. Its view aggregates three legs to (period, line) and
+  // the closing leg carries no area dimension at all, so there is nothing to push an area bound down
+  // into — a geography-scoped viewer was being served whole-line NATIONAL SoS, Closing, Weekly and
+  // TARGET totals on a page that presents itself as their scope, with the region picker hidden by
+  // computeAnalyticsFilterVisibility so nothing signalled the widening.
+  //
+  // Refusing is the honest answer until the view is re-cut at area grain. Showing a manager national
+  // figures they will read as their own is worse than showing them nothing.
+  if (scope.allowedAreaCodes != null) {
+    return (
+      <div className="space-y-5">
+        <AnalyticsErrorState what="Cross-source reconciliation is not available for your territory" />
+        <p className="max-w-prose text-sm text-muted-foreground">
+          This report can only be produced for a whole product line — it cannot yet be narrowed to
+          your areas, and the national figures are not your numbers. Source of Sales and Monthly
+          Closing are scoped to your territory and can be reconciled there.
+        </p>
+      </div>
+    );
+  }
+
   if (demo) {
     rows = demoCrossSource();
     dimensions = demoAnalyticsDimensions();

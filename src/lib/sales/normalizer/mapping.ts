@@ -138,17 +138,58 @@ export async function backfillCustomerRows(
   rows: { distributor_code: unknown; customer_code: unknown }[],
 ): Promise<number> {
   let backfilled = 0;
+  // Backfilling moves an import row's brick/area/region. The fact rollup is a materialised copy of
+  // that geography, so without a refresh the corrected sale keeps its OLD owner indefinitely — the
+  // mapping looks fixed on screen while every rollup-driven report still credits the wrong area.
+  // Collected across the whole loop and refreshed once per batch: one bulk save commonly touches the
+  // same batch hundreds of times.
+  const affectedBatchIds = new Set<string>();
+
   for (const row of rows) {
     try {
       const { data, error } = await supabase.rpc("sos_backfill_import_rows_from_customer_map", {
         p_customer: String(row.customer_code ?? ""),
         p_distributor: String(row.distributor_code ?? ""),
       });
-      if (!error && typeof data === "number") backfilled += data;
+      if (error) continue;
+      // Post-migration the RPC returns one row { updated_rows, affected_batch_ids }; before it is
+      // applied it still returns a bare integer. Accept both, so a deploy landing ahead of the
+      // migration degrades to the old behaviour instead of throwing.
+      if (typeof data === "number") {
+        backfilled += data;
+        continue;
+      }
+      const record = (Array.isArray(data) ? data[0] : data) as
+        | { updated_rows?: number; affected_batch_ids?: unknown }
+        | null
+        | undefined;
+      if (!record) continue;
+      backfilled += Number(record.updated_rows ?? 0);
+      const batchIds = Array.isArray(record.affected_batch_ids) ? record.affected_batch_ids : [];
+      for (const id of batchIds) {
+        const value = String(id ?? "").trim();
+        if (value) affectedBatchIds.add(value);
+      }
     } catch {
       // RPC absent (pre-migration) or transient failure — the mapping itself is already saved.
     }
   }
+
+  for (const batchId of affectedBatchIds) {
+    try {
+      // The same trio the reconcile path refreshes (applyHistoricalReconciliation in
+      // normalizer/customer-map.ts). A refresh failure must not undo the mapping that already
+      // saved, so the corrected rows stay and a later reconcile retries the refresh.
+      await Promise.all([
+        supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
+        supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
+        supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
+      ]);
+    } catch {
+      // Intentionally swallowed — see above.
+    }
+  }
+
   return backfilled;
 }
 
@@ -369,6 +410,26 @@ export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: s
     { onConflict: "normalized_alias,target_type,target_code" },
   );
   if (error) throw new Error(`Failed to save territory alias: ${error.message}`);
+
+  // Re-pointing an alias must REPLACE it, not add a second target.
+  //
+  // The upsert's conflict key includes target_code, so pointing an existing alias at a different
+  // brick does not conflict — it INSERTS. The alias then has two active rows, and buildAliasIndex
+  // deliberately drops an alias that resolves ambiguously, so the edit silently makes the alias
+  // resolve to NOTHING: strictly worse than before it was edited, with no error shown.
+  //
+  // Deactivating AFTER the upsert (never before) means the alias is never momentarily unresolvable.
+  const { error: supersedeError } = await supabase
+    .from("source_of_sales_territory_aliases")
+    .update({ active: false })
+    .eq("normalized_alias", key)
+    .eq("target_type", "brick")
+    .eq("active", true)
+    .neq("target_code", code);
+  if (supersedeError) {
+    throw new Error(`Failed to supersede the previous territory alias target: ${supersedeError.message}`);
+  }
+
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
     entityId: "source_of_sales_territory_aliases",

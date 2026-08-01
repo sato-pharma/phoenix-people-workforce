@@ -184,13 +184,28 @@ export async function loadCrosswalks(preRefs?: Awaited<ReturnType<typeof loadSal
   // the same-area guard (#1458). confidence 100 is a deliberate sentinel — algorithmic scores top out
   // at 95 — so this stays a tiny, owner-curated set. Indexed under both the exact and canonical keys.
   const ownerVerifiedCustomerKeys = new Set<string>();
+  // Exact-key conflicts, tracked the same way customerCanonConflict tracks canonical ones.
+  const customerExactConflict = new Set<string>();
   for (const row of custMap) {
     const dist = normalizeCodeKey(row.distributor_code);
     const brick = normalizeCodeKey(row.brick_id);
     if (!brick) continue;
     const ownerVerified = Number(row.confidence) === 100;
     const exactKey = `${dist} ${normalizeCodeKey(row.customer_code)}`;
-    customerBrickByKey.set(exactKey, brick);
+    // Conflict-detected, exactly like customerBrickByCanonicalKey below. This index was the only
+    // crosswalk built with plain last-write-wins: two active mappings whose customer codes differ
+    // only by case or padding collapse to one key, and whichever row happened to be read last
+    // silently won — sending that customer's sales to an arbitrary one of two bricks. Dropping the
+    // key instead follows the owner's standing rule that an ambiguous signal maps to NOTHING.
+    // 0 such collisions exist in production today, so this is a guard, not a repair.
+    if (!customerExactConflict.has(exactKey)) {
+      const existingExact = customerBrickByKey.get(exactKey);
+      if (existingExact === undefined) customerBrickByKey.set(exactKey, brick);
+      else if (existingExact !== brick) {
+        customerBrickByKey.delete(exactKey);
+        customerExactConflict.add(exactKey);
+      }
+    }
     if (ownerVerified) ownerVerifiedCustomerKeys.add(exactKey);
     const canon = numericCanonicalKey(row.customer_code);
     if (!canon) continue;
