@@ -116,6 +116,7 @@ import { runAttendanceTrackingEligibilityTests } from "./attendance-tracking-eli
 import { runAttendanceManagerViewAccessTests } from "./attendance-manager-view-access.test.ts";
 import { runAttendanceFlexibleHoursTests } from "./attendance-flexible-hours.test.ts";
 import { runPayrollCopilotCycleWindowTests } from "./payroll-copilot-cycle-window.test.ts";
+import { runPayrollCycleWindowRoleAwareTests } from "./payroll-cycle-window-role-aware.test.ts";
 import { runAttendanceReconcileDayTests } from "./attendance-reconcile-day.test.ts";
 import { runAttendanceEmployeeDayReportTests } from "./attendance-employee-day-report.test.ts";
 import { runAttendanceDeviceOutageFailsafeTests } from "./attendance-device-outage-failsafe.test.ts";
@@ -664,6 +665,10 @@ await runTest("attendance tracking eligibility (device mapping OR field title)",
 await runTest("attendance manager view access (self + direct reports)", runAttendanceManagerViewAccessTests);
 await runTest("attendance flexible-hours engine", runAttendanceFlexibleHoursTests);
 await runTest("payroll copilot cycle window + week tiling", runPayrollCopilotCycleWindowTests);
+await runTest(
+  "payroll cycle window is role-aware (Head Office 24->23, field force 1->30/31)",
+  runPayrollCycleWindowRoleAwareTests,
+);
 await runTest("attendance reconcile-day gating", runAttendanceReconcileDayTests);
 await runTest("attendance employee day-by-day report (access/policy-range)", runAttendanceEmployeeDayReportTests);
 await runTest("attendance device-outage fail-safe", runAttendanceDeviceOutageFailsafeTests);
