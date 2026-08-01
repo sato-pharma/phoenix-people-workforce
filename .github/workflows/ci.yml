@@ -119,6 +119,9 @@ jobs:
       - name: Check migrations
         run: pnpm run check:migrations
 
+      - name: Check no snapshot tables land in the anon-readable public schema
+        run: pnpm run check:sql-backups
+
       - name: Check no stale Vercel domains/deps in shipped source
         run: pnpm run check:no-stale-domains
 

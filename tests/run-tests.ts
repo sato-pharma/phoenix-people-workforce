@@ -494,6 +494,7 @@ import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
+import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1006,6 +1007,7 @@ await runTest("GitHub workflow validity (no `secrets` context inside `if:` — i
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);
+await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
