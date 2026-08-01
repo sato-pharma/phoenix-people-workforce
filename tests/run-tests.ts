@@ -163,6 +163,7 @@ import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.te
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
+import { runWeeklyPlanApproverUiParityTests } from "./weekly-plan-approver-ui-parity.test.ts";
 import { runTerminationTruthTests } from "./termination-truth.test.ts";
 import { runResignationCompletionVacancyTests } from "./resignation-completion-vacancy.test.ts";
 import { runCairoLeaveTodayTests } from "./cairo-leave-today.test.ts";
@@ -731,6 +732,7 @@ await runTest("crm master export streaming workbook (multi-page, uncapped, valid
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
+await runTest("weekly plan approver UI parity (no buttons the server rejects; comments gated on participation)", runWeeklyPlanApproverUiParityTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
 await runTest("resignation completion vacancy (completing a resignation leaves exactly one open vacancy for the seat — never zero, never two)", runResignationCompletionVacancyTests);
 await runTest("Cairo leave today (entitlements reference date + excuse month allowance)", runCairoLeaveTodayTests);

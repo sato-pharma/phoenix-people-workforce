@@ -1023,25 +1023,26 @@ export function PlansWorkspace({
     );
   }, [ownPlans, activeKind, period.periodStartDate]);
   // HR_IDs are stored uppercase on the plan but normalized lowercase on the access
-  // context — compare canonical keys, never raw strings (CLAUDE.md). Super Admin is
-  // the god-mode reviewer at every stage, mirroring the server guards
-  // (assertManagerReviewer / assertCeoReviewer) so the UI never hides an action the
-  // API would actually allow.
-  const isSuperAdminReviewer = access.role === "Super Admin" || access.scope === "system";
+  // context — compare canonical keys, never raw strings (CLAUDE.md).
+  //
+  // There is NO Super Admin god-mode at the decide stages. The owner-locked approver model is
+  // enforced server-side by assertManagerReviewer (direct manager only; CEO only when the plan
+  // has no manager) and assertCeoReviewer (CEO only) — neither has a Super Admin branch. This
+  // filter used to admit Super Admin anyway "mirroring the server guards", which was the exact
+  // opposite of what those guards do: every row it added rendered live Approve/Return/Reject
+  // buttons whose every click came back 403, on the platform's most-watched account. The Action
+  // Center already models this correctly (resolveApproverPlanStage returns null for Super Admin,
+  // pinned by tests/action-center-weekly-plans.test.ts) — this now matches it.
+  //
+  // Super Admin's real step is HR acknowledgement, which is the hrQueue below and is unaffected.
   const managerQueue = plans.filter(
-    (item) =>
-      item.status === "submitted" &&
-      (isSuperAdminReviewer || hrIdsMatch(item.managerHrId, access.hrId)),
+    (item) => item.status === "submitted" && hrIdsMatch(item.managerHrId, access.hrId),
   );
   const editRequestQueue = plans.filter(
-    (item) =>
-      item.status === "edit_requested" &&
-      (isSuperAdminReviewer || hrIdsMatch(item.managerHrId, access.hrId)),
+    (item) => item.status === "edit_requested" && hrIdsMatch(item.managerHrId, access.hrId),
   );
   const ceoQueue = plans.filter(
-    (item) =>
-      item.status === "manager_approved" &&
-      (access.role === "CEO" || isSuperAdminReviewer),
+    (item) => item.status === "manager_approved" && access.role === "CEO",
   );
   const hrQueue = plans.filter(
     (item) =>

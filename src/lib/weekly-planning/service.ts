@@ -1659,7 +1659,7 @@ export async function listPlanComments(
   access: AccessContext,
   planId: string,
 ): Promise<{ canComment: boolean; comments: EmployeePlanComment[]; schemaReady: boolean }> {
-  await assertPermission(access, "weekly_plans", "read");
+  await assertPermission(access, "weekly_plans", "update");
   const plan = await loadPlanRow(planId);
   const employee = await currentEmployee(access);
   if (!canViewPlan(access, employee, plan)) {
@@ -1736,7 +1736,13 @@ export async function addPlanComment(access: AccessContext, planId: string, inpu
 }): Promise<EmployeePlanComment> {
   const body = String(input.body ?? "").trim();
   if (!body) throw new Error("Comment cannot be empty.");
-  await assertPermission(access, "weekly_plans", "update");
+  // Posting is gated on PARTICIPATION (canViewPlan below), not on weekly_plans:update.
+  // The thread exists so an approver can ask a question instead of returning the plan — but the
+  // two roles it was built for cannot hold `update`: CEO is ["read","approve","export"] and the
+  // Manager role is ["read","approve"]. The old `update` assert therefore threw Forbidden on Send
+  // for exactly them, while the composer rendered unconditionally and listPlanComments reported
+  // canComment: true. Read is the floor; canViewPlan is the real authorization.
+  await assertPermission(access, "weekly_plans", "read");
   const plan = await loadPlanRow(planId);
   const employee = await currentEmployee(access);
   if (!canViewPlan(access, employee, plan)) {
@@ -2800,8 +2806,10 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
 }) {
   const plan = await loadPlanRow(planId);
   if (input.action.startsWith("manager_")) {
-    // The assigned direct manager (or Super Admin) decides the manager stage by virtue of the
-    // org assignment, independent of the global weekly_plans:approve grant. This lets eligible
+    // The assigned direct manager decides the manager stage by virtue of the org assignment,
+    // independent of the global weekly_plans:approve grant. (No Super Admin bypass —
+    // assertManagerReviewer below admits only the assigned manager, or CEO when the plan has
+    // no manager at all.) This lets eligible
     // submitters' managers (e.g. Marketing/Group Product/National Sales Manager) approve, return,
     // or reject their reports' plans even though their role lacks a company-wide approve grant.
     await assertManagerReviewer(access, plan);
@@ -3207,7 +3215,7 @@ export async function decideEditRequest(
   if (plan.status !== "edit_requested") {
     throw new Error("This plan does not have a pending edit request.");
   }
-  // Only the direct manager or Super Admin can decide.
+  // Only the assigned direct manager can decide (CEO only when the plan has no manager).
   await assertManagerReviewer(access, plan);
   // Direct managers must leave a reason when rejecting; higher-level reviewers
   // (Super Admin) may reject silently.
