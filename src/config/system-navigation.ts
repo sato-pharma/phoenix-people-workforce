@@ -8,7 +8,6 @@ import {
   CalendarClock,
   CalendarDays,
   CalendarRange,
-  CalendarX2,
   ChartColumnBig,
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
@@ -1562,14 +1561,6 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions",
     description: "New unified source of truth for every payroll deduction (Phase 1 preview — feeds nothing live yet).",
     permissions: [{ resource: "deductions", action: "read" }],
-  },
-  {
-    href: "/admin/no-activity-days",
-    icon: CalendarX2,
-    label: "No Activity Days",
-    description: "Company-wide No Activity Recorded days — clarifications and payroll deduction decisions.",
-    permissions: [{ resource: "deductions", action: "read" }],
-    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 

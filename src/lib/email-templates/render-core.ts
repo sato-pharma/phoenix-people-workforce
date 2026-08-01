@@ -71,6 +71,5 @@ export function contextVariables(input: Partial<EmailTemplateContext>, recipient
     scoreTableText: text(input.scoreTableText),
     productsTableText: text(input.productsTableText),
     returnCalloutText: text(input.returnCalloutText),
-    noActivityTableText: text(input.noActivityTableText),
   };
 }
