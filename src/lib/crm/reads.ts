@@ -276,7 +276,10 @@ export function withIdColumn(columns: string): string {
 // the misclassified groups 12.7 min apart and up to 15 hours. Comment text must never group rows.
 //
 // Scope note: this applies to EVERY visit, not just double visits — a rep logging one contact
-// twice alone is the same artifact. Rows without a contact_crm_id are never grouped.
+// twice alone is the same artifact. But ONLY to regular customer visits (visit_type 0): on every
+// other type the contact id is a shared sentinel that identifies nothing, so keying on it would
+// fold a whole day of campaign work into one row. See isRegularCustomerVisit for the measured
+// evidence. Rows without a contact_crm_id are never grouped either.
 
 /** Row shape {@link collapseDuplicateVisitSubmissions} needs — every field optional so it
  * structurally accepts any consumer's own row type that happens to carry these columns. */
@@ -318,19 +321,36 @@ function hasDoublePartner(row: DuplicateVisitDetectionRow): boolean {
 }
 
 /**
- * Groups rows as the same real-world stop: one rep, one contact, one day, one visit type. Per the
- * owner's rule (see the module note) a rep never visits the same contact twice in a day, so any
- * repeat of that tuple is a re-save rather than a second visit.
+ * Regular customer visit — the ONLY visit type whose `contact_crm_id` is a real contact.
+ *
+ * Verified in production (July 2026): type 0 carries 7,364 distinct contact ids across 14,097
+ * rows and is 100% contact_name-populated, while EVERY other type (campaign -8, meeting -11,
+ * vacation -4, …) shares one single sentinel contact id and is 0% named. So for a non-regular row
+ * `contact_crm_id` identifies nothing, and keying the collapse on it would fold a whole day into
+ * one row. Real example: rep Hayam.Eladel's 2026-07-30 prospection campaign visited six different
+ * pharmacies — ص الهادي, ص القاضي, ص الملكه والامير, ص نانسي, ص محمود فوزي, ص هدي — each named in
+ * the COMMENT, all sharing the sentinel contact. Collapsing those would repeat the very mistake
+ * the comment-based rule made, mirrored.
+ */
+function isRegularCustomerVisit(row: DuplicateVisitDetectionRow): boolean {
+  return row.visit_type === 0;
+}
+
+/**
+ * Groups rows as the same real-world stop: one rep, one contact, one day. Per the owner's rule
+ * (see the module note) a rep never visits the same contact twice in a day, so any repeat of that
+ * tuple is a re-save rather than a second visit.
  *
  * Returns null — never grouped — for a row missing the rep, contact, or date that identifies the
- * stop. `visit_type` is part of the key so a regular customer visit is never merged with a
- * campaign or a vacation record for the same contact: those are different kinds of record, not a
- * duplicated one. The double partner is deliberately NOT in the key — the same contact logged
- * once solo and once with a manager is still one visit (see {@link prefersOverForDuplicate} for
- * how the ride-along credit is kept).
+ * stop, and for any non-regular visit type, whose contact id is a shared sentinel rather than a
+ * real contact (see {@link isRegularCustomerVisit}). `visit_type` stays in the key so the
+ * regular-visit space can never merge with anything else. The double partner is deliberately NOT
+ * in the key — one contact logged once solo and once with a manager is still one visit (see
+ * {@link prefersOverForDuplicate} for how the ride-along credit is kept).
  */
 function duplicateSubmissionGroupKey(row: DuplicateVisitDetectionRow): string | null {
   if (row.agent_crm_id == null || row.contact_crm_id == null || !row.visit_date) return null;
+  if (!isRegularCustomerVisit(row)) return null;
   return `${row.agent_crm_id}|${row.contact_crm_id}|${row.visit_date}|${row.visit_type ?? ""}`;
 }
 
