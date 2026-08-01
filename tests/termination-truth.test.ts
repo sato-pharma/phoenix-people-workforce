@@ -67,4 +67,23 @@ export function runTerminationTruthTests() {
     /resignEmployeeAndOpenVacancy\(/,
     "complete must not call resignEmployeeAndOpenVacancy — it would insert a duplicate resignation row for a record that already exists",
   );
+
+  // ── 3. "Completed" must also empty the seat ────────────────────────────────
+  // Terminating the employee opens the replacement position_vacancies row (trigger
+  // phx_employee_terminal_vacancy_guard) but touches nothing in the au model, so this path
+  // used to leave the departed person still occupying their seat on the organogram. The
+  // Employees-page path never had the gap: vacating is step 5 of
+  // phx_resign_employee_and_open_vacancy, which complete deliberately cannot call (see 2).
+  assert.match(
+    workflow,
+    /vacateAuSeatsIfSupported\(/,
+    "completing a resignation must vacate the employee's au seat(s) — otherwise position_vacancies opens a " +
+      "replacement while the organogram still shows the departed person sitting on the seat",
+  );
+  assert.match(
+    resignations,
+    /rpc\(\s*"phx_vacate_au_seats_for_employee"/,
+    "vacateAuSeatsIfSupported must reach the au model through the public.phx_vacate_au_seats_for_employee " +
+      "wrapper — the au schema is not exposed on PostgREST, so there is no direct route from TypeScript",
+  );
 }

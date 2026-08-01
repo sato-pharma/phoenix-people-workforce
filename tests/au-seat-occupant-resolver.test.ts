@@ -231,6 +231,47 @@ export function runAuSeatOccupantResolverTests() {
       "multi-seat occupant's seats and (without an ORDER BY) does so non-deterministically",
   );
 
+  // The Approvals Hub path (runResignationWorkflow "complete") cannot call the RPC above —
+  // it would insert a duplicate resignation row and a duplicate vacancy — so step 5 is also
+  // published on its own as public.phx_vacate_au_seats_for_employee. Both copies of the
+  // vacate must satisfy the same three properties, or the second path silently reintroduces
+  // the stale-occupant bug the first one was fixed for.
+  const vacate = latest.get("public.phx_vacate_au_seats_for_employee");
+  assert.ok(
+    vacate,
+    "public.phx_vacate_au_seats_for_employee must be defined by a migration — it is the only route from " +
+      "TypeScript into the au model (schema au is not exposed on PostgREST) and the Approvals Hub " +
+      "resignation-complete path depends on it to empty the departing employee's seat",
+  );
+  for (const [pattern, why] of [
+    [
+      /occupant_canonical_hr_id = lower\(btrim\(p_employee_hr_id\)\)/,
+      "must match on the generated canonical HR_ID — a raw occupant_hr_id comparison misses on any " +
+        "casing/whitespace difference and then silently vacates nothing at all",
+    ],
+    [
+      /effective_to\s+is\s+null/,
+      "must close the OPEN span only — au.occupancy_history is period-versioned",
+    ],
+    [
+      /\bfor\s+v_seat_id\s+in\b[\s\S]*\bloop\b/,
+      "must LOOP over every open person-span, because the model's one dual-seat occupant would otherwise " +
+        "keep a departed occupant on the second seat",
+    ],
+    [
+      /au\.resign_occupant\(/,
+      "must vacate through au.resign_occupant, which is what also moves the area to 'vacant_will_hire' " +
+        "via au.sync_area_state_for_seat — a direct write would skip that",
+    ],
+  ] as Array<[RegExp, string]>) {
+    assert.ok(pattern.test(vacate!.body), `public.phx_vacate_au_seats_for_employee ${why}`);
+  }
+  assert.ok(
+    !/\blimit\s+1\b/.test(vacate!.body),
+    "public.phx_vacate_au_seats_for_employee must not vacate with `limit 1` — same defect as above, on the " +
+      "path that has no transaction wrapping it",
+  );
+
   // ── 7. area_state follows the seat, in BOTH directions ──────────────────────
   // Vacating a seat without releasing its area left six July-2026 rep areas reading
   // 'occupied' with nobody in them. Fixing only the resign side would have inverted the
