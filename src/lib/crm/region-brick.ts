@@ -289,12 +289,18 @@ export async function getActiveBricksForTemplateReference(): Promise<CrmBrickRef
       };
     });
 
+  // Explicit "en" locale on every key. These are human-readable names, so localeCompare IS right
+  // here (unlike the ISO-date sorts in master.ts) — but passing no locale means the ordering follows
+  // whatever the runtime default is, which differs between a developer's machine and the Cloud Run
+  // container. The list is exported and compared against, so it has to sort identically everywhere.
+  const collator = new Intl.Collator("en");
+  const numericCollator = new Intl.Collator("en", { numeric: true });
   rows.sort(
     (a, b) =>
-      a.regionName.localeCompare(b.regionName) ||
-      a.areaName.localeCompare(b.areaName) ||
-      a.blockCode.localeCompare(b.blockCode) ||
-      a.brickId.localeCompare(b.brickId, undefined, { numeric: true }),
+      collator.compare(a.regionName, b.regionName) ||
+      collator.compare(a.areaName, b.areaName) ||
+      collator.compare(a.blockCode, b.blockCode) ||
+      numericCollator.compare(a.brickId, b.brickId),
   );
   return rows;
 }
@@ -355,10 +361,10 @@ export async function getCurrentBrickIndex(): Promise<{ allKnown: Set<string>; c
  * Records an admin's decision for one CRM region:
  * - "ignored": stores the decision only — the region drops out of getUnmappedCrmRegions, on
  *   purpose no visit rows are touched.
- * - "mapped": validates brickId against the real brick master (source_of_sales_bricks, must be
- *   active), upserts the resolution, and returns the brick's resolved area_code/region_code so the
- *   caller can show immediate feedback (the CRM Master Table reads this same resolution via
- *   loadBrickMappingByRegionId in crm/master.ts on its next render).
+ * - "mapped": validates brickId against the CURRENT brick index (getCurrentBrickIndex — active AND
+ *   not superseded by the geography rebuild), upserts the resolution, and returns the brick's
+ *   resolved area_code/region_code so the caller can show immediate feedback (the CRM Master Table
+ *   reads this same resolution via loadBrickMappingByRegionId in crm/master.ts on its next render).
  * - "pending": explicitly resets to the default, no-decision state.
  */
 export async function setCrmRegionBrickResolution(input: {
@@ -376,17 +382,22 @@ export async function setCrmRegionBrickResolution(input: {
   if (input.action === "mapped") {
     const typed = input.brickId?.trim();
     if (!typed) throw new Error("A brick ID is required to map this region.");
-    const { data: brick, error: brickError } = await supabase
-      .from("source_of_sales_bricks")
-      .select("brick_id, area_code, region_code, active")
-      .eq("brick_id", typed)
-      .maybeSingle();
-    if (brickError) throw new Error(brickError.message);
-    if (!brick) throw new Error(`No brick found with ID "${typed}".`);
-    if (!brick.active) throw new Error(`Brick "${typed}" exists but is not active.`);
-    resolvedBrickId = brick.brick_id as string;
-    resolvedAreaId = (brick.area_code as string | null) ?? null;
-    resolvedRegionId = (brick.region_code as string | null) ?? null;
+    // Validated through getCurrentBrickIndex, the same gate the customer resolver uses (and this
+    // module's own bulk import). It used to check `active` alone against a direct row lookup, which
+    // is a WEAKER test: a pre-rebuild brick superseded by the geography rebuild can still be
+    // active=true, so the two mapping surfaces disagreed — customer mapping rejected the exact brick
+    // id region mapping accepted, and the region resolution then pointed visits at stale geography.
+    const { allKnown, current } = await getCurrentBrickIndex();
+    const brick = current.get(typed);
+    if (!brick) {
+      const reason = allKnown.has(typed)
+        ? "it exists but is inactive, or has been superseded by the geography rebuild"
+        : "no brick exists with that ID";
+      throw new Error(`Brick "${typed}" cannot be used — ${reason}.`);
+    }
+    resolvedBrickId = typed;
+    resolvedAreaId = brick.areaCode;
+    resolvedRegionId = brick.regionCode;
   }
 
   const { error: upsertError } = await supabase.from(resolutionsTable).upsert(
@@ -444,9 +455,11 @@ function isIgnoredStatusText(statusText: string): boolean {
  *   - Brick ID blank + Status says ignore/ignored -> resolved as "ignored".
  *   - Brick ID blank + no ignore status -> skipped (no change) — a blank row never resets an
  *     existing decision back to pending; use the single-row "Keep Pending" action for that.
- * Validates every brick_id against ONE batch-fetched active-brick set (not one query per row) —
- * the brick master is ~1,150 rows (it outgrew the "~400" this comment used to claim, which is why
- * the fetch is now paginated) and this can process hundreds of regions per upload.
+ * Validates every brick_id against ONE batch-fetched CURRENT-brick index (getCurrentBrickIndex, not
+ * one query per row) — the same gate the single-row resolver and the customer-mapping surface use,
+ * so all three agree on what a usable brick is. The brick master is ~1,150 rows (it outgrew the
+ * "~400" this comment used to claim, which is why the fetch is paginated) and this can process
+ * hundreds of regions per upload.
  */
 export async function bulkImportCrmRegionBrickMappings(input: {
   resolvedByHrId: string | null;
@@ -454,18 +467,13 @@ export async function bulkImportCrmRegionBrickMappings(input: {
 }): Promise<CrmRegionBulkImportResult> {
   const supabase = getSupabaseAdmin();
 
-  // Paginated: truncation here made a valid brick id look unknown and produced the false
-  // 'does not exist in the brick master' blocked-row reason on a legitimate upload.
-  const bricks = await fetchAllRowsOrdered<{ active: boolean; brick_id: string }>(
-    () => supabase.from("source_of_sales_bricks").select("brick_id, active"),
-    "brick_id",
-  );
-  const activeBrickIds = new Set(
-    ((bricks ?? []) as Array<{ active: boolean; brick_id: string }>)
-      .filter((b) => b.active)
-      .map((b) => b.brick_id),
-  );
-  const allBrickIds = new Set(((bricks ?? []) as Array<{ brick_id: string }>).map((b) => b.brick_id));
+  // ONE batch-fetched validation index for the whole upload, and the SAME one the single-row
+  // resolver and the customer-mapping surface use. It replaces a local active-only set: "active" is
+  // a weaker test than "current", so a brick superseded by the geography rebuild used to pass here
+  // and fail on the customer side. (It is internally paginated — truncation once made a valid brick
+  // id look unknown and produced the false 'does not exist in the brick master' blocked-row reason
+  // on a legitimate upload.)
+  const { allKnown, current } = await getCurrentBrickIndex();
 
   const blockedRows: CrmRegionBulkImportBlockedRow[] = [];
   const upserts: Record<string, unknown>[] = [];
@@ -492,12 +500,16 @@ export async function bulkImportCrmRegionBrickMappings(input: {
       }
       continue;
     }
-    if (!allBrickIds.has(brickId)) {
+    if (!allKnown.has(brickId)) {
       blockedRows.push({ crmRegionId: row.crmRegionId, reason: `Brick ID "${brickId}" does not exist in the brick master.`, row: row.row });
       continue;
     }
-    if (!activeBrickIds.has(brickId)) {
-      blockedRows.push({ crmRegionId: row.crmRegionId, reason: `Brick ID "${brickId}" exists but is not active.`, row: row.row });
+    if (!current.has(brickId)) {
+      blockedRows.push({
+        crmRegionId: row.crmRegionId,
+        reason: `Brick ID "${brickId}" cannot be used — it exists but is inactive, or has been superseded by the geography rebuild.`,
+        row: row.row,
+      });
       continue;
     }
     upserts.push({

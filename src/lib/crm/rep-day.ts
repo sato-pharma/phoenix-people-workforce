@@ -222,7 +222,14 @@ async function buildRepDayResult(
   const checkins = allCheckins
     .filter((checkin) => !excludedAgentIds.has(checkin.agentID))
     .filter((checkin) => checkin.agentID === agentId && (checkin.checkDate ?? "").slice(0, 10) === day)
-    .sort((left, right) => String(left.checkDate).localeCompare(String(right.checkDate)));
+    // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
+    // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
+    // data. The route legs below are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
+    .sort((left, right) => {
+      const a = String(left.checkDate ?? "");
+      const b = String(right.checkDate ?? "");
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
 
   // Cached Google driving route through the coordinate-bearing check-ins (in time order),
   // aligned to the same filter+sort the map uses so leg[i] is stop[i] -> stop[i+1].

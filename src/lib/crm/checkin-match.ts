@@ -30,7 +30,15 @@ export type CheckinForMatch = {
 export function indexCheckinsByAgentContactDay<C extends CheckinForMatch>(checkins: readonly C[]): Map<string, C[]> {
   const index = new Map<string, C[]>();
   for (const checkin of checkins) {
-    if (checkin.agent_crm_id == null || checkin.contact_crm_id == null || !checkin.check_date) continue;
+    // `0` is the vendor's "no contact" placeholder and is rejected here exactly as pickCheckinForVisit
+    // rejects it on the visit side. The two sides were asymmetric: the visit side normalised 0 to
+    // null (so it returns early and never looks up), but the index still stored those check-ins under
+    // an `agent|0|day` key. Harmless only because of that one-sided guard — the moment anything
+    // queried this index with a raw contact id, every contact-less visit would "match" every
+    // contact-less check-in of the same rep and day, and the match would read as a verified
+    // same-contact GPS hit. Rejecting it on both sides makes the rule true rather than load-bearing
+    // in one place, and matches this function's own docstring ("no real contact").
+    if (checkin.agent_crm_id == null || checkin.contact_crm_id == null || checkin.contact_crm_id === 0 || !checkin.check_date) continue;
     const key = `${checkin.agent_crm_id}|${checkin.contact_crm_id}|${String(checkin.check_date).slice(0, 10)}`;
     const list = index.get(key);
     if (list) list.push(checkin);
