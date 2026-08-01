@@ -658,7 +658,7 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
         text:
           `Collection complete: ${created} new candidate(s).` +
           (failed.length > 0 ? ` ${failed.length} connector(s) failed — see the breakdown below.` : "") +
-          (warnings.length > 0 ? ` ${warnings.length} warning(s) — see server logs.` : ""),
+          (warnings.length > 0 ? ` ${warnings.length} warning(s) — listed per connector below.` : ""),
       });
     } catch (error) {
       setCollectMessage({ tone: "error", text: error instanceof Error ? error.message : "Collection run failed." });
@@ -719,13 +719,29 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
                 {run.state === "pending" ? <span className="text-slate-400">Waiting…</span> : null}
                 {run.state === "running" ? <span className="text-orange-600">Running…</span> : null}
                 {run.state === "done" ? (
-                  <span className="text-emerald-700">
+                  <span className={run.warnings && run.warnings.length > 0 ? "text-amber-700" : "text-emerald-700"}>
                     {run.created ?? 0} new · {run.skippedExisting ?? 0} already live
                     {run.warnings && run.warnings.length > 0 ? ` · ${run.warnings.length} warning(s)` : ""}
                   </span>
                 ) : null}
                 {run.state === "failed" ? <span className="text-red-700">{run.error}</span> : null}
               </span>
+              {/* Show the warnings themselves. The first production run reported
+                  "120 warning(s) — see server logs", but warnings are returned in
+                  the response and never logged, so the logs were empty and the
+                  only copy of the diagnosis was thrown away by this component. */}
+              {run.warnings && run.warnings.length > 0 ? (
+                <ul className="w-full list-disc space-y-1 border-t border-slate-100 pl-5 pt-2 text-xs font-medium text-amber-800">
+                  {run.warnings.slice(0, 10).map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                  {run.warnings.length > 10 ? (
+                    <li className="list-none pl-0 text-slate-500">
+                      …and {run.warnings.length - 10} more of the same kind.
+                    </li>
+                  ) : null}
+                </ul>
+              ) : null}
             </div>
           ))}
         </div>
