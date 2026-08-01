@@ -213,7 +213,28 @@ export type SosFilters = {
   clientCodes?: string[];
   /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
   canViewHeadOffice?: boolean;
+  /** Confidential product lock (LA003/LA004/SS001) — pass canViewRestrictedProducts(role). Absent ⇒ hide (fail-closed). */
+  canViewRestrictedProducts?: boolean;
 };
+
+/**
+ * The confidential-product argument for the analytics_sos_by_* RPCs.
+ *
+ * Until 20260801114237 the exclusion was baked into analytics.sos_fact, so Analytics could never
+ * reveal LA003/LA004/SS001 while the SoS dashboard could — which is why the same month read 5.76x
+ * smaller on one screen than the other for a CEO. The RPCs now read sos_fact_all and take the
+ * exclusion as an argument instead.
+ *
+ * Reveal is expressed as `p_exclude_codes: []` (exclude nothing). Hiding OMITS the key entirely
+ * rather than passing the codes, which is deliberate on two counts: the RPC's own default is the
+ * fail-closed answer, so an omitted key can only ever hide; and an omitted key leaves the argument
+ * set byte-identical to what the pre-migration signature accepts, so an ordinary viewer is
+ * unaffected if this code ever runs against a database that has not had the migration applied.
+ * Only a CEO / Super Admin request depends on the new signature.
+ */
+function confidentialRevealArg(filters: SosFilters): { p_exclude_codes?: string[] } {
+  return filters.canViewRestrictedProducts ? { p_exclude_codes: [] } : {};
+}
 
 export type SosByLineRow = {
   period: string;
@@ -239,6 +260,7 @@ async function loadSosByLineUncached(filters: SosFilters): Promise<SosByLineRow[
     p_products:    filters.products?.length    ? filters.products    : null,
     p_families:    filters.families?.length    ? filters.families    : null,
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
+    ...confidentialRevealArg(filters),
   } as never);
   if (error) throw new Error(`SoS by line: ${error.message}`);
   const rows = ((data ?? []) as Record<string, unknown>[]).map((r) => ({
@@ -275,6 +297,7 @@ async function loadSosByPeriodUncached(filters: SosFilters): Promise<SosKpiRow[]
     // Head Office is line-aggregated away here, so it can't be stripped in TS afterward —
     // exclude it inside the RPC. Fail-closed: absent canViewHeadOffice ⇒ exclude.
     p_exclude_head_office: !filters.canViewHeadOffice,
+    ...confidentialRevealArg(filters),
   } as never);
   if (error) throw new Error(`SoS by period: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosKpiRow);
@@ -297,6 +320,7 @@ async function loadSosByAreaUncached(filters: SosFilters): Promise<SosByAreaRow[
     // Head Office is line-aggregated away here, so it can't be stripped in TS afterward —
     // exclude it inside the RPC. Fail-closed: absent canViewHeadOffice ⇒ exclude.
     p_exclude_head_office: !filters.canViewHeadOffice,
+    ...confidentialRevealArg(filters),
   } as never);
   if (error) throw new Error(`SoS by area: ${error.message}`);
   return ((data ?? []) as Record<string, unknown>[]).map(mapSosAreaRow);
@@ -316,6 +340,7 @@ async function loadSosByProductUncached(filters: SosFilters): Promise<SosByProdu
     p_products:    filters.products?.length    ? filters.products    : null,
     p_families:    filters.families?.length    ? filters.families    : null,
     p_client_codes: filters.clientCodes?.length ? filters.clientCodes : null,
+    ...confidentialRevealArg(filters),
   } as never);
   if (error) throw new Error(`SoS by product: ${error.message}`);
   const rows = ((data ?? []) as Record<string, unknown>[]).map(mapSosProductRow);

@@ -11,7 +11,7 @@ import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav"
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { type PhoenixRole } from "@/lib/auth/permissions";
-import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
+import { canViewHeadOfficeLine, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadSosByPeriod,
@@ -77,6 +77,7 @@ async function SosDashboardContent({
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
+    canViewRestrictedProducts: canViewRestrictedProducts(role),
   };
   // Per-viewer scope: fold the caller's allowed lines/regions/products into the query. Company-wide
   // viewers are a no-op; a viewer whose scope leaves nothing (scoped.empty) gets an empty result.

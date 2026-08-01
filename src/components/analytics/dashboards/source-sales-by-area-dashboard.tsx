@@ -22,7 +22,7 @@ import { scopeAnalyticsFilters, scopeAnalyticsDimensions, computeAnalyticsFilter
 import { isAnalyticsDemoMode } from "@/lib/analytics/demo-mode";
 import { demoAnalyticsDimensions, demoSosByArea } from "@/lib/analytics/demo-fixtures";
 import { SOS_TABS } from "@/lib/analytics/module-nav-config";
-import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
+import { canViewHeadOfficeLine, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 
 async function ByAreaContent({
   searchParams,
@@ -53,6 +53,7 @@ async function ByAreaContent({
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
+    canViewRestrictedProducts: canViewRestrictedProducts(role),
   };
   const scoped = scopeAnalyticsFilters(sosFilters, scope);
 

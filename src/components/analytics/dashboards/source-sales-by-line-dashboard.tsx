@@ -10,7 +10,7 @@ import { AnalyticsModuleNav } from "@/components/analytics/analytics-module-nav"
 import { AnalyticsSection } from "@/components/analytics/analytics-section";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
 import { type PhoenixRole } from "@/lib/auth/permissions";
-import { canViewHeadOfficeLine } from "@/lib/sales/access-scope";
+import { canViewHeadOfficeLine, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import {
   loadAnalyticsDimensions,
   loadSosByLine,
@@ -53,6 +53,7 @@ async function ByLineContent({
     families:     Array.isArray(filters.families)      ? filters.families      : [],
     clientCodes:  Array.isArray(filters.clientCodes)   ? filters.clientCodes   : [],
     canViewHeadOffice: canViewHeadOfficeLine(role),
+    canViewRestrictedProducts: canViewRestrictedProducts(role),
   };
   const scoped = scopeAnalyticsFilters(sosFilters, scope);
 
