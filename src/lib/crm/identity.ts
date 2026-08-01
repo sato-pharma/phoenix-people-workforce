@@ -64,12 +64,18 @@ export function buildCrmIdentityMaps(
   }
 
   const lastWorkingDateByHrId = new Map<string, string>();
+  const crmUsernameByHrId = new Map<string, string>();
   for (const employee of employees) {
     const lastWorkingDate = employee.lastWorkingDate?.slice(0, 10);
     if (lastWorkingDate) lastWorkingDateByHrId.set(employee.hrId, lastWorkingDate);
+    // NOT filtered for ambiguity the way hrIdByCrmUsername is: that map answers "which single
+    // employee owns this label", so a shared label must be dropped. This one answers "what is THIS
+    // employee's own label", which is well defined even when two people share one.
+    const ownLabel = normalizeCrmName(employee.crmUsername);
+    if (ownLabel) crmUsernameByHrId.set(employee.hrId, ownLabel);
   }
 
-  return { hrIdByCrmId, hrIdByCrmUsername, hrIdByManualOverride, lastWorkingDateByHrId };
+  return { hrIdByCrmId, hrIdByCrmUsername, hrIdByManualOverride, lastWorkingDateByHrId, crmUsernameByHrId };
 }
 
 /**
@@ -85,11 +91,34 @@ export function buildCrmIdentityMaps(
  *
  * Returning null is the honest answer and a strictly better failure: an unattributed visit surfaces
  * in the Unmapped Agents tab as an explicit decision to make, instead of being silently filed under
- * someone who had already left. Verified against production 2026-08-01: 203 visits across 5
- * employees are attributed past an exit date, and the two largest (163 + 27) are precisely the known
- * misattributions this guard exists to stop.
+ * someone who had already left.
  *
- * Compares ISO `YYYY-MM-DD` strings directly — both sides are plain dates, so lexicographic order is
+ * THE DATE ALONE IS NOT THE SIGNAL. A post-exit date has two very different causes, and only one is
+ * a misattribution:
+ *
+ *   handed-over slot  — the CRM label names a DIFFERENT person than the roster row it resolves to.
+ *                       This is the bug: the replacement's work filed under the leaver.
+ *   own trailing work — the label still names the SAME person. Their final days were simply logged
+ *                       a day or two after the recorded last working date.
+ *
+ * Verified against every post-exit case in production on 2026-08-01. The label test separates them
+ * perfectly, and a date-only rule does not:
+ *
+ *   B-162  roster "veronica.ashraf ( alex center / a )" == record  -> own work,   allow  (10 rows)
+ *   B-111  roster "amany.wasiem ( assuit 1 / f )"       == record  -> own work,   allow  ( 2 rows)
+ *   B-176  roster "eman.essam ( behera 1 / a )"         == record  -> own work,   allow  ( 1 row )
+ *   PD-0003 roster "mayar.tarek ( dokki / p )"  vs "essam.youssef ( dokki / p )"  -> BLOCK (163)
+ *   B-85    roster "tayseer.khaled ( cairo east 1 / e )" vs "soad.atef ( … / a )" -> BLOCK ( 27)
+ *
+ * A grace window was considered and rejected: the slot-1536 misattribution began ONE day after the
+ * leaver's exit, so any window wide enough to protect the three trailing-work cases would have let
+ * roughly 35 of the replacement's visits stay filed under the wrong person.
+ *
+ * Both labels go through `normalizeCrmName` — the vendor emits the same person's label with
+ * inconsistent internal spacing ("( Assuit 1 / F  )" vs "( Assuit 1 / F )"), which is exactly the
+ * case B-111 hits, so raw string equality reports a false mismatch there.
+ *
+ * Dates compare as ISO `YYYY-MM-DD` strings — both sides are plain dates, so lexicographic order is
  * exact, and it deliberately avoids Date parsing (which would drag the vendor timezone convention
  * into a comparison that has nothing to do with clocks).
  */
@@ -97,13 +126,23 @@ export function isAttributableOn(
   hrId: string,
   visitDate: string | null | undefined,
   maps: CrmIdentityMaps,
+  crmName?: string | null,
 ): boolean {
-  // No date to judge against (check-ins before this was threaded through, ad-hoc callers): fall back
-  // to the previous behaviour rather than blocking on a value we don't have.
+  // No date to judge against (ad-hoc callers): fall back to the previous behaviour rather than
+  // blocking on a value we don't have.
   if (!visitDate) return true;
   const lastWorkingDate = maps.lastWorkingDateByHrId.get(hrId);
   if (!lastWorkingDate) return true;
-  return visitDate.slice(0, 10) <= lastWorkingDate;
+  if (visitDate.slice(0, 10) <= lastWorkingDate) return true;
+
+  // Post-exit. Attribute it only if the record still carries THIS employee's own CRM label.
+  const ownLabel = maps.crmUsernameByHrId.get(hrId);
+  const recordLabel = normalizeCrmName(crmName);
+  // No label to compare (check-ins carry a crm_id only, never a display name): keep the stricter
+  // date-only answer. Unattributed is recoverable — an admin sees it in Unmapped Agents — whereas
+  // silently crediting a leaver is the failure this guard exists to prevent.
+  if (!ownLabel || !recordLabel) return false;
+  return ownLabel === recordLabel;
 }
 
 /** The outcome of one attribution attempt. `blockedHrId` is set when a tier DID match but the
@@ -136,17 +175,22 @@ export function resolveEmployeeAttribution(
     // Tier 2 — employees.crm_id. This is the tier that misattributes a reused CRM slot.
     const byId = maps.hrIdByCrmId.get(String(crmId));
     if (byId) {
-      if (!isAttributableOn(byId, visitDate, maps)) return { blockedHrId: byId, hrId: null };
+      // `name` is the record's raw CRM label — the signal that tells a handed-over slot apart from
+      // this employee's own trailing work. See isAttributableOn.
+      if (!isAttributableOn(byId, visitDate, maps, name)) return { blockedHrId: byId, hrId: null };
       return { blockedHrId: null, hrId: byId };
     }
   }
   const key = normalizeCrmName(name);
   if (!key) return { blockedHrId: null, hrId: null };
-  // Tier 3 — unique crm_username. Guarded too: a stale display name outlives the person just as a
-  // stale crm_id does.
+  // Tier 3 — unique crm_username. Guarded for symmetry, though it can only ever allow: this tier
+  // resolved BECAUSE the record's label is that employee's own label, which is exactly the condition
+  // the post-exit check tests. That is the right answer rather than a loophole — a label matching a
+  // departed person means their own trailing work, and a handed-over slot carries the REPLACEMENT's
+  // label, so it never resolves to the leaver here in the first place.
   const byName = maps.hrIdByCrmUsername.get(key);
   if (!byName) return { blockedHrId: null, hrId: null };
-  if (!isAttributableOn(byName, visitDate, maps)) return { blockedHrId: byName, hrId: null };
+  if (!isAttributableOn(byName, visitDate, maps, name)) return { blockedHrId: byName, hrId: null };
   return { blockedHrId: null, hrId: byName };
 }
 

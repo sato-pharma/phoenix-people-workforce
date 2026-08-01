@@ -48,11 +48,15 @@ export function runCrmPostExitAttributionTests() {
     "the last working day itself is INCLUSIVE — that day was worked",
   );
 
-  // ── (B) Work after the exit date is refused, not silently filed under the leaver ──────────
+  // ── (B) With NO label to compare, post-exit work is refused ──────────────────────────────
+  //
+  // Check-ins carry a crm_id only — never a display name — so the label test cannot run and the
+  // stricter date-only answer stands. Unattributed is recoverable (it surfaces in Unmapped Agents);
+  // silently crediting a leaver is the failure this guard exists to prevent.
   assert.equal(
     resolveEmployeeHrId(1536, null, maps, "2026-07-01"),
     null,
-    "the day after the exit date must not be attributed to the departed employee",
+    "with no label to verify ownership, post-exit work must not be attributed to the departed employee",
   );
   const blocked = resolveEmployeeAttribution(1536, null, maps, "2026-07-15");
   assert.equal(blocked.hrId, null, "post-exit work resolves to nobody");
@@ -62,7 +66,54 @@ export function runCrmPostExitAttributionTests() {
     "the blocked hr id is reported so the sync can COUNT and alert, not just see a bare null",
   );
 
-  // ── (C) The name tier is guarded too — a stale display name outlives a person like an id ──
+  // ── (C) OWN TRAILING WORK is not a misattribution ────────────────────────────────────────
+  //
+  // The date alone cannot tell a handed-over slot from someone's final days logged late. The CRM
+  // LABEL can: if the record still names the same person, the work is theirs. Every one of these is
+  // a real production case from 2026-08-01 (see isAttributableOn's doc comment).
+  const trailing = buildCrmIdentityMaps([
+    employee({ hrId: "B-162", crmId: "1481", crmUsername: "Veronica.Ashraf ( Alex Center / A )", lastWorkingDate: "2026-06-30" }),
+    employee({ hrId: "B-111", crmId: "1413", crmUsername: "Amany.Wasiem ( Assuit 1 / F )", lastWorkingDate: "2026-07-09" }),
+    employee({ hrId: "B-176", crmId: "1499", crmUsername: "Eman.Essam ( Behera 1 / A )", lastWorkingDate: "2026-07-12" }),
+  ]);
+  assert.equal(
+    resolveEmployeeHrId(1481, "Veronica.Ashraf ( Alex Center / A )", trailing, "2026-07-01"),
+    "B-162",
+    "work one day past the exit date, still carrying the person's OWN label, stays theirs",
+  );
+  assert.equal(
+    resolveEmployeeHrId(1499, "Eman.Essam ( Behera 1 / A )", trailing, "2026-07-13"),
+    "B-176",
+    "same rule for a single trailing visit",
+  );
+  // The vendor emits this person's label with a DOUBLE space before the closing paren. Raw string
+  // equality reports a false mismatch and would unmap correctly-attributed work; normalizeCrmName
+  // is what makes the comparison hold.
+  assert.equal(
+    resolveEmployeeHrId(1413, "Amany.Wasiem ( Assuit 1 / F  )", trailing, "2026-07-12"),
+    "B-111",
+    "label matching must normalise the vendor's inconsistent internal spacing",
+  );
+  assert.equal(
+    resolveEmployeeAttribution(1481, "Veronica.Ashraf ( Alex Center / A )", trailing, "2026-07-01").blockedHrId,
+    null,
+    "own trailing work is not a blocked attribution — it must not raise the sync alert",
+  );
+
+  // ── (D) A HANDED-OVER slot is still blocked — the label names someone else ────────────────
+  assert.equal(
+    resolveEmployeeHrId(1536, "Essam.Youssef ( Dokki / P )", maps, "2026-07-15"),
+    null,
+    "a record labelled with a DIFFERENT person must never be filed under the leaver",
+  );
+  // The real slot-1536 case began ONE day after the exit — which is why a grace window cannot work.
+  assert.equal(
+    resolveEmployeeHrId(1536, "Essam.Youssef ( Dokki / P )", maps, "2026-07-01"),
+    null,
+    "a handed-over slot is blocked from day one, however small the gap",
+  );
+
+  // ── (E) The name tier resolves a departed person's own late-logged work ───────────────────
   const nameOnlyMaps = buildCrmIdentityMaps([
     employee({ hrId: "B-85", crmUsername: "Tayseer.Khaled ( Cairo East 1 / A )", lastWorkingDate: "2026-06-02" }),
   ]);
@@ -73,11 +124,17 @@ export function runCrmPostExitAttributionTests() {
   );
   assert.equal(
     resolveEmployeeHrId(null, "Tayseer.Khaled ( Cairo East 1 / A )", nameOnlyMaps, "2026-07-20"),
+    "B-85",
+    "a record carrying the departed person's OWN label is their trailing work, not a reused slot",
+  );
+  // A label naming somebody else never resolves to the leaver in the first place.
+  assert.equal(
+    resolveEmployeeHrId(null, "Soad.Atef ( Cairo East 1 / A )", nameOnlyMaps, "2026-07-20"),
     null,
-    "the username tier must be guarded too — a stale crm_username outlives the person",
+    "a different person's label does not resolve to the departed employee at all",
   );
 
-  // ── (D) An explicit admin override WINS, including for post-exit dates ───────────────────
+  // ── (F) An explicit admin override WINS, including for post-exit dates ───────────────────
   //
   // Tier 1 is a human's hand-verified decision about who owns a CRM slot, and it is the intended way
   // to record "this slot belongs to someone the roster doesn't link". Guarding it would let a stale
@@ -104,19 +161,19 @@ export function runCrmPostExitAttributionTests() {
     "the guard must not override an admin's explicit decision",
   );
 
-  // ── (E) No date supplied → previous behaviour, so no caller silently starts failing ───────
+  // ── (G) No date supplied → previous behaviour, so no caller silently starts failing ───────
   assert.equal(
     resolveEmployeeHrId(1536, null, maps),
     "PD-0003",
     "with no visit date to judge against, resolution is unchanged",
   );
 
-  // ── (F) An active employee (no last working date) is never blocked ───────────────────────
+  // ── (H) An active employee (no last working date) is never blocked ───────────────────────
   assert.ok(isAttributableOn("B-164", "2026-12-31", maps), "an employee with no exit date is always attributable");
   assert.ok(isAttributableOn("UNKNOWN-HR", "2026-12-31", maps), "an hr id absent from the map is not blocked");
   assert.ok(isAttributableOn("PD-0003", null, maps), "a null date cannot block anything");
 
-  // ── (G) Timestamps compare correctly against a plain date ────────────────────────────────
+  // ── (I) Timestamps compare correctly against a plain date ────────────────────────────────
   // Callers pass a sliced YYYY-MM-DD, but a full check-in timestamp must not accidentally read as
   // "after" its own last working day through string comparison.
   assert.ok(

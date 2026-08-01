@@ -24,6 +24,11 @@ export type CrmIdentityMaps = {
    * attribution guard: work dated after someone left cannot be theirs. Only employees WITH a last
    * working date appear, so an active employee is simply absent. */
   lastWorkingDateByHrId: Map<string, string>;
+  /** `hr_id` -> that employee's OWN normalized `crm_username`. The reverse of `hrIdByCrmUsername`,
+   * and deliberately NOT deduplicated: this answers "what does this specific person's CRM label look
+   * like", so an ambiguous label shared by two employees still belongs to each of them. Used by the
+   * post-exit guard to tell a handed-over slot from someone's own trailing work. */
+  crmUsernameByHrId: Map<string, string>;
 };
 
 /** A full `ireports360_visits` row (every persisted column). Reads that project a subset of
