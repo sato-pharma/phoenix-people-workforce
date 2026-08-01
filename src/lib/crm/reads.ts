@@ -248,7 +248,7 @@ function applyVisitFilter(
 }
 
 /** Ensure the `id` column is present in a projection (needed for keyset pagination). */
-function withIdColumn(columns: string): string {
+export function withIdColumn(columns: string): string {
   if (columns.trim() === "*") return columns;
   const parts = columns.split(",").map((part) => part.trim()).filter(Boolean);
   return parts.includes("id") ? parts.join(", ") : ["id", ...parts].join(", ");

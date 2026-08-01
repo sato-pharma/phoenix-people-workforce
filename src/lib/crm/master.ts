@@ -1211,7 +1211,7 @@ function filterComputedRows(
 }
 
 /** A vacation day-row from the mirror, used to group vacation periods. */
-type VacationDayRow = {
+export type VacationDayRow = {
   crm_visit_id: number | null;
   visit_date: string | null;
   ampm: string | null;
@@ -1278,8 +1278,10 @@ function detectNationalHoliday(run: VacationDayRow[]): string | null {
 }
 
 /** Build one vacation-period row from a run of consecutive day-rows (same agent, sorted by date).
- * Duration sums each day (0.5 for an AM/PM half-day, else 1). Vacation ID = earliest CRM visit id. */
-function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
+ * Duration sums each calendar DATE (not each row — see the collapse below): a date with any
+ * full-day marker is 1, otherwise 0.5 per distinct half marker capped at 1. Vacation ID = earliest
+ * CRM visit id. Exported for `tests/crm-vacation-duration.test.ts`; not used outside this module. */
+export function buildVacationPeriod(run: VacationDayRow[]): CrmMasterRow {
   const first = run[0];
   const dates = run.map((r) => String(r.visit_date).slice(0, 10));
   const fromDate = dates.reduce((a, b) => (a < b ? a : b));
