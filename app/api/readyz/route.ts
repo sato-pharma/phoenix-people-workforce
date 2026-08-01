@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { notificationConfigWarnings } from "@/lib/observability/config-drift";
+import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -61,7 +62,7 @@ export async function GET() {
       // Non-fatal notification-config drift (email flag / Resend key unset in prod). Present
       // so an operator or synthetic monitor can catch a silent-email regression early.
       warnings,
-      revision: process.env.K_REVISION ?? null,
+      revision: getDeployRevision(),
       time: new Date().toISOString(),
     },
     { status: ready ? 200 : 503, headers: { "cache-control": "no-store" } },

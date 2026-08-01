@@ -11,16 +11,19 @@
 // If a "Resolved" error happens again on the current build, it is Active again on the
 // next load — no separate reopen concept, no human ever asserts a fix.
 
+import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
+
 export type IssueStatus = "active" | "resolved";
 
 /**
  * The identifier stamped onto every app_error_events row at capture time
- * (app/api/errors/client/route.ts): COMMIT_SHA if the build set it, otherwise the
- * Cloud Run revision name (K_REVISION), otherwise "unknown". Computed here with the
- * IDENTICAL precedence so a live error's stored `release` matches this exactly.
+ * (app/api/errors/client/route.ts). Both the capture path and this query path resolve it
+ * through the shared deploy-identity module so their precedence cannot drift apart — see the
+ * note there for why that is load-bearing, and why Railway had to be added to the chain after
+ * the 2026-08-01 cutover left every row stamped "unknown".
  */
 export function getCurrentReleaseTag(): string {
-  return process.env.COMMIT_SHA || process.env.K_REVISION || "unknown";
+  return getDeployRevisionTag();
 }
 
 /**

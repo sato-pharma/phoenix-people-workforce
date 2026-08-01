@@ -1,3 +1,14 @@
+// DEAD CONFIG as of the 2026-08-01 Railway cutover — do NOT wire this into check:harden.
+//
+// This guard validates the GCP Cloud Run service's Secret Manager wiring. Production no
+// longer runs on Cloud Run, and Railway has no equivalent concept: its variables hold values
+// directly, with no version to pin, so there is nothing here for it to check. The script still
+// EXITS 0 today only because the billing-disabled project continues to answer
+// `gcloud run services describe` — putting it back in a validation gate would therefore pass
+// now and hard-fail for everyone once GCP reclaims the project (~2026-08-31), breaking CI on a
+// timer. Kept, not deleted, because it is the written record of the incident below and would
+// be needed verbatim if the Cloud Run rollback path were ever taken.
+//
 // Asserts that every Cloud Run secret env var reads Secret Manager's `latest` version
 // rather than a hard-pinned number.
 //

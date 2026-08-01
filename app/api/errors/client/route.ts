@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveActivityModule } from "@/lib/activity/modules";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { logAppError } from "@/lib/error-monitor/service";
+import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
 
 
 export const runtime = "nodejs";
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         message,
         moduleKey: activityModule.key,
         moduleLabel: activityModule.label,
-        release: process.env.COMMIT_SHA || process.env.K_REVISION || "unknown",
+        release: getDeployRevisionTag(),
         role: access.role,
         route,
         routeType: typeof body?.routeType === "string" ? body.routeType : null,

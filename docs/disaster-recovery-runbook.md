@@ -1,6 +1,28 @@
 # Phoenix Workforce — Disaster Recovery & Operations Runbook
 
-_Production runs on **GCP Cloud Run** (project `phoenix-workforce-498619`, region `europe-west3` since the 2026-07-17 region cutover, service `phoenix-hr`) at **https://phoenix-hr.satopharma.com**, backed by Supabase (`ozucdzovmcqvepbozvqf`), Resend (email), and Cloud Scheduler (crons — job location `us-central1`, independent of the app's region). No secret values appear in this document._
+> ## ⛔ THIS RUNBOOK IS OUT OF DATE — READ THIS FIRST
+>
+> **Production moved from GCP Cloud Run to Railway on 2026-08-01.** The GCP billing account was
+> closed and every billable API in project `phoenix-workforce-498619` now returns
+> `BILLING_DISABLED`. Everything below that starts with `gcloud` will fail, including — most
+> dangerously — the rollback procedure, which is the one thing you would reach for at 3am.
+>
+> **Until this document is rewritten, use these instead:**
+>
+> | You need to | Do this |
+> |---|---|
+> | **Roll back a bad deploy** | Railway → project `Phoenix-HR-Workforce` → service `phoenix-people-workforce` → **Deployments** → find the last good one → **Redeploy**. There is no traffic-splitting; it is all-or-nothing. |
+> | Confirm what is live | `GET /api/healthz` and read `revision`. Not the workflow list — merges no longer go through a deploy workflow. |
+> | Check readiness | `GET /api/readyz` → `{database:true, env:true}`, `warnings: []` |
+> | Check email | `GET /api/health/email` → 200 healthy |
+> | **Check alerts** | **There are none.** All five Cloud Monitoring policies and the uptime check died with GCP and nothing has replaced them. Healthchecks.io still covers cron liveness only. |
+> | Read logs | Railway → service → **Deploy Logs**. Cloud Logging is gone, so the `labels.event` search recipes below no longer apply — `event` is now a top-level JSON key. |
+>
+> Scheduling: the 8 Cloud Scheduler jobs are dead. A `phoenix-cron` Railway service exists but its
+> effectiveness is unverified. `scripts/setup-gcp-cron.sh` remains the only reliable inventory of
+> what is *supposed* to run — read it, do not run it.
+
+_Historical context (pre-2026-08-01): production ran on **GCP Cloud Run** (project `phoenix-workforce-498619`, region `europe-west3` since the 2026-07-17 region cutover, service `phoenix-hr`) at **https://phoenix-hr.satopharma.com**, backed by Supabase (`ozucdzovmcqvepbozvqf`), Resend (email), and Cloud Scheduler. The domain and Supabase project are unchanged. No secret values appear in this document._
 
 ## 1. Incident response — first 5 minutes
 

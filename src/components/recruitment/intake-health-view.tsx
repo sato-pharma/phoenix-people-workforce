@@ -121,7 +121,20 @@ export function IntakeHealthView({
         </p>
         {error ? <p className="mb-3 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
         {deadLetters.length === 0 ? (
-          <p className="text-sm text-slate-500">None — every inbound CV was processed. 🎉</p>
+          // Zero dead letters means one of two opposite things, and this page used to render the
+          // celebratory one unconditionally: during the 2026-08-01 WhatsApp outage the webhook
+          // 500'd before reading the body, so NOTHING was ever enqueued, no failure was recorded,
+          // and the page reported a perfect score throughout a total outage. No inbound at all is
+          // a warning, not a win.
+          analytics.total === 0 ? (
+            <p className="text-sm text-amber-700">
+              No inbound messages arrived in the last {analytics.windowDays} days, so there is
+              nothing to have failed. That is not the same as healthy — if candidates are known to
+              be sending CVs, check the WhatsApp and mailbox intake configuration.
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500">None — every inbound CV was processed. 🎉</p>
+          )
         ) : (
           <ul className="divide-y divide-slate-100">
             {deadLetters.map((row) => (

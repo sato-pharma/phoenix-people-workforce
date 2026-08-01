@@ -1,10 +1,17 @@
-// Minimal GCP Cloud Logging-friendly structured logger.
+// Minimal single-line-JSON structured logger.
 //
-// Cloud Run auto-ingests a single-line JSON object on stdout/stderr and parses it into a
-// structured LogEntry: the top-level `severity` sets the entry severity and
-// `logging.googleapis.com/labels` becomes searchable labels. This lets log-based metrics
-// and alert policies match on stable labels (e.g. event="cron_unauthorized") instead of
-// brittle text substrings. Never pass secrets/PII in message or labels.
+// Originally shaped for GCP Cloud Logging, which parses a JSON line into a structured LogEntry
+// where `logging.googleapis.com/labels` becomes searchable labels. Since the 2026-08-01 move to
+// Railway nothing consumes that namespaced key: Railway's log search is plain text/JSON matching,
+// so `labels.event` was effectively unsearchable and the recipes written into
+// docs/observability.md stopped working. Labels are now emitted under a plain `labels` key, with
+// `event` ALSO promoted to the top level — that is the field every alert and search recipe keys
+// on, and one hop is worth not having to remember the nesting.
+//
+// The severity field is kept as-is: it is a useful convention on any platform, and it is what a
+// future log drain would key on. Never pass secrets/PII in message or labels.
+
+import { getDeployRevision } from "@/lib/observability/deploy-identity";
 
 export type LogSeverity = "DEBUG" | "INFO" | "NOTICE" | "WARNING" | "ERROR" | "CRITICAL";
 
@@ -36,12 +43,16 @@ function cleanLabels(labels?: LogLabels): Record<string, string> | undefined {
 }
 
 export function logStructured(severity: LogSeverity, message: string, options: LogOptions = {}) {
+  const labels = cleanLabels(options.labels);
   const entry: Record<string, unknown> = {
     severity,
     message,
-    "logging.googleapis.com/labels": cleanLabels(options.labels),
   };
-  const revision = process.env.K_REVISION;
+  // `event` first so it is visible at the head of the line in a log tail, not buried after a
+  // stack trace. It is the key every alert recipe and search matches on.
+  if (labels?.event) entry.event = labels.event;
+  if (labels) entry.labels = labels;
+  const revision = getDeployRevision();
   if (revision) entry.revision = revision;
   const err = serializeError(options.error);
   if (err) entry.error = err;
