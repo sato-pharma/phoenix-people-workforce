@@ -111,8 +111,9 @@ export async function resolvePortalClosingScope(
   // "Everyone sees his scope only": the shared sales access-scope engine is the single source of
   // truth for which regions a viewer may see. District/Regional Managers come back region-bound
   // (a set = their region); National Sales Managers are line-scoped and company roles unrestricted
-  // (null = the whole line). A region-scoped viewer whose own region can't be resolved also comes
-  // back null there — fail-open to the whole line rather than showing a blank sheet.
+  // (null = the whole line). A region-scoped viewer with NO geography at all — no region label and
+  // no seat areas — comes back as an EMPTY set, which applyRegionScope honours as "no rows" rather
+  // than widening to the line (an empty set is truthy, so it must be checked explicitly).
   const [line, salesScope] = await Promise.all([
     resolveEmployeeLineName(access),
     resolveSalesAccessScope(access),
@@ -317,12 +318,23 @@ export function scopeMatrixToAreaCodes(
 }
 
 /**
- * Apply the viewer's geography scope to a matrix, failing OPEN. A seat-scoped viewer (District /
- * Regional Manager whose organogram seat resolved) is narrowed to their own AREAS; otherwise a
- * region-bound viewer is narrowed to their region. If the bound maps to nothing in this matrix — a
- * data gap, e.g. a Regional Manager whose region is the aggregate "Alexandria + Delta" rather than a
- * single SoS region — fall back to the un-narrowed matrix rather than showing a blank sheet. The line
- * filter still applies upstream, so this only ever broadens WITHIN the viewer's own line.
+ * Apply the viewer's geography scope to a matrix. A seat-scoped viewer (District / Regional Manager
+ * whose organogram seat resolved) is narrowed to their own AREAS; otherwise a region-bound viewer is
+ * narrowed to their region. The line filter still applies upstream, so nothing here can ever reach
+ * outside the viewer's own line.
+ *
+ * Two DIFFERENT "the bound matched nothing" cases, which must not be conflated:
+ *
+ *  • An EMPTY `regionNames` set is the scope engine saying "this viewer has no geography at all"
+ *    (see computeSalesAccessScope: no region label AND no seat areas ⇒ deliberate empty set). That
+ *    is an authorization answer and is honoured as-is ⇒ no rows.
+ *  • A NON-empty set that simply matches no region in THIS matrix is a data gap — e.g. a Regional
+ *    Manager whose region label is the aggregate "Alexandria + Delta" rather than a single SoS
+ *    region. There we still fall back to the un-narrowed matrix rather than show a blank sheet.
+ *
+ * Collapsing the two is what previously turned the engine's fail-CLOSED empty set straight back into
+ * the whole line: an empty Set is truthy, so it cleared the null guard, narrowed to zero regions,
+ * and then hit the fallback below.
  */
 export function applyRegionScope(
   matrix: MonthlyClosingMatrix,
@@ -335,6 +347,8 @@ export function applyRegionScope(
   }
   if (!regionNames) return matrix;
   const narrowed = scopeMatrixToRegionNames(matrix, regionNames);
+  // Explicit "no geography" ⇒ no rows. Never widen this back to the full line.
+  if (regionNames.size === 0) return narrowed;
   return narrowed.regions.length > 0 ? narrowed : matrix;
 }
 
