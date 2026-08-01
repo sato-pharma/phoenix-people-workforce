@@ -245,8 +245,9 @@ function buildEmployeePortalSections({
         // Open to every role, self-scoped (see src/lib/employee-360/access.ts) — same
         // employee_profile:read gate as the rest of "My Workspace", no visibility flag needed.
         { href: "/employee-portals/employee-360", label: "Employee 360", icon: IdCard },
-        // Private Calendar is hidden from every other role's nav by design (the page has no
-        // role gate, it's just unlinked) — this is a scoped, Talent-Acquisition-only exception.
+        // Private Calendar — self-scoped to the viewer's own recognized activity. Shown to every
+        // portal role as of the 2026-08-01 owner decision (was Talent-Acquisition-only); kept behind
+        // the showPrivateCalendarTab flag so Modules Control can still curate it per role/person.
         ...(showPrivateCalendarTab ? [{ href: "/employee-portals/private-calendar", label: "Private Calendar", icon: CalendarDays }] : []),
         // Incentive now lives in the Payroll section; "Other Approvals" now lives in the
         // Approvals Hub section — neither belongs in My Workspace anymore.

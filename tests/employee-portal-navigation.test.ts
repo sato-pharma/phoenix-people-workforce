@@ -357,6 +357,22 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(talentAcquisitionNav.showPlanningCalendarTab, true, "Talent Acquisition should still see the Planning Calendar tab");
   assert.equal(talentAcquisitionNav.showPrivateCalendarTab, true, "Talent Acquisition should see Private Calendar");
 
+  // 2026-08-01 owner decision: Private Calendar is now shown to EVERY portal role, not just
+  // Talent Acquisition. It is self-scoped (each employee sees only their own recognized activity),
+  // the page has no role gate, and every role holds the employee_profile:read + attendance:read
+  // that getPrivateCalendarWorkspace asserts. Prove the widening for a field role and a manager
+  // rung so a revert to the old TA-only gate fails here.
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Medical Rep").showPrivateCalendarTab,
+    true,
+    "Medical Rep should see Private Calendar (2026-08-01 all-roles decision)",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("District Manager").showPrivateCalendarTab,
+    true,
+    "District Manager should see Private Calendar (2026-08-01 all-roles decision)",
+  );
+
   const nationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager");
   assert.equal(nationalSalesManager.showMyCoachingTab, false, "NSM should not see My Coaching Reports");
   assert.equal(nationalSalesManager.showTeamCoachingTab, true, "NSM should see Team Coaching Reports");
