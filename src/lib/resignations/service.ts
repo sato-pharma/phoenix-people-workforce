@@ -937,6 +937,41 @@ async function normalizeTerminalEmployeeLifecycleFlags(
   }
 }
 
+// Closes the departing employee's au occupancy span(s), which is what makes the organogram
+// stop showing them on their seat and lets the area fall back to 'vacant_will_hire'.
+//
+// The Employees-page path gets this for free — it is step 5 of
+// phx_resign_employee_and_open_vacancy, inside that RPC's transaction. The Approvals Hub
+// path cannot reuse that RPC (it would insert a SECOND employee_resignations row and a
+// second vacancy for a resignation that already has both), so it calls the extracted
+// step-5-only wrapper instead. The au schema is not exposed on PostgREST and no TypeScript
+// in src/ touches it directly, so the wrapper is the only route in.
+//
+// The wrapper is a no-op returning vacated_count: 0 when the employee holds no open seat,
+// so re-completing an already-terminated employee is harmless. A genuinely failing call
+// throws, exactly like the two lifecycle helpers it runs beside — leaving a departed person
+// visibly occupying a seat is not something to swallow silently.
+async function vacateAuSeatsIfSupported(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+  input: { actor: string; effectiveDate: string | null; reason: string | null },
+) {
+  const { error } = await supabase.rpc("phx_vacate_au_seats_for_employee", {
+    p_actor: input.actor,
+    p_effective_date: input.effectiveDate,
+    p_employee_hr_id: employeeHrId,
+    p_reason: input.reason,
+  });
+
+  // isMissingSchemaMessage also matches PostgREST's PGRST202 ("could not find the function
+  // ... in the schema cache"), so an environment without the migration degrades to today's
+  // behaviour instead of failing the whole workflow -- same tolerance
+  // normalizeTerminalEmployeeLifecycleFlags applies to its own RPC.
+  if (error && !isMissingSchemaMessage(error)) {
+    throw schemaReadinessError("vacating au seats for the departing employee", error);
+  }
+}
+
 async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, employeeHrId: string) {
   const appAuthResult = await supabase
     .from("app_auth_users")
@@ -1739,6 +1774,19 @@ export async function runResignationWorkflow(
       resignationId: record.id,
       resignationVacancyId:
         (updated as ResignationRow & { vacancy_id?: number | null }).vacancy_id ?? null,
+    });
+
+    // That trigger opens the replacement vacancy, but nothing above touches the au seat model,
+    // so the organogram still showed the departed person occupying their seat after the
+    // resignation was completed. The Employees-page path never had this gap — vacating is step 5
+    // of phx_resign_employee_and_open_vacancy, which complete deliberately cannot call.
+    // Runs last: the vacancy reconciliation reads position_vacancies, which vacating never
+    // writes (au.resign_occupant touches only au.occupancy_history and, via
+    // au.sync_area_state_for_seat, au.line_area_map), so the two are independent.
+    await vacateAuSeatsIfSupported(supabase, record.employeeHrId, {
+      actor: actorHrId,
+      effectiveDate: record.effectiveDate,
+      reason: cleanText(record.reason),
     });
   }
 
