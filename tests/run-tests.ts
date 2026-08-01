@@ -460,6 +460,7 @@ import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
 import { runSosLatentGuardsTests } from "./sos-latent-guards.test.ts";
+import { runSosIngestionRemainderTests } from "./sos-ingestion-remainder.test.ts";
 import { runSalesScopeBlankRegionFailClosedTests } from "./sales-scope-blank-region-fail-closed.test.ts";
 import { runSosUiTruthRemainderTests } from "./sos-ui-truth-remainder.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
@@ -1003,6 +1004,7 @@ await runTest('SoS mapping integrity (alias edit replaces, exact customer key de
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
 await runTest('SoS latent guards + decisions of record', runSosLatentGuardsTests);
+await runTest('SoS ingestion remainder (Direct value, blank-customer info, office bad units)', runSosIngestionRemainderTests);
 await runTest('sales scope fails closed on a blank region with no seat areas', runSalesScopeBlankRegionFailClosedTests);
 await runTest('SoS UI truth remainder (headline vs breakdowns, territory target dedup, filtered footer)', runSosUiTruthRemainderTests);
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);

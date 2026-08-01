@@ -34,8 +34,24 @@ async function buildOfficeAllocation(input: { buffer: ArrayBuffer | Buffer; file
     parseOfficePivotBuffer(input.buffer),
   ]);
 
-  if (pivot.rows.length === 0) {
+  if (pivot.rows.length === 0 && pivot.badUnitsRows.length === 0) {
     throw new SalesWorkflowError("invalid_office_file", "No product rows were found in the office file. Expected a pivot with a product-name column and a units column.", 400);
+  }
+
+  // A named product whose units cell is unreadable used to be silently imported as 0 units, so its
+  // office contribution vanished while the upload looked clean. Refuse instead: the numbers must be
+  // fixed in the sheet, not quietly zeroed. Fail-closed matches the unmapped-name path below.
+  if (pivot.badUnitsRows.length > 0) {
+    const sample = pivot.badUnitsRows
+      .slice(0, 5)
+      .map((b) => `"${b.productName}" (row ${b.rowNumber}: "${b.rawUnits}")`)
+      .join(", ");
+    throw new SalesWorkflowError(
+      "invalid_office_file",
+      `${pivot.badUnitsRows.length} office product row(s) have a units value that is not a number and would be dropped as zero. Fix the units column in the sheet, then upload again. Examples: ${sample}.`,
+      400,
+      { badUnitsRows: pivot.badUnitsRows },
+    );
   }
 
   const productByCode = new Map(references.products.map((p) => [normalizeCodeKey(p.productCode), p]));

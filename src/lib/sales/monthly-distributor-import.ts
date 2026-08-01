@@ -1513,6 +1513,19 @@ async function parseDistributorSalesWorkbookBuffer(input: {
     }
     if (!Number.isFinite(qty)) addIssue(rowIssues, rowNumber, headerMap.template.fields.qty, rawQty, "Qty must be numeric.");
     if (!period) addIssue(rowIssues, rowNumber, headerMap.template.fields.invoiceDate, rawInvoiceDate, "Invoice Date must be a valid date.");
+    // Direct is the one channel whose VALUE comes straight from the sheet (see above), so it is the
+    // one place an unreadable value cell can reach `value` unnoticed. For every other channel, value
+    // is derived from qty * price and qty is already checked above — so this mirrors that check for
+    // the one path it doesn't cover, rather than adding a new kind of guard.
+    //
+    // `parseNumber(x, { emptyAsZero: true })` returns 0 for an EMPTY cell (a legitimate zero) and
+    // NaN for a NON-EMPTY cell that fails to parse — a currency symbol, a stray character, a typo.
+    // Without this check that NaN reaches the DB insert unflagged and is silently zeroed there
+    // (`value: Number.isFinite(row.value) ? row.value : 0`), so the row looks successfully imported
+    // while its sale value has vanished.
+    if (isDirect && !Number.isFinite(value) && normalizeDisplay(rawSheetValue)) {
+      addIssue(rowIssues, rowNumber, headerMap.template.valueField ?? "Value", rawSheetValue, "Value must be numeric.");
+    }
 
     if (productCode && !isNotAvailable(rawProductCode) && !productReference) {
       addIssue(
