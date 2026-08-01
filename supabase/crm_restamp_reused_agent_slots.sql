@@ -12,8 +12,12 @@
 --                AI-0003 July visits 0 -> 27; B-164 July visits 0 -> 163
 --                both slots now resolve to ACTIVE employees, so neither the static nor the
 --                live half of the departed-agent exclusion hides them any more
---   backups      public.crm_restamp_backup_20260801           (1,542 visit rows)
---                public.crm_restamp_checkins_backup_20260801  (1,258 check-in rows)
+--   backups      the 2026-08-01 run wrote these into `public`, which left them anon-readable
+--                until RLS was enabled by hand the same day. They still hold that run's
+--                rollback data and are still where the ROLLBACK section below points:
+--                  public.crm_restamp_backup_20260801           (1,542 visit rows)
+--                  public.crm_restamp_checkins_backup_20260801  (1,258 check-in rows)
+--                Step 0 now writes to a sealed schema instead — see the note there.
 --
 -- Re-running is safe (every statement is idempotent) but should be unnecessary.
 -- ############################################################################################
@@ -76,13 +80,28 @@ begin;
 -- ── Step 0. Snapshot the before-state so the change is auditable and reversible. ──────────────
 -- BOTH mutated tables are snapshotted. An earlier draft covered only visits, which would have left
 -- the check-in updates in steps 4 with no restore path.
-create table if not exists public.crm_restamp_backup_20260801 as
+--
+-- The snapshots live in their own dated schema, NOT in `public`. `public` is the only schema
+-- PostgREST exposes and the one where Supabase grants `anon` SELECT on new tables by default, so a
+-- snapshot there is readable with the public anon key until someone remembers to enable RLS. The
+-- first version of this script did exactly that: 2,800 rows of agent names, HR IDs and visit dates
+-- were anon-readable until RLS was applied by hand on 2026-08-01. See
+-- docs/security/backup-table-placement.md.
+--
+-- RE-RUN NOTE: the original `public.crm_restamp_backup_20260801` and
+-- `public.crm_restamp_checkins_backup_20260801` still exist (RLS on, zero policies) and hold the
+-- rollback data for the run that already happened. This script now writes elsewhere, so it will
+-- NOT find or update them — drop them separately once the re-attribution has settled.
+create schema if not exists crm_restamp_backup_20260801;
+revoke all on schema crm_restamp_backup_20260801 from anon, authenticated;
+
+create table if not exists crm_restamp_backup_20260801.visits as
 select id, crm_visit_id, visit_date, agent_crm_id, agent_name, agent_hr_id, double_crm_id, double_hr_id
 from public.ireports360_visits
 where agent_crm_id in (1391, 1536)
    or double_crm_id in (1391, 1536);
 
-create table if not exists public.crm_restamp_checkins_backup_20260801 as
+create table if not exists crm_restamp_backup_20260801.checkins as
 select id, crm_checkin_id, check_date, agent_crm_id, agent_hr_id
 from public.ireports360_checkins
 where agent_crm_id in (1391, 1536);
@@ -161,6 +180,11 @@ commit;
 -- ============================================================================================
 -- ROLLBACK (only if the verification above looked wrong AFTER a commit)
 -- ============================================================================================
+-- These point at the ORIGINAL 2026-08-01 backups in `public`, because those are the ones
+-- holding the rows that run actually overwrote. A later re-run snapshots into
+-- crm_restamp_backup_20260801.visits / .checkins instead — roll back from whichever pair
+-- matches the run you are undoing.
+--
 -- update public.ireports360_visits v
 -- set agent_hr_id = b.agent_hr_id, double_hr_id = b.double_hr_id, updated_at = now()
 -- from public.crm_restamp_backup_20260801 b

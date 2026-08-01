@@ -27,6 +27,7 @@
 
 | Document | Description |
 |---|---|
+| [Backup Table Placement](security/backup-table-placement.md) | Where ad-hoc snapshots go, and why never `public` |
 | [RLS Prerequisites](security/local-supabase-rls-prerequisites.md) | Local RLS validation setup |
 | [Role Alignment](security/role-alignment-staging-validation.md) | Staging role validation |
 | [Production Readiness](security/role-alignment-production-readiness.md) | Production security checklist |
