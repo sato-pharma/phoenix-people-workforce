@@ -108,6 +108,45 @@ export function runCeoCommandCenterTests() {
     /dataUnavailable: Array\.from\(new Set\(dataUnavailable\)\)/,
     "CEO unavailable source metadata must be de-duplicated and returned",
   );
+  // "Leave requests" approval tile: leave was moved off the action-center feed onto its own
+  // approvals page, so getAwaitingMyActionItems(access, "admin") always filters module==="leave"
+  // down to nothing. The tile's count must come from the real vacation-report aggregate instead,
+  // or it silently reads "0 pending" forever no matter how many leave requests are waiting.
+  assert.doesNotMatch(
+    ceoCommandCenterSource,
+    /getAwaitingMyActionItems\(/,
+    "CEO fast path must not call the action-center feed for its leave count — that feed excludes leave by design (see action-center/service.ts), so filtering it always yields zero",
+  );
+  assert.doesNotMatch(
+    ceoCommandCenterSource,
+    /item\.module === "leave"/,
+    "CEO leavePending must not be computed by filtering module==='leave' out of an already leave-excluding feed",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /const leavePending = adminSignals \? adminSignals\.leavePendingTotal : null;/,
+    "CEO leavePending must be sourced from adminSignals.leavePendingTotal (the real vacation-report aggregate)",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /const leavePendingTotal =\s*\n\s*leavePendingR\.status === "fulfilled" \? leavePendingR\.value\.dashboard\.pendingByStage\.total : null;/,
+    "leavePendingTotal must read dashboard.pendingByStage.total from the vacation report, and be null (not 0) when that fetch fails",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /leavePendingTotal: number \| null;/,
+    "CeoAdminSignals must expose leavePendingTotal so the CEO fast path can read the real pending-leave count",
+  );
+  assert.match(
+    ceoCommandCenterSource,
+    /^\s*leavePendingTotal,\s*$/m,
+    "getCeoAdminSignals must actually return leavePendingTotal on the CeoAdminSignals object, not just declare it on the type",
+  );
+  assert.match(
+    ceoComponentSource,
+    /href="\/admin\/approvals\/vacation"[\s\S]{0,600}Leave requests/,
+    "CEO Leave requests tile must link to the dedicated vacation approvals page — /admin/approvals-hub no longer holds leave items (MIGRATED_DEEPLINK_BASES bounces leave deep-links away from it)",
+  );
   assert.match(
     ceoCommandCenterSource,
     /href: "\/admin\/m-payroll"/,

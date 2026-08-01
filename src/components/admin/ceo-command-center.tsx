@@ -446,7 +446,7 @@ export function CeoCommandCenter({
               {totalApprovals > 0 || hasUnavailableApprovals ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Link
-                    href="/admin/approvals-hub"
+                    href="/admin/approvals/vacation"
                     className="group flex items-center justify-between border border-slate-200 bg-slate-50 px-4 py-3 hover:border-orange-300 hover:bg-orange-50/40"
                   >
                     <span className="flex items-center gap-3">
