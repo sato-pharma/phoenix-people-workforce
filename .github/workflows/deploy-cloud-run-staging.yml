@@ -50,8 +50,10 @@ name: Deploy to Google Cloud Run (Staging)
 # and on demand. To put a specific commit on staging immediately, use the Run workflow button
 # (optionally with build_from_source=true for a commit prod never built).
 on:
-  schedule:
-    - cron: "40 3 * * *" # daily 03:40 UTC, offset from the 05:17 security scan and 07:00 drift check
+  # SCHEDULE DISABLED 2026-08-01, same cause as deploy-cloud-run.yml: the GCP billing account
+  # closed and every API in the project now returns BILLING_DISABLED. Staging also has nothing
+  # to deploy — it reuses the image production builds ("build once, deploy twice"), and
+  # production no longer builds one. Restore `schedule: - cron: "40 3 * * *"` if billing reopens.
   workflow_dispatch:
     inputs:
       build_from_source:

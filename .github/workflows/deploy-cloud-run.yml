@@ -30,13 +30,16 @@ name: Deploy to Google Cloud Run
 # now been returned to the scheduled-only cadence and that dead config removed. To ship
 # something immediately, use the "Run workflow" button (workflow_dispatch) as documented above.
 on:
-  schedule:
-    # Every 2h: 00/02/04/.../22 UTC = 02/04/06/.../00 Cairo. Widened from the original
-    # 4-hourly on 2026-07-26 — 4h meant a merge could sit unshipped for most of a working
-    # day, which was too coarse in practice. Cost: roughly double the deploy runs, since the
-    # number of builds tracks the number of scheduled windows that find a new commit, not the
-    # number of commits. GitHub may delay cron under load; a late run is normal, not a fault.
-    - cron: "0 */2 * * *"
+  # SCHEDULE DISABLED 2026-08-01. The GCP billing account (01BDEA-A20B4C-CC568F) was closed
+  # over an unpaid balance, which took Cloud Run offline and moved production to Railway
+  # (service phoenix-people-workforce, deployed from this repo on push). Left on a schedule
+  # this workflow would burn a runner every 2 hours only to fail against a project whose
+  # APIs all return BILLING_DISABLED.
+  #
+  # The job body is deliberately untouched: if the balance is settled and billing reopens,
+  # restoring the previous trigger (`schedule: - cron: "0 */2 * * *"`) is the whole rollback.
+  # Note GCP deletes a disabled project's resources roughly 30 days after closure, so past
+  # that point the Cloud Run service, secrets and scheduler jobs would need recreating first.
   workflow_dispatch:
     inputs:
       force:
