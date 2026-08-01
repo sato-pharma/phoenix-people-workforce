@@ -186,7 +186,14 @@ export async function sendPasswordSetupLink(input: {
   const token = createToken();
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + passwordSetupExpiryMs).toISOString();
-  const setupUrl = `${publicBaseUrl(input.origin)}/password-setup/${token}`;
+  // The emailed CTA button routes through the notification href pipeline, which keeps only
+  // INTERNAL paths — hrefs.ts internalHref() drops anything not starting with "/" — and then
+  // rebuilds the absolute URL via dashboardUrl(). Passing the absolute setupUrl made internalHref
+  // drop it entirely, so the activation email rendered with NO button and NO link (employees could
+  // not set their password). Hand the notification the RELATIVE path; keep the absolute setupUrl
+  // only for copy-mode return / display.
+  const setupPath = `/password-setup/${token}`;
+  const setupUrl = `${publicBaseUrl(input.origin)}${setupPath}`;
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
 
@@ -229,7 +236,7 @@ export async function sendPasswordSetupLink(input: {
   const emailResult =
     deliveryMode === "email"
       ? await createSystemNotification({
-          actionUrl: setupUrl,
+          actionUrl: setupPath,
           actorId: input.actorLoginId ?? "system",
           channels: ["email"],
           email: {
@@ -240,7 +247,7 @@ export async function sendPasswordSetupLink(input: {
             // opened with "Dear B-10" instead of "Dear <name>". user.name is the display name on
             // the auth record (mirrors employees.full_name).
             recipientName: user.name?.trim() || undefined,
-            ctaHref: setupUrl,
+            ctaHref: setupPath,
             ctaLabel: "Set your password",
             metrics: [
               { label: "Login ID", value: loginId },
