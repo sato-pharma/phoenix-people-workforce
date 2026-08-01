@@ -239,6 +239,33 @@ export type StepRow = {
   readOnly?: boolean;
   /** Short explanation shown beside a read-only row, e.g. "settles in August". */
   readOnlyNote?: string;
+  /**
+   * The source lines behind this row's single recommended figure — the trips
+   * behind an expense total, the days behind a deduction — keyed by the step's
+   * `detailColumns` (owner request 2026-08-01: "which days, where").
+   *
+   * Strictly READ-ONLY (owner decision, same date): HR still edits only the one
+   * figure in `values`. Nothing here is persisted to a draft row and the
+   * re-upload parser never reads it back, so a detail line can never become a
+   * second, competing source of truth for the money.
+   */
+  details?: StepRowDetail[];
+};
+
+/** One line of a row's read-only breakdown, keyed by the step's `detailColumns`. */
+export type StepRowDetail = Record<string, string | number | null>;
+
+/**
+ * One column of a step's read-only per-line breakdown. Mirrors `contextColumns`:
+ * declared once on the step definition, keyed to whatever recommend.ts puts in
+ * each `StepRow.details` entry, and consumed by BOTH the expandable grid panel
+ * and the xlsx "Detail" sheet so the two can never drift apart.
+ */
+export type StepDetailColumn = {
+  key: string;
+  label: string;
+  /** Right-align and currency-format in the grid and the xlsx Detail sheet. */
+  money?: boolean;
 };
 
 /** A field editable within a step (drives the grid + the xlsx template columns). */
@@ -306,6 +333,32 @@ export type StepDefinition = {
    * value and an editable money value are both non-zero.
    */
   conflictContextKey?: string;
+  /**
+   * Columns for the read-only per-line breakdown behind each row's figure —
+   * rendered as an expandable panel under the row and as a second "Detail"
+   * sheet in the step's xlsx. Omitted for steps whose figure has no underlying
+   * line data (manual entry, additions, holds).
+   */
+  detailColumns?: StepDetailColumn[];
+  /**
+   * Singular noun for the row expander, e.g. "trip" renders "1 trip". Defaults
+   * to "line". Only meaningful alongside `detailColumns`.
+   */
+  detailNoun?: string;
+  /**
+   * Plural of `detailNoun`. Required whenever adding "s" is wrong — "leave
+   * entry" pluralised naively renders "3 leave entrys". Defaults to
+   * `detailNoun` + "s".
+   */
+  detailNounPlural?: string;
+  /**
+   * Plain-English statement of the exact date range this step draws from, shown
+   * beside the step title. The three Part-2 feeder steps sit next to each other
+   * but cover DIFFERENT windows — expenses by finance payout tag, vacation by
+   * calendar month, CRM by the day-24 cycle — which is invisible otherwise and
+   * makes a correct figure look wrong (owner request 2026-08-01).
+   */
+  windowNote?: string;
 };
 
 /** A dry-run diff line produced when an edited xlsx is re-uploaded. */

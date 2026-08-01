@@ -9,7 +9,9 @@ import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
 import {
   listCrmDeductionCandidates,
   listFingerprintDeductionCandidates,
+  syncCrmLiveMonthCandidates,
 } from "@/lib/payroll/copilot/deductions-review.ts";
+import { resolveCycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
 import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import {
   computeJoinerPay,
@@ -38,7 +40,16 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
-import type { DraftRow, PayrollPeriod, RowLifecycle, StepKey, StepRow } from "./types.ts";
+import { actorId } from "./permissions.ts";
+import { monthNameAndYear } from "./step-definitions.ts";
+import type {
+  DraftRow,
+  PayrollPeriod,
+  RowLifecycle,
+  StepKey,
+  StepRow,
+  StepRowDetail,
+} from "./types.ts";
 
 /**
  * Builds each wizard step's recommendation table from the existing payroll
@@ -81,6 +92,24 @@ function numberOrNull(value: number | null | undefined): number | null {
 function moneyOrNull(value: number): number | null {
   if (!Number.isFinite(value) || value <= 0) return null;
   return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * Splits an already-rounded total into `count` per-line amounts that sum back to
+ * it EXACTLY, with the last line absorbing the rounding remainder.
+ *
+ * Needed because the row's money is computed once for the whole group (Base/30 ×
+ * days) while the new breakdown shows it per day. Naively rounding total/count
+ * per line makes 1,400.00 display as 3 × 466.67 = 1,400.01 — and a payroll
+ * screen whose breakdown doesn't foot to its own total is worse than showing no
+ * breakdown at all. Never changes the total itself. Exported for tests.
+ */
+export function distributeAmount(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  const per = roundCurrency(total / count);
+  const parts = Array.from({ length: count }, () => per);
+  parts[count - 1] = roundCurrency(total - per * (count - 1));
+  return parts;
 }
 
 /**
@@ -248,36 +277,125 @@ function periodBounds(period: PayrollPeriod): { start: string; end: string } {
   };
 }
 
+/** One reimbursable trip behind an employee's expense total (owner request 2026-08-01). */
+type PayoutExpenseTrip = {
+  tripId: string;
+  expenseDate: string;
+  toDate: string;
+  fromLocation: string;
+  toLocation: string;
+  tripType: string;
+  transportationType: string;
+  km: number;
+  travelCost: number;
+  meetingAmount: number;
+  allowance: number;
+  otherAmount: number;
+  total: number;
+  hrApproved: boolean;
+  hrStatus: string;
+  description: string;
+};
+
+type PayoutExpenseRow = {
+  hr_id: string | null;
+  trip_id: string | null;
+  expense_date: string | null;
+  to_date: string | null;
+  from_location: string | null;
+  to_location: string | null;
+  location: string | null;
+  trip_type: string | null;
+  transportation_type: string | null;
+  km: number | null;
+  travel_cost: number | null;
+  meeting_amount: number | null;
+  allowance: number | null;
+  other_amount: number | null;
+  total: number | null;
+  hr_approved: boolean | null;
+  hr_status: string | null;
+  description: string | null;
+};
+
+/** PostgREST's default cap — same pagination pattern as outstation/geocode-warmup.ts. */
+const EXPENSE_PAGE_SIZE = 1000;
+
+function text(value: string | null | undefined): string {
+  return (value ?? "").toString().trim();
+}
+
 /**
  * Owner-corrected expense source (2026-07-20): the real payroll expenses live in the
  * legacy `outstation_expenses` table keyed by payout_month/payout_year — the new
- * `outstation_expense_requests` table the Copilot feeder reads is near-empty. Sums
- * HR-approved rows per employee. Defensive: empty map on any failure.
+ * `outstation_expense_requests` table the Copilot feeder reads is near-empty.
+ *
+ * Returns the individual TRIPS per employee, not just their sum (owner request
+ * 2026-08-01: "which days, where"). recommendExpenses adds them up, so the money
+ * and the breakdown can never disagree — there is one query and one list.
+ *
+ * Paginated: the previous single unbounded select was silently capped at
+ * PostgREST's 1000-row default, which would have under-reimbursed a busy month
+ * with no error. Live volumes are ~30-80 rows/month (checked 2026-08-01), so
+ * this was not yet biting — the loop keeps it from ever starting.
+ *
+ * Defensive: empty map on any failure.
  */
-async function loadPayoutExpenses(period: PayrollPeriod): Promise<Map<string, number>> {
-  const totals = new Map<string, number>();
+async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string, PayoutExpenseTrip[]>> {
+  const byCompact = new Map<string, PayoutExpenseTrip[]>();
   try {
-    // All expenses whose payout period is this payroll month. The wizard IS the HR
-    // confirmation point (recommend → confirm/edit), so pending-approval rows are surfaced
-    // too; HR zeroes out anything that shouldn't pay. Already-imported rows are skipped so a
-    // re-run never double-pays.
-    const { data, error } = await getSupabaseAdmin()
-      .from("outstation_expenses")
-      .select("hr_id,total,imported_payroll_batch_id")
-      .eq("payout_month", period.month)
-      .eq("payout_year", period.year)
-      .is("imported_payroll_batch_id", null);
-    if (error) {
-      logError("Automated payroll: payout expenses load failed", {
-        labels: { event: "automated_payroll_payout_expenses_load_failed", month: period.month, year: period.year },
-        error,
-      });
-      return totals;
-    }
-    for (const row of (data ?? []) as Array<{ hr_id: string | null; total: number | null }>) {
-      const compact = compactHrKey(row.hr_id ?? "");
-      if (!compact) continue;
-      totals.set(compact, roundCurrency((totals.get(compact) ?? 0) + Number(row.total ?? 0)));
+    for (let from = 0; ; from += EXPENSE_PAGE_SIZE) {
+      // All expenses whose payout period is this payroll month. The wizard IS the HR
+      // confirmation point (recommend → confirm/edit), so pending-approval rows are surfaced
+      // too; HR zeroes out anything that shouldn't pay — and each trip's own hr_approved now
+      // shows in the row's detail panel, so "pending" is visible rather than merely implied.
+      // Already-imported rows are skipped so a re-run never double-pays.
+      const { data, error } = await getSupabaseAdmin()
+        .from("outstation_expenses")
+        .select(
+          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,hr_approved,hr_status,description",
+        )
+        .eq("payout_month", period.month)
+        .eq("payout_year", period.year)
+        .is("imported_payroll_batch_id", null)
+        .order("expense_date", { ascending: true })
+        .range(from, from + EXPENSE_PAGE_SIZE - 1);
+      if (error) {
+        logError("Automated payroll: payout expenses load failed", {
+          labels: { event: "automated_payroll_payout_expenses_load_failed", month: period.month, year: period.year },
+          error,
+        });
+        return byCompact;
+      }
+      const rows = (data ?? []) as PayoutExpenseRow[];
+      for (const row of rows) {
+        const compact = compactHrKey(row.hr_id ?? "");
+        if (!compact) continue;
+        const trips = byCompact.get(compact) ?? [];
+        trips.push({
+          allowance: Number(row.allowance ?? 0),
+          description: text(row.description),
+          expenseDate: text(row.expense_date).slice(0, 10),
+          fromLocation: text(row.from_location),
+          hrApproved: row.hr_approved === true,
+          hrStatus: text(row.hr_status),
+          km: Number(row.km ?? 0),
+          meetingAmount: Number(row.meeting_amount ?? 0),
+          otherAmount: Number(row.other_amount ?? 0),
+          toDate: text(row.to_date).slice(0, 10),
+          // `location` is the legacy single-field fallback used when the upload
+          // didn't split from/to (11 of 97 live rows) — same precedence as
+          // outstation/geocode-warmup.ts.
+          toLocation: text(row.to_location) || text(row.location),
+          total: Number(row.total ?? 0),
+          transportationType: text(row.transportation_type),
+          travelCost: Number(row.travel_cost ?? 0),
+          tripId: text(row.trip_id),
+          tripType: text(row.trip_type),
+        });
+        byCompact.set(compact, trips);
+      }
+      if (rows.length < EXPENSE_PAGE_SIZE) break;
     }
   } catch (error) {
     logError("Automated payroll: payout expenses load threw an exception", {
@@ -285,7 +403,15 @@ async function loadPayoutExpenses(period: PayrollPeriod): Promise<Map<string, nu
       error,
     });
   }
-  return totals;
+  return byCompact;
+}
+
+/** "2026-06-01" for a single-day trip, "2026-06-01 → 2026-06-02" for an overnight one. */
+export function formatDateRange(startIso: string, endIso: string): string {
+  const start = (startIso ?? "").slice(0, 10);
+  const end = (endIso ?? "").slice(0, 10);
+  if (start && end && start !== end) return `${start} → ${end}`;
+  return start || end || "—";
 }
 
 /** Compact-keyed set of dates on which each employee has a fingerprint punch (office day). */
@@ -406,13 +532,25 @@ async function loadV2VacationDatesByCompact(period: PayrollPeriod): Promise<Map<
 const LEAVER_VISIT_TYPE_TO_STATUS = new Map<number, "AV" | "CP">([
   [-1, "CP"], // Conference
   [-2, "CP"], // Group Meeting
-  [-4, "AV"], // Annual Vacation
+  [-4, "AV"], // Annual Vacation — the only genuine leave type here
   [-8, "CP"], // Campaign (Prospection)
   [-9, "CP"], // Training
   [-11, "CP"], // Meeting
   [-12, "CP"], // Traveling
-  [-15, "AV"], // Health Day
+  // Health Day is WORKING time, not leave (owner ruling 2026-08-01): "an activity
+  // they do for patients in the dr clinic." Kept in lockstep with the source map
+  // in ireports360-source.ts — see the note there for what the old AV mapping cost.
+  [-15, "CP"],
 ]);
+
+/**
+ * Read accessor for the map above, exported so the AV/CP ruling is unit-testable
+ * without exposing the mutable Map itself. Undefined for a type the map does not
+ * list (callers treat that as CP, matching dayCellValue).
+ */
+export function leaverVisitTypeStatus(visitType: number): "AV" | "CP" | undefined {
+  return LEAVER_VISIT_TYPE_TO_STATUS.get(visitType);
+}
 
 type LeaverVisitRow = {
   visit_date: string | null;
@@ -701,13 +839,8 @@ function monthNameOf(dateText: string): string {
   const year = Number(match[1]);
   const month = Number(match[2]);
   if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) return "later";
-  return `${MONTH_NAMES[month - 1]} ${year}`;
+  return monthNameAndYear(month, year);
 }
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-] as const;
 
 /** Aggregate day-based deduction candidates per employee → { days, value }. Exported for tests. */
 export function aggregateDeductionRows(
@@ -774,16 +907,52 @@ async function recommendExpenses(
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
-  const totals = await loadPayoutExpenses(period);
+  const tripsByCompact = await loadPayoutExpenseTrips(period);
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
-  for (const [compact, amount] of totals) {
+  for (const [compact, trips] of tripsByCompact) {
     const member = byCompact.get(compact);
     if (!member) continue;
     const draft = drafts.get(compact);
-    const value = roundCurrency(amount);
+
+    // Identical running-round accumulation to the pre-detail version — the
+    // reimbursed figure must not move by a piastre just because the breakdown
+    // is now visible.
+    let value = 0;
+    for (const trip of trips) value = roundCurrency(value + trip.total);
+
+    const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
+    const tripEndDates = trips.map((trip) => trip.toDate || trip.expenseDate).filter(Boolean).sort();
+
     const row = baseRow(member);
-    row.context = { "Hire Date": member.employee.hireDate ?? "" };
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      // Declared as a context column since the module shipped (2026-07-20) but
+      // never populated, so it rendered blank in the grid, the mobile card AND
+      // the xlsx. Fixed here.
+      Trips: trips.length,
+      "Trip Dates": tripDates.length
+        ? formatDateRange(tripDates[0], tripEndDates[tripEndDates.length - 1] ?? tripDates[tripDates.length - 1])
+        : "—",
+    };
+    row.details = trips.map((trip) => ({
+      Dates: formatDateRange(trip.expenseDate, trip.toDate),
+      From: trip.fromLocation || "—",
+      To: trip.toLocation || "—",
+      "Trip Type": trip.tripType || "—",
+      Transport: trip.transportationType || "—",
+      KM: trip.km,
+      Travel: trip.travelCost,
+      Meeting: trip.meetingAmount,
+      Allowance: trip.allowance,
+      Other: trip.otherAmount,
+      Total: trip.total,
+      // hr_status is blank on every live row, so hr_approved is the real signal;
+      // fall back to hr_status only if a future import starts populating it.
+      "HR Approved": trip.hrApproved ? "Yes" : trip.hrStatus || "Not yet approved",
+      Description: trip.description || "—",
+      "Trip ID": trip.tripId || "—",
+    }));
     row.recommended = { expenses: value };
     row.values = { expenses: pick(draft?.expenses, value) };
     rows.push(row);
@@ -797,6 +966,12 @@ type VacationDeductionTotal = {
   crmDays: number;
   crmUnpaidDays: number;
   crmAmount: number;
+  /**
+   * CRM leave days the employee's balance absorbed, costing no salary. Surfaced
+   * so a 0-deduction row explains itself: those employees are on this step
+   * because confirming it debits their balance, not because they owe money.
+   */
+  crmBalanceDays: number;
 };
 
 /**
@@ -834,15 +1009,26 @@ export async function computeVacationDeductionTotals(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
-): Promise<{ totals: Map<string, VacationDeductionTotal>; crmLeaveSettlements: CrmLeaveBalanceSettlement[] }> {
+): Promise<{
+  totals: Map<string, VacationDeductionTotal>;
+  crmLeaveSettlements: CrmLeaveBalanceSettlement[];
+  detailsByCompact: Map<string, StepRowDetail[]>;
+}> {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const totals = new Map<string, VacationDeductionTotal>();
   const crmLeaveSettlements: CrmLeaveBalanceSettlement[] = [];
+  const detailsByCompact = new Map<string, StepRowDetail[]>();
   const ensure = (compact: string) => {
     const existing =
-      totals.get(compact) ?? { v2Days: 0, v2Amount: 0, crmDays: 0, crmUnpaidDays: 0, crmAmount: 0 };
+      totals.get(compact) ??
+      { v2Days: 0, v2Amount: 0, crmDays: 0, crmUnpaidDays: 0, crmAmount: 0, crmBalanceDays: 0 };
     totals.set(compact, existing);
     return existing;
+  };
+  const addDetail = (compact: string, line: StepRowDetail) => {
+    const lines = detailsByCompact.get(compact) ?? [];
+    lines.push(line);
+    detailsByCompact.set(compact, lines);
   };
 
   // 1) Phoenix-submitted unpaid vacations (existing v2 balance-aware settlement).
@@ -853,6 +1039,24 @@ export async function computeVacationDeductionTotals(
     const entry = ensure(compact);
     entry.v2Days += Number(candidate.unpaidDays ?? 0);
     entry.v2Amount += roundCurrency(candidate.salaryDeductionAmount);
+    // Deliberately reports "Covered by Balance" as 0 and deducts the full
+    // salaryDeductionAmount, mirroring what the line above actually adds up.
+    // listUnpaidVacationCandidates only returns requests already carrying
+    // payment_status='unpaid', so the balance question was settled when the
+    // request was classified; its balanceDaysToConsume figure is advice for the
+    // Copilot's separate settle-from-balance workflow, NOT a reduction applied
+    // here. Showing it as coverage would imply a smaller deduction than the row
+    // actually charges.
+    addDetail(compact, {
+      Source: "Phoenix request",
+      Dates: formatDateRange(candidate.startDate, candidate.endDate),
+      Type: candidate.vacationType,
+      Days: roundCurrency(Number(candidate.unpaidDays ?? 0)),
+      "Covered by Balance": 0,
+      "Deducted Days": roundCurrency(Number(candidate.unpaidDays ?? 0)),
+      Deduction: roundCurrency(candidate.salaryDeductionAmount),
+      Basis: "Request already marked unpaid — deducted in full",
+    });
   }
 
   // 2) CRM-recorded leave (owner rule 2026-07-20): the balance covers what it can; the
@@ -895,6 +1099,7 @@ export async function computeVacationDeductionTotals(
     entry.crmDays += crmOnly.length;
     entry.crmUnpaidDays += unpaidDays;
     entry.crmAmount += amount;
+    entry.crmBalanceDays += Math.min(Math.floor(balanceDays), crmOnly.length);
     crmLeaveSettlements.push({
       balanceDaysConsumed: roundCurrency(Math.min(balanceDays, crmOnly.length)),
       compact,
@@ -904,9 +1109,33 @@ export async function computeVacationDeductionTotals(
       totalDays: crmOnly.length,
       unpaidDays,
     });
+
+    // One line per CRM leave DATE — this is the "which days" the aggregate hides.
+    // crmOnly is already sorted, and the balance is consumed in date order, so
+    // the first `covered` dates are the free ones and the rest are charged. The
+    // charged dates split `amount` exactly (see distributeAmount) so the panel
+    // always foots to the row's Deduction Value.
+    const coveredCount = Math.min(Math.floor(balanceDays), crmOnly.length);
+    const perDeductedDay = distributeAmount(amount, crmOnly.length - coveredCount);
+    crmOnly.forEach((dateIso, index) => {
+      const isCovered = index < coveredCount;
+      addDetail(compact, {
+        Source: "CRM leave",
+        Dates: dateIso,
+        // Annual Vacation (-4) only. Health Day (-15) is working time and no
+        // longer classifies as leave at all, so it never reaches this step —
+        // see LEAVER_VISIT_TYPE_TO_STATUS.
+        Type: "Annual vacation",
+        Days: 1,
+        "Covered by Balance": isCovered ? 1 : 0,
+        "Deducted Days": isCovered ? 0 : 1,
+        Deduction: isCovered ? 0 : (perDeductedDay[index - coveredCount] ?? 0),
+        Basis: isCovered ? "Vacation balance covered it" : "Beyond balance — deducted from salary",
+      });
+    });
   }
 
-  return { crmLeaveSettlements, totals };
+  return { crmLeaveSettlements, detailsByCompact, totals };
 }
 
 /**
@@ -974,7 +1203,7 @@ async function recommendVacation(
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
-  const { totals } = await computeVacationDeductionTotals(members, sources, period);
+  const { totals, detailsByCompact } = await computeVacationDeductionTotals(members, sources, period);
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
   for (const [compact, total] of totals) {
@@ -984,26 +1213,131 @@ async function recommendVacation(
     if (!member || isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
     const draft = drafts.get(compact);
     const amount = roundCurrency(total.v2Amount + total.crmAmount);
+
+    // This step is "Vacation (NO balance)" — it exists to decide salary
+    // deductions. An employee whose leave the balance fully absorbed owes
+    // nothing and has nothing for HR to decide, so listing them is noise
+    // (owner, 2026-08-01: "still showing employees have normal vacation
+    // balance").
+    //
+    // Safe to hide because the balance draw-down does NOT come from these rows:
+    // confirming the step recomputes crmLeaveSettlements straight from
+    // computeVacationDeductionTotals (run-service.ts), independently of what is
+    // displayed — so a hidden employee's balance is still debited exactly as
+    // before. A row HR has manually typed a value into is always kept, so an
+    // edit can never disappear.
+    const draftedAmount = draft?.unpaidVacations ?? 0;
+    if (amount === 0 && draftedAmount === 0) continue;
+
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
       "Unpaid Days (Phoenix)": roundCurrency(total.v2Days),
       "CRM Leave Days": roundCurrency(total.crmDays),
+      // Partial coverage: how many of those leave days the balance absorbed, so
+      // the remaining deducted days are explainable.
+      "Balance Days Used": roundCurrency(total.crmBalanceDays),
       "CRM Unpaid (no balance)": roundCurrency(total.crmUnpaidDays),
     };
+    row.details = detailsByCompact.get(compact) ?? [];
     row.recommended = { unpaidVacations: amount };
     row.values = { unpaidVacations: pick(draft?.unpaidVacations, amount) };
     rows.push(row);
   }
+
+  // Anyone actually losing salary first; balance-only rows (deduction 0) sink to
+  // the bottom. They must stay ON the step — settleCrmLeaveBalanceForPeriod
+  // debits their balance when it is confirmed (owner rule 2026-07-21), so
+  // dropping them would silently gift free leave days — but they should not be
+  // the first thing HR reads when scanning for money.
+  rows.sort((left, right) => (right.values.unpaidVacations ?? 0) - (left.values.unpaidVacations ?? 0));
   return rows;
 }
 
-type CrmDeductionTotal = { days: number; value: number; officeExcluded: number };
+type CrmDeductionTotal = {
+  days: number;
+  value: number;
+  officeExcluded: number;
+  /** How many of this employee's flagged days they have already written an explanation for. */
+  explained: number;
+  details: StepRowDetail[];
+};
+
+const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+/** "Tuesday" for a yyyy-mm-dd date, "" if unparseable. Exported for tests. */
+export function weekdayName(dateIso: string): string {
+  const ms = Date.parse(`${(dateIso ?? "").slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(ms)) return "";
+  return WEEKDAY_NAMES[new Date(ms).getUTCDay()];
+}
+
+type NoActivityNote = { note: string; resolution: string | null; confirmedNoActivity: boolean };
+
+/**
+ * What each employee already SAID about a flagged no-activity day, keyed
+ * `compact|date`.
+ *
+ * An employee can explain a "No Activity Recorded" day in the private-calendar
+ * workspace and HR resolves it deducted / not_deducted. None of that reached
+ * payroll: checked in production 2026-08-01, July had 92 clarifications filed
+ * and 0 decided, so this step was about to deduct days people had already
+ * explained. Read-only here — deciding still belongs to the No Activity Days
+ * workspace; this only stops HR confirming the step blind.
+ *
+ * Deliberately a direct defensive read rather than getCompanyNoActivityReport():
+ * that one asserts a deductions-governance DECISION actor, which a Payroll
+ * Specialist need not be — it would throw and take the whole step down. A
+ * missing note must never block the money.
+ */
+async function loadNoActivityNotes(startIso: string, endIso: string): Promise<Map<string, NoActivityNote>> {
+  const byKey = new Map<string, NoActivityNote>();
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("private_calendar_no_activity_clarifications")
+      .select("employee_hr_id,activity_date,clarification_text,confirmed_no_activity,resolution")
+      .gte("activity_date", startIso)
+      .lte("activity_date", endIso);
+    if (error) {
+      logError("Automated payroll: no-activity clarifications load failed (non-fatal)", {
+        labels: { event: "automated_payroll_no_activity_notes_load_failed", startIso, endIso },
+        error,
+      });
+      return byKey;
+    }
+    for (const row of (data ?? []) as Array<{
+      employee_hr_id: string | null;
+      activity_date: string | null;
+      clarification_text: string | null;
+      confirmed_no_activity: boolean | null;
+      resolution: string | null;
+    }>) {
+      const compact = compactHrKey(row.employee_hr_id ?? "");
+      const dateIso = (row.activity_date ?? "").slice(0, 10);
+      if (!compact || !dateIso) continue;
+      byKey.set(`${compact}|${dateIso}`, {
+        confirmedNoActivity: row.confirmed_no_activity === true,
+        note: (row.clarification_text ?? "").trim(),
+        resolution: row.resolution,
+      });
+    }
+  } catch (error) {
+    logError("Automated payroll: no-activity clarifications load threw an exception", {
+      labels: { event: "automated_payroll_no_activity_notes_load_threw", startIso, endIso },
+      error,
+    });
+  }
+  return byKey;
+}
 
 /**
  * CRM no-activity deduction totals for every member (punch-excluded, owner rule
  * 2026-07-20). Shared by the Part-2 CRM step (everyone except leavers) and the
  * Resignation step (leavers only).
+ *
+ * Also builds the per-day breakdown behind each total (owner request
+ * 2026-08-01), including the days EXCLUDED as office punches — "3 days were
+ * excluded" is unverifiable without seeing which three.
  */
 async function computeCrmDeductionTotals(
   access: AccessContext,
@@ -1011,14 +1345,34 @@ async function computeCrmDeductionTotals(
   sources: Map<string, PayrollSalarySource>,
   period: PayrollPeriod,
 ): Promise<Map<string, CrmDeductionTotal>> {
+  // Refresh the CURRENT month's pending candidates before reading them.
+  //
+  // `deduction_candidates` is only written in bulk by a sync that runs the
+  // following month (verified in production 2026-08-01: May's rows were created
+  // 6 Jun, June's on 7 Jul, and month_key 2026-07 did not exist at all). So a
+  // run processed inside its own month saw almost nothing and silently
+  // UNDER-deducted: for the July run, whose cycle is 24 Jun - 23 Jul, only the
+  // handful of June-dated candidates on/after the 24th survived the window
+  // filter — AI-0002 could show at most 1 day while 1-23 July went unmeasured.
+  //
+  // Payroll Copilot's own CRM tab has always called this before reading
+  // (app/api/payroll/copilot/[runId]/deductions/crm/route.ts); Automated Payroll
+  // never did, so the two screens disagreed while sharing one table. Insert-only,
+  // idempotent, and it swallows its own errors — a sync failure degrades to the
+  // old already-synced view rather than blocking payroll.
+  await syncCrmLiveMonthCandidates(period, actorId(access));
+
   const { rows: candidates } = await listCrmDeductionCandidates(access, period);
   // Owner rule (2026-07-20): a no-CRM-activity day with a fingerprint punch is an office
   // day, not an absence — drop punched dates before deducting (field reps show CRM activity
   // only on field-visit days; office days have a punch and no CRM visit).
-  const punchedByCompact = await loadPunchedDatesByCompact(
-    period,
-    members.map((member) => member.employee.hrId),
-  );
+  // The notes window is the day-24 payroll cycle these candidates are scoped to, NOT the
+  // calendar month — see stepWindowLabel.
+  const cycle = resolveCycleWindow(`${period.year}-${pad2(period.month)}-01`);
+  const [punchedByCompact, notesByKey] = await Promise.all([
+    loadPunchedDatesByCompact(period, members.map((member) => member.employee.hrId)),
+    loadNoActivityNotes(cycle.startIso, cycle.endIso),
+  ]);
 
   const totals = new Map<string, CrmDeductionTotal>();
   for (const candidate of candidates) {
@@ -1038,10 +1392,46 @@ async function computeCrmDeductionTotals(
         baseSalary: source?.baseSalary ?? undefined,
         deductionDays: days,
       }) ?? 0;
-    const existing = totals.get(compact) ?? { days: 0, value: 0, officeExcluded: 0 };
+    const existing =
+      totals.get(compact) ?? { days: 0, value: 0, officeExcluded: 0, explained: 0, details: [] };
     existing.days += days;
     existing.value += value;
     existing.officeExcluded += excluded;
+
+    // Per-day breakdown. The deducted days split this candidate's own `value`
+    // exactly, so the panel always foots to the row's Deduction Value.
+    const keptSet = new Set(keptDates);
+    const perDeductedDay = distributeAmount(roundCurrency(value), keptDates.length);
+    let deductedIndex = 0;
+    for (const dateIso of [...candidateDates].sort()) {
+      const isDeducted = keptSet.has(dateIso);
+      const note = notesByKey.get(`${compact}|${dateIso}`);
+      if (note && note.note) existing.explained += 1;
+      existing.details.push({
+        Date: dateIso,
+        Weekday: weekdayName(dateIso),
+        Outcome: isDeducted ? "Deducted" : "Excluded — fingerprint punch (office day)",
+        Deduction: isDeducted ? (perDeductedDay[deductedIndex++] ?? 0) : 0,
+        "Employee Note": note?.note || (note?.confirmedNoActivity ? "Confirmed no activity" : "—"),
+        "HR Resolution": note ? (note.resolution ?? "Awaiting HR decision") : "—",
+      });
+    }
+
+    // A candidate can carry a raw day COUNT with no per-day dates (the fallback
+    // the `days` line above already handles for the money). Without this the
+    // panel would silently foot to less than the row it explains, which reads as
+    // a bug in the deduction rather than as missing source data. Say so instead.
+    if (candidateDates.length === 0) {
+      existing.details.push({
+        Date: "—",
+        Weekday: "—",
+        Outcome: `${roundCurrency(days)} day(s) flagged — source recorded no per-day dates`,
+        Deduction: roundCurrency(value),
+        "Employee Note": "—",
+        "HR Resolution": "—",
+      });
+    }
+
     totals.set(compact, existing);
   }
 
@@ -1070,7 +1460,13 @@ async function recommendCrm(
       "Hire Date": member.employee.hireDate ?? "",
       "No-Activity Days": roundCurrency(total.days),
       "Office (punched)": total.officeExcluded,
+      // Days the employee has already written an explanation for. Non-zero here
+      // means confirming this step deducts days someone has contested.
+      Explained: total.explained,
     };
+    row.details = [...total.details].sort((left, right) =>
+      String(left.Date ?? "").localeCompare(String(right.Date ?? "")),
+    );
     row.recommended = { crm: value };
     row.values = { crm: pick(draft?.crm, value) };
     rows.push(row);

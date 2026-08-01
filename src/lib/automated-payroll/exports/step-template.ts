@@ -152,5 +152,82 @@ export async function buildStepTemplateWorkbook(input: {
   sheet.getColumn(3).width = 26;
   sheet.views = [{ state: "frozen", ySplit: headerRowNumber, showGridLines: false }];
 
+  appendDetailSheet(workbook, input);
+
   return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
+}
+
+/**
+ * Second, read-only "Detail" worksheet: every source line behind every row —
+ * the individual trips behind an expense total, the individual days behind a
+ * deduction (owner request 2026-08-01). Keyed by HR_ID so it can be pivoted or
+ * VLOOKUP'd against the editable first sheet.
+ *
+ * Deliberately the SECOND sheet and never parsed back: the re-upload parser
+ * reads `firstExcelWorksheet` only, so nothing here can be edited into the
+ * payroll. Skipped entirely for steps with no `detailColumns`.
+ */
+function appendDetailSheet(
+  workbook: ExcelJS.Workbook,
+  input: { run: MonthlySalaryRun; stepKey: StepKey; rows: StepRow[] },
+): void {
+  const definition = stepDefinition(input.stepKey);
+  const detailColumns = definition.detailColumns ?? [];
+  if (detailColumns.length === 0) return;
+  if (!input.rows.some((row) => (row.details?.length ?? 0) > 0)) return;
+
+  const sheet = workbook.addWorksheet("Detail");
+  const labels = ["HR_ID", "Full Name", ...detailColumns.map((column) => column.label)];
+
+  bandHeader(
+    sheet,
+    labels.length,
+    `${definition.title} — breakdown — ${monthLabel(input.run.month, input.run.year)}`,
+    "Read-only. Every line behind each employee's figure on the first sheet. Edits here are ignored on re-upload.",
+  );
+
+  const headerRowNumber = 5;
+  const headerRow = sheet.getRow(headerRowNumber);
+  labels.forEach((label, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = label;
+    cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
+    cell.border = gridBorder();
+  });
+  headerRow.height = 28;
+
+  let rowNumber = headerRowNumber + 1;
+  for (const row of input.rows) {
+    for (const line of row.details ?? []) {
+      const excelRow = sheet.getRow(rowNumber);
+      const values: (string | number)[] = [
+        row.hrId,
+        row.fullName,
+        ...detailColumns.map((column) => {
+          const value = line[column.key];
+          if (column.money) return Number(value ?? 0);
+          return value == null ? "" : (value as string | number);
+        }),
+      ];
+      values.forEach((value, index) => {
+        const cell = excelRow.getCell(index + 1);
+        cell.value = value;
+        const isMoney = index >= 2 && detailColumns[index - 2]?.money === true;
+        if (isMoney && typeof value === "number") cell.numFmt = VALUE_FMT;
+        cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
+        cell.alignment = { horizontal: isMoney ? "right" : "left", vertical: "middle" };
+        cell.border = gridBorder();
+        cell.fill = { fgColor: { argb: RECOMMENDED_FILL }, pattern: "solid", type: "pattern" };
+      });
+      rowNumber += 1;
+    }
+  }
+
+  labels.forEach((label, index) => {
+    sheet.getColumn(index + 1).width = Math.min(34, Math.max(12, label.length + 2));
+  });
+  sheet.getColumn(2).width = 26;
+  sheet.views = [{ state: "frozen", ySplit: headerRowNumber, showGridLines: false }];
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Info } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,9 @@ import {
   enteredOnThisStepAmount,
   hasDoubleDeductionConflict,
 } from "@/lib/automated-payroll/conflicts";
-import { stepDefinition } from "@/lib/automated-payroll/step-definitions";
+import { stepDefinition, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
 import type {
+  PayrollPeriod,
   StepDefinition,
   StepEditInput,
   StepImportPreview,
@@ -47,6 +48,8 @@ const fieldClassName =
  */
 function gridTemplate(definition: StepDefinition): string {
   const columns = [
+    // Row expander (chevron) — only on steps that carry a per-line breakdown.
+    ...(definition.detailColumns?.length ? ["26px"] : []),
     "92px", // HR_ID
     "minmax(200px,1.4fr)", // Employee
     ...definition.contextColumns.map(() => "minmax(112px,1fr)"),
@@ -61,15 +64,78 @@ function gridTemplate(definition: StepDefinition): string {
   return columns.join(" ");
 }
 
+/**
+ * The read-only per-line breakdown behind one row's figure — the trips behind an
+ * expense total, the days behind a deduction (owner request 2026-08-01).
+ *
+ * Scrolls horizontally inside its own container rather than truncating: locations
+ * are Arabic free text and routinely long, and this repo's standing rule is that
+ * data is never clipped or wrapped away. `dir="auto"` so Arabic renders RTL in an
+ * otherwise LTR grid.
+ */
+function DetailPanel({ definition, row }: { definition: StepDefinition; row: StepRow }) {
+  const columns = definition.detailColumns ?? [];
+  const lines = row.details ?? [];
+  if (columns.length === 0 || lines.length === 0) return null;
+  const template = columns
+    .map((column) => (column.money ? "minmax(96px,0.7fr)" : "minmax(120px,1fr)"))
+    .join(" ");
+  return (
+    <div className="overflow-x-auto border-t border-slate-200 bg-slate-50/80 px-3 py-2">
+      <div className="min-w-max">
+        <div className="grid gap-x-4 border-b border-slate-300 pb-1.5" style={{ gridTemplateColumns: template }}>
+          {columns.map((column) => (
+            <div
+              key={column.key}
+              className={cn(
+                "whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-slate-500",
+                column.money && "text-right",
+              )}
+            >
+              {column.label}
+            </div>
+          ))}
+        </div>
+        {lines.map((line, index) => (
+          <div
+            key={index}
+            className="grid gap-x-4 border-b border-slate-200/70 py-1.5 last:border-b-0"
+            style={{ gridTemplateColumns: template }}
+          >
+            {columns.map((column) => {
+              const value = line[column.key];
+              return (
+                <div
+                  key={column.key}
+                  dir={column.money ? "ltr" : "auto"}
+                  className={cn(
+                    "whitespace-nowrap text-xs text-slate-700",
+                    column.money && "text-right tabular-nums",
+                  )}
+                >
+                  {column.money ? money(Number(value ?? 0)) : String(value ?? "—")}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfirmed }: Props) {
   const definition = stepDefinition(stepKey);
   const [rows, setRows] = useState<StepRow[]>([]);
+  const [period, setPeriod] = useState<PayrollPeriod | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [preview, setPreview] = useState<StepImportPreview | null>(null);
   const [search, setSearch] = useState("");
+  /** hrIds whose per-line breakdown is open. Keyed by hrId, never by index — see setValue. */
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -80,6 +146,10 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load step.");
       setRows(data.rows as StepRow[]);
+      const run = data.run as { month?: number; year?: number } | undefined;
+      setPeriod(
+        run?.month && run?.year ? { month: Number(run.month), year: Number(run.year) } : null,
+      );
       setDirty(false);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load step.");
@@ -87,6 +157,15 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
       setLoading(false);
     }
   }, [runId, stepKey]);
+
+  const toggleExpanded = (hrId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(hrId)) next.delete(hrId);
+      else next.add(hrId);
+      return next;
+    });
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -309,6 +388,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
 
   const template = useMemo(() => gridTemplate(definition), [definition]);
 
+  const windowLabel = useMemo(
+    () => (period ? stepWindowLabel(stepKey, period) : null),
+    [period, stepKey],
+  );
+
+  /** Steps that carry a per-line breakdown get an expander column in front of HR_ID. */
+  const hasDetail = (definition.detailColumns?.length ?? 0) > 0;
+  const detailNoun = definition.detailNoun ?? "line";
+  const detailNounPlural = definition.detailNounPlural ?? `${detailNoun}s`;
+  const detailCount = (row: StepRow) => row.details?.length ?? 0;
+  const detailLabel = (row: StepRow) => {
+    const count = detailCount(row);
+    return `${count} ${count === 1 ? detailNoun : detailNounPlural}`;
+  };
+
   /** Search/filter by HR_ID or name — client-side over the already-loaded rows, so it
    * never touches the server and works instantly even on a large population. */
   const filteredRows = useMemo(() => {
@@ -346,6 +440,14 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
         <div>
           <h3 className="text-base font-black tracking-tight text-slate-900">{definition.title}</h3>
           <p className="mt-0.5 text-sm text-slate-500">{definition.subtitle}</p>
+          {/* The three Part-2 feeder steps cover DIFFERENT date ranges and used to
+              say nothing about it, which makes a correct figure look wrong. */}
+          {windowLabel ? (
+            <p className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-slate-600">
+              <Info className="mt-0.5 size-3.5 shrink-0 text-orange-500" />
+              <span>{windowLabel}</span>
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           {confirmed ? (
@@ -464,6 +566,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                 className="grid items-center gap-x-3 bg-slate-900 px-3 py-2.5"
                 style={{ gridTemplateColumns: template }}
               >
+                {hasDetail ? <div aria-hidden /> : null}
                 <div className="overflow-hidden text-[11px] font-bold uppercase tracking-wide text-slate-300">HR_ID</div>
                 <div className="overflow-hidden text-[11px] font-bold uppercase tracking-wide text-slate-300">Employee</div>
                 {definition.contextColumns.map((column) => (
@@ -495,9 +598,11 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
 
               {filteredRows.map((row, index) => {
                 const tone = rowTone(row);
+                const isExpanded = expanded.has(row.hrId);
+                const lineCount = detailCount(row);
                 return (
+                  <div key={row.hrId}>
                   <div
-                    key={row.hrId}
                     className={cn(
                       "grid items-center gap-x-3 border-b border-slate-200 px-3 py-2 transition-colors hover:bg-slate-100/70",
                       tone === "hold" && "bg-rose-50 hover:bg-rose-50",
@@ -508,6 +613,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     )}
                     style={{ gridTemplateColumns: template }}
                   >
+                    {hasDetail ? (
+                      lineCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(row.hrId)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? "Hide" : "Show"} the ${detailLabel(row)} behind ${row.fullName}'s figure`}
+                          className="flex size-5 items-center justify-center text-slate-400 transition hover:text-orange-600"
+                        >
+                          {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                        </button>
+                      ) : (
+                        <div aria-hidden />
+                      )
+                    ) : null}
                     <div className="overflow-hidden font-mono text-xs text-slate-500">
                       <span className="whitespace-nowrap">{row.hrId}</span>
                     </div>
@@ -526,6 +646,15 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                         <Badge variant="neutral" className="shrink-0" title={row.readOnlyNote}>
                           Notice period
                         </Badge>
+                      ) : null}
+                      {hasDetail && lineCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(row.hrId)}
+                          className="shrink-0 whitespace-nowrap text-xs font-medium text-orange-600 underline-offset-2 hover:underline"
+                        >
+                          {detailLabel(row)}
+                        </button>
                       ) : null}
                     </div>
                     {definition.contextColumns.map((column) => (
@@ -598,6 +727,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                       />
                     ) : null}
                   </div>
+                  {isExpanded ? <DetailPanel definition={definition} row={row} /> : null}
+                  </div>
                 );
               })}
             </div>
@@ -607,6 +738,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
           <div className="flex flex-col gap-2 md:hidden">
             {filteredRows.map((row) => {
               const tone = rowTone(row);
+              const isExpanded = expanded.has(row.hrId);
+              const lineCount = detailCount(row);
               return (
                 <div
                   key={row.hrId}
@@ -716,6 +849,48 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           className={fieldClassName}
                         />
                       </label>
+                    ) : null}
+
+                    {hasDetail && lineCount > 0 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(row.hrId)}
+                          aria-expanded={isExpanded}
+                          className="flex items-center gap-1 self-start pt-1 text-sm font-medium text-orange-600"
+                        >
+                          {isExpanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+                          {isExpanded ? `Hide ${detailLabel(row)}` : `Show ${detailLabel(row)}`}
+                        </button>
+                        {/* Mobile keeps the repo's card idiom rather than shrinking the
+                            desktop table: one mini-card per line, label/value stacked,
+                            so nothing has to be truncated or side-scrolled. */}
+                        {isExpanded
+                          ? (row.details ?? []).map((line, lineIndex) => (
+                              <div
+                                key={lineIndex}
+                                className="flex flex-col gap-1 border border-slate-200 bg-slate-50 p-2 text-xs"
+                              >
+                                {(definition.detailColumns ?? []).map((column) => (
+                                  <div key={column.key} className="flex items-start justify-between gap-3">
+                                    <span className="shrink-0 text-slate-500">{column.label}</span>
+                                    <span
+                                      dir={column.money ? "ltr" : "auto"}
+                                      className={cn(
+                                        "text-right font-medium text-slate-700",
+                                        column.money && "tabular-nums",
+                                      )}
+                                    >
+                                      {column.money
+                                        ? money(Number(line[column.key] ?? 0))
+                                        : String(line[column.key] ?? "—")}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ))
+                          : null}
+                      </>
                     ) : null}
                   </div>
                 </div>
