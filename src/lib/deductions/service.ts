@@ -219,8 +219,42 @@ export type CandidateDraftInsertResult = {
 // two because those keys go into a PostgREST `in.(…)` filter on the URL, which
 // has a header-size ceiling (see #1294); the insert chunk travels in the body
 // and only needs to stay a reasonable statement size.
-const CANDIDATE_PROBE_CHUNK = 200;
+// The duplicate probe sends candidate_keys in a PostgREST `in.(…)` filter, which
+// travels in the URL. Budget by ENCODED BYTES, not row count: measured in
+// production, candidate_key runs ~69 chars for fingerprint but averages 145 and
+// peaks at 367 for CRM, so a flat 200-row chunk built a ~73 KB URL and the
+// request failed outright. 3,000 encoded chars leaves ample room for the base
+// URL, the select list and the other filters inside a typical 8 KB limit.
+const PROBE_URL_BUDGET_CHARS = 3_000;
 const CANDIDATE_INSERT_CHUNK = 500;
+
+/**
+ * Splits items so the URL-encoded length of their keys stays inside `budget`.
+ * A single oversized key still gets its own chunk rather than being dropped —
+ * losing a candidate silently is far worse than one long request.
+ */
+export function chunkByEncodedLength<T>(
+  items: readonly T[],
+  keyOf: (item: T) => string,
+  budget: number,
+): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let used = 0;
+  for (const item of items) {
+    // +3 for the comma and the quoting PostgREST adds around each value.
+    const cost = encodeURIComponent(keyOf(item)).length + 3;
+    if (current.length > 0 && used + cost > budget) {
+      chunks.push(current);
+      current = [];
+      used = 0;
+    }
+    current.push(item);
+    used += cost;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
 
 /**
  * Exported for test: a chunking bug here does not throw, it silently drops
@@ -356,21 +390,45 @@ export async function insertCandidateDrafts(input: {
   // 2. One probe per chunk instead of one per draft. Filtering on candidate_key
   //    alone and pairing with category in memory keeps the URL short; the
   //    (category, candidate_key) pair is what actually decides a duplicate.
+  //
+  //    Chunked by URL BYTES, not by row count. These keys go into a PostgREST
+  //    `in.(…)` filter that travels in the URL, and candidate_key length varies
+  //    hugely by category — measured in production: fingerprint ~69 chars, crm
+  //    averages 145 and reaches 367. A flat 200-row chunk therefore built a
+  //    ~73 KB URL and the request died as `TypeError: fetch failed`, which
+  //    (correctly) failed the run closed and collected nothing.
   const alreadyLive = new Set<string>();
   let probeFailed = false;
-  for (const chunk of chunkList(deduped, CANDIDATE_PROBE_CHUNK)) {
+
+  const probeChunk = async (chunk: CandidateInsertPayload[]): Promise<boolean> => {
     const probe = await supabase
       .from("deductions_candidates")
       .select("category, candidate_key")
       .in("candidate_key", chunk.map((payload) => payload.candidate_key))
       .is("superseded_at", null);
-    if (probe.error) {
-      warnings.push(`${input.sourceLabel}: duplicate probe failed: ${probe.error.message}`);
+    if (!probe.error) {
+      for (const row of (probe.data ?? []) as Array<{ category: string; candidate_key: string }>) {
+        alreadyLive.add(pairKey(row.category, row.candidate_key));
+      }
+      return true;
+    }
+    // Self-heal rather than trust the budget: if a chunk still fails, split it
+    // and retry. A single key can always be sent alone, so this terminates —
+    // and it means no future key-length surprise can break collection again.
+    if (chunk.length > 1) {
+      const mid = Math.ceil(chunk.length / 2);
+      const left = await probeChunk(chunk.slice(0, mid));
+      const right = await probeChunk(chunk.slice(mid));
+      return left && right;
+    }
+    warnings.push(`${input.sourceLabel}: duplicate probe failed: ${probe.error.message}`);
+    return false;
+  };
+
+  for (const chunk of chunkByEncodedLength(deduped, (payload) => payload.candidate_key, PROBE_URL_BUDGET_CHARS)) {
+    if (!(await probeChunk(chunk))) {
       probeFailed = true;
       break;
-    }
-    for (const row of (probe.data ?? []) as Array<{ category: string; candidate_key: string }>) {
-      alreadyLive.add(pairKey(row.category, row.candidate_key));
     }
   }
   // Fail closed: without a trustworthy probe we cannot tell new from existing,
@@ -486,7 +544,8 @@ export async function insertCandidateDrafts(input: {
         const collisions = findDayCollisions(live);
         for (const collision of collisions.slice(0, 20)) {
           warnings.push(
-            `${input.sourceLabel}: ${collision.employeeName ?? collision.employeeHrId} (${collision.employeeHrId}) is claimed on ${collision.date} by ${collision.categories.join(" + ")} — clear the wrong one or the month cannot be published.`,
+            // Employee NAME only — never the HR code.
+            `${input.sourceLabel}: ${collision.employeeName ?? collision.employeeHrId} is claimed on ${collision.date} by ${collision.categories.join(" + ")} — clear the wrong one or the month cannot be published.`,
           );
         }
         if (collisions.length > 20) {

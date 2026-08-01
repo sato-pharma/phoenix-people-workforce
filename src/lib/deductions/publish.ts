@@ -111,7 +111,9 @@ export async function publishMonth(input: {
   if (collisions.length > 0) {
     const named = collisions
       .slice(0, 10)
-      .map((c) => `${c.employeeName ?? c.employeeHrId} (${c.employeeHrId}) ${c.date} → ${c.categories.join(" + ")}`)
+      // Employee NAME only — never the HR code. HR reads these messages to act
+      // on a person, and a bare code makes them go look it up.
+      .map((c) => `${c.employeeName ?? c.employeeHrId} ${c.date} → ${c.categories.join(" + ")}`)
       .join("; ");
     const more = collisions.length > 10 ? ` …and ${collisions.length - 10} more` : "";
     throw new Error(
@@ -128,7 +130,8 @@ export async function publishMonth(input: {
   if (unresolved.length > 0) {
     const named = unresolved
       .slice(0, 10)
-      .map((candidate) => `${candidate.employeeName ?? candidate.employeeHrId} (${candidate.employeeHrId}, ${candidate.category})`)
+      // Employee NAME only — the category still matters, the HR code does not.
+      .map((candidate) => `${candidate.employeeName ?? candidate.employeeHrId} (${candidate.category})`)
       .join("; ");
     const more = unresolved.length > 10 ? ` …and ${unresolved.length - 10} more` : "";
     throw new Error(

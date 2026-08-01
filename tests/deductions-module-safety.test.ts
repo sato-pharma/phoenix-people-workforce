@@ -346,7 +346,21 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       /for \(const draft of input\.drafts\)[\s\S]{0,2000}?await supabase[\s\S]{0,200}?\.insert\(/,
       "no per-draft insert inside the draft loop — that is the N+1 that burned the 300s budget",
     );
-    assert.match(service, /CANDIDATE_PROBE_CHUNK/, "the duplicate probe must be chunked, not one query per draft");
+    // Chunked by URL BYTES, not row count. candidate_key length varies hugely by
+    // category (production: fingerprint ~69 chars, crm avg 145 / max 367), so a
+    // flat 200-row chunk built a ~73 KB `in.()` URL and died as
+    // "TypeError: fetch failed" — which failed the run closed and collected 0.
+    assert.match(service, /PROBE_URL_BUDGET_CHARS/, "the duplicate probe must be chunked by URL bytes, not row count");
+    assert.match(
+      service,
+      /chunkByEncodedLength\(deduped/,
+      "the probe must size its chunks from the encoded key length",
+    );
+    assert.match(
+      service,
+      /const mid = Math\.ceil\(chunk\.length \/ 2\)/,
+      "a failed probe chunk must split and retry, so no future key length can break collection again",
+    );
     assert.match(service, /CANDIDATE_INSERT_CHUNK/, "candidate and decision inserts must be chunked");
     assert.match(
       service,
