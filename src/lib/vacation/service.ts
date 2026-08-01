@@ -5257,7 +5257,13 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
     employees: visibleEmployees,
     filters: clean,
     rows: visibleRowsWithWarnings,
-    today: toDateOnlyString(new Date()) ?? "",
+    // Africa/Cairo calendar day, matching getVacationRequestPageData's employee-facing twin.
+    // This is the reference date for the whole Entitlements table — balance period, payment
+    // calculation and days-until-eligibility all hang off it. On an employee's hire anniversary
+    // the server's own clock still reads the previous day for the first 2-3 Cairo hours, which
+    // leaves the balance period on the PREVIOUS entitlement year (old accrual, prior-year used
+    // days) and can make HR reject a request that is actually funded.
+    today: currentCairoDateOnlyIso(),
   });
   const latestSlaRun = await fetchLatestVacationSlaRun();
 
