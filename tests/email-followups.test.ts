@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { classifyMarketingSla } from "@/lib/marketing-requests/service.ts";
+import {
+  classifyMarketingSla,
+  classifyMarketingWaitingSla,
+  marketingDaysWaiting,
+  mostUrgentMarketingSla,
+} from "@/lib/marketing-requests/service.ts";
 
 /**
  * Email follow-ups: migration guard, interview templates, marketing SLA.
@@ -17,6 +22,50 @@ export function runEmailFollowupsTests() {
   assert.equal(classifyMarketingSla({ payDate: "2026-06-07", today }), "overdue_reminder", "2 days overdue → overdue");
   assert.equal(classifyMarketingSla({ payDate: "2026-06-06", today }), "escalation", "3+ days overdue → escalation");
   assert.equal(classifyMarketingSla({ payDate: "not-a-date", today }), null, "unparseable date → null");
+
+  // --- Waiting-time SLA (the other clock) ------------------------------------------
+  // The pay-date rule cannot see a request that is simply stuck: one with a pay date months out
+  // stays silent however long an approver holds it. This measures time-in-step instead.
+  const now = "2026-06-09T12:00:00.000Z";
+  const daysAgo = (days: number) => new Date(Date.parse(now) - days * 86_400_000).toISOString();
+
+  assert.equal(classifyMarketingWaitingSla({ now, waitingSince: null }), null, "no step timestamp → null");
+  assert.equal(classifyMarketingWaitingSla({ now, waitingSince: daysAgo(2) }), null, "2 days waiting → nothing yet");
+  assert.equal(
+    classifyMarketingWaitingSla({ now, waitingSince: daysAgo(3) }),
+    "due_date_reminder",
+    "3 days waiting → nudge",
+  );
+  assert.equal(
+    classifyMarketingWaitingSla({ now, waitingSince: daysAgo(7) }),
+    "overdue_reminder",
+    "7 days waiting → overdue",
+  );
+  assert.equal(
+    classifyMarketingWaitingSla({ now, waitingSince: daysAgo(14) }),
+    "escalation",
+    "14 days waiting → escalation",
+  );
+  assert.equal(
+    classifyMarketingWaitingSla({ now, waitingSince: "not-a-date" }),
+    null,
+    "unparseable step timestamp → null, never a false alarm",
+  );
+
+  // A request can trigger both clocks; it must produce ONE notification, the worse of the two.
+  assert.equal(mostUrgentMarketingSla(null, null), null, "neither clock → nothing");
+  assert.equal(mostUrgentMarketingSla("due_date_reminder", null), "due_date_reminder", "one clock only");
+  assert.equal(
+    mostUrgentMarketingSla("due_date_reminder", "escalation"),
+    "escalation",
+    "the worse signal wins, regardless of argument order",
+  );
+  assert.equal(mostUrgentMarketingSla("escalation", "overdue_reminder"), "escalation", "order does not matter");
+
+  // The day count is stated in the message, so it must not go negative on a future timestamp.
+  assert.equal(marketingDaysWaiting(daysAgo(5), now), 5, "whole days waiting");
+  assert.equal(marketingDaysWaiting(daysAgo(-3), now), 0, "a future timestamp floors at 0, never negative");
+  assert.equal(marketingDaysWaiting(null, now), null, "no timestamp → null");
 
   // --- W1: migration guard (source-pattern) ----------------------------------------
   const migration = readFileSync(
