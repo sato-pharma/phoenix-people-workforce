@@ -122,6 +122,38 @@ export async function runCrmDuplicateVisitCollapseTests() {
     "rows differing on rep, day, or visit type are never merged",
   );
 
+  // 6b. NON-REGULAR visit types are exempt entirely: their contact_crm_id is one shared sentinel
+  // (production July 2026 — every type except 0 has exactly ONE distinct contact id and is 0%
+  // contact_name-populated), so it identifies nothing. Real case: rep Hayam.Eladel's 2026-07-30
+  // prospection campaign covered six different pharmacies, each named only in the comment, all
+  // carrying the same sentinel contact. Keying on contact would collapse the day to one row.
+  const campaignDay = [
+    row({ crm_visit_id: 801, visit_type: -8, contact_crm_id: 1, comment: "ص الهادي", crm_save_date: "2026-07-30T18:50:00" }),
+    row({ crm_visit_id: 802, visit_type: -8, contact_crm_id: 1, comment: "ص القاضي", crm_save_date: "2026-07-30T18:50:23" }),
+    row({ crm_visit_id: 803, visit_type: -8, contact_crm_id: 1, comment: "ص الملكه والامير", crm_save_date: "2026-07-30T18:50:41" }),
+    row({ crm_visit_id: 804, visit_type: -8, contact_crm_id: 1, comment: "ص نانسي", crm_save_date: "2026-07-30T18:50:53" }),
+    row({ crm_visit_id: 805, visit_type: -8, contact_crm_id: 1, comment: "ص محمود فوزي", crm_save_date: "2026-07-30T18:51:15" }),
+    row({ crm_visit_id: 806, visit_type: -8, contact_crm_id: 1, comment: "ص هدي", crm_save_date: "2026-07-30T18:52:10" }),
+  ];
+  assert.equal(
+    collapseDuplicateVisitSubmissions(campaignDay).length,
+    6,
+    "a campaign day's six pharmacies share a sentinel contact and must ALL survive",
+  );
+
+  // 6c. Same exemption for vacation/meeting/training types, which share that sentinel too.
+  const nonRegularRepeats = [
+    row({ crm_visit_id: 811, visit_type: -4, contact_crm_id: 1 }),
+    row({ crm_visit_id: 812, visit_type: -4, contact_crm_id: 1 }),
+    row({ crm_visit_id: 813, visit_type: -11, contact_crm_id: 1 }),
+    row({ crm_visit_id: 814, visit_type: -11, contact_crm_id: 1 }),
+  ];
+  assert.equal(
+    collapseDuplicateVisitSubmissions(nonRegularRepeats).length,
+    4,
+    "non-regular types are never collapsed on the sentinel contact",
+  );
+
   // 7. A row with no contact to key on is never grouped — it cannot be proven duplicate.
   const noContact = [
     row({ crm_visit_id: 701, contact_crm_id: null }),
