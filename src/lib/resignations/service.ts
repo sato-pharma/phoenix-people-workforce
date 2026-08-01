@@ -1605,6 +1605,32 @@ export async function runResignationWorkflow(
   if (updateError) throw updateError;
   if (!updated) throw new Error("Resignation workflow was updated by another user. Refresh and try again.");
   const record = mapResignation(updated as ResignationRow);
+
+  // "Completed" has to mean the person actually left. Until now this workflow only stamped the
+  // employee_resignations row, so submit -> approve -> complete produced a resignation marked
+  // completed while the employee stayed active, payroll-eligible, organogram-visible and able to
+  // log in. Only the separate Employees-page "resign" action (resignEmployeeAndOpenVacancy) ever
+  // terminated anyone.
+  //
+  // These are the same two employee-side steps that path performs; deliberately NOT
+  // resignEmployeeAndOpenVacancy itself, because that inserts a SECOND employee_resignations row
+  // via phx_resign_employee_and_open_vacancy — this record already exists. Both helpers are
+  // schema-tolerant and idempotent, so completing an already-terminated employee (the normal case
+  // when HR used the Employees page first) is a harmless no-op re-assertion.
+  if (action === "complete") {
+    // mapResignation hardcodes employeeStatus: null, so read the stored column and let
+    // normalizeEmployeeExitStatus default it — "resigned" is the right outcome for this workflow
+    // (the Employees-page path is what produces "terminated").
+    const storedExitStatus = cleanText((updated as ResignationRow & { employee_status?: string | null }).employee_status);
+    await updateEmployeeLifecycleFallback(supabase, record.employeeHrId, {
+      effectiveDate: record.effectiveDate,
+      employeeStatus: normalizeEmployeeExitStatus(storedExitStatus),
+      reason: cleanText(record.reason),
+      submittedDate: record.submittedDate,
+    });
+    await deactivateEmployeeAccessIfSupported(supabase, record.employeeHrId);
+  }
+
   await notifyResignationWorkflow(
     record,
     action === "approve"
