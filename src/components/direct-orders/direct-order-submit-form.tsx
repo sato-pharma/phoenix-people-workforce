@@ -103,6 +103,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   );
   const selectedBrick = bricks.find((b) => b.brickId === newBrickId) ?? null;
 
+  // Mirrors submit()'s hard preconditions only. Over-cap deals are deliberately NOT gated
+  // here: unlike the portal, this form lets them through and flags them for CEO approval.
+  const readyToSubmit = !busy && !!product && qtyNum > 0 && /^\d{4}-\d{2}-\d{2}$/.test(collectionDate);
+
   function updateDistRow(index: number, patch: Partial<{ distributorCode: string; customerCode: string }>) {
     setDistRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -370,7 +374,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <button
             type="button"
             onClick={submit}
-            disabled={busy}
+            disabled={!readyToSubmit}
             className="w-full bg-orange-500 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-white hover:bg-orange-600 disabled:opacity-60"
           >
             {busy ? "Submitting…" : "Submit direct order"}
