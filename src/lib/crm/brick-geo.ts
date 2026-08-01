@@ -24,7 +24,7 @@
  */
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { fetchAllRowsOrdered } from "@/lib/supabase/paginated";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 
 /** One brick with a known geographic centre, ready for distance comparison. */
 type BrickCentroid = {
@@ -96,7 +96,7 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
     // "High · 0.8 km", and which bricks vanished depended on heap order, so it varied per render.
     // The same truncation also made brick VALIDATION reject legitimate brick ids elsewhere.
     const [points, bricks, areasRes, regionsRes] = await Promise.all([
-      fetchAllRowsOrdered<{ latitude: number | null; longitude: number | null; source_key: string | null }>(
+      fetchAllRows<{ latitude: number | null; longitude: number | null; source_key: string | null }>(
         () =>
           supabase
             .from("geo_locations")
@@ -106,7 +106,7 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
             .not("longitude", "is", null),
         "source_key",
       ),
-      fetchAllRowsOrdered<{
+      fetchAllRows<{
         active: boolean | null;
         area_code: string | null;
         brick_id: string | null;

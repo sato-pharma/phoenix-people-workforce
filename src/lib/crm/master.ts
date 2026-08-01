@@ -969,14 +969,20 @@ async function loadBrickMappingByContactId(): Promise<Map<number, BrickMapping>>
     // Paginated with an EXPLICIT order: this table is one row per resolved CRM contact and the
     // migration sizes it at ~12.5k, so a single unpaginated read would silently stop at
     // PostgREST's 1,000-row cap and quietly re-show already-mapped customers as unmapped. Offset
-    // paging is only exact when the order is stable, hence the `.order()` inside the builder.
-    const resolutions = await fetchAllRows<{ brick_id: string | null; crm_contact_id: number }>(() =>
-      supabase
-        .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
-        .select("crm_contact_id, brick_id")
-        .eq("status", "mapped")
-        .not("brick_id", "is", null)
-        .order("crm_contact_id", { ascending: true }),
+    // paging is only exact when the order is stable.
+    //
+    // The order is now the `tiebreakColumn` ARGUMENT rather than an `.order()` inside the builder.
+    // Same query, but the guarantee moves somewhere it can be enforced: the builder is an opaque
+    // callback, so fetchAllRows cannot verify an order hidden inside it — which is how this class of
+    // bug reached production three times. crm_contact_id is unique here, so the order is total.
+    const resolutions = await fetchAllRows<{ brick_id: string | null; crm_contact_id: number }>(
+      () =>
+        supabase
+          .from(CRM_CUSTOMER_BRICK_RESOLUTIONS_TABLE)
+          .select("crm_contact_id, brick_id")
+          .eq("status", "mapped")
+          .not("brick_id", "is", null),
+      "crm_contact_id",
     );
     if (resolutions.length === 0) return map;
 

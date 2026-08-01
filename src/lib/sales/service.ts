@@ -700,7 +700,9 @@ async function readDashboardSalesRecordRows(
         .select(SALES_DASHBOARD_RECORD_SELECT)
         .in("batch_id", batchIdBatch);
       query = applyDashboardRecordFilters(query, filters);
-      const result = await query.range(from, from + pageSize - 1);
+      // ORDER BY id: an offset walk with no total order silently loses and duplicates rows between
+      // pages — the #1446 defect, which cost 1,262 of 49,713 mappings and looked like bad source data.
+      const result = await query.order("id", { ascending: true }).range(from, from + pageSize - 1);
       if (result.error) throw result.error;
       const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
       rows.push(...page);

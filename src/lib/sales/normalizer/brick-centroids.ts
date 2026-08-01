@@ -118,11 +118,16 @@ async function resolveBrickGeo(
   return { geo: googleGeo, passesGate: centroidPassesRegionGate(googleGeo.governorate, brickRegionCode), provider: "google" };
 }
 
-async function pageAll<T>(fetchPage: (from: number, to: number) => Promise<T[] | null>): Promise<T[]> {
+/**
+ * Offset pager. Every `fetchPage` MUST apply a stable `.order()` or pages silently lose and
+ * duplicate rows (#1446), and must THROW on error rather than returning null — returning null made a
+ * transient failure indistinguishable from end-of-data, quietly truncating the centroid set.
+ */
+async function pageAll<T>(fetchPage: (from: number, to: number) => Promise<T[]>): Promise<T[]> {
   const all: T[] = [];
   for (let from = 0; ; from += PAGE) {
     const rows = await fetchPage(from, from + PAGE - 1);
-    if (!rows || rows.length === 0) break;
+    if (rows.length === 0) break;
     all.push(...rows);
     if (rows.length < PAGE) break;
   }
@@ -144,7 +149,8 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
         // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
         .order("id", { ascending: true })
         .range(from, to);
-      return error ? null : (data as { customer_code: string | null; brick_id: string | null }[] | null);
+      if (error) throw error;
+      return (data ?? []) as { customer_code: string | null; brick_id: string | null }[];
     });
     const brickByCode = new Map<string, string>();
     for (const row of mapRows) {
@@ -160,8 +166,11 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
         .from("marketing_pharmacy_distributor_codes")
         .select("pharmacy_id, normalized_pharmacy_code")
         .eq("active", true)
+        // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+        .order("id", { ascending: true })
         .range(from, to);
-      return error ? null : (data as { pharmacy_id: string | null; normalized_pharmacy_code: string | null }[] | null);
+      if (error) throw error;
+      return (data ?? []) as { pharmacy_id: string | null; normalized_pharmacy_code: string | null }[];
     });
     const brickByPharmacyId = new Map<string, string>();
     for (const row of codeRows) {
@@ -178,8 +187,11 @@ async function collectFieldGpsCentroids(): Promise<Map<string, { lat: number; ln
         .select("id, captured_latitude, captured_longitude")
         .not("captured_latitude", "is", null)
         .not("captured_longitude", "is", null)
+        // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+        .order("id", { ascending: true })
         .range(from, to);
-      return error ? null : (data as { id: string | null; captured_latitude: number | null; captured_longitude: number | null }[] | null);
+      if (error) throw error;
+      return (data ?? []) as { id: string | null; captured_latitude: number | null; captured_longitude: number | null }[];
     });
     const capturesByBrick = new Map<string, { lats: number[]; lngs: number[] }>();
     for (const row of gpsRows) {
@@ -208,8 +220,11 @@ export async function getBrickCentroidCoverage(): Promise<BrickCentroidCoverage>
         .from("geo_locations")
         .select("geocode_status")
         .eq("source_type", SOURCE_TYPE)
+        // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+        .order("id", { ascending: true })
         .range(from, to);
-      return error ? null : (data as { geocode_status: string | null }[] | null);
+      if (error) throw error;
+      return (data ?? []) as { geocode_status: string | null }[];
     }),
   ]);
   const success = cachedRows.filter((r) => r.geocode_status === "success").length;
@@ -229,8 +244,11 @@ export async function loadBrickCentroids(): Promise<Map<string, BrickCentroid>> 
         .from("geo_locations")
         .select("source_key, latitude, longitude, city, area, geocode_status")
         .eq("source_type", SOURCE_TYPE)
+        // ORDER BY id: offset pages must be stably ordered or rows silently vanish (#1446).
+        .order("id", { ascending: true })
         .range(from, to);
-      return error ? null : (data as never[] | null);
+      if (error) throw error;
+      return (data ?? []) as never[];
     });
     for (const row of rows) {
       const key = String(row.source_key ?? "");

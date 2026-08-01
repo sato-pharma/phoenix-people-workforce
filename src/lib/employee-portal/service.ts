@@ -1269,7 +1269,7 @@ async function fetchPortalSalesRecords(
       return q.order("year", { ascending: false }).order("month", { ascending: false });
     };
 
-    const data = await fetchAllRows(buildSalesQuery);
+    const data = await fetchAllRows(buildSalesQuery, "id");
     const directRecords = data.map((row) => mapSalesRow(row as PortalSalesSourceRow));
     const continuityRecords = await fetchPortalSalesSeatContinuityRecords({
       currentHrIds: queryHrIds,
@@ -1391,7 +1391,7 @@ async function fetchPortalSalesSeatContinuityRecords({
   };
 
   try {
-    const data = await fetchAllRows(buildContinuityQuery);
+    const data = await fetchAllRows(buildContinuityQuery, "id");
     return data
       .map((row) => mapSalesRow(row as PortalSalesSourceRow))
       .filter((record) =>
@@ -3012,7 +3012,7 @@ async function fetchOpenVacancySummaryForScope({
       }
 
       return query;
-    });
+    }, "id");
 
     const scopedRows = rows.filter((row) => {
       if (isCompanyWorkforceRole(role)) return true;
@@ -3342,7 +3342,7 @@ async function resolveSalesRankInTeam(params: {
   let data: unknown[] = [];
   let error: unknown = null;
   try {
-    data = await fetchAllRows(buildRankQuery);
+    data = await fetchAllRows(buildRankQuery, "id");
   } catch (err) {
     error = err;
   }
@@ -3360,7 +3360,7 @@ async function resolveSalesRankInTeam(params: {
       return q;
     };
     try {
-      data = await fetchAllRows(buildFallbackQuery);
+      data = await fetchAllRows(buildFallbackQuery, "id");
     } catch (fallbackErr) {
       error = fallbackErr;
     }
@@ -5120,7 +5120,7 @@ export async function getEmployeePortalVacancies(
       }
       // Multi-line: fetch unfiltered then scope in memory (avoids complex OR/IN on line_id)
       return query;
-    });
+    }, "id");
 
     const scopedRows = vacancyRows.filter((row) => {
       if (isCompanyScoped) return true;
