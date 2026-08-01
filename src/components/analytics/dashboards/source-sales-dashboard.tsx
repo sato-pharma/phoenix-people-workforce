@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
@@ -56,6 +58,8 @@ async function SosDashboardContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, SOS_FILTERS);
   const compareRaw = searchParams.compare;
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
@@ -90,17 +94,17 @@ async function SosDashboardContent({
   } else if (scoped.empty) {
     byPeriod = [];
     byLine = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [byPeriod, byLine, dimensions] = await Promise.all([
-      loadSosByPeriod(scoped.filters).catch(() => []),
-      loadSosByLine(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadSosByPeriod(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by period", [])),
+      loadSosByLine(scoped.filters).catch(trackFailure(analyticsFailures, "Sales by line", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
 
     if (scoped.filters.period?.length === 1) {
       const priorPeriod = shiftPeriod(scoped.filters.period[0], 1);
-      const priorRows = await loadSosByPeriod({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(() => []);
+      const priorRows = await loadSosByPeriod({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(trackFailure(analyticsFailures, "Sales by period", []));
       priorTotal = priorRows.reduce((s, r) => s + r.value, 0);
     }
   }
@@ -131,6 +135,7 @@ async function SosDashboardContent({
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={SOS_FILTERS}

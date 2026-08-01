@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
@@ -42,6 +44,8 @@ async function ClosingDashboardContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, CLOSING_FILTERS);
   const compareRaw = searchParams.compare;
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
@@ -53,6 +57,10 @@ async function ClosingDashboardContent({
     lines:        Array.isArray(filters.lines)             ? filters.lines         : [],
     products:     Array.isArray(filters.products)          ? filters.products      : [],
     families:     Array.isArray(filters.families)          ? filters.families      : [],
+    // Declared so scopeAnalyticsFilters' geography bound is carried on the TYPE, not just spread
+    // onto the object at runtime — loadClosingByEmployee reads both.
+    regions:      Array.isArray(filters.regions)           ? filters.regions       : [],
+    areas:        Array.isArray(filters.areas)             ? filters.areas         : [],
     employeeHrId: typeof filters.employeeHrId === "string" ? filters.employeeHrId : null,
     territory:    typeof filters.territory    === "string" ? filters.territory    : null,
     canViewHeadOffice: canViewHeadOfficeLine(role),
@@ -68,16 +76,16 @@ async function ClosingDashboardContent({
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
     rows = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [rows, dimensions] = await Promise.all([
-      loadClosingByEmployee(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadClosingByEmployee(scoped.filters).catch(trackFailure(analyticsFailures, "Monthly closing by rep", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
 
     if (scoped.filters.period?.length === 1) {
       const priorPeriod = shiftPeriod(scoped.filters.period[0], 1);
-      const priorRows = await loadClosingByEmployee({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(() => []);
+      const priorRows = await loadClosingByEmployee({ ...scoped.filters, period: [priorPeriod], periodFrom: null, periodTo: null }).catch(trackFailure(analyticsFailures, "Monthly closing by rep", []));
       priorTotal = priorRows.reduce((s, r) => s + r.salesValue, 0);
     }
   }
@@ -106,6 +114,7 @@ async function ClosingDashboardContent({
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={CLOSING_FILTERS}

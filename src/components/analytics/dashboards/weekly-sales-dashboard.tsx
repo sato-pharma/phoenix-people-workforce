@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 
+import { emptyAnalyticsDimensions, trackFailure } from "@/lib/analytics/load-result";
+import { AnalyticsErrorState } from "@/components/analytics/analytics-error-state";
 import { AnalyticsKpiCard } from "@/components/analytics/analytics-kpi-card";
 import { AnalyticsDataTable } from "@/components/analytics/analytics-data-table";
 import { AnalyticsEmptyState } from "@/components/analytics/analytics-empty-state";
@@ -47,6 +49,8 @@ async function WeeklyDashboardContent({
   mountRoot: string;
 }) {
   const demo = isAnalyticsDemoMode(searchParams);
+  // Loads that fail are recorded here, never silently rendered as a zero.
+  const analyticsFailures: string[] = [];
   const filters = parseAnalyticsFilters(searchParams, WEEKLY_FILTERS);
   const compareRaw = searchParams.compare;
   const compareMode = (Array.isArray(compareRaw) ? compareRaw[0] : compareRaw) === "1";
@@ -72,16 +76,16 @@ async function WeeklyDashboardContent({
     dimensions = demoAnalyticsDimensions();
   } else if (scoped.empty) {
     rows = [];
-    dimensions = await loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions());
+    dimensions = await loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions()));
   } else {
     [rows, dimensions] = await Promise.all([
-      loadWeeklyFact(scoped.filters).catch(() => []),
-      loadAnalyticsDimensions(role).catch(() => demoAnalyticsDimensions()),
+      loadWeeklyFact(scoped.filters).catch(trackFailure(analyticsFailures, "Weekly sales", [])),
+      loadAnalyticsDimensions(role).catch(trackFailure(analyticsFailures, "Filter options", emptyAnalyticsDimensions())),
     ]);
 
     if (scoped.filters.weekStart?.length === 1) {
       const priorWeek = shiftWeek(scoped.filters.weekStart[0], 1);
-      const priorRows = await loadWeeklyFact({ ...scoped.filters, weekStart: [priorWeek] }).catch(() => []);
+      const priorRows = await loadWeeklyFact({ ...scoped.filters, weekStart: [priorWeek] }).catch(trackFailure(analyticsFailures, "Weekly sales", []));
       priorTotal = priorRows.reduce((s, r) => s + r.salesValue, 0);
     }
   }
@@ -113,6 +117,7 @@ async function WeeklyDashboardContent({
   return (
     <div className="space-y-6">
       {demo ? <AnalyticsDemoBanner /> : null}
+      {analyticsFailures.length > 0 ? <AnalyticsErrorState what={analyticsFailures.join(", ")} /> : null}
 
       <AnalyticsFilterBar
         descriptors={WEEKLY_FILTERS}

@@ -102,6 +102,12 @@ export type SosDashboardData = {
    * never mis-state what a payload contains.
    */
   restrictedRevealed: boolean;
+  /**
+   * Aggregates that errored while building this payload (RPC error, statement timeout, …).
+   * Non-empty ⇒ the figures below are INCOMPLETE and must not be presented as real zeros. Empty on
+   * every healthy load, so `incompleteReason.length > 0` is the UI's error signal.
+   */
+  incompleteReason: string[];
   summary: {
     totalValue: number;
     totalUnits: number;
@@ -228,14 +234,23 @@ function share(value: number, total: number): number {
   return total > 0 ? value / total : 0;
 }
 
+/**
+ * Run one aggregate RPC, degrading to no rows instead of taking the whole dashboard down.
+ *
+ * The empty array is NOT the whole story: the label is recorded in `failures` so the caller can tell
+ * the viewer that this panel is incomplete. Without that, a 45s statement timeout was indistinguish-
+ * able from "no sales", and the zero was then cached for 300 seconds.
+ */
 async function safeRpcAll<T>(
   label: string,
   supplier: () => Promise<T[]>,
+  failures: string[],
 ): Promise<T[]> {
   try {
     return await supplier();
   } catch (error) {
-    console.warn(`[sales dashboard] Non-blocking RPC failed: ${label}`, error);
+    console.error(`[sales dashboard] RPC failed, panel will be marked incomplete: ${label}`, error);
+    failures.push(label);
     return [];
   }
 }
@@ -263,6 +278,8 @@ type SosRpcRows = {
   customerRaw: Array<Record<string, unknown>>;
   priorDetailRaw: Array<Record<string, unknown>>;
   yoyDetailRaw: Array<Record<string, unknown>>;
+  /** Labels of aggregates that errored. Non-empty ⇒ the numbers below are incomplete. */
+  failedRpcs: string[];
 };
 
 const DETAIL_ORDER_BY = ["distributor_code", "region_code", "area_code", "product_code"];
@@ -293,6 +310,7 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
     } = inputs;
     const supabase = getSupabaseAdmin();
     const emptyRpcRows = Promise.resolve([] as Array<Record<string, unknown>>);
+    const failedRpcs: string[] = [];
 
     const trendResultPromise = trendForcedEmpty
       ? emptyRpcRows
@@ -308,7 +326,7 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
           });
           if (response.error) throw response.error;
           return (response.data ?? []) as Array<Record<string, unknown>>;
-        });
+        }, failedRpcs);
 
     const detailArgsFor = (period: string) => ({
       p_period: period,
@@ -332,15 +350,19 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
     const priorDetailRowsPromise =
       !priorPeriod || trendForcedEmpty
         ? emptyRpcRows
-        : safeRpcAll("phx_exec_distributor_product (prior period)", () =>
-            rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), DETAIL_ORDER_BY),
+        : safeRpcAll(
+            "phx_exec_distributor_product (prior period)",
+            () => rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(priorPeriod), DETAIL_ORDER_BY),
+            failedRpcs,
           );
 
     const yoyDetailRowsPromise =
       !yoyPeriod || trendForcedEmpty
         ? emptyRpcRows
-        : safeRpcAll("phx_exec_distributor_product (YoY period)", () =>
-            rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), DETAIL_ORDER_BY),
+        : safeRpcAll(
+            "phx_exec_distributor_product (YoY period)",
+            () => rpcAll(supabase, "phx_exec_distributor_product", detailArgsFor(yoyPeriod), DETAIL_ORDER_BY),
+            failedRpcs,
           );
 
     const geoArgsFor = (period: string): Record<string, unknown> =>
@@ -348,7 +370,9 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
     const fetchGeo = (fn: "phx_exec_brick" | "phx_exec_customers", orderBy: string[]) =>
       canSeeCrossLineGeography
         ? Promise.all(
-            selectedPeriods.map((period) => safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy))),
+            selectedPeriods.map((period) =>
+              safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy), failedRpcs),
+            ),
           ).then((arrays) => arrays.flat())
         : emptyRpcRows;
 
@@ -360,7 +384,15 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
       priorDetailRowsPromise,
       yoyDetailRowsPromise,
     ]);
-    return { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw };
+    return {
+      detailRows,
+      trendRowsRaw,
+      brickRaw,
+      customerRaw,
+      priorDetailRaw,
+      yoyDetailRaw,
+      failedRpcs: [...new Set(failedRpcs)],
+    };
 };
 
 const fetchSosDashboardRpcRowsCached = unstable_cache(fetchSosDashboardRpcRowsUncached, ["sos-dashboard"], {
@@ -373,12 +405,17 @@ const fetchSosDashboardRpcRowsCached = unstable_cache(fetchSosDashboardRpcRowsUn
 // unstable_cache then rejects asynchronously (unhandledRejection noise) and nothing gets
 // cached anyway. Route those callers straight to the fetcher; every line/region/product
 // scoped viewer keeps the cached path exactly as before.
-function fetchSosDashboardRpcRows(inputs: SosRpcInputs): Promise<SosRpcRows> {
+async function fetchSosDashboardRpcRows(inputs: SosRpcInputs): Promise<SosRpcRows> {
   const unrestrictedLines = !inputs.trendLineNames || inputs.trendLineNames.length === 0;
   if (inputs.canSeeCrossLineGeography && unrestrictedLines) {
     return fetchSosDashboardRpcRowsUncached(inputs);
   }
-  return fetchSosDashboardRpcRowsCached(inputs);
+  const cached = await fetchSosDashboardRpcRowsCached(inputs);
+  if (cached.failedRpcs.length === 0) return cached;
+  // A cached entry carrying a failure would keep serving the same incomplete numbers for the full
+  // 300s TTL. Re-run uncached so a transient timeout self-heals on the next load; if it still fails,
+  // failedRpcs comes back set and the caller says so instead of showing a stale zero.
+  return fetchSosDashboardRpcRowsUncached(inputs);
 }
 
 /**
@@ -642,7 +679,7 @@ export async function getSosDashboard(
   // input set below (scope ∩ user filters, exclude sets, geo gate) — arrays are sorted so the same
   // logical query always maps to the same cache entry. Two callers share an entry ONLY when entitled
   // to identical rows; keepExec below stays the authoritative per-request authorization backstop.
-  const { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw } =
+  const { detailRows, trendRowsRaw, brickRaw, customerRaw, priorDetailRaw, yoyDetailRaw, failedRpcs } =
     await fetchSosDashboardRpcRows({
       windowPeriods,
       selectedPeriods: [...selectedPeriods].sort(),
@@ -1074,6 +1111,7 @@ export async function getSosDashboard(
     selectedPeriods,
     availablePeriods,
     filters: filterOptions,
+    incompleteReason: failedRpcs,
     summary,
     trend,
     channelMix,
@@ -1159,6 +1197,9 @@ function emptyDashboard(filters: SosFilterOptions, totalAreas: number, restricte
     availablePeriods: filters.periods,
     filters,
     restrictedRevealed,
+    // A genuinely empty dashboard is complete — it really did load and really has no rows. Only a
+    // failed aggregate populates this.
+    incompleteReason: [],
     summary: {
       totalValue: 0,
       totalUnits: 0,

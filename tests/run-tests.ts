@@ -443,6 +443,8 @@ import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
+import { runAnalyticsClosingGeographyScopeTests } from "./analytics-closing-geography-scope.test.ts";
+import { runAnalyticsFailureNotZeroTests } from "./analytics-failure-not-zero.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
 import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
 import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
@@ -965,6 +967,8 @@ await runTest("weekly sales optional area scope (branch-mapped areas)", runWeekl
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
+await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);
+await runTest("analytics failure is never rendered as a zero", runAnalyticsFailureNotZeroTests);
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
 await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
 await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);

@@ -349,6 +349,18 @@ export type ClosingFilters = {
   families?: string[];
   employeeHrId?: string | null;
   territory?: string | null;
+  /**
+   * Region CODES, as produced by scopeAnalyticsFilters. Only bounds the result when `areas` is
+   * absent — a seat's region set is deliberately WIDENED to reach an out-of-region owned area
+   * (src/lib/sales/seat-area-scope.ts), so applying it alongside an area bound would re-admit that
+   * region's other areas.
+   */
+  regions?: string[];
+  /**
+   * Area CODES, as produced by scopeAnalyticsFilters. AUTHORITATIVE whenever present: this is the
+   * seat-derived District/Regional Manager bound, and it is what keeps a widened region set safe.
+   */
+  areas?: string[];
   /** Head Office line confidential lock — pass canViewHeadOfficeLine(role). Absent ⇒ strip (fail-closed). */
   canViewHeadOffice?: boolean;
 };
@@ -393,13 +405,20 @@ const REP_ACHIEVEMENT_LINE_CODE_BY_DISPLAY = new Map(
 // an explicit request for more silently truncates rather than fanning out unboundedly.
 const MAX_REP_ACHIEVEMENT_PERIODS = 12;
 
-function currentCalendarPeriod(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Pure — unit-tested directly. */
-export function resolveRepAchievementPeriods(filters: Pick<ClosingFilters, "period" | "periodFrom" | "periodTo">): string[] {
+/**
+ * Pure — unit-tested directly.
+ *
+ * `latestPeriodWithData` is what an unfiltered request falls back to. It used to be the CURRENT
+ * CALENDAR MONTH, which silently showed one month while the Period filter still read "All" — and
+ * whenever the current month had not been uploaded yet (July 2026 today, and May 2026 was never
+ * uploaded at all) the page rendered a confident EGP 0. Defaulting to the newest period that
+ * actually HAS data shows a real number; passing null returns no periods so the caller can say
+ * "no data loaded" rather than invent a zero.
+ */
+export function resolveRepAchievementPeriods(
+  filters: Pick<ClosingFilters, "period" | "periodFrom" | "periodTo">,
+  latestPeriodWithData: string | null = null,
+): string[] {
   if (filters.period?.length) {
     return [...new Set(filters.period)].slice(0, MAX_REP_ACHIEVEMENT_PERIODS);
   }
@@ -415,7 +434,24 @@ export function resolveRepAchievementPeriods(filters: Pick<ClosingFilters, "peri
     }
     return periods;
   }
-  return [currentCalendarPeriod()];
+  return latestPeriodWithData ? [latestPeriodWithData] : [];
+}
+
+/**
+ * Newest period that actually carries data, from analytics.dim_periods (a dimension over the fact,
+ * so it contains only loaded periods). Returns null when nothing is loaded at all.
+ */
+export async function loadLatestAnalyticsPeriod(): Promise<string | null> {
+  const db = getSupabaseAdmin();
+  const { data, error } = await db
+    .schema("analytics")
+    .from("dim_periods" as never)
+    .select("period")
+    .order("period", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(`Latest analytics period: ${error.message}`);
+  const rows = (data ?? []) as { period: string }[];
+  return rows[0]?.period ?? null;
 }
 
 type RawAchievementRow = {
@@ -437,12 +473,14 @@ async function fetchMonthlyAchievement(db: ReturnType<typeof getSupabaseAdmin>, 
   return (data ?? []) as unknown as RawAchievementRow[];
 }
 
-type AreaNameLookup = { areaName: string; regionName: string };
+type AreaNameLookup = { areaName: string; regionName: string; regionCode: string };
 
 async function loadAreaNameLookup(db: ReturnType<typeof getSupabaseAdmin>): Promise<Map<string, AreaNameLookup>> {
-  const { data } = await db.schema("analytics").from("dim_areas" as never).select("area_code,area_name,region_name");
-  const rows = (data ?? []) as { area_code: string; area_name: string; region_name: string }[];
-  return new Map(rows.map((r) => [r.area_code, { areaName: r.area_name, regionName: r.region_name }]));
+  const { data } = await db.schema("analytics").from("dim_areas" as never).select("area_code,area_name,region_name,region_code");
+  const rows = (data ?? []) as { area_code: string; area_name: string; region_name: string; region_code: string }[];
+  return new Map(
+    rows.map((r) => [r.area_code, { areaName: r.area_name, regionName: r.region_name, regionCode: r.region_code }]),
+  );
 }
 
 type ProductFamilyLookup = { family: string; productName: string };
@@ -470,9 +508,44 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * Geography bound for rep-level closing rows. Pure — unit-tested directly.
+ *
+ * `areas` wins whenever it is present: it is the seat-derived District/Regional Manager bound, and
+ * a seat's region set is deliberately WIDENED to reach an owned out-of-region area. Applying both
+ * would filter that area straight back out AND re-admit the widened region's other areas — the very
+ * thing src/lib/sales/seat-area-scope.ts exists to prevent.
+ *
+ * A row with no area (direct / unmapped sales) is dropped for a geography-bound viewer: nobody's
+ * district owns it, so folding it into their total would overstate them.
+ *
+ * No bound at all (company-wide viewer) ⇒ everything passes.
+ */
+export function buildClosingGeographyFilter(
+  filters: Pick<ClosingFilters, "regions" | "areas">,
+  areaLookup: Map<string, { regionCode: string }>,
+): (areaCode: string | null | undefined) => boolean {
+  const wantedAreas = filters.areas?.length ? new Set(filters.areas.map((a) => a.trim().toUpperCase())) : null;
+  const wantedRegions = filters.regions?.length ? new Set(filters.regions.map((r) => r.trim().toUpperCase())) : null;
+  if (!wantedAreas && !wantedRegions) return () => true;
+
+  return (rawAreaCode) => {
+    const areaCode = rawAreaCode?.trim().toUpperCase() ?? "";
+    if (!areaCode) return false;
+    if (wantedAreas) return wantedAreas.has(areaCode);
+    const regionCode = areaLookup.get(rawAreaCode!.trim())?.regionCode?.trim().toUpperCase() ?? "";
+    return regionCode !== "" && wantedRegions!.has(regionCode);
+  };
+}
+
 async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<ClosingByEmployeeRow[]> {
   const db = getSupabaseAdmin();
-  const periods = resolveRepAchievementPeriods(filters);
+  // An unfiltered request falls back to the newest period that HAS data, never the current calendar
+  // month — see resolveRepAchievementPeriods. A lookup failure yields null, i.e. no periods and an
+  // honest empty result, rather than a fabricated current-month zero.
+  const latestPeriod = await loadLatestAnalyticsPeriod().catch(() => null);
+  const periods = resolveRepAchievementPeriods(filters, latestPeriod);
+  if (periods.length === 0) return [];
   const [perPeriod, areaNames, productFamilies] = await Promise.all([
     Promise.all(periods.map((period) => fetchMonthlyAchievement(db, period))),
     loadAreaNameLookup(db),
@@ -485,6 +558,9 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
     : null;
   const wantedProducts = filters.products?.length ? new Set(filters.products.map((p) => p.trim().toUpperCase())) : null;
   const wantedFamilies = filters.families?.length ? new Set(filters.families.map((f) => f.trim().toLowerCase())) : null;
+  // phx_monthly_achievement returns the whole company, so unlike the sos_* loaders (whose RPCs take
+  // p_regions/p_areas) this is the ONLY place the viewer's geography can be applied.
+  const inGeography = buildClosingGeographyFilter(filters, areaNames);
 
   // Filter at raw (period, line, area, product) grain — product/family only make sense before
   // rows are summed into a per-rep total.
@@ -495,6 +571,7 @@ async function loadClosingByEmployeeUncached(filters: ClosingFilters): Promise<C
       const family = productFamilies.get(r.product_code)?.family ?? "";
       if (!wantedFamilies.has(family.trim().toLowerCase())) return false;
     }
+    if (!inGeography(r.area_code)) return false;
     return true;
   });
 
