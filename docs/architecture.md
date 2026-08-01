@@ -1,107 +1,182 @@
 # Architecture
 
+The domain-level narrative for Phoenix Workforce. Operating rules (branching, approval,
+validation, worktrees) live in [AGENTS.md](../AGENTS.md); daily commands and the protected-file
+gate live in [CLAUDE.md](../CLAUDE.md).
+
 ## Overview
 
-Phoenix Workforce is a monolithic Next.js application that combines UI, route handlers, and domain services in one repository. The product centers on workforce operations: employee data, payroll, expenses, offers, approvals, notifications, and sales-linked reporting.
+Phoenix Workforce is a **monolithic Next.js 16 (App Router) + React 19 + Supabase (Postgres)**
+HR/workforce platform. UI, route handlers, and domain services live in one repo. Styling is
+Tailwind CSS v4 + shadcn (radix-ui primitives, lucide icons). The product centers on workforce
+operations: employee data, payroll, expenses, offers, approvals, notifications, and sales-linked
+reporting.
 
-## Runtime Shape
+## Layout
 
-- `app/` contains App Router pages and `app/api/*` route handlers
-- `src/lib/` holds domain services and integration logic
-- `src/components/` contains UI composition for dashboards, tables, forms, and workflows
-- `supabase/` contains SQL used to evolve schema, enforce RLS, and harden operational behavior
+- `app/` — App Router pages and `app/api/**/route.ts` handlers. Two UIs share the app: the
+  **admin** surface (`app/admin`, `app/employees`, `app/payroll`, …) and the **employee portal**
+  (`app/employee-portals/**`). Which one a user lands in is decided by role via
+  `resolveNavigationMode` in `src/lib/auth/permissions.ts`.
+- `src/lib/<domain>/` — domain services and data access (the source of truth for business rules).
+  Domains include `payroll`, `expenses`, `outstation`, `coaching`, `sales`, `vacation`/leave,
+  `resignations`, `probation`, `offers`, `contracts`, `marketing-requests`, `workforce`,
+  `notifications`, `auth`, `supabase`, `workflow-registry`, and more.
+- `src/components/<domain>/` and `src/components/ui/` — UI composition and shared primitives.
+- `src/config/` — `system-settings.ts` (brand, deploy URLs, email defaults, editing policy) and
+  `system-navigation.ts` (sidebar/nav source of truth).
+- `supabase/` — SQL. **`supabase/migrations/` holds the timestamped migrations**
+  (`YYYYMMDDHHMMSS_*.sql`) that define the live schema/RLS; the loose `*.sql` files at the
+  `supabase/` root are historical hardening/setup scripts. Treat SQL here as part of the
+  deliverable, not optional extras.
+- `tests/` (unit) and `tests/e2e/` (Playwright). `docs/` holds architecture, editing, security,
+  and operating-state notes.
+- `local-attendance-agent/` — a separate local .NET/PowerShell ZKTeco attendance agent (see its
+  own README); not part of the Next.js build.
 
-## Workflow Governance and Route Layout
+## Domain-first rule
 
-Approval state machines are split between the workflow registry and hardcoded TypeScript
-tables, and admin pages are split across the `(admin)` route group and a few standalone
-routes. Both distinctions — with the per-module governance table, the `leave_requests`
-registry-key alias, and route/app-shell ownership rules — are documented in
+Business logic lives in `src/lib/<domain>/`. Pages and components **call domain services**; they
+must not re-implement payroll, leave, expense, outstation, HR, or sales rules inline. When
+changing behavior, start in `src/lib/<domain>/`.
+
+## Auth and access control (read these three together)
+
+This is the most important cross-cutting system.
+
+- `src/lib/auth/permissions.ts` — the heart. Defines `PhoenixRole` (15 roles),
+  `PermissionResource`/`PermissionAction`, the **`defaultPermissionMatrix`** (role → resource →
+  allowed actions), and `AccessContext` (`{ hrId, loginId, role, scope, source }`). Scope
+  (`self`/`team`/`hierarchy`/`line`/`company`/`system`) drives row-level visibility helpers like
+  `canAccessPayroll`, `canAccessSales`, `canSeeEmployee`, `filterEmployeesForAccess`. The matrix is
+  overridable at runtime from the `role_permission_overrides` table (cached ~30s).
+- `src/lib/auth/server.ts` — `resolveAccessContext(request)` (API routes) and
+  `resolveAccessContextFromPage()` (server components) turn a request/cookies into an
+  `AccessContext` by verifying the application-signed session cookie against `app_auth_users`.
+  Sessions are rejected on inactive user, role change, or session-version mismatch (all audited).
+- `src/lib/supabase/server.ts` — two clients: `getSupabaseAdmin()` (service role, **bypasses
+  RLS**, server-only/admin/system use) and `getSupabaseUserClient()` (anon key, **respects RLS**).
+  Prefer RLS-respecting access for user-scoped reads; reserve the admin client for tightly bounded
+  server tasks.
+
+**Auth is application-managed, not Supabase Auth.** Login uses HR_ID + password (`bcryptjs`) and an
+app-signed session token; password setup is via one-time links. Session signing is fail-closed on
+missing secrets.
+
+Vacancy is represented in **two deliberately separate models** — `public.position_vacancies` (what
+we are recruiting for) and the `au` seat model (which sales area is staffed, and when). See
+[Two vacancy models](area-unification/vacancy-models.md) before changing either.
+
+## API route convention
+
+Route handlers follow a consistent shape (see `app/api/coaching/` as the reference):
+
+1. `export const runtime = "nodejs"` and `export const dynamic = "force-dynamic"`.
+2. Resolve the caller: `resolveAccessContext(request)`.
+3. Enforce permission with `assertPermission(ctx, resource, action)` (throws `Forbidden: ...`) or a
+   domain `require*Permission` helper, before any mutation.
+4. Delegate work to the `src/lib/<domain>/service.ts`.
+5. Catch errors and map them to HTTP status via a shared `jsonError`-style helper (forbidden → 403,
+   not authenticated → 401, not found → 404, validation → 400, conflict → 409). `isForbiddenError`
+   keys off the `Forbidden:` message prefix.
+
+Always enforce access on the server even though `system-navigation.ts` already hides links —
+sidebar visibility is UX, never the security boundary.
+
+## State-machine workflows
+
+Approval flows (payroll, resignations, probation, contracts, outstation, offers, marketing
+requests) are governed by the **workflow registry** (`src/lib/workflow-registry/service.ts`):
+modules define `statuses` and `actions` (allowed `from`→`to`, `allowedRoles`, `requiresReason`,
+side effects, audit log, notifications). Transitions validate against the registry and write audit
+logs. Approval state machines are split between the workflow registry and hardcoded TypeScript
+tables, and admin pages are split across the `(admin)` route group and a few standalone routes —
+both distinctions are documented in
 [Workflow & Route Architecture](workflow-and-route-architecture.md).
 
-## Main Domains
+## Notifications and cron
 
-### Auth and Access
+Notifications use an outbox model with idempotency and retries. The project runs on **GCP Cloud
+Run**; Google Cloud Scheduler drives **8 cron jobs** against the public domain (Bearer
+`$CRON_SECRET`, Africa/Cairo time) — daily notifications, outbox processing (every 5 min),
+background exports (Fri), inbound intake, recruitment email intake, and three iReports360
+visit-sync jobs. `scripts/setup-gcp-cron.sh` is the schedule source of truth;
+[deployment.md](deployment.md) and [observability.md](observability.md) describe the jobs.
 
-- Request access is resolved in server-side auth helpers
-- Session signing is application-managed and now fail-closed on missing secrets
-- Access control combines application permission checks with Supabase RLS for user-scoped reads
+Every cron sets `maxDuration = 300` and carries a named Healthchecks.io dead-man's-switch heartbeat
+(`withDeadMansSwitch`). Notification outbox and probation reminder processing are shared through
+`src/lib/notifications/scheduled-processing.ts` and run from the 5-minute outbox-drain job.
 
-### Employees and Lifecycle
+The in-app `/admin/cron-control` dashboard can view/pause/resume/run/reschedule these live, but
+does **not** update `setup-gcp-cron.sh` — if you reschedule a job there, update that script's
+`--schedule`/`--time-zone` flags by hand or a future re-run will silently revert it.
 
-- Employee data powers directory, lifecycle events, resignation handling, and vacancy creation
-- Vacancy is represented in **two deliberately separate models** — `public.position_vacancies`
-  (what we are recruiting for) and the `au` seat model (which sales area is staffed, and when).
-  See [Two vacancy models](area-unification/vacancy-models.md) before changing either
-- Imports and bulk actions bring operational data into the platform
-- Arabic name fields already exist in the model and affect future localization requirements
+## Deployment model
 
-### Offers and Hiring
+**Nothing deploys on merge.** Both environments are cron-driven: production every 2h, staging once
+daily, and each ships as a no-traffic Cloud Run revision, smoke-tested, then promoted. `main` is
+production-only — never edit it directly. Production public domain:
+`https://phoenix-hr.satopharma.com` (Cloud Run service `phoenix-hr`, `europe-west3`); staging is a
+separate service (`phoenix-hr-staging`, `us-central1`) that redeploys the image production already
+built. There is no per-branch preview deployment. The exact public production domain must be
+verified after every production deploy — workspace aliases can diverge from the public alias.
 
-- Public offer links render confirmation pages
-- State mutation is performed through explicit `POST` handlers
-- Final approval and employee-creation flows are moving into transactional database RPC paths
+Full triggers, timing caveats, and verification commands live in
+[AGENTS.md](../AGENTS.md) (§ Stable Environment Facts, § Hard-Learned Rules) and
+[current-operating-state.md](current-operating-state.md).
 
-### Payroll and Expenses
+## Conventions
 
-- Payroll batches, salary records, flags, and expense imports are core financial workflows
-- Recent hardening moved high-risk reads away from broad service-role defaults
-- Transactional handling is required for imports and approval chains to avoid partial financial state
+- **Path alias:** `@/*` resolves to both `./*` and `./src/*` (see `tsconfig.json`). TS strict mode
+  is on; `.ts` extension imports are allowed.
+- **HR_ID is the employee key**, not a DB id. Normalize/compare via the helpers in
+  `src/lib/hr-id.ts` and `permissions.ts` (`normalizeHrId`, `hrIdsMatch`) — never compare raw
+  strings.
+- **Global edit points** (don't hunt): brand/URLs/email → `src/config/system-settings.ts`;
+  sidebar/nav/roles → `src/config/system-navigation.ts`; design tokens → `src/styles/tokens.css` +
+  `app/globals.css`; shared primitives → `src/components/ui/`. Full table in
+  [editing-guide.md](editing-guide.md).
+- **i18n:** Arabic data exists in the model; locale/format helpers are in `src/lib/i18n/`
+  (`config.ts`, `format.ts`) but localization is not yet centralized.
+- **Security headers / CSP** are defined in `next.config.ts`.
+- **Local dev auth:** with `NODE_ENV=development`, `GET /api/dev-auth?role=...` sets a dev-preview
+  session cookie so you can browse as any role on localhost (disabled in production).
+  `PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` additionally allows `x-phoenix-role` / `x-phoenix-hr-id`
+  request headers locally.
 
-### Sales and Reporting
+## Tests
 
-- Sales imports feed dashboards and period reporting
-- Reporting now uses real datasets instead of placeholder randomization in overview calculations
+- Unit/integration tests live in `tests/*.test.ts`. Each file **exports** a `run<Name>Tests()`
+  function using `node:assert/strict` and importing domain code directly with `.ts` extensions.
+- They are executed as one aggregated suite by `tests/run-tests.ts`, run via Node with
+  type-stripping and a custom `@/` alias resolver (`tests/alias-loader.mjs`). There is **no
+  per-test filter flag**; to isolate a test temporarily comment out the other `runTest(...)` lines.
+  **When you add a test file, wire its exported function into `tests/run-tests.ts` or it will not
+  run.**
+- End-to-end tests use Playwright (`tests/e2e/*.spec.ts`, config `playwright.config.ts`). Run with
+  `pnpm exec playwright test`. An auth `setup` project signs in first and stores browser state;
+  `*.data-bearing.spec.ts` only runs when `PLAYWRIGHT_DATA_USER_HRID` /
+  `PLAYWRIGHT_DATA_USER_PASSWORD` are set.
 
-### Notifications
+## Database and RLS scripts
 
-- Notifications are shifting to an outbox-based model with idempotency and retries
-- Test and processor endpoints require tighter access control because they can create operational side effects
+Many `db:*` and `phaseNN:*` package.json scripts (Node + type-stripping) validate Supabase RLS,
+role alignment, and the staged production-migration approval pipeline. These talk to
+staging/production Supabase and gate migrations — do not run them casually; treat them as the
+migration safety harness described in `docs/security/`.
 
-## Data Access Model
+All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch
+production manually.
 
-- Supabase remains the system of record
-- User-scoped reads should prefer authenticated request-scoped clients with RLS
-- Service-role access should be reserved for tightly bounded server-only tasks
-- SQL hardening scripts in `supabase/` are part of the application delivery surface, not optional extras
+## Required environment
 
-## Delivery and Validation
+Server reads these (via `process.env`, see `src/lib/supabase/server.ts` and auth libs):
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, plus the
+session-signing secret and email/Google Maps keys used by their respective domains. Full list in
+[environment.md](environment.md).
 
-- CI now runs lint, typecheck, test, and build in sequence
-- Production readiness depends on both application deployment and coordinated Supabase SQL rollout
+## Current gaps
 
-## Current Git And Deployment Model
-
-- `main` is production-only. Do not edit it directly.
-- Feature work happens on a `codex/<task>` branch/worktree, PR'd against `main`.
-- Production public domain: `https://phoenix-hr.satopharma.com` (GCP Cloud Run, service `phoenix-hr`, `europe-west3`).
-- Cloud Run auto-deploys both production and a separate staging service (`phoenix-hr-staging`, `us-central1`) from `main` after CI passes — there is no per-branch preview deployment.
-- The exact public production domain must be checked after every production deploy — confirm the public domain mapping is serving the same revision as the workspace-internal Cloud Run URL.
-- Deployment mapping and the Cloud Scheduler cron model are documented in [current-operating-state.md](current-operating-state.md).
-
-## Current Cloud Scheduler Cron Model
-
-Google Cloud Scheduler drives five jobs (see `scripts/setup-gcp-cron.sh`),
-authenticated via a `Bearer $CRON_SECRET` header against the public domain,
-scheduled in Africa/Cairo time:
-
-- `/api/notifications/daily` -- once daily (6:36 AM Cairo); internally runs
-  birthdays, contract renewals, and the other daily SLA/digest jobs.
-- `/api/notifications/process?limit=50` -- every 5 minutes; drains the
-  notification outbox, probation reminders, and deferred/Telegram delivery retries.
-- `/api/cron/background-jobs?limit=10` -- weekly (Fridays); drains queued
-  admin-requested exports.
-- `/api/cron/ireports360-visits-sync` -- 3x daily; syncs iReports360 CRM visits.
-- `/api/cron/ireports360-visits-reconcile` -- weekly; wide reconciliation over a
-  rotating slice of a 120-day window.
-
-Notification outbox and probation reminder processing are shared through
-`src/lib/notifications/scheduled-processing.ts` and run from the 5-minute
-outbox-drain job. Unlike the retired Vercel-cron model, Cloud Scheduler has no
-plan-tier frequency limit. All five crons carry an explicit `maxDuration = 300` and
-a named Healthchecks.io dead-man's-switch heartbeat (`withDeadMansSwitch`).
-
-## Current Gaps
-
-- Localization is not centralized even though Arabic data already exists
-- Some workflows still depend on disciplined server-side access boundaries rather than uniformly mature database policy coverage
+- Localization is not centralized even though Arabic data already exists.
+- Some workflows still depend on disciplined server-side access boundaries rather than uniformly
+  mature database policy coverage.
