@@ -128,9 +128,9 @@ Each upload flows through the Import Validation and Normalization engine — sch
 | Language | TypeScript (strict mode) |
 | Database | Supabase (PostgreSQL) with Row-Level Security |
 | Styling | Tailwind CSS v4 + shadcn/ui (Radix primitives, Lucide icons) |
-| Hosting | Vercel |
+| Hosting | Railway (deploys on push to `main`) |
 | Email | Resend |
-| Observability | Self-hosted (app_error_events + Cloud Logging) |
+| Observability | Self-hosted (`app_error_events`) |
 | E2E Testing | Playwright |
 | Runtime | Node.js 22+ |
 
@@ -215,7 +215,7 @@ Run `check:edit` during active development and `check:harden` before every commi
 | [Architecture](docs/architecture.md) | System overview, domains, data access model |
 | [Database](docs/database.md) | Supabase setup, schema overview, RLS model |
 | [Migrations](docs/migrations.md) | Migration policy, safety procedures, approval workflow |
-| [Deployment](docs/deployment.md) | Vercel workflow, branch model, verification |
+| [Deployment](docs/deployment.md) | Deploy workflow, branch model, verification — **stale, describes Cloud Run** |
 | [Testing](docs/testing.md) | Test strategy, running tests, adding new tests |
 | [Scripts Reference](docs/scripts.md) | All npm scripts with safety classifications |
 | [Editing Guide](docs/editing-guide.md) | Where to make edits, quality gate workflow |

@@ -135,7 +135,16 @@
       "Bash(vercel deploy*)",
       "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*",
       "mcp__45bb6356-8105-4482-9464-25bfd754baec__*",
-      "Read(./.env*)"
+      "Read(./.env*)",
+      "Bash(cat *.env*)",
+      "Bash(type *.env*)",
+      "Bash(head *.env*)",
+      "Bash(tail *.env*)",
+      "Bash(grep *.env*)",
+      "Bash(rg *.env*)",
+      "Bash(sed *.env*)",
+      "Bash(awk *.env*)",
+      "Bash(Get-Content *.env*)"
     ]
   }
 }

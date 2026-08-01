@@ -1,13 +1,17 @@
 name: CI (docs-only fallback)
 
-# ci.yml's `validate` and `lint-typecheck` jobs use paths-ignore for this same
-# list, so they never queue for PRs that touch only these paths. main's branch
-# protection requires both checks, which then block those PRs forever (no run
-# == no status). This workflow's jobs share those same names and trigger on
-# the inverse filter, so a PR whose changes are entirely docs/templates gets
-# fast, trivially-passing `validate`/`lint-typecheck` runs instead. For mixed
-# PRs (code + docs), both this workflow and ci.yml trigger; all must succeed,
-# which is correct.
+# ci.yml's jobs use paths-ignore for this same list, so they never queue for PRs that touch
+# only these paths. A required check with no run has no status, which blocks such a PR
+# forever. This workflow's jobs share ci.yml's job names and trigger on the inverse filter,
+# so a docs-only PR gets fast, trivially-passing runs instead. For mixed PRs (code + docs)
+# both workflows trigger and all must succeed, which is correct.
+#
+# The job names here MUST track ci.yml's actual job ids. On 2026-07-30 ci.yml split
+# `lint-typecheck` into separate `lint` and `typecheck` jobs and this file was not updated,
+# so it kept satisfying a check that no longer exists while providing nothing for the two
+# that do. Harmless only because branch protection currently requires no checks at all —
+# the moment it does, every docs-only PR would hang. Current ci.yml jobs: validate, lint,
+# typecheck, full-e2e.
 #
 # See https://github.com/Gawish-1997/phoenix-people-workforce/issues/679
 
@@ -30,8 +34,14 @@ jobs:
       - name: Skip full validation for docs-only changes
         run: echo "Only documentation/template files changed in this PR -- full lint/typecheck/test/build runs in ci.yml when code changes are present. Satisfying the required 'validate' check here so docs-only PRs are mergeable."
 
-  lint-typecheck:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip lint/typecheck for docs-only changes
-        run: echo "Only documentation/template files changed in this PR -- there is no app code for lint/typecheck to check. Satisfying the required 'lint-typecheck' check here so docs-only PRs are mergeable."
+      - name: Skip lint for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- there is no app code for lint to check. Satisfying the required 'lint' check here so docs-only PRs are mergeable."
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip typecheck for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- there is no app code for typecheck to check. Satisfying the required 'typecheck' check here so docs-only PRs are mergeable."

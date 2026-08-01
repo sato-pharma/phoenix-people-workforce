@@ -1940,10 +1940,13 @@ async function upsertEmployeeResidenceLocation(
   input: EmployeeMutationInput,
   hrId: string,
 ) {
+  // The Employee Management form always sends these three as null rather than omitting them, so an
+  // `undefined`-only check never fired: EVERY save -- salary, job title, manager, insurance --
+  // re-ran the geocode below and rewrote the row. Treat null as "unchanged" too.
   if (
-    input.residenceAddress === undefined &&
-    input.residenceArea === undefined &&
-    input.residenceCity === undefined
+    input.residenceAddress == null &&
+    input.residenceArea == null &&
+    input.residenceCity == null
   ) {
     return;
   }
@@ -1951,11 +1954,12 @@ async function upsertEmployeeResidenceLocation(
   const residenceAddress = compact(input.residenceAddress);
   const residenceArea = compact(input.residenceArea);
   const residenceCity = compact(input.residenceCity);
-  const geocodeQuery = [residenceAddress, residenceArea, residenceCity, "Egypt"]
-    .filter(Boolean)
-    .join(", ");
-  const geocoded = geocodeQuery
-    ? await googleGeocodeAddress(geocodeQuery).catch(() => null)
+  // Guard the parts, not the joined string: with all three empty the query collapsed to bare
+  // "Egypt", which geocodes successfully to the country centroid and stored that as the
+  // employee's home -- a plausible-looking coordinate that is wrong for everyone.
+  const addressParts = [residenceAddress, residenceArea, residenceCity].filter(Boolean);
+  const geocoded = addressParts.length
+    ? await googleGeocodeAddress([...addressParts, "Egypt"].join(", ")).catch(() => null)
     : null;
 
   await supabaseRest<EmployeeResidenceDbRow[]>(
@@ -1971,8 +1975,14 @@ async function upsertEmployeeResidenceLocation(
         residence_address: residenceAddress,
         residence_area: residenceArea,
         residence_city: residenceCity,
-        residence_latitude: geocoded?.lat ?? null,
-        residence_longitude: geocoded?.lng ?? null,
+        // Only write coordinates when the lookup actually returned some. Sending null under
+        // `resolution=merge-duplicates` OVERWRITES a good stored coordinate, and a failed geocode
+        // is not evidence that the employee moved -- it is usually a dead API key. Omitting the
+        // columns leaves whatever is already stored untouched. (2026-08-01: the Maps key lost
+        // billing, geocoding began answering HTTP 200 with REQUEST_DENIED -- which this code reads
+        // as "no result found", not as an error -- and every employee save silently erased that
+        // person's home GPS, which nothing can re-derive.)
+        ...(geocoded ? { residence_latitude: geocoded.lat, residence_longitude: geocoded.lng } : {}),
         updated_at: new Date().toISOString(),
       }),
       headers: {

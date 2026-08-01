@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
-// Liveness probe for Cloud Run / uptime checks. Intentionally does NO dependency work
+import { getDeployRevision } from "@/lib/observability/deploy-identity";
+
+// Liveness probe for the platform / uptime checks. Intentionally does NO dependency work
 // (no DB, no network) — it only proves the container is up and serving HTTP. Public and
 // unauthenticated by design; it exposes no data. Kept cheap so it can be polled often.
 export const runtime = "nodejs";
@@ -11,9 +13,10 @@ export async function GET() {
     {
       status: "ok",
       service: "phoenix-hr",
-      // K_REVISION is the Cloud Run-injected active revision name; useful to confirm
-      // which revision a probe hit. No secrets.
-      revision: process.env.K_REVISION ?? null,
+      // Which build answered this probe — "is my deploy actually live?" in one request.
+      // Resolved across platforms because Cloud Run's K_REVISION does not exist on Railway;
+      // this returned null for every request after the 2026-08-01 cutover.
+      revision: getDeployRevision(),
       time: new Date().toISOString(),
     },
     { headers: { "cache-control": "no-store" } },
