@@ -636,8 +636,20 @@ function attachSaveTierVisitTime(rows: CrmMasterRow[]): void {
  * `checkinCorrelationAvailable` is false the check-in read FAILED, so every `checkin_id` is null for
  * that reason alone; reclassifying then would turn an infrastructure error into the confident,
  * wrong statement that a whole team did no verified regular visits. Keep the raw vendor type
- * instead — the one value we still actually know. */
-function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[], checkinCorrelationAvailable = true): void {
+ * instead — the one value we still actually know.
+ *
+ * `checkinCorrelationAvailable` is REQUIRED, deliberately not defaulted. A `= true` default fails
+ * OPEN, which is precisely backwards for a rule about classifications: a future caller that simply
+ * forgot the argument would silently get the pre-fix behaviour back — an outage relabelling a whole
+ * team's Regular visits as Campaign, reintroduced by omission rather than by decision. Required
+ * means the type checker names every call site instead of trusting nobody forgets.
+ *
+ * Exported for the behavioural test in tests/crm-degradation-policy.test.ts. */
+export function attachEffectiveType(
+  dataset: CrmMasterDataset,
+  rows: CrmMasterRow[],
+  checkinCorrelationAvailable: boolean,
+): void {
   const knowsCheckin =
     (dataset === "visits" && checkinCorrelationAvailable) ||
     (dataset === "double_visits" && checkinCorrelationAvailable) ||
