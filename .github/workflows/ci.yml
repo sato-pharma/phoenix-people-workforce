@@ -122,6 +122,14 @@ jobs:
       - name: Check no snapshot tables land in the anon-readable public schema
         run: pnpm run check:sql-backups
 
+      # Runs as its own process, NOT inside `pnpm run test`. The aggregated runner
+      # shares one process across 500+ files and getSupabaseAdmin() memoizes its
+      # client, so a suite that successfully constructs one poisons every later
+      # test (PR #1596 took `validate` from ~3m30s to 20m17s, twice). Here the
+      # client dies with the process and cannot leak.
+      - name: Check the deductions write contract (what reaches the wire)
+        run: pnpm run check:deductions-write-contract
+
       - name: Check no stale Vercel domains/deps in shipped source
         run: pnpm run check:no-stale-domains
 
