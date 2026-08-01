@@ -1,29 +1,34 @@
 #!/usr/bin/env node
-// SessionEnd guard for git worktrees: back up, then REPORT. Never deletes anything.
+// SessionEnd guard for git worktrees: REPORT ONLY. Acts on nothing, ever.
 //
 // WHY THIS EXISTS. Worktree sprawl here is not a disk problem, it is a BACKUP problem. A sweep on
 // 2026-08-01 found 82 commits across 12 branches that existed only on this laptop — no remote, no
 // PR, no CI. Retiring folders was never the bottleneck: new worktrees are created faster than they
-// are cleaned up, so the risk regenerates. The durable fix is to close the backup gap at the moment
-// a session ends, which is the one point where "this worktree is done for now" is actually known.
+// are cleaned up, so the risk regenerates. The value is in NOTICING at the moment a session ends,
+// which is the one point where "this worktree is done for now" is actually known.
+//
+// WHY IT ONLY REPORTS (changed from auto-push, deliberately). The first version pushed unpushed
+// commits itself. That worked, but it quietly contradicted this repo's own settings: permissions.ask
+// gates "Bash(git push*)" behind an approval prompt, and HOOKS BYPASS THE PERMISSION SYSTEM
+// ENTIRELY — so the hook pushed without asking, which is exactly what that rule exists to prevent.
+// A tool that silently does the thing you configured a prompt for is worse than one that tells you
+// to do it yourself. The push command is printed ready to paste; running it stays a decision.
 //
 // WHAT IT DOES, in order:
 //   1. Bails unless this is a LINKED worktree on a real feature branch. The primary checkout and
-//      main/master are never auto-pushed — publishing whatever state the main working copy happens
-//      to be in is a different decision, and the owner's to make.
-//   2. Pushes the branch if it has unpushed commits (or no upstream at all). Non-destructive, and
-//      it does NOT pass --no-verify: the pre-push gate is the first validation these branches ever
-//      get, so it is worth paying.
-//   3. Reports whether the worktree is now retirable — merged PR + clean tree + nothing unpushed —
-//      and prints the exact commands.
+//      main/master are skipped — their state is the owner's business, not a hook's.
+//   2. Reports unpushed commits (or no upstream at all) with the exact push command.
+//   3. Reports whether the worktree is retirable — merged PR + clean tree + nothing unpushed —
+//      and prints the exact removal commands.
 //
-// WHAT IT DOES NOT DO: remove a worktree, delete a branch, commit anything, or open/merge a PR.
-// AGENTS.md is explicit that a worktree or branch is removed only with approval, so this stops at
-// telling you it is safe. Deleting on your behalf would trade a recoverable mess for an
-// unrecoverable one.
+// WHAT IT DOES NOT DO: push, remove a worktree, delete a branch, commit anything, or open/merge a
+// PR. AGENTS.md is explicit that a worktree or branch is removed only with approval, and the push
+// rule is the owner's own. This stops at telling you what is true.
 //
-// Runs async (see .claude/settings.json) so session exit is never blocked by the pre-push gate,
-// which takes minutes. Output also lands in <primary-repo>/.claude/worktree-exit.log.
+// Runs SYNCHRONOUSLY (see .claude/settings.json): with no push there is no multi-minute pre-push
+// gate to wait on, so the report can surface before the session closes instead of racing it — which
+// matters when the report is now the entire point. Also appended to
+// <primary-repo>/.claude/worktree-exit.log.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
@@ -81,24 +86,16 @@ const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
 if (!branch || branch === "HEAD") process.exit(0); // detached
 if (branch === "main" || branch === "master") process.exit(0); // never auto-push the trunk
 
-// ── 2. Back up anything unpushed ─────────────────────────────────────────────────────────────
+// ── 2. Report anything unpushed — do NOT push it ─────────────────────────────────────────────
 const hasUpstream = git(["rev-parse", "--abbrev-ref", `${branch}@{u}`]) !== null;
 const unpushed = hasUpstream ? Number(git(["rev-list", "--count", "@{u}..HEAD"]) ?? "0") : Number(git(["rev-list", "--count", `origin/main..${branch}`]) ?? "0");
 
-let pushed = false;
 if (unpushed > 0) {
-  // The pre-push gate (check:routes + check:migrations) runs here and takes a couple of minutes.
-  // Deliberately NOT bypassed with --no-verify: for a branch that has never seen CI, this is the
-  // only validation it gets, and AGENTS.md forbids skipping hooks without explicit approval.
-  try {
-    execFileSync("git", ["push", "-u", "origin", branch], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 600000 });
-    pushed = true;
-    say(`Worktree exit — pushed ${unpushed} unpushed commit(s) on ${branch} to origin (they existed only on this disk).`);
-  } catch (error) {
-    const detail = String(error?.stderr || error?.message || error).split("\n").slice(0, 3).join(" ");
-    say(`Worktree exit — COULD NOT push ${branch} (${unpushed} commit(s) still local only): ${detail}`);
-    say(`  Retry with:  git -C "${cwd}" push -u origin ${branch}`);
-  }
+  const where = hasUpstream ? "ahead of its upstream" : "and the branch has NO upstream at all";
+  say(`Worktree exit — ${branch} has ${unpushed} commit(s) ${where}. They exist only on this disk.`);
+  say(`  git -C "${cwd}" push -u origin ${branch}`);
+  // No --no-verify in that suggestion on purpose: the pre-push gate (check:routes, check:migrations)
+  // is usually the only validation a never-PR'd branch ever gets.
 }
 
 // ── 3. Report retirability — never act on it ────────────────────────────────────────────────
@@ -108,7 +105,7 @@ const dirty = (git(["status", "--porcelain"]) ?? "").split("\n").filter(Boolean)
 const mergedPr = gh(["pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--jq", ".[0].number"]);
 
 if (mergedPr) {
-  if (dirty === 0 && (pushed || unpushed === 0)) {
+  if (dirty === 0 && unpushed === 0) {
     say(`Worktree is RETIRABLE: PR #${mergedPr} merged, tree clean, nothing unpushed.`);
     say(`  git worktree remove "${cwd}"`);
     say(`  git branch -D ${branch}    # -D, not -d: a squash merge is never an ancestor of main`);
