@@ -122,6 +122,32 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
     );
   }, [rows, query, searchKeys]);
 
+  // The `totals` prop is computed by the caller over the FULL dataset, while the body renders
+  // `filtered`. So the moment someone types in the search box the rows shrink and the Total does
+  // not — the footer reports a figure belonging to rows that are no longer on screen. That is
+  // precisely the "the total doesn't match the rows above it" complaint.
+  //
+  // With no query the caller's total is authoritative and used as-is (it legitimately covers rows
+  // beyond the current page). With a query it is recomputed over the matching rows and the label
+  // says so, so a filtered total can never be mistaken for the whole.
+  const isFilteredView = query.trim().length > 0;
+  const effectiveTotals = useMemo(() => {
+    if (!totals || !isFilteredView) return totals;
+    const recomputed: Partial<Record<keyof T, number>> = {};
+    for (const key of Object.keys(totals) as (keyof T)[]) {
+      // Only re-sum keys the caller actually totalled. A column deliberately left out of `totals`
+      // (an average, a share, a ratio) must not acquire a meaningless sum here.
+      if (totals[key] == null) continue;
+      let sum = 0;
+      for (const row of filtered) {
+        const value = row[key];
+        if (typeof value === "number" && Number.isFinite(value)) sum += value;
+      }
+      recomputed[key] = sum;
+    }
+    return recomputed;
+  }, [totals, isFilteredView, filtered]);
+
   const sorted = useMemo(() => {
     if (!sortKey || !sortDir) return filtered;
     return [...filtered].sort((a, b) => {
@@ -233,7 +259,9 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
         ) : (
           pageRows.map((row, i) => <MobileRow columns={visibleColumns} key={i} row={row} />)
         )}
-        {totals && pageRows.length > 0 && <MobileRow columns={visibleColumns} isTotal row={totals} />}
+        {effectiveTotals && pageRows.length > 0 && (
+          <MobileRow columns={visibleColumns} isTotal row={effectiveTotals} />
+        )}
       </div>
 
       <div className="hidden overflow-x-auto border border-border md:block">
@@ -278,14 +306,20 @@ export function AnalyticsDataTable<T extends Record<string, unknown>>({
               ))
             )}
           </tbody>
-          {totals && (
+          {effectiveTotals && (
             <tfoot className="bg-black/5 border-t-2 border-border font-semibold">
               <tr>
                 {visibleColumns.map((col, i) => {
-                  const t = totals[col.key];
+                  const t = effectiveTotals[col.key];
                   return (
                     <td key={String(col.key)} className={`px-3 py-2 text-xs ${col.align === "right" ? "text-right tabular-nums" : "text-left"}`}>
-                      {i === 0 ? "Total" : t != null ? formatValue(col.formatKind, t) : ""}
+                      {i === 0
+                        ? isFilteredView
+                          ? "Total (filtered)"
+                          : "Total"
+                        : t != null
+                          ? formatValue(col.formatKind, t)
+                          : ""}
                     </td>
                   );
                 })}
