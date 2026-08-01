@@ -742,6 +742,22 @@ export async function getFingerprintAttendanceReport(input: {
     const crmDetail = crmActivity.detailMap.get(bucket.employeeHrId)?.get(bucket.reportDate) ?? "";
     const planSaysOffice = planOfficeMap.get(bucket.employeeHrId)?.get(bucket.reportDate);
 
+    // An approved EXCUSE cancels the day's attendance deduction, exactly as an
+    // approved exception does. This was the documented policy in two places and
+    // implemented in neither of the paths that actually deduct:
+    //
+    //   approved-excuse-days.ts — "Used to cancel an attendance deduction for a
+    //                              day covered by an approved excuse"
+    //   digest-reconcile.ts     — if (hasApprovedExcuse) return { action: "skip" }
+    //
+    // Here the flag was fetched, rendered into the `approvedExcuse` label below,
+    // and then ignored when computing the money — a fail-open guard. Measured on
+    // July 2026 production data it charged 1,666.66 EGP over three days that were
+    // all fully covered by an approved excuse: A-9 on 07-07 (800.00, late 78 /
+    // short 97 min vs 120 excused) and B-155 on 07-09 (433.33, late 86 / short 98)
+    // and 07-14 (433.33, short 109).
+    const deductionCancelled = hasApprovedException || hasApprovedExcuse;
+
     return {
       actualFirstPunch: firstPunchText,
       actualLastPunch: hasDistinctVisibleLastPunch ? lastPunchText : "",
@@ -756,8 +772,12 @@ export async function getFingerprintAttendanceReport(input: {
       crmActivity: hasCrmFieldVisit ? crmDetail || "CRM field visit" : "",
       date: displayDate(bucket.reportDate),
       dateIso: bucket.reportDate,
-      deductionDays: hasApprovedException ? "0" : status.deductionDays,
-      deductionValue: hasApprovedException ? "0" : status.deductionValue,
+      // deductionCancelled, not hasApprovedException: an approved excuse must
+      // cancel the charge too. The late/short MINUTES below deliberately stay
+      // factual — HR should still see that the day ran short, just not be
+      // charged for it.
+      deductionDays: deductionCancelled ? "0" : status.deductionDays,
+      deductionValue: deductionCancelled ? "0" : status.deductionValue,
       department,
       deviceUserId: bucket.deviceUserId,
       earlyLeaveMinutes: hasApprovedException ? "0" : status.earlyLeaveMinutes,

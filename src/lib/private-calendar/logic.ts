@@ -4,16 +4,17 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 
-export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "holiday" | "vacation";
+export type PrivateCalendarSource = "attendance" | "double_visit" | "excuse" | "field_visit" | "holiday" | "vacation";
 export type PrivateCalendarSeverity = "danger" | "info" | "success" | "warning";
 export type PrivateCalendarViewMode = "employee" | "team";
 
-export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit"] as const satisfies readonly PrivateCalendarSource[];
+export const privateCalendarSources = ["attendance", "vacation", "excuse", "holiday", "double_visit", "field_visit"] as const satisfies readonly PrivateCalendarSource[];
 
 export const privateCalendarSourceLabels: Record<PrivateCalendarSource, string> = {
   attendance: "Attendance",
   double_visit: "Double Visit",
   excuse: "Excuse",
+  field_visit: "Field Visit",
   holiday: "National vacation",
   vacation: "Vacation",
 };
@@ -490,6 +491,7 @@ export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): Pri
     attendance: 0,
     double_visit: 0,
     excuse: 0,
+    field_visit: 0,
     holiday: 0,
     total: items.length,
     vacation: 0,
@@ -505,6 +507,7 @@ function sourceCounts() {
     attendance: 0,
     double_visit: 0,
     excuse: 0,
+    field_visit: 0,
     holiday: 0,
     vacation: 0,
   } satisfies Record<PrivateCalendarSource, number>;
@@ -609,16 +612,27 @@ export function derivePrivateCalendarExceptions(input: {
       const vacations = dayItems.filter((item) => item.source === "vacation");
       const excuses = dayItems.filter((item) => item.source === "excuse");
       const doubleVisits = dayItems.filter((item) => item.source === "double_visit");
+      const fieldVisits = dayItems.filter((item) => item.source === "field_visit");
       const holidays = companyItems.filter((item) => item.source === "holiday");
-      // A CRM Double Visit self-proves attendance for the day — no fingerprint
-      // needed. Planned/intended activity (the Planning Calendar) is never
-      // consulted here — only actually recorded/verified sources count as covered.
+      // A CRM visit self-proves attendance for the day — no fingerprint needed.
+      // That is true of a rep's OWN solo visits (field_visit) exactly as it is of
+      // a manager-accompanied one (double_visit); only the double-visit feed was
+      // ever wired in. Field reps are not enrolled on fingerprint devices at all
+      // (see attendance-cross-check.ts), so for them CRM is the only possible
+      // proof of work — and measured on July 2026 production data, 86% of field
+      // work is solo: 1,700 rep-days carrying 15,429 real logged visits had no
+      // punch, no leave and no double visit, and so read as "No Activity
+      // Recorded" despite the employee demonstrably working.
+      //
+      // Planned/intended activity (the Planning Calendar) is still never
+      // consulted — only actually recorded/verified sources count as covered.
       const isCovered =
         attendance.length > 0 ||
         vacations.length > 0 ||
         excuses.length > 0 ||
         holidays.length > 0 ||
-        doubleVisits.length > 0;
+        doubleVisits.length > 0 ||
+        fieldVisits.length > 0;
 
       for (const item of attendance) {
         for (const flag of item.exceptionFlags) {
@@ -669,7 +683,7 @@ export function derivePrivateCalendarExceptions(input: {
         exceptions.push(createException({
           code: "no_activity_recorded",
           date,
-          description: `${employee.fullName}: no CRM double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.`,
+          description: `${employee.fullName}: no CRM field or double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.`,
           employeeHrId: employee.hrId,
           employeeName: employee.fullName,
           relatedItemIds: [],

@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 
 import { reconcileDay, type ReconcileInput } from "../src/lib/attendance/digest-reconcile.ts";
 
@@ -113,4 +114,38 @@ export function runAttendanceReconcileDayTests() {
     "skip",
     "a real CRM field visit cancels judgment even if a punch also exists that day",
   );
+
+  // --- The SAME rule, in the code that actually deducts (2026-08-01) ---
+  //
+  // Everything above tests reconcileDay() in digest-reconcile.ts — the engine of
+  // the attendance-digest feature, which was DROPPED (migration
+  // 20260722124339_drop_attendance_digest_feature). So the correct cascade was
+  // tested in code that no longer runs, while fingerprint-report.ts — the live
+  // path that produces the money — fetched the approved-excuse map, rendered it
+  // into a label, and charged the deduction anyway.
+  //
+  // Cost, measured on July 2026 production data: 1,666.66 EGP over three days
+  // that were each fully covered by an approved excuse — A-9 on 07-07 (800.00),
+  // B-155 on 07-09 and 07-14 (433.33 each).
+  //
+  // A behaviour test cannot reach getFingerprintAttendanceReport (it builds a
+  // Supabase client), so this is a wiring assertion on the live file.
+  {
+    const report = readFileSync("src/lib/attendance/fingerprint-report.ts", "utf8");
+    assert.match(
+      report,
+      /const deductionCancelled = hasApprovedException \|\| hasApprovedExcuse/,
+      "an approved excuse must cancel the attendance deduction, not merely be displayed",
+    );
+    assert.match(
+      report,
+      /deductionValue: deductionCancelled \?/,
+      "the money field must be gated on deductionCancelled, not on hasApprovedException alone",
+    );
+    assert.doesNotMatch(
+      report,
+      /deductionDays: hasApprovedException \?/,
+      "deductionDays gated on hasApprovedException alone is the fail-open that charged excused days",
+    );
+  }
 }

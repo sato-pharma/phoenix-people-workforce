@@ -6,6 +6,7 @@ import { loadAttendancePolicyGroups } from "@/lib/attendance/policy-groups";
 import { isAttendanceScheduledWorkingDay } from "@/lib/attendance/work-schedule";
 import { monthBounds, rangesOverlap, buildMonthGrid } from "@/lib/calendar/logic";
 import { loadDoubleVisitPrivateCalendarItems } from "@/lib/double-visit-analytics/service";
+import { loadFieldVisitPrivateCalendarItems } from "@/lib/private-calendar/field-visits";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -445,14 +446,16 @@ export async function getPrivateCalendarWorkspace(input: {
   const scopeEmployees = viewMode === "team" ? visibleEmployees : [selectedEmployee];
   const scopeHrIds = scopeEmployees.map((employee) => employee.hrId);
 
-  const [attendance, vacations, excuses, holidays, doubleVisits, attendancePolicyRows] = await Promise.all([
-    loadAttendanceItems(scopeHrIds, start, end),
-    loadVacationItems(scopeHrIds, start, end),
-    loadExcuseItems(scopeHrIds, start, end),
-    loadHolidayItems(input.year, input.month, start, end),
-    loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
-    loadAttendancePolicyScheduleRows(),
-  ]);
+  const [attendance, vacations, excuses, holidays, doubleVisits, fieldVisits, attendancePolicyRows] =
+    await Promise.all([
+      loadAttendanceItems(scopeHrIds, start, end),
+      loadVacationItems(scopeHrIds, start, end),
+      loadExcuseItems(scopeHrIds, start, end),
+      loadHolidayItems(input.year, input.month, start, end),
+      loadDoubleVisitPrivateCalendarItems(scopeHrIds, start, end),
+      loadFieldVisitPrivateCalendarItems(scopeHrIds, start, end),
+      loadAttendancePolicyScheduleRows(),
+    ]);
 
   const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
     ...attendance.items,
@@ -460,6 +463,7 @@ export async function getPrivateCalendarWorkspace(input: {
     ...excuses.items,
     ...holidays,
     ...doubleVisits.items,
+    ...fieldVisits.items,
   ], scopeEmployees), employees)
     .sort((left, right) => `${left.startDate}-${left.employeeName ?? ""}-${left.source}-${left.title}`.localeCompare(`${right.startDate}-${right.employeeName ?? ""}-${right.source}-${right.title}`));
 
@@ -493,6 +497,7 @@ export async function getPrivateCalendarWorkspace(input: {
     attendance: attendance.ready,
     double_visit: doubleVisits.ready,
     excuse: excuses.ready,
+    field_visit: fieldVisits.ready,
     holiday: true,
     vacation: vacations.ready,
   };
@@ -582,14 +587,19 @@ export async function getCompanyNoActivityDays(input: {
   const hrIds = employees.map((employee) => employee.hrId);
   const months = monthsTouchedByRange(input.start, input.end);
 
-  const [attendance, vacations, excuses, doubleVisits, attendancePolicyRows, ...holidaysByMonth] = await Promise.all([
-    loadAttendanceItems(hrIds, input.start, input.end),
-    loadVacationItems(hrIds, input.start, input.end),
-    loadExcuseItems(hrIds, input.start, input.end),
-    loadDoubleVisitPrivateCalendarItems(hrIds, input.start, input.end),
-    loadAttendancePolicyScheduleRows(),
-    ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
-  ]);
+  const [attendance, vacations, excuses, doubleVisits, fieldVisits, attendancePolicyRows, ...holidaysByMonth] =
+    await Promise.all([
+      loadAttendanceItems(hrIds, input.start, input.end),
+      loadVacationItems(hrIds, input.start, input.end),
+      loadExcuseItems(hrIds, input.start, input.end),
+      loadDoubleVisitPrivateCalendarItems(hrIds, input.start, input.end),
+      // A rep's OWN solo visits prove field work exactly as a double visit does.
+      // Only the double-visit feed was ever wired in, so 86% of field work was
+      // invisible here — see loadFieldVisitPrivateCalendarItems.
+      loadFieldVisitPrivateCalendarItems(hrIds, input.start, input.end),
+      loadAttendancePolicyScheduleRows(),
+      ...months.map(({ year, month }) => loadHolidayItems(year, month, input.start, input.end)),
+    ]);
 
   const allItems = decorateItemsWithEmployeeMetadata(filterItemsByEmployees([
     ...attendance.items,
@@ -597,6 +607,7 @@ export async function getCompanyNoActivityDays(input: {
     ...excuses.items,
     ...holidaysByMonth.flat(),
     ...doubleVisits.items,
+    ...fieldVisits.items,
   ], employees), employees);
 
   // Same per-employee suppression the calendar workspace uses. This path spans
