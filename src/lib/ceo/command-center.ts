@@ -1,4 +1,3 @@
-import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getSalaryFlags } from "@/lib/admin/service";
 import { hrIdsMatch, type AccessContext } from "@/lib/auth/permissions";
 import { getAttendanceAnalytics } from "@/lib/attendance/analytics";
@@ -215,10 +214,9 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   // of executive-signal fetching that could run concurrently.
   const adminSignalsPromise = getCeoAdminSignals(access, platformPromise);
 
-  const [sosR, leaveR, platformR, adminSignalsR, pendingPlansR] =
+  const [sosR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
       loadSourceOfSalesDashboard(null, canRestricted),
-      getAwaitingMyActionItems(access, "admin"),
       platformPromise,
       adminSignalsPromise,
       getCeoPendingPlansCount(),
@@ -226,8 +224,6 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
 
   const sos = sosR.status === "fulfilled" ? sosR.value : null;
   if (!sos) dataUnavailable.push("Source of Sales (monthly)");
-  const leaveItems = leaveR.status === "fulfilled" ? leaveR.value : null;
-  if (!leaveItems) dataUnavailable.push("Pending leave approvals");
   const platformMetrics = platformR.status === "fulfilled" ? platformR.value : null;
   if (!platformMetrics) dataUnavailable.push("Platform company metrics");
   if (platformMetrics?.dataUnavailable.length) dataUnavailable.push(...platformMetrics.dataUnavailable);
@@ -237,7 +233,14 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
   const plansPending = pendingPlansR.status === "fulfilled" ? pendingPlansR.value : null;
   if (pendingPlansR.status === "rejected") dataUnavailable.push("Pending weekly-plan approvals");
 
-  const leavePending = leaveItems ? leaveItems.filter((item) => item.module === "leave").length : null;
+  // Leave was moved out of "Other Approvals" onto the dedicated vacation approvals page, so
+  // getAwaitingMyActionItems filters module==="leave" out of its own feed by design (see
+  // action-center/service.ts). This CEO tile must source its count from the same vacation-report
+  // aggregate the "leaveSla" attention signal already uses (via adminSignals), not from that
+  // feed — filtering it here always returned zero, which read as "no leave waiting" even when
+  // requests were pending. Null (not 0) when the underlying vacation fetch failed, so the tile
+  // renders "unavailable" instead of a false all-clear.
+  const leavePending = adminSignals ? adminSignals.leavePendingTotal : null;
 
   const sosOut = sos
     ? {
@@ -352,6 +355,12 @@ async function getCeoAdminSignals(
     leavePendingR.status === "fulfilled"
       ? leavePendingR.value.dashboard.overdueBySla.total || leavePendingR.value.dashboard.pendingByStage.total
       : 0;
+  // Total requests actually awaiting a decision (HR or manager stage), independent of the
+  // SLA-prioritized `overdueLeaveSla` figure above — this is what the CEO's "Leave requests"
+  // approval tile shows. Null (not 0) on fetch failure so the tile can render "unavailable"
+  // rather than a false zero; the rejection is already recorded in dataUnavailable below.
+  const leavePendingTotal =
+    leavePendingR.status === "fulfilled" ? leavePendingR.value.dashboard.pendingByStage.total : null;
   const expiringContracts =
     contractsActiveR.status === "fulfilled"
       ? contractsActiveR.value.rows.filter((row) => {
@@ -401,6 +410,7 @@ async function getCeoAdminSignals(
     dataUnavailable: Array.from(new Set(dataUnavailable)),
     departuresLast30d,
     health,
+    leavePendingTotal,
     trends,
     payroll: {
       batchLabel: payroll.batchLabel,
@@ -439,6 +449,8 @@ export type CeoAdminSignals = {
   dataUnavailable: string[];
   /** Rolling 30-day departures (resignations effective within the last 30 days); 0 if resignation data is unavailable. */
   departuresLast30d: number;
+  /** Leave/vacation requests pending a decision (HR or manager stage); null if the vacation-report fetch failed. */
+  leavePendingTotal: number | null;
   health: {
     salesLinkageRate: number;
     attendanceReadinessRate: number;
