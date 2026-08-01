@@ -5,6 +5,7 @@ import { TargetsWorkspace, type TargetGridRow } from "@/components/sales/targets
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import {
   SALES_LINES,
   loadAllCanonicalAreaNames,
@@ -32,17 +33,20 @@ export const maxDuration = 60;
 // no inline inputs, no Save, no line-wide audit export. Rows are bounded by area code before any
 // rollup runs — see the note on filterAchievementForScope.
 
-/** A 13-month window (6 back → current → 6 forward), matching the admin page's picker. */
+/**
+ * A 13-month window (6 back → current → 6 forward), matching the admin page's picker — including
+ * its Cairo anchor, so this read-only twin can never label a different month "current" than the
+ * authoring surface does.
+ */
 function buildPeriods(): { periods: string[]; current: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
+  const { year, month } = currentCairoDateParts();
+  const monthIndex = month - 1; // 0-based for the Date arithmetic below
   const periods: string[] = [];
   for (let offset = 6; offset >= -6; offset -= 1) {
-    const date = new Date(year, month - offset, 1);
-    periods.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+    const date = new Date(Date.UTC(year, monthIndex - offset, 1));
+    periods.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
   }
-  return { periods, current: `${year}-${String(month + 1).padStart(2, "0")}` };
+  return { periods, current: `${year}-${String(month).padStart(2, "0")}` };
 }
 
 export default async function PortalTargetsPage({

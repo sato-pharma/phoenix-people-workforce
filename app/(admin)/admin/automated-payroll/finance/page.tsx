@@ -4,6 +4,7 @@ import { FinanceDownloadPanel } from "@/components/automated-payroll/finance-dow
 import { isAutomatedPayrollFinanceActor } from "@/lib/automated-payroll/permissions";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,9 @@ export default async function AutomatedPayrollFinancePage() {
     redirect("/admin");
   }
 
-  const now = new Date();
-  return <FinanceDownloadPanel initialMonth={now.getMonth() + 1} initialYear={now.getFullYear()} />;
+  // Cairo, not the runtime clock: this period flows into defaultFabValueDate(), so a UTC-derived
+  // month in the first 2-3 hours of a Cairo month stamps the FAB bank transfer file with the
+  // previous month's value date.
+  const { year, month } = currentCairoDateParts();
+  return <FinanceDownloadPanel initialMonth={month} initialYear={year} />;
 }

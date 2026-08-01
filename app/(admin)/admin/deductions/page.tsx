@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PremiumHero } from "@/components/ui/premium-hero";
 import { DeductionsWorkspace } from "@/components/admin/deductions-workspace";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +15,11 @@ export default async function AdminDeductionsPage() {
     redirect("/employee-portals");
   }
 
-  const now = new Date();
-  const initialMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  // Cairo, not UTC: this key seeds the workspace's state and is what the publish action files
+  // deductions under. In the first 2-3 hours of a Cairo month a UTC key still reads the previous
+  // month, which would land real deductions on the wrong payslip month.
+  const { year, month } = currentCairoDateParts();
+  const initialMonthKey = `${year}-${String(month).padStart(2, "0")}`;
 
   return (
     <div className="space-y-6">
