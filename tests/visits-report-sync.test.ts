@@ -26,6 +26,8 @@ function emptyMaps(): CrmIdentityMaps {
     // Empty = nobody has a last working date, so the post-exit attribution guard never fires and
     // these fixtures keep testing the row shape rather than the guard (which has its own suite).
     lastWorkingDateByHrId: new Map(),
+    // Same reasoning: with no last working date the guard returns before it ever consults a label.
+    crmUsernameByHrId: new Map(),
   };
 }
 
