@@ -123,6 +123,7 @@ import { runAttendanceHolidayOverridesTests } from "./attendance-holiday-overrid
 import { runDeductionsGovernanceFoundationTests } from "./deductions-governance-foundation.test.ts";
 import { runDeductionsGovernanceServiceTests } from "./deductions-governance-service.test.ts";
 import { runDeductionsGovernanceFwcConnectorTests } from "./deductions-governance-fwc-connector.test.ts";
+import { runDeductionsGovernancePayrollImportDisabledTests } from "./deductions-governance-payroll-import-disabled.test.ts";
 import { runDeductionsGovernanceCompletionTests } from "./deductions-governance-completion.test.ts";
 import { runDeductionsModuleFoundationTests } from "./deductions-module-foundation.test.ts";
 import { runDeductionsModulePublishTests } from "./deductions-module-publish.test.ts";
@@ -678,6 +679,10 @@ await runTest("company holidays", runCompanyHolidaysTests);
 await runTest("deductions governance foundation", runDeductionsGovernanceFoundationTests);
 await runTest("deductions governance service", runDeductionsGovernanceServiceTests);
 await runTest("deductions governance fwc connector", runDeductionsGovernanceFwcConnectorTests);
+await runTest(
+  "deductions governance payroll import stays disabled (no second writer to salary_records)",
+  runDeductionsGovernancePayrollImportDisabledTests,
+);
 await runTest("deductions governance completion", runDeductionsGovernanceCompletionTests);
 await runTest("deductions module foundation (unified module — candidate key, calculations, conflicts, validation)", runDeductionsModuleFoundationTests);
 await runTest("deductions module publish eligibility (mandatory-vs-approval-gated selection rule)", runDeductionsModulePublishTests);

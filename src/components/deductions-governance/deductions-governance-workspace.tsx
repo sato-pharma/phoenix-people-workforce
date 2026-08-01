@@ -44,6 +44,7 @@ import type {
   DeductionInboxRow,
   DeductionSourceGroup,
 } from "@/lib/deductions-governance/service";
+import { DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED } from "@/lib/deductions-governance/feature-flags";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -1096,17 +1097,27 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
                 {isFinalizing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 <span className="ml-2">Finalize Month</span>
               </Button>
-              <Button
-                disabled={isLoading}
-                onClick={() => {
-                  void previewPayrollImport();
-                }}
-                type="button"
-                variant="secondary"
-              >
-                <FileSpreadsheet className="h-4 w-4" />
-                <span className="ml-2">Payroll Preview</span>
-              </Button>
+              {/* Payroll Preview / Confirm Import are hidden while
+                  DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED is false. This
+                  import writes salary_records.crm/finger_print/unpaid_vacations
+                  strictly ADD-ON-TOP and cannot see what Automated Payroll has
+                  already baked into the same row — so while the Deductions
+                  module is being cut over, using it would silently pay twice.
+                  The server refuses regardless; hiding the buttons means nobody
+                  discovers that by clicking. */}
+              {DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED ? (
+                <Button
+                  disabled={isLoading}
+                  onClick={() => {
+                    void previewPayrollImport();
+                  }}
+                  type="button"
+                  variant="secondary"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  <span className="ml-2">Payroll Preview</span>
+                </Button>
+              ) : null}
               <Button
                 disabled={isExporting || isLoading}
                 onClick={() => {
@@ -1118,16 +1129,18 @@ export function DeductionsGovernanceWorkspace(props: DeductionsGovernanceWorkspa
                 {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
                 <span className="ml-2">Export</span>
               </Button>
-              <Button
-                disabled={isImportingPayroll || !payrollPreview?.canImport}
-                onClick={() => {
-                  void confirmPayrollImport();
-                }}
-                type="button"
-              >
-                {isImportingPayroll ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                <span className="ml-2">Confirm Import</span>
-              </Button>
+              {DEDUCTIONS_GOVERNANCE_PAYROLL_IMPORT_ENABLED ? (
+                <Button
+                  disabled={isImportingPayroll || !payrollPreview?.canImport}
+                  onClick={() => {
+                    void confirmPayrollImport();
+                  }}
+                  type="button"
+                >
+                  {isImportingPayroll ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                  <span className="ml-2">Confirm Import</span>
+                </Button>
+              ) : null}
             </div>
           ) : null
         }
