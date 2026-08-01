@@ -64,6 +64,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # Matches ci.yml / migration-drift-check.yml. Only the secret-pin assertion needs a Node
+  # runtime in this workflow; keeping the version in one place per workflow (rather than
+  # inlining it at the step) is the convention the other two already follow.
+  CI_NODE_VERSION: "24"
   PROJECT_ID: phoenix-workforce-498619
   # europe-west3 (Frankfurt) since the 2026-07-17 region cutover: colocated with the
   # production Supabase project (AWS eu-central-1, same metro, ~1ms) and ~57ms from
@@ -265,6 +269,25 @@ jobs:
           code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL/api/webhooks/resend" -H "content-type: application/json" -d '{}'); echo "POST /api/webhooks/resend -> $code"; [ "$code" = "401" ] || fail "webhook not 401"
           code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/notifications/daily"); echo "GET /api/notifications/daily -> $code"; [ "$code" = "401" ] || fail "cron not 401"
           echo "Smoke passed."
+
+      # This job is otherwise pure gcloud and had NO Node toolchain, so the secret-pin step
+      # below died with `pnpm: command not found` (exit 127) on every run — blocking BOTH the
+      # scheduled and manual production deploys from the moment it was added. It failed closed,
+      # which is the right direction, but it never once evaluated a real secret.
+      #
+      # Deliberately placed here rather than beside Checkout: it is only needed by the one step
+      # that follows, and a build/smoke failure should not have paid for it first.
+      #
+      # No `pnpm install` and no `cache: pnpm`: scripts/check-secret-pins.ts imports nothing but
+      # node:child_process, so the repo checkout plus a Node runtime is the whole requirement.
+      # Installing would add ~40s per deploy to satisfy a dependency that does not exist.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js (for the secret-pin assertion below)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
 
       - name: Assert no secret is pinned to a fixed version
         # A secretKeyRef pinned to a number cannot pick up a rotation and breaks outright
