@@ -14,6 +14,7 @@ import { roundCurrency } from "@/lib/payroll/money";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
+import { normalizeApprovedAmount, payableExpenseAmount } from "@/lib/outstation/payable";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -439,6 +440,12 @@ function mapExpense(row: Record<string, unknown>): PayrollExpenseApproval {
   return {
     allowance: Number(row.allowance ?? 0),
     amWorkload: Number(row.am_workload ?? 0),
+    // Without this the approvals UI cannot see what it saved and silently falls back to `total`,
+    // which is exactly how the edited amount used to disappear on reload.
+    approvedAmount:
+      row.approved_amount === null || row.approved_amount === undefined
+        ? null
+        : Number(row.approved_amount),
     approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
     approvedBy: row.approved_by ? String(row.approved_by) : null,
     date: row.expense_date ? new Date(String(row.expense_date)).toISOString() : "",
@@ -825,7 +832,7 @@ export async function getApprovedExpenseTotalsForPayroll(
   const supabase = await getSupabaseRlsClientIfAvailable() ?? getSupabaseAdmin();
   let query = supabase
     .from("outstation_expenses")
-    .select("hr_id,total,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
+    .select("hr_id,total,approved_amount,hr_approved,payout_year,trip_id,source_file_name,specialist,description")
     .eq("payout_month", month)
     .eq("payout_year", year)
     .eq("hr_approved", true);
@@ -849,7 +856,11 @@ export async function getApprovedExpenseTotalsForPayroll(
     .forEach((row) => {
       const hrId = String(row.hr_id ?? "").trim();
       if (!hrId) return;
-      totals.set(hrId, (totals.get(hrId) ?? 0) + Number(row.total ?? 0));
+      const payable = payableExpenseAmount(
+        row.approved_amount as number | null | undefined,
+        row.total as number | null | undefined,
+      );
+      totals.set(hrId, (totals.get(hrId) ?? 0) + payable);
     });
 
   return totals;
@@ -858,6 +869,7 @@ export async function getApprovedExpenseTotalsForPayroll(
 export async function savePayrollExpenseApprovals(input: {
   fileName: string;
   records: Array<ExpenseTripRecord & {
+    approvedAmount?: number | null;
     hrId?: string | null;
     hrApproved?: boolean;
     hrComment?: string;
@@ -956,6 +968,9 @@ export async function savePayrollExpenseApprovals(input: {
     return {
       allowance: record.allowance,
       am_workload: record.amWorkload,
+      // HR's approved figure gets its own column; `total` below still carries the employee's
+      // claim, so reducing a claim stays auditable instead of overwriting the evidence.
+      approved_amount: normalizeApprovedAmount(record.approvedAmount, record.total),
       approved_at: approved ? now : null,
       approved_by: approved ? approvedBy : null,
       description: record.description,

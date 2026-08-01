@@ -523,6 +523,9 @@ import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
+import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
+import { runOutstationApprovalStateTests } from "./outstation-approval-state.test.ts";
+import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-evidence.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1073,6 +1076,9 @@ await runTest("secret pins check (catches the version pinning that 401'd every c
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
+await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);
+await runTest("outstation approval state (3-state queues partition exactly; approval beats a stale rejected status)", runOutstationApprovalStateTests);
+await runTest("outstation workload evidence (solo days count as worked; campaign cap keeps double-visit counts)", runOutstationWorkloadEvidenceTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

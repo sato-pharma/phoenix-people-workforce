@@ -1808,6 +1808,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
 // the same Expense Command Center page, preserved exactly as before.
 export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
   {
+    href: "/admin/outstation/expense-approvals",
+    icon: ClipboardCheck,
+    label: "Expense Approvals",
+    description: "Review and approve outstation expenses against real CRM field activity.",
+    permissions: [{ resource: "expenses" }],
+    roles: systemAdministratorNavigationRoles,
+  },
+  {
     href: "/admin/outstation/expense-command",
     icon: Radar,
     label: "Expense Command Center",

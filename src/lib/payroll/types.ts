@@ -115,6 +115,8 @@ export type ExpenseTripRecord = {
 };
 
 export type PayrollExpenseApproval = ExpenseTripRecord & {
+  /** HR-approved payable figure. null = HR did not adjust the claim, so `total` is payable. */
+  approvedAmount: number | null;
   approvedAt: string | null;
   approvedBy: string | null;
   hrId: string | null;

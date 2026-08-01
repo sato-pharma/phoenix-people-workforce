@@ -1,5 +1,8 @@
 import {
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Columns3,
   Download,
   FileCheck2,
   FileSpreadsheet,
@@ -8,7 +11,7 @@ import {
   Upload,
 } from "lucide-react";
 import type { RefObject } from "react";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +136,78 @@ const expenseReviewColumns: Array<{
   { className: "min-w-[300px]", key: "hrNotes", label: "HR Notes" },
   { className: "min-w-[120px]", key: "open", label: "Open" },
 ];
+
+// The Employee column is pinned to the left (identity anchor) and the HR-decision
+// controls are pinned to the right, so only these "detail" columns live in the
+// scrollable middle and can be shown/hidden.
+const expenseDetailColumns = expenseReviewColumns.filter((column) => column.key !== "specialist");
+
+// Default-hidden to minimise horizontal scrolling; every column stays one click
+// away in the Columns menu. Kept visible by default: Validation, HR ID, Expense
+// Type, Start/End Date, Destination, Total, Status.
+const expenseDefaultHiddenColumns = new Set<ExpenseReviewColumnKey>([
+  "row",
+  "tripId",
+  "tripType",
+  "from",
+  "to",
+  "transportationType",
+  "km",
+  "travelCost",
+  "meetingAmount",
+  "allowance",
+  "amWorkload",
+  "pmWorkload",
+  "description",
+  "hr",
+  "hrNotes",
+  "open",
+]);
+
+const expenseColumnPrefsKey = "phoenix.outstation.expense-review.hidden-columns.v1";
+
+// Verified workload evidence (actual iReports360 double-visit mirror) for a trip,
+// used to check the sheet's declared AM/PM against reality, day by day.
+type WorkloadEvidenceDay = {
+  am: number;
+  campaign: number;
+  date: string;
+  other: number;
+  pm: number;
+  regular: number;
+  total: number;
+};
+type WorkloadEvidence = {
+  amWorkload: number;
+  campaignVisits: number;
+  dateBreakdown: WorkloadEvidenceDay[];
+  idleDates: string[];
+  matchStatus: string;
+  matchedDates: string[];
+  otherVisits: number;
+  pmWorkload: number;
+  regularVisits: number;
+  sourceLabel: string;
+};
+type TripEvidenceState = { status: "loading" | "done" | "error"; data?: WorkloadEvidence; error?: string };
+
+const workloadStatusTone: Record<string, "success" | "warning" | "danger" | "neutral"> = {
+  matched: "success",
+  manual: "neutral",
+  no_activity: "danger",
+  partial: "warning",
+  stale_import: "warning",
+};
+
+// Trip dates arrive as ISO datetimes (e.g. 2026-06-14T00:00:00.000Z); the evidence
+// API wants a plain YYYY-MM-DD.
+function toIsoDate(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString().slice(0, 10);
+}
 
 function expenseRecordIssues(record: ExpenseTripRecord) {
   const issues: string[] = [];
@@ -293,7 +368,14 @@ export function ExpenseReport({
   onImportToPayroll: (month: number, year: number) => void;
   onDeleteReport: (reportId: string) => void;
   onReplaceReport: (reportId: string, file: File | null) => void;
-  onSaveApprovals: (records: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>) => void;
+  onSaveApprovals: (
+    records: Array<
+      // approvedAmount must be declared here, not just passed: the server stores null when a
+      // record arrives without it, so a save that dropped the field would silently reset every
+      // amount HR had adjusted back to the full claim.
+      ExpenseTripRecord & { approvedAmount: number; hrApproved: boolean; hrComment: string }
+    >,
+  ) => void;
   onSelectReport: (reportId: string) => void;
   onUpload: (file: File | null) => void;
   payrollMonthsForImport: typeof payrollMonths;
@@ -307,24 +389,226 @@ export function ExpenseReport({
 }) {
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [approvals, setApprovals] = useState<Record<string, { hrApproved: boolean; hrComment: string }>>({});
+  const [approvals, setApprovals] = useState<Record<string, { hrApproved: boolean; hrComment: string; approvedAmount: number }>>({});
   const [tripDateFrom, setTripDateFrom] = useState("");
   const [tripDateTo, setTripDateTo] = useState("");
   const [importMonth, setImportMonth] = useState(String(new Date().getMonth() + 1));
   const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
   const [replaceReportId, setReplaceReportId] = useState<string | null>(null);
   const [sort, setSort] = useState("total-desc");
+  const [hiddenColumns, setHiddenColumns] = useState<Set<ExpenseReviewColumnKey>>(() => {
+    // The review table only renders after a client-side data load, so reading the
+    // saved preference here (rather than in an effect) is hydration-safe and keeps
+    // the initial paint correct.
+    if (typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(expenseColumnPrefsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return new Set(parsed as ExpenseReviewColumnKey[]);
+        }
+      } catch {
+        // Ignore unreadable/blocked localStorage — defaults still apply.
+      }
+    }
+    return new Set(expenseDefaultHiddenColumns);
+  });
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const bodyScrollRef = useRef<HTMLDivElement | null>(null);
+  const reviewTableRef = useRef<HTMLTableElement | null>(null);
+  const scrollSyncing = useRef(false);
+  const [expandedTrips, setExpandedTrips] = useState<Set<string>>(() => new Set());
+  const [evidenceByTrip, setEvidenceByTrip] = useState<Record<string, TripEvidenceState>>({});
   const replaceReportInputRef = useRef<HTMLInputElement | null>(null);
   const approvalFor = (record: ExpenseTripRecord) => {
-    const saved = record as ExpenseTripRecord & { hrApproved?: boolean; hrComment?: string };
+    const saved = record as ExpenseTripRecord & {
+      hrApproved?: boolean;
+      hrComment?: string;
+      approvedAmount?: number | null;
+    };
 
     return (
       approvals[record.tripId] ?? {
         hrApproved: Boolean(saved.hrApproved),
         hrComment: saved.hrComment ?? "",
+        approvedAmount:
+          typeof saved.approvedAmount === "number" ? saved.approvedAmount : record.total,
       }
     );
   };
+
+  function updateApproval(
+    record: ExpenseTripRecord,
+    patch: Partial<{ hrApproved: boolean; hrComment: string; approvedAmount: number }>,
+  ) {
+    setApprovals((current) => {
+      const saved = record as ExpenseTripRecord & {
+        hrApproved?: boolean;
+        hrComment?: string;
+        approvedAmount?: number | null;
+      };
+      const base =
+        current[record.tripId] ?? {
+          hrApproved: Boolean(saved.hrApproved),
+          hrComment: saved.hrComment ?? "",
+          approvedAmount:
+            typeof saved.approvedAmount === "number" ? saved.approvedAmount : record.total,
+        };
+
+      return { ...current, [record.tripId]: { ...base, ...patch } };
+    });
+  }
+
+  function toggleColumnVisibility(key: ExpenseReviewColumnKey) {
+    setHiddenColumns((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function loadTripEvidence(record: ExpenseTripRecord) {
+    const key = record.tripId;
+    if (!record.hrId) return;
+    const existing = evidenceByTrip[key];
+    if (existing && (existing.status === "loading" || existing.status === "done")) return;
+
+    setEvidenceByTrip((current) => ({ ...current, [key]: { status: "loading" } }));
+    try {
+      const params = new URLSearchParams({
+        employeeHrId: record.hrId,
+        tripEndDate: toIsoDate(record.toDate || record.date),
+        tripStartDate: toIsoDate(record.date),
+      });
+      const response = await fetch(`/api/outstation/visit-workload?${params.toString()}`, {
+        headers: { accept: "application/json" },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload?.success) {
+        throw new Error(payload?.message || `Request failed (${response.status})`);
+      }
+      setEvidenceByTrip((current) => ({
+        ...current,
+        [key]: { data: payload.data as WorkloadEvidence, status: "done" },
+      }));
+    } catch (error) {
+      setEvidenceByTrip((current) => ({
+        ...current,
+        [key]: { error: error instanceof Error ? error.message : "Workload lookup failed.", status: "error" },
+      }));
+    }
+  }
+
+  function toggleTripExpand(record: ExpenseTripRecord) {
+    const willExpand = !expandedTrips.has(record.tripId);
+    setExpandedTrips((current) => {
+      const next = new Set(current);
+      if (next.has(record.tripId)) next.delete(record.tripId);
+      else next.add(record.tripId);
+      return next;
+    });
+    if (willExpand) void loadTripEvidence(record);
+  }
+
+  function renderTripEvidence(record: ExpenseTripRecord) {
+    if (!record.hrId) {
+      return (
+        <p className="text-xs font-medium text-rose-600">
+          This trip has no HR ID, so its actual visits can&apos;t be verified against iReports360.
+        </p>
+      );
+    }
+
+    const entry = evidenceByTrip[record.tripId];
+    if (!entry || entry.status === "loading") {
+      return (
+        <p className="flex items-center gap-2 text-xs text-text-secondary">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading verified workload…
+        </p>
+      );
+    }
+    if (entry.status === "error" || !entry.data) {
+      return <p className="text-xs font-medium text-rose-600">Couldn&apos;t load workload evidence: {entry.error}</p>;
+    }
+
+    const data = entry.data;
+    const declaredTotal = record.amWorkload + record.pmWorkload;
+    const actualTotal = data.amWorkload + data.pmWorkload;
+    const mismatch = declaredTotal !== actualTotal;
+    const tone = workloadStatusTone[data.matchStatus] ?? "neutral";
+
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-text-secondary">Verified workload</span>
+          <Badge variant={tone}>{data.matchStatus.replace(/_/g, " ")}</Badge>
+          <span className="text-[11px] text-text-secondary">{data.sourceLabel}</span>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Declared (sheet)</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-text">
+              AM {formatNumber(record.amWorkload)} · PM {formatNumber(record.pmWorkload)}
+            </p>
+          </div>
+          <div className={cn("rounded-xl border p-3", mismatch ? "border-rose-300 bg-rose-50" : "border-emerald-200 bg-emerald-50")}>
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Actual (evidence)</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-text">
+              AM {formatNumber(data.amWorkload)} · PM {formatNumber(data.pmWorkload)}
+            </p>
+            {mismatch ? (
+              <p className="mt-0.5 text-[10px] font-semibold text-rose-600">
+                ≠ declared ({formatNumber(actualTotal)} actual vs {formatNumber(declaredTotal)} declared)
+              </p>
+            ) : null}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
+            <p className="mt-1 font-mono text-sm font-semibold text-text">
+              Regular {formatNumber(data.regularVisits)} · Campaign {formatNumber(data.campaignVisits)}
+            </p>
+          </div>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-text-secondary">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Day</th>
+                <th className="px-3 py-2 text-right font-semibold">AM</th>
+                <th className="px-3 py-2 text-right font-semibold">PM</th>
+                <th className="px-3 py-2 text-right font-semibold">Regular</th>
+                <th className="px-3 py-2 text-right font-semibold">Campaign</th>
+                <th className="px-3 py-2 text-right font-semibold">Total</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.dateBreakdown.map((day) => (
+                <tr className={day.total === 0 ? "bg-rose-50/60" : undefined} key={day.date}>
+                  <td className="whitespace-nowrap px-3 py-2 font-medium text-text">{formatPayrollDate(day.date)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.am)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-text">{formatNumber(day.pm)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-sky-700">{formatNumber(day.regular)}</td>
+                  <td className="px-3 py-2 text-right font-mono text-violet-700">{formatNumber(day.campaign)}</td>
+                  <td className="px-3 py-2 text-right font-mono font-semibold text-text">{formatNumber(day.total)}</td>
+                  <td className="whitespace-nowrap px-3 py-2">
+                    {day.total === 0 ? (
+                      <span className="font-semibold text-rose-600">No activity</span>
+                    ) : (
+                      <span className="text-emerald-700">{formatNumber(day.total)} field visits</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
   const records = useMemo(() => {
     const query = search.trim().toLowerCase();
     const fromDate = tripDateFrom ? new Date(`${tripDateFrom}T00:00:00`) : null;
@@ -382,11 +666,68 @@ export function ExpenseReport({
     });
   }, [analysis?.records, columnFilters, search, sort, tripDateFrom, tripDateTo]);
 
+  const visibleDetailColumns = useMemo(
+    () => expenseDetailColumns.filter((column) => !hiddenColumns.has(column.key)),
+    [hiddenColumns],
+  );
+
+  // Persist the reviewer's column choices (the initial value is read in useState above).
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(expenseColumnPrefsKey, JSON.stringify([...hiddenColumns]));
+    } catch {
+      // Ignore quota/blocked storage.
+    }
+  }, [hiddenColumns]);
+
+  // Mirror the table's real scroll width onto the top proxy scrollbar so it stays
+  // grabbable, and re-measure whenever visible columns or row count change.
+  useEffect(() => {
+    const table = reviewTableRef.current;
+    if (!table) return;
+
+    const measure = () => setTableScrollWidth(table.scrollWidth);
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, [visibleDetailColumns.length, records.length]);
+
+  function handleTopScroll() {
+    const top = topScrollRef.current;
+    const body = bodyScrollRef.current;
+    if (!top || !body || top.scrollLeft === body.scrollLeft) return;
+    if (scrollSyncing.current) {
+      scrollSyncing.current = false;
+      return;
+    }
+    scrollSyncing.current = true;
+    body.scrollLeft = top.scrollLeft;
+  }
+
+  function handleBodyScroll() {
+    const top = topScrollRef.current;
+    const body = bodyScrollRef.current;
+    if (!top || !body || top.scrollLeft === body.scrollLeft) return;
+    if (scrollSyncing.current) {
+      scrollSyncing.current = false;
+      return;
+    }
+    scrollSyncing.current = true;
+    top.scrollLeft = body.scrollLeft;
+  }
+
   const approvedRecords = (analysis?.records ?? []).filter((record) => approvalFor(record).hrApproved);
-  const approvedTotal = approvedRecords.reduce((sum, record) => sum + record.total, 0);
+  const approvedTotal = approvedRecords.reduce((sum, record) => sum + approvalFor(record).approvedAmount, 0);
   const unmappedRecords = (analysis?.records ?? []).filter((record) => !record.hrId);
   const missingTripDateRecords = (analysis?.records ?? []).filter((record) => !record.date);
   const filteredTotal = records.reduce((sum, record) => sum + record.total, 0);
+  const unjustifiedAmountRows = (analysis?.records ?? []).filter((record) => {
+    const approval = approvalFor(record);
+    return Math.abs(approval.approvedAmount - record.total) > 0.5 && !approval.hrComment.trim();
+  }).length;
   const validation = analysis?.validation ?? buildExpenseValidation(analysis?.records ?? []);
   const expenseFilterCount =
     (search.trim() ? 1 : 0) +
@@ -398,11 +739,15 @@ export function ExpenseReport({
     if (!analysis) return;
 
     onSaveApprovals(
-      analysis.records.map((record) => ({
-        ...record,
-        hrApproved: approvalFor(record).hrApproved,
-        hrComment: approvalFor(record).hrComment,
-      })),
+      analysis.records.map((record) => {
+        const approval = approvalFor(record);
+        return {
+          ...record,
+          approvedAmount: approval.approvedAmount,
+          hrApproved: approval.hrApproved,
+          hrComment: approval.hrComment,
+        };
+      }),
     );
   }
 
@@ -834,14 +1179,111 @@ export function ExpenseReport({
             </Button>
           </div>
 
-          <div>
-            <div className="min-w-0">
-              <div className="overflow-x-scroll rounded-[28px] border border-[#E2E8F0] bg-white pb-2 shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
-                <table className="w-full min-w-[4100px] table-fixed text-left text-sm">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-[#64748B]">
+                <span>Review &amp; approve</span>
+                <Badge variant="neutral">{formatNumber(records.length)} rows</Badge>
+                <span className="hidden font-normal normal-case tracking-normal text-text-secondary sm:inline">
+                  Employee and HR Decision stay pinned.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-xs text-text-secondary sm:inline">
+                  {formatNumber(visibleDetailColumns.length)} of {formatNumber(expenseDetailColumns.length)} detail columns
+                </span>
+                <div className="relative">
+                  <Button
+                    className="h-9 px-3 text-xs"
+                    onClick={() => setColumnsMenuOpen((open) => !open)}
+                    variant="secondary"
+                  >
+                    <Columns3 className="mr-2 h-3.5 w-3.5" />
+                    Columns
+                  </Button>
+                  {columnsMenuOpen ? (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setColumnsMenuOpen(false)} />
+                      <div className="absolute right-0 z-40 mt-1 max-h-[340px] w-64 overflow-y-auto rounded-2xl border border-border bg-card p-2 shadow-xl">
+                        <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-text-secondary">
+                            Detail columns
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="text-[11px] font-semibold text-[#EA580C] hover:underline"
+                              onClick={() => setHiddenColumns(new Set())}
+                              type="button"
+                            >
+                              Show all
+                            </button>
+                            <button
+                              className="text-[11px] font-semibold text-text-secondary hover:underline"
+                              onClick={() => setHiddenColumns(new Set(expenseDefaultHiddenColumns))}
+                              type="button"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </div>
+                        {expenseDetailColumns.map((column) => (
+                          <label
+                            className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-text hover:bg-bg-muted"
+                            key={column.key}
+                          >
+                            <input
+                              checked={!hiddenColumns.has(column.key)}
+                              className="accent-[#F97316]"
+                              onChange={() => toggleColumnVisibility(column.key)}
+                              type="checkbox"
+                            />
+                            {column.label}
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            {unjustifiedAmountRows > 0 ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-medium text-rose-700">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {formatNumber(unjustifiedAmountRows)} row(s) have an adjusted amount without a reason — add a reason so the change is auditable.
+              </div>
+            ) : null}
+
+            <div className="overflow-hidden rounded-[28px] border border-[#E2E8F0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.06)]">
+              <div
+                aria-hidden="true"
+                className="overflow-x-auto overflow-y-hidden border-b border-[#EEF2F6] bg-[#F8FAFC] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3"
+                onScroll={handleTopScroll}
+                ref={topScrollRef}
+              >
+                <div style={{ height: 1, width: tableScrollWidth }} />
+              </div>
+              <div
+                className="max-h-[70vh] overflow-auto [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3"
+                onScroll={handleBodyScroll}
+                ref={bodyScrollRef}
+              >
+                <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm" ref={reviewTableRef}>
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-xs uppercase tracking-[0.12em] text-[#64748B]">
-                      {expenseReviewColumns.map((column) => (
-                        <th className={cn("sticky top-0 z-10 px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
+                    <tr className="text-xs uppercase tracking-[0.12em] text-[#64748B]">
+                      <th className="sticky left-0 top-0 z-30 min-w-[210px] border-b border-r border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 align-top font-semibold shadow-[8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                        <TableHeaderMenu
+                          filterValue={columnFilters.specialist ?? ""}
+                          label="Employee"
+                          onFilterChange={(value) =>
+                            setColumnFilters((filters) => ({ ...filters, specialist: value }))
+                          }
+                          onSortAsc={() => setSort("specialist-asc")}
+                          onSortDesc={() => setSort("specialist-desc")}
+                        />
+                      </th>
+                      {visibleDetailColumns.map((column) => (
+                        <th className={cn("sticky top-0 z-20 whitespace-nowrap border-b border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 align-top font-semibold", column.className)} key={column.key}>
                           <TableHeaderMenu
                             filterValue={columnFilters[column.key] ?? ""}
                             label={column.label}
@@ -856,37 +1298,64 @@ export function ExpenseReport({
                           />
                         </th>
                       ))}
-                      <th className="sticky top-0 z-10 px-3 py-3 font-semibold">
-                        HR Approved
-                      </th>
-                      <th className="sticky top-0 z-10 px-3 py-3 font-semibold">
-                        Comment
+                      <th className="sticky right-0 top-0 z-30 min-w-[320px] border-b border-l border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3 text-left align-top font-semibold shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
+                        HR Decision
+                        <span className="mt-1 block text-[10px] font-medium normal-case tracking-normal text-text-secondary">
+                          Approve · adjust amount · add reason
+                        </span>
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody>
                     {records.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={expenseReviewColumns.length + 2}>
+                        <td className="px-3 py-8 text-center text-sm text-text-secondary" colSpan={visibleDetailColumns.length + 2}>
                           No expenses match the current filters.
                         </td>
                       </tr>
                     ) : (
                       records.slice(0, 250).map((record) => {
                         const issues = expenseRecordIssues(record);
+                        const approval = approvalFor(record);
+                        const amountChanged = Math.abs(approval.approvedAmount - record.total) > 0.5;
+                        const reasonMissing = amountChanged && !approval.hrComment.trim();
+                        const isExpanded = expandedTrips.has(record.tripId);
 
                         return (
-                        <tr className="transition-colors hover:bg-[#FFF7ED]/65" key={`${record.tripId}-${record.row}`}>
-                          {expenseReviewColumns.map((column) => {
+                        <Fragment key={`${record.tripId}-${record.row}`}>
+                        <tr className="group">
+                          <td className="sticky left-0 z-10 min-w-[210px] border-b border-r border-slate-100 bg-white px-3 py-3 align-top shadow-[8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[#FFF7ED]">
+                            <p className="whitespace-nowrap font-semibold text-text">{record.specialist || "Unassigned"}</p>
+                            <p className="mt-0.5 whitespace-nowrap font-mono text-[11px] text-text-secondary">
+                              {record.hrId ? record.hrId : "HR ID not mapped"}
+                            </p>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                              <span className="whitespace-nowrap rounded-md bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700">
+                                AM {formatNumber(record.amWorkload)}
+                              </span>
+                              <span className="whitespace-nowrap rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-700">
+                                PM {formatNumber(record.pmWorkload)}
+                              </span>
+                              <span className="text-[9px] font-semibold uppercase tracking-wide text-text-secondary">declared</span>
+                            </div>
+                            <button
+                              className="mt-1.5 inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-50"
+                              onClick={() => toggleTripExpand(record)}
+                              type="button"
+                            >
+                              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                              {isExpanded ? "Hide" : "Verify"} workload
+                            </button>
+                          </td>
+                          {visibleDetailColumns.map((column) => {
                             const rawValue = expenseColumnRawValue(record, column.key);
                             const displayValue = expenseColumnDisplayValue(record, column.key);
                             const isMoney = expenseCurrencyKeys.has(column.key);
                             const isNumeric = expenseNumericKeys.has(column.key);
-                            const isLongText = ["description", "from", "hrNotes", "location"].includes(column.key);
 
                             if (column.key === "validation") {
                               return (
-                                <td className={cn("px-3 py-3 align-top", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top group-hover:bg-[#FFF7ED]", column.className)} key={column.key}>
                                   <Badge variant={issues.length > 0 ? "warning" : "success"}>
                                     {issues.length > 0 ? issues.join(", ") : "Ready"}
                                   </Badge>
@@ -896,7 +1365,7 @@ export function ExpenseReport({
 
                             if (column.key === "hrId") {
                               return (
-                                <td className={cn("px-3 py-3 align-top font-mono text-xs text-text-secondary", column.className)} key={column.key}>
+                                <td className={cn("whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top font-mono text-xs text-text-secondary group-hover:bg-[#FFF7ED]", column.className)} key={column.key}>
                                   {record.hrId ? record.hrId : (
                                     <Badge variant="warning">Not mapped</Badge>
                                   )}
@@ -907,11 +1376,10 @@ export function ExpenseReport({
                             return (
                               <td
                                 className={cn(
-                                  "px-3 py-3 align-top text-text-secondary",
+                                  "whitespace-nowrap border-b border-slate-100 px-3 py-3 align-top text-text-secondary group-hover:bg-[#FFF7ED]",
                                   column.className,
                                   (isMoney || isNumeric) && "text-right font-mono text-xs",
                                   column.key === "total" && "font-semibold text-text",
-                                  isLongText && "whitespace-normal break-words leading-5",
                                 )}
                                 key={column.key}
                                 title={String(rawValue ?? "")}
@@ -920,50 +1388,72 @@ export function ExpenseReport({
                               </td>
                             );
                           })}
-                          <td className="px-3 py-3">
-                            <Switch
-                              checked={approvalFor(record).hrApproved}
-                              label="Approved by HR/Admin"
-                              onChange={(checked) =>
-                                setApprovals((current) => ({
-                                  ...current,
-                                  [record.tripId]: {
-                                    hrApproved: checked,
-                                    hrComment: approvalFor(record).hrComment,
-                                  },
-                                }))
-                              }
-                            />
-                          </td>
-                          <td className="px-3 py-3">
-                            <Input
-                              className="h-9 min-w-[220px] text-xs"
-                              onChange={(event) =>
-                                setApprovals((current) => ({
-                                  ...current,
-                                  [record.tripId]: {
-                                    hrApproved: approvalFor(record).hrApproved,
-                                    hrComment: event.target.value,
-                                  },
-                                }))
-                              }
-                              placeholder="HR/admin comment"
-                              value={approvalFor(record).hrComment}
-                            />
+                          <td
+                            className={cn(
+                              "sticky right-0 z-10 min-w-[320px] border-b border-l border-slate-100 bg-white px-3 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[#FFF7ED]",
+                              reasonMissing && "bg-rose-50/80 group-hover:bg-rose-50",
+                            )}
+                          >
+                            <div className="flex flex-col gap-2">
+                              <Switch
+                                checked={approval.hrApproved}
+                                label={approval.hrApproved ? "Approved" : "Approve"}
+                                onChange={(checked) => updateApproval(record, { hrApproved: checked })}
+                              />
+                              <div className="flex items-center gap-2">
+                                <span className="w-12 shrink-0 text-[10px] font-bold uppercase tracking-[0.1em] text-text-secondary">
+                                  Amount
+                                </span>
+                                <input
+                                  className="h-8 w-28 rounded-lg border border-border bg-white px-2 text-right font-mono text-xs text-text focus:border-[#F97316] focus:outline-none"
+                                  inputMode="decimal"
+                                  min={0}
+                                  onChange={(event) =>
+                                    updateApproval(record, { approvedAmount: Number(event.target.value) || 0 })
+                                  }
+                                  type="number"
+                                  value={String(approval.approvedAmount)}
+                                />
+                                {amountChanged ? (
+                                  <Badge variant="warning">was {formatEGP(record.total)}</Badge>
+                                ) : null}
+                              </div>
+                              <Input
+                                className={cn("h-8 text-xs", reasonMissing && "border-rose-400")}
+                                onChange={(event) => updateApproval(record, { hrComment: event.target.value })}
+                                placeholder={amountChanged ? "Reason for adjusted amount (required)" : "Reason / comment"}
+                                value={approval.hrComment}
+                              />
+                              {reasonMissing ? (
+                                <p className="text-[10px] font-semibold text-rose-600">
+                                  Add a reason for the changed amount.
+                                </p>
+                              ) : null}
+                            </div>
                           </td>
                         </tr>
+                        {isExpanded ? (
+                          <tr className="bg-slate-50/70">
+                            <td className="border-b border-slate-200 p-0" colSpan={visibleDetailColumns.length + 2}>
+                              <div className="sticky left-0 w-[min(920px,100%)] p-4">
+                                {renderTripEvidence(record)}
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                        </Fragment>
                         );
                       })
                     )}
                   </tbody>
                 </table>
               </div>
-              {records.length > 250 ? (
-                <p className="mt-3 text-xs text-text-secondary">
-                  Showing first 250 rows. Use filters to narrow the expenses report.
-                </p>
-              ) : null}
             </div>
+            {records.length > 250 ? (
+              <p className="text-xs text-text-secondary">
+                Showing first 250 rows. Use filters or hide columns to narrow the review.
+              </p>
+            ) : null}
           </div>
 
           {analysis.warnings.length > 0 ? (

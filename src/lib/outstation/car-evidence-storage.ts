@@ -230,3 +230,22 @@ export async function createOutstationCarEvidenceSignedUrl(path: string | null) 
   if (error) return null;
   return data.signedUrl;
 }
+
+/**
+ * Sign a batch of paths in the outstation-evidence bucket (ticket attachments live here too).
+ * Returns a URL per input path, preserving order; a path that fails to sign yields null.
+ */
+export async function createOutstationEvidenceSignedUrls(paths: string[]): Promise<Array<string | null>> {
+  if (paths.length === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  return Promise.all(
+    paths.map(async (path) => {
+      if (!path) return null;
+      const { data, error } = await supabase.storage
+        .from(OUTSTATION_EVIDENCE_BUCKET)
+        .createSignedUrl(path, CAR_EVIDENCE_SIGNED_URL_TTL_SECONDS);
+      return error ? null : data.signedUrl;
+    }),
+  );
+}

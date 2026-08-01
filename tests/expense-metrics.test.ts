@@ -13,6 +13,7 @@ function expense(input: Partial<PayrollExpenseApproval>): PayrollExpenseApproval
   return {
     allowance: 0,
     amWorkload: 0,
+    approvedAmount: null,
     approvedAt: null,
     approvedBy: null,
     date: "2026-04-10T00:00:00.000Z",

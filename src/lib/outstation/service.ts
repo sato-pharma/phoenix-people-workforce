@@ -10,6 +10,8 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
+import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
@@ -203,15 +205,39 @@ async function resolveOutstationWorkloadPayload(params: {
   tripEndDate: string;
   tripStartDate: string;
 }) {
-  const evidence = await getDoubleVisitExpenseWorkloadEvidence(params).catch((error) =>
-    fallbackWorkloadEvidence({
-      sourceLabel: error instanceof Error
-        ? `Double Visit evidence unavailable: ${error.message}`
-        : "Double Visit evidence unavailable.",
+  // TWO sources on purpose — they answer different questions and must not be conflated.
+  //
+  // Workload / "did this rep actually work these days" comes from the CRM visits read, which
+  // counts every field visit where the rep is the primary agent OR the double-visit partner.
+  // The double-visit mirror cannot see a rep's SOLO field days, so it reported worked days as
+  // "no activity" and the decision engine judged real trips against a workload of zero.
+  //
+  // The campaign-visit cap deliberately KEEPS the double-visit source. That rule (rule 3 in
+  // decision.ts, and campaignRuleRejection here) rejects on "campaign DOUBLE-visits" and on
+  // "no double-visit activity". Feeding it the CRM read would break it both ways: solo campaign
+  // visits would inflate campaignVisits into spurious auto-rejections, and solo visits would
+  // satisfy the totalDvVisits > 0 test, silently fail-opening a live rejection rule.
+  const [doubleVisitEvidence, repWorkload] = await Promise.all([
+    getDoubleVisitExpenseWorkloadEvidence(params).catch((error) =>
+      fallbackWorkloadEvidence({
+        sourceLabel: error instanceof Error
+          ? `Double Visit evidence unavailable: ${error.message}`
+          : "Double Visit evidence unavailable.",
+        tripEndDate: params.tripEndDate,
+        tripStartDate: params.tripStartDate,
+      }),
+    ),
+    // Never let the corrected read take a write path down: on failure we keep the previous
+    // (under-counting) behaviour rather than blocking an expense submission.
+    getRepTripVisitWorkload({
+      hrId: params.employeeHrId,
       tripEndDate: params.tripEndDate,
       tripStartDate: params.tripStartDate,
-    }),
-  );
+    }).catch(() => null),
+  ]);
+
+  const evidence = mergeWorkloadEvidence(doubleVisitEvidence, repWorkload);
+
   return {
     am_workload: evidence.amWorkload,
     pm_workload: evidence.pmWorkload,

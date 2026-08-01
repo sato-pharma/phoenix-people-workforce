@@ -13,6 +13,7 @@ import {
   groupPayrollExpenses,
   summarizePayrollExpenses,
 } from "@/lib/outstation/expense-metrics";
+import { EXPENSE_STATE_LABEL, expenseApprovalState } from "@/lib/outstation/approval-state";
 import { listUnifiedOutstationExpenses, PORTAL_HIERARCHY_EXPENSE_ROLES } from "@/lib/outstation/expenses";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 import { listOutstationRequests } from "@/lib/outstation/service";
@@ -276,15 +277,15 @@ export async function getOutstationExpenseCommandData(
     // so the ledger and heatmap dedupe instead of scattering the same place.
     const rawDestination = expense.to || expense.location || "";
     const canonicalDestination = rawDestination ? canonicalizeLocation(rawDestination) : expense.to;
-    const isRejected = String(expense.status ?? "").toLowerCase().includes("reject");
-
     return {
       ...expense,
       to: canonicalDestination,
-      // Approval is 3-state. hr_approved stays the canonical "approved" signal (so
-      // the Approved-spend KPI is unchanged); the rest split into Rejected (from raw
-      // status) vs Pending, so Rejected is no longer hidden inside Pending.
-      status: expense.hrApproved ? "Approved" : isRejected ? "Rejected" : "Pending",
+      // Approval is 3-state. hr_approved stays the canonical "approved" signal (so the
+      // Approved-spend KPI is unchanged); the rest split into Rejected (from raw status) vs
+      // Pending, so Rejected is no longer hidden inside Pending. The rule itself lives in
+      // approval-state.ts — the approvals workspace decides its queues with the same function,
+      // so this surface and that one can no longer drift.
+      status: EXPENSE_STATE_LABEL[expenseApprovalState(expense)],
       source,
       region,
       line,

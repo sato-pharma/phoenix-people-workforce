@@ -1,4 +1,5 @@
 import { normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
 
@@ -85,7 +86,15 @@ export function summarizePayrollExpenses(
   const totalAmount = roundCurrency(expenses.reduce((sum, expense) => sum + (expense.total || 0), 0));
 
   return {
-    approvedAmount: roundCurrency(approvedRows.reduce((sum, expense) => sum + (expense.total || 0), 0)),
+    // The approved figure must match what payroll pays, so it follows the same payable rule
+    // (HR's adjusted amount when there is one, the claim otherwise). `totalAmount` and
+    // `pendingAmount` below stay on `total` — those are what was CLAIMED, not what pays.
+    approvedAmount: roundCurrency(
+      approvedRows.reduce(
+        (sum, expense) => sum + payableExpenseAmount(expense.approvedAmount, expense.total),
+        0,
+      ),
+    ),
     approvedRows: approvedRows.length,
     averageCostPerTrip: expenses.length > 0 ? roundCurrency(totalAmount / expenses.length) : 0,
     pendingAmount: roundCurrency(
@@ -183,7 +192,10 @@ export function getApprovedExpenseTotalsByHrId(
     .filter((expense) => expense.hrApproved && expense.hrId)
     .forEach((expense) => {
       const hrId = String(expense.hrId);
-      totals.set(hrId, (totals.get(hrId) ?? 0) + (expense.total || 0));
+      totals.set(
+        hrId,
+        (totals.get(hrId) ?? 0) + payableExpenseAmount(expense.approvedAmount, expense.total),
+      );
     });
 
   return totals;

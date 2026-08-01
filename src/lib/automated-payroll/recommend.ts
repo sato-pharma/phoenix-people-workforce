@@ -24,6 +24,7 @@ import {
   calculateDeductionAmountFromBaseSalary,
   resolveDayBasedDeductionAmount,
 } from "@/lib/deductions-governance/calculations";
+import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility.ts";
 import { roundCurrency } from "@/lib/payroll/money";
 import { normalizePayrollPaymentMode, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
@@ -292,6 +293,8 @@ type PayoutExpenseTrip = {
   allowance: number;
   otherAmount: number;
   total: number;
+  /** HR's approved payable figure. null = HR did not adjust the claim, so `total` is payable. */
+  approvedAmount: number | null;
   hrApproved: boolean;
   hrStatus: string;
   description: string;
@@ -313,6 +316,7 @@ type PayoutExpenseRow = {
   allowance: number | null;
   other_amount: number | null;
   total: number | null;
+  approved_amount: number | null;
   hr_approved: boolean | null;
   hr_status: string | null;
   description: string | null;
@@ -353,7 +357,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
       const { data, error } = await getSupabaseAdmin()
         .from("outstation_expenses")
         .select(
-          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,hr_approved,hr_status,description",
+          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,description",
         )
         .eq("payout_month", period.month)
         .eq("payout_year", period.year)
@@ -374,6 +378,10 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
         const trips = byCompact.get(compact) ?? [];
         trips.push({
           allowance: Number(row.allowance ?? 0),
+          approvedAmount:
+            row.approved_amount === null || row.approved_amount === undefined
+              ? null
+              : Number(row.approved_amount),
           description: text(row.description),
           expenseDate: text(row.expense_date).slice(0, 10),
           fromLocation: text(row.from_location),
@@ -917,9 +925,14 @@ async function recommendExpenses(
 
     // Identical running-round accumulation to the pre-detail version — the
     // reimbursed figure must not move by a piastre just because the breakdown
-    // is now visible.
+    // is now visible. It DOES move when HR approved a different amount than was
+    // claimed: that is the approval, and payableExpenseAmount is the one rule
+    // every payout path shares. Untouched rows have a null approved amount and
+    // still reimburse the claim exactly.
     let value = 0;
-    for (const trip of trips) value = roundCurrency(value + trip.total);
+    for (const trip of trips) {
+      value = roundCurrency(value + payableExpenseAmount(trip.approvedAmount, trip.total));
+    }
 
     const tripDates = trips.map((trip) => trip.expenseDate).filter(Boolean).sort();
     const tripEndDates = trips.map((trip) => trip.toDate || trip.expenseDate).filter(Boolean).sort();
@@ -946,7 +959,10 @@ async function recommendExpenses(
       Meeting: trip.meetingAmount,
       Allowance: trip.allowance,
       Other: trip.otherAmount,
-      Total: trip.total,
+      // The payable figure, so the visible breakdown always adds up to the reimbursed total.
+      // When HR reduced a claim this is below the sum of the components above — that gap IS the
+      // approval decision, and the original claim stays on the Expense Approvals page.
+      Total: payableExpenseAmount(trip.approvedAmount, trip.total),
       // hr_status is blank on every live row, so hr_approved is the real signal;
       // fall back to hr_status only if a future import starts populating it.
       "HR Approved": trip.hrApproved ? "Yes" : trip.hrStatus || "Not yet approved",
