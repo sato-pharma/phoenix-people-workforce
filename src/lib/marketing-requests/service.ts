@@ -1928,6 +1928,61 @@ export function classifyMarketingSla(input: { payDate: string | null; today: str
   return null;
 }
 
+// --- Waiting-time SLA ---------------------------------------------------------------------
+// The pay-date rule above catches a request running out of runway. It cannot catch a request that
+// is simply STUCK: one submitted with a pay date three months out produces no signal at all,
+// however long an approver sits on it, and only starts alerting once the pay date is nearly on
+// top of it — by which point the delay has already happened. These thresholds measure the other
+// axis: how long the CURRENT approval step has been waiting for a decision.
+const MARKETING_WAITING_DUE_SOON_DAYS = 3;
+const MARKETING_WAITING_OVERDUE_DAYS = 7;
+const MARKETING_WAITING_ESCALATION_DAYS = 14;
+
+/**
+ * Pure classifier for how long the current approval step has been outstanding.
+ *
+ * `waitingSince` is the step's last status change — a step's `updated_at` is stamped when it is
+ * made `current`, including when a returned request is resumed. So reassigning or resubmitting
+ * legitimately restarts the clock rather than counting elapsed time against someone who was not
+ * yet responsible for the decision.
+ */
+export function classifyMarketingWaitingSla(input: {
+  waitingSince: string | null;
+  now: string;
+}): MarketingSlaEvent | null {
+  const daysWaiting = marketingDaysWaiting(input.waitingSince, input.now);
+  if (daysWaiting === null) return null;
+  if (daysWaiting >= MARKETING_WAITING_ESCALATION_DAYS) return "escalation";
+  if (daysWaiting >= MARKETING_WAITING_OVERDUE_DAYS) return "overdue_reminder";
+  if (daysWaiting >= MARKETING_WAITING_DUE_SOON_DAYS) return "due_date_reminder";
+  return null;
+}
+
+/** Whole days the current step has been waiting, so the message states it rather than implying it. */
+export function marketingDaysWaiting(waitingSince: string | null, now: string): number | null {
+  if (!waitingSince) return null;
+  const since = Date.parse(waitingSince);
+  const parsedNow = Date.parse(now);
+  if (!Number.isFinite(since) || !Number.isFinite(parsedNow)) return null;
+  return Math.max(0, Math.floor((parsedNow - since) / 86_400_000));
+}
+
+/** Severity order, so the two independent signals reduce to the single worst one. */
+const MARKETING_SLA_SEVERITY: Record<MarketingSlaEvent, number> = {
+  due_date_reminder: 1,
+  escalation: 3,
+  overdue_reminder: 2,
+};
+
+export function mostUrgentMarketingSla(...events: Array<MarketingSlaEvent | null>): MarketingSlaEvent | null {
+  let worst: MarketingSlaEvent | null = null;
+  for (const event of events) {
+    if (!event) continue;
+    if (!worst || MARKETING_SLA_SEVERITY[event] > MARKETING_SLA_SEVERITY[worst]) worst = event;
+  }
+  return worst;
+}
+
 function marketingTodayCairo(): string {
   // YYYY-MM-DD in Africa/Cairo (the platform-wide convention).
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -1974,25 +2029,36 @@ export async function runMarketingSlaDaily(): Promise<{
     const { data, error } = await supabase
       .from("marketing_requests")
       .select("*")
-      .in("status", MARKETING_SLA_PENDING_STATUSES as unknown as string[])
-      .not("pay_date", "is", null);
+      // No longer requires a pay date. A request without one cannot trigger the pay-date rule,
+      // but it can still sit unapproved for weeks — which is exactly what the waiting-time rule
+      // below exists to catch. Excluding these rows made the stalest requests the least visible.
+      .in("status", MARKETING_SLA_PENDING_STATUSES as unknown as string[]);
     if (error) throw error;
     const rows = (data ?? []) as MarketingRequestDbRow[];
     scanned = rows.length;
+    const nowIso = new Date().toISOString();
     for (const row of rows) {
       const request = mapRequest(row);
-      const eventType = classifyMarketingSla({ payDate: request.payDate, today });
-      if (!eventType) continue;
       try {
         // Current approver — feeds assigned_approver / workflow_step_approver routing.
+        // `updated_at` is stamped when a step is made `current`, so it doubles as "waiting since".
         const { data: stepData } = await supabase
           .from("marketing_request_approval_steps")
-          .select("assigned_hr_id")
+          .select("assigned_hr_id, updated_at, created_at")
           .eq("request_id", request.id)
           .eq("status", "current")
           .maybeSingle();
         const hasCurrentStep = Boolean(stepData);
-        const approverHrId = (stepData as { assigned_hr_id?: string | null } | null)?.assigned_hr_id ?? null;
+        const step = stepData as { assigned_hr_id?: string | null; created_at?: string | null; updated_at?: string | null } | null;
+        const approverHrId = step?.assigned_hr_id ?? null;
+
+        // Two independent clocks, reduced to the single worst signal so one request never
+        // produces two competing notifications on the same day.
+        const waitingSince = step?.updated_at ?? step?.created_at ?? null;
+        const payDateEvent = classifyMarketingSla({ payDate: request.payDate, today });
+        const waitingEvent = classifyMarketingWaitingSla({ now: nowIso, waitingSince });
+        const eventType = mostUrgentMarketingSla(payDateEvent, waitingEvent);
+        if (!eventType) continue;
 
         // Data-integrity guard: a `pending_approval` request always gets exactly one `current`
         // gating step the moment it enters this status (createMarketingApprovalSteps stamps it
@@ -2014,10 +2080,23 @@ export async function runMarketingSlaDaily(): Promise<{
         }
 
         const copy = MARKETING_SLA_EVENT_COPY[eventType];
+        // The message must name the reason that actually fired. Saying "is approaching its pay
+        // date" about a request whose pay date is three months out — reached purely because an
+        // approver has held it for two weeks — would be untrue and would teach people to ignore
+        // the alert. Pay date wins the wording when it is the more urgent of the two, because
+        // that is the harder deadline.
+        const daysWaiting = marketingDaysWaiting(waitingSince, nowIso);
+        const drivenByPayDate =
+          payDateEvent !== null && mostUrgentMarketingSla(payDateEvent, waitingEvent) === payDateEvent;
+        const message = drivenByPayDate
+          ? `Marketing request ${request.requestCode} ${copy.verb} (pay date ${request.payDate}).`
+          : `Marketing request ${request.requestCode} has been waiting ${daysWaiting} day(s) for a decision${
+              request.payDate ? ` (pay date ${request.payDate})` : ""
+            }.`;
         await notifyMarketingWorkflow({
           actorHrId: "system",
           eventType,
-          message: `Marketing request ${request.requestCode} ${copy.verb} (pay date ${request.payDate}).`,
+          message,
           metadata: {
             assignedApproverHrId: approverHrId,
             // Date-stamps the idempotency key so each reminder fires at most once per day
