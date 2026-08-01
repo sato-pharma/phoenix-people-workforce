@@ -516,6 +516,26 @@ function generatedRecommendations(
         sourceType: "n_retroactive_candidate",
       }));
 
+      // APPROVED LEAVE CANCELS THE DEDUCTION — you cannot log a CRM visit on a day
+      // you were approved to be away.
+      //
+      // leaveCoverage is already loaded for this archive and already consulted TWICE
+      // above: once for the `approved_leave_request` advisory (which reports the exact
+      // dates where approved leave exists but the field calendar is not marked AV), and
+      // once for this employee's `existingCoverageStatus`. The payroll path simply never
+      // read it. So the module would notice you were on approved leave, file an advisory
+      // saying so, and then deduct a full day of base salary for each of those same days.
+      //
+      // Measured on July 2026 production: 8 employee-days, 6,983.89 EGP, across 3 people
+      // — including 5 consecutive days of APPROVED PAID ANNUAL leave for the Training
+      // Manager, plus approved emergency and compensatory days.
+      const employeeLeaveDates = leaveCoverage.coveredDatesByEmployee.get(canonicalHrIdKey(employee.hrId) ?? "") ?? new Set<string>();
+      const deductibleCells = normalNoActivityCells.filter((cell) => !employeeLeaveDates.has(cell.dateIso));
+      const deductibleDates = deductibleCells.map((cell) => cell.dateIso);
+      // Severity must be recomputed from what actually remains: carrying the original
+      // severity would rate a one-day candidate by days that are no longer charged.
+      const deductibleSeverity = highestSeverity(deductibleCells.map((cell) => cell.severity ?? "Low"));
+
       // SFE Manager appears in the compliance report above (leaveRecommendations) but must
       // never generate a payroll-deduction recommendation — see the ELIGIBLE_TITLES comment
       // in eligibility.ts. This is the "enforced separately in the deductions-governance
@@ -527,10 +547,22 @@ function generatedRecommendations(
       // inclusion is informational only and must never itself create a payroll consequence, so
       // only the ORIGINAL, title-eligible population can ever reach a payroll_deduction
       // recommendation — this is the only place payroll_deduction is generated in the codebase.
-      if (!holidaySourceDegraded && !isSfeManagerTitle(employee.roleName) && isFieldWorkforceComplianceEligibleTitle(employee.roleName)) {
+      //
+      // NOT gated on leaveCoverage.sourceUnavailable, deliberately. Suppressing the whole
+      // category whenever the leave read fails would turn a source outage into a silent
+      // 0.00 EGP month, and archives legitimately carry no leave matching at all
+      // ("Leave request read-only matching is unavailable for this archive"). When
+      // coverage is absent the covered set is simply empty, so behaviour is byte-for-byte
+      // what it was before — the exclusion only ever subtracts dates it can prove.
+      if (
+        !holidaySourceDegraded &&
+        deductibleDates.length > 0 &&
+        !isSfeManagerTitle(employee.roleName) &&
+        isFieldWorkforceComplianceEligibleTitle(employee.roleName)
+      ) {
         payrollRecommendations.push(buildRecommendation({
           archive: archiveDetail.archive,
-          dates: normalNoActivityDates,
+          dates: deductibleDates,
           decisions,
           ...hierarchy,
           estimatedAmount: null,
@@ -539,7 +571,7 @@ function generatedRecommendations(
           recommendation: "Review no-activity days for possible payroll deduction report. Amount requires payroll calculation.",
           recommendationReason: "N means no activity candidate only. It is not an automatic payroll deduction.",
           recommendationType: "payroll_deduction",
-          severity,
+          severity: deductibleSeverity,
           sourceType: "no_activity_candidate",
         }));
       }

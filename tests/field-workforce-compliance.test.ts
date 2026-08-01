@@ -422,6 +422,57 @@ export async function runFieldWorkforceComplianceTests() {
     recommendation.existingCoverageStatus === "already_covered"
   ));
 
+  // Approved leave must CANCEL the payroll deduction, not merely annotate it.
+  //
+  // A-1's no-activity days in this fixture are 2026-01-03 and 2026-01-04. The
+  // leaveCoverage built above deliberately covers a DIFFERENT date (2026-01-06), so it
+  // cannot exercise this path — a separate request covering 2026-01-04 is required, or
+  // the assertion would pass whether or not the exclusion exists.
+  //
+  // Before this guard the module raised an `approved_leave_request` advisory naming
+  // exactly these dates and then deducted a full day of base salary for them anyway.
+  // Measured on July 2026 production: 8 employee-days / 6,983.89 EGP, including 5
+  // consecutive days of approved PAID annual leave for the Training Manager.
+  const payrollLeaveCoverage = buildFieldWorkforceLeaveCoverageFromApprovedRequests({
+    monthEnd: "2026-01-31",
+    monthStart: "2026-01-01",
+    rows: [{
+      employee_hr_id: "A-1",
+      end_date: "2026-01-04",
+      start_date: "2026-01-04",
+      status: "approved",
+    }],
+  });
+  const payrollLeaveReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [], payrollLeaveCoverage);
+  const coveredPayroll = payrollLeaveReport.payrollRecommendations.find((recommendation) =>
+    recommendation.employeeCode === "A-1" &&
+    recommendation.sourceType === "no_activity_candidate"
+  );
+  assert.ok(coveredPayroll, "A-1 still has an uncovered no-activity day, so a payroll recommendation must survive");
+  assert.ok(
+    !coveredPayroll.dates.includes("2026-01-04"),
+    "2026-01-04 falls inside an approved leave request — you cannot log a CRM visit on a day you were approved to be away, so it must never reach a payroll deduction",
+  );
+  assert.deepEqual(
+    coveredPayroll.dates,
+    ["2026-01-03"],
+    "only the leave-covered date may be removed; a genuinely uncovered no-activity day must still be charged",
+  );
+
+  // Leave coverage that is not connected must leave the deduction exactly as it was.
+  // Gating the category on leave availability would turn a source outage into a silent
+  // 0.00 EGP month, and archives legitimately have no leave matching.
+  const uncoveredPayroll = recommendations.payrollRecommendations.find((recommendation) =>
+    recommendation.employeeCode === "A-1" &&
+    recommendation.sourceType === "no_activity_candidate"
+  );
+  assert.ok(uncoveredPayroll, "with no leave source connected the payroll recommendation must still be produced");
+  assert.deepEqual(
+    uncoveredPayroll.dates,
+    ["2026-01-03", "2026-01-04"],
+    "an unread leave source must not silently suppress deduction days — the exclusion only subtracts dates it can prove",
+  );
+
   const mismatchedDecisionReport = buildFieldWorkforceRecommendationsReportFromArchive(restored, [{
     dates: payrollRecommendation.dates,
     days_count: payrollRecommendation.daysCount,
