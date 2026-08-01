@@ -34,16 +34,30 @@ function parseNum(value: unknown, emptyAsZero = false): number {
   return Number.isFinite(n) ? n : Number.NaN;
 }
 
+/**
+ * Discount as a fraction, or NaN when the cell is present but cannot be trusted.
+ *
+ * NaN (not a clamp) is the point. This used to end in
+ *     return Math.min(1, Math.max(0, fraction));
+ * so a "150" typo became a 100% discount, `value = qty x price x (1 - 1)` = 0, and the sale silently
+ * vanished. It also made upload-validation's `discount_out_of_range` check unreachable — nothing
+ * out-of-range ever survived the clamp to be validated. The caller now raises an exception instead,
+ * so a bad cell is reviewed rather than quietly zeroing revenue.
+ */
 function discountFrac(value: unknown): number {
   const text = String(value ?? "").replace(/%/g, "").replace(/,/g, "").trim();
-  if (!text) return 0;
+  if (!text) return 0; // an empty cell genuinely means "no discount"
   const n = Number(text);
-  if (!Number.isFinite(n) || n === 0) return 0;
+  if (!Number.isFinite(n)) return Number.NaN; // present but unreadable
+  if (n === 0) return 0;
+  // Convention: >1 is a percentage, <=1 is already a fraction.
   const fraction = Math.abs(n) > 1 ? n / 100 : n;
-  // Clamp to [0, 1]: value = qty x price x (1 - fraction); an out-of-range cell (e.g. a "150" typo)
-  // would otherwise drive the row value negative (or inflate it for a negative cell). Mirror of the
-  // guard in monthly-distributor-import.ts's parseDiscount.
-  return Math.min(1, Math.max(0, fraction));
+  // >= 1 is rejected rather than applied. A cell of exactly "1" is genuinely ambiguous under the
+  // convention above — 1% or 100%? — and reading it as 100% zeroes the row. Anything that would
+  // wipe out a sale should be reviewed, not guessed at. Production carries no discount at or above
+  // 1 today (all 52 non-zero values are 0.0–0.08), so this rejects nothing that currently exists.
+  if (fraction < 0 || fraction >= 1) return Number.NaN;
+  return fraction;
 }
 
 // Timezone-safe YYYY-MM. dayFirst disambiguates DD-MM-YYYY vs MM-DD-YYYY when both parts are <= 12
@@ -367,13 +381,46 @@ export function normalizeRows(
     }
 
     const product = maps.productByCode.get(productCode);
-    const qty = parseNum(firstValue(row, header, profile.qtyColumns));
+    const qtyRaw = firstValue(row, header, profile.qtyColumns);
+    const valueRaw = firstValue(row, header, profile.valueColumns);
+    const discountRaw = firstValue(row, header, profile.discountColumns);
+    const qty = parseNum(qtyRaw);
     const bonusQty = 0;
-    const discount = discountFrac(firstValue(row, header, profile.discountColumns));
-    const sheetValue = parseNum(firstValue(row, header, profile.valueColumns), true);
+    const discount = discountFrac(discountRaw);
+    const sheetValue = parseNum(valueRaw, true);
     const value = profile.valueSource === "sheet"
       ? sheetValue
       : (Number.isFinite(qty) ? qty * (product?.factoryPrice ?? 0) * (1 - discount) : 0);
+
+    // A cell the parser cannot read must NOT become a zero.
+    //
+    // qty and value were written as `Number.isFinite(x) ? x : 0`, so "1,2OO" (letter O), an Arabic-
+    // Indic numeral, "n/a", or a European "1.234,56" all silently became 0 on the path that carries
+    // 99.6% of production rows — the sale vanished from every total with nothing to review. parseNum
+    // returns NaN for an EMPTY cell too, and an empty quantity legitimately means zero, so only a
+    // NON-EMPTY cell that fails to parse is an error.
+    const nonEmpty = (raw: unknown) => String(raw ?? "").trim() !== "";
+    const badQty = !Number.isFinite(qty) && nonEmpty(qtyRaw);
+    const badValue = profile.valueSource === "sheet" && !Number.isFinite(sheetValue) && nonEmpty(valueRaw);
+    // discountFrac returns NaN when the cell is present but out of range. It used to clamp silently
+    // into [0,1], which both hid the typo and let a "150" become a 100% discount that zeroed the row
+    // — and made upload-validation's discount_out_of_range check unreachable, because nothing
+    // out-of-range ever survived to be validated.
+    const badDiscount = !Number.isFinite(discount) && nonEmpty(discountRaw);
+
+    if (badQty || badValue || badDiscount) {
+      exceptions.push({
+        rawProduct,
+        rawProductName: productValues.slice(1).find(Boolean) ?? "",
+        rawTerritory: territoryValues.find(Boolean) ?? "",
+        rawCustomerCode: customerCode,
+        rawCustomerName: firstValue(row, header, profile.customerNameColumns),
+        rawCustomerAddress: firstValue(row, header, profile.customerAddressColumns),
+        rawRowNumber: r,
+        reason: badQty ? "unparseable_qty" : badValue ? "unparseable_value" : "discount_out_of_range",
+      });
+      continue;
+    }
 
     coded.push({
       areaCode: hierarchy.areaCode,

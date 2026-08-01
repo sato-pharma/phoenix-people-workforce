@@ -141,7 +141,17 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
     setIsExporting(true);
     try {
       const response = await fetch("/api/sales/monthly-closing/export", {
-        body: JSON.stringify({ line: selectedLine, period: selectedPeriod }),
+        // Send the on-screen filter too. Without it the workbook was always the full national
+        // matrix while the screen showed a filtered one, so "export what I am looking at" produced
+        // a different set of numbers — the usual reason a report and its export disagree.
+        body: JSON.stringify({
+          areaCodes: filter.areaCodes,
+          line: selectedLine,
+          period: selectedPeriod,
+          productCodes: filter.productCodes,
+          regionCodes: filter.regionCodes,
+          search: filter.search,
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });

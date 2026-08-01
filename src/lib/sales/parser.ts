@@ -321,16 +321,21 @@ export async function readUploadRows(file: File): Promise<ParsedUploadRows> {
   return { headers, rows, schemaType };
 }
 
+/**
+ * Content fingerprint used to detect a re-upload of the same workbook.
+ *
+ * It used to hash the headers, the FIRST FIVE ROWS and the row count only, which is wrong in both
+ * directions: correcting a cell anywhere from row 6 onward left the hash identical, so a genuinely
+ * fixed workbook was rejected as a duplicate; and adding one blank row changed the count, so a true
+ * duplicate sailed through and its value was counted twice. Hashing every row closes both.
+ */
 function duplicateHash(line: string, month: number, year: number, rows: Record<string, unknown>[]) {
-  const signature = JSON.stringify({
-    line,
-    month,
-    year,
-    headers: Object.keys(rows[0] ?? {}).sort(),
-    sample: rows.slice(0, 5),
-    count: rows.length,
-  });
-  return createHash("sha256").update(signature).digest("hex");
+  const hash = createHash("sha256");
+  hash.update(JSON.stringify({ line, month, year, headers: Object.keys(rows[0] ?? {}).sort(), count: rows.length }));
+  // Streamed row by row rather than JSON.stringify(rows): these workbooks reach tens of thousands of
+  // rows, and serialising the whole array at once is a needless multi-megabyte allocation.
+  for (const row of rows) hash.update(JSON.stringify(row));
+  return hash.digest("hex");
 }
 
 function uniqueRecordPeriods(records: Array<{ month: number; year: number }>) {
@@ -379,8 +384,22 @@ export async function parseSalesUpload(file: File, line: string, uploadedBy: str
   );
   assertFileNamePeriodMatchesRows(file.name, parsedRecords);
   const firstValid = parsedRecords.find((record) => record.month && record.year);
-  const month = firstValid?.month || new Date().getMonth() + 1;
-  const year = firstValid?.year || new Date().getFullYear();
+  // A sheet that states no period at all used to fall back to `new Date()` — the SERVER's clock,
+  // which is UTC on Cloud Run. That silently filed the whole batch under the upload month rather
+  // than the sales month, and just after midnight Cairo on the 1st it filed it under the month
+  // BEFORE that. Refuse instead: the period is not something to guess at, and the operator can
+  // either fix the Month/Year columns or rename the file.
+  if (!firstValid) {
+    throw new SalesWorkflowError(
+      "missing_period",
+      "This workbook does not state a period. Add the Month and Year columns (or name the file with " +
+        "the month, e.g. \"… July 2026.xlsx\") and upload it again — the period cannot be inferred " +
+        "from the upload date without risking filing the sales under the wrong month.",
+      400,
+    );
+  }
+  const month = firstValid.month;
+  const year = firstValid.year;
   const periods = [
     ...new Set(
       parsedRecords

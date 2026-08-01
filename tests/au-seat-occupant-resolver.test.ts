@@ -122,19 +122,43 @@ export function runAuSeatOccupantResolverTests() {
       `occupant — use au.f_seat_occupant_asof(seat_id, date) instead. Offending migrations: ${naive.join(", ")}`,
   );
 
-  // ── 3. The canonical resolver keeps the documented as-of window ─────────────
+  // ── 3. The canonical resolver implements the owner's credit rule ────────────
+  //
+  // CHANGED 2026-08-01 by owner ruling: credit follows TODAY'S area→person wiring, except that a
+  // departed rep keeps the credit for months they actually worked. That is
+  //     coalesce(occupant today, occupant at period end)
+  // and it supersedes the pure as-of window this section used to pin.
+  //
+  // It also removes the old `effective_from asc` arm. That arm existed for the seed-baseline case
+  // (p_asof precedes the seat's first span) on the reasoning that dropping those periods "would lose
+  // their sales entirely" — but it did not merely retain them, it attributed them to the EARLIEST
+  // occupant the seat ever had, i.e. someone who never held it in that period. Measured on
+  // production it was firing on 100 of 525 (area × period) rows; under the new rule 83 of those
+  // resolve to the correct person via the today-arm and only 17 become genuinely unowned. Those 17
+  // are not lost either — attribution is area-first, so the value still belongs to its area and only
+  // the person is absent, which is the honest answer when nobody holds the seat and nobody did.
   const resolver = latest.get("au.f_seat_occupant_asof")!;
   const normalized = resolver.body.replace(/\s+/g, " ");
   assert.ok(
-    normalized.includes(
-      "(oh.effective_from <= p_asof and (oh.effective_to is null or oh.effective_to > p_asof)) desc",
-    ),
-    "au.f_seat_occupant_asof must prefer the span covering p_asof (half-open [effective_from, effective_to))",
+    normalized.includes("oh.effective_from <= current_date"),
+    "arm 1: au.f_seat_occupant_asof must resolve today's occupant first (today's wiring wins)",
   );
   assert.ok(
-    /order\s+by[^;]*oh\.effective_from\s+asc/i.test(normalized),
-    "au.f_seat_occupant_asof must fall back to the earliest span when p_asof precedes the seat's first span " +
-      "(the seed-baseline case — dropping those periods would lose their sales entirely)",
+    normalized.includes("oh.effective_from <= p_asof"),
+    "arm 2: it must fall back to the occupant at p_asof, so a departed rep keeps historical credit",
+  );
+  assert.ok(
+    normalized.indexOf("oh.effective_from <= current_date") < normalized.indexOf("oh.effective_from <= p_asof"),
+    "today's wiring must be the FIRST coalesce arm — reversed, a transfer would never re-point history",
+  );
+  assert.ok(
+    !/effective_from\s+asc/i.test(normalized),
+    "the earliest-ever fallback must stay gone: it invented an owner who never held the seat that period",
+  );
+  assert.ok(
+    normalized.includes("(oh.effective_to is null or oh.effective_to > current_date)") &&
+      normalized.includes("(oh.effective_to is null or oh.effective_to > p_asof)"),
+    "both arms keep the half-open [effective_from, effective_to) window",
   );
 
   const lamResolver = latest.get("au.f_line_area_map_asof")!;

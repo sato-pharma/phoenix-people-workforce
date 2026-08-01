@@ -447,6 +447,13 @@ import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts
 import { runAnalyticsClosingGeographyScopeTests } from "./analytics-closing-geography-scope.test.ts";
 import { runAnalyticsFailureNotZeroTests } from "./analytics-failure-not-zero.test.ts";
 import { runSupabasePaginationGuardsTests } from "./supabase-pagination-guards.test.ts";
+import { runSosUiTruthTests } from "./sos-ui-truth.test.ts";
+import { runSosDataCoverageTests } from "./sos-data-coverage.test.ts";
+import { runSosRollupSqlTruthTests } from "./sos-rollup-sql-truth.test.ts";
+import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.test.ts";
+import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
+import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
+import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
 import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
 import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
@@ -974,6 +981,13 @@ await runTest("rep achievement period resolution", runRepAchievementPeriodsTests
 await runTest("monthly closing geography scope (DM/RM area bound reaches the loader)", runAnalyticsClosingGeographyScopeTests);
 await runTest("analytics failure is never rendered as a zero", runAnalyticsFailureNotZeroTests);
 await runTest("supabase pagination guards (no unordered pages, no row ceilings, no swallowed page errors)", runSupabasePaginationGuardsTests);
+await runTest("SoS UI truth (brick coverage denominator, export matches the screen)", runSosUiTruthTests);
+await runTest("SoS data coverage (missing months + per-distributor gaps are visible)", runSosDataCoverageTests);
+await runTest("SoS rollup SQL truth (Direct priced as Direct, backfill refreshes the rollup)", runSosRollupSqlTruthTests);
+await runTest("SoS seat attribution (today's wiring, departed reps keep their credit)", runSosSeatAttributionPeriodTests);
+await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
+await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
+await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
 await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
 await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);

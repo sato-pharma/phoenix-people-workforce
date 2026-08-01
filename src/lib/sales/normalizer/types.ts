@@ -134,7 +134,19 @@ export type NormalizeException = {
   rawRowNumber: number;
   // "blank_customer" = no customer code, territory, or brick ID at all; row is a data error
   // (EG-BR) or an unresolvable summary row — NOT actionable by adding to the customer map.
-  reason: "product" | "brick" | "both" | "blank_customer";
+  //
+  // The three unparseable_* reasons are cell-level data errors, not mapping gaps: the row's
+  // quantity, value or discount is present but cannot be read. They exist because those cells used
+  // to be coerced to 0 (or the discount clamped into range), which made the sale silently vanish
+  // from every total instead of appearing here for review.
+  reason:
+    | "product"
+    | "brick"
+    | "both"
+    | "blank_customer"
+    | "unparseable_qty"
+    | "unparseable_value"
+    | "discount_out_of_range";
 };
 
 // Reserved product code for "we don't sell this — neglect it". Rows whose item maps to this are

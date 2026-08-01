@@ -24,6 +24,11 @@ import {
 import { listMonthlyClosingPeriods, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { shiftPeriod } from "@/lib/sales/periods";
 import {
+  buildSosCoverageReport,
+  describeSosCoverageGaps,
+  type SosCoverageReport,
+} from "@/lib/sales/sos-coverage";
+import {
   computeContribution,
   computeDelta,
   computeDeltaPctByCode,
@@ -37,6 +42,7 @@ import {
   type SosNewLostRow,
   type SosParetoRow,
 } from "@/lib/sales/sos-analytics";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 export type {
@@ -365,10 +371,26 @@ const fetchSosDashboardRpcRowsUncached = async (inputs: SosRpcInputs): Promise<S
             failedRpcs,
           );
 
-    const geoArgsFor = (period: string): Record<string, unknown> =>
-      trendExcludeCodes.length > 0 ? { p_period: period, p_exclude_codes: trendExcludeCodes } : { p_period: period };
+    // The brick/customer panels take the SAME line/product/region/area bound as the headline total.
+    // They used to receive only the period, so "Top Bricks" and "Top Customers" showed company-wide
+    // rows directly beneath a line-scoped total — and neither line nor product is even present in
+    // the result set, so no amount of post-filtering in TS could have corrected it.
+    //
+    // Cache-safe: every array below is already a field of SosRpcInputs (the unstable_cache key), so
+    // two differently-scoped viewers still cannot share an entry.
+    const geoArgsFor = (period: string): Record<string, unknown> => ({
+      p_period: period,
+      ...(trendExcludeCodes.length > 0 ? { p_exclude_codes: trendExcludeCodes } : {}),
+      p_lines: trendLineNames ?? null,
+      p_products: trendProductCodes ?? null,
+      p_regions: trendRegionCodes ?? null,
+      p_areas: filterAreas.length > 0 ? filterAreas : null,
+    });
     const fetchGeo = (fn: "phx_exec_brick" | "phx_exec_customers", orderBy: string[]) =>
-      canSeeCrossLineGeography
+      // trendForcedEmpty means the viewer's scope ∩ filters resolved to nothing. Every other RPC
+      // here already short-circuits on it; the geography panels did not, and only the TS keepExec
+      // backstop stopped them rendering rows. Skipping the call is both correct and cheaper.
+      canSeeCrossLineGeography && !trendForcedEmpty
         ? Promise.all(
             selectedPeriods.map((period) =>
               safeRpcAll(fn, () => rpcAll(supabase, fn, geoArgsFor(period), orderBy), failedRpcs),
@@ -483,10 +505,14 @@ export async function getSosDashboard(
   // from rows, filter options and the trend for every other role (incl. company-scope SFE).
   const canSeeHeadOffice = canViewHeadOfficeLine(accessContext.role);
 
-  const [availablePeriods, references, salesScope] = await Promise.all([
+  const [availablePeriods, references, salesScope, coverage] = await Promise.all([
     listMonthlyClosingPeriods(),
     loadSalesReferenceData({ includeCustomerBricks: false }),
     resolveSalesAccessScope(accessContext),
+    // Which months and which distributors actually landed. Nothing in the pipeline noticed that
+    // 2026-05 was never uploaded, and every trend line drew straight through the gap. A failure to
+    // read coverage must not take the dashboard down — it degrades to "no gaps reported".
+    loadSosCoverageReport().catch(() => null),
   ]);
 
   // Per-viewer LINE/REGION lockdown. The SoS RPCs return the WHOLE company; without this any
@@ -565,6 +591,16 @@ export async function getSosDashboard(
         : !scopeRegionCodes || scopeRegionCodes.has((a.regionCode ?? "").toUpperCase()),
     );
   const totalAreas = masterAreas.length;
+  // Brick coverage needs a MASTER denominator, scoped exactly like masterAreas above. It used to be
+  // `new Set(brickRows.map(r => r.brickId)).size` — the very same expression as the numerator — so
+  // "bricks reached / total bricks" was mathematically always 100% and the KPI could never show a
+  // gap: only bricks that HAD sales were ever counted as bricks that exist.
+  const masterBricks = (references.bricks ?? []).filter((b) => {
+    if (!b.brickId) return false;
+    if (scopeAreaCodes) return scopeAreaCodes.has((b.areaCode ?? "").toUpperCase());
+    return !scopeRegionCodes || scopeRegionCodes.has((b.regionCode ?? "").toUpperCase());
+  });
+  const totalBricks = masterBricks.length;
 
   // Multi-month selection: the dashboard sums leaf rows across every selected month. `periods`
   // (multi) takes precedence over the legacy single `period`; when neither is supplied it defaults
@@ -600,7 +636,7 @@ export async function getSosDashboard(
   };
 
   if (!selectedPeriod) {
-    return emptyDashboard(filterOptions, totalAreas, canSeeRestricted);
+    return emptyDashboard(filterOptions, totalAreas, totalBricks, canSeeRestricted);
   }
 
   // Trend window = the most-recent N months, always including every selected period (so a selection
@@ -941,7 +977,7 @@ export async function getSosDashboard(
     areasReached: soldAreaCodes.size,
     totalAreas,
     bricksReached: soldBrickIds.size,
-    totalBricks: new Set(brickRows.map((row) => row.brickId).filter(Boolean)).size,
+    totalBricks,
   };
 
   const channelMix = [
@@ -1126,6 +1162,7 @@ export async function getSosDashboard(
     customerTop10Share,
     whiteSpaceAreas,
     insights: buildInsights({
+      coverage,
       byDistributor,
       byRegion,
       byArea,
@@ -1147,6 +1184,29 @@ export async function getSosDashboard(
   };
 }
 
+/**
+ * Coverage over every validated batch. Ordered by id (uuid) so the offset walk has a total order;
+ * period alone is not unique.
+ */
+async function loadSosCoverageReport(): Promise<SosCoverageReport> {
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<{ period: string; distributor_code: string; total_value: number | null }>(
+    () =>
+      supabase
+        .from("source_of_sales_import_batches")
+        .select("period,distributor_code,total_value")
+        .eq("status", "validated"),
+    "id",
+  );
+  return buildSosCoverageReport(
+    rows.map((row) => ({
+      period: String(row.period ?? ""),
+      distributorCode: String(row.distributor_code ?? ""),
+      totalValue: row.total_value == null ? 0 : Number(row.total_value),
+    })),
+  );
+}
+
 function buildInsights(input: {
   byDistributor: SosDistributorRow[];
   byRegion: SosGroupRow[];
@@ -1158,9 +1218,15 @@ function buildInsights(input: {
   singleRegion: boolean;
   /** Month-over-month comparison — only supplied by admin/export callers; null/absent for the portal. */
   mom?: SosMomComparison | null;
+  /** Batch coverage; null when the lookup failed. */
+  coverage?: SosCoverageReport | null;
 }): SosDashboardData["insights"] {
   const out: SosDashboardData["insights"] = [];
   const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+  // FIRST, before any movement commentary: if a month or a distributor never landed, every "up
+  // 12% vs last month" below it is partly measuring which files were uploaded.
+  const coverageWarning = input.coverage ? describeSosCoverageGaps(input.coverage) : null;
+  if (coverageWarning) out.push({ tone: "danger", text: coverageWarning });
   const momValue = input.mom?.summaryDeltas.totalValue;
   if (momValue && momValue.deltaPct != null) {
     out.push({
@@ -1190,7 +1256,7 @@ function buildInsights(input: {
   return out;
 }
 
-function emptyDashboard(filters: SosFilterOptions, totalAreas: number, restrictedRevealed: boolean): SosDashboardData {
+function emptyDashboard(filters: SosFilterOptions, totalAreas: number, totalBricks: number, restrictedRevealed: boolean): SosDashboardData {
   return {
     period: null,
     selectedPeriods: [],
@@ -1213,7 +1279,8 @@ function emptyDashboard(filters: SosFilterOptions, totalAreas: number, restricte
       areasReached: 0,
       totalAreas,
       bricksReached: 0,
-      totalBricks: 0,
+      // Master denominator even with no sales, so the KPI reads "0 of N" rather than "0 of 0".
+      totalBricks,
     },
     trend: [],
     channelMix: [],
