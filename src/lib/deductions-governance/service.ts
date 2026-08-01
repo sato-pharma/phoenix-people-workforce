@@ -1486,7 +1486,7 @@ type SummaryRow = {
   year: number;
 };
 
-type SummaryLineRow = {
+export type SummaryLineRow = {
   applied_amount: string | number;
   applied_deduction_value: string | number;
   candidate_id: string;
@@ -1527,7 +1527,7 @@ function mapSummaryRow(row: SummaryRow): DeductionMonthlySummary {
   };
 }
 
-function mapSummaryLineRow(row: SummaryLineRow): DeductionMonthlySummaryLine {
+export function mapSummaryLineRow(row: SummaryLineRow): DeductionMonthlySummaryLine {
   const sourceModule = isSourceModule(row.source_module) ? row.source_module : "OTHER";
   const deductionType = isDeductionType(row.deduction_type) ? row.deduction_type : "other";
   const deductionUnit = (deductionUnits as readonly string[]).includes(row.deduction_unit)
@@ -1792,7 +1792,7 @@ export async function addDeductionComment(input: {
   return mapCommentRow(data as CommentRow);
 }
 
-type EmployeeScopeRow = {
+export type EmployeeScopeRow = {
   full_name: string | null;
   hr_id: string | null;
   line_name: string | null;
@@ -1800,7 +1800,7 @@ type EmployeeScopeRow = {
   manager_hr_id: string | null;
 };
 
-function collectPortalDeductionScope(input: {
+export function collectPortalDeductionScope(input: {
   access: AccessContext;
   employees: EmployeeScopeRow[];
 }) {
