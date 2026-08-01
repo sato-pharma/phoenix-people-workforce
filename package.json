@@ -83,6 +83,7 @@
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
     "check:db-timezone": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-db-timezone.ts",
     "check:secret-pins": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-secret-pins.ts",
+    "check:unbacked": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-unbacked-branches.ts",
     "check:routes": "node scripts/check-routes.mjs",
     "check:no-stale-domains": "node scripts/check-no-stale-domains.mjs",
     "validate:env": "node scripts/validate-env.mjs",
