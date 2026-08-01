@@ -25,7 +25,11 @@ import {
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, todayIso } from "@/lib/crm/dates";
-import { getEffectiveExcludedAgentCrmIds, queryCheckins } from "@/lib/crm/reads";
+import {
+  collapseDuplicateVisitSubmissionsLiveShape,
+  getEffectiveExcludedAgentCrmIds,
+  queryCheckins,
+} from "@/lib/crm/reads";
 import { CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import type { CrmCheckinRow } from "@/lib/crm/types";
 
@@ -192,7 +196,7 @@ async function buildRepDayResult(
   // stays consistent with the aggregate metric that links to it (a double visit whose PRIMARY
   // agent is excluded, with the drilled rep as partner, must not surface here).
   const excludedAgentIds = new Set<number>(await getEffectiveExcludedAgentCrmIds());
-  const visits: IReports360RepDayVisit[] = allVisits
+  const dayVisits = allVisits
     // Resigned/departed agents are invisible in every aggregate (agent-side exclusion), so drop
     // their rows here too — keeps this drill-down consistent with the metric it links to and makes
     // the live and mirror sources agree.
@@ -201,7 +205,14 @@ async function buildRepDayResult(
       (visit) =>
         (visit.agentID === agentId || visit.doubleID === agentId) &&
         (visit.visitDate ?? "").slice(0, 10) === day,
-    )
+    );
+  // Burst-duplicate collapse: every aggregate that links INTO this page (FWC day cells, portal
+  // Team Calendar counts, DV analytics) already collapses the CRM mobile client's re-saves of
+  // one real stop at read time — without the same collapse here, a day cell of "4" opens a
+  // drill-down listing the same visit 2–8 times (confirmed in production, 2026-08-01). Applied
+  // to both sources: the mirror never collapses for this caller, and the live API returns the
+  // raw duplicates too.
+  const visits: IReports360RepDayVisit[] = collapseDuplicateVisitSubmissionsLiveShape(dayVisits)
     .map((visit) => {
       const role: "primary" | "double" = visit.agentID === agentId ? "primary" : "double";
       const hasPartner = visit.doubleID != null && visit.doubleID !== 0;

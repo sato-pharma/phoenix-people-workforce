@@ -21,7 +21,7 @@
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
-import { collapseDuplicateDoubleVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
+import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
 import { isCrmVisitsSchemaReady } from "@/lib/crm/schema";
 import { buildFieldWorkforceCompliancePreview } from "@/lib/field-workforce-compliance/classifier";
 import {
@@ -730,10 +730,11 @@ async function loadMirrorVisitsForRange(startDate: string, endDate: string): Pro
       "double_crm_id, double_hr_id, double_name, visit_date, visit_type",
   });
   // scanVisitsForRange (unlike crm/reads' getDoubleVisitRows) returns EVERY visit, single and
-  // double alike, so the collapse is applied here rather than inside the shared scanner — it must
-  // only ever touch the double-visit rows (see collapseDuplicateDoubleVisitSubmissions), and a
-  // rep's genuine single-agent visit count must never be affected by it.
-  return collapseDuplicateDoubleVisitSubmissions(rows);
+  // double alike, so the collapse is applied here rather than inside the shared scanner. It keys
+  // on the CONTACT (see collapseDuplicateVisitSubmissions) — one rep, one contact, one day, one
+  // visit type is one real stop — so it applies to single-agent rows too, and rows naming
+  // different contacts are always kept as the separate real visits they are.
+  return collapseDuplicateVisitSubmissions(rows);
 }
 
 function validateMonthYear(month: number, year: number): void {

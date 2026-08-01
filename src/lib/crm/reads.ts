@@ -254,40 +254,53 @@ export function withIdColumn(columns: string): string {
   return parts.includes("id") ? parts.join(", ") : ["id", ...parts].join(", ");
 }
 
-// ── Duplicate double-visit submission collapse ────────────────────────────────────────────────
-// iReports360's mobile client has a confirmed, widespread bug: the SAME real-world double-visit
-// stop gets saved as 2+ separate CRM records — same rep, same double partner, same day, same
-// AM/PM, byte-identical comment — typically seconds to a few hours apart. Verified in production
-// (2026-07-24): 263 of 1,570 double-visit rows (~17%) in an 11-day window belonged to such a
-// group, spanning dozens of unrelated rep/manager pairs. Each duplicate carries its own genuine,
-// distinct crm_visit_id issued by the vendor, so this is a CRM client-side artifact — not a
-// Phoenix sync defect — and every consumer that SUMS or COUNTS double-visit rows (Double Visit
-// Analytics KPIs/summaries/trends, Field Workforce Compliance's day cells, probation DV credit)
-// was silently inflated by it.
+// ── Duplicate visit submission collapse ───────────────────────────────────────────────────────
+// iReports360's mobile client saves the SAME real-world stop as 2+ separate CRM records, each
+// with its own genuine crm_visit_id — a client-side artifact, not a Phoenix sync defect. Every
+// consumer that SUMS or COUNTS visit rows (Double Visit Analytics KPIs/summaries/trends, Field
+// Workforce Compliance day cells, probation DV credit, the rep-day drill-down) is inflated by it.
+//
+// THE DUPLICATE KEY IS THE CONTACT. Owner's standing domain rule (2026-08-01): a rep never
+// visits the same contact twice in a day — nor even in a week. So two rows for one rep, one
+// contact, one day, one visit type are the same real stop; two rows naming DIFFERENT contacts
+// are two real visits, however alike they otherwise look.
+//
+// This previously fingerprinted duplicates by IDENTICAL COMMENT TEXT (rep + partner + day +
+// AM/PM + comment) and never looked at contact_crm_id at all. Reps type one generic comment for
+// every doctor ("اخدت وعد بالكتابه" — "took a promise to prescribe"), so an ordinary day of
+// fieldwork collapsed into a single row. Measured in production (July 2026): of 119 groups the
+// comment rule matched, only 21 shared a contact — the other 98 spanned different doctors, so
+// 166 of the 199 rows it dropped each month were REAL visits. Worked case: rep B-124 with DSM
+// B-118 on 2026-07-13 logged nine different doctors between 11:54 and 15:40 and the comment rule
+// kept one. Save-time corroborates independently: true duplicates land a median 0.5 min apart,
+// the misclassified groups 12.7 min apart and up to 15 hours. Comment text must never group rows.
+//
+// Scope note: this applies to EVERY visit, not just double visits — a rep logging one contact
+// twice alone is the same artifact. Rows without a contact_crm_id are never grouped.
 
-/** Row shape {@link collapseDuplicateDoubleVisitSubmissions} needs — every field optional so it
+/** Row shape {@link collapseDuplicateVisitSubmissions} needs — every field optional so it
  * structurally accepts any consumer's own row type that happens to carry these columns. */
 type DuplicateVisitDetectionRow = {
   agent_crm_id?: number | null;
-  ampm?: string | null;
-  comment?: string | null;
+  contact_crm_id?: number | null;
   crm_save_date?: string | null;
   crm_visit_id?: number | null;
   double_crm_id?: number | null;
   visit_date?: string | null;
+  visit_type?: number | null;
 };
 
 const DUPLICATE_DETECTION_COLUMNS = [
   "crm_visit_id",
   "agent_crm_id",
+  "contact_crm_id",
   "double_crm_id",
   "visit_date",
-  "ampm",
-  "comment",
+  "visit_type",
   "crm_save_date",
 ] as const;
 
-/** Ensures the columns {@link collapseDuplicateDoubleVisitSubmissions} needs are present in a
+/** Ensures the columns {@link collapseDuplicateVisitSubmissions} needs are present in a
  * caller's requested projection — same "widen internally, extra columns just ride along" pattern
  * as {@link withIdColumn}, since {@link getDoubleVisitRows} always applies the collapse regardless
  * of which columns the caller actually wants back. */
@@ -298,33 +311,44 @@ function withDuplicateDetectionColumns(columns: string | undefined): string | un
   return missing.length === 0 ? columns : [...parts, ...missing].join(", ");
 }
 
-/** True when a double-visit comment carries enough real content to reliably fingerprint one
- * specific submission. Gates the group key below so a short, generic filler comment (".", "-",
- * "ok") shared across GENUINELY different real visits can never be mistaken for a duplicate
- * resubmission — deliberately conservative (favors under- over over-collapsing): only comments
- * with real substance are ever used to group rows as duplicates. */
-function isMeaningfulDuplicateComment(comment: string | null | undefined): boolean {
-  const stripped = (comment ?? "").replace(/[.\-_,،\s]/g, "");
-  return stripped.length >= 4;
+/** True when this row carries a real double-visit partner (a manager riding along), as opposed
+ * to a solo visit. `0` is the vendor's "no partner" sentinel alongside null. */
+function hasDoublePartner(row: DuplicateVisitDetectionRow): boolean {
+  return row.double_crm_id != null && row.double_crm_id !== 0;
 }
 
-/** Groups rows as the same real-world submission when they share rep, double partner, day,
- * AM/PM, and an exact (trimmed, case-insensitive) comment — the pattern confirmed in production.
- * Returns null (never grouped) for a single-agent visit, a visit missing its date/agent, or one
- * whose comment isn't distinctive enough per {@link isMeaningfulDuplicateComment}. */
+/**
+ * Groups rows as the same real-world stop: one rep, one contact, one day, one visit type. Per the
+ * owner's rule (see the module note) a rep never visits the same contact twice in a day, so any
+ * repeat of that tuple is a re-save rather than a second visit.
+ *
+ * Returns null — never grouped — for a row missing the rep, contact, or date that identifies the
+ * stop. `visit_type` is part of the key so a regular customer visit is never merged with a
+ * campaign or a vacation record for the same contact: those are different kinds of record, not a
+ * duplicated one. The double partner is deliberately NOT in the key — the same contact logged
+ * once solo and once with a manager is still one visit (see {@link prefersOverForDuplicate} for
+ * how the ride-along credit is kept).
+ */
 function duplicateSubmissionGroupKey(row: DuplicateVisitDetectionRow): string | null {
-  if (row.double_crm_id == null || row.double_crm_id === 0) return null;
-  if (row.agent_crm_id == null || !row.visit_date) return null;
-  const comment = (row.comment ?? "").trim();
-  if (!isMeaningfulDuplicateComment(comment)) return null;
-  return `${row.agent_crm_id}|${row.double_crm_id}|${row.visit_date}|${row.ampm ?? ""}|${comment.toLowerCase()}`;
+  if (row.agent_crm_id == null || row.contact_crm_id == null || !row.visit_date) return null;
+  return `${row.agent_crm_id}|${row.contact_crm_id}|${row.visit_date}|${row.visit_type ?? ""}`;
 }
 
-/** True when `candidate` was submitted before `current` — the earlier row is the real first
- * submission and is kept; later resubmissions in the same group are dropped. Falls back to the
- * lower `crm_visit_id` (issued in submission order by the CRM) when save times tie or are
- * unavailable to this caller's column projection. */
-function isEarlierSubmission(candidate: DuplicateVisitDetectionRow, current: DuplicateVisitDetectionRow): boolean {
+/**
+ * True when `candidate` should be kept over `current` as the survivor of a duplicate group.
+ *
+ * A row carrying a double partner always wins: when one real stop was saved both solo and as a
+ * ride-along, dropping the ride-along row would silently erase the manager's coaching credit for
+ * that day (Double Visit Analytics, probation DV, and the Team Calendar's "DV" marker all read
+ * it) while the visit count stayed the same. Otherwise the earliest submission wins — it is the
+ * real first save — falling back to the lower `crm_visit_id`, issued in submission order by the
+ * CRM, when save times tie or aren't in this caller's column projection.
+ */
+function prefersOverForDuplicate(candidate: DuplicateVisitDetectionRow, current: DuplicateVisitDetectionRow): boolean {
+  const candidateDouble = hasDoublePartner(candidate);
+  const currentDouble = hasDoublePartner(current);
+  if (candidateDouble !== currentDouble) return candidateDouble;
+
   const candidateSave = candidate.crm_save_date ?? "";
   const currentSave = current.crm_save_date ?? "";
   if (candidateSave && currentSave && candidateSave !== currentSave) return candidateSave < currentSave;
@@ -334,27 +358,66 @@ function isEarlierSubmission(candidate: DuplicateVisitDetectionRow, current: Dup
 }
 
 /**
- * Collapses burst duplicate double-visit submissions (see the module note above) down to one row
- * per real-world stop — keeping the earliest submission in each group, dropping the rest. A
- * READ-TIME collapse only: the raw `ireports360_visits` mirror is never mutated, so the CRM
- * Master "exact mirror" browser and any audit trail stay untouched; only aggregate counts fed by
- * this function's callers (Double Visit Analytics, Field Workforce Compliance, probation DV) see
- * the deduplicated total. Rows that don't belong to any duplicate group (including every
- * single-agent visit) are returned unchanged and in their original order.
+ * Collapses duplicate visit submissions (see the module note above) down to one row per real
+ * stop — one rep, one contact, one day, one visit type — keeping the earliest save and preferring
+ * a ride-along row so coaching credit survives. A READ-TIME collapse only: the raw
+ * `ireports360_visits` mirror is never mutated, so the CRM Master "exact mirror" browser and any
+ * audit trail stay untouched; only the counts fed by this function's callers (Double Visit
+ * Analytics, Field Workforce Compliance, probation DV, the rep-day drill-down) see the
+ * deduplicated total. Rows naming different contacts are different real visits and are always
+ * kept, as is any row without a contact to key on — both returned unchanged, in original order.
  */
-export function collapseDuplicateDoubleVisitSubmissions<T extends DuplicateVisitDetectionRow>(rows: readonly T[]): T[] {
+export function collapseDuplicateVisitSubmissions<T extends DuplicateVisitDetectionRow>(rows: readonly T[]): T[] {
   const bestByKey = new Map<string, T>();
   for (const row of rows) {
     const key = duplicateSubmissionGroupKey(row);
     if (!key) continue;
     const current = bestByKey.get(key);
-    if (!current || isEarlierSubmission(row, current)) bestByKey.set(key, row);
+    if (!current || prefersOverForDuplicate(row, current)) bestByKey.set(key, row);
   }
   if (bestByKey.size === 0) return rows as T[];
   return rows.filter((row) => {
     const key = duplicateSubmissionGroupKey(row);
     return !key || bestByKey.get(key) === row;
   });
+}
+
+/** The live iReports360 client's camel-case visit fields that identify one real stop — the same
+ * dimensions as {@link DuplicateVisitDetectionRow}, under their {@link IReports360Visit}-shape
+ * names. */
+type DuplicateVisitDetectionLiveShapeVisit = {
+  agentID?: number | null;
+  contactID?: number | null;
+  doubleID?: number | null;
+  id?: number | null;
+  saveDate?: string | null;
+  visitDate?: string | null;
+  visitType?: number | null;
+};
+
+/**
+ * {@link collapseDuplicateVisitSubmissions} for visits already mapped onto the live client's
+ * camel-case shape (IReports360Visit) instead of mirror-row snake_case — the rep-day drill-down
+ * handles both its live and mirror sources in that shape. A thin field-name adapter around the
+ * same canonical collapse, so the drill-down can never disagree with the aggregates that link to
+ * it (FWC day cells, Team Calendar counts, DV analytics) about which rows are duplicates.
+ * `visitDate` is truncated to its day so the live API's datetime form groups identically to the
+ * mirror's pure DATE.
+ */
+export function collapseDuplicateVisitSubmissionsLiveShape<T extends DuplicateVisitDetectionLiveShapeVisit>(
+  visits: readonly T[],
+): T[] {
+  const adapted = visits.map((visit) => ({
+    agent_crm_id: visit.agentID ?? null,
+    contact_crm_id: visit.contactID ?? null,
+    crm_save_date: visit.saveDate ?? null,
+    crm_visit_id: visit.id ?? null,
+    double_crm_id: visit.doubleID ?? null,
+    visit_date: (visit.visitDate ?? "").slice(0, 10) || null,
+    visit_type: visit.visitType ?? null,
+    visit,
+  }));
+  return collapseDuplicateVisitSubmissions(adapted).map((entry) => entry.visit);
 }
 
 /** Ensure the `check_date` column is present (needed for check_date-keyset pagination). */
@@ -386,7 +449,7 @@ export async function queryVisits<T = CrmVisitRow>(
      */
     includeResignedAgents?: boolean;
     /** Opt-in: collapse iReports360 burst-duplicate double-visit submissions (the same read-time
-     * dedup {@link getDoubleVisitRows} applies — see {@link collapseDuplicateDoubleVisitSubmissions}).
+     * dedup {@link getDoubleVisitRows} applies — see {@link collapseDuplicateVisitSubmissions}).
      * Off by default so raw-mirror browsers are unaffected. When on, the duplicate-detection columns
      * are added to the projection automatically and single-agent visits pass through unchanged, so a
      * caller that SUMS/COUNTS visit rows gets the deduplicated total without re-deriving the dedup. */
@@ -420,7 +483,7 @@ export async function queryVisits<T = CrmVisitRow>(
     cursor = page[page.length - 1].id;
   }
   return options.collapseDoubleVisits
-    ? (collapseDuplicateDoubleVisitSubmissions(rows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
+    ? (collapseDuplicateVisitSubmissions(rows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
     : rows;
 }
 
@@ -449,7 +512,7 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
   }
   const limitedRows = (data ?? []) as unknown as T[];
   return options.collapseDoubleVisits
-    ? (collapseDuplicateDoubleVisitSubmissions(limitedRows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
+    ? (collapseDuplicateVisitSubmissions(limitedRows as unknown as DuplicateVisitDetectionRow[]) as unknown as T[])
     : limitedRows;
 }
 
@@ -459,10 +522,10 @@ export async function queryVisitsLimited<T = CrmVisitRow>(
  * probation feedback — so those consumers can never disagree about what counts as a double
  * visit. `visitTypes` defaults to {@link CRM_DOUBLE_VISIT_TYPE_CODES}.
  *
- * Also the single point every one of those consumers gets burst-duplicate collapse for free:
- * results run through {@link collapseDuplicateDoubleVisitSubmissions} before returning, so a rep
- * re-saving the same stop 2-8 times in the CRM (see that function's doc comment) counts once here
- * everywhere this door is used, instead of each consumer re-deriving its own dedup rule.
+ * Also the single point every one of those consumers gets duplicate collapse for free: results
+ * run through {@link collapseDuplicateVisitSubmissions} before returning, so a rep re-saving the
+ * same contact-day stop counts once here everywhere this door is used, instead of each consumer
+ * re-deriving its own dedup rule.
  */
 export async function getDoubleVisitRows<T = CrmVisitRow>(
   options: Omit<CrmVisitFilter, "doubleOnly"> & { columns?: string; includeResignedAgents?: boolean; pageSize?: number },
@@ -473,7 +536,7 @@ export async function getDoubleVisitRows<T = CrmVisitRow>(
     doubleOnly: true,
     visitTypes: options.visitTypes ?? CRM_DOUBLE_VISIT_TYPE_CODES,
   });
-  return collapseDuplicateDoubleVisitSubmissions(rows) as unknown as T[];
+  return collapseDuplicateVisitSubmissions(rows) as unknown as T[];
 }
 
 /** Shared check-in filters. */
