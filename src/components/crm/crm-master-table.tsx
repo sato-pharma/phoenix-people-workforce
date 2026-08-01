@@ -10,6 +10,7 @@ import {
   recognitionLabel,
   renderCell,
 } from "@/lib/crm/master-cell-format";
+import { crmMasterSupportsFilter, type CrmMasterFilterKey } from "@/lib/crm/master-datasets";
 import type {
   CrmMasterAmpm,
   CrmMasterColumn,
@@ -89,7 +90,12 @@ export function CrmMasterTable({
   const searchParams = useSearchParams();
 
   const isCheckins = data.dataset === "checkins";
-  const isVacations = data.dataset === "vacations";
+  // Which filter controls this tab may render. Single source of truth shared with the server (see
+  // CRM_MASTER_SUPPORTED_FILTERS): the AM/PM, Visit Type and Mapping controls used to render on the
+  // computed tabs (Vacations, Triple Visits), which filter rows in memory and never look at those
+  // values — so the control accepted a choice, the chip claimed it was applied, and the result set
+  // was unchanged. Gate on the map, never on a per-tab boolean re-derived here.
+  const supports = (key: CrmMasterFilterKey) => crmMasterSupportsFilter(data.dataset, key);
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [searchText, setSearchText] = useState(data.search ?? "");
@@ -369,52 +375,52 @@ export function CrmMasterTable({
               value={hireToText}
             />
           </label>
-          {!isCheckins ? (
-            <>
-              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                AM/PM
-                <select
-                  className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-                  onChange={(event) => setAmpmValue(event.target.value as CrmMasterAmpm)}
-                  value={ampmValue}
-                >
-                  <option value="all">All</option>
-                  <option value="AM">AM</option>
-                  <option value="PM">PM</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Visit Type
-                <select
-                  className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-                  onChange={(event) => setVisitTypeText(event.target.value)}
-                  value={visitTypeText}
-                >
-                  <option value="">All types</option>
-                  {data.visitTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {showMappingFilter ? (
-                <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Mapping
-                  <select
-                    className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
-                    onChange={(event) => setMappingValue(event.target.value as CrmMasterMappingStatus)}
-                    value={mappingValue}
-                  >
-                    <option value="all">All</option>
-                    <option value="agent_mapped">Agent mapped</option>
-                    <option value="agent_unmapped">Agent unmapped</option>
-                  </select>
-                </label>
-              ) : null}
-            </>
+          {supports("ampm") ? (
+            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              AM/PM
+              <select
+                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                onChange={(event) => setAmpmValue(event.target.value as CrmMasterAmpm)}
+                value={ampmValue}
+              >
+                <option value="all">All</option>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </label>
           ) : null}
-          {isVacations ? (
+          {supports("visitType") ? (
+            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Visit Type
+              <select
+                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                onChange={(event) => setVisitTypeText(event.target.value)}
+                value={visitTypeText}
+              >
+                <option value="">All types</option>
+                {data.visitTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {showMappingFilter && supports("mappingStatus") ? (
+            <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Mapping
+              <select
+                className="border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none"
+                onChange={(event) => setMappingValue(event.target.value as CrmMasterMappingStatus)}
+                value={mappingValue}
+              >
+                <option value="all">All</option>
+                <option value="agent_mapped">Agent mapped</option>
+                <option value="agent_unmapped">Agent unmapped</option>
+              </select>
+            </label>
+          ) : null}
+          {supports("minDuration") || supports("halfDaysOnly") ? (
             <>
               <label className="flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Min Duration (days)

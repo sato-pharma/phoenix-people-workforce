@@ -31,9 +31,16 @@ import {
 } from "@/lib/crm/viewer-scope";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 import { brickMatchConfidence, loadBrickCentroids, resolveBrickForPoint } from "@/lib/crm/brick-geo";
-import { CRM_MASTER_DATASETS, type CrmMasterDataset } from "@/lib/crm/master-datasets";
+import { logError } from "@/lib/observability/log";
+import {
+  CRM_MASTER_DATASETS,
+  CRM_MASTER_SUPPORTED_FILTERS,
+  crmMasterSupportsFilter,
+  type CrmMasterDataset,
+  type CrmMasterFilterKey,
+} from "@/lib/crm/master-datasets";
 
-export { CRM_MASTER_DATASETS, type CrmMasterDataset };
+export { CRM_MASTER_DATASETS, CRM_MASTER_SUPPORTED_FILTERS, crmMasterSupportsFilter, type CrmMasterDataset, type CrmMasterFilterKey };
 
 /** Confidence labels for a detected triple visit — shared by the Triple Visits tab column and the
  * Double Visits "Triple?" flag so both read identically. */
@@ -372,6 +379,7 @@ type MasterQuery = {
   gte: (...args: any[]) => MasterQuery;
   ilike: (...args: any[]) => MasterQuery;
   is: (...args: any[]) => MasterQuery;
+  lt: (...args: any[]) => MasterQuery;
   lte: (...args: any[]) => MasterQuery;
   in: (...args: any[]) => MasterQuery;
   neq: (...args: any[]) => MasterQuery;
@@ -380,9 +388,29 @@ type MasterQuery = {
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-/** Escapes a free-text search term for a PostgREST `or(...ilike...)` expression. */
+/**
+ * Ascending comparator for ISO date / timestamp strings.
+ *
+ * Deliberately NOT `localeCompare`: these are machine strings (`2026-07-31`, `2026-07-31T08:14:00`),
+ * and localeCompare sorts them under whatever locale + ICU data the runtime happens to carry —
+ * hyphens and digits are exactly the characters locale collation treats as variable-weight, so the
+ * ordering is environment-dependent for values where plain lexicographic order is both correct and
+ * total. Every caller here sorts ISO strings, so compare them as strings.
+ */
+function compareIso(left: unknown, right: unknown): number {
+  const a = String(left ?? "");
+  const b = String(right ?? "");
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Escapes a free-text search term for a PostgREST `or(...ilike...)` expression.
+ *
+ * `*` is stripped alongside `%`: PostgREST translates `*` in an `ilike` pattern to SQL's `%`, so a
+ * user typing a bare `*` (or a product code like "B*12") silently became a wildcard and matched
+ * every row — the opposite of narrowing. `,` and `()` are structural in an `or(...)` expression and
+ * would otherwise let a search term break out of its own predicate. */
 function sanitizeSearch(term: string): string {
-  return term.replace(/[%,()]/g, " ").trim();
+  return term.replace(/[%*,()]/g, " ").trim();
 }
 
 type CheckinLite = {
@@ -461,12 +489,31 @@ async function preloadCheckinsIndexForExport(range: { dateFrom: string | null; d
       columns: NEAREST_CHECKIN_COLUMNS,
     });
     return indexCheckinsByAgentContactDay(data);
-  } catch {
-    return new Map();
+  } catch (error) {
+    // DELIBERATELY NOT SWALLOWED (it used to return an empty Map). An empty index makes every
+    // Regular visit look like it has no check-in, and attachEffectiveType then RECLASSIFIES all of
+    // them as "Campaign — reclassified". In a downloadable workbook that is a permanent artifact
+    // stating, with total confidence, that an entire team did zero verified regular visits — a
+    // classification manufactured out of an infrastructure error. A failed export the user retries
+    // is strictly better than a plausible, wrong one they act on.
+    //
+    // Safe to throw here: this runs during resource setup BEFORE the generator yields its first
+    // page, so no workbook bytes have been written yet and the request fails cleanly rather than
+    // truncating mid-stream (the corrupted-.xlsx failure mode of the 2026-07-29 incident).
+    throw new Error(
+      `CRM export aborted: the check-in correlation data could not be loaded, so Regular visits cannot be verified. ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 
-async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<string, CheckinLite[]>): Promise<void> {
+/**
+ * Returns whether the check-in correlation actually RAN. `false` means the check-in read failed and
+ * every row's `checkin_id` is null for that reason alone — not because those visits have no
+ * check-in. attachEffectiveType must not reclassify on a `false`; see the degradation rule there.
+ */
+async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<string, CheckinLite[]>): Promise<boolean> {
   for (const row of rows) {
     for (const key of CHECKIN_MERGE_KEYS) row[key] = null;
     // Save-tier visit time up front (no check-in correlated yet); upgraded to the GPS tier below
@@ -492,14 +539,25 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
     const days = rows
       .map((r) => (typeof r.visit_date === "string" ? r.visit_date.slice(0, 10) : null))
       .filter((v): v is string => Boolean(v));
-    if (agentIds.length === 0 || days.length === 0) return;
+    // Nothing correlatable on this page (no agent ids or no dates) — not a failure: no check-in
+    // could match these rows anyway, so the "no check-in" answer is genuine and reclassifying is
+    // correct. Distinct from the catch below, which is a failure.
+    if (agentIds.length === 0 || days.length === 0) return true;
     const from = days.reduce((a, b) => (a < b ? a : b));
     const to = days.reduce((a, b) => (a > b ? a : b));
     let data: CheckinLite[];
     try {
       data = await queryCheckins<CheckinLite>({ agentCrmIds: agentIds, dateFrom: from, dateTo: to, columns: NEAREST_CHECKIN_COLUMNS });
-    } catch {
-      return;
+    } catch (error) {
+      // The paginated table view degrades rather than throwing (unlike the export above): the page
+      // still renders with the GPS/geography overlay columns blank, which is honestly "unknown".
+      // But it reports the failure so attachEffectiveType leaves the visit TYPE alone instead of
+      // relabelling the whole page Campaign.
+      logError("CRM master: check-in correlation failed; visit types left unreclassified", {
+        error,
+        labels: { event: "crm_master_checkin_correlation_failed" },
+      });
+      return false;
     }
     index = indexCheckinsByAgentContactDay(data);
   }
@@ -549,6 +607,7 @@ async function attachNearestCheckins(rows: CrmMasterRow[], preloadedIndex?: Map<
       row.geo_confidence = brickMatchConfidence(geo.distanceKm);
     }
   }
+  return true;
 }
 
 /** Set the "Logged/save" visit time from crm_save_date only (no check-in query) — for the two
@@ -570,13 +629,22 @@ function attachSaveTierVisitTime(rows: CrmMasterRow[]): void {
 /** Effective visit type: a Regular visit (0) with NO matched GPS check-in is COUNTED as Campaign,
  * but ALWAYS flagged here — never a silent recount. For regular_no_checkin every row is reclassified
  * (the tab filters to it); for visits/double it's derived from the in-memory check-in correlation
- * (checkin_id null). Datasets that don't correlate (vacations, triples) keep the raw type. */
-function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[]): void {
+ * (checkin_id null). Datasets that don't correlate (vacations, triples) keep the raw type.
+ *
+ * DEGRADATION RULE (the module-wide one): a cosmetic OVERLAY may fall back to null — a blank
+ * Check-in Address or GPS brick reads as "unknown", which is honest. A CLASSIFICATION may not. When
+ * `checkinCorrelationAvailable` is false the check-in read FAILED, so every `checkin_id` is null for
+ * that reason alone; reclassifying then would turn an infrastructure error into the confident,
+ * wrong statement that a whole team did no verified regular visits. Keep the raw vendor type
+ * instead — the one value we still actually know. */
+function attachEffectiveType(dataset: CrmMasterDataset, rows: CrmMasterRow[], checkinCorrelationAvailable = true): void {
   const knowsCheckin =
-    dataset === "visits" ||
-    dataset === "double_visits" ||
+    (dataset === "visits" && checkinCorrelationAvailable) ||
+    (dataset === "double_visits" && checkinCorrelationAvailable) ||
     dataset === "regular_no_checkin" ||
     dataset === "regular_dv_no_checkin";
+  // The two No-Check-in tabs are filtered at the DB by the `reclassified_no_checkin` column, so they
+  // never depended on the in-memory correlation and stay correct even when it fails.
   const alwaysReclassified = dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin";
   for (const row of rows) {
     const isRegular = row.visit_type === 0;
@@ -756,7 +824,7 @@ async function computeTriplesUncached(range: {
     }
   }
 
-  rows.sort((x, y) => String(y.visit_date).localeCompare(String(x.visit_date)));
+  rows.sort((x, y) => compareIso(y.visit_date, x.visit_date));
   // `dv` reaches MAX_ROWS only when the cap is hit (a short page breaks the loop first), so this is
   // the honest "we may have missed some double-visit rows → some triples may be absent" signal.
   return { rows, byVisitId, truncated: dv.length >= MAX_ROWS };
@@ -1117,7 +1185,20 @@ function filterComputedRows(
       if (!matchesAny) return false;
     }
     if (searchNeedle) {
-      const hay = [row.agent_name, row.base_name, row.mid_name, row.top_name, row.contact_name, row.comment]
+      // HR ids are part of the haystack because the search box's own placeholder promises them
+      // ("Agent, double, contact, customer, comment, HR ID…") and the DB-backed tabs deliver on it
+      // (applyMasterFilters ORs agent_hr_id / double_hr_id into the search). The computed tabs
+      // searched names only, so typing a valid HR ID on Vacations or Triple Visits returned an empty
+      // table — indistinguishable from "this rep took no leave".
+      const hay = [
+        row.agent_name,
+        row.base_name,
+        row.mid_name,
+        row.top_name,
+        row.contact_name,
+        row.comment,
+        ...agentHrIdFields.map((field) => row[field]),
+      ]
         .filter((v): v is string => typeof v === "string")
         .join(" ")
         .toLowerCase();
@@ -1313,7 +1394,7 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
 
   const periods: CrmMasterRow[] = [];
   for (const list of byAgent.values()) {
-    list.sort((a, b) => String(a.visit_date).localeCompare(String(b.visit_date)));
+    list.sort((a, b) => compareIso(a.visit_date, b.visit_date));
     let run: VacationDayRow[] = [];
     for (const d of list) {
       if (run.length === 0) {
@@ -1340,7 +1421,7 @@ async function computeVacationPeriods(range: { dateFrom: string | null; dateTo: 
     return true;
   });
 
-  inWindow.sort((x, y) => String(y.from_date).localeCompare(String(x.from_date)));
+  inWindow.sort((x, y) => compareIso(y.from_date, x.from_date));
   return { periods: inWindow, truncated: days.length >= MAX_ROWS };
 }
 
@@ -1387,7 +1468,12 @@ function applyMasterFilters(
     q = q.in("agent_hr_id", expandedAllowed.length > 0 ? expandedAllowed : ["__no_match__"]);
   }
   if (dateFrom) q = q.gte(dateColumn, isCheckins ? `${dateFrom}T00:00:00` : dateFrom);
-  if (dateTo) q = q.lte(dateColumn, isCheckins ? `${dateTo}T23:59:59` : dateTo);
+  // Check-ins carry a timestamp, so the upper bound is a HALF-OPEN `< next-day 00:00:00` rather than
+  // `<= 23:59:59`: the latter silently dropped anything in the final second of the day
+  // (23:59:59.001-23:59:59.999). Rare, but it made the last day of a range quietly under-report and
+  // the same range return different counts depending on sub-second precision. Visits key on a plain
+  // date column, where an inclusive `lte` is exactly right.
+  if (dateTo) q = isCheckins ? q.lt(dateColumn, `${addDaysIso(dateTo, 1)}T00:00:00`) : q.lte(dateColumn, dateTo);
 
   // Dataset scope.
   // Canonical double-visit = real partner on a fieldwork visit type (Regular 0 / Campaign -8),
@@ -1396,6 +1482,11 @@ function applyMasterFilters(
   if (dataset === "double_visits") {
     q = q.not("double_crm_id", "is", null).neq("double_crm_id", 0).in("visit_type", [...CRM_DOUBLE_VISIT_TYPE_CODES]);
   }
+  // UNREACHABLE TODAY — deliberately kept. Both callers (the paginated list and the streaming
+  // export) return from their own `dataset === "vacations"` branch, which groups day-rows into
+  // periods in memory, well before reaching this builder. Kept rather than deleted because deleting
+  // it would fail OPEN: a future caller that did reach here would silently get EVERY visit type
+  // instead of vacations. Read it as a safety net, not as how the Vacations tab is filtered.
   if (dataset === "vacations") q = q.ilike("visit_type_description", "%vacation%");
   if (dataset === "regular_no_checkin") q = q.eq("reclassified_no_checkin", true);
   if (dataset === "regular_dv_no_checkin") {
@@ -1467,7 +1558,12 @@ async function attachDerived(
   // coordinates (see attachGeoBrick). Visit datasets get their geography from the CRM region instead
   // (attachBrickMapping below), so this is deliberately check-ins-only.
   if (dataset === "checkins") await attachGeoBrick(rows);
-  if (dataset === "visits" || dataset === "double_visits") await attachNearestCheckins(rows, resources?.checkinsIndex);
+  // False = the check-in read failed, so `checkin_id` is null everywhere for that reason alone.
+  // Threaded into attachEffectiveType below so a failure can't manufacture a reclassification.
+  let checkinCorrelationAvailable = true;
+  if (dataset === "visits" || dataset === "double_visits") {
+    checkinCorrelationAvailable = await attachNearestCheckins(rows, resources?.checkinsIndex);
+  }
   // The two No-Check-in tabs never correlate a check-in (they're defined by NOT having one), so seed
   // the Logged/save visit time directly — otherwise the Visit Time column renders blank for them.
   else if (dataset === "regular_no_checkin" || dataset === "regular_dv_no_checkin") attachSaveTierVisitTime(rows);
@@ -1476,7 +1572,7 @@ async function attachDerived(
     const byVisitId = resources?.triples ?? (await computeTriplesInRange(range)).byVisitId;
     attachTripleFlag(rows, byVisitId);
   }
-  if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows);
+  if (isVisitDataset(dataset)) attachEffectiveType(dataset, rows, checkinCorrelationAvailable);
   // "Line" + "Hiring Date" columns on every tab — the agent's roster metadata.
   attachAgentMeta(rows, resources?.agentMeta ?? (await loadAgentMetaByHrId()), "agent_hr_id");
   // PHX Brick/Area/Region ID + Grade — visit-only (checkins/vacations/triples don't carry a
@@ -1574,27 +1670,33 @@ export async function getCrmMasterData(input: CrmMasterFilter, scope: CrmViewerS
     search,
   };
 
-  // Fields echoed back so the UI can seed its filter inputs.
+  // Fields echoed back so the UI can seed its filter inputs — and, via `activeChips`, to state
+  // which filters are currently applied. A filter this dataset does NOT honour is echoed back
+  // CLEARED (see CRM_MASTER_SUPPORTED_FILTERS): a lingering `?ampm=AM` carried over from another
+  // tab would otherwise render an "AM/PM: AM" chip on the Vacations tab, asserting a narrowing that
+  // never happened. Clearing here fixes the chip and the seeded control in one place, on the server,
+  // rather than trusting every UI branch to re-derive the same rule.
+  const supports = (key: CrmMasterFilterKey) => crmMasterSupportsFilter(dataset, key);
   const echo = {
     agentHrId,
-    ampm,
+    ampm: supports("ampm") ? ampm : ("all" as CrmMasterAmpm),
     columns,
     configured,
     dataset,
     dateFrom,
     dateTo,
-    halfDaysOnly,
+    halfDaysOnly: supports("halfDaysOnly") ? halfDaysOnly : false,
     hireFrom,
     hireTo,
     line,
     lineOptions,
-    mappingStatus,
-    minDuration,
+    mappingStatus: supports("mappingStatus") ? mappingStatus : ("all" as CrmMasterMappingStatus),
+    minDuration: supports("minDuration") ? minDuration : null,
     page,
     pageSize,
     pageSizeOptions: CRM_MASTER_PAGE_SIZE_OPTIONS,
     search,
-    visitType,
+    visitType: supports("visitType") ? visitType : null,
     visitTypeOptions: CRM_VISIT_TYPE_OPTIONS,
   };
 
