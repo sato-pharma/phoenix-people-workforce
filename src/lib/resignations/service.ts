@@ -969,6 +969,103 @@ async function deactivateEmployeeAccessIfSupported(supabase: SupabaseClient, emp
   });
 }
 
+/**
+ * Reads back the open vacancy the vacated seat already has, if any.
+ *
+ * Status is normalized exactly the way the SQL guard normalizes it —
+ * `lower(coalesce(status, 'open')) = 'open'` — so a row with a NULL or differently-cased status
+ * is still recognized as open. Getting that wrong reads as "this seat has no vacancy" and makes
+ * the caller open a second one.
+ */
+async function findOpenVacancyForSeat(
+  supabase: SupabaseClient,
+  employeeHrId: string,
+): Promise<{ resolved: boolean; vacancyId: number | null }> {
+  const { data, error } = await supabase
+    .from("position_vacancies")
+    .select("id, status")
+    .eq("replacement_for_hr_id", employeeHrId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (error) {
+    // Fail CLOSED. The caller's only response to "no vacancy exists" is to open one, so a read
+    // that did not actually complete must never be reported as an empty result.
+    if (isMissingSchemaMessage(error)) {
+      return { resolved: false, vacancyId: null };
+    }
+    throw error;
+  }
+
+  const rows = (data ?? []) as Array<{ id: number; status?: string | null }>;
+  const open = rows.find((candidate) => (cleanText(candidate.status) ?? "open").toLowerCase() === "open");
+  return { resolved: true, vacancyId: open ? Number(open.id) : null };
+}
+
+/**
+ * Points a just-completed resignation at the open vacancy for the seat it vacated.
+ *
+ * It deliberately does NOT open a vacancy in the normal case. Completing a resignation writes the
+ * employee's terminal lifecycle row, and that UPDATE fires the `phx_employee_terminal_vacancy_guard`
+ * trigger (AFTER UPDATE OF employment_status, ... ON public.employees), which runs
+ * `phx_ensure_terminal_employee_vacancy`: it adopts the seat's existing open vacancy if there is
+ * one and otherwise opens exactly one `VAC-TERM-…` row. By the time control returns here the
+ * vacancy already exists, so an unconditional insert would leave the seat with TWO open vacancies —
+ * and because the two paths mint different codes (`vacancyCodeFromEmployee` vs `VAC-TERM-…`), the
+ * unique index on `vacancy_code` would not catch the duplicate either.
+ *
+ * What the guard cannot do is link the record: it only touches `position_vacancies`. A resignation
+ * raised through createResignation carries `vacancy_id = null` / `create_vacancy = false` (only
+ * resignEmployeeAndOpenVacancy ever set them), and employee-directory's `replacementForVacancy`
+ * resolves "who does this vacancy replace" through exactly that column. So read the vacancy back
+ * and stamp it.
+ *
+ * The insert below is the last resort for an environment where the guard trigger is not installed,
+ * and it only runs once a completed read has PROVEN the seat has no open vacancy.
+ */
+async function linkCompletedResignationVacancy(
+  supabase: SupabaseClient,
+  input: {
+    effectiveDate: string;
+    employee: DirectoryEmployee | null;
+    employeeHrId: string;
+    resignationId: string;
+    resignationVacancyId: number | null;
+  },
+) {
+  // Already linked — the Employees-page path opened and recorded this vacancy at submit time.
+  if (input.resignationVacancyId) return;
+
+  const lookup = await findOpenVacancyForSeat(supabase, input.employeeHrId);
+  if (!lookup.resolved) return;
+
+  let vacancyId = lookup.vacancyId;
+  if (!vacancyId) {
+    // No open vacancy and the read proved it: the guard trigger is absent here. Open one using the
+    // same code convention and insert path the Employees-page fallback uses.
+    if (!input.employee) return;
+    vacancyId = await insertFallbackVacancy(
+      supabase,
+      input.employee,
+      input.effectiveDate,
+      vacancyCodeFromEmployee(input.employeeHrId, input.effectiveDate),
+    );
+  }
+
+  const { error } = await supabase
+    .from("employee_resignations")
+    .update({
+      create_vacancy: true,
+      updated_at: new Date().toISOString(),
+      vacancy_id: vacancyId,
+    })
+    .eq("id", input.resignationId);
+
+  if (error && !isMissingSchemaMessage(error) && !missingColumnFromError(error, ["create_vacancy", "vacancy_id"])) {
+    throw error;
+  }
+}
+
 async function resignEmployeeWithFallback(
   supabase: SupabaseClient,
   input: {
@@ -1521,7 +1618,8 @@ export async function runResignationWorkflow(
   // already flipped -- use the inactive-inclusive lookup so the scope check itself doesn't throw
   // a false Forbidden for every caller (including Super Admin) once that happens.
   const directory = await getEmployeeDirectoryRows({ includeInactive: true });
-  const employee = directory.find((item) => hrIdsMatch(item.hrId, row.employee_hr_id)) ?? { hrId: row.employee_hr_id, managerHrId: null };
+  const directoryEmployee = directory.find((item) => hrIdsMatch(item.hrId, row.employee_hr_id)) ?? null;
+  const employee = directoryEmployee ?? { hrId: row.employee_hr_id, managerHrId: null };
   const scopedAccess = access ?? systemAccessContext;
   if (!canSeeEmployee(scopedAccess, employee)) {
     throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${row.employee_hr_id}.`);
@@ -1629,6 +1727,19 @@ export async function runResignationWorkflow(
       submittedDate: record.submittedDate,
     });
     await deactivateEmployeeAccessIfSupported(supabase, record.employeeHrId);
+
+    // The lifecycle write above is what opens the vacancy: it fires the
+    // phx_employee_terminal_vacancy_guard trigger, which adopts the seat's existing open vacancy
+    // or opens exactly one. This step only reconciles the record with it — see
+    // linkCompletedResignationVacancy for why opening one here unconditionally would double the seat.
+    await linkCompletedResignationVacancy(supabase, {
+      effectiveDate: record.effectiveDate,
+      employee: directoryEmployee,
+      employeeHrId: record.employeeHrId,
+      resignationId: record.id,
+      resignationVacancyId:
+        (updated as ResignationRow & { vacancy_id?: number | null }).vacancy_id ?? null,
+    });
   }
 
   await notifyResignationWorkflow(

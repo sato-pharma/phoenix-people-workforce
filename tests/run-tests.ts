@@ -164,6 +164,7 @@ import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
 import { runTerminationTruthTests } from "./termination-truth.test.ts";
+import { runResignationCompletionVacancyTests } from "./resignation-completion-vacancy.test.ts";
 import { runCairoLeaveTodayTests } from "./cairo-leave-today.test.ts";
 import { runCairoPeriodSeedGuardTests } from "./cairo-period-seed-guard.test.ts";
 import { runIdentityAliasesTests } from "./identity-aliases.test.ts";
@@ -731,6 +732,7 @@ await runTest("crm degradation policy (a failed read never manufactures a classi
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
 await runTest("termination truth (company exits are not announced as resignations; complete actually terminates)", runTerminationTruthTests);
+await runTest("resignation completion vacancy (completing a resignation leaves exactly one open vacancy for the seat — never zero, never two)", runResignationCompletionVacancyTests);
 await runTest("Cairo leave today (entitlements reference date + excuse month allowance)", runCairoLeaveTodayTests);
 await runTest("Cairo period seeds (a working period must never come from the raw UTC clock)", runCairoPeriodSeedGuardTests);
 await runTest("shared person identity (B-10 = PHX-1 = admin-HR, one primitive)", runIdentityAliasesTests);
