@@ -508,6 +508,10 @@ async function maybeRunNonRenewalTerminalLifecycle(
       },
       actor,
       access,
+      // A non-renewal is a COMPANY decision, not a resignation. Without this the resignation
+      // recipient list receives a "Resignation Submitted" notice framed as voluntary for an
+      // employee the company chose not to renew — see resignations/service.ts:1247-1250.
+      { suppressWorkflowNotification: true },
     );
   } catch (error) {
     // Match the surrounding file style: surface the failure as a

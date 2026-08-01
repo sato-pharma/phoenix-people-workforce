@@ -1268,6 +1268,14 @@ async function applyDecisionSideEffects(record: ProbationWorkflowRecord) {
         workflowNotes: `Probation termination from probation review ${record.id}.`,
       },
       record.completedBy ?? record.approvedBy ?? "probation",
+      undefined,
+      // A probation termination is a COMPANY decision, not a resignation. Without this the
+      // resignation recipient list also receives a "Resignation Submitted" notice framed as
+      // voluntary, alongside the real probation-decision notice — wrong framing, wrong audience,
+      // duplicated for one event. intelligence/decision.ts:223 already does this on the newer
+      // path, and resignations/service.ts:1247-1250 documents that probation-sourced
+      // terminations must suppress it.
+      { suppressWorkflowNotification: true },
     );
   }
 
