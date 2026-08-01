@@ -63,6 +63,58 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
     assert.equal(detectSuspectDatesFromCounts(counts).size, 0);
   }
 
+  // 3b. detectSuspectDatesFromCounts — a SYSTEMATICALLY depressed working weekday
+  // must still be detectable. A same-weekday median is computed from that
+  // weekday's own days, so before this guard a depressed weekday encoded the
+  // depression in its own baseline and could never flag itself.
+  //
+  // These are the REAL company-wide daily visit counts for July 2026, typed from
+  // production rather than computed here, so the numbers cannot drift with the
+  // code under test. Thursdays ran 4 / 14 / 143 / 363 / 450 against ~730-924 on
+  // every other working day; the Thursday median came out at 143, so 07-09 sat
+  // EXACTLY on its own baseline and was unflaggable — while an identical 143 on a
+  // Wednesday would have been caught instantly. Cost: 78 of the month's 247
+  // flagged employee-days, 62,435.47 EGP, against 43 people following a
+  // company-wide pattern.
+  {
+    const counts = new Map<string, number>([
+      ["2026-07-01", 900], ["2026-07-02", 14], ["2026-07-03", 8], ["2026-07-04", 847],
+      ["2026-07-05", 848], ["2026-07-06", 897], ["2026-07-07", 802], ["2026-07-08", 924],
+      ["2026-07-09", 143], ["2026-07-10", 7], ["2026-07-11", 881], ["2026-07-12", 871],
+      ["2026-07-13", 881], ["2026-07-14", 832], ["2026-07-15", 861], ["2026-07-16", 363],
+      ["2026-07-17", 3], ["2026-07-18", 832], ["2026-07-19", 734], ["2026-07-20", 807],
+      ["2026-07-21", 820], ["2026-07-22", 792], ["2026-07-23", 4], ["2026-07-24", 7],
+      ["2026-07-25", 798], ["2026-07-26", 774], ["2026-07-27", 802], ["2026-07-28", 842],
+      ["2026-07-29", 796], ["2026-07-30", 450], ["2026-07-31", 4],
+    ]);
+    const suspect = detectSuspectDatesFromCounts(counts);
+
+    assert.ok(
+      suspect.has("2026-07-09"),
+      "2026-07-09 ran at 143 visits against a ~802 month baseline and MUST be suspect — it was missed because it sat exactly on the Thursday median it helped depress",
+    );
+    assert.ok(
+      suspect.has("2026-07-16"),
+      "2026-07-16 ran at 363 visits, under half the month baseline, and must be suspect",
+    );
+
+    // The weekly-off protection must survive the fallback. Fridays run 3-8 all
+    // month with a PEAK of 8 — never reaching working-day volume — so they keep
+    // their own median and stay unflagged. That peak is the only thing separating
+    // a genuine day off from a working weekday having a bad month.
+    for (const friday of ["2026-07-03", "2026-07-10", "2026-07-17", "2026-07-24", "2026-07-31"]) {
+      assert.ok(
+        !suspect.has(friday),
+        `${friday} is a weekly-off Friday, not a data gap — falling back to the month baseline for genuinely quiet days would wrongly mark every Friday suspect`,
+      );
+    }
+
+    // Normal working days are untouched.
+    for (const normal of ["2026-07-01", "2026-07-08", "2026-07-19", "2026-07-28"]) {
+      assert.ok(!suspect.has(normal), `${normal} ran at normal volume and must not be flagged`);
+    }
+  }
+
   // 4. excludeSuspectDates — no-op when none of the candidate's dates are suspect
   {
     const original = draft({ dates: ["2026-06-22", "2026-06-23"] });
