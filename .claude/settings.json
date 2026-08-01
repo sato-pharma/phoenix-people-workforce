@@ -18,6 +18,14 @@
             "type": "command",
             "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/session-lock.mjs\" end \"$DIR\" 2>/dev/null || true",
             "shell": "bash"
+          },
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/worktree-exit-guard.mjs\" \"$DIR\" 2>/dev/null || true",
+            "shell": "bash",
+            "async": true,
+            "timeout": 900,
+            "statusMessage": "Backing up worktree branch"
           }
         ]
       }
