@@ -27,6 +27,7 @@ import {
   privateCalendarHrIdKey,
   privateCalendarSources,
   resolvePrivateCalendarVisibleEmployees,
+  suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
   type PrivateCalendarException,
   type PrivateCalendarItem,
@@ -464,17 +465,10 @@ export async function getPrivateCalendarWorkspace(input: {
 
   // Suppress FP attendance PROBLEMS (Late/Short day/Single punch) on a Double
   // Visit day — a "late/absent" flag is meaningless when the employee was
-  // legitimately away from the office on a CRM-verified visit. A genuine
-  // Complete punch is NEVER suppressed here: real proof of presence always wins.
-  const fieldVisitDates = new Set<string>();
-  for (const item of allItems) {
-    if (item.source === "double_visit") {
-      fieldVisitDates.add(item.startDate);
-    }
-  }
-  const items = fieldVisitDates.size > 0
-    ? allItems.filter((item) => item.source !== "attendance" || item.status === "Complete" || !fieldVisitDates.has(item.startDate))
-    : allItems;
+  // legitimately away from the office on a CRM-verified visit. Scoped per
+  // employee (team view holds the whole team's items) and never suppressing a
+  // genuine Complete punch — see suppressFieldVisitAttendanceProblems.
+  const items = suppressFieldVisitAttendanceProblems(allItems);
   const mappedScopeEmployees = scopeEmployees.map(mapPrivateCalendarEmployee);
   const exceptions = derivePrivateCalendarExceptions({
     employees: mappedScopeEmployees,
@@ -605,13 +599,11 @@ export async function getCompanyNoActivityDays(input: {
     ...doubleVisits.items,
   ], employees), employees);
 
-  const fieldVisitDates = new Set<string>();
-  for (const item of allItems) {
-    if (item.source === "double_visit") fieldVisitDates.add(item.startDate);
-  }
-  const items = fieldVisitDates.size > 0
-    ? allItems.filter((item) => item.source !== "attendance" || !fieldVisitDates.has(item.startDate))
-    : allItems;
+  // Same per-employee suppression the calendar workspace uses. This path spans
+  // the ENTIRE roster, so keying on the date alone would let one employee's
+  // double visit erase every colleague's punches for that date and report them
+  // as "No Activity Recorded" — which becomes a payroll deduction candidate.
+  const items = suppressFieldVisitAttendanceProblems(allItems);
 
   const mappedEmployees = employees.map(mapPrivateCalendarEmployee);
   const exceptions = derivePrivateCalendarExceptions({
