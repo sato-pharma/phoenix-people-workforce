@@ -269,8 +269,20 @@ export async function runDeductionsModuleFoundationTests(): Promise<void> {
     const payload = prepareCandidateInsertPayload(validDraft(), { createdBy: "tester" });
     assert.equal(payload.employee_hr_id_compact, "a16");
     assert.equal(payload.category, "crm");
-    assert.equal(payload.month_key, "2026-05");
     assert.ok(payload.candidate_key.length > 0);
+
+    // month_key must NOT be in the payload. On deductions_candidates it is
+    // GENERATED ALWAYS, and Postgres rejects an INSERT that supplies a value
+    // for it (SQLSTATE 428C9). This assertion used to read
+    // `assert.equal(payload.month_key, "2026-05")` — it asserted the bug, and
+    // passed green while the first real production run inserted 0 of 120
+    // candidates. month + year are what the database derives it from.
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(payload, "month_key"),
+      "month_key is a GENERATED ALWAYS column — sending it makes every insert fail",
+    );
+    assert.equal(payload.month, 5);
+    assert.equal(payload.year, 2026);
     assert.throws(() => prepareCandidateInsertPayload(validDraft({ rawValue: -1 }), { createdBy: "tester" }), /Invalid deductions candidate draft/);
     assert.throws(() => prepareCandidateInsertPayload(validDraft(), { createdBy: "" }), /requires options.createdBy/);
   }

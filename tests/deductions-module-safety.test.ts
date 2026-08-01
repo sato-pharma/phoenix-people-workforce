@@ -353,5 +353,21 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       /entityType: "deductions_candidate"/,
       "audit must stay ONE ROW PER CANDIDATE — this is a financial ledger; a per-batch summary would lose the trail",
     );
+
+    // Audit writes must NOT be fanned out. Measured on production, a 25-wide
+    // Promise.all silently lost 43 of 57 fingerprint audit rows — scattered at
+    // random, no error surfaced, because writeAuditLog swallows its own
+    // failures. An audit trail that is usually complete is not an audit trail.
+    const auditSection = service.slice(service.indexOf("const auditable ="));
+    assert.doesNotMatch(
+      auditSection.slice(0, 1200),
+      /Promise\.all/,
+      "audit rows must be written sequentially — parallel fan-out silently dropped 43 of 57 rows in production",
+    );
+    assert.match(
+      service,
+      /audit trail incomplete/,
+      "a short audit trail must surface as a warning, never pass silently",
+    );
   }
 }

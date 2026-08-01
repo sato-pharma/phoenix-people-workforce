@@ -123,6 +123,13 @@ export function validateCandidateDraft(draft: DeductionsCandidateDraft): Candida
   return { valid: errors.length === 0, errors };
 }
 
+// NOTE: no `month_key`. On deductions_candidates that column is
+// GENERATED ALWAYS AS (year || '-' || lpad(month,2,'0')) STORED, and Postgres
+// rejects any INSERT that supplies a value for it (SQLSTATE 428C9,
+// "cannot insert a non-DEFAULT value into column"). Sending it made EVERY
+// insert fail — the first real production run produced 0 candidates and 120
+// "insert failed" warnings. month + year below are the inputs the database
+// derives it from; keep it out of this type so it cannot be reintroduced.
 type CandidateInsertPayload = {
   category: string;
   source_system: string;
@@ -131,7 +138,6 @@ type CandidateInsertPayload = {
   employee_hr_id: string;
   employee_hr_id_compact: string;
   employee_name: string | null;
-  month_key: string;
   month: number;
   year: number;
   unit: string;
@@ -163,7 +169,9 @@ export function prepareCandidateInsertPayload(
     throw new Error("employeeHrId could not be normalized to a canonical HR_ID");
   }
 
-  const normalizedMonthKey = normalizeMonthKey(draft.monthKey);
+  // Still normalized (it throws on a malformed monthKey) even though the value
+  // is no longer sent — the database derives month_key from month + year.
+  normalizeMonthKey(draft.monthKey);
   const normalizedDates = normalizeDates(draft.dates);
   const candidateKey = buildDeductionsCandidateKey({
     sourceSystem: draft.sourceSystem,
@@ -182,7 +190,9 @@ export function prepareCandidateInsertPayload(
     employee_hr_id: draft.employeeHrId.trim(),
     employee_hr_id_compact: compactHr,
     employee_name: draft.employeeName ?? null,
-    month_key: normalizedMonthKey,
+    // month_key is deliberately NOT sent — the column is GENERATED ALWAYS.
+    // normalizedMonthKey above is still computed because validating it is how
+    // a draft whose month/year disagree with its monthKey gets rejected.
     month: draft.month,
     year: draft.year,
     unit: draft.unit,
@@ -211,9 +221,6 @@ export type CandidateDraftInsertResult = {
 // and only needs to stay a reasonable statement size.
 const CANDIDATE_PROBE_CHUNK = 200;
 const CANDIDATE_INSERT_CHUNK = 500;
-// Audit rows are written one per candidate on purpose (financial trail); this
-// only bounds how many are in flight at once.
-const AUDIT_CONCURRENCY = 25;
 
 /**
  * Exported for test: a chunking bug here does not throw, it silently drops
@@ -426,22 +433,40 @@ export async function insertCandidateDrafts(input: {
     }
   }
 
-  // 5. Audit stays one row PER CANDIDATE — this is a financial ledger and
-  //    collapsing it to a per-batch summary would lose the per-row trail. Only
-  //    the concurrency changes: bounded parallel instead of strictly serial.
+  // 5. Audit — one row PER CANDIDATE. This is a financial ledger; collapsing it
+  //    to a per-batch summary would lose the per-row trail.
+  //
+  //    WRITTEN SEQUENTIALLY ON PURPOSE. A previous version fanned these out 25 at
+  //    a time with Promise.all. Measured against production it silently lost 43
+  //    of 57 fingerprint audit rows — scattered at random, with no error surfaced,
+  //    because writeAuditLog swallows its own failures. An audit trail that is
+  //    usually complete is not an audit trail. Sequential is the shape the
+  //    original had, and it lost nothing.
+  //
+  //    This is NOT where the latency was: the win came from collapsing the probe
+  //    and insert path from ~4 round-trips per candidate to a handful of chunked
+  //    calls. Audit was always going to be one write per row.
   const auditable = toInsert.filter((payload) => insertedByKey.has(pairKey(payload.category, payload.candidate_key)));
-  for (const chunk of chunkList(auditable, AUDIT_CONCURRENCY)) {
-    await Promise.all(
-      chunk.map((payload) =>
-        writeAuditLog({
-          actorLoginId: input.createdBy,
-          entityId: insertedByKey.get(pairKey(payload.category, payload.candidate_key)) ?? null,
-          entityType: "deductions_candidate",
-          newValues: payload as unknown as Record<string, unknown>,
-          summary: `Deduction candidate created from ${input.sourceLabel}`,
-          // writeAuditLog already swallows its own errors; this guards a custom logger throwing.
-        }).catch(() => undefined),
-      ),
+  let auditWritten = 0;
+  for (const payload of auditable) {
+    try {
+      await writeAuditLog({
+        actorLoginId: input.createdBy,
+        entityId: insertedByKey.get(pairKey(payload.category, payload.candidate_key)) ?? null,
+        entityType: "deductions_candidate",
+        newValues: payload as unknown as Record<string, unknown>,
+        summary: `Deduction candidate created from ${input.sourceLabel}`,
+      });
+      auditWritten += 1;
+    } catch {
+      // writeAuditLog swallows internally; this only guards a custom logger throwing.
+    }
+  }
+  // Never let a short audit trail pass silently again — if the count does not
+  // match, say so where someone will actually read it.
+  if (auditWritten < auditable.length) {
+    warnings.push(
+      `${input.sourceLabel}: audit trail incomplete — ${auditWritten} of ${auditable.length} candidate(s) were logged. The candidates were created; their audit rows were not.`,
     );
   }
 
