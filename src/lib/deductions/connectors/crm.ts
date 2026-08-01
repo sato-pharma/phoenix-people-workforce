@@ -61,12 +61,39 @@ function median(values: number[]): number {
 /**
  * Pure: given a date -> visit-count map, returns the dates whose volume looks
  * like a data-quality gap rather than genuine company-wide inactivity.
- * Compares each date only against the median for the SAME weekday in the
- * month, so a naturally-quiet weekly-off day is never mistaken for an
- * anomaly, and only flags weekdays whose normal baseline is high enough that
- * "half of normal" is meaningfully suspicious (not just an ordinarily quiet
- * day). Verified against a real case: 2026-06-11 had 154 visits vs ~900-1,020
- * on the surrounding days — almost certainly a sync gap, not mass absence.
+ * Compares each date against the median for the SAME weekday in the month, so a
+ * naturally-quiet weekly-off day is never mistaken for an anomaly, and only
+ * flags weekdays whose normal baseline is high enough that "half of normal" is
+ * meaningfully suspicious (not just an ordinarily quiet day). Verified against a
+ * real case: 2026-06-11 had 154 visits vs ~900-1,020 on the surrounding days —
+ * almost certainly a sync gap, not mass absence.
+ *
+ * 🔴 A same-weekday median DEFEATS ITSELF when the anomaly IS the weekday.
+ * The median is computed from that weekday's own days, so a weekday that is
+ * systematically depressed encodes the depression in its own baseline and can
+ * never flag itself. Measured on July 2026 production:
+ *
+ *   Sun-Wed, Sat   730-924 visits      (a healthy working day)
+ *   Thursday       4, 14, 143, 363, 450  -> weekday median 143
+ *
+ * Thursday's baseline came out at 143 against ~860 for every other working day,
+ * so 2026-07-09 sat EXACTLY ON its own median and was unflaggable — while an
+ * identical 143 on a Wednesday would have been caught instantly. Three depressed
+ * Thursdays produced 78 of the month's 247 flagged employee-days (32%),
+ * 62,435.47 EGP, against 43 people who were following a company-wide pattern.
+ *
+ * Fix: when a weekday's own median is depressed BUT that weekday demonstrably
+ * reaches working-day volume at least once in the month, its median is evidence
+ * of the anomaly rather than a baseline — fall back to the month-wide median.
+ *
+ * The peak is what separates the two cases, and it has to be, or this would
+ * break the weekly-off protection above:
+ *
+ *   Thursday  median 143, PEAK 450  -> a working day having a bad month
+ *   Friday    median   7, PEAK   8  -> genuinely a day off, never a candidate
+ *
+ * Friday keeps its own median and stays unflagged, exactly as before; Thursday
+ * falls back to the month and 2026-07-09 / 2026-07-16 finally register.
  */
 export function detectSuspectDatesFromCounts(countByDate: Map<string, number>): Set<string> {
   const countsByWeekday = new Map<number, number[]>();
@@ -77,10 +104,21 @@ export function detectSuspectDatesFromCounts(countByDate: Map<string, number>): 
     countsByWeekday.set(weekday, list);
   }
 
+  // Robust to weekly-off days: they are a minority of the month (5 Fridays in
+  // 31 days), so the month-wide median still lands on a normal working day.
+  const monthBaseline = median([...countByDate.values()]);
+  const workingDayFloor = monthBaseline * 0.5;
+
   const suspect = new Set<string>();
   for (const [date, count] of countByDate) {
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const baseline = median(countsByWeekday.get(weekday) ?? []);
+    const weekdayCounts = countsByWeekday.get(weekday) ?? [];
+    const weekdayBaseline = median(weekdayCounts);
+    const weekdayPeak = weekdayCounts.length > 0 ? Math.max(...weekdayCounts) : 0;
+    // Depressed median + a peak that still reaches working-day volume = a
+    // working weekday whose own median has been dragged under by the anomaly.
+    const weekdayIsSelfDefeating = weekdayBaseline < workingDayFloor && weekdayPeak >= workingDayFloor;
+    const baseline = weekdayIsSelfDefeating ? monthBaseline : weekdayBaseline;
     if (baseline >= 100 && count < baseline * 0.5) suspect.add(date);
   }
   return suspect;
