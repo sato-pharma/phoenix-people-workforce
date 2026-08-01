@@ -342,7 +342,7 @@ export function productGaps(
 export function avgRealizedPrice(distProductRows: DistProductRow[], maps: ComparisonNameMaps): AvgPriceRow[] {
   const byKey = new Map<string, { name: string; units: number; value: number; distributorCode: string; productCode: string }>();
   distProductRows.forEach((row) => {
-    const key = `${row.productCode} ${row.distributorCode}`;
+    const key = `${row.productCode}\u0000${row.distributorCode}`;
     let entry = byKey.get(key);
     if (!entry) { entry = { distributorCode: row.distributorCode, name: row.productName || row.productCode, productCode: row.productCode, units: 0, value: 0 }; byKey.set(key, entry); }
     entry.units += row.units;
