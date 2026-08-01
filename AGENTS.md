@@ -24,8 +24,8 @@
 
 ## Hard-Learned Rules (each cost a real incident — do not relearn them)
 
-- **Never use `gh pr merge --auto`.** `main` is not branch-protected, so `--auto` merges instantly and silently. Merge only with an explicit plain `gh pr merge` after separate owner approval.
-- **Production deploys ship in scheduled windows, not on push.** Merging to `main` deploys staging automatically but NOT production. Verify production after the deploy window runs — never assume a merge is live, and never conclude "deploy is broken" because production lags a merge.
+- **Never use `gh pr merge --auto`.** `main` IS branch-protected (`enforce_admins: true`, force-pushes and deletions blocked) — but it has **zero required status checks**, so CI never gates a merge and `--auto` would land the PR the moment it is set, green or not. The repo also sets `allow_auto_merge: false`, so the flag is rejected outright. Merge only with an explicit plain `gh pr merge` after separate owner approval. (Settings verified 2026-08-01; this line previously claimed `main` was unprotected, which was the wrong reason for a right rule.)
+- **Nothing deploys on merge — not production, and not staging either.** Both are cron-driven (triggers verified 2026-08-01): production `cron: "0 */2 * * *"` (every 2h, `deploy-cloud-run.yml`), staging `cron: "40 3 * * *"` (daily 03:40 UTC, `deploy-cloud-run-staging.yml`) which redeploys the image prod already built rather than building its own. Production's workflow *does* still carry a `workflow_run: [CI]` trigger, but its gate job refuses those runs past `FAST_DEPLOY_UNTIL` (`2026-07-30T07:00:00Z`, already expired) — so a green run can legitimately show `deploy: skipped`, which is NOT a failure. Use `workflow_dispatch` to ship immediately. Verify production after a window actually runs — never assume a merge is live, and never conclude "deploy is broken" because production lags a merge.
 - **Full validation gates must not trust warm TypeScript caches.** `pnpm run check:harden` / CI are authoritative; a bare warm `tsc` can report a false green. For manual full checks use `tsc --incremental false`.
 - **Never foreground-watch a long pipeline** (CI run, deploy, big script). Launch it in the background and check at batched checkpoints.
 - **Role sweeps use dev-auth request headers** (`PHOENIX_ENABLE_DEV_AUTH_HEADERS=true` + `x-phoenix-role`/`x-phoenix-hr-id`), not the cookie flow — cookie-based role switching logs the real user out.
@@ -37,10 +37,15 @@
 - Staging application: `https://phoenix-hr-staging-897559113412.us-central1.run.app` (Cloud Run
   service `phoenix-hr-staging`, project `phoenix-workforce-498619`, region `us-central1`; deployed
   2026-07-12, points at the staging Supabase project below, isolated from production — no shared
-  third-party secrets. Auto-deploys from `main` after CI passes, via
-  `.github/workflows/deploy-cloud-run-staging.yml` — same no-traffic/smoke-test/promote gate as
+  third-party secrets. Deploys on a **daily cron only** (`cron: "40 3 * * *"`, 03:40 UTC) via
+  `.github/workflows/deploy-cloud-run-staging.yml` — NOT on merge, and there is no `push` or
+  `workflow_run` trigger. It redeploys the image production already built ("build once, deploy
+  twice"), so if prod has not shipped the commit you care about, staging falls back to the newest
+  prod image and will not contain your change. Same no-traffic/smoke-test/promote gate as
   production, reusing the env vars already configured on the Cloud Run service itself rather than
-  any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.)
+  any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.
+  Observed caution: across 2026-07-28..31 the scheduled runs actually fired ~11:30 UTC, ~8h after
+  the configured 03:40 — treat the cron as "once a day, time not guaranteed", not a clock.)
 - Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1,
   created 2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
@@ -98,7 +103,7 @@ sharing one folder — never from parallel worktrees.
 
 | Tier | Where | Use for |
 | --- | --- | --- |
-| **A — Cloud session** (Claude Code on the web) — *the default* | Isolated cloud clone, ends in a PR | Any independent code task that does not need localhost browser verification, local files, or locally-authenticated CLIs. CI + staging auto-deploy validate it. Run these on Sonnet by default. |
+| **A — Cloud session** (Claude Code on the web) — *the default* | Isolated cloud clone, ends in a PR | Any independent code task that does not need localhost browser verification, local files, or locally-authenticated CLIs. CI validates it; staging only picks it up on the next daily cron (and only if prod shipped it first), so do not treat "merged" as "on staging". Run these on Sonnet by default. |
 | **B — Local worktree** (max **2–3 woken** at once, one session per worktree) | Sibling `_wt-<task>` | Only tasks needing the browser preview, dev-auth role sweeps, or local creds. |
 | **C — Main checkout** (exactly **one** interactive session — the control tower) | primary repo folder | Reviews, merge/deploy decisions, DB operations, deployed-env verification, worktree triage. Never feature edits here. |
 
@@ -137,7 +142,7 @@ ancestry check silently never passed.
 - Use one branch per coherent delivery and one major delivery per PR.
 - Keep related fixes together. Put unrelated, experimental, or materially riskier work on another branch.
 - Do not carry commits from a merged or stale branch into a new task. Create a fresh branch from `origin/main`.
-- Never merge automatically. Never delete a branch or worktree automatically after merge.
+- Never merge automatically. Never delete a branch or worktree automatically after merge — but know that the repo sets `delete_branch_on_merge: true`, so GitHub deletes the **remote** branch on merge no matter what the CLI does. Omitting `--delete-branch` does not prevent it; only changing that repo setting would. The local branch and any worktree survive and still require explicit approval before removal. (Verified 2026-08-01 on PR #1540.)
 
 ## Execution And Approval Matrix
 
