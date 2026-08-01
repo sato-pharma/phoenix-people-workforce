@@ -294,9 +294,10 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
               <tbody>
                 {rows.map((row) => (
                   <tr className="border-b border-slate-100 odd:bg-slate-50/60 hover:bg-orange-50/40" key={row.id}>
+                    {/* Employee NAME only — never the HR code alongside it. The
+                        code is fallback text for a row with no name, not a badge. */}
                     <td className="px-4 py-2.5 font-semibold text-slate-900">
                       {row.employeeName ?? row.employeeHrId}
-                      <span className="ml-1.5 font-mono text-[11px] font-medium text-slate-400">{row.employeeHrId}</span>
                     </td>
                     <td className="px-4 py-2.5 text-slate-700">{row.unit === "days" ? row.rawValue : "—"}</td>
                     <td className="px-4 py-2.5 text-slate-700">
