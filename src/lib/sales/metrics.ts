@@ -209,13 +209,18 @@ function areaLabel(items: SalesMetricRecord[]) {
 
 export function buildSalesDashboardView(rows: SalesMetricRecord[], fallbackSummary: Record<string, unknown> = {}): SalesDashboardView {
   const reportRows = rows.filter((row) => !isC01Row(row));
-  const totalSales = sumSalesMetricMoney(rows, "salesValue");
-  const totalTarget = sumSalesMetricMoney(rows, "targetValue");
-  const unitsSold = sumSalesMetricRows(rows, "salesUnits");
+  // Headline figures are summed over reportRows, NOT rows. They used to include C-O1 while every
+  // breakdown below them excluded it, so the headline total could never equal the sum of the parts
+  // and the difference had no visible home. One row set, one number.
+  const totalSales = sumSalesMetricMoney(reportRows, "salesValue");
+  const totalTarget = sumSalesMetricMoney(reportRows, "targetValue");
+  const unitsSold = sumSalesMetricRows(reportRows, "salesUnits");
   const activeProducts = new Set(reportRows.map((row) => valueAsText(row.product)).filter(Boolean)).size;
   const linkedEmployees = new Set(reportRows.map((row) => valueAsText(row.employeeHrId)).filter(Boolean)).size;
   const dsmIds = new Set(reportRows.map((row) => valueAsText(row.managerHrId)).filter(Boolean));
-  const prices = rows.map((row) => valueAsNumber(row.factoryPrice)).filter((price) => price > 0);
+  // reportRows for the same reason as the totals above: an average drawn from a wider row set than
+  // the one on screen is not the average of what is on screen.
+  const prices = reportRows.map((row) => valueAsNumber(row.factoryPrice)).filter((price) => price > 0);
   const averageFactoryPrice = prices.length ? prices.reduce((total, price) => total + price, 0) / prices.length : 0;
 
   const trendRows = [...aggregateSalesMetricRows(rows, "period").entries()]
@@ -414,10 +419,16 @@ export function buildPortalSalesDashboardMetrics(records: SalesMetricRecord[]): 
   const maxTargetsByPeriodProduct = new Map<string, number>();
   const maxTargetsByLineProduct = new Map<string, number>();
   const maxTargetsByPeriodFamily = new Map<string, number>();
+  // Territory was the ONE dimension summing target raw, while trend, product, family and line all
+  // de-duplicate. The source rows echo the same target across every (period, product) line for an
+  // employee, so a raw sum multiplies a territory's target by the row-echo factor — and understates
+  // its achievement % by exactly that factor. Same key shape as the siblings.
+  const maxTargetsByTerritory = new Map<string, number>();
   const seenTrendTargets = new Set<string>();
   const seenProductTargets = new Set<string>();
   const seenFamilyTargets = new Set<string>();
   const seenLineTargets = new Set<string>();
+  const seenTerritoryTargets = new Set<string>();
 
   records.forEach((record) => {
     const period = periodForRecord(record);
@@ -437,6 +448,9 @@ export function buildPortalSalesDashboardMetrics(records: SalesMetricRecord[]): 
 
     const familyTargetKey = `fam::${employeeHrId}::${territory}::${period}::${product}::${family}`;
     maxTargetsByPeriodFamily.set(familyTargetKey, Math.max(targetValue, maxTargetsByPeriodFamily.get(familyTargetKey) ?? 0));
+
+    const territoryTargetKey = `terr::${employeeHrId}::${territory}::${period}::${product}`;
+    maxTargetsByTerritory.set(territoryTargetKey, Math.max(targetValue, maxTargetsByTerritory.get(territoryTargetKey) ?? 0));
   });
 
   records.forEach((record) => {
@@ -488,9 +502,14 @@ export function buildPortalSalesDashboardMetrics(records: SalesMetricRecord[]): 
     });
 
     const prevTerritory = territoryMap.get(territory) ?? { sales: 0, target: 0 };
+    const territoryTargetKey = `terr::${employeeHrId}::${territory}::${period}::${product}`;
+    const territoryTargetValue = seenTerritoryTargets.has(territoryTargetKey)
+      ? 0
+      : (maxTargetsByTerritory.get(territoryTargetKey) ?? 0);
+    seenTerritoryTargets.add(territoryTargetKey);
     territoryMap.set(territory, {
       sales: prevTerritory.sales + salesValue,
-      target: prevTerritory.target + valueAsNumber(record.targetValue),
+      target: prevTerritory.target + territoryTargetValue,
     });
 
     const prevLine = linePerformance.get(line) ?? { sales: 0, target: 0, linkedEmployees: 0 };
