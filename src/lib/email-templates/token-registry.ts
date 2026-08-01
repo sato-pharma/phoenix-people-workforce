@@ -5,7 +5,6 @@
 // service.ts and email-designer.ts. A token that's missing here is missing everywhere, LOUDLY
 // (chip picker won't offer it, "Unknown variable" blocks publish) instead of the old failure
 // mode: silently rendering blank in a real, already-sent email (the exact shape of the
-// 2026-07-14 blank-probation-email incident and this session's detailsTable/noActivityTable bugs).
 //
 // ZERO non-type imports on purpose — mirrors render-core.ts, which needs to stay importable by
 // the type-stripping test runner (no JSX). EmailTemplateContext/EmailTemplateKey are imported
@@ -78,7 +77,6 @@ export const TOKEN_REGISTRY: readonly TokenDefinition[] = [
   { category: "Company", label: "Excuse Date", sampleValue: "2026-06-12", token: "excuseDate", allowedTemplateTypes: ["excuse_request", "excuse_decision"] },
   { category: "Company", label: "Details Table", sampleValue: "(a premium zebra-striped label/value summary table)", token: "detailsTable", allowedTemplateTypes: [], isHtmlBlock: true },
   { category: "Company", label: "Digest Table", sampleValue: "(a weekly digest summary table)", token: "digestTable", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"], isHtmlBlock: true },
-  { category: "Company", label: "No Activity Table", sampleValue: "(a table of unresolved no-activity days)", token: "noActivityTable", allowedTemplateTypes: ["no_activity_weekly_reminder"], isHtmlBlock: true },
   { category: "Company", label: "Week Label", sampleValue: "2026-06-08 to 2026-06-14", token: "weekLabel", allowedTemplateTypes: ["dv_planner_weekly", "probation_weekly_digest"] },
   { category: "Company", label: "Score Table", sampleValue: "(the coaching score breakdown table)", token: "scoreTable", allowedTemplateTypes: ["coaching_report"], isHtmlBlock: true },
   { category: "Payroll", label: "Estimated Cost", sampleValue: "50,000 EGP", token: "estimatedCost", allowedTemplateTypes: ["marketing_request"] },

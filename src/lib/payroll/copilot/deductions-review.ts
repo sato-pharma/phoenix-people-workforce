@@ -210,13 +210,13 @@ export type ApprovedDeductionTotals = { crm: number; fingerPrint: number };
  * stay approval-gated (must be explicitly "Approved for Payroll" on the
  * Fingerprint tab before they reach the sheet).
  *
- * MANUAL_HR no_activity rows (Private Calendar "No Activity Recorded" days,
- * decided by a Super Admin in the dedicated No Activity Days report — see
- * src/lib/private-calendar/no-activity-clarifications.ts) share the same
- * "crm" payroll column as CRM no-activity (payrollColumnForDeduction), but
- * are approval-gated like fingerprint, NEVER unconditional like CRM: a
- * Super Admin must explicitly decide every one, individually or in bulk —
- * there is no silent/automatic deduction path anywhere in this system.
+ * MANUAL_HR rows share the same "crm" payroll column as CRM no-activity
+ * (payrollColumnForDeduction) but are approval-gated like fingerprint, NEVER
+ * unconditional like CRM: a Super Admin must explicitly decide every one —
+ * there is no silent/automatic deduction path anywhere in this system. The
+ * Private Calendar "No Activity Days" report used to be the writer of these
+ * rows; it was retired, so MANUAL_HR is now HR-entered only. This read stays
+ * because historical rows remain valid payroll history.
  *
  * Called from deep inside `assembleDraft`, which has no request-scoped
  * `AccessContext` available — uses `systemAccessContext` the same way other

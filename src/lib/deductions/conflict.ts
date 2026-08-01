@@ -2,7 +2,7 @@
 // Ported from deductions-governance/conflict.ts, keyed by category instead of
 // deductionType so cross-category same-day overlaps (e.g. CRM vs No Records
 // Activity both claiming the same day) surface too — see the mutual-exclusion
-// rule from deductions-governance/no-activity-clarifications.ts this generalizes.
+// rule the retired No Activity Days clarification flow used, generalized here.
 
 import { canonicalHrIdKey } from "../hr-id.ts";
 import { normalizeMonthKey } from "./candidate-key.ts";

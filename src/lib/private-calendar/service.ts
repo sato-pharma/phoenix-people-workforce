@@ -220,90 +220,6 @@ function appendDisputeStatusExceptions(
   return [...exceptions, ...statusExceptions];
 }
 
-type NoActivityStatusRow = {
-  activity_date: string;
-  admin_note: string | null;
-  clarification_text: string | null;
-  confirmed_no_activity: boolean;
-  employee_hr_id: string;
-  employee_name: string | null;
-  id: string;
-  resolution: "deducted" | "not_deducted" | null;
-  status: "pending_review" | "resolved";
-};
-
-// Local, read-only fetch — deliberately not imported from
-// no-activity-clarifications.ts, which itself imports getCompanyNoActivityDays
-// from this file; importing back from there would create a circular module
-// dependency. Mirrors the same inline-query pattern already used throughout
-// this file (loadVacationItems, loadExcuseItems, etc.) for other domains'
-// tables.
-async function loadNoActivityClarificationStatuses(
-  employeeHrIds: string[],
-  start: string,
-  end: string,
-): Promise<NoActivityStatusRow[]> {
-  const employeeHrKeys = expandHrIdLookupKeys(employeeHrIds.map((value) => String(value ?? "").trim()).filter(Boolean));
-  if (employeeHrKeys.length === 0) return [];
-  const { data, error } = await getSupabaseAdmin()
-    .from("private_calendar_no_activity_clarifications")
-    .select("id,employee_hr_id,employee_name,activity_date,clarification_text,confirmed_no_activity,status,resolution,admin_note")
-    .in("employee_hr_id", employeeHrKeys)
-    .gte("activity_date", start)
-    .lte("activity_date", end);
-  if (error) {
-    if (schemaMissing(error, "private_calendar_no_activity_clarifications")) return [];
-    throw error;
-  }
-  return (data ?? []) as NoActivityStatusRow[];
-}
-
-// Employee-visible status/history for no-activity clarifications: only
-// surfaced once the employee (or the system, via the 3-days-later clarify
-// prompt) or an admin has actually acted — an untouched "No Activity
-// Recorded" day already gets that label from derivePrivateCalendarExceptions,
-// so a pending row with no clarification yet would just be a duplicate of
-// that same message.
-function appendNoActivityStatusExceptions(
-  exceptions: PrivateCalendarException[],
-  rows: NoActivityStatusRow[],
-): PrivateCalendarException[] {
-  if (rows.length === 0) return exceptions;
-  const additions: PrivateCalendarException[] = [];
-  for (const row of rows) {
-    const hasResponse = Boolean(row.clarification_text) || row.confirmed_no_activity;
-    if (row.status === "pending_review" && hasResponse) {
-      additions.push({
-        code: "no_activity_clarification_pending",
-        date: row.activity_date,
-        description: row.confirmed_no_activity && !row.clarification_text
-          ? "You confirmed no activity happened this day. Awaiting Super Admin review."
-          : `You clarified: "${row.clarification_text}". Awaiting Super Admin review.`,
-        employeeHrId: row.employee_hr_id,
-        employeeName: row.employee_name,
-        id: `private-calendar-no-activity-status-${row.id}`,
-        relatedItemIds: [],
-        severity: "info",
-        title: "Clarification Submitted — Pending",
-      });
-    } else if (row.status === "resolved") {
-      const deducted = row.resolution === "deducted";
-      additions.push({
-        code: "no_activity_resolved",
-        date: row.activity_date,
-        description: `${deducted ? "This day was deducted from payroll." : "No deduction was applied for this day."}${row.admin_note ? ` Admin note: ${row.admin_note}` : ""}`,
-        employeeHrId: row.employee_hr_id,
-        employeeName: row.employee_name,
-        id: `private-calendar-no-activity-status-${row.id}`,
-        relatedItemIds: [],
-        severity: deducted ? "danger" : "info",
-        title: deducted ? "No Activity — Deducted" : "No Activity — Cleared",
-      });
-    }
-  }
-  return [...exceptions, ...additions];
-}
-
 async function loadHolidayItems(year: number, month: number, start: string, end: string): Promise<PrivateCalendarItem[]> {
   try {
     const result = await getConfirmedNationalHolidays({ month, year });
@@ -502,18 +418,11 @@ export async function getPrivateCalendarWorkspace(input: {
     vacation: vacations.ready,
   };
 
-  const scopeEmployeeHrIds = scopeEmployees.map((employee) => employee.hrId);
-  const [employeeDisputes, noActivityStatusRows] = await Promise.all([
-    (await Promise.all(
-      scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
-    )).flat(),
-    loadNoActivityClarificationStatuses(scopeEmployeeHrIds, start, end).catch(() => []),
-  ]);
+  const employeeDisputes = (await Promise.all(
+    scopeEmployees.map((employee) => listDisputesForEmployee({ employeeHrId: employee.hrId, end, start }).catch(() => [])),
+  )).flat();
   const itemsWithCorrections = applyAcceptedDisputeOverlays(items, employeeDisputes);
-  const exceptionsWithStatuses = appendNoActivityStatusExceptions(
-    appendDisputeStatusExceptions(exceptions, employeeDisputes),
-    noActivityStatusRows,
-  );
+  const exceptionsWithStatuses = appendDisputeStatusExceptions(exceptions, employeeDisputes);
 
   const displayItems = itemsWithCorrections;
 
@@ -540,6 +449,7 @@ export async function getPrivateCalendarWorkspace(input: {
     year: input.year,
   };
 }
+
 
 export type CompanyNoActivityDay = {
   date: string;
@@ -569,12 +479,14 @@ function monthsTouchedByRange(start: string, end: string): Array<{ year: number;
 /**
  * Company-wide "No Activity Recorded" days across every active employee for
  * the given date range — the same derivePrivateCalendarExceptions engine the
- * employee's own calendar uses (guaranteeing the admin report and what an
- * employee sees on their calendar can never disagree), just fed the whole
- * roster instead of one employee/team. Backs the No Activity Days report
- * (src/lib/private-calendar/no-activity-clarifications.ts) — this function
- * only computes which days ARE no-activity; it does not touch clarifications
- * or deduction decisions.
+ * employee's own calendar uses (so a report and what an employee sees on their
+ * own calendar can never disagree), just fed the whole roster instead of one
+ * employee/team. Computes only which days ARE no-activity; it decides nothing.
+ *
+ * Sole consumer since the No Activity Days admin module was retired: the
+ * unified Deductions module's No Records Activity connector
+ * (src/lib/deductions/connectors/no-records-activity.ts), which is the
+ * successor surface for adjudicating these days.
  */
 export async function getCompanyNoActivityDays(input: {
   access: AccessContext;

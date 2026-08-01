@@ -5,8 +5,9 @@
 // covers every active employee (not just field-force) and already excludes
 // pre-hire days, holidays, and non-working days via derivePrivateCalendarExceptions'
 // isExpectedWorkday gate. One candidate per (employee, day) — matching the
-// granularity the existing clarification UX (no-activity-clarifications.ts)
-// already decides at.
+// granularity the retired No Activity Days clarification UX decided at. This
+// connector is that module's successor surface, which is why
+// getCompanyNoActivityDays survived its removal — do not delete that engine.
 //
 // Excludes field-eligible-title employees with no crm_id mapping at all —
 // mirrors the existing FWC Tier-0 guard (generatedRecommendations skips

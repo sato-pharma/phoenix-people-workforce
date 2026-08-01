@@ -1278,17 +1278,16 @@ type NoActivityNote = { note: string; resolution: string | null; confirmedNoActi
  * What each employee already SAID about a flagged no-activity day, keyed
  * `compact|date`.
  *
- * An employee can explain a "No Activity Recorded" day in the private-calendar
- * workspace and HR resolves it deducted / not_deducted. None of that reached
- * payroll: checked in production 2026-08-01, July had 92 clarifications filed
- * and 0 decided, so this step was about to deduct days people had already
- * explained. Read-only here — deciding still belongs to the No Activity Days
- * workspace; this only stops HR confirming the step blind.
+ * HISTORICAL ONLY. Employees used to explain a "No Activity Recorded" day in the
+ * private-calendar workspace and HR resolved it deducted / not_deducted. None of
+ * that reached payroll: checked in production 2026-08-01, July had 92
+ * clarifications filed and 0 decided, so this step was about to deduct days
+ * people had already explained. That workflow has since been RETIRED along with
+ * the No Activity Days module, so no new rows are ever written — this read
+ * survives only so the notes already on file still surface next to the money.
  *
- * Deliberately a direct defensive read rather than getCompanyNoActivityReport():
- * that one asserts a deductions-governance DECISION actor, which a Payroll
- * Specialist need not be — it would throw and take the whole step down. A
- * missing note must never block the money.
+ * Deliberately a direct defensive read: a missing note must never block the
+ * money, so a failure here is logged and swallowed rather than thrown.
  */
 async function loadNoActivityNotes(startIso: string, endIso: string): Promise<Map<string, NoActivityNote>> {
   const byKey = new Map<string, NoActivityNote>();

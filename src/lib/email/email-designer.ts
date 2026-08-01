@@ -200,8 +200,8 @@ const sampleDetailsRows = [
 
 export function sampleTemplateContext(): Record<string, string> {
   // Generated from TOKEN_REGISTRY — was previously a hand-listed object that had already drifted
-  // out of sync (missing digestTable/weekLabel/scoreTable/noActivityTable and every marketing
-  // and probation-milestone token), so "Backend Preview" silently showed blank fields for them.
+  // out of sync (missing digestTable/weekLabel/scoreTable and every marketing and
+  // probation-milestone token), so "Backend Preview" silently showed blank fields for them.
   const base = Object.fromEntries(
     TOKEN_REGISTRY.filter((t) => !t.isHtmlBlock).map((t) => [t.token, t.sampleValue]),
   );

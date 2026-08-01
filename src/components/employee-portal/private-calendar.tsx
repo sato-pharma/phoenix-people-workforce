@@ -9,7 +9,6 @@ import {
   Download,
   FileSearch,
   ListFilter,
-  MessageSquareWarning,
   RefreshCw,
   Search,
 } from "lucide-react";
@@ -391,11 +390,10 @@ export function PrivateCalendar({
     [exceptions],
   );
 
-  // Flag-this-day / clarify-no-activity are self-service actions — only the
-  // employee whose calendar this is can act on it, never a manager/admin
-  // paging through someone else's calendar from the admin surface.
+  // Flag-this-day is a self-service action — only the employee whose calendar
+  // this is can act on it, never a manager/admin paging through someone else's
+  // calendar from the admin surface.
   const canActOnOwnDay = viewerHrId != null && privateCalendarHrIdKey(viewerHrId) === privateCalendarHrIdKey(selectedEmployee.hrId);
-  const selectedDayIsNoActivity = selectedExceptions.some((exception) => exception.title === "No Activity Recorded");
 
   const [disputeFormOpen, setDisputeFormOpen] = useState(false);
   const [disputeClaimText, setDisputeClaimText] = useState("");
@@ -404,13 +402,6 @@ export function PrivateCalendar({
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
   const [disputeMessage, setDisputeMessage] = useState<string | null>(null);
 
-  const [clarifyFormOpen, setClarifyFormOpen] = useState(false);
-  const [clarifyText, setClarifyText] = useState("");
-  const [clarifySourceOptions, setClarifySourceOptions] = useState<string[]>([]);
-  const [clarifySourceDetail, setClarifySourceDetail] = useState("");
-  const [clarifyConfirmNoActivity, setClarifyConfirmNoActivity] = useState(false);
-  const [clarifySubmitting, setClarifySubmitting] = useState(false);
-  const [clarifyMessage, setClarifyMessage] = useState<string | null>(null);
 
   async function submitDayDispute() {
     setDisputeMessage(null);
@@ -453,50 +444,6 @@ export function PrivateCalendar({
       setDisputeMessage(error instanceof Error ? error.message : "Unable to submit this dispute.");
     } finally {
       setDisputeSubmitting(false);
-    }
-  }
-
-  async function submitNoActivityClarification() {
-    setClarifyMessage(null);
-    if (!clarifyText.trim() && !clarifyConfirmNoActivity) {
-      setClarifyMessage("Explain what happened, or confirm that no activity occurred that day.");
-      return;
-    }
-    if (clarifyText.trim() && clarifySourceOptions.length === 0) {
-      setClarifyMessage("Tell us where a Super Admin can verify this.");
-      return;
-    }
-    if (clarifySourceOptions.includes("Other") && !clarifySourceDetail.trim()) {
-      setClarifyMessage("Tell us where a Super Admin can verify this.");
-      return;
-    }
-    setClarifySubmitting(true);
-    try {
-      const sourcePointerText = clarifySourceOptions.length > 0
-        ? (clarifySourceDetail.trim() ? `${clarifySourceOptions.join(", ")}: ${clarifySourceDetail.trim()}` : clarifySourceOptions.join(", "))
-        : null;
-      const response = await fetch("/api/private-calendar/no-activity", {
-        body: JSON.stringify({
-          activityDate: selectedDate,
-          clarificationText: clarifyText || null,
-          confirmedNoActivity: clarifyConfirmNoActivity,
-          employeeName: selectedEmployee.fullName,
-          sourcePointerText,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.success) throw new Error(payload.message || "Unable to submit this clarification.");
-      setClarifyText("");
-      setClarifySourceOptions([]);
-      setClarifySourceDetail("");
-      setClarifyConfirmNoActivity(false);
-      setClarifyMessage("Clarification submitted.");
-    } catch (error) {
-      setClarifyMessage(error instanceof Error ? error.message : "Unable to submit this clarification.");
-    } finally {
-      setClarifySubmitting(false);
     }
   }
 
@@ -1097,16 +1044,6 @@ export function PrivateCalendar({
               <span className="rounded-full bg-slate-100 px-4 py-1.5 text-xs font-black text-slate-600">
                 {timelineItems.length} item{timelineItems.length === 1 ? "" : "s"} · {selectedExceptions.length} exception{selectedExceptions.length === 1 ? "" : "s"}
               </span>
-              {canActOnOwnDay && selectedDayIsNoActivity ? (
-                <button
-                  className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-700 transition hover:bg-amber-100"
-                  onClick={() => { setClarifyFormOpen((open) => !open); setClarifyMessage(null); }}
-                  type="button"
-                >
-                  <MessageSquareWarning className="h-3.5 w-3.5" />
-                  Clarify this day
-                </button>
-              ) : null}
               {canActOnOwnDay ? (
                 <button
                   className="inline-flex h-8 items-center gap-1.5 rounded-sm border border-sky-300 bg-sky-50 px-3 text-xs font-black text-sky-700 transition hover:bg-sky-100"
@@ -1119,63 +1056,6 @@ export function PrivateCalendar({
               ) : null}
             </div>
           </div>
-
-          {clarifyFormOpen ? (
-            <div className="border-b border-amber-200 bg-amber-50/60 px-6 py-4">
-              <p className="text-xs font-black uppercase tracking-[0.1em] text-amber-700">Clarify No Activity — {dayLabel(selectedDate)}</p>
-              <p className="mt-1 text-xs font-semibold text-amber-800">
-                Tell us what actually happened this day, and where we can verify it — or confirm that no work activity happened.
-              </p>
-              <textarea
-                className="mt-3 w-full rounded-sm border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none"
-                onChange={(event) => setClarifyText(event.target.value)}
-                placeholder="What actually happened this day..."
-                rows={3}
-                value={clarifyText}
-              />
-              <VerificationSourceMultiSelect
-                borderClass="border-amber-200"
-                focusRingClass="focus:border-amber-400"
-                onChange={setClarifySourceOptions}
-                selected={clarifySourceOptions}
-              />
-              {clarifySourceOptions.length > 0 ? (
-                <input
-                  className="mt-2 w-full rounded-sm border border-amber-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-amber-400 focus:outline-none"
-                  onChange={(event) => setClarifySourceDetail(event.target.value)}
-                  placeholder={clarifySourceOptions.includes("Other") ? "Describe the source" : "Additional details (optional)"}
-                  type="text"
-                  value={clarifySourceDetail}
-                />
-              ) : null}
-              <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-amber-800">
-                <input
-                  checked={clarifyConfirmNoActivity}
-                  onChange={(event) => setClarifyConfirmNoActivity(event.target.checked)}
-                  type="checkbox"
-                />
-                I confirm no work activity happened this day.
-              </label>
-              {clarifyMessage ? <p className="mt-2 text-xs font-bold text-amber-900">{clarifyMessage}</p> : null}
-              <div className="mt-3 flex items-center gap-2">
-                <button
-                  className="rounded-sm bg-amber-600 px-4 py-1.5 text-xs font-black text-white transition hover:bg-amber-700 disabled:opacity-50"
-                  disabled={clarifySubmitting}
-                  onClick={submitNoActivityClarification}
-                  type="button"
-                >
-                  {clarifySubmitting ? "Submitting…" : "Submit"}
-                </button>
-                <button
-                  className="rounded-sm border border-amber-300 px-4 py-1.5 text-xs font-black text-amber-700 transition hover:bg-amber-100"
-                  onClick={() => setClarifyFormOpen(false)}
-                  type="button"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           {disputeFormOpen ? (
             <div className="border-b border-sky-200 bg-sky-50/60 px-6 py-4">
@@ -1434,9 +1314,9 @@ function TeamSummaryPanel({ rows }: { rows: PrivateCalendarWorkspace["teamSummar
   );
 }
 
-// Multi-select "where can a Super Admin verify this" dropdown, shared by the
-// Request Review and Clarify No Activity forms — a day's claim can point to
-// more than one source at once (e.g. both CRM and a manager confirmation).
+// Multi-select "where can a Super Admin verify this" dropdown used by the
+// Request Review form — a day's claim can point to more than one source at
+// once (e.g. both CRM and a manager confirmation).
 function VerificationSourceMultiSelect({
   borderClass,
   focusRingClass,

@@ -601,8 +601,8 @@ export function runPrivateCalendarTests() {
   );
   assert.equal(
     serviceSource.match(/\.in\("employee_hr_id", employeeHrKeys\)/g)?.length,
-    3,
-    "vacation, excuse, and no-activity-status private-calendar loaders must use expanded employee HR_ID keys",
+    2,
+    "the vacation and excuse private-calendar loaders must use expanded employee HR_ID keys",
   );
   assert.match(
     excuseLoaderSource,
@@ -620,20 +620,35 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
   assert.match(serviceSource, /loadAttendancePolicyGroups/, "service must resolve custom attendance workdays for private calendar exceptions");
-  // Both the calendar workspace and the company No Activity Days report must go
-  // through the one per-employee helper (behavior asserted above). A local
-  // re-implementation is how the company path drifted into suppressing every
-  // employee's punches — including Complete ones — on any colleague's
-  // double-visit date, manufacturing wrongful payroll deduction candidates.
+  // Field-visit suppression must go through the one per-employee helper
+  // (behavior asserted above) in BOTH the employee/team workspace and the
+  // company-wide engine. A local re-implementation is how the company path
+  // drifted into suppressing every employee's punches — including Complete
+  // ones — on any colleague's double-visit date, manufacturing wrongful
+  // payroll deduction candidates.
   assert.equal(
     (serviceSource.match(/suppressFieldVisitAttendanceProblems\(allItems\)/g) ?? []).length,
     2,
-    "both the private calendar workspace and getCompanyNoActivityDays must suppress field-visit attendance through the shared per-employee helper",
+    "the private calendar workspace and the company no-activity engine must both suppress field-visit attendance through the shared per-employee helper",
   );
   assert.doesNotMatch(
     serviceSource,
     /fieldVisitDates/,
     "field-visit suppression must never be re-implemented inline with a date-only key — it would suppress other employees' attendance",
+  );
+  // The No Activity Days admin module is retired: no clarification workflow and
+  // no payroll-deduction decisions from the private calendar. getCompanyNoActivityDays
+  // itself SURVIVES — it is the engine the unified Deductions module's No Records
+  // Activity connector reuses, and it decides nothing on its own.
+  assert.doesNotMatch(
+    serviceSource,
+    /no_activity_clarifications|appendNoActivityStatusExceptions/,
+    "the retired clarification workflow must not come back into the private calendar service",
+  );
+  assert.match(
+    serviceSource,
+    /export async function getCompanyNoActivityDays/,
+    "the company no-activity engine must stay — the unified Deductions connector depends on it",
   );
   assert.match(
     serviceSource,
