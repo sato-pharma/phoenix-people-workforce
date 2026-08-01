@@ -12,7 +12,10 @@ import {
   PortalSection,
   PortalSegmentedTabs,
 } from "@/components/employee-portal/portal-primitives";
-import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits";
+// Value import MUST come from the client-safe constants module: my-crm-visits.ts is server-only
+// (it reaches node:crypto through the employee directory) and importing a value from it here
+// breaks the webpack dev build for this route and every route compiled after it.
+import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
 import type {
   MyCrmCheckinRow,
   MyCrmDoubleVisitRow,

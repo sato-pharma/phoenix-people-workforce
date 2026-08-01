@@ -106,7 +106,25 @@ export function runCrmVisitsSelfScopeTests() {
   // 3. It is HARD-CAPPED. The live Regional Manager's 17-person subtree logged 9,253 visits in a
   //    90-day window — an uncapped fetch rendered a 5.1 MB payload in 43s. Must use the bounded,
   //    DB-ordered reader, never the full-scan queryVisits the self tabs use.
-  assert.match(dataLayer, /export const TEAM_VISIT_ROW_CAP = \d+;/, "the team feed must declare a row cap");
+  // The cap itself lives in the client-safe constants module (see below) and is re-exported here,
+  // so assert on that module — but still require this file to expose the name, because
+  // fetchTeamVisits reads it and a silent removal would uncap the feed.
+  const visitConstants = readFileSync("src/lib/employee-portal/my-crm-visits-constants.ts", "utf8");
+  assert.match(visitConstants, /export const TEAM_VISIT_ROW_CAP = \d+;/, "the team feed must declare a row cap");
+  assert.match(dataLayer, /TEAM_VISIT_ROW_CAP/, "the data layer must still expose/apply the row cap");
+
+  // The cap constant must NOT be declared in this server-only module. my-crm-visits.ts reaches
+  // node:crypto (crm/reads -> employee-directory -> employee-photo), so the "use client" workspace
+  // importing a VALUE from here pulls that chain into the browser bundle and hard-fails the webpack
+  // dev build with UnhandledSchemeError — which then poisons every route compiled afterwards, not
+  // just /employee-portals/visits. Production (Turbopack) tolerated it, so it broke only local dev,
+  // silently. Keep the value import pointed at the constants module.
+  const visitsWorkspace = readFileSync("src/components/employee-portal/my-visits-workspace.tsx", "utf8");
+  assert.doesNotMatch(
+    visitsWorkspace,
+    /import\s*\{[^}]*\}\s*from\s*["']@\/lib\/employee-portal\/my-crm-visits["']/,
+    "the client workspace must not VALUE-import the server-only my-crm-visits module (use my-crm-visits-constants; `import type` is fine)",
+  );
   const teamFnIdx = dataLayer.indexOf("export async function fetchTeamVisits(");
   const teamFnBody = dataLayer.slice(teamFnIdx, teamFnIdx + 1800);
   assert.match(teamFnBody, /queryVisitsLimited</, "the team feed must use the bounded reader");

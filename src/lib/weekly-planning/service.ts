@@ -1498,6 +1498,32 @@ async function notifyHrOnSubmit(plan: PlanHeaderRow, resolvedRecipients?: Array<
   });
 }
 
+/**
+ * Tell the manager a plan they may already have in their queue is GONE.
+ *
+ * Cancel used to reuse notifyManager(), whose payload is hardcoded to the submission copy
+ * ("<name> submitted a <kind> plan" / "needs manager review", eventType plan_submitted).
+ * A cancellation therefore reached the manager as a brand-new review request pointing at a
+ * plan they can no longer act on. This sends the truthful cancellation notice instead;
+ * recipient resolution is deliberately identical (same manager_hr_id, no skip-level/CEO
+ * fallbacks — an already-cancelled plan needs no escalation to find an approver).
+ */
+async function notifyManagerPlanCancelled(plan: PlanHeaderRow, comment: string | null): Promise<void> {
+  if (!plan.manager_hr_id) return;
+  const reason = comment?.trim();
+  await notifyRecipients({
+    actionUrl: `/admin/approvals/plan/${plan.id}`,
+    eventType: "plan_cancelled",
+    message:
+      `${plan.employee_name} cancelled their ${plan.plan_kind} plan for ${plan.period_key}.`
+      + (reason ? ` Reason: ${reason}` : "")
+      + " No review is needed.",
+    plan,
+    recipients: [{ hrId: plan.manager_hr_id }],
+    title: `${plan.employee_name}'s ${plan.plan_kind} plan was cancelled`,
+  });
+}
+
 // Single fan-out for a fresh submission: direct manager (review) + HR (awareness).
 // Best-effort and isolated — a failure to reach HR must never block the manager alert.
 // National Sales Manager's "direct manager" is the CEO (see notifyManager's NSM fallback) —
@@ -3066,7 +3092,7 @@ export async function cancelEmployeePlan(access: AccessContext, planId: string, 
     summary: `${plan.plan_kind} plan cancelled`,
   });
   const cancelledRow = await loadPlanRow(planId);
-  await notifyManager(cancelledRow).catch((err) =>
+  await notifyManagerPlanCancelled(cancelledRow, comment ?? null).catch((err) =>
     logError("Weekly plan cancel notify failed", {
       labels: { event: "weekly_plan_cancel_notify_failed", planId: cancelledRow.id },
       error: err,

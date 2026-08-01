@@ -151,6 +151,38 @@ export function runEmployeePortalNavigationTests() {
   const plainEmployee = resolveEmployeePortalNavVisibility("Employee");
   assert.equal(plainEmployee.showExpenseActionTab, true, "Any non-Medical-Rep employee should see Submit Expense");
   assert.equal(plainEmployee.showExpenseDashboardTab, true, "Any non-Medical-Rep employee should see Expense Dashboard");
+  assert.equal(plainEmployee.showVacationApprovalsTab, false, "Plain Employee should not see Vacation Approvals");
+  assert.equal(plainEmployee.showExcuseApprovalsTab, false, "Plain Employee should not see Excuse Approvals");
+  assert.equal(plainEmployee.showPlanApprovalsTab, false, "Plain Employee should not see Plan Approvals");
+
+  // Other Approvals: the Employee permission matrix grants no `approve` action on any
+  // resource, so the hub is permanently empty for a real Employee-access-role user.
+  for (const officeTitle of ["Office Coordinator", "Admin Assistant", "Buffet", null]) {
+    const officeEmployee = resolveEmployeePortalNavVisibility(officeTitle, "Employee");
+    assert.equal(
+      officeEmployee.showActionsTab,
+      false,
+      `Plain Employee (${officeTitle ?? "no title"}) should not see Other Approvals — no approve permission on any resource`,
+    );
+  }
+  // The exclusion keys on the ACCESS role, not the job-title-derived one. These two both
+  // resolve to portal role "Employee" via the job-title fallback but hold a real approver
+  // access role, so they must KEEP the hub — gating on the resolved role alone broke them.
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Qppv", "Manager").showActionsTab,
+    true,
+    "An unclassifiable job title with a Manager access role must keep Other Approvals",
+  );
+  assert.equal(
+    resolveEmployeePortalNavVisibility("District Sales Manager", "Employee").showActionsTab,
+    true,
+    "A District-Manager job title must keep Other Approvals even where the access role lags behind",
+  );
+  // The Head-Office people-manager rung keeps the hub — guards the exclusion from being
+  // widened into the approver roles.
+  const headOfficeManager = resolveEmployeePortalNavVisibility("R And D Manager", "Manager");
+  assert.equal(headOfficeManager.showActionsTab, true, "Head-Office Manager should still see Other Approvals");
+  assert.equal(headOfficeManager.showVacationApprovalsTab, true, "Head-Office Manager should still see Vacation Approvals");
 
   const districtManager = resolveEmployeePortalNavVisibility("District Manager");
   assert.equal(districtManager.showMyCoachingTab, false, "DSM should not see My Coaching Reports");
