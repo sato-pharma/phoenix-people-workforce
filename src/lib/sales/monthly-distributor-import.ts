@@ -1364,9 +1364,22 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       const mappedBrickId = maps.customerBrickByKey.get(`${selectedDistributorCode} ${normalizeCode(clientCode)}`);
       const mappedBrick = mappedBrickId ? maps.brickById.get(mappedBrickId) : undefined;
       if (mappedBrick) {
-        rawBrickId = mappedBrick.brickId;
-        if (normalizeCode(rawAreaCode) === "" || isNotAvailable(rawAreaCode)) rawAreaCode = mappedBrick.areaCode;
-        if (normalizeCode(rawRegionCode) === "" || isNotAvailable(rawRegionCode)) rawRegionCode = mappedBrick.regionCode;
+        // Cross-area guard, mirroring resolveBrick in the normalizer: if the sheet already typed an
+        // AREA, only accept a stored brick that sits INSIDE that area. Filling a blank brick from a
+        // mapping that points at a DIFFERENT area would silently move the sale — and the rep's
+        // numbers — across areas, which is exactly the unverified cross-area auto-apply the
+        // normalizer forbids. When the sheet gave no area, there is nothing to cross, so the mapping
+        // is taken in full (this is the common raw/hybrid case).
+        const sheetArea = normalizeCode(rawAreaCode);
+        const mappedArea = normalizeCode(mappedBrick.areaCode);
+        const crossesArea = sheetArea !== "" && !isNotAvailable(rawAreaCode) && mappedArea !== sheetArea;
+        if (!crossesArea) {
+          rawBrickId = mappedBrick.brickId;
+          if (normalizeCode(rawAreaCode) === "" || isNotAvailable(rawAreaCode)) rawAreaCode = mappedBrick.areaCode;
+          if (normalizeCode(rawRegionCode) === "" || isNotAvailable(rawRegionCode)) rawRegionCode = mappedBrick.regionCode;
+        }
+        // If it crosses the area, the brick stays blank and the row fails the brick checks below,
+        // surfacing in "Rows To Fix" for a human to resolve — never silently re-homed.
       }
     }
 
