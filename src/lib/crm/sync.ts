@@ -532,6 +532,17 @@ export async function syncIReports360Visits(input: {
     await supabase
       .from(syncRunsTable)
       .update({
+        // RECORDED, not just notified. This is the recurrence signal for the invisible-work bug
+        // class — a CRM account handed to a replacement keeps stamping the leaver's hr id, and the
+        // departed-agent exclusion then hides the new rep's work entirely. It previously existed
+        // only in the Telegram / in-app digest, so confirming the guard's behaviour meant catching
+        // a notification at the moment a sync ran, which is not a check anyone actually performs.
+        // Persisting makes it queryable and trendable.
+        //
+        // Requires migration 20260801130000, which MUST be applied first: this update is what marks
+        // a run "success", so writing an absent column would make every sync look failed while
+        // having written its rows perfectly well.
+        blocked_post_exit_attributions: blockedPostExitAttributions,
         completed_at: new Date().toISOString(),
         rows_deleted: rowsDeleted,
         rows_fetched: visits.length,
