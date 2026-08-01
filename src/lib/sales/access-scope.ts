@@ -288,14 +288,48 @@ export function computeSalesAccessScope(input: ComputeScopeInput): SalesAccessSc
   // bound still applies). Areas are never used to restrict (taxonomy unreliable).
   const regionScoped = businessScope === "HIERARCHY" || businessScope === "TEAM" || businessScope === "SELF";
   const canonicalRegion = canonicalizeRegionName(viewerRegionName);
-  const allowedRegionNames = regionScoped && canonicalRegion ? new Set<string>([canonicalRegion]) : null;
 
   // A District / Regional Manager's real geography is their organogram seat's areas, which can
   // legitimately sit outside their own region label (see ./seat-area-scope.ts). When the seat map
   // answered, carry that area set — consumers must filter rows on it, and may use the paired
-  // fact-region set to widen prefetch so the out-of-region rows are fetched at all. When it did not
-  // answer (null), nothing changes: the region-name bound above remains the only geography bound.
+  // fact-region set to widen prefetch so the out-of-region rows are fetched at all.
   const seatAreaScope = regionScoped ? input.seatAreaScope ?? null : null;
+
+  // Geography must not FAIL OPEN when we know nothing about the viewer's geography.
+  //
+  // This used to read `regionScoped && canonicalRegion ? {region} : null`, and null means "no
+  // region restriction". So a region-scoped viewer with a blank region label got the whole LINE.
+  //
+  // Scale, measured on the field this code actually reads — `employees.region_name` (see
+  // resolveSalesAccessScope: it passes `viewer?.regionName`, and the directory sets
+  // `regionName: row.region_name`). NOT `region_code`, which nothing here consults:
+  //   District Sales Manager   17 active — 1 blank region_name (16 blank region_code)
+  //   Medical Representative   74 active — 0 blank
+  //   Regional Sales Manager    1 active — 0 blank
+  // So this is a latent guard, not a live outage: verified 2026-08-01, the single blank-region DM
+  // (PD-0006, Pedia) holds seat SEAT-PED-DM-CA which owns 6 areas, so he takes the seat branch
+  // below and is unaffected. Nobody in production currently lands in the fail-closed case.
+  //
+  // The seat bound IS populated and correct, so this keeps the existing behaviour wherever it
+  // answers — no manager loses access they legitimately have. It closes only the case where BOTH
+  // are absent: no region name AND no seat areas. There, an empty set means "no rows", because
+  // showing a manager the entire product line is a worse answer than showing them nothing and
+  // having them report it.
+  //
+  // CAVEAT for whoever trips this later: only District Manager / Manager / Regional Manager get a
+  // seat scope at all (SEAT_AREA_SCOPED_ROLES in ./seat-area-scope.ts). Medical Rep and Employee
+  // are SELF-scoped — so `regionScoped` — with NO seat fallback. A rep onboarded without a region
+  // therefore lands straight in the fail-closed branch and silently sees nothing. That is the
+  // correct answer for an unknown geography, but it is the most likely way this surfaces as a
+  // support ticket, so check `employees.region_name` first when one reports an empty dashboard.
+  const hasSeatGeography = (seatAreaScope?.areaCodes.size ?? 0) > 0;
+  const allowedRegionNames = !regionScoped
+    ? null
+    : canonicalRegion
+      ? new Set<string>([canonicalRegion])
+      : hasSeatGeography
+        ? null // seat areas are the authoritative bound; region stays unrestricted so they are reachable
+        : new Set<string>(); // no geography at all ⇒ fail closed
   const allowedAreaCodes = seatAreaScope ? new Set([...seatAreaScope.areaCodes].map((c) => c.trim().toUpperCase())) : null;
   const allowedAreaFactRegionCodes = seatAreaScope
     ? new Set([...seatAreaScope.factRegionCodes].map((c) => c.trim().toUpperCase()))
