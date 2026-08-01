@@ -2,6 +2,7 @@
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
+import { runTestWiringCompleteTests } from "./test-wiring-complete.test.ts";
 import { runCrmPortalScopeTests } from "./crm-portal-scope.test.ts";
 import { runEmployee360VisitClassificationTests } from "./employee-360-visit-classification.test.ts";
 import { runEmployee360DoubleVisitCountTests } from "./employee-360-double-visit-count.test.ts";
@@ -539,6 +540,10 @@ await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);
 await runTest("targets view scope (read-only DM/RM/NSM by AREA code, writes stay sales:import)", runTargetsViewScopeTests);
+await runTest(
+  "test wiring is complete (no test file imported-but-uninvoked, none orphaned)",
+  runTestWiringCompleteTests,
+);
 await runTest("crm portal scope (exact-match agentHrIds, fail-closed, no ?view= governance panels)", runCrmPortalScopeTests);
 await runTest("error monitor new-issue diff", runErrorMonitorNewIssueDiffTests);
 await runTest("error monitor derived status", runErrorMonitorDerivedStatusTests);
