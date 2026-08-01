@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
+import { currentCairoDateParts } from "@/lib/i18n/format";
 import { listSalaryBatches } from "@/lib/payroll/service";
 import type { SalaryBatch } from "@/lib/payroll/types";
 import { payrollMonths, payrollPeriodLabel, statusBadge } from "@/components/payroll/dashboard/shared";
@@ -36,8 +37,11 @@ function parsePayrollPeriod(
   const requestedMonth = Number(monthText);
   const requestedYear = Number(yearText);
 
-  const fallbackMonth = referenceDate.getMonth() + 1;
-  const fallbackYear = referenceDate.getFullYear();
+  // Cairo, not the runtime clock. This fallback is the displayed period, the batch filter and the
+  // salary-template download URL, so on a UTC runtime in the first 2-3 hours of a Cairo month HR
+  // would download the previous month's template, fill it in, and upload it against that period.
+  // (It also bounds the year dropdown, which on 1 January would otherwise start a year early.)
+  const { year: fallbackYear, month: fallbackMonth } = currentCairoDateParts(referenceDate);
   let month = fallbackMonth;
   let year = fallbackYear;
   let hasIssue = false;

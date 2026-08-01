@@ -160,6 +160,7 @@ import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.te
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
 import { runLocationIqGeocodeConfidenceTests } from "./locationiq-geocode-confidence.test.ts";
 import { runPrivateCalendarTests } from "./private-calendar.test.ts";
+import { runCairoPeriodSeedGuardTests } from "./cairo-period-seed-guard.test.ts";
 import { runIdentityAliasesTests } from "./identity-aliases.test.ts";
 import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.test.ts";
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
@@ -711,6 +712,7 @@ await runTest("crm master export streaming workbook (multi-page, uncapped, valid
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);
 await runTest("LocationIQ geocode confidence (reverse/forward scoring + LocationIQ-first/Google-fallback wiring)", runLocationIqGeocodeConfidenceTests);
 await runTest("private calendar", runPrivateCalendarTests);
+await runTest("Cairo period seeds (a working period must never come from the raw UTC clock)", runCairoPeriodSeedGuardTests);
 await runTest("shared person identity (B-10 = PHX-1 = admin-HR, one primitive)", runIdentityAliasesTests);
 await runTest("leave source of truth", runLeaveSourceOfTruthTests);
 await runTest("lifecycle risk source", runLifecycleRiskSourceTests);
