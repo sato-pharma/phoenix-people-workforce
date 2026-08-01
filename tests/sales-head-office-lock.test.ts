@@ -88,6 +88,53 @@ export function runSalesHeadOfficeLockTests() {
     "by-area dashboard passes canViewHeadOffice resolved from the role",
   );
 
+  // ── Confidential-product reveal (LA003/LA004/SS001) ──────────────────────────
+  // The exclusion used to be baked into analytics.sos_fact, so Analytics could never reveal while
+  // the SoS dashboard could — the same month read 5.76x smaller on one screen than the other for a
+  // CEO. Migration 20260801114237 moved it to a per-call argument; these pins stop a call site or a
+  // dashboard silently dropping back to the hidden default.
+  assert.equal(
+    (analytics.match(/\.\.\.confidentialRevealArg\(filters\)/g) ?? []).length,
+    4,
+    "all four money RPCs (period/area/line/product) carry the confidential reveal argument",
+  );
+
+  // Reveal must be expressed as an EMPTY exclusion list. Passing the codes explicitly would hide
+  // them, which is the exact inversion this lock exists to catch.
+  assert.ok(
+    /p_exclude_codes: \[\]/.test(analytics),
+    "reveal is p_exclude_codes: [] (exclude nothing), never the code list",
+  );
+
+  // Hiding must OMIT the key rather than pass the codes: the RPC default is the fail-closed answer,
+  // and an omitted key keeps the argument set compatible with the pre-migration signature.
+  assert.ok(
+    /return filters\.canViewRestrictedProducts \? \{ p_exclude_codes: \[\] \} : \{\};/.test(analytics),
+    "non-privileged viewers omit p_exclude_codes entirely and inherit the RPC's hidden default",
+  );
+
+  // analytics_sos_by_customer measures active_batches (a COUNT) off a different view and has no
+  // value column, so it must NOT gain the argument — its signature never grew one.
+  const byCustomerLoader = analytics.slice(analytics.indexOf("loadSosByCustomerUncached"));
+  assert.ok(
+    !byCustomerLoader.slice(0, 900).includes("confidentialRevealArg"),
+    "by_customer is a count view with no value column — it must not take the confidential argument",
+  );
+
+  // Every money dashboard must resolve the reveal from the role, or the RPC default hides it.
+  for (const name of [
+    "source-sales-dashboard",
+    "source-sales-by-area-dashboard",
+    "source-sales-by-line-dashboard",
+    "source-sales-by-product-dashboard",
+  ]) {
+    const source = readSource(`../src/components/analytics/dashboards/${name}.tsx`);
+    assert.ok(
+      source.includes("canViewRestrictedProducts: canViewRestrictedProducts(role)"),
+      `${name} passes canViewRestrictedProducts resolved from the role`,
+    );
+  }
+
   // The weekly analytics dashboards (overview, detail, by-distributor) carry the Head Office strip
   // ENTIRELY in TS: the analytics_weekly_fact RPC and analytics.weekly_fact view have no Head
   // Office exclusion, so loadWeeklyFact strips it and each dashboard must thread the role's flag.
