@@ -195,10 +195,11 @@ keys used by their respective domains.
   `codex/work-from-production` branch is dead — do not use it).
 - Production: `https://phoenix-hr.satopharma.com` (verify this exact public domain
   after every production deploy — workspace aliases can diverge from the public alias).
-- Deploys: staging auto-deploys from `main` after CI; production ships as a
-  no-traffic Cloud Run revision, smoke-tested, then promoted — full model, rules,
-  and verification commands live in AGENTS.md (§ Stable Environment Facts,
-  § Hard-learned rules, § Preview/CI/Production Verification).
+- Deploys: **nothing ships on merge.** Both environments are cron-driven — production
+  every 2h, staging once daily — and each ships as a no-traffic Cloud Run revision,
+  smoke-tested, then promoted. Full model, rules, and verification commands live in
+  AGENTS.md (§ Stable Environment Facts, § Hard-learned rules,
+  § Preview/CI/Production Verification).
 - Vercel is legacy/decommissioned; `.vercel/` may exist locally, stays gitignored.
 - Parallel sessions use isolated git worktrees — routing model and safety rules in
   AGENTS.md § Parallel Work Model.
