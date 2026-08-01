@@ -14,6 +14,7 @@
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { queryCheckins, queryVisits, queryVisitsLimited, resolveVisitTime } from "@/lib/crm/reads";
 import type { VisitTimeSource } from "@/lib/crm/reads";
+import { TEAM_VISIT_ROW_CAP } from "@/lib/employee-portal/my-crm-visits-constants";
 
 export type MyCrmWindow = { dateFrom: string; dateTo: string };
 
@@ -95,8 +96,11 @@ const VISIT_COLUMNS =
 const DOUBLE_VISIT_COLUMNS =
   "id,visit_date,ampm,visit_type_description,contact_name,customer_name,agent_name,comment,crm_save_date";
 const TEAM_VISIT_COLUMNS = `${VISIT_COLUMNS},agent_name`;
-/** Newest-first cap on a manager's team feed — see the rationale in {@link fetchTeamVisits}. */
-export const TEAM_VISIT_ROW_CAP = 500;
+// Imported (for fetchTeamVisits below) and re-exported (for existing server-side callers) from a
+// client-safe module, so the "use client" workspace can read the cap without importing this
+// server-only file — which reaches node:crypto via the employee directory. A bare
+// `export { X } from "..."` would re-export without binding the name locally, so import + export.
+export { TEAM_VISIT_ROW_CAP };
 const CHECKIN_COLUMNS = "id,check_date,agent_crm_id,contact_crm_id,contact_name,address";
 
 function byVisitDateDesc(a: { visitDate: string | null }, b: { visitDate: string | null }): number {

@@ -117,6 +117,29 @@ export function runWeeklyPlansHardeningTests() {
   assert.match(workflowE2eSource, /ADMIN_PLANS_PATH = "\/admin\/weekly-plans"/, "CEO and HR workflow must use admin route");
   assert.match(workflowE2eSource, /Never point this mutating workflow at production/, "mutating workflow must be marked local/staging only");
 
+  // Cancelling a plan used to call notifyManager(), whose payload is hardcoded to the
+  // submission copy — so the manager was told a cancelled plan "needs manager review".
+  assert.match(
+    serviceSource,
+    /notifyManagerPlanCancelled\(cancelledRow/,
+    "cancelEmployeePlan must send the cancellation notice, not the submission notice",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /cancelledRow = await loadPlanRow\(planId\);\s*await notifyManager\(/,
+    "cancelEmployeePlan must not reuse notifyManager (its copy says 'needs manager review')",
+  );
+  assert.match(
+    serviceSource,
+    /eventType: "plan_cancelled"/,
+    "cancellation must use its own eventType so it is never classified as an approval request",
+  );
+  assert.match(
+    serviceSource,
+    /plan was cancelled/,
+    "cancellation notice title must say the plan was cancelled",
+  );
+
   assert.match(readonlyE2eSource, /GET requests only/, "read-only smoke must avoid mutations");
   assert.match(readonlyE2eSource, /\/employee-portals\/plans\/calendar/, "read-only smoke must cover employee calendar");
   assert.match(readonlyE2eSource, /Marketing Manager employee portal reviewer/, "read-only smoke must cover the MM employee portal reviewer");

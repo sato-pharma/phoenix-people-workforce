@@ -265,6 +265,8 @@ export function resolveEmployeePortalNavVisibility(
   const isMarketingManager = resolvedRole === "Marketing Manager";
   const isA3Account = canonicalHrIdKey(viewerHrId) === "a-3";
   const isTalentAcquisition = resolvedRole === "Talent Acquisition";
+  // The raw ACCESS role, not the job-title-derived one — see showActionsTab below.
+  const isPlainEmployeeAccessRole = String(accessRole ?? "").trim().toLowerCase() === "employee";
   const isHeadOffice =
     ["office", "headoffice", "hq"].includes(normalizedLine) ||
     ["office", "headoffice", "hq"].includes(normalizedDepartment);
@@ -522,7 +524,20 @@ export function resolveEmployeePortalNavVisibility(
     // (governance restricts that to Super Admin / HR Manager, see hard-boundary notes in
     // permissions.ts), so the whole hub is hidden for her even though the other flags
     // above already evaluate false for her role.
-    showActionsTab: !isTrainingManager && !isMedicalRep && !isTalentAcquisition,
+    // Plain "Employee" is excluded for the same reason: the permission matrix grants that
+    // role no `approve` action on any resource, so the inbox can never hold an actionable
+    // item for them.
+    //
+    // Deliberately requires BOTH the resolved portal role AND the raw access role to be
+    // Employee. resolvePortalRole() also returns "Employee" as its fallback for a job title
+    // it cannot classify (e.g. "Qppv"), and such a person may still hold a real approver
+    // ACCESS role — gating on the resolved role alone would strip the hub from them. The
+    // access role is the permission source of truth, so it gets the deciding vote.
+    showActionsTab:
+      !isTrainingManager &&
+      !isMedicalRep &&
+      !isTalentAcquisition &&
+      !(resolvedRole === "Employee" && isPlainEmployeeAccessRole),
     showMyVisitsTab,
     showDeductionsTab,
     showDirectOrdersTab,
