@@ -28,6 +28,14 @@ const NO_PRIMARY_KEY_ALLOWED = new Set<string>([
   // quietly stops being a guard — retire entries with the table, not later.
   "geo_locations_brick_centroid_backup2_20260728",
   "geo_locations_brick_centroid_backup_20260728",
+  // Added 2026-08-01: rollback records for the CRM re-attribution. Their exposure was
+  // closed by 20260801110000 (RLS enabled); these entries only silence the missing-PK
+  // check, which is what this allowlist is for. Retire BOTH entries when the tables are
+  // dropped — this is the third such pair in three days, so the standing fix is to stop
+  // creating ad-hoc backups in `public` with default grants, not to keep extending this
+  // list.
+  "crm_restamp_backup_20260801",
+  "crm_restamp_checkins_backup_20260801",
 ]);
 
 // Tables allowed to be reachable by anon/authenticated while RLS is DISABLED.
