@@ -269,7 +269,9 @@ export function ExpensesReviewWorkspace() {
   }
 
   async function handleSaveExpenseApprovals(
-    recordsToSave: Array<ExpenseTripRecord & { hrApproved: boolean; hrComment: string }>,
+    recordsToSave: Array<
+      ExpenseTripRecord & { approvedAmount: number; hrApproved: boolean; hrComment: string }
+    >,
   ) {
     if (!expenseAnalysis) return;
 

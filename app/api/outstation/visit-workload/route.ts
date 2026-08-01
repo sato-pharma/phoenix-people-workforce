@@ -1,0 +1,63 @@
+import { NextResponse } from "next/server";
+
+import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
+import { canViewEmployeeExpenseScope } from "@/lib/outstation/expenses";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * Per-day field-visit workload for a rep across a trip window, read from the admin/CRM
+ * mirror (`ireports360_visits`). Backs the outstation expense-review "Verify workload" panel.
+ * Counts every field visit where the rep is the primary agent OR the double-visit partner —
+ * unlike the double-visit evidence route, which misses solo days and drops partner-side visits
+ * whose primary agent has since departed.
+ */
+export async function GET(request: Request) {
+  try {
+    const access = await resolveAccessContext(request);
+    await assertPermission(access, "outstation", "read");
+
+    const url = new URL(request.url);
+    const employeeHrId = url.searchParams.get("employeeHrId") || access.hrId || access.loginId;
+    const requestedKey = normalizeHrIdForAccess(employeeHrId);
+    const ownKeys = [access.hrId, access.loginId]
+      .map(normalizeHrIdForAccess)
+      .filter((value): value is string => Boolean(value));
+    if (
+      requestedKey &&
+      !ownKeys.includes(requestedKey) &&
+      !(await canViewEmployeeExpenseScope(access, employeeHrId ?? ""))
+    ) {
+      return NextResponse.json(
+        { error: "forbidden", message: "You can only view CRM visit workload for employees within your access scope." },
+        { status: 403 },
+      );
+    }
+
+    const tripStartDate = url.searchParams.get("tripStartDate");
+    const tripEndDate = url.searchParams.get("tripEndDate") || tripStartDate;
+    if (!tripStartDate || !tripEndDate) {
+      return NextResponse.json(
+        { error: "missing_date_range", message: "Provide tripStartDate and tripEndDate to resolve CRM visit workload." },
+        { status: 400 },
+      );
+    }
+
+    const data = await getRepTripVisitWorkload({ hrId: employeeHrId, tripEndDate, tripStartDate });
+    return NextResponse.json({ data, success: true });
+  } catch (error) {
+    if (isForbiddenError(error)) {
+      return NextResponse.json(
+        { error: "forbidden", message: "You do not have access to CRM visit workload." },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      { error: "visit_workload_failed", message: error instanceof Error ? error.message : "CRM visit workload lookup failed." },
+      { status: 500 },
+    );
+  }
+}

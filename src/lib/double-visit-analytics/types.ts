@@ -192,7 +192,10 @@ export type DoubleVisitExpenseWorkloadEvidence = {
   }>;
   importId: string | null;
   matchedDates: string[];
-  matchStatus: "manual" | "matched" | "no_activity" | "partial" | "stale_import";
+  // "unmapped" arrives from the corrected CRM visit read (the rep has no CRM id, so their
+  // activity cannot be matched at all) — distinct from "no_activity", which means we looked
+  // and the rep genuinely did not work. Nothing branches on this value; it is stored and shown.
+  matchStatus: "manual" | "matched" | "no_activity" | "partial" | "stale_import" | "unmapped";
   missingDates: string[];
   pmWorkload: number;
   // Visit-kind counts within the trip window (visitType -8 = campaign, 0 = regular),

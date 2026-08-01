@@ -156,6 +156,9 @@ export function mapOutstationRequestRowToPayrollApproval(
   return {
     allowance,
     amWorkload,
+    // Phoenix-submitted requests live in outstation_expense_requests, which has no
+    // approved_amount column — HR adjusts amounts on the uploaded expense rows, not here.
+    approvedAmount: null,
     approvedAt: null,
     approvedBy: null,
     date: tripStartDate,
