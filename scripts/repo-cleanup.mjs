@@ -32,8 +32,11 @@
 //   5. Before removing any folder it is scanned for .xlsx/.pdf. Anything found
 //      that is not byte-identical to a git-tracked copy is MOVED to xlsx/ at the
 //      repo root, never deleted (AGENTS.md, hard rule).
-//   6. Refuses to run if any worktree has uncommitted changes — that is somebody
-//      else's in-flight work, and this script must never race a live session.
+//   6. A dirty worktree blocks PER STEP, not the whole run. Branch deletion cannot
+//      race anything (rule 3 already protects every checked-out branch), so it always
+//      proceeds; folder removal, prune and gc are skipped while somebody else has
+//      in-flight work. A partial run says so loudly at the end rather than reading
+//      like a clean one.
 
 'use strict';
 
@@ -81,12 +84,36 @@ for (const wt of worktrees) {
     dirty++;
   }
 }
-if (dirty > 0 && APPLY) {
-  console.error(
-    `${TAG} REFUSING TO APPLY: ${dirty} worktree(s) hold uncommitted work. ` +
-      `Commit, stash, or hand it back to whoever owns it first — this script will not race a live session.`,
+// PER-STEP, not whole-run. This used to `process.exit(1)` on any dirty worktree —
+// right in spirit, too coarse in practice. In a repo with a dozen live worktrees
+// something is almost always dirty, so the whole script became unrunnable and the
+// branch list grew unbounded (2026-08-01: 41 local branches, and the only way to
+// make progress was to bypass the script by hand). A guard that forces people
+// around it is worse than a narrower one that holds.
+//
+// What each step actually races:
+//   - Branch deletion: NOTHING. Every branch checked out in any worktree is already
+//     in `protectedBranches`, and deleting some other, provably-merged branch does
+//     not touch a working tree. Uncommitted work elsewhere is irrelevant to it.
+//   - Folder removal + data rescue: REAL RACE. An unregistered `_wt-*` directory can
+//     be an in-flight `git worktree add` target, and a session actively creating
+//     worktrees is precisely when that is likely.
+//   - `worktree prune` + `gc --prune=now`: REAL RACE, and gc is the one step with no
+//     undo — it destroys the reflog recovery path for whatever was just deleted.
+//
+// So a dirty tree blocks the second and third groups only.
+const worktreesDirty = dirty > 0;
+// Two different reasons a step does not run, and they must not be reported alike:
+// `skipped` = BLOCKED (re-running once things are clean will finish it), `byRequest` =
+// the operator asked for it, so telling them to commit their worktrees would be advice
+// that cannot help.
+const skipped = [];
+const byRequest = [];
+if (worktreesDirty && APPLY) {
+  warn(
+    `${dirty} worktree(s) hold uncommitted work. Folder removal, prune and gc will be SKIPPED — ` +
+      `they can race a live session. Branch deletion is unaffected and proceeds.`,
   );
-  process.exit(1);
 }
 
 if (APPLY) {
@@ -266,19 +293,8 @@ if (!APPLY) {
   process.exit(0);
 }
 
-if (rescues.length) {
-  const dest = path.join(REPO_ROOT, 'xlsx');
-  fs.mkdirSync(dest, { recursive: true });
-  for (const f of rescues) {
-    const target = path.join(dest, path.basename(f));
-    const final = fs.existsSync(target)
-      ? path.join(dest, `${Date.now()}-${path.basename(f)}`)
-      : target;
-    fs.renameSync(f, final);
-    log(`rescued ${path.basename(f)} -> ${final}`);
-  }
-}
-
+// --- STEP 1: branches. Always safe — see the per-step note above. Runs FIRST so a
+// --- dirty tree never costs you the one piece of cleanup that cannot race anything.
 let deleted = 0;
 for (const d of deletable) {
   const res = gitQuiet(['branch', '-D', d.name]);
@@ -286,29 +302,72 @@ for (const d of deletable) {
   else warn(`could not delete ${d.name}`);
 }
 log(`deleted ${deleted} branch(es)`);
-
-// Re-walk rather than reusing the counts taken before the rescue above: a folder
-// whose ONLY contents were .xlsx/.pdf is empty by now, and judging it on its
-// pre-rescue count would leave it behind forever.
-let removedDirs = 0;
-for (const r of removable) {
-  const remaining = walk(r.dir);
-  if (remaining.length > 0) continue; // still holds real files — a human decides
-  try {
-    fs.rmSync(r.dir, { recursive: true, force: true });
-    removedDirs++;
-  } catch (err) {
-    warn(`could not remove ${r.dir}: ${err.message}`);
-  }
+if (deleted > 0 && (worktreesDirty || NO_GC)) {
+  log(`  (gc is not running, so every deleted branch stays recoverable from the reflog:`);
+  log(`   git branch <name> <sha> — find the sha with: git reflog --no-abbrev)`);
 }
-log(`removed ${removedDirs} empty orphan folder(s)`);
 
-git(['worktree', 'prune']);
-log('pruned stale worktree administrative entries');
+// --- STEP 2: data rescue + folder removal + prune. Gated: an unregistered _wt-* dir
+// --- can be an in-flight `git worktree add` target.
+if (worktreesDirty) {
+  skipped.push(
+    `folder removal (${empties.length} empty orphan(s)) and worktree prune — ${dirty} worktree(s) dirty`,
+  );
+  if (rescues.length) skipped.push(`data-file rescue of ${rescues.length} .xlsx/.pdf file(s)`);
+} else {
+  if (rescues.length) {
+    const dest = path.join(REPO_ROOT, 'xlsx');
+    fs.mkdirSync(dest, { recursive: true });
+    for (const f of rescues) {
+      const target = path.join(dest, path.basename(f));
+      const final = fs.existsSync(target)
+        ? path.join(dest, `${Date.now()}-${path.basename(f)}`)
+        : target;
+      fs.renameSync(f, final);
+      log(`rescued ${path.basename(f)} -> ${final}`);
+    }
+  }
 
-if (!NO_GC) {
+  // Re-walk rather than reusing the counts taken before the rescue above: a folder
+  // whose ONLY contents were .xlsx/.pdf is empty by now, and judging it on its
+  // pre-rescue count would leave it behind forever.
+  let removedDirs = 0;
+  for (const r of removable) {
+    const remaining = walk(r.dir);
+    if (remaining.length > 0) continue; // still holds real files — a human decides
+    try {
+      fs.rmSync(r.dir, { recursive: true, force: true });
+      removedDirs++;
+    } catch (err) {
+      warn(`could not remove ${r.dir}: ${err.message}`);
+    }
+  }
+  log(`removed ${removedDirs} empty orphan folder(s)`);
+
+  git(['worktree', 'prune']);
+  log('pruned stale worktree administrative entries');
+}
+
+// --- STEP 3: gc. Gated on BOTH the flag and a clean tree — it is the only step with
+// --- no undo, and it runs right after branch deletion, so it would purge exactly the
+// --- objects you might still want back.
+if (NO_GC) {
+  byRequest.push('git gc (--no-gc given)');
+} else if (worktreesDirty) {
+  skipped.push(`git gc — ${dirty} worktree(s) dirty`);
+} else {
   log('running git gc --prune=now (clears the orphaned packs and garbage objects)');
   git(['gc', '--prune=now'], { stdio: 'inherit' });
 }
 
-log('done.');
+// A partial run must never read as a full one — that is the same silent-green failure
+// this repo keeps getting bitten by. Say plainly what did not happen.
+log('');
+for (const s of byRequest) log(`not run by request: ${s}`);
+if (skipped.length > 0) {
+  warn('PARTIAL RUN — the following were BLOCKED and did not run:');
+  for (const s of skipped) warn(`  - ${s}`);
+  warn('Re-run once every worktree is committed or stashed to finish the rest.');
+} else {
+  log(`done — every step that was asked for ran.`);
+}
