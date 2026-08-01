@@ -451,6 +451,40 @@ export function privateCalendarItemOccursOn(item: PrivateCalendarItem, date: str
   return date >= item.startDate && date <= item.endDate;
 }
 
+/**
+ * Suppress fingerprint attendance PROBLEMS (Late/Short day/Single punch) on a
+ * day the SAME employee was out on a CRM-verified double visit — a "late" flag
+ * is meaningless when the employee was legitimately away from the office.
+ *
+ * Two rules make this safe to run over a multi-employee item set, and both are
+ * load-bearing because this feeds the company No Activity Days report, whose
+ * output becomes payroll deduction candidates:
+ *   1. Suppression is keyed on (employee, date). One employee's double visit
+ *      must never hide a DIFFERENT employee's attendance — that would make the
+ *      other person look like they recorded no activity at all.
+ *   2. A genuine "Complete" punch is never suppressed. Real proof of presence
+ *      always wins over the field-visit heuristic.
+ */
+export function suppressFieldVisitAttendanceProblems(items: PrivateCalendarItem[]): PrivateCalendarItem[] {
+  const fieldVisitKeys = new Set<string>();
+  for (const item of items) {
+    if (item.source !== "double_visit") continue;
+    const employeeKey = privateCalendarHrIdKey(item.employeeHrId);
+    // An unattributable double visit suppresses nothing: losing a Late flag is
+    // cheaper than manufacturing a "No Activity Recorded" day for someone else.
+    if (!employeeKey) continue;
+    fieldVisitKeys.add(`${employeeKey}|${item.startDate}`);
+  }
+  if (fieldVisitKeys.size === 0) return items;
+  return items.filter((item) => {
+    if (item.source !== "attendance") return true;
+    if (item.status === "Complete") return true;
+    const employeeKey = privateCalendarHrIdKey(item.employeeHrId);
+    if (!employeeKey) return true;
+    return !fieldVisitKeys.has(`${employeeKey}|${item.startDate}`);
+  });
+}
+
 export function summarizePrivateCalendarItems(items: PrivateCalendarItem[]): PrivateCalendarWorkspace["summary"] {
   const summary = {
     attendance: 0,

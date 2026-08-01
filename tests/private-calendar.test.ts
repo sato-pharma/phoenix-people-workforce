@@ -9,8 +9,10 @@ import {
   mapAttendanceRowToPrivateCalendarItem,
   mapExcuseRowToPrivateCalendarItem,
   mapVacationRowToPrivateCalendarItem,
+  suppressFieldVisitAttendanceProblems,
   summarizePrivateCalendarItems,
 } from "../src/lib/private-calendar/logic.ts";
+import type { PrivateCalendarItem } from "../src/lib/private-calendar/logic.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 function access(overrides: Partial<AccessContext>): AccessContext {
@@ -403,6 +405,138 @@ export function runPrivateCalendarTests() {
     vacation: 1,
   });
 
+  // Field-visit attendance suppression must be scoped to the employee who was
+  // actually out on the double visit. The company No Activity Days report runs
+  // this over the WHOLE roster and its output becomes payroll deduction
+  // candidates, so a date-keyed filter would let one employee's double visit
+  // erase a different employee's punches and flag them "No Activity Recorded".
+  const dvDate = "2026-06-22";
+  const visitingRepDoubleVisit: PrivateCalendarItem = {
+    approvalImpact: null,
+    description: null,
+    detailLines: [],
+    employeeDepartmentName: null,
+    employeeHrId: "E-1",
+    employeeJobTitle: null,
+    employeeLineName: null,
+    employeeName: "Employee One",
+    endDate: dvDate,
+    exceptionFlags: [],
+    id: `double-visit-E-1-${dvDate}`,
+    managerName: null,
+    severity: "info",
+    source: "double_visit",
+    sourceLabel: "Double Visit",
+    sourceRecordId: null,
+    sourceSystem: "iReports360",
+    sourceTable: "ireports360_visits",
+    startDate: dvDate,
+    status: "Completed",
+    time: null,
+    title: "Double visit",
+  };
+  const otherEmployeeCompletePunch = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "8:58 AM",
+    actualLastPunch: "5:06 PM",
+    dateIso: dvDate,
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-2",
+    employeeName: "Employee Two",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Complete",
+    timeLong: "08:08",
+  });
+  const visitingRepLatePunch = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "10:41 AM",
+    actualLastPunch: "5:02 PM",
+    dateIso: dvDate,
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "101",
+    recommendedAction: "Review",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Late",
+    timeLong: "06:21",
+  });
+  // A second double-visit day for the same rep, where they DID punch a full day.
+  // (One attendance row per employee per date, so this needs its own date.)
+  const secondDvDate = "2026-06-23";
+  const visitingRepSecondDoubleVisit: PrivateCalendarItem = {
+    ...visitingRepDoubleVisit,
+    endDate: secondDvDate,
+    id: `double-visit-E-1-${secondDvDate}`,
+    startDate: secondDvDate,
+  };
+  const visitingRepCompletePunch = mapAttendanceRowToPrivateCalendarItem({
+    actualFirstPunch: "8:55 AM",
+    actualLastPunch: "5:01 PM",
+    dateIso: secondDvDate,
+    deductionDays: "0",
+    earlyLeaveMinutes: "",
+    employeeHrId: "E-1",
+    employeeName: "Employee One",
+    lateMinutes: "",
+    recommendedAction: "No action",
+    scheduledEnd: "5:00 PM",
+    scheduledStart: "9:00 AM",
+    status: "Complete",
+    timeLong: "08:06",
+  });
+  const suppressed = suppressFieldVisitAttendanceProblems([
+    visitingRepDoubleVisit,
+    visitingRepSecondDoubleVisit,
+    otherEmployeeCompletePunch,
+    visitingRepLatePunch,
+    visitingRepCompletePunch,
+  ]);
+  const suppressedIds = new Set(suppressed.map((item) => item.id));
+  assert.ok(
+    suppressedIds.has(otherEmployeeCompletePunch.id),
+    "a colleague's double visit must never suppress a DIFFERENT employee's attendance — that would flag them 'No Activity Recorded' and feed a wrongful payroll deduction",
+  );
+  assert.ok(
+    suppressedIds.has(visitingRepCompletePunch.id),
+    "a genuine Complete punch must survive on a field-visit date — real proof of presence always wins",
+  );
+  assert.ok(
+    !suppressedIds.has(visitingRepLatePunch.id),
+    "the visiting employee's own Late/Short-day flag must still be suppressed on their double-visit date",
+  );
+  assert.ok(
+    suppressedIds.has(visitingRepDoubleVisit.id),
+    "double-visit items themselves are never filtered",
+  );
+  // The employee who merely shares the date must still count as covered, i.e.
+  // must never surface as "No Activity Recorded" in the company report.
+  const teammateCoverageExceptions = derivePrivateCalendarExceptions({
+    employees: [{
+      departmentName: null,
+      fullName: "Employee Two",
+      hrId: "E-2",
+      jobTitle: "Medical Rep",
+      lineName: null,
+      managerHrId: null,
+      managerName: null,
+    }],
+    end: dvDate,
+    isExpectedWorkday: () => true,
+    items: suppressed,
+    start: dvDate,
+    today: dvDate,
+  });
+  assert.equal(
+    teammateCoverageExceptions.filter((exception) => exception.title === "No Activity Recorded").length,
+    0,
+    "an employee who punched a full day must never be reported 'No Activity Recorded' because a teammate had a double visit that date",
+  );
+
   const serviceSource = readFileSync("src/lib/private-calendar/service.ts", "utf8");
   const excuseLoaderSource = serviceSource.slice(
     serviceSource.indexOf("async function loadExcuseItems"),
@@ -439,10 +573,20 @@ export function runPrivateCalendarTests() {
   assert.match(serviceSource, /viewMode/, "service must support employee and team calendar modes");
   assert.match(serviceSource, /derivePrivateCalendarExceptions/, "service must derive private calendar exceptions server-side");
   assert.match(serviceSource, /loadAttendancePolicyGroups/, "service must resolve custom attendance workdays for private calendar exceptions");
-  assert.match(
+  // Both the calendar workspace and the company No Activity Days report must go
+  // through the one per-employee helper (behavior asserted above). A local
+  // re-implementation is how the company path drifted into suppressing every
+  // employee's punches — including Complete ones — on any colleague's
+  // double-visit date, manufacturing wrongful payroll deduction candidates.
+  assert.equal(
+    (serviceSource.match(/suppressFieldVisitAttendanceProblems\(allItems\)/g) ?? []).length,
+    2,
+    "both the private calendar workspace and getCompanyNoActivityDays must suppress field-visit attendance through the shared per-employee helper",
+  );
+  assert.doesNotMatch(
     serviceSource,
-    /item\.source !== "attendance" \|\| item\.status === "Complete" \|\| !fieldVisitDates\.has\(item\.startDate\)/,
-    "a genuine Complete attendance punch must never be suppressed on a field-visit date — only problem statuses (Late/Short day/Single punch) get suppressed there",
+    /fieldVisitDates/,
+    "field-visit suppression must never be re-implemented inline with a date-only key — it would suppress other employees' attendance",
   );
   assert.match(
     serviceSource,
