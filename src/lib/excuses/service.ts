@@ -16,6 +16,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { conflictError } from "@/lib/http/api-errors";
 import { getConfiguredHrNotificationEmails } from "@/lib/notifications/recipients";
 import { createSystemNotification } from "@/lib/notifications/system";
@@ -106,8 +107,12 @@ function requestMonthKey(dateText: string) {
   return dateText.slice(0, 7);
 }
 
+// Africa/Cairo, never the server clock. This keys the 2-per-month excuse allowance, and the
+// portal gates its Submit button on the resulting `monthly.remaining`. A UTC month key means
+// that for the first 2-3 hours of a Cairo month an employee who used both excuses LAST month is
+// still counted against it, so the UI refuses a request the server would accept.
 function currentMonthKey() {
-  return new Date().toISOString().slice(0, 7);
+  return currentCairoDateOnlyIso().slice(0, 7);
 }
 
 function activeStatus(status: EmployeeExcuseStatus) {

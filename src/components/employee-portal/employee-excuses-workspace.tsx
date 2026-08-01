@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { ChoiceGroup } from "@/components/ui/choice-group";
 import { Input } from "@/components/ui/input";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import type {
   EmployeeExcuseRequest,
   EmployeeExcuseStatus,
@@ -70,8 +71,12 @@ function typeLabel(type: "morning" | "afternoon") {
   return type === "morning" ? "Morning excuse" : "Afternoon excuse";
 }
 
+// Africa/Cairo, not the clock. Inside a client component `toISOString()` is still UTC, so this
+// used to pre-fill YESTERDAY for the first 2-3 hours of a Cairo day — on a correctly-set Cairo
+// machine, not just a traveller's. validateExcuseDate then compared it against the browser's own
+// today and rejected it as a past date, so the form opened with Submit already disabled.
 function todayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return currentCairoDateOnlyIso();
 }
 
 function formatDate(value: string | null | undefined) {
@@ -106,11 +111,12 @@ function validateExcuseDate(dateString: string): DateWarning | null {
 
   const parts = dateString.split("-").map(Number);
   const date = new Date(parts[0], parts[1] - 1, parts[2]);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  // Past date check
-  if (date < today) {
+  // Past date check. Compared against Cairo's calendar day, not the viewer's browser clock —
+  // both sides of this comparison must resolve "today" the same way as the field's default
+  // (todayDate above), or the form contradicts itself and blocks a valid same-day excuse.
+  // YYYY-MM-DD strings compare correctly lexicographically, so no Date round-trip is needed.
+  if (dateString < currentCairoDateOnlyIso()) {
     return { kind: "error", text: "Cannot submit excuses for past dates." };
   }
 
