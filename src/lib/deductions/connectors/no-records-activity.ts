@@ -9,14 +9,33 @@
 // connector is that module's successor surface, which is why
 // getCompanyNoActivityDays survived its removal — do not delete that engine.
 //
-// Excludes field-eligible-title employees with no crm_id mapping at all —
-// mirrors the existing FWC Tier-0 guard (generatedRecommendations skips
-// crmIdentity.confidence === "unresolved" for the same reason). Verified via
-// Phase 3 reconciliation against real June 2026 data: an employee with zero
-// possible positive signal (field role, no CRM account, no device punches by
-// design) gets flagged nearly every single workday — not a useful finding,
-// just noise from a data-mapping gap that needs fixing once, not 20+
-// individual "day without record" candidates a month.
+// Excludes the ENTIRE field workforce: `crm` is the sole deduction authority for
+// that population, and this connector covers everyone it does not reach (Head
+// Office, admin, support). Both engines measure the same thing — absence of CRM
+// activity — so running both over the same person double-books every absence day.
+//
+// Measured on July 2026 production, running both produced 142 employee-days
+// across 50 employees claimed by `crm` AND `no_records_activity`, with ZERO
+// field-force days that `crm` had not already found. The overlap was never
+// silently charged (publishMonth hard-blocks on day collisions), but it put 142
+// manual clearances in front of every month's close for no added signal.
+//
+// Overlap was not the only cost. Scoping by title rather than by crm_id mapping
+// also closes two guards this connector was quietly defeating:
+//
+//   1. THE ZERO-CRM-SIGNAL GUARD. `crm.ts`'s loadZeroCrmSignalHrIdKeys excludes a
+//      field employee whose crm_id logged nothing all month — a data-mapping gap,
+//      not 20+ real findings. This connector then re-flagged the same people:
+//      Sara Samir (District Sales Manager) 24 days and Hossam AboElftouh
+//      (Marketing Manager) 1 day in July 2026, both excluded by `crm` on purpose.
+//   2. THE SFE MANAGER EXCLUSION. `isSfeManagerTitle` exists because an SFE
+//      Manager "must never generate a payroll-deduction recommendation", but it
+//      was only ever wired into the FWC engine behind `crm`. July 2026 carried a
+//      live no_records_activity candidate for the SFE Manager. Excluding every
+//      eligible title covers it, since "sfe manager" is in ELIGIBLE_TITLES.
+//
+// The previous rule tested `crm_id IS NULL`, so it caught only the unmapped
+// field employee and let every mapped one through.
 
 import { systemAccessContext } from "@/lib/auth/permissions.ts";
 import { getCompanyNoActivityDays } from "@/lib/private-calendar/service.ts";
@@ -33,22 +52,33 @@ function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
 
-async function loadCrmIdentityUnresolvedHrIdKeys(): Promise<Set<string>> {
-  const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase.from("employees").select("hr_id,job_title,crm_id");
-  if (error) {
-    // Defensive: if this check itself fails, don't block candidate generation
-    // on it — proceed with no exclusion rather than throwing.
-    return new Set();
-  }
+/**
+ * Every employee `crm` owns. Title-scoped, NOT crm_id-scoped: a mapped field
+ * employee is still the crm connector's to judge, so this one must stay out of
+ * their way entirely. See the module header for the two guards the old
+ * crm_id-only test was defeating.
+ */
+export function selectFieldWorkforceHrIdKeys(
+  rows: ReadonlyArray<{ hr_id: string; job_title: string | null }>,
+): Set<string> {
   const keys = new Set<string>();
-  for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null; crm_id: string | null }>) {
-    if (row.crm_id != null && String(row.crm_id).trim() !== "") continue;
+  for (const row of rows) {
     if (!isFieldWorkforceComplianceEligibleTitle(row.job_title)) continue;
     const key = canonicalHrIdKey(row.hr_id);
     if (key) keys.add(key);
   }
   return keys;
+}
+
+async function loadFieldWorkforceHrIdKeys(): Promise<Set<string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("employees").select("hr_id,job_title");
+  if (error) {
+    // Defensive: if this check itself fails, don't block candidate generation
+    // on it — proceed with no exclusion rather than throwing.
+    return new Set();
+  }
+  return selectFieldWorkforceHrIdKeys((data ?? []) as Array<{ hr_id: string; job_title: string | null }>);
 }
 
 export async function collectNoRecordsActivityCandidates(input: {
@@ -59,9 +89,9 @@ export async function collectNoRecordsActivityCandidates(input: {
   const start = `${monthKey}-01`;
   const end = `${monthKey}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
 
-  const [days, unresolvedCrmIdentityKeys, baseSalaryByCompact] = await Promise.all([
+  const [days, fieldWorkforceKeys, baseSalaryByCompact] = await Promise.all([
     getCompanyNoActivityDays({ access: systemAccessContext, start, end }),
-    loadCrmIdentityUnresolvedHrIdKeys(),
+    loadFieldWorkforceHrIdKeys(),
     getBaseSalaryMap(),
   ]);
   // Fail closed — without salaries every candidate's amount is null, which the
@@ -70,8 +100,10 @@ export async function collectNoRecordsActivityCandidates(input: {
 
   return days
     .filter((day) => {
+      // The field workforce belongs to `crm`. Letting them through here books the
+      // same absence day twice and re-flags people `crm` deliberately excluded.
       const key = canonicalHrIdKey(day.employeeHrId);
-      return !(key && unresolvedCrmIdentityKeys.has(key));
+      return !(key && fieldWorkforceKeys.has(key));
     })
     .map((day) => {
       // Compute the money here, not at publish time. This connector previously
