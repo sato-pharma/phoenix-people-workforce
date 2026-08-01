@@ -1478,8 +1478,15 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         planTable: input.planTableHtml,
         planTableText: input.planTableText,
         honorific: input.recipientHonorific ?? "",
+        // Auth emails (password setup/reset, user-created) go to the account owner
+        // themselves, so greet them by their real name when the caller supplied it
+        // (sendPasswordSetupLink passes recipientName = the employee's name; see
+        // system.ts buildChannelEmailInput). Fall back to the generic "Phoenix User"
+        // only for login-only accounts with no name on file — never an HR_ID. The
+        // honorific (line above) already flows, so this yields e.g. "Dear Dr. Omar …"
+        // instead of "Dear Phoenix User".
         recipientName: isAuthTemplateKey(migratedTemplateKey)
-          ? systemNotificationEmailText.userRecipientName
+          ? input.recipientName?.trim() || systemNotificationEmailText.userRecipientName
           : input.recipientName || employeeNameFromNotification(input) || systemNotificationEmailText.teamRecipientName,
         startDate: metricValue(input, "Hire date") || metricValue(input, "Trip start"),
         // The caller's own explicit "Status" metric (e.g. "Pending manager approval",
