@@ -454,6 +454,7 @@ import { runSosSeatAttributionPeriodTests } from "./sos-seat-attribution-period.
 import { runSosMappingIntegrityTests } from "./sos-mapping-integrity.test.ts";
 import { runSosIngestionNoSilentZeroTests } from "./sos-ingestion-no-silent-zero.test.ts";
 import { runAnalyticsAreaScopeV2Tests } from "./analytics-area-scope-v2.test.ts";
+import { runSosLatentGuardsTests } from "./sos-latent-guards.test.ts";
 import { runAnalyticsScopeWiringTests } from "./analytics-scope-wiring.test.ts";
 import { runAnalyticsFilterContextualizationTests } from "./analytics-filter-contextualization.test.ts";
 import { runAnalyticsRoutingTests } from "./analytics-routing.test.ts";
@@ -988,6 +989,7 @@ await runTest("SoS seat attribution (today's wiring, departed reps keep their cr
 await runTest('SoS mapping integrity (alias edit replaces, exact customer key detects conflicts)', runSosMappingIntegrityTests);
 await runTest('SoS ingestion (an unreadable cell is rejected, never silently zeroed)', runSosIngestionNoSilentZeroTests);
 await runTest('analytics area scope v2 (reconciliation refuses area-scoped viewers, one active alias target)', runAnalyticsAreaScopeV2Tests);
+await runTest('SoS latent guards + decisions of record', runSosLatentGuardsTests);
 await runTest("analytics scope wiring (every dashboard page scopes + fails closed)", runAnalyticsScopeWiringTests);
 await runTest("analytics filter contextualization (trim dropdowns + hide single-value pickers)", runAnalyticsFilterContextualizationTests);
 await runTest("analytics dual-mode routing (pages moved, bounce removed, permission + shell intact)", runAnalyticsRoutingTests);
