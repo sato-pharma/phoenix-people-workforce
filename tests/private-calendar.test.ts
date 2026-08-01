@@ -223,9 +223,55 @@ export function runPrivateCalendarTests() {
   );
   assert.equal(
     noItemsExceptions[0]?.description,
-    "Employee Two: no CRM double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.",
+    "Employee Two: no CRM field or double visit, no fingerprint attendance, no approved vacation, and no approved excuse recorded for this workday.",
     "the description must spell out exactly which sources were checked and came up empty",
   );
+
+  // A rep's OWN solo CRM visit proves field work exactly as a double visit does.
+  // Only the double-visit feed used to be wired in, so 86% of field work was
+  // invisible: measured on July 2026 production data, 1,700 rep-days carrying
+  // 15,429 real logged visits had no punch, no leave and no double visit, and
+  // every one read as "No Activity Recorded". Field reps are not enrolled on
+  // fingerprint devices at all, so CRM is their ONLY possible proof of work.
+  {
+    const fieldVisitItem = {
+      approvalImpact: null,
+      description: null,
+      detailLines: [],
+      employeeDepartmentName: null,
+      employeeHrId: "E-2",
+      employeeJobTitle: null,
+      employeeLineName: null,
+      employeeName: "Employee Two",
+      endDate: "2026-06-17",
+      exceptionFlags: [],
+      id: "field-visit-e2",
+      managerName: null,
+      severity: "success" as const,
+      source: "field_visit" as const,
+      sourceLabel: "Live iReports360 visit mirror",
+      sourceRecordId: "field-visit-e2",
+      sourceSystem: "CRM Field Visits",
+      sourceTable: "ireports360_visits",
+      startDate: "2026-06-17",
+      status: "performed",
+      time: "Full day",
+      title: "Field visits: Customer A",
+    };
+    const covered = derivePrivateCalendarExceptions({
+      employees: [{ departmentName: null, fullName: "Employee Two", hrId: "E-2", jobTitle: "Medical Rep", lineName: "Line A", managerHrId: "M-1", managerName: "Manager One" }],
+      end: "2026-06-17",
+      isExpectedWorkday: () => true,
+      items: [fieldVisitItem],
+      start: "2026-06-17",
+      today: "2026-06-17",
+    });
+    assert.equal(
+      covered.filter((e) => e.title === "No Activity Recorded").length,
+      0,
+      "a rep's own solo CRM field visit must cover the day — it is the only proof a device-less field rep can produce",
+    );
+  }
 
   // A half-day vacation (Am/Pm Only) is expected to carry attendance for the other
   // half of the day — that must not be flagged as a conflict. A full-day vacation
@@ -400,6 +446,7 @@ export function runPrivateCalendarTests() {
     attendance: 1,
     double_visit: 0,
     excuse: 1,
+    field_visit: 0,
     holiday: 0,
     total: 3,
     vacation: 1,

@@ -307,6 +307,85 @@ async function collectLeaverCrmCandidate(input: {
 }
 
 /**
+ * Employees who cannot produce a positive CRM signal for this period at all —
+ * their crm_id logged ZERO visits across the whole month.
+ *
+ * This is the SAME data-mapping gap the no-records-activity connector already
+ * guards against, and that connector's own header states the rule:
+ *
+ *   "an employee with zero possible positive signal ... gets flagged nearly
+ *    every single workday — not a useful finding, just noise from a
+ *    data-mapping gap that needs fixing once, not 20+ individual 'day without
+ *    record' candidates a month"
+ *
+ * But that guard only tests `crm_id IS NULL`, so it catches the unmapped case
+ * and misses the mapped-but-unused one, which is indistinguishable in effect.
+ * Measured on July 2026 production data, the miss charged two Head Office
+ * managers for essentially their entire working month:
+ *
+ *   A-9  Marketing Manager       20 days  30,967.74 EGP   0 CRM rows all month
+ *   A-8  Group Product Manager   16 days  22,193.55 EGP   0 CRM rows all month
+ *
+ * Both punched in regularly (36 and 13 times) — they were at work, they simply
+ * do not log visits in the CRM. Compare B-155, who has 44 CRM rows in the same
+ * month: his 7 flagged days are real gaps in a system he demonstrably uses, and
+ * are NOT excluded here.
+ *
+ * Deliberately period-scoped: "no signal this month" is the data gap. An
+ * employee who normally logs visits but had a genuinely idle month still has a
+ * usable signal and stays in scope.
+ */
+async function loadZeroCrmSignalHrIdKeys(input: {
+  dateFrom: string;
+  dateTo: string;
+}): Promise<Set<string>> {
+  const zeroSignal = new Set<string>();
+  try {
+    const supabase = getSupabaseAdmin();
+    const [{ data: employeeRows, error }, visits] = await Promise.all([
+      supabase.from("employees").select("hr_id,job_title,crm_id"),
+      scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
+        dateFrom: input.dateFrom,
+        dateTo: input.dateTo,
+        columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
+      }),
+    ]);
+    // Defensive, matching loadCrmIdentityUnresolvedHrIdKeys: if this check
+    // cannot run, exclude nobody rather than silently suppressing real findings.
+    if (error) return zeroSignal;
+
+    const activeHrKeys = new Set<string>();
+    const activeCrmIds = new Set<string>();
+    for (const visit of visits) {
+      const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
+      const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "");
+      if (agentKey) activeHrKeys.add(agentKey);
+      if (doubleKey) activeHrKeys.add(doubleKey);
+      const agentCrm = String(visit.agent_crm_id ?? "").trim();
+      const doubleCrm = String(visit.double_crm_id ?? "").trim();
+      if (agentCrm) activeCrmIds.add(agentCrm);
+      if (doubleCrm) activeCrmIds.add(doubleCrm);
+    }
+
+    for (const row of (employeeRows ?? []) as Array<{
+      hr_id: string;
+      job_title: string | null;
+      crm_id: string | null;
+    }>) {
+      if (!isFieldWorkforceComplianceEligibleTitle(row.job_title)) continue;
+      const key = canonicalHrIdKey(row.hr_id);
+      if (!key) continue;
+      const crmIdText = row.crm_id != null ? String(row.crm_id).trim() : "";
+      const hasSignal = activeHrKeys.has(key) || (crmIdText !== "" && activeCrmIds.has(crmIdText));
+      if (!hasSignal) zeroSignal.add(key);
+    }
+  } catch {
+    return new Set();
+  }
+  return zeroSignal;
+}
+
+/**
  * Continuing-employee candidates via the shared FWC recommendations engine.
  * Excludes anyone in leaverHrIdKeys — those are handled by
  * collectLeaverCrmCandidate over their own truncated settlement span instead.
@@ -326,11 +405,20 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
   const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview });
 
+  const monthStr = String(input.month).padStart(2, "0");
+  const zeroCrmSignalKeys = await loadZeroCrmSignalHrIdKeys({
+    dateFrom: `${input.year}-${monthStr}-01`,
+    dateTo: `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`,
+  });
+
   const drafts: DeductionsCandidateDraft[] = [];
   for (const recommendation of report.payrollRecommendations) {
     if (recommendation.sourceType !== "no_activity_candidate") continue;
     const key = canonicalHrIdKey(recommendation.employeeCode) ?? "";
     if (key && input.leaverHrIdKeys.has(key)) continue;
+    // Zero CRM signal for the whole month is a data-mapping gap, not a
+    // field-activity failure — see loadZeroCrmSignalHrIdKeys.
+    if (key && zeroCrmSignalKeys.has(key)) continue;
 
     // baseSalaryByCompact is keyed by compactDeductionsHrId (hyphens stripped),
     // NOT canonicalHrIdKey (hyphens kept, used for `key` above) — a distinct

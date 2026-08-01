@@ -370,4 +370,32 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       "a short audit trail must surface as a warning, never pass silently",
     );
   }
+
+  // ── Zero CRM signal is a data gap, not a field-activity failure ──────────
+  // no-records-activity.ts already states the rule ("zero possible positive
+  // signal ... just noise from a data-mapping gap"), but its guard only tests
+  // `crm_id IS NULL` — so it caught the unmapped case and missed the
+  // mapped-but-never-used one. Measured on July 2026 production data that miss
+  // charged two Head Office managers for essentially their whole month:
+  // A-9 20 days / 30,967.74 EGP and A-8 16 days / 22,193.55 EGP, both with ZERO
+  // CRM rows while punching in 36 and 13 times. B-155, with 44 CRM rows the
+  // same month, is correctly still in scope.
+  {
+    const crm = readFileSync("src/lib/deductions/connectors/crm.ts", "utf8");
+    assert.match(
+      crm,
+      /async function loadZeroCrmSignalHrIdKeys/,
+      "the CRM connector must exclude employees with no CRM signal at all for the period",
+    );
+    assert.match(
+      crm,
+      /zeroCrmSignalKeys\.has\(key\)\) continue/,
+      "the zero-signal set must actually skip the recommendation, not just be computed",
+    );
+    assert.match(
+      crm,
+      /activeHrKeys\.has\(key\) \|\| \(crmIdText !== "" && activeCrmIds\.has\(crmIdText\)\)/,
+      "signal must be checked on BOTH the hr-id and the crm_id — visits carry either",
+    );
+  }
 }
