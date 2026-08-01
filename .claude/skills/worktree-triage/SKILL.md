@@ -51,10 +51,16 @@ grep -Fx "<abs-path>" /tmp/registered.txt   # no match => unregistered
 git -C "<dir>" rev-parse --show-toplevel     # prints the PRIMARY path => orphan
 ```
 
-A healthy worktree resolves to *itself*. An orphan resolves to the primary checkout
-— that is the real hazard, not the disk: a session started inside one runs
-`git status` / `commit` / `reset` against the **production checkout** while believing
-it is isolated.
+A healthy worktree resolves to *itself*. An orphan **inside** the repo (`_wt-*` at the
+repo root, or under `.claude/worktrees/`) resolves to the primary checkout — that is
+the real hazard, not the disk: a session started inside one runs `git status` /
+`commit` / `reset` against the **production checkout** while believing it is isolated.
+
+A **sibling** orphan (e.g. `F:/Phoenix Workforce/_wt-foo`, outside the repo) resolves
+to *nothing* — git walks up and finds no repository, so `rev-parse --show-toplevel`
+returns empty. Those waste disk but cannot misdirect git, so an empty toplevel is an
+orphan too, not a healthy worktree. Classify on **absence from `git worktree list`**
+first; use the toplevel only to tell which of the two kinds you are holding.
 
 **Never trust one tool to call an orphan empty.** `Get-ChildItem -Recurse` counts
 dangling pnpm symlinks as entries and silently swallows MAX_PATH errors; robocopy
@@ -138,6 +144,29 @@ git branch -d "<branch>"                     # lowercase -d; if it refuses, STOP
 
 If `git worktree remove` refuses (dirty), re-classify as KEEP — dirty and report;
 do not force.
+
+**`git worktree remove` leaves a remnant. Delete it — this is where orphans come
+from.** Git does not manage gitignored paths, so `node_modules/` survives removal as
+a farm of dangling pnpm symlinks. The command still succeeded: it deregisters the
+worktree and drops the `.git/worktrees/<name>` metadata, so from that moment the
+leftover is invisible to `git worktree list` AND `git worktree prune` — it has become
+an orphan (step 1b) the instant you created it. Confirmed 2026-08-01: removing
+`_wt-sos-ts` left exactly **1,424 dirs / 3,263 symlinks / 0 files**, byte-for-byte the
+same fingerprint as three orphans found earlier that same day. Those 13 orphans were
+not anyone's mistake — they are the automatic byproduct of routine removal.
+
+So after every `git worktree remove`, check and clean:
+
+```bash
+[ -d "<worktree-path>" ] && find "<worktree-path>" -type f | wc -l   # expect 0
+```
+
+```powershell
+cmd /c "rmdir /s /q `"<abs-windows-path>`""
+```
+
+Treat a non-zero file count as a stop: something real is there, and `git worktree
+remove` should not have left it. Investigate before deleting.
 
 ### 5b. Orphans (unregistered — git commands do not apply)
 
