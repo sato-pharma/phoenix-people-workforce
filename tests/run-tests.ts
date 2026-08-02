@@ -527,6 +527,8 @@ import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.t
 import { runOutstationApprovalStateTests } from "./outstation-approval-state.test.ts";
 import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-evidence.test.ts";
 
+import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attribution.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1079,6 +1081,8 @@ await runTest("deductions no-records scope (crm owns the field workforce; Head O
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);
 await runTest("outstation approval state (3-state queues partition exactly; approval beats a stale rejected status)", runOutstationApprovalStateTests);
 await runTest("outstation workload evidence (solo days count as worked; campaign cap keeps double-visit counts)", runOutstationWorkloadEvidenceTests);
+
+await runTest("crm rep-day check-in attribution (managers borrow the rep's check-ins; an ordinary rep's route is unchanged)", runCrmRepDayCheckinAttributionTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
