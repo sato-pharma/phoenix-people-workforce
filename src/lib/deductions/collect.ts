@@ -43,7 +43,12 @@ type Collector = {
 export const DEDUCTION_COLLECTORS: readonly Collector[] = [
   { key: "fingerprint", label: "Fingerprint attendance report", run: collectFingerprintCandidates },
   { key: "crm", label: "CRM no-activity", run: collectCrmCandidates },
-  { key: "no_records_activity", label: "No Records Activity (Private Calendar)", run: collectNoRecordsActivityCandidates },
+  // no_records_activity is NOT here. Its connector has no population left: the field
+  // workforce belongs to `crm`, and Head Office has no CRM obligation, which between
+  // them is everybody. Leaving it registered made the collection UI offer a step that
+  // always reports "created=0" and the workspace render a permanently empty category —
+  // an operator cannot tell that apart from a broken connector. The category constant
+  // and its historical rows stay untouched; only the live collection step is retired.
   { key: "unpaid_vacation", label: "Unpaid Vacation", run: collectUnpaidVacationCandidates },
   { key: "insufficient_balance_vacation", label: "Insufficient Balance Vacation", run: collectInsufficientBalanceVacationCandidates },
 ];
