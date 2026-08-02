@@ -1675,11 +1675,23 @@ function MarketingRequestDraftWorkspaceInner() {
                         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                           Products
                         </p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-400">
-                          {workspace.requesterLineId === null
-                            ? "All available products"
-                            : `Line: ${workspace.requesterLineName ?? "Assigned"}`}
-                        </p>
+                        {/* A null requesterLineId means BOTH "oversight role, every line" and
+                            "requester has no line assigned" — the second case gets an empty
+                            product list, so labelling it "All available products" told the
+                            requester the exact opposite of the truth. requesterLineName is the
+                            honest discriminator: the server sets it to "All product lines" for
+                            an unrestricted role and to null only when no line is assigned. */}
+                        {workspace.requesterLineName === null ? (
+                          <p className="mt-0.5 text-[11px] font-semibold text-amber-600">
+                            No product line assigned — contact HR
+                          </p>
+                        ) : (
+                          <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                            {workspace.requesterLineId === null
+                              ? "All available products"
+                              : `Line: ${workspace.requesterLineName}`}
+                          </p>
+                        )}
                       </div>
                       <button
                         className="flex items-center gap-1 rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition hover:bg-slate-50"
