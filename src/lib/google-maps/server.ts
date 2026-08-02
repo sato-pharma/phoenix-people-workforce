@@ -418,6 +418,144 @@ export async function googlePlacesTextSearch(searchText: string): Promise<PlaceM
   return null;
 }
 
+// ── Places autocomplete (the "type and pick the nearest point" flow) ─────────
+// googlePlacesTextSearch above answers "what is the ONE best match for this text" and is the right
+// tool for batch geocoding. It is the wrong tool when a human is choosing: it silently picks for
+// them, and its geographic-result preference would skip past the clinic or pharmacy they actually
+// mean in favour of the district it sits in. Autocomplete returns the ranked list instead and lets
+// the person pick, exactly like the Google Maps search box on a phone.
+
+export type PlaceSuggestion = {
+  /** Full one-line label, safe to render on its own. */
+  description: string;
+  placeId: string;
+  /** The place's own name — "Dr Ahmed Clinic". */
+  primaryText: string;
+  /** Where it is — "Smouha, Alexandria". Null when Google returns no context line. */
+  secondaryText: string | null;
+};
+
+/**
+ * Ranked place suggestions for a partial query, Egypt-biased. Returns [] rather than throwing when
+ * the key is missing or Google refuses, so a lookup failure degrades to "no suggestions" instead of
+ * breaking the form the user is filling in.
+ */
+export async function googlePlacesAutocomplete(input: string): Promise<PlaceSuggestion[]> {
+  const key = getServerKey();
+  const query = input.trim();
+  if (!key || !query) return [];
+
+  const response = await postJsonWithHttpsFallback("https://places.googleapis.com/v1/places:autocomplete", {
+    body: JSON.stringify({ input: query, languageCode: "en", regionCode: "EG" }),
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": key,
+    },
+    method: "POST",
+  });
+  if (!response.ok) return [];
+
+  const payload = (await response.json()) as {
+    suggestions?: Array<{
+      placePrediction?: {
+        placeId?: string;
+        structuredFormat?: { mainText?: { text?: string }; secondaryText?: { text?: string } };
+        text?: { text?: string };
+      };
+    }>;
+  };
+
+  return (payload.suggestions ?? []).flatMap((suggestion) => {
+    const prediction = suggestion.placePrediction;
+    const placeId = prediction?.placeId?.trim();
+    if (!placeId) return [];
+
+    const primaryText = prediction?.structuredFormat?.mainText?.text?.trim()
+      ?? prediction?.text?.text?.trim()
+      ?? "";
+    if (!primaryText) return [];
+    const secondaryText = prediction?.structuredFormat?.secondaryText?.text?.trim() || null;
+
+    return [{
+      description: prediction?.text?.text?.trim()
+        || [primaryText, secondaryText].filter(Boolean).join(", "),
+      placeId,
+      primaryText,
+      secondaryText,
+    }];
+  });
+}
+
+export type PlaceLocation = {
+  /** District / markaz level, the value the marketing forms store as the area name. */
+  area: string | null;
+  formattedAddress: string | null;
+  /** administrative_area_level_1 with the " Governorate" suffix stripped, matching googleReverseGeocode. */
+  governorate: string | null;
+  lat: number;
+  lng: number;
+  name: string | null;
+};
+
+// Places API (New) returns address components as longText/shortText, NOT the geocoding API's
+// long_name/short_name — extractAddressComponent above cannot read them.
+function extractPlaceComponent(
+  components: Array<{ longText?: string; shortText?: string; types?: string[] }> | undefined,
+  targetTypes: string[],
+) {
+  const component = components?.find((entry) =>
+    Array.isArray(entry.types) && entry.types.some((type) => targetTypes.includes(type)),
+  );
+  return component?.longText ?? component?.shortText ?? null;
+}
+
+/**
+ * Resolve a place id from `googlePlacesAutocomplete` into coordinates plus the area/governorate the
+ * marketing validation records store. Null when the id is unknown or the key is missing.
+ */
+export async function googlePlaceDetails(placeId: string): Promise<PlaceLocation | null> {
+  const key = getServerKey();
+  const id = placeId.trim();
+  if (!key || !id) return null;
+
+  const url = `https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`;
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      "X-Goog-Api-Key": key,
+      "X-Goog-FieldMask": "addressComponents,displayName,formattedAddress,location",
+    },
+  });
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    addressComponents?: Array<{ longText?: string; shortText?: string; types?: string[] }>;
+    displayName?: { text?: string };
+    formattedAddress?: string;
+    location?: { latitude?: number; longitude?: number };
+  };
+
+  const lat = payload.location?.latitude;
+  const lng = payload.location?.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const governorate = extractPlaceComponent(payload.addressComponents, ["administrative_area_level_1"]);
+  return {
+    area: extractPlaceComponent(payload.addressComponents, [
+      "sublocality",
+      "sublocality_level_1",
+      "neighborhood",
+      "locality",
+      "administrative_area_level_2",
+    ]),
+    formattedAddress: payload.formattedAddress ?? null,
+    governorate: governorate ? governorate.replace(/\s*Governorate$/i, "").trim() : null,
+    lat: Number(lat),
+    lng: Number(lng),
+    name: payload.displayName?.text ?? null,
+  };
+}
+
 // One Geocoding call returning coordinates + admin level 1/2 together (the older helpers each
 // discard part of the payload, forcing double billing when both are needed).
 export async function googleGeocodeComponents(searchText: string): Promise<GeocodeComponents | null> {

@@ -48,6 +48,7 @@ import type {
   MarketingRequestFinanceRequirement,
   MarketingRequestApprovalStep,
   MarketingRequestType,
+  MarketingOnBehalfEmployee,
   MarketingValidationInput,
   MarketingValidationReportRow,
   MarketingValidationStatus,
@@ -987,6 +988,122 @@ function tryFindRequester(access: AccessContext, rows: EmployeeDirectoryRow[]): 
   return rows.find((row) => normalizeHrId(row.hrId) === normalizeHrId(actorHrId)) ?? null;
 }
 
+/* ── Super Admin "validate on behalf of an employee" ──────────────────────────────────────────
+ *
+ * A Super Admin sitting at a desk can validate a customer FOR a field employee: they pick the
+ * employee, search the address on a map, and the resulting customer/pharmacy records are OWNED by
+ * that employee — which is what puts the customer in that employee's marketing request dropdown
+ * (getMarketingRequestDraftWorkspace filters customers through canSeeMarketingCustomer, which reads
+ * owner_hr_id / manager_hr_id).
+ *
+ * Two invariants make this safe to hand to an admin:
+ *   1. The role check is on the ACTOR, server-side, before any write. A non-Super-Admin who posts
+ *      `onBehalfOfHrId` gets a 403 — the UI hiding the panel is not the boundary.
+ *   2. The audit columns stay truthful. created_by_hr_id / updated_by_hr_id / validated_by_hr_id
+ *      name the admin, never the employee, so a desk entry can always be told apart from a rep who
+ *      physically stood at the door. owner_hr_id is the only column that moves.
+ */
+
+export function canValidateMarketingOnBehalf(access: AccessContext) {
+  return access.scope === "system" || access.role === "Super Admin";
+}
+
+export function assertMarketingOnBehalfAccess(access: AccessContext) {
+  if (canValidateMarketingOnBehalf(access)) return;
+  throw forbiddenError(
+    `Forbidden: ${access.role} cannot validate a customer on behalf of another employee.`,
+  );
+}
+
+export type MarketingValidationActor = {
+  /**
+   * Who is physically doing the work — the admin on the on-behalf path, else the owner. Always in
+   * the employee master's stored casing, because every *_hr_id column on the marketing validation
+   * tables is a case-sensitive FK to employees(hr_id) and the access context's dialect is not.
+   */
+  actorHrId: string;
+  /** False when a Super Admin has no employee row — `actorHrId` then cannot satisfy those FKs. */
+  actorIsDirectoryEmployee: boolean;
+  actorName: string | null;
+  isOnBehalf: boolean;
+  /** Whose marketing scope the customer lands in. */
+  owner: EmployeeDirectoryRow;
+};
+
+/**
+ * Resolve who owns the validation records and who is recorded as having created them.
+ *
+ * Without `onBehalfOfHrId` this is exactly the previous behaviour (`findRequester`), so the field
+ * rep path is unchanged. With it, the actor must be Super Admin and the target must be an active
+ * employee whose job function is one that can actually raise a marketing request — otherwise the
+ * customer would be parked on someone with no marketing screen and could never be used. That job
+ * title check classifies the TARGET's usefulness; it grants nobody any permission (the permission
+ * decision above is on the actor alone).
+ */
+export function resolveMarketingValidationActor(params: {
+  access: AccessContext;
+  employeeRows: EmployeeDirectoryRow[];
+  onBehalfOfHrId?: string | null;
+}): MarketingValidationActor {
+  const requestedHrId = cleanText(params.onBehalfOfHrId);
+  if (!requestedHrId) {
+    const requester = findRequester(params.access, params.employeeRows);
+    return {
+      actorHrId: String(requester.hrId),
+      actorIsDirectoryEmployee: true,
+      actorName: requester.displayName,
+      isOnBehalf: false,
+      owner: requester,
+    };
+  }
+
+  assertMarketingOnBehalfAccess(params.access);
+
+  const rawActorHrId = assertMarketingActor(params.access);
+  const employeesByHrId = employeeRowByHrId(params.employeeRows);
+  const owner = params.employeeRows.find(
+    (row) => normalizeHrId(row.hrId) === normalizeHrId(requestedHrId),
+  );
+  if (!owner) {
+    throw validationError(
+      "The selected employee was not found in the active employee directory.",
+      "on_behalf_employee_not_found",
+    );
+  }
+
+  if (!marketingCreatorRoles.has(resolveJobFunctionRole(owner.jobTitle))) {
+    throw validationError(
+      `${owner.displayName} (${owner.jobTitle ?? "no job title"}) cannot raise marketing requests, so a customer cannot be validated for them.`,
+      "on_behalf_employee_not_marketing_capable",
+    );
+  }
+
+  const actorRow = employeesByHrId.get(normalizeHrId(rawActorHrId) ?? "");
+  return {
+    actorHrId: resolveStoredEmployeeHrId(rawActorHrId, employeesByHrId) ?? String(rawActorHrId),
+    actorIsDirectoryEmployee: Boolean(actorRow),
+    actorName: actorRow?.displayName ?? null,
+    isOnBehalf: true,
+    owner,
+  };
+}
+
+/** Marketing-capable active employees a Super Admin may validate on behalf of. */
+export function buildMarketingOnBehalfEmployees(
+  employeeRows: EmployeeDirectoryRow[],
+): MarketingOnBehalfEmployee[] {
+  return employeeRows
+    .filter((row) => marketingCreatorRoles.has(resolveJobFunctionRole(row.jobTitle)))
+    .map((row) => ({
+      areaName: row.areaName,
+      hrId: row.hrId,
+      jobTitle: row.jobTitle,
+      lineName: row.lineName,
+      name: row.displayName,
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export type MarketingDraftProductScope = {
   canCreateDraft: boolean;
   products: MarketingProduct[];
@@ -1164,6 +1281,23 @@ export function resolveMarketingSystemValidationStatus(
     input.referenceStatus === "matched"
     ? "system_validated"
     : "pending";
+}
+
+/**
+ * The single rule deciding what status a validation row is saved with.
+ *
+ * A Super Admin validating at the desk for another employee has no live GPS fix and no stamped
+ * shop-front photo, so `resolveMarketingSystemValidationStatus` would park every desk row on
+ * `pending` — and a `pending` row never reaches the marketing request customer dropdown, which is
+ * the entire point of the desk flow. `sfe_validated` is the human-authority status the read filters
+ * already accept, and routing desk rows there keeps `system_validated` meaning exactly what it has
+ * always meant: complete field evidence plus a matched distributor code.
+ */
+export function resolveMarketingValidationRecordStatus(params: {
+  isOnBehalf: boolean;
+  systemStatus: MarketingValidationStatus;
+}): MarketingValidationStatus {
+  return params.isOnBehalf ? "sfe_validated" : params.systemStatus;
 }
 
 export function normalizeMarketingValidationInput(
@@ -3342,10 +3476,17 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   if (linksResult.error) throw linksResult.error;
 
   const distributors = ((distributorsResult.data ?? []) as MarketingDistributorDbRow[]).map(mapDistributor);
+  const canActOnBehalf = canValidateMarketingOnBehalf(access);
   const links = (linksResult.data ?? []) as MarketingCustomerPharmacyDbRow[];
   if (links.length === 0) {
+    // A Super Admin still needs the picker on an empty workspace — validating the very first
+    // customer for an employee is exactly when this screen is empty.
     return {
+      canValidateOnBehalf: canActOnBehalf,
       distributors,
+      onBehalfEmployees: canActOnBehalf
+        ? buildMarketingOnBehalfEmployees(await loadEmployeeDirectoryRows())
+        : [],
       rows: [],
       summary: emptyValidationSummary(),
     };
@@ -3382,7 +3523,9 @@ export async function getMarketingValidationWorkspace(access: AccessContext): Pr
   });
 
   return {
+    canValidateOnBehalf: canActOnBehalf,
     distributors,
+    onBehalfEmployees: canActOnBehalf ? buildMarketingOnBehalfEmployees(employeeRows) : [],
     rows: report.rows,
     summary: report.summary,
   };
@@ -3710,8 +3853,30 @@ export async function createMarketingValidationRecord(
 
   const supabase = options.supabase ?? getSupabaseAdmin();
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
-  const requester = findRequester(access, employeeRows);
-  const actorHrId = String(requester.hrId);
+  const {
+    actorHrId: resolvedActorHrId,
+    actorIsDirectoryEmployee,
+    actorName,
+    isOnBehalf,
+    owner,
+  } = resolveMarketingValidationActor({
+    access,
+    employeeRows,
+    onBehalfOfHrId: input.onBehalfOfHrId,
+  });
+
+  // A Super Admin who has no employee row of their own cannot satisfy the employees(hr_id) FKs on
+  // these tables at all. In that case the audit columns fall back to the owner so the insert still
+  // succeeds, and `validated_at` — which has no FK — remains the flag saying an admin produced this
+  // row rather than a field capture.
+  const ownerHrId = String(owner.hrId);
+  const actorHrId = actorIsDirectoryEmployee ? resolvedActorHrId : ownerHrId;
+  const adminValidatedByHrId = isOnBehalf && actorIsDirectoryEmployee ? actorHrId : null;
+  const adminValidatedAt = isOnBehalf ? new Date().toISOString() : null;
+  const adminValidationNote = isOnBehalf
+    ? `Validated at the desk by ${actorName ?? "Super Admin"} on behalf of ${owner.displayName}. Location chosen from map search — no field GPS or live photo.`
+    : null;
+
   const normalized = normalizeMarketingValidationInput(input);
   const distributorIds = Array.from(
     new Set(normalized.pharmacies.flatMap((pharmacy) => pharmacy.vendorCodes.map((code) => code.distributorId))),
@@ -3737,7 +3902,7 @@ export async function createMarketingValidationRecord(
     const customerInsert = await supabase
       .from("marketing_customers")
       .insert({
-        area_id: requester.areaId ?? null,
+        area_id: owner.areaId ?? null,
         captured_accuracy_meters: normalized.customer.capturedAccuracyMeters,
         captured_address: normalized.customer.capturedAddress,
         captured_at: normalized.customer.capturedAt,
@@ -3753,14 +3918,20 @@ export async function createMarketingValidationRecord(
         evidence_status: normalized.customer.evidenceStatus,
         extracted_area_name: normalized.customer.extractedAreaName,
         extracted_governorate_name: normalized.customer.extractedGovernorateName,
-        line_id: requester.lineId ?? null,
-        manager_hr_id: requester.managerHrId ?? null,
+        line_id: owner.lineId ?? null,
+        manager_hr_id: owner.managerHrId ?? null,
         normalized_name: normalized.customer.normalizedName,
         other_type_description: normalized.customer.otherTypeDescription,
-        owner_hr_id: actorHrId,
+        owner_hr_id: ownerHrId,
         region_name: normalized.customer.regionName,
         updated_by_hr_id: actorHrId,
-        validation_status: normalized.customer.validationStatus,
+        validated_at: adminValidatedAt,
+        validated_by_hr_id: adminValidatedByHrId,
+        validation_notes: adminValidationNote,
+        validation_status: resolveMarketingValidationRecordStatus({
+          isOnBehalf,
+          systemStatus: normalized.customer.validationStatus,
+        }),
       })
       .select("*")
       .single();
@@ -3786,7 +3957,7 @@ export async function createMarketingValidationRecord(
       const pharmacyInsert = await supabase
         .from("marketing_pharmacies")
         .insert({
-          area_id: requester.areaId ?? null,
+          area_id: owner.areaId ?? null,
           captured_accuracy_meters: normalizedPharmacy.capturedAccuracyMeters,
           captured_address: normalizedPharmacy.capturedAddress,
           captured_at: normalizedPharmacy.capturedAt,
@@ -3800,14 +3971,20 @@ export async function createMarketingValidationRecord(
           evidence_status: normalizedPharmacy.evidenceStatus,
           extracted_area_name: normalizedPharmacy.extractedAreaName,
           extracted_governorate_name: normalizedPharmacy.extractedGovernorateName,
-          line_id: requester.lineId ?? null,
-          manager_hr_id: requester.managerHrId ?? null,
+          line_id: owner.lineId ?? null,
+          manager_hr_id: owner.managerHrId ?? null,
           normalized_name: normalizedPharmacy.normalizedName,
-          owner_hr_id: actorHrId,
+          owner_hr_id: ownerHrId,
           pharmacy_code: generateMarketingCode("MKT-PHA"),
           region_name: normalizedPharmacy.regionName,
           updated_by_hr_id: actorHrId,
-          validation_status: normalizedPharmacy.validationStatus,
+          validated_at: adminValidatedAt,
+          validated_by_hr_id: adminValidatedByHrId,
+          validation_notes: adminValidationNote,
+          validation_status: resolveMarketingValidationRecordStatus({
+            isOnBehalf,
+            systemStatus: normalizedPharmacy.validationStatus,
+          }),
         })
         .select("*")
         .single();
@@ -3821,11 +3998,24 @@ export async function createMarketingValidationRecord(
           normalizedPharmacyCode: vendorCode.normalizedPharmacyCode,
           supabase,
         });
-        const linkValidationStatus = resolveMarketingSystemValidationStatus({
-          customerEvidenceStatus: normalized.customer.evidenceStatus,
-          pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
-          referenceStatus: reference.status,
+        const linkValidationStatus = resolveMarketingValidationRecordStatus({
+          isOnBehalf,
+          systemStatus: resolveMarketingSystemValidationStatus({
+            customerEvidenceStatus: normalized.customer.evidenceStatus,
+            pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
+            referenceStatus: reference.status,
+          }),
         });
+        // The reference lookup still runs and is still stored truthfully, because an unmatched code
+        // means sales can never be attributed to this pharmacy — the row is usable, but its ROI
+        // would read zero forever. Say so on the row rather than letting it look fully healthy.
+        const linkValidationNotes = isOnBehalf
+          ? reference.status === "matched"
+            ? adminValidationNote
+            : `${adminValidationNote} Distributor code is ${reference.status.replace(/_/g, " ")} in the Phoenix reference database, so sales cannot be tracked for it yet.`
+          : linkValidationStatus === "system_validated"
+            ? null
+            : "Waiting for complete evidence or distributor-code match.";
         const distributorCodeInsert = await supabase
           .from("marketing_pharmacy_distributor_codes")
           .insert({
@@ -3847,13 +4037,13 @@ export async function createMarketingValidationRecord(
         const linkInsert = await supabase
           .from("marketing_customer_pharmacies")
           .insert({
-        created_by_hr_id: actorHrId,
-        customer_id: customer.id,
-        distributor_code_id: distributorCode.id,
-        pharmacy_id: pharmacy.id,
-        updated_by_hr_id: actorHrId,
-        validation_notes: linkValidationStatus === "system_validated" ? null : "Waiting for complete evidence or distributor-code match.",
-        validation_status: linkValidationStatus,
+            created_by_hr_id: actorHrId,
+            customer_id: customer.id,
+            distributor_code_id: distributorCode.id,
+            pharmacy_id: pharmacy.id,
+            updated_by_hr_id: actorHrId,
+            validation_notes: linkValidationNotes,
+            validation_status: linkValidationStatus,
           })
           .select("*")
           .single();
@@ -3871,6 +4061,26 @@ export async function createMarketingValidationRecord(
           validationStatus: link.validationStatus,
         });
       }
+    }
+
+    if (isOnBehalf) {
+      // An admin moving a customer into another employee's book is exactly the kind of act that has
+      // to be reconstructable later — the row itself only shows the end state.
+      await writeAuditLog({
+        actorLoginId: resolvedActorHrId,
+        entityId: customer.id,
+        entityType: "marketing_customer",
+        newValues: {
+          customerCode: customer.customerCode,
+          customerName: customer.displayName,
+          onBehalfOfHrId: ownerHrId,
+          onBehalfOfName: owner.displayName,
+          pharmacyCount: normalized.pharmacies.length,
+          source: "marketing_validation_admin_on_behalf",
+          validationStatus: "sfe_validated",
+        },
+        summary: `Customer ${customer.displayName} validated at the desk on behalf of ${owner.displayName} (${ownerHrId})`,
+      });
     }
 
     return rows;

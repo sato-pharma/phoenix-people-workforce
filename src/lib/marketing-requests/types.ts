@@ -295,6 +295,13 @@ export type MarketingCustomerPharmacy = {
 };
 
 export type MarketingValidationInput = {
+  /**
+   * Super-Admin-only: validate this customer FOR another employee. The records are owned by the
+   * named employee (so the customer reaches their marketing request dropdown) while the audit
+   * columns keep naming the admin who actually typed it. Rejected with 403 for every other role —
+   * see `assertMarketingOnBehalfAccess`. Omit for the normal field-rep flow.
+   */
+  onBehalfOfHrId?: string | null;
   customer: {
     capturedAccuracyMeters?: number | null;
     capturedAddress?: string | null;
@@ -364,8 +371,21 @@ export type MarketingValidationReportRow = {
   validationStatus: MarketingValidationStatus;
 };
 
+/** One selectable target in the Super Admin "validate on behalf of" picker. */
+export type MarketingOnBehalfEmployee = {
+  areaName: string | null;
+  hrId: string;
+  jobTitle: string | null;
+  lineName: string | null;
+  name: string;
+};
+
 export type MarketingValidationWorkspace = {
+  /** True only for Super Admin — drives whether the on-behalf panel renders at all. */
+  canValidateOnBehalf: boolean;
   distributors: MarketingDistributor[];
+  /** Empty unless `canValidateOnBehalf`; active employees holding a marketing-capable role. */
+  onBehalfEmployees: MarketingOnBehalfEmployee[];
   rows: MarketingValidationReportRow[];
   summary: Record<MarketingValidationStatus, number>;
 };
