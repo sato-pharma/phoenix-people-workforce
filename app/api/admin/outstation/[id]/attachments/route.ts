@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createOutstationEvidenceSignedUrls } from "@/lib/outstation/car-evidence-storage";
@@ -17,6 +18,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const access = await resolveAccessContext(request);
+    // An expired session must not be reported as a missing permission (see
+    // api-session-response.ts). A guest is already denied everything, so this only changes
+    // how the denial reads, never who gets through.
+    const unauthenticated = unauthenticatedSessionResponse(access);
+    if (unauthenticated) return unauthenticated;
     await assertOutstationAdminAccess(access, "approve");
 
     const { id: rawId } = await params;

@@ -112,6 +112,7 @@ export function TripWorkloadEvidencePanel({
     status: "idle" | "loading" | "done" | "error";
     data?: TripWorkloadEvidence;
     error?: string;
+    sessionExpired?: boolean;
   }>({ status: "idle" });
 
   useEffect(() => {
@@ -137,12 +138,21 @@ export function TripWorkloadEvidencePanel({
         });
         const payload = await response.json();
         if (!response.ok || !payload?.success) {
-          throw new Error(payload?.message || `Request failed (${response.status})`);
+          const error = new Error(payload?.message || `Request failed (${response.status})`);
+          // Carried through so the UI can offer a sign-in instead of implying a permissions
+          // problem — an expired session used to surface here as "you do not have access".
+          (error as Error & { sessionExpired?: boolean }).sessionExpired =
+            response.status === 401 || payload?.error === "session_expired";
+          throw error;
         }
         if (!cancelled) setState({ data: payload.data as TripWorkloadEvidence, status: "done" });
       } catch (error) {
         if (!cancelled) {
-          setState({ error: error instanceof Error ? error.message : "Workload lookup failed.", status: "error" });
+          setState({
+            error: error instanceof Error ? error.message : "Workload lookup failed.",
+            sessionExpired: Boolean((error as { sessionExpired?: boolean })?.sessionExpired),
+            status: "error",
+          });
         }
       }
     }
@@ -167,6 +177,19 @@ export function TripWorkloadEvidencePanel({
     );
   }
   if (state.status === "error" || !state.data) {
+    // An expired session is not a permissions problem, so it must not read like one — say what
+    // actually happened and offer the one action that fixes it.
+    if (state.sessionExpired) {
+      return (
+        <p className="flex flex-wrap items-center gap-2 text-xs font-medium text-amber-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Your session has expired, so the workload evidence could not be loaded.
+          <a className="font-bold underline hover:text-amber-900" href="/login">
+            Sign in again
+          </a>
+        </p>
+      );
+    }
     return <p className="text-xs font-medium text-rose-600">Couldn&apos;t load workload evidence: {state.error}</p>;
   }
 
