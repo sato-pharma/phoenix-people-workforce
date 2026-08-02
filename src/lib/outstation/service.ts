@@ -10,6 +10,7 @@ import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { randomUUID } from "node:crypto";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { carTripFuelIsUnpriceable, UNPRICEABLE_CAR_TRIP_MESSAGE } from "@/lib/outstation/fuel-policy";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
@@ -1330,18 +1331,14 @@ export async function submitOutstationRequest(
       : null;
   let carEvidenceImagePath: string | null = null;
 
+  // A blocked draft is recoverable; an approved 0.00 EGP fuel line is not. Condition and message
+  // live in fuel-policy.ts so they can be asserted -- see the notes there on why a measured 0
+  // must still submit and why train/bus must not be blocked.
+  if (carTripFuelIsUnpriceable(calculation.transportationType, calculation.distanceFromResidenceKm)) {
+    throw new Error(UNPRICEABLE_CAR_TRIP_MESSAGE);
+  }
+
   if (calculation.transportationType === "car") {
-    // Fuel is distance x 2 x rate, and the distance comes from the Google Routes API. When that
-    // lookup fails the distance is null, which calculateOutstationExpense coerces to 0 -- producing
-    // a real-looking 0.00 EGP fuel line that an approver can rubber-stamp, paying the rep nothing
-    // for a real drive. Refuse the submission instead: a blocked draft is recoverable, an approved
-    // zero is not. (Seen live 2026-08-01, when the Routes key lost billing and every car claim
-    // silently costed at zero.)
-    if (calculation.distanceFromResidenceKm == null) {
-      throw new Error(
-        "The distance from your residence could not be measured, so the fuel amount cannot be calculated. Please try again in a few minutes, and contact HR if it keeps failing — do not submit a car trip with a zero fuel amount.",
-      );
-    }
     if (!input.carEvidenceImageDataUrl) {
       throw new Error("Car transport requires the live camera evidence image before submitting the request.");
     }

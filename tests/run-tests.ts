@@ -35,6 +35,8 @@ import { runTelegramTemplateManagementTests } from "./telegram-template-manageme
 import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
 import { runTelegramDeliveryErrorsTests } from "./telegram-delivery-errors.test.ts";
 import { runConfigDriftTests } from "./config-drift.test.ts";
+import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.ts";
+import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
@@ -582,6 +584,8 @@ await runTest("telegram template management", runTelegramTemplateManagementTests
 await runTest("telegram hardening", runTelegramHardeningTests);
 await runTest("telegram permanent-delivery-error classification", runTelegramDeliveryErrorsTests);
 await runTest("notification config drift guard", runConfigDriftTests);
+await runTest("residence geocode policy (a failed geocode must never null a stored coordinate)", runResidenceGeocodePolicyTests);
+await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);

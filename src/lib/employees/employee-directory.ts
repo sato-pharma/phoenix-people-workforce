@@ -10,6 +10,11 @@ import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation"
 import { sharedIdentityGroups } from "@/lib/auth/identity-aliases";
 import { canonicalHrIdForDisplay, canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { getEmployeePhotoMap } from "@/lib/employees/employee-photo";
+import {
+  residenceCoordinateColumns,
+  residenceGeocodeQuery,
+  residenceUnchanged,
+} from "@/lib/employees/residence-geocode-policy";
 import { employeeRegionFields, resolveRegionByIds } from "@/lib/employees/region-resolver";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
@@ -1940,26 +1945,16 @@ async function upsertEmployeeResidenceLocation(
   input: EmployeeMutationInput,
   hrId: string,
 ) {
-  // The Employee Management form always sends these three as null rather than omitting them, so an
-  // `undefined`-only check never fired: EVERY save -- salary, job title, manager, insurance --
-  // re-ran the geocode below and rewrote the row. Treat null as "unchanged" too.
-  if (
-    input.residenceAddress == null &&
-    input.residenceArea == null &&
-    input.residenceCity == null
-  ) {
-    return;
-  }
+  // The three rules below are in residence-geocode-policy.ts so they can be asserted without a
+  // Supabase client -- see the notes there for what each one cost.
+  if (residenceUnchanged(input)) return;
 
   const residenceAddress = compact(input.residenceAddress);
   const residenceArea = compact(input.residenceArea);
   const residenceCity = compact(input.residenceCity);
-  // Guard the parts, not the joined string: with all three empty the query collapsed to bare
-  // "Egypt", which geocodes successfully to the country centroid and stored that as the
-  // employee's home -- a plausible-looking coordinate that is wrong for everyone.
-  const addressParts = [residenceAddress, residenceArea, residenceCity].filter(Boolean);
-  const geocoded = addressParts.length
-    ? await googleGeocodeAddress([...addressParts, "Egypt"].join(", ")).catch(() => null)
+  const geocodeQuery = residenceGeocodeQuery([residenceAddress, residenceArea, residenceCity]);
+  const geocoded = geocodeQuery
+    ? await googleGeocodeAddress(geocodeQuery).catch(() => null)
     : null;
 
   await supabaseRest<EmployeeResidenceDbRow[]>(
@@ -1975,14 +1970,9 @@ async function upsertEmployeeResidenceLocation(
         residence_address: residenceAddress,
         residence_area: residenceArea,
         residence_city: residenceCity,
-        // Only write coordinates when the lookup actually returned some. Sending null under
-        // `resolution=merge-duplicates` OVERWRITES a good stored coordinate, and a failed geocode
-        // is not evidence that the employee moved -- it is usually a dead API key. Omitting the
-        // columns leaves whatever is already stored untouched. (2026-08-01: the Maps key lost
-        // billing, geocoding began answering HTTP 200 with REQUEST_DENIED -- which this code reads
-        // as "no result found", not as an error -- and every employee save silently erased that
-        // person's home GPS, which nothing can re-derive.)
-        ...(geocoded ? { residence_latitude: geocoded.lat, residence_longitude: geocoded.lng } : {}),
+        // Omits the coordinate columns entirely when the geocode produced nothing -- under
+        // merge-duplicates a null would OVERWRITE a good stored value. See the policy module.
+        ...residenceCoordinateColumns(geocoded),
         updated_at: new Date().toISOString(),
       }),
       headers: {
