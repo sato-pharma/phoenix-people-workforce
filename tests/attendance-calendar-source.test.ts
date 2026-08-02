@@ -86,6 +86,9 @@ export function runAttendanceCalendarSourceTests() {
   ];
   assert.deepEqual(resolvePolicyAttendanceStatus({
     baseSalary: 15000,
+    // 2026-03 has 31 days; the day rate divides by THAT month's actual calendar
+    // days, so the fixture must name the day being charged.
+    reportDate: "2026-03-10",
     durationMinutes: 470,
     firstPunchMinutes: 9 * 60,
     lastPunchMinutes: 16 * 60 + 50,
@@ -102,6 +105,9 @@ export function runAttendanceCalendarSourceTests() {
   });
   assert.deepEqual(resolvePolicyAttendanceStatus({
     baseSalary: 15000,
+    // 2026-03 has 31 days; the day rate divides by THAT month's actual calendar
+    // days, so the fixture must name the day being charged.
+    reportDate: "2026-03-10",
     durationMinutes: 470,
     firstPunchMinutes: 9 * 60 + 10,
     lastPunchMinutes: 17 * 60,
@@ -118,6 +124,9 @@ export function runAttendanceCalendarSourceTests() {
   });
   assert.deepEqual(resolvePolicyAttendanceStatus({
     baseSalary: 15000,
+    // 2026-03 has 31 days; the day rate divides by THAT month's actual calendar
+    // days, so the fixture must name the day being charged.
+    reportDate: "2026-03-10",
     durationMinutes: 460,
     firstPunchMinutes: 9 * 60 + 10,
     lastPunchMinutes: 16 * 60 + 50,
@@ -126,7 +135,12 @@ export function runAttendanceCalendarSourceTests() {
     visiblePunchCount: 2,
   }), {
     deductionDays: "0.25",
-    deductionValue: "125.00",
+    // 15000 / 31 (March) * 0.25 = 120.97. This used to assert 125.00, which is
+    // 15000 / 30 — the flat divisor this path used before it was routed to the
+    // deductions implementation. The old number was pinning the defect: the owner's
+    // standing rule is Base / ACTUAL calendar days, everywhere, and fingerprint was
+    // the one category still on /30.
+    deductionValue: "120.97",
     earlyLeaveMinutes: "",
     lateMinutes: "20",
     recommendedAction: "Deduct quarter day",
@@ -134,6 +148,9 @@ export function runAttendanceCalendarSourceTests() {
   });
   assert.deepEqual(resolvePolicyAttendanceStatus({
     baseSalary: 15000,
+    // 2026-03 has 31 days; the day rate divides by THAT month's actual calendar
+    // days, so the fixture must name the day being charged.
+    reportDate: "2026-03-10",
     durationMinutes: 468,
     firstPunchMinutes: 9 * 60 + 12,
     lastPunchMinutes: 17 * 60,

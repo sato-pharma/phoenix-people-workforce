@@ -1,4 +1,8 @@
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
+// The DEDUCTIONS implementation (Base / ACTUAL calendar days). Two functions share this
+// name and the governance one takes no month, so importing it type-checks and silently
+// pays a flat /30. This is the legacy fallback path for policy groups with
+// required_minutes IS NULL - 2 of 15 groups, so it is live money.
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 
 export const standardAttendanceDayMs = 8 * 60 * 60 * 1000;
 
@@ -56,6 +60,11 @@ export type PolicyAttendanceStatusInput = {
   policy: AttendancePolicySelectionInput | null | undefined;
   rules: AttendancePolicyRuleSelectionInput[];
   visiblePunchCount: number;
+  // The day being charged (YYYY-MM-DD), so the day rate divides by THAT month's
+  // actual calendar days. Required, not optional: an optional field would silently
+  // fall back to a flat 30, which is the defect this closes. 2 of 15 policy groups
+  // still route here (required_minutes IS NULL), so this path is live money.
+  reportDate: string;
 };
 
 export type PolicyAttendanceStatusResult = {
@@ -174,19 +183,25 @@ function findAttendanceRule(
     .sort((left, right) => Number(left.sort_order ?? 0) - Number(right.sort_order ?? 0))[0];
 }
 
-function deductionAmountText(baseSalary: number | null | undefined, deductionDays: string) {
+function deductionAmountText(baseSalary: number | null | undefined, deductionDays: string, reportDate: string) {
   if (!deductionDays.trim()) return "";
   const salary = Number(baseSalary);
   const days = Number(deductionDays);
   if (!Number.isFinite(days) || days <= 0) return days === 0 ? "0" : "";
   if (!Number.isFinite(salary) || salary <= 0) return "Base salary missing";
-  const amount = calculateDeductionAmountFromBaseSalary({ baseSalary: salary, deductionDays: days });
+  const amount = calculateDeductionAmountFromBaseSalary({
+    baseSalary: salary,
+    deductionDays: days,
+    month: Number(reportDate.slice(5, 7)),
+    year: Number(reportDate.slice(0, 4)),
+  });
   return amount != null ? amount.toFixed(2) : "Base salary missing";
 }
 
 function ruleStatusResult(input: {
   baseSalary?: number | null;
   defaultAction: string;
+  reportDate: string;
   earlyLeaveMinutes?: number;
   eventType: "early_leave" | "late" | "single_punch";
   lateMinutes?: number;
@@ -201,7 +216,7 @@ function ruleStatusResult(input: {
     : `Missing deduction rule: ${input.defaultAction}`;
   return {
     deductionDays,
-    deductionValue: deductionAmountText(input.baseSalary, deductionDays),
+    deductionValue: deductionAmountText(input.baseSalary, deductionDays, input.reportDate),
     earlyLeaveMinutes: input.earlyLeaveMinutes ? String(input.earlyLeaveMinutes) : "",
     lateMinutes: input.lateMinutes ? String(input.lateMinutes) : "",
     recommendedAction: rule?.recommended_action?.trim() || missingRuleAction,
@@ -213,6 +228,7 @@ export function resolvePolicyAttendanceStatus(input: PolicyAttendanceStatusInput
   if (input.visiblePunchCount <= 1) {
     return ruleStatusResult({
       baseSalary: input.baseSalary,
+      reportDate: input.reportDate,
       defaultAction: "Review missing punch",
       eventType: "single_punch",
       minutes: null,
@@ -261,6 +277,7 @@ export function resolvePolicyAttendanceStatus(input: PolicyAttendanceStatusInput
   if (lateFromSchedule > 0) {
     return ruleStatusResult({
       baseSalary: input.baseSalary,
+      reportDate: input.reportDate,
       defaultAction: "Review late arrival",
       eventType: "late",
       lateMinutes: dailyGraceUsageMinutes,
@@ -272,6 +289,7 @@ export function resolvePolicyAttendanceStatus(input: PolicyAttendanceStatusInput
 
   return ruleStatusResult({
     baseSalary: input.baseSalary,
+    reportDate: input.reportDate,
     defaultAction: earlyLeaveMinutes > 0 ? "Review early leave" : "Review short day",
     earlyLeaveMinutes: dailyGraceUsageMinutes,
     eventType: "early_leave",
