@@ -36,6 +36,7 @@ import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
 import { runTelegramDeliveryErrorsTests } from "./telegram-delivery-errors.test.ts";
 import { runConfigDriftTests } from "./config-drift.test.ts";
 import { runPushEnableHangTests } from "./push-enable-hang.test.ts";
+import { runBrevoKeepaliveTests } from "./brevo-keepalive.test.ts";
 import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.ts";
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
@@ -1112,6 +1113,8 @@ await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month b
 await runTest("push enable hang (a blocked browser resolves instantly instead of freezing the settings panel forever)", runPushEnableHangTests);
 
 await runTest("visit contact kind (pharmacy/institution/doctor split is display-only — decision.ts stays pharmacy-blind)", runVisitContactKindTests);
+
+await runTest("brevo failover keepalive (GET /v3/account only — never a send; a rejected key fails loudly)", runBrevoKeepaliveTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
