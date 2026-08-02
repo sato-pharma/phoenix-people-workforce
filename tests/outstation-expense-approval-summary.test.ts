@@ -9,10 +9,13 @@ type Row = Parameters<typeof buildExpenseApprovalEmployeeSummary>[0][number];
 
 function trip(overrides: Partial<Row>): Row {
   return {
+    amWorkload: 0,
     approvedAmount: 1000,
     claimedTotal: 1000,
     date: "2026-06-15T00:00:00.000Z",
     destination: "Alexandria",
+    km: 0,
+    pmWorkload: 0,
     specialist: "Mona Khaled",
     state: "pending",
     tripId: "TRIP-1",
@@ -75,6 +78,26 @@ export function runOutstationExpenseApprovalSummaryTests() {
   assert.ok(
     mona.trips.every((row) => row.specialist === "Mona Khaled"),
     "no other employee's trip may leak into an expanded row",
+  );
+
+  // The expanded row shows distance and declared workload, so those must survive the roll-up
+  // rather than being dropped on the way through it.
+  const detailed = buildExpenseApprovalEmployeeSummary([
+    trip({ amWorkload: 6, km: 518, pmWorkload: 9, tripId: "detail" }),
+  ]);
+  assert.deepEqual(
+    {
+      am: detailed[0].trips[0].amWorkload,
+      km: detailed[0].trips[0].km,
+      pm: detailed[0].trips[0].pmWorkload,
+    },
+    { am: 6, km: 518, pm: 9 },
+    "distance and declared AM/PM workload reach the expanded row intact — the reviewer is reading these to judge whether the trip was real",
+  );
+  assert.equal(
+    detailed[0].trips[0].amWorkload,
+    6,
+    "AM and PM must not be swapped: 6 declared in the morning is not the same claim as 9",
   );
 
   const dated = buildExpenseApprovalEmployeeSummary([
