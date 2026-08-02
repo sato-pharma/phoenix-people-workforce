@@ -3,7 +3,12 @@ import {
   getApprovedExpenseTotalsByHrId,
   summarizePayrollExpenses,
 } from "../src/lib/outstation/expense-metrics.ts";
-import { normalizeApprovedAmount, payableExpenseAmount } from "../src/lib/outstation/payable.ts";
+import {
+  approvedAmountFromDeduction,
+  deductionFromApprovedAmount,
+  normalizeApprovedAmount,
+  payableExpenseAmount,
+} from "../src/lib/outstation/payable.ts";
 import type { PayrollExpenseApproval } from "../src/lib/payroll/types.ts";
 
 function approval(overrides: Partial<PayrollExpenseApproval>): PayrollExpenseApproval {
@@ -96,6 +101,79 @@ export function runOutstationApprovedAmountTests() {
     normalizeApprovedAmount(-5, 2000),
     0,
     "a negative is not a payable amount and the column's check constraint rejects it, so it clamps instead of failing the whole batched save",
+  );
+
+  // --- the Deduction field: typing a cut and typing a payable must stay the same decision ---
+
+  assert.equal(
+    approvedAmountFromDeduction(2000, 500),
+    1500,
+    "deducting 500 from a 2,000 claim approves 1,500 — this is the whole point of the field",
+  );
+  assert.equal(
+    approvedAmountFromDeduction(2000, 0),
+    2000,
+    "a zero deduction approves the claim untouched, so opening a trip and typing nothing changes nothing",
+  );
+  assert.equal(
+    deductionFromApprovedAmount(2000, 1500),
+    500,
+    "the deduction shown for an already-reduced row is the gap, so reopening a saved trip shows what was actually cut",
+  );
+  assert.equal(
+    deductionFromApprovedAmount(2000, 2000),
+    0,
+    "an unadjusted row shows a zero deduction rather than a blank or a NaN",
+  );
+
+  // The pair must be exact complements, or the two inputs drift and the panel shows an equation
+  // that does not add up.
+  for (const [claimed, cut] of [[2000, 500], [905, 905], [1234.56, 34.56], [0, 100]] as const) {
+    const approved = approvedAmountFromDeduction(claimed, cut);
+    assert.equal(
+      deductionFromApprovedAmount(claimed, approved) + approved,
+      claimed === 0 ? 0 : claimed,
+      `claimed − deduction must equal approved for ${claimed}/${cut}`,
+    );
+  }
+
+  assert.equal(
+    approvedAmountFromDeduction(2000, 5000),
+    0,
+    "a deduction larger than the claim floors the payable at zero instead of paying a negative amount",
+  );
+  assert.equal(
+    approvedAmountFromDeduction(2000, -100),
+    2000,
+    "a negative deduction is not a deduction — it must never inflate a claim above what the employee asked for",
+  );
+  assert.equal(
+    deductionFromApprovedAmount(2000, 2500),
+    0,
+    "approving above the claim reports no deduction rather than a negative one",
+  );
+  assert.equal(
+    approvedAmountFromDeduction(2000, Number.NaN),
+    2000,
+    "a half-typed or cleared deduction box must not silently zero somebody's payable amount",
+  );
+  assert.equal(
+    approvedAmountFromDeduction(1000.5, 0.25),
+    1000.25,
+    "piastres survive the round-trip — the field is currency, not integers",
+  );
+
+  // The Deduction field only ever produces values `normalizeApprovedAmount` already understood,
+  // so it cannot widen what reaches the database.
+  assert.equal(
+    normalizeApprovedAmount(approvedAmountFromDeduction(2000, 0), 2000),
+    null,
+    "typing 0 into Deduction stores null (never adjusted), not a redundant copy of the claim",
+  );
+  assert.equal(
+    normalizeApprovedAmount(approvedAmountFromDeduction(2000, 2000), 2000),
+    0,
+    "deducting the entire claim stores a real zero, which payroll pays as nothing",
   );
 
   // --- the payroll totals that actually move money ---
