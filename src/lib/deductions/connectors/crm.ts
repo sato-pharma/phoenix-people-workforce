@@ -107,7 +107,27 @@ export function detectSuspectDatesFromCounts(countByDate: Map<string, number>): 
   // Robust to weekly-off days: they are a minority of the month (5 Fridays in
   // 31 days), so the month-wide median still lands on a normal working day.
   const monthBaseline = median([...countByDate.values()]);
+
+  // TWO DIFFERENT RATIOS, DELIBERATELY. They answer different questions and moving
+  // them together breaks one of the two cases below.
+  //
+  // workingDayFloor asks "is this weekday a working day at all?" — used on the
+  // weekday's PEAK to tell a depressed working day (Thursday, peak 450) from a
+  // genuine day off (Friday, peak 8). Raising it to 0.6 would put Thursday's peak
+  // under the floor, cancel its month fallback, and un-flag 2026-07-09 / 07-16.
   const workingDayFloor = monthBaseline * 0.5;
+  // SUSPECT_RATIO asks "is THIS day's volume a data gap?" Widened from 0.5 to 0.6 so
+  // 2026-07-30 registers: 450 visits against an 802 baseline is 56%, with 73 of ~80
+  // reps still logging — near-normal participation at half the volume, which is a
+  // company-wide half day, not 13 reps independently skipping work.
+  //
+  // Calibrated against four months of production rather than fitted to one day.
+  // Newly suspect at 0.6 vs 0.5: April 0, May 0, June 0, July exactly one (07-30).
+  // There is a real gap in this company's distribution between a normal day and an
+  // anomalous one, so the wider ratio costs nothing elsewhere. Over-suspicion only
+  // ever REMOVES deduction days, which is the safe direction the seeding note below
+  // already argues for.
+  const SUSPECT_RATIO = 0.6;
 
   const suspect = new Set<string>();
   for (const [date, count] of countByDate) {
@@ -119,7 +139,7 @@ export function detectSuspectDatesFromCounts(countByDate: Map<string, number>): 
     // working weekday whose own median has been dragged under by the anomaly.
     const weekdayIsSelfDefeating = weekdayBaseline < workingDayFloor && weekdayPeak >= workingDayFloor;
     const baseline = weekdayIsSelfDefeating ? monthBaseline : weekdayBaseline;
-    if (baseline >= 100 && count < baseline * 0.5) suspect.add(date);
+    if (baseline >= 100 && count < baseline * SUSPECT_RATIO) suspect.add(date);
   }
   return suspect;
 }

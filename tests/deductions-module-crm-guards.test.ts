@@ -97,6 +97,10 @@ export async function runDeductionsModuleCrmGuardsTests(): Promise<void> {
       suspect.has("2026-07-16"),
       "2026-07-16 ran at 363 visits, under half the month baseline, and must be suspect",
     );
+    assert.ok(
+      suspect.has("2026-07-30"),
+      "2026-07-30 ran at 450 visits — 56% of the 802 baseline, with 73 of ~80 reps still logging. Near-normal participation at half the volume is a company-wide half day, not 13 reps independently skipping work. It sat just above the old 0.5 ratio and charged 6,241.93 EGP",
+    );
 
     // The weekly-off protection must survive the fallback. Fridays run 3-8 all
     // month with a PEAK of 8 — never reaching working-day volume — so they keep
