@@ -1776,14 +1776,20 @@ function RecommendationsPanel({
   onRefresh,
   onSaveDecision,
   report,
+  showPayrollRecommendations,
 }: {
   isLoading: boolean;
   isSavingDecisionKey: string | null;
   onRefresh: (auditFinalReportView?: boolean) => void;
   onSaveDecision: (recommendation: FieldWorkforceRecommendation, status: FieldWorkforceDecisionStatus, note: string, reason: FieldWorkforceDecisionReason | "") => void;
   report: FieldWorkforceRecommendationsReport | null;
+  showPayrollRecommendations: boolean;
 }) {
   const [recommendationTab, setRecommendationTab] = useState<"final" | "leave" | "payroll">("leave");
+  // Payroll recommendations are hidden for viewers without payroll standing (today: the SFE
+  // Manager, whose remit is sales and CRM). Defaulting the tab away from "payroll" too, so a
+  // hidden tab can never be the active one.
+  const visibleRecommendationTab = !showPayrollRecommendations && recommendationTab === "payroll" ? "leave" : recommendationTab;
 
   if (!report) {
     return (
@@ -1806,16 +1812,16 @@ function RecommendationsPanel({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
         <div className="flex flex-wrap gap-2">
-          {([
+          {(([
             ["leave", "Leave Recommendations"],
             ["payroll", "Payroll Recommendations"],
             ["final", "Final Actions"],
-          ] as const).map(([id, label]) => (
+          ] as const).filter(([id]) => showPayrollRecommendations || id !== "payroll")).map(([id, label]) => (
             <button
-              aria-pressed={recommendationTab === id}
+              aria-pressed={visibleRecommendationTab === id}
               className={cn(
                 "rounded-xl px-3 py-2 text-xs font-black transition",
-                recommendationTab === id ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700",
+                visibleRecommendationTab === id ? "bg-slate-950 text-white" : "bg-white text-slate-600 hover:bg-orange-50 hover:text-orange-700",
               )}
               key={id}
               type="button"
@@ -1828,7 +1834,7 @@ function RecommendationsPanel({
             </button>
           ))}
         </div>
-        <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={() => onRefresh(recommendationTab === "final")}>
+        <Button className="gap-2" disabled={isLoading} type="button" variant="secondary" onClick={() => onRefresh(visibleRecommendationTab === "final")}>
           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Refresh
         </Button>
@@ -1843,26 +1849,26 @@ function RecommendationsPanel({
           <p>{report.integrationStatus.payrollAmountMessage}</p>
         </AdminCallout>
       </div>
-      {recommendationTab === "leave" ? (
+      {visibleRecommendationTab === "leave" ? (
         <RecommendationRows
           isSavingDecisionKey={isSavingDecisionKey}
           recommendations={report.leaveRecommendations}
           onSaveDecision={onSaveDecision}
         />
       ) : null}
-      {recommendationTab === "payroll" ? (
+      {visibleRecommendationTab === "payroll" ? (
         <RecommendationRows
           isSavingDecisionKey={isSavingDecisionKey}
           recommendations={report.payrollRecommendations}
           onSaveDecision={onSaveDecision}
         />
       ) : null}
-      {recommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} /> : null}
+      {visibleRecommendationTab === "final" ? <FinalActionsTable actions={report.finalActions} /> : null}
     </AdminTableShell>
   );
 }
 
-export function FieldWorkforceComplianceWorkspace() {
+export function FieldWorkforceComplianceWorkspace({ showPayrollRecommendations = true }: { showPayrollRecommendations?: boolean } = {}) {
   const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
   const [isSavingDecisionKey, setIsSavingDecisionKey] = useState<string | null>(null);
   const [result, setResult] = useState<FieldWorkforcePreviewResult | null>(null);
@@ -2127,6 +2133,7 @@ export function FieldWorkforceComplianceWorkspace() {
               isLoading={isLoadingRecommendations}
               isSavingDecisionKey={isSavingDecisionKey}
               report={recommendationsReport}
+              showPayrollRecommendations={showPayrollRecommendations}
               onRefresh={() => void loadLiveMirrorRecommendations(liveMirrorMonthKey)}
               onSaveDecision={(recommendation, decisionStatus, hrNote, decisionReason) => void handleSaveDecision(recommendation, decisionStatus, hrNote, decisionReason)}
             />

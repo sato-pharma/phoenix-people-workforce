@@ -561,7 +561,7 @@ export async function getMyApprovalHistory(access: AccessContext): Promise<Histo
   // they live on their own dedicated pages, where the full decided record is shown).
   const NATIVE_HREFS = {
     salary: "/payroll",
-    sales_import: "/sales/queue",
+    sales_import: "/sales/import?tab=approvals",
     marketing_request: "/admin/marketing-requests/inbox",
     payroll_expense: "/admin/outstation/expenses",
   } as const;

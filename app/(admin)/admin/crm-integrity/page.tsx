@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { CrmIntegrityWorkspace } from "@/components/crm-integrity/crm-integrity-workspace";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { getCrmIntegrityData } from "@/lib/crm-integrity/service";
 
 export const runtime = "nodejs";
@@ -32,7 +33,7 @@ export default async function CrmIntegrityPage({
   if (!access.loginId && !access.hrId) redirect("/login");
   // Correlates the same raw CRM mirror the /admin/crm hub reads, plus GPS coordinates -- gated to
   // Super Admin, matching /admin/crm and /admin/double-visit-data-integrity exactly.
-  if (access.role !== "Super Admin") {
+  if (!canUseAdminCrmWorkspace(access)) {
     redirect(resolveLandingPathForRole(access.role));
   }
 

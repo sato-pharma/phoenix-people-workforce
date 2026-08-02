@@ -519,9 +519,9 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-import/commit", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated admin import: persists the previewed Source of Sales upload after server-side validation." }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/sales/monthly-import/cancel", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Discards an abandoned large-file preview by deleting its temporary Storage object; persists no business data." }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/master-workbook/export", permission: { resource: "sales", action: "export" } }),
-  // Sales Queue (/sales/queue, monthly closing-sheet upload) — separate module from
+  // Monthly sales batch approvals (/sales/import?tab=approvals) — separate module from
   // Source of Sales and Weekly Sales above; its own upload template only.
-  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/queue/template", permission: { resource: "sales", action: "import" } }),
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/import/template", permission: { resource: "sales", action: "import" } }),
   // Monthly Sales (Achievement) Dashboard detailed workbook — available to everyone who can
   // already read the dashboard (no extra CEO/Super Admin gate, unlike the SoS BI workbook below).
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/sales/monthly-dashboard/export", permission: { resource: "sales", action: "export" } }),

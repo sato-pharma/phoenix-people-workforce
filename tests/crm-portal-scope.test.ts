@@ -87,10 +87,21 @@ export function runCrmPortalScopeTests() {
   // ── (B) CRM_SCOPE_ALL is constructible in exactly the two admin surfaces ─────
   const adminPage = readFileSync("app/(admin)/admin/crm/page.tsx", "utf8");
   const adminExport = readFileSync("app/api/admin/crm/master-export/route.ts", "utf8");
-  assert.ok(adminPage.includes("CRM_SCOPE_ALL"), "the Super-Admin /admin/crm page constructs the company scope");
-  assert.ok(adminExport.includes("CRM_SCOPE_ALL"), "the Super-Admin admin export constructs the company scope");
-  // The admin export keeps its Super-Admin-only gate — the scoped path must not have loosened it.
-  assert.ok(adminExport.includes('access.role !== "Super Admin"'), "the admin export must stay Super-Admin-only");
+  assert.ok(adminPage.includes("CRM_SCOPE_ALL"), "the admin /admin/crm page constructs the company scope");
+  assert.ok(adminExport.includes("CRM_SCOPE_ALL"), "the admin export constructs the company scope");
+  // The admin export keeps a HARD ROLE GATE in front of the company-wide scope — the scoped path
+  // must not have loosened it. The gate moved from an inline `role !== "Super Admin"` to the shared
+  // canUseAdminCrmWorkspace predicate when the owner granted the SFE Manager the CRM workspace
+  // (2026-08-02); what this guards is that CRM_SCOPE_ALL is never reachable WITHOUT such a gate,
+  // not which roles are on the list. The list itself is asserted in ceo-command-center.test.ts.
+  assert.ok(
+    adminExport.includes("canUseAdminCrmWorkspace(access)"),
+    "the admin export must keep a hard role gate in front of the company-wide CRM scope",
+  );
+  assert.ok(
+    adminPage.includes("canUseAdminCrmWorkspace(access)"),
+    "the admin CRM page must keep a hard role gate in front of the company-wide CRM scope",
+  );
 
   // ── (B) the portal page + export enforce the gate and never expose the panels ─
   const portalPage = readFileSync("app/employee-portals/crm/page.tsx", "utf8");

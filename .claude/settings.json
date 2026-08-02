@@ -134,7 +134,6 @@
       "Bash(gh pr merge --auto*)",
       "Bash(vercel deploy*)",
       "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*",
-      "mcp__45bb6356-8105-4482-9464-25bfd754baec__*",
       "Read(./.env*)",
       "Bash(cat *.env*)",
       "Bash(type *.env*)",

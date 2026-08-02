@@ -88,7 +88,7 @@ Top-level admin/workforce pages:
 - `/reports/vacancies`
 - `/resignations`
 - `/sales`
-- `/sales/queue`
+- `/sales/import?tab=approvals`
 
 Employee-facing pages:
 
@@ -261,7 +261,7 @@ Outstation:
 
 Sales:
 
-1. Open `/sales/queue`.
+1. Open `/sales/import?tab=approvals`.
 2. Upload a monthly closing workbook through `/api/sales/imports/upload`.
 3. Review validation, linkage, warning, and failure summaries.
 4. Approve, reject, replace, or delete queued imports through `/api/sales/imports/[id]/[action]`.

@@ -6,10 +6,28 @@ import { CeoHeroClock } from "@/components/admin/ceo-hero-clock";
 import { CeoHiddenNote } from "@/components/admin/ceo-hidden-note";
 import { cn } from "@/lib/utils";
 
-function getGreeting(hour: number) {
+/** The CEO's own greeting — addressed to him by name, and only ever shown to him. */
+function getCeoGreeting(hour: number) {
   if (hour < 12) return { line: "Good morning, Dr. Anwar —", sub: "Your company is awake and working for you." };
   if (hour < 17) return { line: "Good afternoon, Dr. Anwar —", sub: "Here is everything, exactly the way you like to see it." };
   return { line: "Good evening, Dr. Anwar —", sub: "A strong day. Let's close it well." };
+}
+
+/** Everyone else is greeted by their OWN name, with copy that fits their remit. */
+function getGreeting(hour: number, name: string) {
+  const who = name ? `, ${name}` : "";
+  if (hour < 12) return { line: `Good morning${who} —`, sub: "Here is where sales and the field stand today." };
+  if (hour < 17) return { line: `Good afternoon${who} —`, sub: "Here is where sales and the field stand today." };
+  return { line: `Good evening${who} —`, sub: "A strong day. Let's close it well." };
+}
+
+/**
+ * First name for the greeting. Arabic names here run long ("Khaled Mohamed Ali Bedair"), and the
+ * greeting line must not wrap — the owner's standing rule is no wrapping and no ellipsis — so it
+ * is addressed to the first given name only.
+ */
+function firstName(fullName: string): string {
+  return String(fullName ?? "").trim().split(/\s+/)[0] ?? "";
 }
 
 /**
@@ -23,10 +41,17 @@ export function CeoHeroIdentity({
   fullName,
   roleLabel,
   imageUrl,
+  /**
+   * The CEO's personal hero: his own greeting and the note written for him. Off by default so a
+   * new viewer of this component can never inherit either by accident — the SFE Manager was
+   * being greeted "Good morning, Dr. Anwar" and handed a note addressed to the Chief Executive.
+   */
+  personal = false,
 }: {
   fullName: string;
   roleLabel: string;
   imageUrl?: string | null;
+  personal?: boolean;
 }) {
   const [hour, setHour] = useState<number | null>(null);
   const [imgError, setImgError] = useState(false);
@@ -47,8 +72,13 @@ export function CeoHeroIdentity({
 
   const { line: greetLine, sub: greetSub } =
     hour !== null
-      ? getGreeting(hour)
-      : { line: `Welcome, ${fullName} —`, sub: "Here is everything, exactly the way you like to see it." };
+      ? (personal ? getCeoGreeting(hour) : getGreeting(hour, firstName(fullName)))
+      : {
+          line: `Welcome, ${personal ? fullName : firstName(fullName)} —`,
+          sub: personal
+            ? "Here is everything, exactly the way you like to see it."
+            : "Here is where sales and the field stand today.",
+        };
 
   const showPhoto = Boolean(imageUrl) && !imgError;
 
@@ -81,7 +111,7 @@ export function CeoHeroIdentity({
           {/* Time-aware greeting + hidden note */}
           <div className="flex items-center gap-2.5">
             <p className="text-[15px] font-semibold leading-snug text-slate-100">{greetLine}</p>
-            <CeoHiddenNote />
+            {personal ? <CeoHiddenNote /> : null}
           </div>
 
           {/* Sub-greeting */}
@@ -101,12 +131,30 @@ export function CeoHeroIdentity({
           aria-hidden="true"
           className="pointer-events-none absolute right-[47px] top-0 bottom-[-4%] hidden max-w-[46%] items-end justify-end sm:flex"
         >
+          {/* A warm glow behind the subject so a dark studio portrait separates from the dark
+              hero instead of dissolving into it. Non-personal heroes only — the CEO's banner
+              is deliberately left exactly as it was. */}
+          {!personal ? (
+            <span
+              aria-hidden="true"
+              className="absolute bottom-0 right-[6%] h-[78%] w-[70%] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(249,115,22,0.20)_0%,rgba(249,115,22,0.07)_45%,transparent_72%)] blur-2xl"
+            />
+          ) : null}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imageUrl!}
             alt=""
             onError={() => setImgError(true)}
-            className="h-full w-auto max-w-none object-contain object-bottom"
+            className={cn(
+              "relative h-full w-auto max-w-none object-contain object-bottom",
+              // In-app "polish": a contrast/saturation lift so the portrait matches the hero's
+              // amber grade, and a two-axis fade. The LEFT fade matters most — this asset is a
+              // rectangular photo with its own dark studio background, so without it the frame
+              // ends on a visible vertical seam instead of dissolving into the hero. This is a
+              // CSS grade, not a retouch of the file.
+              !personal &&
+                "[filter:contrast(1.07)_saturate(1.1)_brightness(1.05)] [mask-image:linear-gradient(to_right,transparent_0%,rgba(0,0,0,0.35)_10%,#000_34%),linear-gradient(to_bottom,#000_0%,#000_80%,rgba(0,0,0,0.5)_92%,transparent_100%)] [mask-composite:intersect] [-webkit-mask-composite:source-in]",
+            )}
           />
         </div>
       ) : null}

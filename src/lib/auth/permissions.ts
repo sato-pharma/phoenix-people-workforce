@@ -740,10 +740,20 @@ const defaultPermissionMatrix: PermissionMap = {
     report_it: ["read", "create"],
   },
   "SFE Manager": {
-    direct_orders: ["read", "export"],
+    // `approve` added 2026-08-02 on owner instruction, alongside the Direct Orders Approvals
+    // sidebar entry. This is APPROVAL AUTHORITY over direct orders, not just visibility — the
+    // page carries no guard of its own, so showing it without this grant would only produce
+    // buttons that 403.
+    direct_orders: ["read", "export", "approve"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     overview: ["read"],
+    // Read-only org structure (2026-08-02): needed for /organogram. Grants no write anywhere —
+    // seat/vacancy mutations are gated separately.
+    organogram: ["read"],
+    // Field Workforce Compliance gates on hr_calendar:read. Read-only: it is the working-day
+    // calendar the compliance view is computed against, not an HR authoring grant.
+    hr_calendar: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

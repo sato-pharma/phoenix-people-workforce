@@ -422,7 +422,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
       <AdminCallout tone="warning">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
         <div>
-          <p className="font-semibold">Sales Queue uploads have been retired</p>
+          <p className="font-semibold">Uploads on this tab have been retired</p>
           <p className="mt-1 leading-6">
             Monthly Closing rep achievement now reads live Source of Sales data, not sheets uploaded here,
             so the upload form here is disabled. Existing sheets below stay viewable for reference. To bring
@@ -503,7 +503,7 @@ export function SalesQueue({ initialData, initialError }: Props) {
                   Line
                   <a
                     className="inline-flex items-center gap-1 text-[11px] font-bold normal-case tracking-normal text-[#F97316] hover:underline"
-                    href="/api/sales/queue/template"
+                    href="/api/sales/import/template"
                   >
                     <Download className="h-3 w-3" />
                     Download template

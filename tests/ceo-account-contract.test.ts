@@ -314,6 +314,19 @@ export async function runCeoAccountContractTests() {
     "CEO probation route must pass executive read-only mode",
   );
   assert.match(probationTrackerSource, /Executive read-only/);
-  assert.match(sidebarSource, /currentRole === "CEO" \? resolveLandingPathForRole\(currentRole\) : navigationHomePathByMode\[mode\]/);
+  // The CEO's sidebar logo must return them to the CEO Command Center, not the admin shell's
+  // generic /admin/access home. This was a hardcoded `currentRole === "CEO"` check; it is now a
+  // role set so the SFE Manager gets the same treatment (his landing page is his home too), but
+  // the CEO guarantee is unchanged and still asserted here.
+  assert.match(
+    sidebarSource,
+    /const commandCenterHomeRoles = new Set<PhoenixRole>\(\[[^\]]*"CEO"[^\]]*\]\)/,
+    "CEO must be in the sidebar command-center home roles",
+  );
+  assert.match(
+    sidebarSource,
+    /commandCenterHomeRoles\.has\(currentRole as PhoenixRole\)\s*\n?\s*\?\s*resolveLandingPathForRole\(currentRole\)\s*\n?\s*:\s*navigationHomePathByMode\[mode\]/,
+    "sidebar home must resolve through resolveLandingPathForRole for command-center roles and fall back to the shell home otherwise",
+  );
   assert.match(sidebarSource, /<SidebarBrand currentRole=\{currentRole\} mode=\{navigationMode\}/);
 }

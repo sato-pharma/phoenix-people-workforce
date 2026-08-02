@@ -15,10 +15,12 @@ import {
   type SalesDistributorOption,
 } from "@/lib/sales/monthly-distributor-import";
 import { listMappingReferences, listNormalizerDistributors, type MappingReferences } from "@/lib/sales/normalizer/service";
+import { listSalesQueue } from "@/lib/sales/service";
+import type { SalesHistoryRow } from "@/lib/sales/types";
 
 export const dynamic = "force-dynamic";
 
-const TAB_KEYS = ["coverage", "dashboard", "mapping", "monthly-sales", "products", "sheets"] as const;
+const TAB_KEYS = ["approvals", "coverage", "dashboard", "mapping", "monthly-sales", "products", "sheets"] as const;
 type SalesImportTab = (typeof TAB_KEYS)[number];
 
 export default async function SalesImportPage({ searchParams }: { searchParams: Promise<{ tab?: string; search?: string }> }) {
@@ -46,6 +48,16 @@ export default async function SalesImportPage({ searchParams }: { searchParams: 
   let initialProducts: SourceOfSalesProduct[] = [];
   let mappingReferences: MappingReferences = { bricks: [], products: [] };
   let initialError: string | null = null;
+  // Batch approvals — the retired Sales Queue's workflow. Loaded separately from the block below
+  // so a queue failure degrades to an error inside the Approvals tab instead of blanking the whole
+  // workspace, which is what the old dedicated page did.
+  let initialQueue: SalesHistoryRow[] | null = null;
+  let initialQueueError: string | null = null;
+  try {
+    initialQueue = await listSalesQueue(accessContext);
+  } catch (error) {
+    initialQueueError = error instanceof Error ? error.message : "Failed to load sales approvals.";
+  }
 
   try {
     [distributors, initialBatches, initialProducts, initialDashboard, mappingReferences] = await Promise.all([
@@ -78,6 +90,8 @@ export default async function SalesImportPage({ searchParams }: { searchParams: 
       initialError={initialError}
       initialProducts={initialProducts}
       initialProductsSearch={initialProductsSearch}
+      initialQueue={initialQueue}
+      initialQueueError={initialQueueError}
       initialTab={initialTab}
       mappingReferences={mappingReferences}
       profiledDistributorCodes={listNormalizerDistributors().map((distributor) => distributor.code)}

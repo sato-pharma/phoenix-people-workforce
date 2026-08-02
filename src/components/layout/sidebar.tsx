@@ -36,7 +36,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  ArrowUpRight,
   ChevronRight,
   GripVertical,
   PanelLeftClose,
@@ -382,11 +381,17 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
 }
 
 // ── A single navigation entry ────────────────────────────────────────────────
-// `standalone` marks an item that IS its section (a section that collapsed to exactly
-// one visible entry — see the single-item branch in SortableSectionBlock below). It
-// skips the redundant section-header-plus-one-tab chrome and instead renders directly
-// as a button, with a tinted icon box + a small "opens a hub" arrow so it still reads
-// as different from an ordinary single-destination link.
+/**
+ * The single tab that is styled above all others — the SFE Manager's own overview. Everything
+ * else in the sidebar renders in one uniform style; this one carries a standing gradient, a warm
+ * ring and a heavier label so it reads as the master tab even when you are elsewhere.
+ */
+const PREMIUM_NAV_HREF = "/admin/sfe-command-center";
+
+// One row style for every tab. A section that collapses to a single visible entry still skips
+// the redundant header-plus-one-tab chrome (see SortableSectionBlock below), but it no longer
+// renders differently: the tinted icon box and the "opens a hub" arrow were removed on owner
+// instruction (2026-08-02) so hub buttons and ordinary links read as one family.
 function NavRow({
   active,
   dark,
@@ -397,7 +402,6 @@ function NavRow({
   pinned = false,
   onTogglePin,
   rail,
-  standalone = false,
 }: {
   active: boolean;
   dark: boolean;
@@ -408,9 +412,11 @@ function NavRow({
   pinned?: boolean;
   onTogglePin?: () => void;
   rail: boolean;
-  standalone?: boolean;
 }) {
   const Icon = item.icon;
+  // The one tab that outranks the rest. Keyed on href rather than a nav-config flag so the
+  // styling cannot be handed to a second "master" tab by editing a list.
+  const premium = item.href === PREMIUM_NAV_HREF;
 
   return (
     <div
@@ -426,13 +432,20 @@ function NavRow({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F97316]/60 focus-visible:ring-offset-2",
           dark ? "focus-visible:ring-offset-slate-900" : "focus-visible:ring-offset-white",
           rail ? "justify-center px-0 py-2.5" : "gap-3 px-2.5 py-2.5",
-          dark
+          // Premium row: the owner's own overview outranks every other tab, so it carries a
+          // standing gradient + ring instead of only lighting up when active. Deliberately warmer
+          // and heavier than the active state so it still reads as "the top one" when you are
+          // somewhere else in the app.
+          premium && (dark
+            ? "bg-[linear-gradient(90deg,rgba(249,115,22,0.18)_0%,rgba(249,115,22,0.05)_60%,transparent_100%)] text-white ring-1 ring-[#F97316]/45 shadow-[0_6px_20px_rgba(249,115,22,0.16),inset_0_1px_0_rgba(255,255,255,0.08)] hover:ring-[#F97316]/70"
+            : "bg-[linear-gradient(90deg,#FFF4E9_0%,#FFFBF7_70%,#FFFFFF_100%)] text-[#0F172A] ring-1 ring-[#F9A85E]/60 shadow-[0_6px_18px_rgba(249,115,22,0.13)] hover:ring-[#F97316]/70"),
+          !premium && (dark
             ? active
               ? "bg-white/[0.08] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#F97316]/30"
               : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
             : active
               ? "bg-white text-[#0F172A] shadow-[0_1px_2px_rgba(15,23,42,0.06)] ring-1 ring-[#F4D9BE]"
-              : "text-[#5A6678] hover:bg-white hover:text-[#0F172A] hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]",
+              : "text-[#5A6678] hover:bg-white hover:text-[#0F172A] hover:shadow-[0_1px_2px_rgba(15,23,42,0.05)]"),
         )}
         href={item.href}
         onClick={onActivate}
@@ -441,16 +454,16 @@ function NavRow({
         <span
           className={cn(
             "relative flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
-            dark
-              ? active
-                ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
-                : standalone
-                  ? "bg-orange-500/15 text-[#F8B56B] ring-1 ring-orange-400/30 group-hover:ring-orange-400/50"
+            // `standalone` no longer changes the icon: hub buttons and ordinary links render
+            // identically, so every tab reads as one family. Only `premium` and `active` differ.
+            premium
+              ? "bg-[linear-gradient(180deg,#FDBA74_0%,#F97316_55%,#EA580C_100%)] text-white shadow-[0_10px_22px_rgba(249,115,22,0.45)] ring-1 ring-white/25"
+              : dark
+                ? active
+                  ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
                   : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
-              : active
-                ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
-                : standalone
-                  ? "bg-orange-50 text-[#F97316] ring-1 ring-orange-200 group-hover:ring-orange-300"
+                : active
+                  ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
                   : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
           )}
         >
@@ -459,13 +472,14 @@ function NavRow({
         </span>
         {!rail && (
           <span className={cn("flex min-w-0 flex-1 items-center gap-1.5", onTogglePin && "pr-6")}>
-            <span className="min-w-0 flex-1 truncate tracking-[-0.01em]">{item.label}</span>
-            {standalone && (
-              <ArrowUpRight
-                aria-hidden="true"
-                className={cn("h-3.5 w-3.5 shrink-0", dark ? "text-orange-400/70" : "text-orange-500/70")}
-              />
-            )}
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate tracking-[-0.01em]",
+                premium && "font-black tracking-[0.005em]",
+              )}
+            >
+              {item.label}
+            </span>
             <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
           </span>
         )}
@@ -599,7 +613,9 @@ function SortableSectionBlock({
   };
 
   const hasActive = section.items.some((item) => item.href === activeHref);
-  const collapsed = !query && collapsedSectionIds.has(section.id) && !hasActive;
+  // `section.label &&` — a headerless section has no toggle to reopen it, so a collapsed flag
+  // left in localStorage from before the label was removed would hide its items permanently.
+  const collapsed = Boolean(section.label) && !query && collapsedSectionIds.has(section.id) && !hasActive;
   const sectionContentId = `${navInstanceId}-${section.id}-items`;
 
   const orderedItems = useMemo(
@@ -620,7 +636,7 @@ function SortableSectionBlock({
   // A section that resolves to exactly one visible item (e.g. a module hub like
   // "Admin Tools") IS that item — a collapsible header repeating the same label
   // above a single tab reads as a redundant extra click. Skip the header/collapse
-  // chrome entirely and render just the item, styled via NavRow's `standalone`
+  // chrome entirely and render just the item.
   // treatment so it still reads as different from an ordinary single-destination
   // link. Section-level drag-to-reorder still works via the same overlay-on-hover
   // grip handle SortableNavRow uses for items.
@@ -647,7 +663,6 @@ function SortableSectionBlock({
           onTogglePin={() => onTogglePin(soleItem.href)}
           pinned={pinnedSet.has(soleItem.href)}
           rail={false}
-          standalone
         />
       </div>
     );
@@ -663,7 +678,10 @@ function SortableSectionBlock({
           isAdmin ? "bg-[#000000]" : "bg-white",
         )}
       >
-        <div className="group/sec-hdr flex items-center">
+        {/* A section with no label renders no header at all. An empty label would otherwise
+            leave a blank heading bar — a chevron and a drag grip above nothing — which reads
+            worse than the title it replaced. The items still render below. */}
+        <div className={cn("group/sec-hdr flex items-center", !section.label && "hidden")}>
           {/* Section drag handle (admin only) */}
           {isAdmin && !dragDisabled && (
             <button
@@ -1152,6 +1170,15 @@ function SidebarNav({
 }
 
 // ── Brand / logo header ──────────────────────────────────────────────────────
+/**
+ * Roles whose sidebar logo returns them to their own command center rather than the admin
+ * shell's generic home. `navigationHomePathByMode.admin` is `/admin/access`, and that page
+ * hard-asserts `admin_access:read` — a grant neither of these roles holds — so sending them
+ * there renders an error card instead of a home page. Their landing page IS their home.
+ * Keep this list in sync with the dedicated command-center entries in resolveLandingPathForRole.
+ */
+const commandCenterHomeRoles = new Set<PhoenixRole>(["CEO", "SFE Manager"]);
+
 function SidebarBrand({
   currentRole,
   mode = "admin",
@@ -1163,7 +1190,9 @@ function SidebarBrand({
   onNavigate?: () => void;
   rail?: boolean;
 }) {
-  const homePath = currentRole === "CEO" ? resolveLandingPathForRole(currentRole) : navigationHomePathByMode[mode];
+  const homePath = commandCenterHomeRoles.has(currentRole as PhoenixRole)
+    ? resolveLandingPathForRole(currentRole)
+    : navigationHomePathByMode[mode];
   const isAdmin = mode === "admin";
   const subtitle = isAdmin ? `${systemIdentity.productName} · Admin` : systemUiText.sidebar.employeeLogoSubtitle;
 

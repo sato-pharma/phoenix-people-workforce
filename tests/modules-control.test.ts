@@ -71,23 +71,27 @@ export function runModulesControlTests() {
     assert.equal(permissionMatrix[role].module_control?.includes("update") ?? false, false, `${role} must not update Modules Control`);
   }
 
-  // Sales Upload moved behind the consolidated "Source of Sales" sidebar button (system-
-  // navigation.ts) and is no longer individually assignable in Modules Control — the standalone
-  // "Sales Queue" module (never collapsed) exercises the exact same sales:import-required
-  // blocking path Medical Rep still lacks.
-  const salesQueue = catalog.find((module) => module.label === "Sales Queue" && module.navigationMode === "admin");
-  assert.ok(salesQueue, "Sales Queue module exists");
+  // Modules Control must refuse to assign a module whose required permission the target's role
+  // does not hold. This used to be exercised via "Sales Queue" (sales:import); that module was
+  // retired 2026-08-02 and its approval workflow moved into the Sales Import workspace, leaving no
+  // admin sidebar module requiring sales:import at all. "Direct Orders Approvals"
+  // (direct_orders:approve) is the equivalent fixture — an uncollapsed admin module carrying a
+  // permission Medical Rep still lacks — so the blocking path stays covered.
+  const gatedModule = catalog.find(
+    (module) => module.label === "Direct Orders Approvals" && module.navigationMode === "admin",
+  );
+  assert.ok(gatedModule, "Direct Orders Approvals module exists");
   assert.throws(
     () => validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,
-      moduleIds: [salesQueue!.moduleId],
+      moduleIds: [gatedModule!.moduleId],
       navigationMode: "admin",
       people: [person()],
       targetKey: "a-9",
       targetType: "user",
     }),
-    /Blocked: A-9 is Medical Rep\. Sales Queue requires sales:import\./,
+    /Blocked: A-9 is Medical Rep\. Direct Orders Approvals requires direct_orders:approve\./,
     "invalid drag/drop is blocked before any database write can be attempted",
   );
 
@@ -156,7 +160,7 @@ export function runModulesControlTests() {
     () => validateModuleAssignmentList({
       catalog,
       matrix: permissionMatrix,
-      moduleIds: [salesQueue!.moduleId],
+      moduleIds: [gatedModule!.moduleId],
       navigationMode: "admin",
       people: [
         person({ hrId: "SA-1", loginId: "SA-1", role: "Super Admin" }),

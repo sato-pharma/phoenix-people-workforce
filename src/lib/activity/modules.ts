@@ -83,7 +83,7 @@ const MODULE_RULES: ModuleRule[] = [
   { prefix: "/sales/monthly-closing", key: "monthly_closing", label: "Monthly Closing" },
   { prefix: "/sales/customer-directory", key: "customer_directory", label: "Customer Directory" },
   { prefix: "/sales/customer-mapping", key: "customer_mapping", label: "Customer Mapping" },
-  { prefix: "/sales/queue", key: "monthly_sales", label: "Monthly Sales" },
+  { prefix: "/sales/import", key: "monthly_sales", label: "Monthly Sales" },
   { prefix: "/sales", key: "sales", label: "Sales Dashboard" },
 
   // ── Coaching ──────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ const adminPages = [
   ["/resignations", ["Resignations"]],
   ["/probation", ["Probation"]],
   ["/sales", ["Sales"]],
-  ["/sales/queue", ["Sales"]],
+  ["/sales/import", ["Sales"]],
   ["/payroll", ["Payroll"]],
   ["/admin/outstation/expenses", ["Expenses"]],
   ["/admin/outstation/expenses/dashboard", ["Expenses"]],

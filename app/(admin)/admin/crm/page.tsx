@@ -20,6 +20,7 @@ import { addDaysIso, todayIso } from "@/lib/crm/dates";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getDoubleVisitRecoveredChains } from "@/lib/double-visit-analytics/service";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import type { VisitsSyncRun } from "@/lib/visits-report/types";
 
 export const runtime = "nodejs";
@@ -62,7 +63,7 @@ export default async function CrmHubPage({
   const access = await resolveAccessContextFromPage();
   if (!access.loginId && !access.hrId) redirect("/login");
   // Raw company-wide CRM mirror — Super Admin only, matching every CRM sub-tool.
-  if (access.role !== "Super Admin") {
+  if (!canUseAdminCrmWorkspace(access)) {
     redirect(resolveLandingPathForRole(access.role));
   }
 

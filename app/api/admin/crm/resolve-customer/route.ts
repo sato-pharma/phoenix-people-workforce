@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { setCrmCustomerBrickResolution, type CrmCustomerResolutionAction } from "@/lib/crm/customer-brick";
 
 export const runtime = "nodejs";
@@ -19,9 +20,9 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    if (access.role !== "Super Admin") {
+    if (!canUseAdminCrmWorkspace(access)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Only Super Admin can resolve CRM customer mappings.", success: false },
+        { error: "forbidden", message: "This action is limited to the admin CRM workspace roles.", success: false },
         { status: 403 },
       );
     }

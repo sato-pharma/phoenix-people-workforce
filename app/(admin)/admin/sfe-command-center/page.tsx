@@ -42,11 +42,23 @@ async function SfeCommandContent({ access }: { access: Awaited<ReturnType<typeof
     );
   }
 
-  const welcome = { fullName: viewer.displayName, roleLabel: "SFE Manager", hrId: access.hrId, imageUrl: null };
+  // Portrait for the identity banner. Same convention as the CEO hero: a transparent-background
+  // PNG under public/people. The hero hides the portrait on load error (CeoHeroIdentity's
+  // onError), so the page renders correctly whether or not the file is present — dropping the
+  // asset in is all that is needed to light it up.
+  const welcome = {
+    fullName: viewer.displayName,
+    roleLabel: "SFE Manager",
+    hrId: access.hrId,
+    // NOT a "-transparent" asset like the CEO's: this photo carries its own dark studio
+    // background, which is why the hero masks its left and bottom edges rather than just
+    // dropping it in.
+    imageUrl: "/people/sfe-khaled-bedair.png",
+  };
   return (
     <div className="min-w-0 max-w-full overflow-x-hidden">
       <CeoCommandCenter data={result.data} welcome={welcome} access={access} variant="sfe" />
-      <Suspense fallback={<CeoPhaseBSkeleton />}>
+      <Suspense fallback={<CeoPhaseBSkeleton variant="sfe" />}>
         <CeoPhaseBWidgets access={access} sosPrefetched={result.data.sos} adminSignalsPrefetched={result.data.adminSignals} variant="sfe" />
       </Suspense>
     </div>
