@@ -191,12 +191,15 @@ type WorkloadEvidence = {
 };
 type TripEvidenceState = { status: "loading" | "done" | "error"; data?: WorkloadEvidence; error?: string };
 
+// Tones for RepVisitWorkload.matchStatus — the only statuses `/api/outstation/visit-workload`
+// can return (matched | partial | no_activity | unmapped). "unmapped" means the rep has no CRM
+// identity mapping, so there is no visit evidence either way — that must read as a warning,
+// never a neutral badge.
 const workloadStatusTone: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   matched: "success",
-  manual: "neutral",
   no_activity: "danger",
   partial: "warning",
-  stale_import: "warning",
+  unmapped: "warning",
 };
 
 // Trip dates arrive as ISO datetimes (e.g. 2026-06-14T00:00:00.000Z); the evidence
