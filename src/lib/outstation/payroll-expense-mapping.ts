@@ -57,6 +57,17 @@ function outstationExpenseTotal(input: {
   return input.claimedTotalAmount > 0 ? input.claimedTotalAmount : input.expectedTotalAmount;
 }
 
+/** Reads one of the doctor/pharmacy/institution totals out of a stored workload snapshot.
+ * Pre-pharmacy-split snapshots don't carry them — undefined, never 0, so "not recorded" stays
+ * distinguishable from "recorded zero" on every display surface. */
+function snapshotKindCount(
+  snapshot: OutstationExpenseRequest["workloadEvidenceSnapshot"],
+  key: "doctorVisits" | "institutionVisits" | "pharmacyVisits",
+): number | undefined {
+  const value = (snapshot as Record<string, unknown> | null | undefined)?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 export function mapOutstationRequestToPayrollExpenseRecord(
   request: OutstationExpenseRequest,
   options: {
@@ -81,17 +92,20 @@ export function mapOutstationRequestToPayrollExpenseRecord(
     amWorkload: request.amWorkload ?? 0,
     date: tripStartDate,
     description: request.notes ?? request.approvalReason ?? "Approved outstation expense",
+    doctorVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "doctorVisits"),
     from: request.residenceCity ?? request.residenceArea ?? "Residence",
     hr: "Approved",
     hrApproved: true,
     hrComment: options.hrComment ?? "Approved from outstation workflow.",
     hrId: request.employeeHrId,
     hrNotes: request.approvalReason,
+    institutionVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "institutionVisits"),
     km: request.distanceFromResidenceKm ?? 0,
     location: request.toLabel ?? request.toCity ?? request.toArea ?? "",
     meetingAmount: request.meetingAmount ?? (request.expenseType === "meeting" ? total : 0),
     open: "",
     other: request.otherAmount ?? 0,
+    pharmacyVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "pharmacyVisits"),
     pmWorkload: request.pmWorkload ?? 0,
     reportId: options.reportId ?? undefined,
     requestType: "Outstation",

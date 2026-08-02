@@ -540,6 +540,7 @@ import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attri
 
 import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
 import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
+import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1109,6 +1110,8 @@ await runTest("biometric passkey login (terminal-employment gate, replay counter
 await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month bucketing, primary-rep model, single-source door)", runSfeDoctorCoverageTests);
 
 await runTest("push enable hang (a blocked browser resolves instantly instead of freezing the settings panel forever)", runPushEnableHangTests);
+
+await runTest("visit contact kind (pharmacy/institution/doctor split is display-only — decision.ts stays pharmacy-blind)", runVisitContactKindTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

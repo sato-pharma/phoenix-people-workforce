@@ -35,14 +35,22 @@ export function mergeWorkloadEvidence(
     matchedDates: repWorkload.matchedDates,
     missingDates: repWorkload.idleDates,
     // Compact projection — the stored snapshot must stay small, so the per-visit and
-    // per-check-in detail the workload panel renders is deliberately not persisted.
+    // per-check-in detail the workload panel renders is deliberately not persisted. The
+    // doctor/pharmacy/institution split (3 ints/day) is small enough to keep: it lets the
+    // portal dashboard show the mix without a live CRM re-read.
     dateBreakdown: repWorkload.dateBreakdown.map((day) => ({
       am: day.am,
       date: day.date,
+      doctor: day.doctor,
       evidenceRows: day.total,
+      institution: day.institution,
+      pharmacy: day.pharmacy,
       pm: day.pm,
       total: day.total,
     })),
+    doctorVisits: repWorkload.doctorVisits,
+    institutionVisits: repWorkload.institutionVisits,
+    pharmacyVisits: repWorkload.pharmacyVisits,
     sourceLabel: `${repWorkload.sourceLabel} Campaign/regular counts remain from: ${doubleVisitEvidence.sourceLabel}`,
     // campaignVisits, regularVisits, source and importId deliberately fall through from
     // doubleVisitEvidence via the spread above. Do not "unify" them onto the CRM read.

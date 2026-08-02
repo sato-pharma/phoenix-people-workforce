@@ -91,15 +91,21 @@ export type ExpenseTripRecord = {
   amWorkload: number;
   date: string;
   description: string;
+  /** Doctor/pharmacy/institution split of the trip's REGULAR CRM visits — display-only context,
+   * present only for Phoenix-submitted outstation requests whose workload snapshot recorded it
+   * (post pharmacy-split change). Excel-imported historical rows never carry these. */
+  doctorVisits?: number;
   hrId?: string | null;
   from: string;
   hr: string;
   hrNotes: string;
+  institutionVisits?: number;
   km: number;
   location: string;
   meetingAmount: number;
   open: string;
   other: number;
+  pharmacyVisits?: number;
   pmWorkload: number;
   requestType: string;
   row: number;

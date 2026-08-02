@@ -181,10 +181,14 @@ type WorkloadEvidence = {
   amWorkload: number;
   campaignVisits: number;
   dateBreakdown: WorkloadEvidenceDay[];
+  /** Kind split of the regular visits (see classifyVisitContactKind) — display-only context. */
+  doctorVisits: number;
   idleDates: string[];
+  institutionVisits: number;
   matchStatus: string;
   matchedDates: string[];
   otherVisits: number;
+  pharmacyVisits: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -572,6 +576,15 @@ export function ExpenseReport({
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-text-secondary">Visit type</p>
             <p className="mt-1 font-mono text-sm font-semibold text-text">
               Regular {formatNumber(data.regularVisits)} · Campaign {formatNumber(data.campaignVisits)}
+            </p>
+            {/* Doctor/pharmacy/institution mix of the regular visits — display-only context so the
+                approver can see WHAT kind of fieldwork justified the trip; no rule consumes it. */}
+            <p className="mt-0.5 text-[10px] text-text-secondary">
+              Doctor {formatNumber(data.doctorVisits)} · Pharmacy {formatNumber(data.pharmacyVisits)} · Institution{" "}
+              {formatNumber(data.institutionVisits)}
+              {data.regularVisits > data.doctorVisits + data.pharmacyVisits + data.institutionVisits
+                ? ` · Unclassified ${formatNumber(data.regularVisits - data.doctorVisits - data.pharmacyVisits - data.institutionVisits)}`
+                : ""}
             </p>
           </div>
         </div>
