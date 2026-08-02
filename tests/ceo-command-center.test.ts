@@ -80,6 +80,26 @@ export function runCeoCommandCenterTests() {
     "the note written for the Chief Executive must not render for anyone else",
   );
 
+  // The SFE overview is one role's personal page and must not sit on the Super Admin's or the
+  // CEO's sidebar. `roles` alone does not achieve that: the system-administrator workspace
+  // bypasses role gating entirely, so Super Admin saw it regardless. getSections now honours
+  // excludedRoles THROUGH that bypass — assert both halves, because either one alone silently
+  // stops working.
+  const activePathSource = readFileSync("src/lib/navigation/active-path.ts", "utf8");
+  assert.match(
+    activePathSource,
+    /isSystemAdministratorWorkspace\s*\?\s*dedupeSectionsByHref\(\s*sections\s*\n?\s*\.map\(\(section\) => \(\{[\s\S]{0,220}?roleNotExcluded\(role, item\.excludedRoles\)/,
+    "the system-administrator bypass must still apply excludedRoles, or a role-personal page reappears on the Super Admin sidebar",
+  );
+  const sfeNavEntry = /^.*href: "\/admin\/sfe-command-center".*$/m.exec(navSource)?.[0] ?? "";
+  assert.ok(sfeNavEntry.length > 0, "the SFE command-center nav entry must still be findable");
+  for (const role of ["Super Admin", "CEO"]) {
+    assert.ok(
+      new RegExp(`excludedRoles: \\[[^\\]]*"${role}"`).test(sfeNavEntry),
+      `${role} must be excluded from the SFE Manager Overview sidebar entry`,
+    );
+  }
+
   // Hiding the nav entry is UX only — /admin itself must bounce these roles to their own page,
   // or a typed URL or stale bookmark still lands them on the generic admin dashboard.
   const adminPageSource = readFileSync("app/(admin)/admin/page.tsx", "utf8");
