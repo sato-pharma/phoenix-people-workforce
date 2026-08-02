@@ -1,6 +1,6 @@
 "use client";
 
-import { startAuthentication } from "@simplewebauthn/browser";
+import type { startAuthentication as StartAuthentication } from "@simplewebauthn/browser";
 import {
   BarChart3,
   Eye,
@@ -173,7 +173,11 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
         return;
       }
 
-      const { options } = (await optionsResponse.json()) as { options: Parameters<typeof startAuthentication>[0]["optionsJSON"] };
+      const { options } = (await optionsResponse.json()) as { options: Parameters<typeof StartAuthentication>[0]["optionsJSON"] };
+      // Loaded on demand: pulling @simplewebauthn/browser in at module scope put the
+      // whole WebAuthn client in the login page's first JS payload, which only the
+      // fingerprint button ever needs.
+      const { startAuthentication } = await import("@simplewebauthn/browser");
       const assertion = await startAuthentication({ optionsJSON: options });
 
       const verifyResponse = await fetch("/api/auth/biometric/login/verify", {
