@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Download, PlayCircle, XCircle } from "lucide-react";
 
 import { DEDUCTIONS_CATEGORY_CONFIG } from "@/lib/deductions/calculations.ts";
-import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
+import { visibleDeductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 
 type CandidateApiRow = {
   id: string;
@@ -30,6 +30,23 @@ type CandidateApiRow = {
     decidedAt: string | null;
   } | null;
 };
+
+/**
+ * The day-of-month numbers a candidate actually charges, comma separated and sorted.
+ *
+ * Day numbers rather than full ISO dates because the workspace is already scoped to a
+ * single month, so "2026-07-" on every entry is pure repetition — and a 19-day CRM
+ * candidate rendered as full dates cannot fit on one line, which would force either a
+ * wrap or an ellipsis. Both are barred by the admin-shell rules.
+ */
+function formatDeductedDays(dates: string[] | null | undefined): string {
+  if (!dates || dates.length === 0) return "—";
+  const days = dates
+    .map((date) => Number(String(date).slice(8, 10)))
+    .filter((day) => Number.isInteger(day) && day > 0)
+    .sort((left, right) => left - right);
+  return days.length > 0 ? days.join(", ") : "—";
+}
 
 type CategoryBucket = { candidateCount: number; employeeCount: number; totalAmount: number };
 type CompanySummary = {
@@ -285,6 +302,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                 <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
                   <th className="px-4 py-2">Employee</th>
                   <th className="px-4 py-2">Days</th>
+                  <th className="px-4 py-2">Dates deducted</th>
                   <th className="px-4 py-2">Amount</th>
                   <th className="px-4 py-2">Reason</th>
                   <th className="px-4 py-2">Status</th>
@@ -300,6 +318,16 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       {row.employeeName ?? row.employeeHrId}
                     </td>
                     <td className="px-4 py-2.5 text-slate-700">{row.unit === "days" ? row.rawValue : "—"}</td>
+                    {/* WHICH days, not just how many. The candidate has always carried
+                        the exact dates; the table simply never showed them, so a
+                        reviewer could see "14 days" with no way to tell which 14 or to
+                        check one against a calendar. Day numbers only — the whole view
+                        is already scoped to one month, so the year/month would be
+                        repetition, and this keeps a 19-day row on a single line
+                        instead of wrapping or being cut off. */}
+                    <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-slate-700">
+                      {formatDeductedDays(row.dates)}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-700">
                       {row.estimatedAmount != null ? money(row.estimatedAmount) : "requires review"}
                     </td>
@@ -327,6 +355,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                 <p className="mt-0.5 text-xs text-slate-500">
                   {row.unit === "days" ? `${row.rawValue} day(s)` : ""} ·{" "}
                   {row.estimatedAmount != null ? `${money(row.estimatedAmount)} EGP` : "requires review"}
+                </p>
+                <p className="mt-1 text-xs tabular-nums text-slate-700">
+                  Dates: {formatDeductedDays(row.dates)}
                 </p>
                 {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
                 <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
@@ -480,7 +511,7 @@ function OverviewTab({ monthKey, canDecide }: { monthKey: string; canDecide: boo
         </p>
       </div>
 
-      {deductionsCategories.map((category) => {
+      {visibleDeductionsCategories.map((category) => {
         const config = DEDUCTIONS_CATEGORY_CONFIG[category];
         const willPublish = summary.willPublish[category];
         const pending = summary.pending[category];
@@ -570,7 +601,7 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
             {summary.employeeName ?? summary.employeeHrId} <span className="font-mono text-xs font-medium text-slate-400">{summary.employeeHrId}</span>
           </h3>
           <div className="mt-3 divide-y divide-slate-100 border border-slate-200">
-            {deductionsCategories
+            {visibleDeductionsCategories
               .filter((category) => summary.byCategory[category])
               .map((category, index) => {
                 const config = DEDUCTIONS_CATEGORY_CONFIG[category];
@@ -671,7 +702,7 @@ export function DeductionsWorkspace({ canDecide, initialMonthKey }: { canDecide:
   const tabs: Array<{ key: "overview" | "by_employee" | DeductionsCategory; label: string }> = [
     { key: "overview", label: "Overview" },
     { key: "by_employee", label: "By Employee" },
-    ...deductionsCategories.map((category) => ({ key: category, label: DEDUCTIONS_CATEGORY_CONFIG[category].label })),
+    ...visibleDeductionsCategories.map((category) => ({ key: category, label: DEDUCTIONS_CATEGORY_CONFIG[category].label })),
   ];
 
   return (

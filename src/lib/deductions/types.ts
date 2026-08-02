@@ -2,6 +2,26 @@
 // Governance/reporting layer only until Phase 2's publish snapshot exists — no
 // trigger or application path in this module writes salary_records/salary_batches.
 
+/**
+ * Categories the workspace SHOWS. Excludes `no_records_activity`, whose connector was
+ * retired from DEDUCTION_COLLECTORS once it lost its population — the field workforce
+ * belongs to `crm` and Head Office has no CRM obligation, which is everybody. A tab that
+ * is permanently empty and zero looks identical to a broken connector, so it is hidden
+ * rather than shown at 0.00.
+ *
+ * `deductionsCategories` itself is unchanged: it still backs the DB enum, the category
+ * config, and every historical row (July 2026 has 263 superseded no_records candidates),
+ * so narrowing it would break reads of data that legitimately exists.
+ */
+export const visibleDeductionsCategories = [
+  "fingerprint",
+  "crm",
+  "unpaid_vacation",
+  "insufficient_balance_vacation",
+  "loan",
+  "other",
+] as const;
+
 export const deductionsCategories = [
   "fingerprint",
   "crm",

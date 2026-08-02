@@ -8,7 +8,7 @@ import { buildManualDeductionDraft } from "../src/lib/deductions/connectors/manu
 import { assertBaseSalaryMapLoaded, DeductionsConnectorDegradedError } from "../src/lib/deductions/connectors/health.ts";
 import { isEligibleForPublish } from "../src/lib/deductions/calculations.ts";
 import { chunkList, validateCandidateDraft } from "../src/lib/deductions/service.ts";
-import type { DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
+import { deductionsCategories, visibleDeductionsCategories, type DeductionsCandidateDraft } from "../src/lib/deductions/types.ts";
 
 function draft(overrides: Partial<DeductionsCandidateDraft> = {}): DeductionsCandidateDraft {
   return {
@@ -281,10 +281,14 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
   // test — the failure only appears at production data volume — so these are
   // WIRING assertions that keep the shape which makes the timeout impossible.
   {
-    assert.equal(DEDUCTION_COLLECTORS.length, 5, "all five automated connectors must stay registered");
+    // Was 5. no_records_activity was retired once its connector lost its population —
+    // field workforce belongs to `crm`, Head Office has no CRM obligation, and between
+    // them that is everybody — so a registered step would report created=0 forever and
+    // be indistinguishable from a broken connector. The exact keys are pinned just below.
+    assert.equal(DEDUCTION_COLLECTORS.length, 4, "the four live automated connectors must stay registered");
     assert.deepEqual(
       DEDUCTION_COLLECTORS.map((collector) => collector.key),
-      ["fingerprint", "crm", "no_records_activity", "unpaid_vacation", "insufficient_balance_vacation"],
+      ["fingerprint", "crm", "unpaid_vacation", "insufficient_balance_vacation"],
       "connector order is the documented run order; changing it changes what an interrupted run leaves behind",
     );
 
@@ -410,6 +414,29 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
       crm,
       /activeHrKeys\.has\(key\) \|\| \(crmIdText !== "" && activeCrmIds\.has\(crmIdText\)\)/,
       "signal must be checked on BOTH the hr-id and the crm_id — visits carry either",
+    );
+  }
+  // The visible category list must stay a strict subset of the canonical one, and the
+  // ONLY thing it may hide is no_records_activity — whose connector was retired once it
+  // lost its population (field workforce -> crm, Head Office has no CRM obligation,
+  // which is everybody). Narrowing `deductionsCategories` itself would break the DB enum
+  // and every historical row, so the two lists are deliberately separate and this pins
+  // the relationship between them.
+  {
+    const canonical = new Set<string>(deductionsCategories);
+    const visible = new Set<string>(visibleDeductionsCategories);
+    for (const category of visible) {
+      assert.ok(canonical.has(category), `visible category "${category}" is not a real DeductionsCategory`);
+    }
+    const hidden = [...canonical].filter((category) => !visible.has(category));
+    assert.deepEqual(
+      hidden,
+      ["no_records_activity"],
+      "a new category must be shown in the workspace or its exclusion justified here — silently hiding one is how a whole deduction category goes unreviewed",
+    );
+    assert.ok(
+      !DEDUCTION_COLLECTORS.some((collector) => collector.key === "no_records_activity"),
+      "no_records_activity must not be a live collector: its connector returns nothing, so a registered step reports created=0 forever and is indistinguishable from a broken connector",
     );
   }
 }
