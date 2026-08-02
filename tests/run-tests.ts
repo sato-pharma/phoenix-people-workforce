@@ -458,6 +458,7 @@ import { runPortalSosScopeTests } from "./portal-sos-scope.test.ts";
 import { runDmSeatAreaScopeTests } from "./dm-seat-area-scope.test.ts";
 import { runWeeklyAreaScopeTests } from "./weekly-area-scope.test.ts";
 import { runSalesHeadOfficeLockTests } from "./sales-head-office-lock.test.ts";
+import { runSqlExcludeCodesFailClosedTests } from "./sql-exclude-codes-fail-closed.test.ts";
 import { runSosImportDashboardHeadOfficeLockTests } from "./sos-import-dashboard-head-office-lock.test.ts";
 import { runAnalyticsViewerScopeTests } from "./analytics-viewer-scope.test.ts";
 import { runRepAchievementPeriodsTests } from "./rep-achievement-periods.test.ts";
@@ -1030,6 +1031,7 @@ await runTest("portal source-of-sales scope + smart filters", runPortalSosScopeT
 await runTest("DM/RM seat-derived area scope (out-of-region areas)", runDmSeatAreaScopeTests);
 await runTest("weekly sales optional area scope (branch-mapped areas)", runWeeklyAreaScopeTests);
 await runTest("sales Head Office confidential lock (all surfaces)", runSalesHeadOfficeLockTests);
+await runTest("SQL p_exclude_codes defaults are fail-closed (and match RESTRICTED_PRODUCT_CODES)", runSqlExcludeCodesFailClosedTests);
 await runTest("SoS import dashboard Head Office line lock (loader + all callers)", runSosImportDashboardHeadOfficeLockTests);
 await runTest("analytics per-viewer scope (line/region/product, per role)", runAnalyticsViewerScopeTests);
 await runTest("rep achievement period resolution", runRepAchievementPeriodsTests);
