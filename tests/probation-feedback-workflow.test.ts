@@ -77,65 +77,9 @@ export function runProbationFeedbackWorkflowTests() {
   assert.match(wf, /an edit reason is required/i, "edit requires a reason (P4-T08)");
   assert.match(wf, /current\.currentVersion \+ 1/, "edit bumps the version");
 
-  // ── SLA reminders deduped by state (P4-T07) ──
-  const rem = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
-  assert.match(rem, /idempotencyKey: `\$\{slaReminderKey\(task\.dvDayId, state\)\}:\$\{recipientHrId\}`/,
-    "one notification per (DV-Day, state, recipient) — no uncontrolled repeats");
-  // TRAINING-MANAGER OPT-OUT (owner rule 2026-07-18): TM feedback is optional — a TM-evaluated DV-Day
-  // never generates an SLA reminder or escalation (paired with requirements.tm = 0).
-  assert.match(rem, /t\.evaluatorRole !== "tm"/, "TM-evaluated DV-Days are excluded from the SLA reminder sweep");
-  // RECIPIENT LADDER (MOD-2, 2026-07-17 owner report): the 3 SLA reminders (timings unchanged
-  // 24/48/72h) now widen the audience per stage instead of CC'ing HR company-wide from the middle
-  // warning (118 emails to 2 accounts trained recipients to stop opening probation email):
-  //   1) due       → evaluator only.
-  //   2) escalated → + the probationer's Direct Manager (probation_cases.manager_hr_id) + System Admin (PHX-1).
-  //   3) overdue   → + CEO + HR + Super Admin.
-  assert.match(rem, /if \(evaluator\) ordered\.push\(evaluator\)/,
-    "the evaluator is on every SLA reminder stage (reminder 1 = evaluator only)");
-  assert.match(rem, /if \(state === "escalated"\)\s*\{[\s\S]*?parties\.directManagerHrId[\s\S]*?parties\.systemAdminHrId/,
-    "reminder 2 (escalated) CCs the Direct Manager + the System Admin");
-  assert.match(rem, /if \(state === "overdue"\)\s*\{\s*\n\s*ordered\.push\(\.\.\.parties\.ceoHrIds, \.\.\.parties\.hrApproverHrIds\)/,
-    "reminder 3 (overdue) CCs CEO + HR + Super Admin");
-  assert.doesNotMatch(rem, /state === "escalated" \|\| state === "overdue"/,
-    "HR must not be CC'd on the escalated warning (volume fix preserved)");
-  assert.match(rem, /activeHrIdsByRole\(\["Super Admin"\]\)/,
-    "HR approver lookup must be Super Admin only — \"HR Manager\" is a job title, not an app_auth_users.role value");
-  assert.match(rem, /const SYSTEM_ADMIN_CC_HR_ID = canonicalPersonHrId\("PHX-1"\) \?\? "PHX-1"/,
-    "the System Admin CC resolves to the canonical person behind PHX-1 (which has no deliverable mailbox) via the shared-identity primitive, not a hardcoded HR_ID");
-  assert.match(rem, /\.eq\("hr_id", SYSTEM_ADMIN_CC_HR_ID\)/,
-    "the System Admin CC resolves that account by hr_id + is_active");
-  // MOD-3 daily cap: an over-cap recipient is filtered out of the SLA reminder audience this run.
-  assert.match(rem, /\.filter\(\(h\) => parties\.cap\.allow\(h\)\)/,
-    "the per-recipient daily cap (MOD-3) gates SLA reminder recipients");
-  // REGRESSION GUARD (2026-07-16 owner report): SLA reminder title/message/metrics used the raw
-  // employeeHrId (e.g. "AI-0002") instead of the employee's name, and carried no link to the case
-  // report. Both are fixed by resolving the case info (name + manager) up front and threading it
-  // through, plus a ctaHref/actionUrl to the live report.
-  assert.match(rem, /resolveCaseInfo/, "employee names + direct managers are bulk-resolved for the sweep");
-  assert.match(rem, /const title = `\$\{copy\.headline\} — \$\{employeeName\}`/,
-    "title uses the resolved employee name, not the raw HR_ID");
-  assert.match(rem, /const message = copy\.body\(employeeName\)/,
-    "message uses the resolved employee name, not the raw HR_ID");
-  assert.match(rem, /label: "Employee", value: employeeName/, "email metrics show the name, not the code");
-  assert.match(rem, /ctaHref: ctaUrl/, "SLA reminder email links to the live case report");
-  assert.match(rem, /actionUrl: ctaUrl/, "SLA reminder in-app notification links to the live case report");
-  // CONTENT CLARITY GUARD (2026-07-17 owner report): "msh mafhoom" — the email never said why the
-  // recipient was getting it or what to do, and the table showed raw state words + a meaningless
-  // "Hours overdue: 0" for tasks that weren't actually overdue. Each state's copy must state a
-  // reason and an action in plain English, and the internal state word/"DV" jargon must not leak
-  // into anything user-facing.
-  assert.match(rem, /const STATE_COPY: Record<"due" \| "escalated" \| "overdue"/,
-    "each SLA state has dedicated plain-English copy (purpose + action)");
-  for (const state of ["due", "escalated", "overdue"]) {
-    const stateBlock = rem.slice(rem.indexOf(`${state}: {`), rem.indexOf(`${state}: {`) + 400);
-    assert.match(stateBlock, /submit your assessment|If you are the evaluating manager|please submit/i,
-      `${state} copy tells the recipient what action to take`);
-  }
-  assert.doesNotMatch(rem, /label: "Status", value: state\b/, "status row must use the plain-English label, not the raw state word");
-  assert.doesNotMatch(rem, /label: "Hours overdue", value: String\(task\.sla\.hoursOverdue\)/,
-    "must not always show Hours overdue (meaningless/0 outside the overdue state)");
-  assert.match(rem, /label: "Overdue by", value: `\$\{task\.sla\.hoursOverdue\}h`/,
-    "overdue duration is shown only for the overdue state, with a clear unit");
+  // The feedback SLA reminder sweep was retired 2026-08-02 (owner request) and its module
+  // deleted, so the assertions that pinned its dedup key, recipient ladder, daily cap and
+  // plain-English copy went with it. The scorecard/versioning guards above are unaffected.
 
   // ZEBRA TABLE GUARD (2026-07-17 owner report): the shared metadata-row table every
   // notification-type email renders through (probation and everything else) had no row styling —

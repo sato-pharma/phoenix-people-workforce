@@ -9,8 +9,6 @@ import {
 import { createStepBudget, runStep, summarizeTimings, type StepTiming } from "@/lib/notifications/step-runner";
 import { processDeferredDeliveryRetries, processPushDeliveryRetries, processTelegramDeliveryRetries } from "@/lib/notifications/system";
 import { processDueProbationReminderEvents } from "@/lib/probation/service";
-import { processFeedbackSlaReminders } from "@/lib/probation/intelligence/feedback-sla-reminders";
-import { processProbationMilestoneEmails } from "@/lib/probation/intelligence/probation-emails";
 import { cleanupStalePendingSosBatches } from "@/lib/sales/source-of-sales-batch-supersede";
 import { reapStaleIReports360SyncRuns } from "@/lib/crm/sync";
 import { logError } from "@/lib/observability/log";
@@ -61,34 +59,11 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       budget,
       { fallback: { attempted: 0, failed: 0, processedIds: [] as string[], sent: 0, error: "step timed out" } },
     );
-    // State-based DV feedback SLA reminders/escalations (deduped by (DV-Day, state) idempotency key).
-    const probationFeedbackSla = await runStep(
-      "probation-feedback-sla",
-      () =>
-        processFeedbackSlaReminders().catch((e: unknown) => {
-          logError("Probation feedback SLA reminder processing step failed", {
-            labels: { event: "cron_step_failed", cron: "notification-process-probation-feedback-sla" },
-            error: e,
-          });
-          return { scanned: 0, due: 0, escalated: 0, overdue: 0, notificationsEmitted: 0, error: String(e) };
-        }),
-      budget,
-      { fallback: { scanned: 0, due: 0, escalated: 0, overdue: 0, notificationsEmitted: 0, error: "step timed out" } },
-    );
-    // Day 30/60/75 milestone emails (deduped per case+milestone idempotency key — safe to run often).
-    const probationMilestones = await runStep(
-      "probation-milestones",
-      () =>
-        processProbationMilestoneEmails().catch((e: unknown) => {
-          logError("Probation milestone email processing step failed", {
-            labels: { event: "cron_step_failed", cron: "notification-process-probation-milestones" },
-            error: e,
-          });
-          return { scanned: 0, sent: 0, error: String(e) };
-        }),
-      budget,
-      { fallback: { scanned: 0, sent: 0, error: "step timed out" } },
-    );
+    // Retired 2026-08-02 at the owner's request: the DV feedback SLA reminders and the day
+    // 30/60/75 probation milestone emails. The two steps below are NOT notifications and are
+    // deliberately kept — the attendance alert is the only automated signal that punch data has
+    // stopped flowing into payroll, and the exited-employee sweep is what withdraws pending
+    // deduction candidates for people who have already left.
     // Never throws; per-day idempotency key prevents duplicate alerts across runs.
     const attendanceAgent = await runStep("attendance-agent", () => runAttendanceIngestionAlert(), budget);
     // Never throws; idempotent cleanup of pending deduction warnings for exited employees.
@@ -166,8 +141,6 @@ export async function runScheduledNotificationProcessing(limit = 10) {
       exitedDeductions,
       inactiveUsers: inactiveUsers?.length ?? 0,
       outbox,
-      probationFeedbackSla,
-      probationMilestones,
       probationReminders,
       push,
       reaped,

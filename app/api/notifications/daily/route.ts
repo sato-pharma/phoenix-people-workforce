@@ -9,13 +9,11 @@ import { runBirthdayNotifications } from "@/app/api/notifications/birthdays/rout
 import { runContractRenewalNotifications } from "@/app/api/notifications/contract-renewals/route";
 import { runHolidayConfirmationReminder } from "@/app/api/notifications/holiday-confirmation/route";
 import { runVacationSlaDaily } from "@/lib/vacation/service";
-import { runFieldWorkforceComplianceDigest } from "@/lib/field-workforce-compliance/digest";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
-import { processProbationWeeklyDigest } from "@/lib/probation/intelligence/probation-emails";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
 import { runOutstationSlaDaily } from "@/lib/outstation/service";
@@ -87,9 +85,7 @@ async function runDailyNotifications(request: Request) {
     // probation digest's result). The jobs themselves were unaffected — each has its own
     // .catch() and runs regardless of destructuring position — only this diagnostic JSON
     // response was mislabeled.
-    probationWeeklyDigest,
     outstationGeocodeWarmup,
-    fieldWorkforceComplianceDigest,
     fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
     outstationSla,
@@ -129,17 +125,12 @@ async function runDailyNotifications(request: Request) {
     runWeeklySystemHealthDigest().catch(
       onJobFailure("weekly-system-health-digest", (message) => ({ delivered: 0, skipped: true, error: message, sourceWarnings: [] })),
     ),
-    // Restored 2026-07-23 behind a real admin toggle (see "probation_weekly_dv_digest" in
-    // role-recipients.ts) — self-gates to one Cairo weekday, replacing the per-DV-day snapshot
-    // email; safe to call daily, a non-digest day or a disabled toggle is both a clean no-op.
-    processProbationWeeklyDigest().catch(
-      onJobFailure("probation-weekly-digest", (message) => ({ scanned: 0, sent: 0, error: message })),
-    ),
+    // Retired 2026-08-02: the probation weekly digest and the Field Workforce Compliance digest
+    // were removed at the owner's request. The FWC DEDUCTIONS auto-sync immediately below is a
+    // different job with a near-identical name and is deliberately KEPT — it writes deduction
+    // candidates, so retiring it would stop money records being created, not just emails.
     runOutstationGeocodeWarmup().catch(
       onJobFailure("daily-outstation-geocode-warmup", (message) => ({ success: false, error: message })),
-    ),
-    runFieldWorkforceComplianceDigest().catch(
-      onJobFailure("daily-fwc-digest", (message) => ({ success: false, error: message })),
     ),
     runFieldWorkforceComplianceDeductionsAutoSync().catch(
       onJobFailure("daily-fwc-deductions-sync", (message) => ({ ok: false as const, months: [] as const, error: message })),
@@ -245,13 +236,11 @@ async function runDailyNotifications(request: Request) {
     failedCount: failures.length,
     failedJobs: failures,
     fieldWorkforceComplianceDeductionsAutoSync,
-    fieldWorkforceComplianceDigest,
     holidayConfirmation,
     marketingSla,
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
-    probationWeeklyDigest,
     rateLimitPrune,
     errorEventsPrune,
     recruitment,

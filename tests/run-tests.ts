@@ -175,7 +175,6 @@ import { runFieldWorkforceComplianceTests } from "./field-workforce-compliance.t
 import { runFieldWorkforceComplianceEligibilityTests } from "./field-workforce-compliance-eligibility.test.ts";
 import { runFieldWorkforceComplianceLiveSnapshotsTests } from "./field-workforce-compliance-live-snapshots.test.ts";
 import { runFieldWorkforceComplianceScorecardsTests } from "./field-workforce-compliance-scorecards.test.ts";
-import { runFieldWorkforceComplianceDigestTests } from "./field-workforce-compliance-digest.test.ts";
 import { runCompanyVacationReportTests } from "./company-vacation-report.test.ts";
 import { runNsmTeamCalendarTests } from "./nsm-team-calendar.test.ts";
 import { runCompanyHolidaysTests } from "./company-holidays.test.ts";
@@ -696,7 +695,6 @@ await runTest("field workforce compliance", runFieldWorkforceComplianceTests);
 await runTest("field workforce compliance eligibility", runFieldWorkforceComplianceEligibilityTests);
 await runTest("field workforce compliance live snapshots", runFieldWorkforceComplianceLiveSnapshotsTests);
 await runTest("field workforce compliance scorecards", runFieldWorkforceComplianceScorecardsTests);
-await runTest("field workforce compliance digest", runFieldWorkforceComplianceDigestTests);
 await runTest("company vacation report (CRM signal classification)", runCompanyVacationReportTests);
 await runTest("nsm team calendar (manager grouping)", runNsmTeamCalendarTests);
 await runTest("company holidays", runCompanyHolidaysTests);

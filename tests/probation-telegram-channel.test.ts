@@ -13,10 +13,6 @@ export function runProbationTelegramChannelTests() {
     "DV-snapshot + milestone emitter includes the telegram and push channels",
   );
 
-  const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
-  assert.match(
-    sla,
-    /channels: \["in_app", "email", "telegram", "push"\]/,
-    "feedback SLA reminders include the telegram and push channels",
-  );
+  // The feedback SLA reminder module was retired 2026-08-02, so there is no longer an SLA
+  // emitter whose channel list needs asserting.
 }

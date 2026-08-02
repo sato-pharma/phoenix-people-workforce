@@ -104,7 +104,10 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runRecruitmentDailyNotifications\(\)\.catch\(/, "daily recruitment run must have catch boundary");
   assert.match(dailyCronRoute, /runTelegramDailyHrDigest\(\)\.catch\(/, "daily telegram digest run must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationGeocodeWarmup\(\)\.catch\(/, "daily outstation geocode warmup must have catch boundary");
-  assert.match(dailyCronRoute, /runFieldWorkforceComplianceDigest\(\)\.catch\(/, "daily FWC digest must have catch boundary");
+  // The FWC *digest* was retired 2026-08-02. The deductions auto-sync below has a near-identical
+  // name and is deliberately kept — it writes deduction candidates, so this assertion is the guard
+  // against the two being confused and the wrong one being removed.
+  assert.doesNotMatch(dailyCronRoute, /runFieldWorkforceComplianceDigest\(/, "the FWC digest was retired — it must not be re-wired into the daily cron");
   assert.match(dailyCronRoute, /runFieldWorkforceComplianceDeductionsAutoSync\(\)\.catch\(/, "daily deductions auto sync must have catch boundary");
   assert.match(dailyCronRoute, /runExcuseSlaDaily\(\)\.catch\(/, "daily excuse SLA must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationSlaDaily\(\)\.catch\(/, "outstation SLA reminder is restored behind a real admin toggle (see outstation_sla_reminder in role-recipients.ts)");

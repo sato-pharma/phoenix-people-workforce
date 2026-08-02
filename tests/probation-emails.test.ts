@@ -119,10 +119,14 @@ export function runProbationEmailsTests() {
   const sync = src("src/lib/probation/intelligence/dv-sync.ts");
   assert.doesNotMatch(sync, /sendDvSnapshotEmail\(/, "per-DV-day snapshot email is no longer wired into the CRM sync (MOD-1)");
   assert.match(sync, /if \(r\.dv_status === "validated"\) newValidatedDvDayIds\.push/, "newly-validated DV-Days are still tracked (telemetry)");
+  // Both probation email sweeps were RETIRED 2026-08-02 at the owner's request: the day 30/60/75
+  // milestone emails (5-minute cron) and the weekly Double-Visit digest (daily cron). These
+  // assertions are inverted rather than deleted so a future re-wiring is a deliberate act that
+  // has to update this test, not an accident.
   const cron = src("src/lib/notifications/scheduled-processing.ts");
-  assert.match(cron, /processProbationMilestoneEmails\(\)/, "milestone sweep wired into the notifications cron");
+  assert.doesNotMatch(cron, /processProbationMilestoneEmails\(/, "probation milestone sweep was retired — it must not be re-wired into the notifications cron");
   const dailyRoute = src("app/api/notifications/daily/route.ts");
-  assert.match(dailyRoute, /processProbationWeeklyDigest\(\)/, "weekly Double-Visit digest is restored in the daily notifications cron, gated by the probation_weekly_dv_digest enabled toggle");
+  assert.doesNotMatch(dailyRoute, /processProbationWeeklyDigest\(/, "probation weekly digest was retired — it must not be re-wired into the daily cron");
 
   // ── FRESH START (owner directive 2026-07-17): no catch-up emails on re-enable ──
   // Behavioral: the cutoff helpers classify pre-reset vs post-reset activity correctly.
@@ -133,8 +137,9 @@ export function runProbationEmailsTests() {
   assert.equal(isDateBeforeProbationEmailFreshStart("2026-07-16"), true, "a milestone crossed before the reset day is suppressed");
   assert.equal(isDateBeforeProbationEmailFreshStart(cutoffDay), false, "a crossing on the reset day itself emails");
   // Wiring: every sweep honours the cutoff so the 62-DV-day / crossed-milestone backlog stays silent.
-  const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
-  assert.match(sla, /!isBeforeProbationEmailFreshStart\(t\.createdAt\)/, "SLA sweep suppresses pre-reset DV-Days");
+  // The SLA sweep module was deleted 2026-08-02. The milestone and weekly-digest sweeps still
+  // exist in probation-emails.ts but are no longer wired into any cron (asserted above), so their
+  // fresh-start guards are retained here only as documentation of the cutoff semantics.
   assert.match(emails, /if \(isDateBeforeProbationEmailFreshStart\(crossingDate\)\) continue;/, "milestone sweep suppresses pre-reset crossings");
   assert.match(emails, /\.gte\("created_at", PROBATION_EMAIL_FRESH_START_ISO\)/, "weekly digest only rolls up post-reset DV-Days");
 }

@@ -36,10 +36,12 @@ export function runEmailControlCenterTests() {
     );
   }
 
-  // The 3 digests disabled 2026-07-22 (335437cc) must be restored as real calls, not stubs.
-  assert.doesNotMatch(dailyRouteSource, /Disabled 2026-07-22/, "the 3 owner-disabled digests must be restored, not still stubbed");
+  // The digests disabled 2026-07-22 (335437cc) must be restored as real calls, not stubs. The
+  // probation weekly digest was later RETIRED outright (2026-08-02, owner request) — a deliberate
+  // removal, distinct from the 2026-07-22 stubbing this guard exists to prevent recurring.
+  assert.doesNotMatch(dailyRouteSource, /Disabled 2026-07-22/, "the owner-disabled digests must be restored, not still stubbed");
   assert.match(dailyRouteSource, /runMarketingSlaDaily\(\)/, "daily route must call the real marketing SLA function");
-  assert.match(dailyRouteSource, /processProbationWeeklyDigest\(\)/, "daily route must call the real probation weekly digest function");
+  assert.doesNotMatch(dailyRouteSource, /processProbationWeeklyDigest\(/, "probation weekly digest was retired 2026-08-02 — it must not be re-wired");
   assert.match(dailyRouteSource, /runOutstationSlaDaily\(\)/, "daily route must call the real outstation SLA function");
 
   // Each restored digest's master "enabled" switch must be checked before any data is scanned —
