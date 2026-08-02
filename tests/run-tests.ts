@@ -35,6 +35,7 @@ import { runTelegramTemplateManagementTests } from "./telegram-template-manageme
 import { runTelegramHardeningTests } from "./telegram-hardening.test.ts";
 import { runTelegramDeliveryErrorsTests } from "./telegram-delivery-errors.test.ts";
 import { runConfigDriftTests } from "./config-drift.test.ts";
+import { runPushEnableHangTests } from "./push-enable-hang.test.ts";
 import { runResidenceGeocodePolicyTests } from "./residence-geocode-policy.test.ts";
 import { runOutstationFuelPolicyTests } from "./outstation-fuel-policy.test.ts";
 import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
@@ -1106,6 +1107,8 @@ await runTest("crm rep-day check-in attribution (managers borrow the rep's check
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
 await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month bucketing, primary-rep model, single-source door)", runSfeDoctorCoverageTests);
+
+await runTest("push enable hang (a blocked browser resolves instantly instead of freezing the settings panel forever)", runPushEnableHangTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
