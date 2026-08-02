@@ -282,7 +282,13 @@ export function ExpenseApprovalsWorkspace() {
         ))}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(300px,360px)_1fr]">
+      {/* `[&>*]:min-w-0` is load-bearing on mobile: below `lg` this is a SINGLE-column grid, and a
+          grid item defaults to `min-width: auto`, so the column is sized by its widest item's
+          min-content — not by the viewport. One long unbreakable destination in the decision panel
+          therefore stretched the whole column to 729px in a 375px viewport and scrolled the page
+          sideways. Letting the items shrink is only safe because each piece of wide content now
+          scrolls inside its own box (see the route line below and the workload table). */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(300px,360px)_1fr] [&>*]:min-w-0">
         {/* Left: scannable list */}
         <div className="space-y-2">
           <div className="relative">
@@ -455,12 +461,17 @@ function ExpenseDecisionPanel({
           <Fact label="Distance" value={record.km ? `${formatNumberValue(record.km)} km` : "—"} />
           <div className="col-span-2 sm:col-span-2">
             <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
-            <p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold text-slate-900">
-              <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <span className="whitespace-nowrap">{record.from || "—"}</span>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              <span className="whitespace-nowrap">{record.location || record.to || "—"}</span>
-            </p>
+            {/* Phoenix-submitted trips carry a full postal address here, not a city — one live row
+                is 95 characters. It must not wrap and must not be truncated, so the line scrolls
+                horizontally WITHIN this box; the page itself no longer moves. */}
+            <div className="mt-0.5 -mx-1 overflow-x-auto px-1">
+              <p className="flex w-max items-center gap-1.5 text-sm font-semibold text-slate-900">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="whitespace-nowrap">{record.from || "—"}</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="whitespace-nowrap">{record.location || record.to || "—"}</span>
+              </p>
+            </div>
           </div>
           <div className="col-span-2 border-t border-[#e4e9ec] pt-3 sm:col-span-4">
             <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
