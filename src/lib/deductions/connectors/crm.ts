@@ -554,13 +554,27 @@ export async function collectCrmCandidates(input: {
     baseSalaryByCompact,
   });
 
+  const collected: DeductionsCandidateDraft[] = [];
   if (suspectDates.size === 0) {
-    return [...leaverDrafts, ...continuingDrafts];
+    collected.push(...leaverDrafts, ...continuingDrafts);
+  } else {
+    for (const draft of [...leaverDrafts, ...continuingDrafts]) {
+      const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact);
+      if (result) collected.push(result);
+    }
   }
-  const cleaned: DeductionsCandidateDraft[] = [];
-  for (const draft of [...leaverDrafts, ...continuingDrafts]) {
-    const result = excludeSuspectDates(draft, suspectDates, baseSalaryByCompact);
-    if (result) cleaned.push(result);
-  }
-  return cleaned;
+
+  // NO SALARY BASIS ⇒ NO SALARY-BASED DEDUCTION.
+  //
+  // A day-rate deduction is Base Salary ÷ days in month, so with no base salary
+  // recorded there is nothing to take a fraction OF. "Not deductible" is the honest
+  // answer; "deductible, amount unknown" is not, and publishMonth refuses any month
+  // containing a null-amount candidate — so one unsalaried person blocked payday for
+  // everyone. July 2026 carried exactly this for a leaver sitting at base_salary 0.
+  //
+  // Applied at the single exit point rather than at the three emit sites, so a future
+  // fourth branch cannot reintroduce it. Safe because the SYSTEMIC case is already
+  // guarded by assertBaseSalaryMapLoaded above: reaching here means the map loaded
+  // and this employee genuinely is not in it.
+  return collected.filter((draft) => draft.estimatedAmount != null);
 }

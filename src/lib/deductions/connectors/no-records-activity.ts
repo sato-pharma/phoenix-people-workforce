@@ -105,7 +105,7 @@ export async function collectNoRecordsActivityCandidates(input: {
       const key = canonicalHrIdKey(day.employeeHrId);
       return !(key && fieldWorkforceKeys.has(key));
     })
-    .map((day) => {
+    .flatMap((day) => {
       // Compute the money here, not at publish time. This connector previously
       // emitted no estimatedAmount at all, and publish's old `?? 0` fallback
       // turned that into a 0.00 EGP line — so the entire category could publish
@@ -121,7 +121,27 @@ export async function collectNoRecordsActivityCandidates(input: {
         month: input.month,
         year: input.year,
       });
-      return {
+
+      // NO SALARY BASIS ⇒ NO SALARY-BASED DEDUCTION.
+      //
+      // A day-rate deduction is Base Salary ÷ days in month. With no base salary
+      // recorded there is nothing to take a fraction OF, so the honest result is
+      // "not deductible", not "deductible, amount unknown". Emitting the latter
+      // produced a NULL-amount candidate, and publishMonth refuses any month that
+      // contains one — so people who are not on the salaried payroll at all were
+      // silently blocking payday for everyone else.
+      //
+      // July 2026: 60 of the month's 62 publish-blocking NULLs were three people
+      // with no base_salary on record (the CEO, an R&D Manager, a Financial
+      // Advisor), plus one leaver at 0. All four are "no salary basis", not
+      // "amount to be determined".
+      //
+      // Safe because the SYSTEMIC case is already guarded: assertBaseSalaryMapLoaded
+      // above throws if the feeder returns an empty map, so reaching here means the
+      // map loaded and THIS employee genuinely is not in it.
+      if (estimatedAmount == null) return [];
+
+      return [{
         category: "no_records_activity",
         sourceSystem: "no_activity_engine",
         sourceRecordId: `${day.employeeHrId}:${day.date}`,
@@ -133,12 +153,12 @@ export async function collectNoRecordsActivityCandidates(input: {
         unit: "days",
         rawValue: 1,
         estimatedAmount,
-        // Still requires_review when the amount is unknown — publish now refuses
-        // such a candidate outright rather than silently zeroing it.
-        calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
+        // Always "calculated" now: the null-amount case returned early above, so a
+        // draft reaching here has a real number behind it.
+        calculationStatus: "calculated" as const,
         reason: day.description || "No activity recorded (Private Calendar)",
         evidence: { description: day.description },
         dates: [day.date],
-      } satisfies DeductionsCandidateDraft;
+      } satisfies DeductionsCandidateDraft];
     });
 }
