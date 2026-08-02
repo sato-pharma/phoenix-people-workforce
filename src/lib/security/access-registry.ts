@@ -109,6 +109,15 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/heartbeat", reason: "Session heartbeat endpoint validates the Phoenix session token directly." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
+  // Biometric (passkey) sign-in. The two /login/* routes are credential bootstrap exactly like
+  // /api/auth/login — no session exists yet, and the WebAuthn signature IS the credential. The
+  // /register/* and /credentials routes are self-service and validate the active Phoenix session
+  // cookie directly via resolveSessionState, exactly like /api/auth/change-password above.
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/biometric/login/options", reason: "Credential bootstrap endpoint; no existing Phoenix session is expected. Returns only an opaque challenge and deliberately reveals nothing about which accounts have biometrics enrolled." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/biometric/login/verify", reason: "Credential bootstrap endpoint; the verified WebAuthn assertion replaces the password check, then the route re-applies every gate /api/auth/login applies (is_active, terminal employment, lockout, IP blocklist, force_password_reset)." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/biometric/register/options", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before issuing an enrollment challenge." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/biometric/register/verify", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before storing a device public key." }),
+  tokenApi({ authMode: "public-token", methods: ["GET", "DELETE"], pattern: "/api/auth/biometric/credentials", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState and is scoped to the caller's own login_id, so it cannot read or revoke another person's devices." }),
   tokenApi({ authMode: "dev-only", methods: ["GET"], pattern: "/api/dev-auth", reason: "Development-only local preview authentication helper." }),
   // Super Admin only, on top of the same dev-only env+localhost gate as /api/dev-auth above
   // (see isLocalDevelopmentRequest): auto-picks a real active employee for a role+line and

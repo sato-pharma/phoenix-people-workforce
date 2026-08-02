@@ -102,19 +102,7 @@ async function isLinkedEmployeeTerminal(hrId: string | null | undefined): Promis
   }
 }
 
-export async function authenticateLoginId(loginIdInput: string, password: string): Promise<AppAuthUser | null> {
-  const loginId = normalizeLoginId(loginIdInput);
-  if (!loginId || !password) return null;
-
-  const row = await findActiveAuthUserRow(loginId);
-  if (!row) return null;
-
-  const passwordMatches = await bcrypt.compare(password, row.password_hash);
-  if (!passwordMatches) return null;
-
-  // Resigned / terminated employees can never sign in, even if their login was left active.
-  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
-
+function mapAuthUserRow(row: AppAuthUserDbRow): AppAuthUser {
   return {
     authEmail: row.auth_email ?? null,
     authUserId: row.auth_user_id ?? null,
@@ -128,4 +116,41 @@ export async function authenticateLoginId(loginIdInput: string, password: string
     role: normalizeRole(row.role),
     sessionVersion: Number.isFinite(row.session_version) ? Number(row.session_version) : 1,
   };
+}
+
+export async function authenticateLoginId(loginIdInput: string, password: string): Promise<AppAuthUser | null> {
+  const loginId = normalizeLoginId(loginIdInput);
+  if (!loginId || !password) return null;
+
+  const row = await findActiveAuthUserRow(loginId);
+  if (!row) return null;
+
+  const passwordMatches = await bcrypt.compare(password, row.password_hash);
+  if (!passwordMatches) return null;
+
+  // Resigned / terminated employees can never sign in, even if their login was left active.
+  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
+
+  return mapAuthUserRow(row);
+}
+
+// Biometric (passkey) sign-in resolves the account AFTER the WebAuthn signature has already been
+// verified, so there is no password to compare — possession of the enrolled device is the proof.
+//
+// 🔴 Every other gate authenticateLoginId applies MUST still apply here, or a passkey becomes a way
+// around them. findActiveAuthUserRow enforces is_active, and the terminal-employment check below is
+// the one that matters most: a resigned rep whose phone still holds a passkey must be refused at the
+// same instant their password stops working. Do not "simplify" this by returning the row directly.
+export async function resolveAuthUserForPasswordlessLogin(
+  loginIdInput: string,
+): Promise<AppAuthUser | null> {
+  const loginId = normalizeLoginId(loginIdInput);
+  if (!loginId) return null;
+
+  const row = await findActiveAuthUserRow(loginId);
+  if (!row) return null;
+
+  if (await isLinkedEmployeeTerminal(row.hr_id)) return null;
+
+  return mapAuthUserRow(row);
 }

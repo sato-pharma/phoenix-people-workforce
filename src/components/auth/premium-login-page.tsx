@@ -1,9 +1,11 @@
 "use client";
 
+import { startAuthentication } from "@simplewebauthn/browser";
 import {
   BarChart3,
   Eye,
   EyeOff,
+  Fingerprint,
   Lock,
   ShieldCheck,
   User,
@@ -50,8 +52,10 @@ function safeReturnUrl(value: string | null | undefined): string | null {
 }
 
 export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorField, setErrorField] = useState<LoginErrorField | null>(null);
+  const [isBiometricSubmitting, setIsBiometricSubmitting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -131,6 +135,88 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
     };
   }, []);
 
+  // Only offer biometrics where the device actually has a built-in sensor it can verify the person
+  // with — Face ID, Touch ID, a fingerprint reader, Windows Hello. On anything else the button
+  // never renders, so nobody is shown a control that can only fail. Older browsers lack
+  // PublicKeyCredential entirely, which the optional chain treats as "not available".
+  useEffect(() => {
+    let cancelled = false;
+
+    window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.()
+      .then((available) => {
+        if (!cancelled) setBiometricAvailable(Boolean(available));
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleBiometricSignIn() {
+    setError(null);
+    setErrorField(null);
+    setShakeError(false);
+    setIsBiometricSubmitting(true);
+
+    try {
+      const optionsResponse = await fetch("/api/auth/biometric/login/options", {
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      if (!optionsResponse.ok) {
+        const payload = (await optionsResponse.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        showLoginError(payload?.message ?? "Biometric sign-in is unavailable. Use your password.");
+        return;
+      }
+
+      const { options } = (await optionsResponse.json()) as { options: Parameters<typeof startAuthentication>[0]["optionsJSON"] };
+      const assertion = await startAuthentication({ optionsJSON: options });
+
+      const verifyResponse = await fetch("/api/auth/biometric/login/verify", {
+        body: JSON.stringify({ response: assertion }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+
+      if (!verifyResponse.ok) {
+        const payload = (await verifyResponse.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        showLoginError(
+          payload?.message ?? "Biometric sign-in failed. Please sign in with your password.",
+        );
+        return;
+      }
+
+      const payload = (await verifyResponse.json()) as {
+        redirectTo?: string;
+        user?: { role?: string | null };
+      };
+
+      markSessionActivity();
+      const urlReturnUrl = new URLSearchParams(window.location.search).get("returnUrl");
+      const destination =
+        returnUrl ??
+        safeReturnUrl(urlReturnUrl) ??
+        payload.redirectTo ??
+        resolveLandingPathForRole(payload.user?.role);
+      window.location.assign(destination);
+    } catch (cancellation) {
+      // Dismissing the Face ID / fingerprint sheet throws here. That is a normal thing to do, not
+      // an error worth a red banner — leave the form exactly as it was so they can type instead.
+      const name = (cancellation as { name?: string } | null)?.name ?? "";
+      if (name !== "NotAllowedError" && name !== "AbortError") {
+        showLoginError("Biometric sign-in failed. Please sign in with your password.");
+      }
+    } finally {
+      setIsBiometricSubmitting(false);
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedLoginId = loginId.trim();
@@ -196,11 +282,14 @@ export function PremiumLoginPage({ returnUrl }: { returnUrl?: string }) {
       <div className="login-noise pointer-events-none fixed inset-0 opacity-[0.08]" />
       <section className="relative mx-auto grid min-h-[calc(100vh-16px)] w-full max-w-[1740px] overflow-hidden rounded-[28px] border border-white/10 bg-black shadow-[0_28px_90px_rgba(0,0,0,0.72)] sm:min-h-[calc(100vh-32px)] lg:min-h-[calc(100vh-48px)] lg:grid-cols-[1.06fr_0.94fr]">
         <AccessPanel
+          biometricAvailable={biometricAvailable}
           error={error}
           errorField={errorField}
           greeting={greeting}
+          isBiometricSubmitting={isBiometricSubmitting}
           isSubmitting={isSubmitting}
           loginId={loginId}
+          onBiometricSignIn={handleBiometricSignIn}
           onLoginIdChange={updateLoginId}
           onPasswordChange={updatePassword}
           onRememberChange={setRemember}
@@ -323,11 +412,14 @@ function BrandPanel() {
 }
 
 function AccessPanel({
+  biometricAvailable,
   error,
   errorField,
   greeting,
+  isBiometricSubmitting,
   isSubmitting,
   loginId,
+  onBiometricSignIn,
   onLoginIdChange,
   onPasswordChange,
   onRememberChange,
@@ -338,11 +430,14 @@ function AccessPanel({
   shakeError,
   showPassword,
 }: {
+  biometricAvailable: boolean;
   error: string | null;
   errorField: LoginErrorField | null;
   greeting: string;
+  isBiometricSubmitting: boolean;
   isSubmitting: boolean;
   loginId: string;
+  onBiometricSignIn: () => void;
   onLoginIdChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onRememberChange: (value: boolean) => void;
@@ -475,6 +570,30 @@ function AccessPanel({
           )}
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
+
+        {biometricAvailable && (
+          <>
+            <div className="mt-4 flex items-center gap-4">
+              <span className="h-px flex-1 bg-white/12" />
+              <span className="text-xs font-bold uppercase tracking-[0.22em] text-white/38">or</span>
+              <span className="h-px flex-1 bg-white/12" />
+            </div>
+
+            <button
+              className="mt-4 flex h-[52px] w-full items-center justify-center gap-3 whitespace-nowrap rounded-[14px] border border-white/16 bg-white/[0.045] text-base font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] transition hover:border-[#ff7900]/60 hover:bg-white/[0.075] focus:outline-none focus:ring-4 focus:ring-[#ff6a00]/24 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={isBiometricSubmitting || isSubmitting}
+              onClick={onBiometricSignIn}
+              type="button"
+            >
+              {isBiometricSubmitting ? (
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/35 border-t-white" />
+              ) : (
+                <Fingerprint className="h-6 w-6 text-[#ff9a2f]" />
+              )}
+              {isBiometricSubmitting ? "Waiting for you..." : "Sign in with biometrics"}
+            </button>
+          </>
+        )}
 
         <p className="mt-5 flex items-center justify-center gap-3 text-center text-sm text-white/48">
           <ShieldCheck className="h-5 w-5" />

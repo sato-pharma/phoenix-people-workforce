@@ -101,6 +101,8 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@google-cloud/logging": "^11.3.0",
     "@node-projects/excelforge": "3.6.0",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.2",
     "@supabase/supabase-js": "^2.110.8",
     "@tanstack/react-virtual": "^3.14.7",
     "@types/pdfmake": "^0.3.3",
