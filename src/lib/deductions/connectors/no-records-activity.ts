@@ -81,7 +81,40 @@ async function loadFieldWorkforceHrIdKeys(): Promise<Set<string>> {
   return selectFieldWorkforceHrIdKeys((data ?? []) as Array<{ hr_id: string; job_title: string | null }>);
 }
 
-export async function collectNoRecordsActivityCandidates(input: {
+/**
+ * 🔴 THIS CATEGORY NO LONGER HAS A POPULATION. It returns nothing, on purpose.
+ *
+ * "No Activity Recorded" measures absence of CRM activity. Two owner decisions removed
+ * everyone it could honestly apply to:
+ *
+ *   1. The FIELD WORKFORCE moved to the `crm` connector, which is the sole deduction
+ *      authority for them (see this module's header). Running both double-booked every
+ *      absence day — 142 employee-days in July 2026.
+ *   2. HEAD OFFICE has no CRM obligation at all. Whoever remained after (1) was office
+ *      staff being charged for not making field visits: in July 2026 the CEO (20 days),
+ *      an R&D Manager (20), a Financial Advisor (20), the HR Manager (9), an Office
+ *      Coordinator (14), a QPPV (4), two Admin Assistants (6) and a recruiter (1).
+ *      None of them has a contact list. NONE had a fingerprint punch on any charged day
+ *      either, so there was no corroborating signal in any direction — just an engine
+ *      pointed at the wrong people. 22,161.32 EGP.
+ *
+ * Field workforce + Head Office is everybody, so the honest result is an empty set rather
+ * than a scan that quietly finds someone new when a title changes.
+ *
+ * The engine behind it (`getCompanyNoActivityDays`) is NOT dead — it powers the Private
+ * Calendar UI and survived the No Activity Days module's retirement for that reason. Only
+ * the DEDUCTION use of it ends here. Retiring the category from DEDUCTION_COLLECTORS and
+ * the workspace is a follow-up, kept separate so this change is reviewable on its own.
+ */
+export async function collectNoRecordsActivityCandidates(_input: {
+  month: number;
+  year: number;
+}): Promise<DeductionsCandidateDraft[]> {
+  return [];
+}
+
+/** Retained for the follow-up that retires the category; see the note above. */
+export async function collectNoRecordsActivityCandidatesLegacy(input: {
   month: number;
   year: number;
 }): Promise<DeductionsCandidateDraft[]> {

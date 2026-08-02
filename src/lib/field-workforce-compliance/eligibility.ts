@@ -89,3 +89,43 @@ const SFE_MANAGER_TITLE = "sfe manager";
 export function isSfeManagerTitle(...titles: Array<string | null | undefined>): boolean {
   return titles.some((title) => normalizeTitle(title) === SFE_MANAGER_TITLE);
 }
+
+/**
+ * Titles that OWN a CRM contact list and log their own visits.
+ *
+ * This is deliberately narrower than isFieldWorkforceComplianceEligibleTitle, and the
+ * difference decides who a CRM no-activity deduction can honestly apply to.
+ *
+ * A Medical Rep owns contacts and enters visits, so a day with no visit is that rep's
+ * own signal. **A manager has no contact list and does not hand-enter visits** — the rep
+ * submits the visit and TAGS the manager, so a manager appears in CRM only when someone
+ * else remembered to tag them. Their absence measures the rep's data entry, not the
+ * manager's work, and they have no mechanism to correct it.
+ *
+ * Measured on July 2026 production: 16 managers/PMs carried 131,741.94 EGP — 77% of the
+ * whole CRM category — and on 35 of those charged days the person had CLOCKED IN on the
+ * fingerprint device (53,258.06 EGP). One Product Manager was at work on every single day
+ * he was charged for; a National Sales Manager lost 35% of a 90,000 base over 11 days no
+ * rep tagged him.
+ *
+ * 🔴 `field-workforce-compliance/types.ts` says a fingerprint punch CORROBORATES a
+ * no-activity day rather than cancelling it. That is correct FOR REPS, who are not on
+ * fingerprint devices at all — it was never written about office-based managers, for whom
+ * the punch proves attendance and the missing CRM row proves only that nobody tagged them.
+ * Do not cite that comment to put managers back in scope.
+ */
+const OWN_CRM_VISIT_LOGGER_TITLES = new Set<string>([
+  "medical representative",
+  "medical rep",
+  "employee medical rep",
+]);
+
+export function logsOwnCrmVisitsTitle(...titles: Array<string | null | undefined>): boolean {
+  for (const title of titles) {
+    const normalized = normalizeTitle(title);
+    if (!normalized) continue;
+    if (OWN_CRM_VISIT_LOGGER_TITLES.has(normalized)) return true;
+    if (resolveJobFunctionRole(title) === "Medical Rep") return true;
+  }
+  return false;
+}
