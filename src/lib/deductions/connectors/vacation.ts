@@ -12,6 +12,8 @@
 // which took every unpaid_duration_days > 0 row with no reason filter at all.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
+import { calculatePaymentForRequest } from "@/lib/vacation/service.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
 import { assertBaseSalaryMapLoaded } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
@@ -32,6 +34,14 @@ type VacationRequestRow = {
   manager_hr_id: string | null;
   manager_of_manager_hr_id: string | null;
 };
+
+/**
+ * iReports360's Annual Vacation code. `ireports360-source.ts` maps -4 to the "AV" status
+ * and its own comment calls it "the only genuine leave type here" — the other negative
+ * codes are excuses, health days and the like, which are NOT vacation and must not be
+ * charged as one.
+ */
+const CRM_ANNUAL_VACATION_VISIT_TYPE = -4;
 
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
@@ -201,26 +211,204 @@ async function collectVacationCandidatesByReason(input: {
   return drafts;
 }
 
+/**
+ * VACATIONS ARE SUBMITTED IN TWO PLACES, AND THIS CONNECTOR ONLY EVER READ ONE.
+ *
+ * `v2_vacation_requests` is the HR system. But a vacation can also be entered on CRM —
+ * iReports360 visit type -4, "Annual Vacation", which `ireports360-source.ts` maps to the
+ * "AV" status. That second source was invisible here, so an employee who took leave on CRM
+ * with no balance to cover it generated NO candidate at all.
+ *
+ * This is the only under-detection in the module: every other defect found on 2026-08-02
+ * over-charged. Measured on July 2026 production: 84 CRM vacation days across 43 employees
+ * had no matching HR request. Running each through the balance engine, 61 were covered by
+ * balance and 23 were not — 15 Medical Reps hired Jan–May 2026, all `first_six_months`,
+ * 10,725.76 EGP that should have been deducted and was not.
+ *
+ * WHY IT CALLS THE ENGINE RATHER THAN JUDGING BALANCE ITSELF
+ *
+ * There is no balance table. A balance is derived per employee from the hire-date-anchored
+ * entitlement period, approved requests inside it, days consumed via payroll settlement,
+ * and debt carried forward from prior periods. `calculatePaymentForRequest` is the same
+ * function that runs when someone files a request, so calling it keeps this connector and
+ * the vacation module in agreement by construction. Re-deriving the arithmetic is exactly
+ * how two `calculateDeductionAmountFromBaseSalary` functions came to disagree on a divisor.
+ *
+ * The unpaid REASON the engine returns decides the category, so a CRM day lands in the same
+ * bucket an identical HR request would.
+ */
+async function collectCrmSubmittedUnpaidVacationDays(input: {
+  month: number;
+  year: number;
+  category: Extract<DeductionsCategory, "unpaid_vacation" | "insufficient_balance_vacation">;
+  unpaidReasons: string[];
+}): Promise<DeductionsCandidateDraft[]> {
+  const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
+  const start = `${monthKey}-01`;
+  const end = `${monthKey}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
+  const supabase = getSupabaseAdmin();
+
+  const baseSalaryByCompact = await getBaseSalaryMap();
+  assertBaseSalaryMapLoaded("Vacation connector (CRM source)", baseSalaryByCompact);
+
+  // The CRM mirror is read through src/lib/crm's single door, never queried directly —
+  // `tests/crm-single-source-door` enforces that, and it caught the first cut of this.
+  //
+  // INCLUDING DEPARTED on purpose. The plain scan hides a resigned rep's visits from
+  // company-wide views, but that read's own doc says a caller looking up one person's own
+  // history for payroll must not have it hidden. A leaver's unpaid vacation is still owed,
+  // so excluding them would silently drop exactly the people whose final month matters.
+  const [{ data: employeeRows, error: employeeError }, visits, { data: requestRows, error: requestError }] =
+    await Promise.all([
+      supabase.from("employees").select("hr_id,full_name,crm_id,hire_date"),
+      scanVisitsForRangeIncludingDeparted<{ agent_crm_id: unknown; visit_date: unknown; visit_type: unknown }>({
+        columns: "agent_crm_id,visit_date,visit_type",
+        dateFrom: start,
+        dateTo: end,
+      }),
+      supabase.from("v2_vacation_requests").select("employee_hr_id,start_date,end_date").lte("start_date", end).gte("end_date", start),
+    ]);
+  // Fail closed on every read. A silent empty result here means "nobody took CRM leave",
+  // which is indistinguishable from the outage that produced this gap in the first place.
+  // (scanVisitsForRangeIncludingDeparted throws on failure rather than returning empty.)
+  if (employeeError) throw new Error(`Vacation connector: employees read failed: ${employeeError.message}`);
+  if (requestError) throw new Error(`Vacation connector: vacation request read failed: ${requestError.message}`);
+  const visitRows = visits.filter((visit) => Number(visit.visit_type) === CRM_ANNUAL_VACATION_VISIT_TYPE);
+
+  const employeeByCrmId = new Map<string, { hrId: string; name: string | null; hireDate: string | null }>();
+  for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; crm_id: string | null; hire_date: string | null }>) {
+    const crmId = row.crm_id != null ? String(row.crm_id).trim() : "";
+    if (crmId) employeeByCrmId.set(crmId, { hrId: row.hr_id, name: row.full_name, hireDate: row.hire_date });
+  }
+
+  const coveredByHrId = new Map<string, Array<{ start: string; end: string }>>();
+  for (const row of (requestRows ?? []) as Array<{ employee_hr_id: string | null; start_date: string | null; end_date: string | null }>) {
+    const hrId = String(row.employee_hr_id ?? "").trim();
+    if (!hrId || !row.start_date) continue;
+    const list = coveredByHrId.get(hrId) ?? [];
+    list.push({ start: String(row.start_date).slice(0, 10), end: String(row.end_date ?? row.start_date).slice(0, 10) });
+    coveredByHrId.set(hrId, list);
+  }
+
+  // One entry per (employee, day): several -4 rows on one date is still one vacation day.
+  const daysByHrId = new Map<string, { name: string | null; hireDate: string | null; days: Set<string> }>();
+  for (const visit of (visitRows ?? []) as Array<{ agent_crm_id: unknown; visit_date: unknown }>) {
+    const employee = employeeByCrmId.get(String(visit.agent_crm_id ?? "").trim());
+    if (!employee) continue;
+    const day = String(visit.visit_date ?? "").slice(0, 10);
+    if (!day) continue;
+    const covered = (coveredByHrId.get(employee.hrId) ?? []).some((range) => day >= range.start && day <= range.end);
+    // An HR request already covers this day — the request path above owns it, and taking
+    // it here too would double-book the same absence.
+    if (covered) continue;
+    const entry = daysByHrId.get(employee.hrId) ?? { name: employee.name, hireDate: employee.hireDate, days: new Set<string>() };
+    entry.days.add(day);
+    daysByHrId.set(employee.hrId, entry);
+  }
+
+  const drafts: DeductionsCandidateDraft[] = [];
+  for (const [hrId, entry] of daysByHrId) {
+    // No hire date means no entitlement period, so the balance is uncomputable. The HR
+    // path treats that as `missing_hire_date`; here it would be a guess, so skip rather
+    // than charge on an assumption.
+    if (!entry.hireDate) continue;
+
+    // Chronological, and consumption is tracked locally: these days are not persisted, so
+    // the engine judges every one of them against the same untouched balance. Without this
+    // a single remaining day would "cover" several dates at once.
+    const orderedDays = [...entry.days].sort();
+    let consumedSoFar = 0;
+    for (const day of orderedDays) {
+      const snapshot = await calculatePaymentForRequest({
+        durationDays: 1,
+        employeeHrId: hrId,
+        hireDate: entry.hireDate,
+        startDate: day,
+        vacationType: "annual",
+      });
+      const balanceBefore = snapshot.balanceBeforeDays - consumedSoFar;
+      consumedSoFar += 1;
+
+      const unpaid = balanceBefore <= 0 || snapshot.unpaidDurationDays > 0;
+      if (!unpaid) continue;
+      // Route by the engine's own reason so a CRM day lands in the same category an
+      // identical HR request would. A reason outside this collector's set belongs to the
+      // sibling collector, not here.
+      const reason = snapshot.unpaidReason ?? (balanceBefore <= 0 ? "insufficient_balance" : null);
+      if (!reason || !input.unpaidReasons.includes(reason)) continue;
+
+      const compactKey = compactDeductionsHrId(hrId);
+      const baseSalary = compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null;
+      const estimatedAmount = calculateDeductionAmountFromBaseSalary({
+        baseSalary,
+        deductionDays: 1,
+        month: input.month,
+        year: input.year,
+      });
+      if (estimatedAmount == null) continue; // no salary basis => no salary-based deduction
+
+      drafts.push({
+        category: input.category,
+        sourceSystem: "crm_vacation_signal",
+        sourceRecordId: `crm-vacation:${hrId}:${day}:${input.category}`,
+        employeeHrId: hrId,
+        employeeName: entry.name,
+        monthKey,
+        month: input.month,
+        year: input.year,
+        unit: "days",
+        rawValue: 1,
+        estimatedAmount,
+        calculationStatus: "calculated",
+        severity: "Medium",
+        reason: `Vacation taken on CRM with no HR request, and not covered by balance (${reason})`,
+        evidence: {
+          source: "ireports360 visit_type -4 (Annual Vacation)",
+          unpaidReason: reason,
+          entitlementDays: snapshot.entitlementDays,
+          balanceBeforeDays: Math.round(balanceBefore * 100) / 100,
+          periodStart: snapshot.periodStart,
+          periodEnd: snapshot.periodEnd,
+          hireDate: entry.hireDate,
+        },
+        dates: [day],
+      });
+    }
+  }
+
+  return drafts;
+}
+
 export async function collectUnpaidVacationCandidates(input: {
   month: number;
   year: number;
 }): Promise<DeductionsCandidateDraft[]> {
-  return collectVacationCandidatesByReason({
-    ...input,
-    category: "unpaid_vacation",
-    unpaidReasons: ["first_six_months", "missing_hire_date"],
-    reasonLabel: "Approved vacation is unpaid (not yet entitled within first 6 months, or hire date missing)",
-  });
+  const unpaidReasons = ["first_six_months", "missing_hire_date"];
+  const [fromRequests, fromCrm] = await Promise.all([
+    collectVacationCandidatesByReason({
+      ...input,
+      category: "unpaid_vacation",
+      unpaidReasons,
+      reasonLabel: "Approved vacation is unpaid (not yet entitled within first 6 months, or hire date missing)",
+    }),
+    collectCrmSubmittedUnpaidVacationDays({ ...input, category: "unpaid_vacation", unpaidReasons }),
+  ]);
+  return [...fromRequests, ...fromCrm];
 }
 
 export async function collectInsufficientBalanceVacationCandidates(input: {
   month: number;
   year: number;
 }): Promise<DeductionsCandidateDraft[]> {
-  return collectVacationCandidatesByReason({
-    ...input,
-    category: "insufficient_balance_vacation",
-    unpaidReasons: ["insufficient_balance"],
-    reasonLabel: "Approved vacation includes unpaid days because balance was insufficient",
-  });
+  const unpaidReasons = ["insufficient_balance"];
+  const [fromRequests, fromCrm] = await Promise.all([
+    collectVacationCandidatesByReason({
+      ...input,
+      category: "insufficient_balance_vacation",
+      unpaidReasons,
+      reasonLabel: "Approved vacation includes unpaid days because balance was insufficient",
+    }),
+    collectCrmSubmittedUnpaidVacationDays({ ...input, category: "insufficient_balance_vacation", unpaidReasons }),
+  ]);
+  return [...fromRequests, ...fromCrm];
 }
