@@ -538,6 +538,7 @@ import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-eviden
 import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attribution.test.ts";
 
 import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
+import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1103,6 +1104,8 @@ await runTest("outstation workload evidence (solo days count as worked; campaign
 await runTest("crm rep-day check-in attribution (managers borrow the rep's check-ins; an ordinary rep's route is unchanged)", runCrmRepDayCheckinAttributionTests);
 
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
+
+await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month bucketing, primary-rep model, single-source door)", runSfeDoctorCoverageTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
