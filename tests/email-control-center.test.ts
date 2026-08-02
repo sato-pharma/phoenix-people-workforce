@@ -8,7 +8,6 @@ import { emailTemplateKeys } from "../src/lib/email-templates/service.ts";
 export function runEmailControlCenterTests() {
   const aggregatorSource = readFileSync("src/lib/notifications/email-control-center.ts", "utf8");
   const dailyRouteSource = readFileSync("app/api/notifications/daily/route.ts", "utf8");
-  const probationEmailsSource = readFileSync("src/lib/probation/intelligence/probation-emails.ts", "utf8");
   const outstationServiceSource = readFileSync("src/lib/outstation/service.ts", "utf8");
   const marketingServiceSource = readFileSync("src/lib/marketing-requests/service.ts", "utf8");
 
@@ -49,11 +48,9 @@ export function runEmailControlCenterTests() {
   // achieves a true off (see the hybrid-recipient / per-request-routing notes in role-recipients.ts
   // and email-control-center.ts); for outstation_sla_reminder it's a redundant-but-cheap
   // perf/consistency win since an empty roles array already no-ops it correctly.
-  assert.match(
-    probationEmailsSource,
-    /resolveNotificationRoleEnabled\("probation_weekly_dv_digest"\)/,
-    "probation weekly digest must check its own enabled flag before scanning any data (hybrid mandatory-recipient gap)",
-  );
+  // The probation weekly digest's own enabled-flag check went with probation-emails.ts, deleted
+  // 2026-08-02 after the digest was retired. marketing_sla_reminder below is the remaining
+  // hybrid-recipient case this guard exists for.
   assert.match(
     marketingServiceSource,
     /resolveNotificationRoleEnabled\("marketing_sla_reminder"\)/,
