@@ -7,6 +7,7 @@ import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
+import { getSfeDoctorCoverage, type SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
@@ -535,6 +536,8 @@ export type CeoLandingDeferredData = {
   targets: SfeTargetPerformance | null;
   /** Sales share vs IMS market share by area — SFE only. */
   ims: SfeImsContribution | null;
+  /** Doctor coverage & frequency (current Cairo month) — SFE only (see includeDoctorCoverage). */
+  doctorCoverage: SfeDoctorCoverageBoard | null;
 };
 
 export type CeoWeeklyTrendPoint = {
@@ -565,6 +568,8 @@ export type CeoLandingDeferredOptions = {
   includeWeeklyTrend?: boolean;
   /** Per-line targets and IMS contribution. Line-scoped to SFE_VISIBLE_LINES. */
   includeSfePerformance?: boolean;
+  /** Doctor coverage & frequency board (current Cairo month). Off by default: only the SFE page shows it. */
+  includeDoctorCoverage?: boolean;
 };
 
 /** Days of CRM history behind the SFE field-activity partitions. */
@@ -581,6 +586,7 @@ export async function getCeoLandingDeferred(
     includeCrmField = false,
     includeWeeklyTrend = false,
     includeSfePerformance = false,
+    includeDoctorCoverage = false,
   } = options;
   const dataUnavailable: string[] = [];
   // CRM timestamps are Cairo wall-clock, so the window is seeded from the Cairo day, not the raw
@@ -595,7 +601,7 @@ export async function getCeoLandingDeferred(
   // adminSignals is likewise reused from the fast path when it succeeded there (avoids
   // recomputing the same 6 heavy sub-fetches + getPlatformMetrics a second time per page
   // load); only re-fetched here if the fast path didn't compute it or its fetch failed.
-  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR, crmFieldR, weeklyR, targetsR, imsR] = await Promise.allSettled([
+  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR, crmFieldR, weeklyR, targetsR, imsR, doctorCoverageR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
     includeExpense ? getOutstationExpenseCommandData(access, { preset: "30d" }) : Promise.resolve(null),
     includeAttendance ? getAttendanceAnalytics() : Promise.resolve(null),
@@ -607,6 +613,7 @@ export async function getCeoLandingDeferred(
     includeWeeklyTrend ? getPortalWeeklyDashboard({}, access) : Promise.resolve(null),
     includeSfePerformance ? getSfeTargetPerformance(access, SFE_VISIBLE_LINES) : Promise.resolve(null),
     includeSfePerformance ? getSfeImsContribution(SFE_VISIBLE_LINES) : Promise.resolve(null),
+    includeDoctorCoverage ? getSfeDoctorCoverage({}) : Promise.resolve(null),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;
@@ -625,6 +632,8 @@ export async function getCeoLandingDeferred(
   if (!targets && includeSfePerformance) dataUnavailable.push("Sales targets");
   const ims = imsR.status === "fulfilled" ? imsR.value : null;
   if (!ims && includeSfePerformance) dataUnavailable.push("IMS contribution");
+  const doctorCoverage = doctorCoverageR.status === "fulfilled" ? doctorCoverageR.value : null;
+  if (!doctorCoverage && includeDoctorCoverage) dataUnavailable.push("Doctor coverage");
   const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
   if (!marketing) dataUnavailable.push("ROI Signal");
   const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
@@ -772,5 +781,6 @@ export async function getCeoLandingDeferred(
     weeklyTrend: weeklyTrendOut,
     targets,
     ims,
+    doctorCoverage,
   };
 }

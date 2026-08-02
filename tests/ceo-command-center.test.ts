@@ -7,6 +7,10 @@ import {
   canReadCompanyWorkforceAggregates,
 } from "../src/lib/platform/metrics.ts";
 
+// The sfe skeleton-title array must contain the Doctor coverage section title (titles must track
+// rendered sections — see PHASE_B_SKELETON_TITLES's own comment in ceo-phase-b.tsx).
+const PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK = /sfe: \[[^\]]*"Doctor coverage & frequency"[^\]]*\]/;
+
 export function runCeoCommandCenterTests() {
   // The CEO now lands on their dedicated, branded command center (was /sales).
   assert.equal(
@@ -452,6 +456,15 @@ export function runCeoCommandCenterTests() {
     ceoPhaseBSource,
     /includeWeeklyTrend: isSfe/,
     "the SFE overview must load the real weekly sales series",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeDoctorCoverage: isSfe/,
+    "the SFE overview must load the doctor coverage board — and ONLY the SFE variant pays for it",
+  );
+  assert.ok(
+    PHASE_B_SKELETON_TITLES_SFE_SOURCE_CHECK.test(ceoPhaseBSource),
+    "the SFE skeleton must announce the Doctor coverage section — a rendered section with no skeleton row reads as a stuck load",
   );
   assert.match(
     ceoComponentSource,

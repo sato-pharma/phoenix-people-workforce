@@ -794,6 +794,9 @@ const employeePortalNavigationSectionSeeds = [
       // The real gate is the access map in src/lib/business-review-s1/portal-scope.ts; this list is
       // UX only, and a role here with no seat in that map still resolves to no access.
       { href: "/employee-portals/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Portal twin of /admin/doctor-coverage — NSM-only here; SFE Manager and Super Admin use the
+      // admin entry, since that is the shell they land in (same split as S1 Business Review above).
+      { href: "/employee-portals/doctor-coverage", icon: Stethoscope, label: "Doctor Coverage", permissions: [{ resource: "crm_visits" }], roles: ["National Sales Manager"] },
       // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.
@@ -2062,6 +2065,15 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     icon: TriangleAlert,
     label: "Double Visit Data Integrity",
     description: "Data-integrity checks for double-visit records.",
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
+    // NSM reaches the same board via the portal twin at /employee-portals/doctor-coverage —
+    // portal-mode roles never enter the (admin) shell.
+    href: "/admin/doctor-coverage",
+    icon: Stethoscope,
+    label: "Doctor Coverage",
+    description: "A/B doctor visit frequency vs norms — covered, under-visited, and lapsed panels per rep.",
     roles: ["Super Admin", "SFE Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];

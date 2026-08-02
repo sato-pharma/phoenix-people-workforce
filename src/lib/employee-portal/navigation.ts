@@ -23,6 +23,9 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
   showDsmsPerformanceTab?: boolean;
+  // Doctor Coverage & Frequency — NSM-only portal twin of /admin/doctor-coverage (SFE Manager and
+  // Super Admin use the admin entry; portal-mode roles cannot reach the (admin) shell).
+  showDoctorCoverageTab?: boolean;
   // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
   // server-side (see src/lib/employee-portal/team-calendar.ts). Reads the iReports360
   // visits mirror; each green numeric day deep-links to that rep's day drill-down.
@@ -339,6 +342,7 @@ export function resolveEmployeePortalNavVisibility(
 
   return {
     showDashboardTab: !isTrainingManager,
+    showDoctorCoverageTab: isNationalSalesManager,
     showDsmsPerformanceTab: isNationalSalesManager,
     showTeamCalendarTab: isNationalSalesManager,
     // The isHeadOffice branch is line/department-based, so a District or Regional Manager sitting
