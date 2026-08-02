@@ -1155,7 +1155,7 @@ async function resignEmployeeWithFallback(
 export async function createResignation(
   input: CreateResignationInput,
   actor: string,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
   const submittedDate = normalizeSubmittedDate(input);
@@ -1182,7 +1182,7 @@ async function createResignationForEmployee(
   input: CreateResignationInput,
   actor: string,
   employee: DirectoryEmployee,
-  access?: Pick<AccessContext, "role">,
+  access?: AccessContext,
 ) {
   const submittedDate = normalizeSubmittedDate(input);
   const effectiveDate = normalizeLastWorkingDate(input);
@@ -1195,6 +1195,19 @@ async function createResignationForEmployee(
     expectedNextStatus: "resignation_submitted",
     status: "new",
   });
+
+  // Scope guard — deliberately mirrors resignEmployeeAndOpenVacancy below. This path takes
+  // the target employee from the caller-supplied payload rather than the URL, so without
+  // this a role holding resignations:create could submit a resignation for ANY employee,
+  // including one far outside their own chain. It was survivable only because that grant
+  // has been limited to Super Admin / Talent Acquisition, both of whom canSeeEmployee
+  // already passes company-wide — the missing check was masked by the narrow grant, not
+  // by any actual scoping. Keep this in place before widening resignations:create.
+  const scopedAccess = access ?? systemAccessContext;
+  if (!canSeeEmployee(scopedAccess, employee)) {
+    throw new Error(`Forbidden: ${scopedAccess.role} cannot access employee ${employee.hrId}.`);
+  }
+
   const resignationId = await insertResignationRecord(supabase, {
     actor,
     effectiveDate,
