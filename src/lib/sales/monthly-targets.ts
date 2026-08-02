@@ -64,6 +64,18 @@ function isValidPeriod(period: string | null | undefined): period is string {
   return typeof period === "string" && PERIOD_RE.test(period);
 }
 
+/**
+ * Official Source-of-Sales line label ("Anti Infective", "CNS", "Pedia") -> canonical target
+ * line_code. Exported so the Closing Matrix can look up the targets for the line it is showing
+ * without re-deriving the alias table; LINE_ALIASES stays the single definition.
+ *
+ * Returns null for anything unrecognised — notably "Head Office", which is a confidential line
+ * that carries no field target and must never silently resolve to one.
+ */
+export function resolveTargetLineCode(officialLine: string | null | undefined): string | null {
+  return LINE_ALIASES[normKey(officialLine)] ?? null;
+}
+
 // ── Validation reference data ─────────────────────────────────────────────────
 
 export type TargetValidationRefs = {

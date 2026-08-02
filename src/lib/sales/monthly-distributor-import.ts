@@ -11,6 +11,7 @@ import {
   RESTRICTED_PRODUCT_CODES,
 } from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
@@ -3112,6 +3113,21 @@ export type MonthlyClosingAggregateCell = {
   salesValue: number;
 };
 
+/**
+ * One target cell (area × product) for the selected line and month, from au.monthly_targets.
+ *
+ * Targets ride the AREA, not the person, so they line up with the matrix's own grain exactly.
+ * An area/product with no target row simply has no entry here — it must render "—", never 0.
+ * "Other" areas carry no target by design, and the Direct channel has no area, so neither ever
+ * appears in this list.
+ */
+export type MonthlyClosingTargetCell = {
+  areaCode: string;
+  productCode: string;
+  targetUnits: number | null;
+  targetValue: number | null;
+};
+
 // One direct-sales aggregate cell (region × product). Region may be a real code or "NATIONAL".
 export type MonthlyClosingDirectCell = {
   productCode: string;
@@ -3131,20 +3147,47 @@ function emptyClosingCell(): MonthlyClosingCell {
   return { achievement: null, salesUnits: 0, salesValue: 0, targetUnits: null, targetValue: null };
 }
 
-// Roll-up adds ONLY the sales figures; target/achievement are derived later (Phase 2).
+/**
+ * Null-preserving addition for the target columns.
+ *
+ * A missing target is NOT zero. If a region's areas all lack targets, the subtotal must stay
+ * null so the UI renders "—"; folding them in as 0 would both assert "the target is zero" and
+ * make every achievement % a division by nothing. Only once at least one contributing cell
+ * actually carries a target does the sum become a number.
+ */
+function addTarget(left: number | null, right: number | null): number | null {
+  if (left === null && right === null) return null;
+  return (left ?? 0) + (right ?? 0);
+}
+
+/** Roll-up adds the sales figures AND the targets; achievement is re-derived from the sums. */
 function addClosingSales(target: MonthlyClosingCell, source: MonthlyClosingCell) {
   target.salesUnits += source.salesUnits;
   target.salesValue += source.salesValue;
+  target.targetUnits = addTarget(target.targetUnits, source.targetUnits);
+  target.targetValue = addTarget(target.targetValue, source.targetValue);
+}
+
+/**
+ * Achievement is ALWAYS recomputed from summed value ÷ summed target — never averaged from the
+ * per-cell percentages (which would weight a tiny area the same as a whole region), and never
+ * emitted against a null or zero target.
+ */
+function closingAchievement(cell: MonthlyClosingCell): number | null {
+  if (cell.targetValue === null || cell.targetValue === 0) return null;
+  return cell.salesValue / cell.targetValue;
 }
 
 function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
-  return {
-    achievement: cell.achievement,
+  const rounded: MonthlyClosingCell = {
+    achievement: null,
     salesUnits: Number(cell.salesUnits.toFixed(6)),
     salesValue: Number(cell.salesValue.toFixed(6)),
-    targetUnits: cell.targetUnits,
-    targetValue: cell.targetValue,
+    targetUnits: cell.targetUnits === null ? null : Number(cell.targetUnits.toFixed(6)),
+    targetValue: cell.targetValue === null ? null : Number(cell.targetValue.toFixed(6)),
   };
+  rounded.achievement = closingAchievement(rounded);
+  return rounded;
 }
 
 function sumClosingRowTotal(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -3166,6 +3209,8 @@ export function buildMonthlyClosingMatrix(input: {
   line: string | null;
   period: string | null;
   products: SalesProductReference[];
+  /** Area × product targets for this line/month. Absent ⇒ every target column renders "—". */
+  targets?: MonthlyClosingTargetCell[];
 }): MonthlyClosingMatrix {
   const columns: MonthlyClosingColumn[] = input.products
     .map((product) => ({
@@ -3181,6 +3226,11 @@ export function buildMonthlyClosingMatrix(input: {
   const cellLookup = new Map<string, MonthlyClosingAggregateCell>();
   input.cells.forEach((cell) => {
     cellLookup.set(`${normalizeCode(cell.areaCode)} ${normalizeCode(cell.productCode)}`, cell);
+  });
+
+  const targetLookup = new Map<string, MonthlyClosingTargetCell>();
+  (input.targets ?? []).forEach((target) => {
+    targetLookup.set(`${normalizeCode(target.areaCode)} ${normalizeCode(target.productCode)}`, target);
   });
 
   const sortedAreas = [...input.areas].sort((left, right) => {
@@ -3204,6 +3254,13 @@ export function buildMonthlyClosingMatrix(input: {
       if (aggregate) {
         cell.salesUnits = aggregate.salesUnits;
         cell.salesValue = aggregate.salesValue;
+      }
+      // A target with no matching sales still belongs on the grid — an area that sold nothing
+      // against a real target is exactly the row a reader is looking for.
+      const target = targetLookup.get(`${areaCode} ${column.productCode}`);
+      if (target) {
+        cell.targetUnits = target.targetUnits;
+        cell.targetValue = target.targetValue;
       }
       return roundedClosingCell(cell);
     });
@@ -3620,12 +3677,29 @@ export async function loadMonthlyClosing(input?: {
   }
 
   const supabase = getSupabaseAdmin();
-  const [areas, products, aggregateData, directData] = await Promise.all([
+  // The target columns are read from the seat-model Targets engine (au.monthly_targets, the same
+  // source the Targets workspace uses), so the closing grid and the achievement grid can never
+  // disagree about a target. A line that resolves to no target code — Head Office — simply gets
+  // none, and every target cell renders "—".
+  const targetLineCode = resolveTargetLineCode(selectedLine);
+  const [areas, products, aggregateData, directData, targetRows] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
     rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
+    // A targets outage must not take the whole closing down with it — the sales numbers are the
+    // headline and stand on their own. On failure the target columns degrade to "—".
+    targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
   ]);
+
+  const targets: MonthlyClosingTargetCell[] = targetRows
+    .filter((row) => row.lineCode === targetLineCode)
+    .map((row) => ({
+      areaCode: row.areaCode,
+      productCode: row.productCode,
+      targetUnits: row.targetUnits,
+      targetValue: row.targetValue,
+    }));
 
   const cells: MonthlyClosingAggregateCell[] = (aggregateData as Record<string, unknown>[]).map((row) => ({
     areaCode: String(row.area_code ?? ""),
@@ -3649,6 +3723,7 @@ export async function loadMonthlyClosing(input?: {
     line: selectedLine,
     period: selectedPeriod,
     products,
+    targets,
   });
 
   return injectDirectIntoMatrix(matrix, directCells);

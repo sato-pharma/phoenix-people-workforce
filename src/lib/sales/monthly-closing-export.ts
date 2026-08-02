@@ -706,16 +706,21 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
       const value = isStatic ? (cell?.salesValue ?? 0) : F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0);
       num(row.getCell(start), units, UNITS_FMT, tone);
       num(row.getCell(start + 1), value, VALUE_FMT, tone);
-      num(row.getCell(start + 2), null, UNITS_FMT, tone);
-      num(row.getCell(start + 3), null, VALUE_FMT, tone);
-      num(row.getCell(start + 4), null, PCT_FMT, tone, true);
+      // Targets and achievement come off the matrix cell, which sourced them from
+      // au.monthly_targets — the same engine the Targets workspace reads, so the two can never
+      // disagree. They are plain cached values rather than Data-sheet formulas: the Calc sheet
+      // holds distributor invoice lines only, so there is nothing there to SUMIFS a target out
+      // of. A null stays blank, so an area with no target reads "—" and never a fabricated 0.
+      num(row.getCell(start + 2), cell?.targetUnits ?? null, UNITS_FMT, tone);
+      num(row.getCell(start + 3), cell?.targetValue ?? null, VALUE_FMT, tone);
+      num(row.getCell(start + 4), cell?.achievement ?? null, PCT_FMT, tone, true);
     });
     const totalValue = isStatic
       ? rowTotal.salesValue
       : F(level === "grand" ? sumAll(ref.dpValue) : sumifs(ref.dpValue, valueCrit(level, key)), rowTotal.salesValue);
     num(row.getCell(grandStart), totalValue, VALUE_FMT, tone);
-    num(row.getCell(grandStart + 1), null, VALUE_FMT, tone);
-    num(row.getCell(grandStart + 2), null, PCT_FMT, tone, true);
+    num(row.getCell(grandStart + 1), rowTotal.targetValue, VALUE_FMT, tone);
+    num(row.getCell(grandStart + 2), rowTotal.achievement, PCT_FMT, tone, true);
     rowAccent = null;
     rowIndex += 1;
   };
@@ -905,6 +910,105 @@ function writeGapsSheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparison,
   });
 }
 
+/**
+ * Target vs Achievement — the comparison the workbook never had.
+ *
+ * Every other comparison sheet (Distributor, Rankings & Mix, Gaps, Summary) answers "who sold
+ * what", never "against what they were asked to sell": monthly-closing-comparison.ts carries no
+ * target field at all. This sheet is built from the MATRIX rather than from the comparison data,
+ * because the matrix is where au.monthly_targets was joined on — so a number here can never
+ * disagree with the Closing Matrix sheet sitting next to it.
+ *
+ * Sales and target are written as the matrix's own cached values (the hidden Calc sheet holds
+ * distributor invoice lines only — there is nothing there to SUMIFS a target out of, and pairing
+ * a live sales formula with a static target would let the two drift apart on recalculation).
+ * Achievement IS a live formula dividing this row's two cells, so editing either keeps it honest.
+ *
+ * An area with no target shows blank, not 0 — a 0 target would read as "asked to sell nothing"
+ * and turn achievement into a division by nothing.
+ */
+function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Target vs Achievement"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+  const columns: TableColumn[] = [
+    { label: "Region", width: 18 },
+    { label: "Area", width: 26 },
+    { label: "Sales Units", numFmt: UNITS_FMT, right: true },
+    { label: "Tgt Units", numFmt: UNITS_FMT, right: true },
+    { dataBar: true, label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "Tgt Value", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "Ach %", numFmt: PCT_FMT, right: true },
+  ];
+  bandHeader(sheet, matrix.line, matrix.period, "Target vs Achievement", columns.length);
+
+  // writeTable puts the title on `startRow`, the header on the next row, and the first data row
+  // two below — so the achievement formula can reference its own row deterministically.
+  const START_ROW = 4;
+  const FIRST_DATA_ROW = START_ROW + 2;
+  const SALES_VALUE_COL = columnLetter(5);
+  const TARGET_VALUE_COL = columnLetter(6);
+
+  const rows: CellValue[][] = [];
+  const push = (region: string, area: string, cell: MonthlyClosingCell) => {
+    const excelRow = FIRST_DATA_ROW + rows.length;
+    rows.push([
+      region,
+      area,
+      cell.salesUnits,
+      cell.targetUnits,
+      cell.salesValue,
+      cell.targetValue,
+      // Live division, blank when there is no target to divide by.
+      F(
+        `IFERROR(${SALES_VALUE_COL}${excelRow}/${TARGET_VALUE_COL}${excelRow},"")`,
+        cell.achievement ?? 0,
+      ),
+    ]);
+  };
+
+  matrix.regions.forEach((region) => {
+    region.areas.forEach((area) => {
+      push(region.regionName, area.isDirect ? "Direct orders (company)" : area.areaName, area.rowTotal);
+    });
+    push(region.regionName, `${region.regionName} — REGION TOTAL`, region.subtotal.rowTotal);
+  });
+
+  const grandRow = FIRST_DATA_ROW + rows.length;
+  const totals: CellValue[] = [
+    "NATIONAL",
+    "Grand Total",
+    matrix.grandTotal.rowTotal.salesUnits,
+    matrix.grandTotal.rowTotal.targetUnits,
+    matrix.grandTotal.rowTotal.salesValue,
+    matrix.grandTotal.rowTotal.targetValue,
+    F(
+      `IFERROR(${SALES_VALUE_COL}${grandRow}/${TARGET_VALUE_COL}${grandRow},"")`,
+      matrix.grandTotal.rowTotal.achievement ?? 0,
+    ),
+  ];
+
+  const hasAnyTarget =
+    matrix.grandTotal.rowTotal.targetValue !== null ||
+    matrix.regions.some((region) => region.subtotal.rowTotal.targetValue !== null);
+
+  writeTable(sheet, START_ROW, {
+    columns,
+    note: hasAnyTarget
+      ? "Achievement % is a live formula (Sales Value ÷ Tgt Value) on each row, so it stays correct " +
+        "if a figure is edited. A blank target means no target was uploaded for that area and " +
+        "product — it is NOT a target of zero, and no achievement is claimed against it. " +
+        "Region totals divide summed sales by summed targets; they are never the average of the " +
+        "area percentages."
+      : "No targets are loaded for this line and month, so every target and achievement cell is " +
+        "blank. This is an absence of data, not a target of zero — upload the line's targets to " +
+        "populate this sheet.",
+    rows,
+    title: "Sales vs Target by Area",
+    totals,
+  });
+}
+
 function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparison, ref: DataRefs) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Summary & Insights"));
   bandHeader(sheet, c.line, c.period, "Summary & Insights", 2);
@@ -947,6 +1051,9 @@ export async function buildMonthlyClosingWorkbook(
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
   writeMatrixSheet(workbook, matrix, ref);
+  // Directly after the matrix: the same numbers judged against their targets. It sits here rather
+  // than at the end because "did we hit the number" is the second question a reader asks.
+  writeTargetAchievementSheet(workbook, matrix);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
   writeGapsSheet(workbook, comparison, ref);
