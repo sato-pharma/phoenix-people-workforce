@@ -206,7 +206,10 @@ export function TripWorkloadEvidencePanel({
           </p>
         </div>
       </div>
-      <div className="overflow-hidden rounded-xl border border-[#e4e9ec]">
+      {/* overflow-x-auto, not overflow-hidden: seven columns with nowrap dates do not fit a phone,
+          and hidden CLIPPED the later columns with no way to reach them. Scrolling keeps the table
+          whole and keeps the sideways movement inside this box. */}
+      <div className="overflow-x-auto rounded-xl border border-[#e4e9ec]">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-slate-500">
             <tr>
