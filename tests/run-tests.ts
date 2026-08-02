@@ -537,6 +537,8 @@ import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-eviden
 
 import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attribution.test.ts";
 
+import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1099,6 +1101,8 @@ await runTest("outstation approval state (3-state queues partition exactly; appr
 await runTest("outstation workload evidence (solo days count as worked; campaign cap keeps double-visit counts)", runOutstationWorkloadEvidenceTests);
 
 await runTest("crm rep-day check-in attribution (managers borrow the rep's check-ins; an ordinary rep's route is unchanged)", runCrmRepDayCheckinAttributionTests);
+
+await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

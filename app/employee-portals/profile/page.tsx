@@ -21,6 +21,7 @@ import {
 import { BottomNavCustomizer } from "@/components/employee-portal/bottom-nav-customizer";
 import { EmployeePhotoEditor } from "@/components/employee-portal/employee-photo-editor";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
+import { BiometricDevicesCard } from "@/components/auth/biometric-devices-card";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { NotificationSettingsPanel } from "@/components/notifications/notification-settings-panel";
 import { Card } from "@/components/ui/card";
@@ -181,6 +182,7 @@ export default async function EmployeePortalProfilePage() {
         />
         <NotificationSettingsPanel />
         <ChangePasswordForm />
+        <BiometricDevicesCard />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <ScopeBadge scope={access.scope} />

@@ -27,6 +27,7 @@ import {
   setSupabaseAuthIdentityAccess,
 } from "@/lib/auth/supabase-identity";
 import { createTemporaryAuthPassword } from "@/lib/auth/password-setup";
+import { revokeAllCredentialsForLogin } from "@/lib/auth/webauthn";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -920,6 +921,13 @@ async function performUserStatusUpdate(
         reason: governanceReason ?? "Access user deactivated.",
         userId: loginId,
       });
+
+      // Unenroll every biometric device, so a deactivated person's phone stops offering to sign
+      // them in. This is defence in depth, not the security boundary: the biometric login route
+      // already refuses anyone whose app_auth_users row is inactive or whose employee record is
+      // terminal. Deliberately non-throwing for that reason — a failure here must not roll back an
+      // otherwise successful deactivation, which would leave the account ACTIVE.
+      await revokeAllCredentialsForLogin(loginId, "account_deactivated").catch(() => undefined);
     }
   } catch (mutationError) {
     if (profileStatusWritten && typeof existing.auth_user_id === "string") {
