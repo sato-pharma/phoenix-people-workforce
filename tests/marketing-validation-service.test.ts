@@ -126,8 +126,44 @@ function runMarketingOnBehalfValidationTests() {
   // ...while the audit trail still names the admin who actually typed it, in the employee master's
   // stored casing — the marketing tables' employees(hr_id) FKs are case-sensitive.
   assert.equal(adminActor.actorHrId, "SA-1");
-  assert.equal(adminActor.actorIsDirectoryEmployee, true);
+  assert.equal(adminActor.actorIsKnownEmployee, true);
   assert.equal(adminActor.actorName, "Omar Admin");
+
+  // The real Super Admin (PHX-1) is NOT in the active field directory: isActiveDirectoryEmployee
+  // drops organogram_visible=false rows and system-admin accounts on purpose. Looking the actor up
+  // in that slice found nothing, so a live desk validation recorded created_by_hr_id as the EMPLOYEE
+  // and left validated_by_hr_id null — the row read as if Nahed had validated her own customer.
+  // The actor must resolve from the unfiltered directory while the target stays restricted.
+  const systemAdminRow = directoryRow({
+    fullName: "Phoenix System Administrator",
+    hrId: "PHX-1",
+    jobTitle: "System Administrator",
+  });
+  const excludedAdminActor = resolveMarketingValidationActor({
+    access: createAccessContext({ hrId: "PHX-1", role: "Super Admin" }),
+    // Deliberately absent from employeeRows, present only in actorRows — exactly production's shape.
+    actorRows: [...onBehalfDirectory, systemAdminRow],
+    employeeRows: onBehalfDirectory,
+    onBehalfOfHrId: "A-10",
+  });
+  assert.equal(excludedAdminActor.owner.hrId, "A-10", "the customer must still be owned by the employee");
+  assert.equal(
+    excludedAdminActor.actorHrId,
+    "PHX-1",
+    "a system-admin actor outside the field directory must still be named, not swapped for the employee",
+  );
+  assert.equal(excludedAdminActor.actorIsKnownEmployee, true);
+  assert.equal(excludedAdminActor.actorName, "Phoenix System Administrator");
+
+  // An actor with no employees row anywhere still must not be silently renamed to the employee.
+  const unknownActor = resolveMarketingValidationActor({
+    access: createAccessContext({ hrId: "GHOST-1", role: "Super Admin" }),
+    actorRows: onBehalfDirectory,
+    employeeRows: onBehalfDirectory,
+    onBehalfOfHrId: "A-10",
+  });
+  assert.equal(unknownActor.actorIsKnownEmployee, false);
+  assert.equal(unknownActor.owner.hrId, "A-10");
 
   // HR_ID casing must not decide whether the target resolves.
   assert.equal(

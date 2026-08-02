@@ -619,6 +619,8 @@ type MarketingSystemValidationInput = {
 };
 
 type CreateValidationOptions = {
+  /** Unfiltered directory used to name the acting admin; defaults to `employeeRows`. */
+  actorRows?: EmployeeDirectoryRow[];
   employeeRows?: EmployeeDirectoryRow[];
   supabase?: SupabaseClient;
 };
@@ -1022,8 +1024,8 @@ export type MarketingValidationActor = {
    * tables is a case-sensitive FK to employees(hr_id) and the access context's dialect is not.
    */
   actorHrId: string;
-  /** False when a Super Admin has no employee row — `actorHrId` then cannot satisfy those FKs. */
-  actorIsDirectoryEmployee: boolean;
+  /** False when the actor has no employees row at all — `actorHrId` then cannot satisfy those FKs. */
+  actorIsKnownEmployee: boolean;
   actorName: string | null;
   isOnBehalf: boolean;
   /** Whose marketing scope the customer lands in. */
@@ -1043,6 +1045,18 @@ export type MarketingValidationActor = {
 export function resolveMarketingValidationActor(params: {
   access: AccessContext;
   employeeRows: EmployeeDirectoryRow[];
+  /**
+   * Directory slice used to identify the ACTOR, defaulting to `employeeRows`.
+   *
+   * These are deliberately two different lists. `employeeRows` is the active field directory, which
+   * `isActiveDirectoryEmployee` filters by `organogram_visible` and explicitly excludes system-admin
+   * accounts from — correctly, since they are not people on an org chart. But the Super Admin who
+   * performs a desk validation IS one of those excluded accounts, so looking the actor up in that
+   * slice found nothing and silently attributed the row to the employee it was done FOR. Pass the
+   * unfiltered directory here so the admin can be named; the TARGET stays restricted to the active
+   * slice, because a customer must only ever be parked on a working field employee.
+   */
+  actorRows?: EmployeeDirectoryRow[];
   onBehalfOfHrId?: string | null;
 }): MarketingValidationActor {
   const requestedHrId = cleanText(params.onBehalfOfHrId);
@@ -1050,7 +1064,7 @@ export function resolveMarketingValidationActor(params: {
     const requester = findRequester(params.access, params.employeeRows);
     return {
       actorHrId: String(requester.hrId),
-      actorIsDirectoryEmployee: true,
+      actorIsKnownEmployee: true,
       actorName: requester.displayName,
       isOnBehalf: false,
       owner: requester,
@@ -1060,7 +1074,7 @@ export function resolveMarketingValidationActor(params: {
   assertMarketingOnBehalfAccess(params.access);
 
   const rawActorHrId = assertMarketingActor(params.access);
-  const employeesByHrId = employeeRowByHrId(params.employeeRows);
+  const employeesByHrId = employeeRowByHrId(params.actorRows ?? params.employeeRows);
   const owner = params.employeeRows.find(
     (row) => normalizeHrId(row.hrId) === normalizeHrId(requestedHrId),
   );
@@ -1081,7 +1095,7 @@ export function resolveMarketingValidationActor(params: {
   const actorRow = employeesByHrId.get(normalizeHrId(rawActorHrId) ?? "");
   return {
     actorHrId: resolveStoredEmployeeHrId(rawActorHrId, employeesByHrId) ?? String(rawActorHrId),
-    actorIsDirectoryEmployee: Boolean(actorRow),
+    actorIsKnownEmployee: Boolean(actorRow),
     actorName: actorRow?.displayName ?? null,
     isOnBehalf: true,
     owner,
@@ -3853,25 +3867,30 @@ export async function createMarketingValidationRecord(
 
   const supabase = options.supabase ?? getSupabaseAdmin();
   const employeeRows = options.employeeRows ?? await loadEmployeeDirectoryRows();
+  // Only the desk path needs the unfiltered directory, and only to name the admin — so the extra
+  // load never runs for a field rep. Injected rows (tests) serve both roles.
+  const actorRows = cleanText(input.onBehalfOfHrId) && !options.employeeRows
+    ? await loadActorDirectoryRows()
+    : options.actorRows ?? employeeRows;
   const {
     actorHrId: resolvedActorHrId,
-    actorIsDirectoryEmployee,
+    actorIsKnownEmployee,
     actorName,
     isOnBehalf,
     owner,
   } = resolveMarketingValidationActor({
     access,
+    actorRows,
     employeeRows,
     onBehalfOfHrId: input.onBehalfOfHrId,
   });
 
-  // A Super Admin who has no employee row of their own cannot satisfy the employees(hr_id) FKs on
-  // these tables at all. In that case the audit columns fall back to the owner so the insert still
-  // succeeds, and `validated_at` — which has no FK — remains the flag saying an admin produced this
-  // row rather than a field capture.
+  // An actor with no employees row at all cannot satisfy the employees(hr_id) FKs on these tables.
+  // Only then do the audit columns fall back to the owner so the insert still succeeds; `validated_at`
+  // has no FK and stays set either way, so the row is always identifiable as a desk entry.
   const ownerHrId = String(owner.hrId);
-  const actorHrId = actorIsDirectoryEmployee ? resolvedActorHrId : ownerHrId;
-  const adminValidatedByHrId = isOnBehalf && actorIsDirectoryEmployee ? actorHrId : null;
+  const actorHrId = actorIsKnownEmployee ? resolvedActorHrId : ownerHrId;
+  const adminValidatedByHrId = isOnBehalf && actorIsKnownEmployee ? actorHrId : null;
   const adminValidatedAt = isOnBehalf ? new Date().toISOString() : null;
   const adminValidationNote = isOnBehalf
     ? `Validated at the desk by ${actorName ?? "Super Admin"} on behalf of ${owner.displayName}. Location chosen from map search — no field GPS or live photo.`
@@ -5122,6 +5141,20 @@ export async function uploadMarketingFinanceEvidence(params: {
 async function loadEmployeeDirectoryRows() {
   const directory = await import("@/lib/employees/employee-directory");
   return directory.getEmployeeDirectoryRows();
+}
+
+/**
+ * The unfiltered directory, used ONLY to put a name to the person acting.
+ *
+ * `loadEmployeeDirectoryRows` above returns the active field slice, which deliberately drops
+ * `organogram_visible = false` rows and system-admin accounts. The Super Admin performing a desk
+ * validation is exactly such an account, so it has to be resolved from the unfiltered list or the
+ * row ends up attributed to the employee it was created for. Never use this to widen who a customer
+ * may be owned by.
+ */
+async function loadActorDirectoryRows() {
+  const directory = await import("@/lib/employees/employee-directory");
+  return directory.getEmployeeDirectoryRows({ includeInactive: true });
 }
 
 export function assertMarketingDraftCanBeSubmitted(draft: MarketingRequestDraftDetail) {
