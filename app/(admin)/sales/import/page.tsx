@@ -52,7 +52,7 @@ export default async function SalesImportPage({ searchParams }: { searchParams: 
       listSalesImportDistributors(),
       listSourceOfSalesUploadBatches(),
       listSourceOfSalesProducts(),
-      loadSourceOfSalesDashboard(undefined, canViewRestrictedProducts(accessContext.role)),
+      loadSourceOfSalesDashboard(undefined, { role: accessContext.role }),
       listMappingReferences().catch(() => ({ bricks: [], products: [] })),
     ]);
   } catch (error) {

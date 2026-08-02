@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
-import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 
@@ -14,7 +13,9 @@ export async function GET(request: Request) {
     await assertPermission(access, "sales", "import");
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period");
-    const data = await loadSourceOfSalesDashboard(period, canViewRestrictedProducts(access.role));
+    // The viewer's role carries BOTH confidential locks (restricted products + the Head Office
+    // line); loadSourceOfSalesDashboard derives them so this route cannot forget either.
+    const data = await loadSourceOfSalesDashboard(period, { role: access.role });
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

@@ -9,7 +9,6 @@ import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/servic
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
-import { canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import {
   getSalesMarketingDashboard,
@@ -205,7 +204,6 @@ function buildCeoTrends(
 
 export async function getCeoCommandCenterData(access: AccessContext): Promise<CeoCommandCenterData> {
   const dataUnavailable: string[] = [];
-  const canRestricted = canViewRestrictedProducts(access.role);
   const platformPromise = getPlatformMetrics(access);
   // Share the in-flight platformPromise rather than chaining .then() after it —
   // getCeoAdminSignals's own 6 aggregate fetches are independent of platform
@@ -216,7 +214,7 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
 
   const [sosR, platformR, adminSignalsR, pendingPlansR] =
     await Promise.allSettled([
-      loadSourceOfSalesDashboard(null, canRestricted),
+      loadSourceOfSalesDashboard(null, { role: access.role }),
       platformPromise,
       adminSignalsPromise,
       getCeoPendingPlansCount(),
