@@ -6,7 +6,7 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import { isEligibleForPublish } from "./calculations.ts";
+import { isEligibleForPublish, resolveAppliedDeductionDates } from "./calculations.ts";
 import { normalizeMonthKey } from "./candidate-key.ts";
 import { findDayCollisions } from "./conflict.ts";
 import { assertDeductionsPublishActor } from "./permissions.ts";
@@ -21,6 +21,20 @@ export { isEligibleForPublish };
 
 function resolveAppliedValue(candidate: DeductionsCandidateWithDecision): number {
   return candidate.decision?.appliedValue ?? candidate.rawValue;
+}
+
+/**
+ * The days this candidate publishes — the reviewer's narrowed selection when
+ * they made one, otherwise everything the engine detected.
+ *
+ * Used for BOTH the snapshot lines and the double-deduction gate, deliberately.
+ * Publishing `candidate.dates` while charging a reduced `appliedValue` produced
+ * a line that said "3 days" above a list of 14 dates, and left the collision
+ * gate blocking a publish over a day the reviewer had already cleared — the one
+ * action the error message tells them to take could not actually resolve it.
+ */
+function resolvePublishDates(candidate: DeductionsCandidateWithDecision): string[] {
+  return resolveAppliedDeductionDates(candidate);
 }
 
 /**
@@ -107,7 +121,9 @@ export async function publishMonth(input: {
   // candidates — but paying all three deducts one day three times. Checked
   // against ELIGIBLE candidates only: an overlapping day that HR already cleared
   // in one category is resolved, not a conflict.
-  const collisions = findDayCollisions(eligible);
+  const collisions = findDayCollisions(
+    eligible.map((candidate) => ({ ...candidate, dates: resolvePublishDates(candidate) })),
+  );
   if (collisions.length > 0) {
     const named = collisions
       .slice(0, 10)
@@ -158,7 +174,7 @@ export async function publishMonth(input: {
     original_value: candidate.rawValue,
     applied_value: resolveAppliedValue(candidate),
     applied_amount: resolveAppliedAmount(candidate) ?? 0, // safe: unresolved rejected above
-    dates: candidate.dates,
+    dates: resolvePublishDates(candidate),
     reason: candidate.decision?.decisionReason || candidate.reason,
     hr_note: candidate.decision?.hrNote ?? null,
   }));

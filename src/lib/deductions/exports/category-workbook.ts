@@ -11,7 +11,7 @@
 import ExcelJS from "exceljs";
 
 import { buildCoverSheet, sanitizeSheetName, writeTable, type CellValue, type TableColumn } from "@/lib/export/phoenix-xlsx-style";
-import { deductionsCategoryLabel } from "../calculations.ts";
+import { deductionsCategoryLabel, resolveAppliedDeductionDates } from "../calculations.ts";
 import type { DeductionsCandidateWithDecision, DeductionsCategory } from "../types.ts";
 
 function money(value: number | null): CellValue {
@@ -25,6 +25,7 @@ function joinDates(dates: readonly string[]): string {
 const COLUMNS: TableColumn[] = [
   { label: "HR ID", width: 12 },
   { label: "Employee Name", width: 30 },
+  { label: "Hire Date", width: 12 },
   { label: "Month", width: 10 },
   { label: "Unit", width: 9 },
   { label: "Raw Value", numFmt: "#,##0.00", right: true, width: 11 },
@@ -33,6 +34,11 @@ const COLUMNS: TableColumn[] = [
   { label: "Severity", width: 10 },
   { label: "Reason", width: 40 },
   { label: "Dates", width: 40 },
+  // Side by side with "Dates" on purpose: detected vs actually charged is the
+  // comparison somebody opens this sheet to make. Without it the workbook shows
+  // "Applied Value 12" against a list of 14 dates and no record of which two the
+  // reviewer dropped.
+  { label: "Applied Dates", width: 40 },
   { label: "Decision Status", width: 18 },
   { label: "Applied Value", numFmt: "#,##0.00", right: true, width: 12 },
   { label: "Applied Amount", numFmt: "#,##0.00", right: true, width: 14, dataBar: true },
@@ -49,6 +55,7 @@ function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
   return [
     candidate.employeeHrId,
     candidate.employeeName ?? "",
+    candidate.hireDate ?? "",
     candidate.monthKey,
     candidate.unit,
     candidate.rawValue,
@@ -57,6 +64,7 @@ function candidateRow(candidate: DeductionsCandidateWithDecision): CellValue[] {
     candidate.severity ?? "",
     candidate.reason ?? "",
     joinDates(candidate.dates),
+    joinDates(resolveAppliedDeductionDates(candidate)),
     candidate.decision?.decisionStatus ?? "Pending",
     candidate.decision?.appliedValue == null ? null : candidate.decision.appliedValue,
     money(candidate.decision?.appliedAmount ?? null),

@@ -45,6 +45,7 @@ function candidate(
             hrNote: "",
             appliedValue: null,
             appliedAmount: null,
+            appliedDates: null,
             decidedBy: null,
             decidedAt: null,
             actorRoleAtDecision: null,

@@ -140,6 +140,102 @@ export function calculateDeductionAmountFromBaseSalary(input: {
 }
 
 /**
+ * The days a candidate ACTUALLY charges: the reviewer's narrowed selection when
+ * one exists, otherwise every day the detection engine found.
+ *
+ * `appliedDates === null` and `appliedDates === []` mean opposite things — see
+ * the column comment on deductions_decisions.applied_dates. The tempting
+ * shorthand here is an EMPTINESS check (`!selected?.length`, `selected?.length
+ * ? selected : candidate.dates`), and it is wrong: it reads "the reviewer
+ * cleared every day" as "charge every day", turning a deliberate zero into a
+ * full-month deduction. Only null means "never narrowed", so this tests for
+ * null and nothing else.
+ */
+export function resolveAppliedDeductionDates(candidate: {
+  dates: readonly string[];
+  decision?: { appliedDates?: readonly string[] | null } | null;
+}): string[] {
+  const selected = candidate.decision?.appliedDates;
+  if (selected == null) return [...candidate.dates];
+  return [...selected];
+}
+
+export type NormalizedAppliedDates = {
+  /** The accepted subset, de-duplicated and sorted. */
+  dates: string[];
+  /** Anything the caller sent that the detection engine never found. */
+  rejected: string[];
+};
+
+/**
+ * Constrains a reviewer's day selection to days the engine actually detected.
+ *
+ * A reviewer can only ever REMOVE days, never invent them: a deduction is
+ * evidence-backed, and a day nobody detected has no evidence behind it. The
+ * rejected days are returned rather than silently dropped so the caller can
+ * refuse loudly — a selection that silently shrinks is how a reviewer ends up
+ * believing they charged a day they did not.
+ */
+export function normalizeAppliedDeductionDates(input: {
+  candidateDates: readonly string[];
+  selected: readonly unknown[];
+}): NormalizedAppliedDates {
+  const detected = new Set<string>();
+  for (const value of input.candidateDates) {
+    if (typeof value === "string" && value.trim()) detected.add(value.trim());
+  }
+
+  const accepted = new Set<string>();
+  const rejected: string[] = [];
+  for (const value of input.selected) {
+    if (typeof value !== "string") {
+      rejected.push(String(value));
+      continue;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) continue;
+    if (detected.has(trimmed)) accepted.add(trimmed);
+    else rejected.push(trimmed);
+  }
+
+  return { dates: [...accepted].sort(), rejected };
+}
+
+/**
+ * A day-based candidate's amount for an arbitrary number of charged days,
+ * scaled from the candidate's OWN estimate rather than from a fresh base-salary
+ * read.
+ *
+ * Deliberate: `estimatedAmount` was computed by the connector from the employee's
+ * base salary at collection time, and it is the figure publish already pays and
+ * the reviewer already sees on screen. Re-reading base salary here would make a
+ * row jump because payroll changed that employee's salary last week — a movement
+ * the reviewer did not cause and cannot explain from the day they just unticked.
+ * Scaling the candidate's own number keeps "what I see" and "what is charged"
+ * the same statement.
+ *
+ * Returns null when there is no basis to scale (no estimate, or a candidate that
+ * charges zero days), which callers must surface as "requires review" rather than
+ * as 0.00 EGP.
+ */
+export function scaleDeductionAmountToDays(input: {
+  estimatedAmount: number | null | undefined;
+  rawValue: number;
+  appliedDays: number;
+}): number | null {
+  const estimatedAmount = input.estimatedAmount;
+  if (estimatedAmount == null || !Number.isFinite(estimatedAmount)) return null;
+  const rawValue = Number(input.rawValue);
+  const appliedDays = Number(input.appliedDays);
+  if (!Number.isFinite(rawValue) || rawValue <= 0) return null;
+  if (!Number.isFinite(appliedDays) || appliedDays < 0) return null;
+  // Exact passthrough when nothing was narrowed, so an untouched candidate can
+  // never drift by a rounding piaster just because this function ran.
+  if (appliedDays === rawValue) return estimatedAmount;
+  return Math.round((estimatedAmount / rawValue) * appliedDays * 100) / 100;
+}
+
+/**
  * Resolves a day-based deduction candidate's payroll amount: the decided
  * amount if one exists (`appliedAmount`, set on approval), otherwise an
  * ESTIMATE from base salary (base ÷ actual days in month × days) using

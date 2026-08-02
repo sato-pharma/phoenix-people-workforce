@@ -158,6 +158,125 @@ async function main() {
     );
   });
 
+  // ── THE DECISION WRITE PATH ────────────────────────────────────────────────
+  //
+  // The day-picker's Save is the other write this module makes, and it could not
+  // be exercised against a real database: production does not have
+  // `applied_dates` until the migration lands, and staging does not have the
+  // unified deductions tables at all (it still only carries the legacy
+  // `deduction_*` governance set). The wire is therefore the only place the
+  // payload can be checked — which is exactly what this script exists for.
+  //
+  // A URL-aware stub, because recordDecision now READS before it writes:
+  // `.single()`/`.maybeSingle()` ask for a single object, and answering those
+  // with `[]` would leave `unit` undefined and silently route the candidate down
+  // the amount-unit branch — the assertions would then pass on the wrong code.
+  const decisionCalls: RecordedRequest[] = [];
+  const CANDIDATE = {
+    id: "cand-1",
+    locked_at: null,
+    unit: "days",
+    raw_value: 4,
+    estimated_amount: 400,
+    dates: ["2026-07-03", "2026-07-07", "2026-07-14", "2026-07-21"],
+  };
+
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    const url = new URL(raw, "http://127.0.0.1:1");
+    const method = (init?.method ?? "GET").toUpperCase();
+    const marker = "/rest/v1/";
+    const index = url.pathname.indexOf(marker);
+    const table = index === -1 ? url.pathname : (url.pathname.slice(index + marker.length).split("?")[0] ?? "");
+
+    let body: unknown = null;
+    if (typeof init?.body === "string") {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    }
+    decisionCalls.push({ method, table, params: Object.fromEntries(url.searchParams.entries()), body });
+
+    const wantsObject = String(new Headers(init?.headers).get("accept") ?? "").includes("pgrst.object");
+
+    if (method === "GET") {
+      if (table === "deductions_candidates") {
+        return new Response(JSON.stringify(wantsObject ? CANDIDATE : [CANDIDATE]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      // No decision row yet — maybeSingle() reads this as data null, error null.
+      return new Response(JSON.stringify(wantsObject ? null : []), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    const written = Array.isArray(body) ? body[0] : body;
+    const row = { id: "dec-1", candidate_id: "cand-1", created_at: "x", updated_at: "x", ...(written as object) };
+    return new Response(JSON.stringify(wantsObject ? row : [row]), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof globalThis.fetch;
+
+  const { recordDecision } = await import("../src/lib/deductions/service.ts");
+  await recordDecision({
+    actor: { role: "Super Admin", hrId: "B-1", loginId: "contract-check" },
+    candidateId: "cand-1",
+    decisionStatus: "Pending",
+    decisionReason: "",
+    // Three of the four detected days ticked — the reviewer dropped 2026-07-07.
+    appliedDates: ["2026-07-03", "2026-07-14", "2026-07-21"],
+  });
+
+  console.log("\n[deductions-write-contract] asserting the DECISION wire\n");
+
+  const decisionWrites = decisionCalls
+    .filter((call) => call.table === "deductions_decisions" && call.method !== "GET" && call.method !== "HEAD")
+    .flatMap((call) => (Array.isArray(call.body) ? call.body : call.body ? [call.body] : []) as Record<string, unknown>[]);
+
+  check("the decision upsert reaches the wire exactly once", () => {
+    assert.equal(decisionWrites.length, 1, `expected 1 decision write, got ${decisionWrites.length}`);
+  });
+
+  check("the ticked days are sent as applied_dates", () => {
+    assert.deepEqual(
+      decisionWrites[0]?.applied_dates,
+      ["2026-07-03", "2026-07-14", "2026-07-21"],
+      "the reviewer's day selection must reach the database, or the picker is decorative",
+    );
+  });
+
+  check("applied_value is DERIVED from the ticks, not from the caller", () => {
+    assert.equal(decisionWrites[0]?.applied_value, 3, "three ticked days must be sent as three days");
+  });
+
+  check("applied_amount is DERIVED server-side (400 EGP over 4 days -> 300 for 3)", () => {
+    assert.equal(
+      decisionWrites[0]?.applied_amount,
+      300,
+      "the amount must be re-derived from the stored candidate — a browser must never dictate a payroll figure",
+    );
+  });
+
+  check("the existing decision is READ before it is overwritten", () => {
+    const firstWriteIndex = decisionCalls.findIndex(
+      (call) => call.table === "deductions_decisions" && call.method !== "GET" && call.method !== "HEAD",
+    );
+    const readIndex = decisionCalls.findIndex(
+      (call) => call.table === "deductions_decisions" && call.method === "GET",
+    );
+    assert.ok(readIndex !== -1, "recordDecision must read the existing decision row");
+    assert.ok(
+      readIndex < firstWriteIndex,
+      "the read must precede the upsert, or an omitted field blanks a saved day selection",
+    );
+  });
+
   globalThis.fetch = originalFetch;
 
   if (failures.length > 0) {

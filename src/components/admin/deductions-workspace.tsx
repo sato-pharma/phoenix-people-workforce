@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, PlayCircle, XCircle } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CheckCircle2, Download, PlayCircle, RotateCcw, XCircle } from "lucide-react";
 
-import { DEDUCTIONS_CATEGORY_CONFIG } from "@/lib/deductions/calculations.ts";
+import {
+  DEDUCTIONS_CATEGORY_CONFIG,
+  resolveAppliedDeductionDates,
+  scaleDeductionAmountToDays,
+} from "@/lib/deductions/calculations.ts";
 import { visibleDeductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 
 type CandidateApiRow = {
@@ -11,6 +15,8 @@ type CandidateApiRow = {
   category: DeductionsCategory;
   employeeHrId: string;
   employeeName: string | null;
+  /** Resolved from the employees table at read time — see service.ts. */
+  hireDate?: string | null;
   monthKey: string;
   unit: "days" | "amount";
   rawValue: number;
@@ -26,26 +32,344 @@ type CandidateApiRow = {
     hrNote: string;
     appliedValue: number | null;
     appliedAmount: number | null;
+    /** null = never narrowed (every detected day charges); [] = all days cleared. */
+    appliedDates: string[] | null;
     decidedBy: string | null;
     decidedAt: string | null;
   } | null;
 };
 
 /**
- * The day-of-month numbers a candidate actually charges, comma separated and sorted.
+ * The day-of-month number for an ISO date.
  *
  * Day numbers rather than full ISO dates because the workspace is already scoped to a
  * single month, so "2026-07-" on every entry is pure repetition — and a 19-day CRM
  * candidate rendered as full dates cannot fit on one line, which would force either a
  * wrap or an ellipsis. Both are barred by the admin-shell rules.
  */
-function formatDeductedDays(dates: string[] | null | undefined): string {
-  if (!dates || dates.length === 0) return "—";
-  const days = dates
-    .map((date) => Number(String(date).slice(8, 10)))
-    .filter((day) => Number.isInteger(day) && day > 0)
-    .sort((left, right) => left - right);
-  return days.length > 0 ? days.join(", ") : "—";
+function dayOfMonth(date: string): number {
+  return Number(String(date).slice(8, 10));
+}
+
+/**
+ * A person is shown by NAME, never by an HR code — the owner's standing rule,
+ * and the reason this helper exists rather than a `?? row.employeeHrId`
+ * fallback. The name is resolved server-side (service.ts fills a missing one
+ * from the employees directory), so this only guards the case where the person
+ * genuinely has no name anywhere.
+ */
+function employeeLabel(row: CandidateApiRow): string {
+  return row.employeeName?.trim() || "Name unavailable";
+}
+
+/**
+ * The hiring date, as a plain calendar date.
+ *
+ * Formatted in UTC from its own Y/M/D parts and never shifted into Cairo: this
+ * is a DATE column, not an instant, and running it through a timezone is how a
+ * hire date lands a day early.
+ */
+function hireDateLabel(value: string | null | undefined): string {
+  if (!value) return "—";
+  const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
+  if (!year || !month || !day) return "—";
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(
+    new Date(Date.UTC(year, month - 1, day)),
+  );
+}
+
+function sortedDates(dates: readonly string[] | null | undefined): string[] {
+  return [...(dates ?? [])].filter((date) => Number.isInteger(dayOfMonth(date)) && dayOfMonth(date) > 0).sort();
+}
+
+/** The days this candidate currently charges, per the saved decision. */
+function appliedDatesOf(row: CandidateApiRow): string[] {
+  return sortedDates(resolveAppliedDeductionDates(row));
+}
+
+/**
+ * Detected days on one line, with the ones the reviewer removed struck through
+ * rather than deleted. "14 detected, 12 charged, and these are the 2 I dropped"
+ * is the sentence a reviewer needs; silently rendering only the survivors makes
+ * a narrowed row indistinguishable from one that never had those days at all.
+ */
+function DayList({ row }: { row: CandidateApiRow }) {
+  const detected = sortedDates(row.dates);
+  if (detected.length === 0) return <span className="text-slate-400">—</span>;
+  const applied = new Set(appliedDatesOf(row));
+  return (
+    <span className="whitespace-nowrap tabular-nums">
+      {detected.map((date, index) => (
+        <span className={applied.has(date) ? "text-slate-700" : "text-slate-400 line-through"} key={date}>
+          {dayOfMonth(date)}
+          {index < detected.length - 1 ? ", " : ""}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** The day count a candidate currently charges. */
+function appliedDaysOf(row: CandidateApiRow): number {
+  if (row.unit !== "days") return 0;
+  if (row.decision?.appliedValue != null) return row.decision.appliedValue;
+  return row.decision?.appliedDates != null ? row.decision.appliedDates.length : row.rawValue;
+}
+
+/** What this candidate currently costs — the same scaling rule the server re-derives on save. */
+function appliedAmountOf(row: CandidateApiRow): number | null {
+  if (row.decision?.appliedAmount != null) return row.decision.appliedAmount;
+  if (row.unit !== "days") return row.estimatedAmount;
+  return scaleDeductionAmountToDays({
+    estimatedAmount: row.estimatedAmount,
+    rawValue: row.rawValue,
+    appliedDays: appliedDaysOf(row),
+  });
+}
+
+/**
+ * Tick the days that should be deducted; the quantity follows, and the amount
+ * follows the quantity.
+ *
+ * Every detected day starts TICKED, because every detected day is what this
+ * module charges today — starting empty would read as "nothing is deducted until
+ * you confirm each day", quietly zeroing a month that nobody had reviewed yet.
+ * So the reviewer's action here is removal, and the quantity is the count of
+ * what is left unless they type over it.
+ */
+function DeductionDaysEditor({
+  row,
+  onSaved,
+  onClose,
+}: {
+  row: CandidateApiRow;
+  onSaved: (candidateId: string, decision: CandidateApiRow["decision"]) => void;
+  onClose: () => void;
+}) {
+  const detected = useMemo(() => sortedDates(row.dates), [row.dates]);
+  const [selected, setSelected] = useState<string[]>(() => appliedDatesOf(row));
+  // Held as a string, not a number: a controlled number input that coerces on
+  // every keystroke cannot be cleared to retype it.
+  const [quantity, setQuantity] = useState<string>(() =>
+    // A loan/other candidate has no days — its applied VALUE is the money, so it
+    // seeds from the amount. Seeding it from the (always zero) day count would
+    // offer to write the deduction down to nothing the moment it was opened.
+    String(row.unit === "days" ? appliedDaysOf(row) : (row.decision?.appliedValue ?? row.rawValue)),
+  );
+  const [manualQuantity, setManualQuantity] = useState(
+    () => row.unit === "days" && row.decision?.appliedValue != null && row.decision.appliedValue !== appliedDatesOf(row).length,
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const parsedQuantity = Number(quantity);
+  const quantityValid = quantity.trim() !== "" && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
+  const overDetected = quantityValid && row.unit === "days" && parsedQuantity > row.rawValue;
+  const previewAmount =
+    quantityValid && !overDetected
+      ? scaleDeductionAmountToDays({
+          estimatedAmount: row.estimatedAmount,
+          rawValue: row.rawValue,
+          appliedDays: parsedQuantity,
+        })
+      : null;
+
+  function toggleDay(date: string) {
+    // Computed outside the updater, not inside it: a state updater must stay
+    // pure, and React may invoke it more than once.
+    const next = selected.includes(date) ? selected.filter((entry) => entry !== date) : [...selected, date].sort();
+    setSelected(next);
+    // The point of the checkboxes: the quantity auto-populates from them. It
+    // stops following only once the reviewer has typed a number of their own.
+    if (!manualQuantity) setQuantity(String(next.length));
+  }
+
+  function setAll(checked: boolean) {
+    const next = checked ? [...detected] : [];
+    setSelected(next);
+    if (!manualQuantity) setQuantity(String(next.length));
+  }
+
+  function resetQuantityToTicks() {
+    setManualQuantity(false);
+    setQuantity(String(selected.length));
+  }
+
+  async function save() {
+    if (!quantityValid) {
+      setError("Enter the number of days to deduct.");
+      return;
+    }
+    if (overDetected) {
+      setError(`Only ${row.rawValue} day(s) were detected — you cannot deduct more than that.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      // Carry the existing decision forward untouched. This control edits the
+      // days, not the verdict — re-sending the status and reason keeps a row
+      // that was already "Approved for Payroll" approved, and keeps the DB's
+      // reason-required-when-decided constraint satisfied.
+      const status = row.decision?.decisionStatus ?? "Pending";
+      const payload = await fetchJson<{ decision: CandidateApiRow["decision"] }>("/api/admin/deductions/decisions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId: row.id,
+          decisionStatus: status,
+          decisionReason: row.decision?.decisionReason ?? "",
+          hrNote: row.decision?.hrNote ?? "",
+          appliedValue: parsedQuantity,
+          appliedDates: selected,
+        }),
+      });
+      onSaved(row.id, payload.decision);
+      onClose();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save these days.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 border border-orange-200 bg-orange-50/50 p-3">
+      {detected.length > 0 ? (
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">Days to deduct</p>
+            <button
+              className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              onClick={() => setAll(true)}
+              type="button"
+            >
+              Select all
+            </button>
+            <button
+              className="whitespace-nowrap text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 underline transition hover:text-orange-600"
+              onClick={() => setAll(false)}
+              type="button"
+            >
+              Clear all
+            </button>
+          </div>
+          {/* A control grid, not a paragraph: fixed columns so a 19-day month
+              lays out deliberately instead of reflowing like wrapped text. */}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5">
+            {detected.map((date) => {
+              const checked = selectedSet.has(date);
+              return (
+                <label
+                  className={[
+                    "flex cursor-pointer items-center gap-1.5 whitespace-nowrap border px-2 py-1 text-xs font-bold tabular-nums transition",
+                    checked
+                      ? "border-orange-400 bg-white text-slate-900"
+                      : "border-slate-200 bg-slate-100 text-slate-400 line-through",
+                  ].join(" ")}
+                  key={date}
+                >
+                  <input
+                    checked={checked}
+                    className="h-3.5 w-3.5 accent-orange-500"
+                    onChange={() => toggleDay(date)}
+                    type="checkbox"
+                  />
+                  Day {dayOfMonth(date)}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs font-semibold text-slate-500">
+          This deduction carries no dated days — set the quantity directly.
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            {row.unit === "days" ? "Deduction quantity (days)" : "Deduction amount (EGP)"}
+          </span>
+          <input
+            className="w-32 border border-slate-300 bg-white px-2 py-1 text-sm font-black tabular-nums text-slate-900 focus:border-orange-400 focus:outline-none"
+            inputMode="decimal"
+            min={0}
+            onChange={(event) => {
+              setQuantity(event.target.value);
+              setManualQuantity(true);
+            }}
+            step="0.5"
+            type="number"
+            value={quantity}
+          />
+        </label>
+
+        <div className="flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            {row.unit === "days" ? "Amount" : "Detected"}
+          </span>
+          <p className="whitespace-nowrap py-1 text-sm font-black tabular-nums text-slate-900">
+            {row.unit === "days"
+              ? previewAmount != null
+                ? `${money(previewAmount)} EGP`
+                : "requires review"
+              : `${money(row.rawValue)}`}
+          </p>
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <button
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            disabled={saving}
+            onClick={save}
+            type="button"
+          >
+            {saving ? "Saving…" : "Save days"}
+          </button>
+          <button
+            className="whitespace-nowrap px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            disabled={saving}
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {manualQuantity && row.unit === "days" && parsedQuantity !== selected.length ? (
+        <p className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-amber-800">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          You typed {quantity} but {selected.length} day(s) are ticked — the typed number is what gets deducted.
+          <button
+            className="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.08em] underline transition hover:text-orange-600"
+            onClick={resetQuantityToTicks}
+            type="button"
+          >
+            <RotateCcw className="h-3 w-3" />
+            Match the ticks
+          </button>
+        </p>
+      ) : null}
+
+      {selected.length === 0 && detected.length > 0 && parsedQuantity === 0 ? (
+        <p className="text-[11px] font-bold text-amber-800">
+          No days ticked — this publishes as 0.00 EGP. To drop the deduction entirely, decide it as “Do Not Take Action”.
+        </p>
+      ) : null}
+
+      {overDetected ? (
+        <p className="text-[11px] font-bold text-red-700">
+          Only {row.rawValue} day(s) were detected for this employee — you cannot deduct more than that.
+        </p>
+      ) : null}
+
+      {error ? <p className="text-[11px] font-semibold text-red-700">{error}</p> : null}
+    </div>
+  );
 }
 
 type CategoryBucket = { candidateCount: number; employeeCount: number; totalAmount: number };
@@ -232,6 +556,10 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   const [rows, setRows] = useState<CandidateApiRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // One open editor at a time. A month can carry hundreds of candidates, each
+  // with up to ~19 days — rendering every checkbox at once would put thousands
+  // of live inputs on the page for no benefit.
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -301,6 +629,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
                   <th className="px-4 py-2">Employee</th>
+                  <th className="whitespace-nowrap px-4 py-2">Hire date</th>
                   <th className="px-4 py-2">Days</th>
                   <th className="px-4 py-2">Dates deducted</th>
                   <th className="px-4 py-2">Amount</th>
@@ -310,59 +639,119 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
-                  <tr className="border-b border-slate-100 odd:bg-slate-50/60 hover:bg-orange-50/40" key={row.id}>
-                    {/* Employee NAME only — never the HR code alongside it. The
-                        code is fallback text for a row with no name, not a badge. */}
-                    <td className="px-4 py-2.5 font-semibold text-slate-900">
-                      {row.employeeName ?? row.employeeHrId}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-700">{row.unit === "days" ? row.rawValue : "—"}</td>
-                    {/* WHICH days, not just how many. The candidate has always carried
-                        the exact dates; the table simply never showed them, so a
-                        reviewer could see "14 days" with no way to tell which 14 or to
-                        check one against a calendar. Day numbers only — the whole view
-                        is already scoped to one month, so the year/month would be
-                        repetition, and this keeps a 19-day row on a single line
-                        instead of wrapping or being cut off. */}
-                    <td className="whitespace-nowrap px-4 py-2.5 text-xs tabular-nums text-slate-700">
-                      {formatDeductedDays(row.dates)}
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-700">
-                      {row.estimatedAmount != null ? money(row.estimatedAmount) : "requires review"}
-                    </td>
-                    <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">{row.reason ?? "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <StatusBadge status={row.decision?.decisionStatus ?? null} />
-                    </td>
-                    {canDecide ? (
-                      <td className="px-4 py-2.5">
-                        <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
+                {rows.map((row) => {
+                  const appliedDays = appliedDaysOf(row);
+                  const narrowed = row.unit === "days" && appliedDays !== row.rawValue;
+                  const amount = appliedAmountOf(row);
+                  return (
+                    <Fragment key={row.id}>
+                      <tr className="border-b border-slate-100 odd:bg-slate-50/60 hover:bg-orange-50/40">
+                        {/* Employee NAME only. Not "name, falling back to the HR
+                            code" either — a raw code must never reach a screen, so
+                            the name is resolved server-side from the employees
+                            directory when the candidate did not carry one. */}
+                        <td className="whitespace-nowrap px-4 py-2.5 font-semibold text-slate-900">
+                          {employeeLabel(row)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-600">
+                          {hireDateLabel(row.hireDate)}
+                        </td>
+                        {/* What is CHARGED, with what was detected beside it when the
+                            two differ. Showing rawValue alone made a reviewer's own
+                            reduction invisible in the column it changed. */}
+                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
+                          {row.unit === "days" ? (
+                            <>
+                              <span className={narrowed ? "font-black text-orange-600" : ""}>{appliedDays}</span>
+                              {narrowed ? <span className="text-xs text-slate-400"> of {row.rawValue}</span> : null}
+                            </>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        {/* WHICH days, not just how many. The candidate has always carried
+                            the exact dates; the table simply never showed them, so a
+                            reviewer could see "14 days" with no way to tell which 14 or to
+                            check one against a calendar. Day numbers only — the whole view
+                            is already scoped to one month, so the year/month would be
+                            repetition, and this keeps a 19-day row on a single line
+                            instead of wrapping or being cut off. */}
+                        <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-700">
+                          <DayList row={row} />
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
+                          {amount != null ? money(amount) : "requires review"}
+                        </td>
+                        <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">{row.reason ?? "—"}</td>
+                        <td className="px-4 py-2.5">
+                          <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                        </td>
+                        {canDecide ? (
+                          <td className="px-4 py-2.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                                onClick={() => setEditingId(editingId === row.id ? null : row.id)}
+                                type="button"
+                              >
+                                {editingId === row.id ? "Close days" : "Edit days"}
+                              </button>
+                              <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                      {canDecide && editingId === row.id ? (
+                        <tr className="border-b border-slate-200 bg-white">
+                          <td className="px-4 pb-3" colSpan={8}>
+                            <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="divide-y divide-slate-100 sm:hidden">
-            {rows.map((row, index) => (
-              <div className={["px-4 py-3", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={row.id}>
-                <div className="flex items-center justify-between gap-2">
-                  <p className="font-semibold text-slate-900">{row.employeeName ?? row.employeeHrId}</p>
-                  <StatusBadge status={row.decision?.decisionStatus ?? null} />
+            {rows.map((row, index) => {
+              const appliedDays = appliedDaysOf(row);
+              const narrowed = row.unit === "days" && appliedDays !== row.rawValue;
+              const amount = appliedAmountOf(row);
+              return (
+                <div className={["px-4 py-3", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={row.id}>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="whitespace-nowrap font-semibold text-slate-900">{employeeLabel(row)}</p>
+                    <StatusBadge status={row.decision?.decisionStatus ?? null} />
+                  </div>
+                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">Hired {hireDateLabel(row.hireDate)}</p>
+                  <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">
+                    {row.unit === "days" ? `${appliedDays}${narrowed ? ` of ${row.rawValue}` : ""} day(s)` : ""} ·{" "}
+                    {amount != null ? `${money(amount)} EGP` : "requires review"}
+                  </p>
+                  <p className="mt-1 text-xs tabular-nums text-slate-700">
+                    Dates: <DayList row={row} />
+                  </p>
+                  {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
+                  {canDecide ? (
+                    <button
+                      className="mt-1.5 whitespace-nowrap border border-slate-300 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+                      onClick={() => setEditingId(editingId === row.id ? null : row.id)}
+                      type="button"
+                    >
+                      {editingId === row.id ? "Close days" : "Edit days"}
+                    </button>
+                  ) : null}
+                  {canDecide && editingId === row.id ? (
+                    <div className="mt-2">
+                      <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
+                    </div>
+                  ) : null}
+                  <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
                 </div>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {row.unit === "days" ? `${row.rawValue} day(s)` : ""} ·{" "}
-                  {row.estimatedAmount != null ? `${money(row.estimatedAmount)} EGP` : "requires review"}
-                </p>
-                <p className="mt-1 text-xs tabular-nums text-slate-700">
-                  Dates: {formatDeductedDays(row.dates)}
-                </p>
-                {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
-                <CandidateDecideRow canDecide={canDecide} onDecided={handleDecided} row={row} />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -598,7 +987,10 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
       {summary ? (
         <div className="mt-5">
           <h3 className="text-sm font-black text-slate-900">
-            {summary.employeeName ?? summary.employeeHrId} <span className="font-mono text-xs font-medium text-slate-400">{summary.employeeHrId}</span>
+            {/* Name only — the HR code used to sit beside it as a monospace
+                badge. A person is identified by their name on screen; the code
+                belongs in the lookup box above, not in the heading. */}
+            {summary.employeeName?.trim() || "Name unavailable"}
           </h3>
           <div className="mt-3 divide-y divide-slate-100 border border-slate-200">
             {visibleDeductionsCategories
