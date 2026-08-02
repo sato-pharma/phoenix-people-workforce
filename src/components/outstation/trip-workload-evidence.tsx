@@ -255,7 +255,10 @@ export function TripWorkloadEvidencePanel({
               <div className="rounded-xl border border-[#e4e9ec] bg-white p-3" key={`detail-${day.date}`}>
                 <p className="text-xs font-bold text-slate-900">{formatDateValue(day.date)}</p>
                 <div className="mt-2 space-y-3">
-                  <div className="grid gap-3 md:grid-cols-2">
+                  {/* `[&>*]:min-w-0` for the same reason as the workspace grid: below `md` this is a
+                      single column, and grid items default to `min-width: auto`, so the visit and
+                      check-in lists sized the column to their longest line (measured 283 vs 436). */}
+                  <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
                     <div>
                       <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Visits</p>
                       {!day.visits?.length ? (
@@ -326,9 +329,17 @@ export function TripWorkloadEvidencePanel({
                     </div>
                   </div>
                   {day.checkins?.length ? (
-                    <div>
+                    <div className="min-w-0">
                       <p className="mb-1 text-[10px] font-black uppercase tracking-wide text-slate-400">Route map</p>
-                      <TripDayRouteMap checkins={day.checkins} />
+                      {/* overflow-hidden is load-bearing: Google Maps renders absolutely-positioned
+                          internals (and, when the Maps key is rejected, a fixed-width "can't load
+                          Google Maps" overlay) that are WIDER than their container. Measured at
+                          375px: `.gm-style` reported clientWidth 247 vs scrollWidth 486, and that
+                          239px pushed the whole page sideways. Clipping it here keeps the map's
+                          internals from escaping. */}
+                      <div className="min-w-0 overflow-hidden">
+                        <TripDayRouteMap checkins={day.checkins} />
+                      </div>
                     </div>
                   ) : null}
                 </div>
