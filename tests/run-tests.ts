@@ -337,6 +337,7 @@ import { runOutstationEmployeeLookupStatusTests } from "./outstation-employee-lo
 import { runMedicalRepExpensesTests } from "./medical-rep-expenses.test.ts";
 import { runAuthSessionTests } from "./auth-session.test.ts";
 import { runAuthPageAccessTests } from "./auth-page-access.test.ts";
+import { runLoginPageServerRenderTests } from "./login-page-server-render.test.ts";
 import { runAuthAuditHardeningTests } from "./auth-audit-hardening.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 import { runEmployeeImportHrIdAliasResolutionTests } from "./employee-import-hrid-alias-resolution.test.ts";
@@ -938,6 +939,7 @@ await runTest("probation feedback security", runProbationFeedbackSecurityTests);
   await runTest("google routes fastest", runGoogleRoutesShortestTests);
 await runTest("auth session", runAuthSessionTests);
 await runTest("auth page access guard (guest-fallback predicate)", runAuthPageAccessTests);
+await runTest("login page server-renders its form (no ssr:false, lazy webauthn)", runLoginPageServerRenderTests);
 await runTest("auth audit hardening", runAuthAuditHardeningTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
 await runTest("employee import HR_ID alias resolution", runEmployeeImportHrIdAliasResolutionTests);
