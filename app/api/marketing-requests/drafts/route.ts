@@ -1,15 +1,63 @@
 import { NextResponse } from "next/server";
 
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
+import { logAppError } from "@/lib/error-monitor/service";
 import { toApiError } from "@/lib/http/api-errors";
 import {
   createMarketingRequestDraft,
   getMarketingRequestDraftWorkspace,
 } from "@/lib/marketing-requests/service";
+import { getDeployRevisionTag } from "@/lib/observability/deploy-identity";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type DraftAccess = Awaited<ReturnType<typeof resolveAccessContext>> | null;
+
+/**
+ * Record a failed draft load/save in app_error_events.
+ *
+ * Every failure on this route used to be caught and returned as a JSON body and nothing else —
+ * no row, no log line. So a requester blocked by a real gate (`customer_not_validated`,
+ * `product_line_not_allowed`, `requester_line_not_assigned`, a 503 schema gap) hit a dead end
+ * that was invisible from the admin side: the only way to tell "she failed" from "she never
+ * finished the form" was to diff the tables by hand. This route carries a handful of requests a
+ * day, so logging every non-2xx is signal, not noise.
+ *
+ * Best-effort by construction: logAppError never throws, and this is wrapped anyway — a logging
+ * failure must never replace the real error the caller is already returning.
+ */
+async function logMarketingDraftFailure(params: {
+  access: DraftAccess;
+  code: string;
+  error: unknown;
+  message: string;
+  request: Request;
+  routeType: "load" | "create";
+}) {
+  try {
+    await logAppError({
+      environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
+      hrId: params.access?.hrId ?? null,
+      loginId: params.access?.loginId ?? null,
+      // The code is the diagnosis — keep it in the message so the error monitor shows which
+      // gate fired without needing the stack.
+      message: `[${params.code}] ${params.message}`,
+      moduleKey: "marketing_requests",
+      moduleLabel: "Marketing Requests",
+      release: getDeployRevisionTag(),
+      role: params.access?.role ?? null,
+      route: new URL(params.request.url).pathname,
+      routeType: params.routeType,
+      source: "server",
+      stack: params.error instanceof Error ? params.error.stack ?? null : null,
+      userAgent: params.request.headers.get("user-agent"),
+    });
+  } catch {
+    // Swallowed on purpose — see the doc comment above.
+  }
+}
 
 function marketingDraftApiError(error: unknown) {
   if (isForbiddenError(error)) {
@@ -60,26 +108,44 @@ function marketingDraftApiError(error: unknown) {
 }
 
 export async function GET(request: Request) {
+  // Hoisted so the catch can attribute the failure to a person — without it every logged row
+  // would be anonymous, which is most of the value.
+  let access: DraftAccess = null;
   try {
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     return NextResponse.json(await getMarketingRequestDraftWorkspace(access));
   } catch (error) {
     const { code, message, status } = marketingDraftApiError(error);
+    await logMarketingDraftFailure({ access, code, error, message, request, routeType: "load" });
     return NextResponse.json({ error: code, message }, { status });
   }
 }
 
 export async function POST(request: Request) {
+  let access: DraftAccess = null;
   try {
     const csrfError = assertSameOriginMutation(request);
-    if (csrfError) return csrfError;
+    if (csrfError) {
+      // Returns early, so it never reaches the catch below — log it here or a rejected save
+      // looks identical to a button that did nothing.
+      await logMarketingDraftFailure({
+        access,
+        code: "csrf_rejected",
+        error: null,
+        message: "Same-origin check rejected the draft submission.",
+        request,
+        routeType: "create",
+      });
+      return csrfError;
+    }
 
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     const draft = await createMarketingRequestDraft(await request.json(), access);
 
     return NextResponse.json({ draft }, { status: 201 });
   } catch (error) {
     const { code, message, status } = marketingDraftApiError(error);
+    await logMarketingDraftFailure({ access, code, error, message, request, routeType: "create" });
     return NextResponse.json({ error: code, message }, { status });
   }
 }

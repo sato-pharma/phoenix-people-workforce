@@ -723,6 +723,53 @@ export async function runMarketingRequestServiceTests() {
   assert.equal(sfeScope.requesterLineName, "All product lines", "unrestricted scope labels all product lines");
   assert.equal(sfeScope.requesterLineId, null, "unrestricted scope without a requester has no line id");
 
+  // 4) Resolved requester whose employee record has NO line assigned. Creation stays allowed,
+  //    so the create form renders, but the product list is EMPTY — the requester cannot pick
+  //    anything and the draft can never be saved. requesterLineName MUST stay null here: it is
+  //    the only field separating this state from case 3 (unrestricted, "All product lines"),
+  //    and the portal's Products label branches on it. Branching on requesterLineId instead
+  //    labelled this state "All available products" over an empty picker.
+  const lineLessScope = buildMarketingDraftProductScope({
+    access: createAccessContext({ hrId: "B-184", role: "District Manager" }),
+    productRows: draftScopeProducts,
+    requester: { ...requester, hrId: "B-184", lineId: null, lineName: null },
+  });
+  assert.equal(lineLessScope.canCreateDraft, true, "a directory requester without a line still reaches the create form");
+  assert.equal(lineLessScope.products.length, 0, "a requester without a line has no products to choose from");
+  assert.equal(lineLessScope.requesterLineId, null, "a requester without a line has no line id");
+  assert.equal(
+    lineLessScope.requesterLineName,
+    null,
+    "an unassigned line must stay null so the portal can tell it apart from unrestricted scope",
+  );
+
+  // ...and the portal must actually branch on that field. Guarding on requesterLineId instead
+  // is the bug: a null id is ALSO produced by an unrestricted oversight role, so the label read
+  // "All available products" while the picker underneath was empty and disabled.
+  // Every failure on the drafts route must leave a row in app_error_events. The route used to
+  // catch everything and return JSON only, so a requester blocked by a real gate was invisible
+  // from the admin side — "she failed" could not be told apart from "she never finished the
+  // form" without diffing tables by hand. All THREE exit paths must log: load, csrf reject,
+  // create. A csrf reject returns early and never reaches the catch, so it needs its own call.
+  const draftsRouteSource = source("app/api/marketing-requests/drafts/route.ts");
+  assert.match(
+    draftsRouteSource,
+    /logAppError/,
+    "the marketing drafts route must record failures in app_error_events",
+  );
+  assert.equal(
+    (draftsRouteSource.match(/logMarketingDraftFailure\(\{/g) ?? []).length,
+    3,
+    "every drafts-route failure path (load, csrf reject, create) must be logged",
+  );
+
+  const draftWorkspaceSource = source("src/components/employee-portal/marketing-request-drafts.tsx");
+  assert.match(
+    draftWorkspaceSource,
+    /workspace\.requesterLineName === null \?[\s\S]{0,240}No product line assigned/,
+    "the Products label must warn when the requester has no product line assigned",
+  );
+
   /* ---------------------------------------------------------------------- */
   /* Additive product_scope_override: a PM (e.g. B-155) covering one product  */
   /* per line may see + create for a product outside their own line, without  */
