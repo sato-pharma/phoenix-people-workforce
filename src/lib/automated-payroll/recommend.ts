@@ -24,6 +24,7 @@ import {
   calculateDeductionAmountFromBaseSalary,
   resolveDayBasedDeductionAmount,
 } from "@/lib/deductions-governance/calculations";
+import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility.ts";
 import { roundCurrency } from "@/lib/payroll/money";
@@ -279,7 +280,7 @@ function periodBounds(period: PayrollPeriod): { start: string; end: string } {
 }
 
 /** One reimbursable trip behind an employee's expense total (owner request 2026-08-01). */
-type PayoutExpenseTrip = {
+export type PayoutExpenseTrip = {
   tripId: string;
   expenseDate: string;
   toDate: string;
@@ -300,7 +301,7 @@ type PayoutExpenseTrip = {
   description: string;
 };
 
-type PayoutExpenseRow = {
+export type PayoutExpenseRow = {
   hr_id: string | null;
   trip_id: string | null;
   expense_date: string | null;
@@ -319,6 +320,12 @@ type PayoutExpenseRow = {
   approved_amount: number | null;
   hr_approved: boolean | null;
   hr_status: string | null;
+  /**
+   * The free-text column a REJECTION is recorded in. `hr_approved` only encodes approval, so
+   * without this a rejected trip is indistinguishable from a pending one — see
+   * payoutExpenseRowIsPayable.
+   */
+  status: string | null;
   description: string | null;
 };
 
@@ -327,6 +334,72 @@ const EXPENSE_PAGE_SIZE = 1000;
 
 function text(value: string | null | undefined): string {
   return (value ?? "").toString().trim();
+}
+
+/**
+ * Whether a payout-tagged expense row is money the payroll sheet should carry at all.
+ *
+ * Outstation approval is THREE-state and only one of those states lives in `hr_approved`:
+ * approval is the boolean, a REJECTION is recorded in the free-text `status` column, and
+ * anything else is pending (see src/lib/outstation/approval-state.ts). This read previously
+ * selected neither `status` nor filtered on it, so a trip HR had explicitly rejected was summed
+ * at its full claimed amount — the rejection reached the approvals screen and nothing else.
+ *
+ * PENDING rows deliberately stay in. This wizard IS the approval point (see the p2_expenses
+ * subtitle), so HR reviews them here and zeroes anything that should not pay. Only an explicit
+ * rejection is dropped, because that decision has already been made.
+ *
+ * Reuses expenseApprovalState rather than re-deriving the rule, so the queue the approvals
+ * screen shows and the money payroll pays can never disagree about what "rejected" means —
+ * including its deliberate precedence that a later approval beats a stale "Rejected" status.
+ */
+export function payoutExpenseRowIsPayable(
+  row: Pick<PayoutExpenseRow, "hr_approved" | "status">,
+): boolean {
+  return expenseApprovalState({ hrApproved: row.hr_approved, status: row.status }) !== "rejected";
+}
+
+/**
+ * Groups raw payout-tagged expense rows into per-employee trips, dropping rejected ones.
+ *
+ * Pure and exported so the exclusion rule is testable without a database: the money this
+ * produces is what lands on the sheet, so it is worth pinning directly.
+ */
+export function buildPayoutExpenseTripMap(rows: PayoutExpenseRow[]): Map<string, PayoutExpenseTrip[]> {
+  const byCompact = new Map<string, PayoutExpenseTrip[]>();
+  for (const row of rows) {
+    if (!payoutExpenseRowIsPayable(row)) continue;
+    const compact = compactHrKey(row.hr_id ?? "");
+    if (!compact) continue;
+    const trips = byCompact.get(compact) ?? [];
+    trips.push({
+      allowance: Number(row.allowance ?? 0),
+      approvedAmount:
+        row.approved_amount === null || row.approved_amount === undefined
+          ? null
+          : Number(row.approved_amount),
+      description: text(row.description),
+      expenseDate: text(row.expense_date).slice(0, 10),
+      fromLocation: text(row.from_location),
+      hrApproved: row.hr_approved === true,
+      hrStatus: text(row.hr_status),
+      km: Number(row.km ?? 0),
+      meetingAmount: Number(row.meeting_amount ?? 0),
+      otherAmount: Number(row.other_amount ?? 0),
+      toDate: text(row.to_date).slice(0, 10),
+      // `location` is the legacy single-field fallback used when the upload
+      // didn't split from/to (11 of 97 live rows) — same precedence as
+      // outstation/geocode-warmup.ts.
+      toLocation: text(row.to_location) || text(row.location),
+      total: Number(row.total ?? 0),
+      transportationType: text(row.transportation_type),
+      travelCost: Number(row.travel_cost ?? 0),
+      tripId: text(row.trip_id),
+      tripType: text(row.trip_type),
+    });
+    byCompact.set(compact, trips);
+  }
+  return byCompact;
 }
 
 /**
@@ -341,23 +414,25 @@ function text(value: string | null | undefined): string {
  * Paginated: the previous single unbounded select was silently capped at
  * PostgREST's 1000-row default, which would have under-reimbursed a busy month
  * with no error. Live volumes are ~30-80 rows/month (checked 2026-08-01), so
- * this was not yet biting — the loop keeps it from ever starting.
+ * this was not yet biting — the loop keeps it from ever starting. Rows are collected
+ * across pages and grouped once, so the rejected-row exclusion has a single home.
  *
  * Defensive: empty map on any failure.
  */
 async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string, PayoutExpenseTrip[]>> {
-  const byCompact = new Map<string, PayoutExpenseTrip[]>();
+  const collected: PayoutExpenseRow[] = [];
   try {
     for (let from = 0; ; from += EXPENSE_PAGE_SIZE) {
       // All expenses whose payout period is this payroll month. The wizard IS the HR
       // confirmation point (recommend → confirm/edit), so pending-approval rows are surfaced
       // too; HR zeroes out anything that shouldn't pay — and each trip's own hr_approved now
       // shows in the row's detail panel, so "pending" is visible rather than merely implied.
+      // Rows HR explicitly REJECTED are dropped by buildPayoutExpenseTripMap below.
       // Already-imported rows are skipped so a re-run never double-pays.
       const { data, error } = await getSupabaseAdmin()
         .from("outstation_expenses")
         .select(
-          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,description",
+          "hr_id,trip_id,expense_date,to_date,from_location,to_location,location,trip_type,transportation_type,km,travel_cost,meeting_amount,allowance,other_amount,total,approved_amount,hr_approved,hr_status,status,description",
         )
         .eq("payout_month", period.month)
         .eq("payout_year", period.year)
@@ -369,40 +444,10 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
           labels: { event: "automated_payroll_payout_expenses_load_failed", month: period.month, year: period.year },
           error,
         });
-        return byCompact;
+        return buildPayoutExpenseTripMap(collected);
       }
       const rows = (data ?? []) as PayoutExpenseRow[];
-      for (const row of rows) {
-        const compact = compactHrKey(row.hr_id ?? "");
-        if (!compact) continue;
-        const trips = byCompact.get(compact) ?? [];
-        trips.push({
-          allowance: Number(row.allowance ?? 0),
-          approvedAmount:
-            row.approved_amount === null || row.approved_amount === undefined
-              ? null
-              : Number(row.approved_amount),
-          description: text(row.description),
-          expenseDate: text(row.expense_date).slice(0, 10),
-          fromLocation: text(row.from_location),
-          hrApproved: row.hr_approved === true,
-          hrStatus: text(row.hr_status),
-          km: Number(row.km ?? 0),
-          meetingAmount: Number(row.meeting_amount ?? 0),
-          otherAmount: Number(row.other_amount ?? 0),
-          toDate: text(row.to_date).slice(0, 10),
-          // `location` is the legacy single-field fallback used when the upload
-          // didn't split from/to (11 of 97 live rows) — same precedence as
-          // outstation/geocode-warmup.ts.
-          toLocation: text(row.to_location) || text(row.location),
-          total: Number(row.total ?? 0),
-          transportationType: text(row.transportation_type),
-          travelCost: Number(row.travel_cost ?? 0),
-          tripId: text(row.trip_id),
-          tripType: text(row.trip_type),
-        });
-        byCompact.set(compact, trips);
-      }
+      collected.push(...rows);
       if (rows.length < EXPENSE_PAGE_SIZE) break;
     }
   } catch (error) {
@@ -411,7 +456,7 @@ async function loadPayoutExpenseTrips(period: PayrollPeriod): Promise<Map<string
       error,
     });
   }
-  return byCompact;
+  return buildPayoutExpenseTripMap(collected);
 }
 
 /** "2026-06-01" for a single-day trip, "2026-06-01 → 2026-06-02" for an overnight one. */
