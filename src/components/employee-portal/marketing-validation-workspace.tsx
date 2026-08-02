@@ -23,6 +23,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
+import { MARKETING_CUSTOMER_SPECIALITIES } from "@/lib/marketing-requests/types";
 import type {
   MarketingCustomerType,
   MarketingDistributor,
@@ -173,11 +174,33 @@ type PharmacyLine = {
   vendorCodes: VendorCodeLine[];
 };
 
+/**
+ * One submission can validate several customers. Each carries ITS OWN pharmacies rather than the
+ * form keeping a single shared list — two doctors in the same building do not necessarily dispense
+ * through the same pharmacy, and pooling them would silently attach one customer's pharmacy to
+ * another, so any request raised later would attribute sales from a pharmacy they never used.
+ */
+type CustomerLine = {
+  area: string;
+  capture: CaptureState;
+  governorate: string;
+  key: string;
+  mobile: string;
+  name: string;
+  otherType: string;
+  pharmacies: PharmacyLine[];
+  speciality: string;
+  type: MarketingCustomerType;
+};
+
 type CodeCheckStatus = "checking" | "tracked" | "untracked" | "unknown";
 
-type CameraTarget =
-  | { kind: "customer" }
-  | { kind: "pharmacy"; pharmacyKey: string };
+/** Which location block a GPS capture, map pin, or camera shot applies to. */
+type LocationTarget = {
+  customerKey: string;
+  /** Absent for the customer's own location. */
+  pharmacyKey?: string;
+};
 
 type ValidatedCustomerGroup = {
   customerName: string;
@@ -247,6 +270,21 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
     name: "",
     area: "",
     vendorCodes: [newVendorCodeLine(distributorId)],
+  };
+}
+
+function newCustomerLine(distributorId = ""): CustomerLine {
+  return {
+    area: "",
+    capture: emptyCapture(),
+    governorate: "",
+    key: stableKey("customer"),
+    mobile: "",
+    name: "",
+    otherType: "",
+    pharmacies: [newPharmacyLine(distributorId)],
+    speciality: "",
+    type: "clinic",
   };
 }
 
@@ -1075,17 +1113,10 @@ export function MarketingValidationWorkspace() {
   const [selectedValidatedCustomerKey, setSelectedValidatedCustomerKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [captureTarget, setCaptureTarget] = useState<"customer" | string | null>(null);
-  const [cameraTarget, setCameraTarget] = useState<CameraTarget | null>(null);
+  const [captureTarget, setCaptureTarget] = useState<string | null>(null);
+  const [cameraTarget, setCameraTarget] = useState<LocationTarget | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [customerType, setCustomerType] = useState<MarketingCustomerType>("clinic");
-  const [customerName, setCustomerName] = useState("");
-  const [customerArea, setCustomerArea] = useState("");
-  const [customerGovernorate, setCustomerGovernorate] = useState("");
-  const [customerMobile, setCustomerMobile] = useState("");
-  const [customerOtherType, setCustomerOtherType] = useState("");
-  const [customerCapture, setCustomerCapture] = useState<CaptureState>(emptyCapture);
-  const [pharmacies, setPharmacies] = useState<PharmacyLine[]>([newPharmacyLine()]);
+  const [customers, setCustomers] = useState<CustomerLine[]>(() => [newCustomerLine()]);
   // Super Admin only. When set, the whole form switches to desk mode: the location comes from map
   // search instead of the phone's GPS, no live photo is required, and the saved customer is owned
   // by this employee so it lands in THEIR marketing request dropdown.
@@ -1134,12 +1165,15 @@ export function MarketingValidationWorkspace() {
         rows: payload.rows ?? [],
         summary: payload.summary ?? emptyWorkspace().summary,
       });
-      setPharmacies((current) =>
-        current.map((pharmacy) => ({
-          ...pharmacy,
-          vendorCodes: pharmacy.vendorCodes.map((line) => ({
-            ...line,
-            distributorId: line.distributorId || String(payload.distributors?.[0]?.id ?? ""),
+      setCustomers((current) =>
+        current.map((customer) => ({
+          ...customer,
+          pharmacies: customer.pharmacies.map((pharmacy) => ({
+            ...pharmacy,
+            vendorCodes: pharmacy.vendorCodes.map((line) => ({
+              ...line,
+              distributorId: line.distributorId || String(payload.distributors?.[0]?.id ?? ""),
+            })),
           })),
         })),
       );
@@ -1205,15 +1239,33 @@ export function MarketingValidationWorkspace() {
   const hasPin = (capture: CaptureState) => capture.latitude !== null && capture.longitude !== null;
   const canSave = Boolean(
     !isSaving &&
-    customerName.trim() &&
-    (!isDeskMode || hasPin(customerCapture)) &&
-    pharmacies.every((pharmacy) =>
-      pharmacy.name.trim() &&
-      (!isDeskMode || hasPin(pharmacy.capture)) &&
-      pharmacy.vendorCodes.length > 0 &&
-      pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
+    customers.length > 0 &&
+    customers.every((customer) =>
+      customer.name.trim() &&
+      (!isDeskMode || hasPin(customer.capture)) &&
+      customer.pharmacies.length > 0 &&
+      customer.pharmacies.every((pharmacy) =>
+        pharmacy.name.trim() &&
+        (!isDeskMode || hasPin(pharmacy.capture)) &&
+        pharmacy.vendorCodes.length > 0 &&
+        pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
+      ),
     ),
   );
+  const totalPharmacyCount = customers.reduce((sum, customer) => sum + customer.pharmacies.length, 0);
+  // Caught only once there are several customers: the same person entered twice would mint two
+  // separate records that both show up in the request dropdown. The server refuses it too — this
+  // just says so before the round trip.
+  const duplicateCustomerName = (() => {
+    const seen = new Set<string>();
+    for (const customer of customers) {
+      const key = customer.name.trim().replace(/\s+/g, " ").toLowerCase();
+      if (!key) continue;
+      if (seen.has(key)) return customer.name.trim();
+      seen.add(key);
+    }
+    return null;
+  })();
 
   async function reverseGeocode(latitude: number, longitude: number) {
     const response = await fetch("/api/marketing-requests/reverse-geocode", {
@@ -1225,26 +1277,91 @@ export function MarketingValidationWorkspace() {
     return await response.json() as { area?: string | null; city?: string | null; governorate?: string | null; label?: string | null };
   }
 
-  function updatePharmacy(key: string, patch: Partial<PharmacyLine>) {
-    setPharmacies((current) =>
-      current.map((pharmacy) => (pharmacy.key === key ? { ...pharmacy, ...patch } : pharmacy)),
+  function updateCustomer(customerKey: string, patch: Partial<CustomerLine>) {
+    setCustomers((current) =>
+      current.map((customer) => (customer.key === customerKey ? { ...customer, ...patch } : customer)),
     );
   }
 
-  function updateVendorCode(pharmacyKey: string, vendorKey: string, patch: Partial<VendorCodeLine>) {
-    setPharmacies((current) =>
-      current.map((pharmacy) =>
-        pharmacy.key === pharmacyKey
+  /** Patch one pharmacy inside one customer. Both keys are required — pharmacy keys are unique, but
+   *  scoping the write to its customer keeps the lists provably independent. */
+  function updatePharmacy(customerKey: string, pharmacyKey: string, patch: Partial<PharmacyLine>) {
+    setCustomers((current) =>
+      current.map((customer) =>
+        customer.key === customerKey
           ? {
-              ...pharmacy,
-              vendorCodes: pharmacy.vendorCodes.map((line) =>
-                line.key === vendorKey ? { ...line, ...patch } : line,
+              ...customer,
+              pharmacies: customer.pharmacies.map((pharmacy) =>
+                pharmacy.key === pharmacyKey ? { ...pharmacy, ...patch } : pharmacy,
               ),
             }
-          : pharmacy,
+          : customer,
       ),
     );
   }
+
+  function updateVendorCode(
+    customerKey: string,
+    pharmacyKey: string,
+    vendorKey: string,
+    patch: Partial<VendorCodeLine>,
+  ) {
+    setCustomers((current) =>
+      current.map((customer) =>
+        customer.key === customerKey
+          ? {
+              ...customer,
+              pharmacies: customer.pharmacies.map((pharmacy) =>
+                pharmacy.key === pharmacyKey
+                  ? {
+                      ...pharmacy,
+                      vendorCodes: pharmacy.vendorCodes.map((line) =>
+                        line.key === vendorKey ? { ...line, ...patch } : line,
+                      ),
+                    }
+                  : pharmacy,
+              ),
+            }
+          : customer,
+      ),
+    );
+  }
+
+  /** Apply a capture patch to either the customer's own location or one of its pharmacies. */
+  function patchLocation(
+    target: LocationTarget,
+    capturePatch: Partial<CaptureState>,
+    place?: { area: string; governorate: string },
+  ) {
+    setCustomers((current) =>
+      current.map((customer) => {
+        if (customer.key !== target.customerKey) return customer;
+        if (!target.pharmacyKey) {
+          return {
+            ...customer,
+            ...(place ? { area: place.area, governorate: place.governorate } : {}),
+            capture: { ...customer.capture, ...capturePatch },
+          };
+        }
+        return {
+          ...customer,
+          pharmacies: customer.pharmacies.map((pharmacy) =>
+            pharmacy.key === target.pharmacyKey
+              ? {
+                  ...pharmacy,
+                  ...(place ? { area: place.area, governorate: place.governorate } : {}),
+                  capture: { ...pharmacy.capture, ...capturePatch },
+                }
+              : pharmacy,
+          ),
+        };
+      }),
+    );
+  }
+
+  /** Stable id for "which block is currently capturing", so two blocks never share a spinner. */
+  const targetKey = (target: LocationTarget) =>
+    target.pharmacyKey ? `${target.customerKey}::${target.pharmacyKey}` : target.customerKey;
 
   // Advisory, non-blocking check: does this (vendor, pharmacy code) already exist in the
   // Phoenix reference database (fed from the sales module)? Debounced so typing is smooth.
@@ -1295,57 +1412,31 @@ export function MarketingValidationWorkspace() {
     };
   }, []);
 
-  async function captureLocation(target: "customer" | string) {
+  async function captureLocation(target: LocationTarget) {
     setMessage(null);
     if (!navigator.geolocation) {
       setMessage("GPS capture is not supported in this browser.");
       return;
     }
 
-    setCaptureTarget(target);
+    setCaptureTarget(targetKey(target));
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const capturedAt = new Date(position.timestamp || Date.now()).toISOString();
-        const basePatch = {
+        patchLocation(target, {
           accuracy: position.coords.accuracy,
           address: `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`,
           capturedAt,
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
-        };
+        });
 
-        if (target === "customer") {
-          setCustomerCapture((current) => ({ ...current, ...basePatch }));
-        } else {
-          setPharmacies((current) =>
-            current.map((pharmacy) =>
-              pharmacy.key === target ? { ...pharmacy, capture: { ...pharmacy.capture, ...basePatch } } : pharmacy,
-            ),
-          );
-        }
         void reverseGeocode(position.coords.latitude, position.coords.longitude).then((result) => {
           const area = result?.area ?? "";
           const governorate = result?.governorate ?? result?.city ?? "";
           const label = result?.label || [area, governorate].filter(Boolean).join(", ");
           if (!label) return;
-          if (target === "customer") {
-            setCustomerArea(area);
-            setCustomerGovernorate(governorate);
-            setCustomerCapture((current) => ({ ...current, address: label }));
-          } else {
-            setPharmacies((current) =>
-              current.map((pharmacy) =>
-                pharmacy.key === target
-                  ? {
-                      ...pharmacy,
-                      capture: { ...pharmacy.capture, address: label },
-                      area,
-                      governorate,
-                    }
-                  : pharmacy,
-              ),
-            );
-          }
+          patchLocation(target, { address: label }, { area, governorate });
         });
         setCaptureTarget(null);
       },
@@ -1366,63 +1457,31 @@ export function MarketingValidationWorkspace() {
    * evidence model treats a location without a timestamp as no location at all — for a desk entry it
    * records when the admin pinned it, which is the honest answer to "when was this decided".
    */
-  function applyResolvedPlace(target: "customer" | string, place: ResolvedPlace) {
+  function applyResolvedPlace(target: LocationTarget, place: ResolvedPlace) {
     const address = place.formattedAddress
       || [place.name, place.area, place.governorate].filter(Boolean).join(", ")
       || `${place.lat.toFixed(6)}, ${place.lng.toFixed(6)}`;
-    const patch = {
-      accuracy: null,
-      address,
-      capturedAt: new Date().toISOString(),
-      latitude: place.lat,
-      longitude: place.lng,
-    };
 
-    if (target === "customer") {
-      setCustomerCapture((current) => ({ ...current, ...patch }));
-      setCustomerArea(place.area ?? "");
-      setCustomerGovernorate(place.governorate ?? "");
-      return;
-    }
-
-    setPharmacies((current) =>
-      current.map((pharmacy) =>
-        pharmacy.key === target
-          ? {
-              ...pharmacy,
-              area: place.area ?? "",
-              capture: { ...pharmacy.capture, ...patch },
-              governorate: place.governorate ?? "",
-            }
-          : pharmacy,
-      ),
+    patchLocation(
+      target,
+      {
+        accuracy: null,
+        address,
+        capturedAt: new Date().toISOString(),
+        latitude: place.lat,
+        longitude: place.lng,
+      },
+      { area: place.area ?? "", governorate: place.governorate ?? "" },
     );
   }
 
   function applyLivePhoto(dataUrl: string, photoCapturedAt: string) {
-    if (cameraTarget?.kind === "customer") {
-      setCustomerCapture((current) => ({
-        ...current,
+    if (cameraTarget) {
+      patchLocation(cameraTarget, {
         photoCapturedAt,
         photoDataUrl: dataUrl,
-        photoName: `customer-live-${photoCapturedAt}.jpg`,
-      }));
-    } else if (cameraTarget?.kind === "pharmacy") {
-      setPharmacies((current) =>
-        current.map((pharmacy) =>
-          pharmacy.key === cameraTarget.pharmacyKey
-            ? {
-                ...pharmacy,
-                capture: {
-                  ...pharmacy.capture,
-                  photoCapturedAt,
-                  photoDataUrl: dataUrl,
-                  photoName: `pharmacy-live-${photoCapturedAt}.jpg`,
-                },
-              }
-            : pharmacy,
-        ),
-      );
+        photoName: `${cameraTarget.pharmacyKey ? "pharmacy" : "customer"}-live-${photoCapturedAt}.jpg`,
+      });
     }
     setCameraTarget(null);
   }
@@ -1445,48 +1504,49 @@ export function MarketingValidationWorkspace() {
       // Only sent in desk mode. The server rejects it with a 403 for any role other than Super
       // Admin, so this is a request, not a grant.
       onBehalfOfHrId: isDeskMode ? onBehalfHrId : null,
-      customer: {
-        ...payloadCapture(customerCapture),
-        customerType,
-        displayName: customerName,
-        mobileNumber: customerMobile,
-        otherTypeDescription: customerOtherType,
-        extractedAreaName: customerArea,
-        extractedGovernorateName: customerGovernorate,
-        regionName: [customerArea, customerGovernorate].filter(Boolean).join(", "),
-      },
-      pharmacies: pharmacies.map((pharmacy) => ({
-        ...payloadCapture(pharmacy.capture),
-        displayName: pharmacy.name,
-        extractedAreaName: pharmacy.area,
-        extractedGovernorateName: pharmacy.governorate,
-        regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
-        vendorCodes: pharmacy.vendorCodes.map((line) => ({
-          distributorId: Number(line.distributorId),
-          distributorPharmacyCode: line.distributorCode,
+      // Each customer carries its own pharmacies — the server keeps them separate too, so nothing
+      // pools across customers on either side of the wire.
+      customers: customers.map((customer) => ({
+        ...payloadCapture(customer.capture),
+        customerType: customer.type,
+        displayName: customer.name,
+        extractedAreaName: customer.area,
+        extractedGovernorateName: customer.governorate,
+        mobileNumber: customer.mobile,
+        otherTypeDescription: customer.otherType,
+        regionName: [customer.area, customer.governorate].filter(Boolean).join(", "),
+        speciality: customer.speciality || null,
+        pharmacies: customer.pharmacies.map((pharmacy) => ({
+          ...payloadCapture(pharmacy.capture),
+          displayName: pharmacy.name,
+          extractedAreaName: pharmacy.area,
+          extractedGovernorateName: pharmacy.governorate,
+          regionName: [pharmacy.area, pharmacy.governorate].filter(Boolean).join(", "),
+          vendorCodes: pharmacy.vendorCodes.map((line) => ({
+            distributorId: Number(line.distributorId),
+            distributorPharmacyCode: line.distributorCode,
+          })),
         })),
       })),
     };
   }
 
   function resetForm() {
-    setCustomerName("");
-    setCustomerArea("");
-    setCustomerGovernorate("");
-    setCustomerMobile("");
-    setCustomerOtherType("");
-    setCustomerCapture(emptyCapture());
-    setPharmacies([newPharmacyLine(defaultDistributorId)]);
+    setCustomers([newCustomerLine(defaultDistributorId)]);
   }
 
   async function submitValidation(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    if (duplicateCustomerName) {
+      setMessage(`"${duplicateCustomerName}" is entered twice. Remove the duplicate before saving.`);
+      return;
+    }
     if (!canSave) {
       setMessage(
         isDeskMode
-          ? "Complete the customer, pharmacy, vendor, and code fields, and pin a location on the map for each one, before saving."
-          : "Complete the customer, pharmacy, vendor, and code fields before saving.",
+          ? "Complete every customer, pharmacy, vendor, and code field, and pin a location on the map for each one, before saving."
+          : "Complete every customer, pharmacy, vendor, and code field before saving.",
       );
       return;
     }
@@ -1499,7 +1559,7 @@ export function MarketingValidationWorkspace() {
       // Optimistic: increment pending count
       setWorkspace((current) => ({
         ...current,
-        summary: { ...current.summary, pending: current.summary.pending + pharmacies.length },
+        summary: { ...current.summary, pending: current.summary.pending + totalPharmacyCount },
       }));
       resetForm();
       setMessage("Saved offline. Will sync automatically when connection returns.");
@@ -1545,12 +1605,14 @@ export function MarketingValidationWorkspace() {
     }
   }
 
-  const activeCameraCapture = cameraTarget?.kind === "customer"
-    ? customerCapture
-    : cameraTarget
-      ? pharmacies.find((pharmacy) => pharmacy.key === cameraTarget.pharmacyKey)?.capture ?? null
-      : null;
-  const activeCameraLabel = cameraTarget?.kind === "customer" ? "Customer" : "Pharmacy";
+  const activeCameraCapture = (() => {
+    if (!cameraTarget) return null;
+    const customer = customers.find((entry) => entry.key === cameraTarget.customerKey);
+    if (!customer) return null;
+    if (!cameraTarget.pharmacyKey) return customer.capture;
+    return customer.pharmacies.find((pharmacy) => pharmacy.key === cameraTarget.pharmacyKey)?.capture ?? null;
+  })();
+  const activeCameraLabel = cameraTarget?.pharmacyKey ? "Pharmacy" : "Customer";
 
   const totalValidated = workspace.summary.system_validated + workspace.summary.sfe_validated;
 
@@ -1712,282 +1774,373 @@ export function MarketingValidationWorkspace() {
               </div>
             ) : null}
 
-            <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-6">
-              <div className="lg:col-span-2">
-                <Field label="Customer Type">
-                  <SelectField onChange={(value) => setCustomerType(value as MarketingCustomerType)} value={customerType}>
-                    {customerTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </SelectField>
-                </Field>
-              </div>
-              <div className="lg:col-span-4">
-                <Field label="Customer Name">
-                  <Input
-                    className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                    onChange={(event) => setCustomerName(event.target.value)}
-                    placeholder="Customer name"
-                    value={customerName}
-                  />
-                </Field>
-              </div>
-              {customerType === "other" ? (
-                <div className="lg:col-span-3">
-                  <Field label="Other Type">
-                    <Input
-                      className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                      onChange={(event) => setCustomerOtherType(event.target.value)}
-                      placeholder="Describe customer type"
-                      value={customerOtherType}
-                    />
-                  </Field>
-                </div>
-              ) : null}
-              <div className={customerType === "other" ? "lg:col-span-3" : "lg:col-span-2"}>
-                <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
-                  <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customerArea} />
-                </Field>
-              </div>
-              <div className={customerType === "other" ? "lg:col-span-3" : "lg:col-span-2"}>
-                <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
-                  <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customerGovernorate} />
-                </Field>
-              </div>
-              <div className="lg:col-span-2">
-                <Field label="Phone">
-                  <Input
-                    className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                    onChange={(event) => setCustomerMobile(event.target.value)}
-                    placeholder="Mobile number"
-                    type="tel"
-                    value={customerMobile}
-                  />
-                </Field>
-              </div>
-              <div className="lg:col-span-6">
-                <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
-                  <ReadOnlyCaptureValue
-                    multiline
-                    placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS capture"}
-                    value={customerCapture.address}
-                  />
-                </Field>
-              </div>
-              <div className="lg:col-span-6">
-                {isDeskMode ? (
-                  <PlaceSearchPanel
-                    capture={customerCapture}
-                    label="Customer location"
-                    onResolved={(place) => applyResolvedPlace("customer", place)}
-                  />
-                ) : (
-                  <CapturePanel
-                    capture={customerCapture}
-                    isCapturing={captureTarget === "customer"}
-                    label="Customer GPS + live sign photo"
-                    onCaptureLocation={() => captureLocation("customer")}
-                    onOpenCamera={() => setCameraTarget({ kind: "customer" })}
-                  />
-                )}
-              </div>
-
-              {/* Pharmacy section divider */}
-              <div className="lg:col-span-6">
-                <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
-                    <p className="mt-0.5 text-[12px] font-medium text-slate-500">Multiple pharmacies per customer, multiple vendors per pharmacy.</p>
-                  </div>
-                  <Button
-                    className="h-8 shrink-0 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
-                    onClick={() => setPharmacies((current) => [...current, newPharmacyLine(defaultDistributorId)])}
-                    type="button"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Pharmacy
-                  </Button>
-                </div>
-              </div>
-
-              {pharmacies.map((pharmacy, index) => (
-                <div className="lg:col-span-6" key={pharmacy.key}>
-                  <div className="rounded-sm border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
-                          <Store className="h-3.5 w-3.5" />
-                        </div>
-                        <p className="text-[13px] font-bold text-slate-800">Pharmacy {index + 1}</p>
+            <div className="space-y-4 p-4 sm:p-5">
+              {customers.map((customer, customerIndex) => (
+                <div
+                  className="overflow-hidden rounded-sm border border-slate-200 bg-white"
+                  key={customer.key}
+                >
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-3 py-2.5 sm:px-4">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
+                        <UserCheck className="h-3.5 w-3.5" />
                       </div>
-                      <button
-                        aria-label="Remove pharmacy"
-                        className="flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                        disabled={pharmacies.length === 1}
-                        onClick={() => setPharmacies((current) => current.length === 1 ? current : current.filter((item) => item.key !== pharmacy.key))}
-                        type="button"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[13px] font-bold text-slate-800">
+                        Customer {customerIndex + 1}
+                        {customer.name.trim() ? ` — ${customer.name.trim()}` : ""}
+                      </p>
                     </div>
-                    <div className="grid gap-3 lg:grid-cols-6">
+                    <button
+                      aria-label="Remove customer"
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                      disabled={customers.length === 1}
+                      onClick={() =>
+                        setCustomers((current) =>
+                          current.length === 1 ? current : current.filter((item) => item.key !== customer.key),
+                        )
+                      }
+                      type="button"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="grid gap-4 p-3 sm:p-4 lg:grid-cols-6">
+                    <div className="lg:col-span-2">
+                      <Field label="Customer Type">
+                        <SelectField
+                          onChange={(value) => updateCustomer(customer.key, { type: value as MarketingCustomerType })}
+                          value={customer.type}
+                        >
+                          {customerTypes.map((type) => (
+                            <option key={type.value} value={type.value}>
+                              {type.label}
+                            </option>
+                          ))}
+                        </SelectField>
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-4">
+                      <Field label="Customer Name">
+                        <Input
+                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                          onChange={(event) => updateCustomer(customer.key, { name: event.target.value })}
+                          placeholder="Customer name"
+                          value={customer.name}
+                        />
+                      </Field>
+                    </div>
+                    <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
+                      <Field label="Speciality">
+                        <SelectField
+                          onChange={(value) => updateCustomer(customer.key, { speciality: value })}
+                          value={customer.speciality}
+                        >
+                          <option value="">No speciality</option>
+                          {MARKETING_CUSTOMER_SPECIALITIES.map((speciality) => (
+                            <option key={speciality} value={speciality}>
+                              {speciality}
+                            </option>
+                          ))}
+                        </SelectField>
+                      </Field>
+                    </div>
+                    {customer.type === "other" ? (
                       <div className="lg:col-span-2">
-                        <Field label="Pharmacy Name">
+                        <Field label="Other Type">
                           <Input
                             className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                            onChange={(event) => updatePharmacy(pharmacy.key, { name: event.target.value })}
-                            placeholder="Name"
-                            value={pharmacy.name}
+                            onChange={(event) => updateCustomer(customer.key, { otherType: event.target.value })}
+                            placeholder="Describe customer type"
+                            value={customer.otherType}
                           />
                         </Field>
                       </div>
-                      <div className="lg:col-span-2">
-                        <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
-                          <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.area} />
-                        </Field>
-                      </div>
-                      <div className="lg:col-span-2">
-                        <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
-                          <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.governorate} />
-                        </Field>
-                      </div>
-                      <div className="lg:col-span-6">
-                        <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
-                          <ReadOnlyCaptureValue
-                            multiline
-                            placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS"}
-                            value={pharmacy.capture.address}
-                          />
-                        </Field>
-                      </div>
-                      <div className="lg:col-span-6">
-                        {isDeskMode ? (
-                          <PlaceSearchPanel
-                            capture={pharmacy.capture}
-                            label={`Pharmacy ${index + 1} location`}
-                            onResolved={(place) => applyResolvedPlace(pharmacy.key, place)}
-                          />
-                        ) : (
-                          <CapturePanel
-                            capture={pharmacy.capture}
-                            isCapturing={captureTarget === pharmacy.key}
-                            label="Pharmacy GPS + live sign photo"
-                            onCaptureLocation={() => captureLocation(pharmacy.key)}
-                            onOpenCamera={() => setCameraTarget({ kind: "pharmacy", pharmacyKey: pharmacy.key })}
-                          />
-                        )}
-                      </div>
-                      <div className="lg:col-span-6">
-                        <div className="space-y-2.5">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                              Vendor Codes
-                            </p>
-                            <Button
-                              className="h-7 gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
-                              onClick={() => updatePharmacy(pharmacy.key, { vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)] })}
-                              type="button"
-                            >
-                              <Plus className="h-3 w-3" />
-                              Add
-                            </Button>
-                          </div>
-                          {pharmacy.vendorCodes.map((line) => {
-                            const codeCheck = codeChecks[line.key];
-                            return (
-                            <div key={line.key}>
-                              <div className="grid grid-cols-[1fr_1fr_32px] gap-2">
-                                <SelectField
-                                  disabled={workspace.distributors.length === 0}
-                                  onChange={(value) => {
-                                    updateVendorCode(pharmacy.key, line.key, { distributorId: value });
-                                    checkVendorCode(line.key, value, line.distributorCode);
-                                  }}
-                                  value={line.distributorId}
-                                >
-                                  <option value="">Vendor</option>
-                                  {workspace.distributors.map((distributor: MarketingDistributor) => (
-                                    <option key={distributor.id} value={distributor.id}>
-                                      {distributor.displayName}
-                                    </option>
-                                  ))}
-                                </SelectField>
-                                <Input
-                                  className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
-                                  onChange={(event) => {
-                                    const nextCode = event.target.value;
-                                    updateVendorCode(pharmacy.key, line.key, { distributorCode: nextCode });
-                                    checkVendorCode(line.key, line.distributorId, nextCode);
-                                  }}
-                                  placeholder="Code"
-                                  value={line.distributorCode}
-                                />
-                                <button
-                                  aria-label="Remove vendor"
-                                  className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                                  disabled={pharmacy.vendorCodes.length === 1}
-                                  onClick={() =>
-                                    updatePharmacy(pharmacy.key, {
-                                      vendorCodes: pharmacy.vendorCodes.length === 1
-                                        ? pharmacy.vendorCodes
-                                        : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
-                                    })
-                                  }
-                                  type="button"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
-                              </div>
-                              {codeCheck ? (
-                                <p
-                                  className={`mt-1.5 flex items-center gap-1.5 text-[11px] font-bold ${
-                                    codeCheck === "tracked"
-                                      ? "text-emerald-700"
-                                      : codeCheck === "untracked"
-                                        ? "text-amber-700"
-                                        : "text-slate-500"
-                                  }`}
-                                >
-                                  {codeCheck === "checking" ? (
-                                    <>
-                                      <LoadingSpinner />
-                                      Checking Phoenix database…
-                                    </>
-                                  ) : null}
-                                  {codeCheck === "tracked" ? (
-                                    <>
-                                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                                      In Phoenix sales database — sales can be tracked.
-                                    </>
-                                  ) : null}
-                                  {codeCheck === "untracked" ? (
-                                    <>
-                                      <ShieldX className="h-3.5 w-3.5 shrink-0" />
-                                      Not in our database yet — sales won’t be auto-tracked.
-                                    </>
-                                  ) : null}
-                                  {codeCheck === "unknown" ? (
-                                    <>Could not check the database right now.</>
-                                  ) : null}
-                                </p>
-                              ) : null}
-                            </div>
-                            );
-                          })}
+                    ) : null}
+                    <div className={customer.type === "other" ? "lg:col-span-2" : "lg:col-span-3"}>
+                      <Field label="Phone">
+                        <Input
+                          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                          onChange={(event) => updateCustomer(customer.key, { mobile: event.target.value })}
+                          placeholder="Mobile number"
+                          type="tel"
+                          value={customer.mobile}
+                        />
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-3">
+                      <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
+                        <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customer.area} />
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-3">
+                      <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
+                        <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customer.governorate} />
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-6">
+                      <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
+                        <ReadOnlyCaptureValue
+                          multiline
+                          placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS capture"}
+                          value={customer.capture.address}
+                        />
+                      </Field>
+                    </div>
+                    <div className="lg:col-span-6">
+                      {isDeskMode ? (
+                        <PlaceSearchPanel
+                          capture={customer.capture}
+                          label="Customer location"
+                          onResolved={(place) => applyResolvedPlace({ customerKey: customer.key }, place)}
+                        />
+                      ) : (
+                        <CapturePanel
+                          capture={customer.capture}
+                          isCapturing={captureTarget === customer.key}
+                          label="Customer GPS + live sign photo"
+                          onCaptureLocation={() => captureLocation({ customerKey: customer.key })}
+                          onOpenCamera={() => setCameraTarget({ customerKey: customer.key })}
+                        />
+                      )}
+                    </div>
+
+                    {/* Pharmacy section divider — scoped to THIS customer */}
+                    <div className="lg:col-span-6">
+                      <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-orange-600">Pharmacy Validation</p>
+                          <p className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-medium text-slate-500">
+                            Pharmacies for this customer only, multiple vendors per pharmacy.
+                          </p>
                         </div>
+                        <Button
+                          className="h-8 shrink-0 gap-1.5 rounded-sm border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 hover:bg-slate-50"
+                          onClick={() =>
+                            updateCustomer(customer.key, {
+                              pharmacies: [...customer.pharmacies, newPharmacyLine(defaultDistributorId)],
+                            })
+                          }
+                          type="button"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add Pharmacy
+                        </Button>
                       </div>
                     </div>
+
+                    {customer.pharmacies.map((pharmacy, index) => (
+                      <div className="lg:col-span-6" key={pharmacy.key}>
+                        <div className="rounded-sm border border-slate-200 bg-slate-50/50 p-3 sm:p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-sm bg-white text-orange-600 ring-1 ring-orange-100">
+                                <Store className="h-3.5 w-3.5" />
+                              </div>
+                              <p className="text-[13px] font-bold text-slate-800">Pharmacy {index + 1}</p>
+                            </div>
+                            <button
+                              aria-label="Remove pharmacy"
+                              className="flex h-7 w-7 items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              disabled={customer.pharmacies.length === 1}
+                              onClick={() =>
+                                updateCustomer(customer.key, {
+                                  pharmacies: customer.pharmacies.length === 1
+                                    ? customer.pharmacies
+                                    : customer.pharmacies.filter((item) => item.key !== pharmacy.key),
+                                })
+                              }
+                              type="button"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="grid gap-3 lg:grid-cols-6">
+                            <div className="lg:col-span-2">
+                              <Field label="Pharmacy Name">
+                                <Input
+                                  className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                  onChange={(event) => updatePharmacy(customer.key, pharmacy.key, { name: event.target.value })}
+                                  placeholder="Name"
+                                  value={pharmacy.name}
+                                />
+                              </Field>
+                            </div>
+                            <div className="lg:col-span-2">
+                              <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
+                                <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.area} />
+                              </Field>
+                            </div>
+                            <div className="lg:col-span-2">
+                              <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
+                                <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.governorate} />
+                              </Field>
+                            </div>
+                            <div className="lg:col-span-6">
+                              <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
+                                <ReadOnlyCaptureValue
+                                  multiline
+                                  placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS"}
+                                  value={pharmacy.capture.address}
+                                />
+                              </Field>
+                            </div>
+                            <div className="lg:col-span-6">
+                              {isDeskMode ? (
+                                <PlaceSearchPanel
+                                  capture={pharmacy.capture}
+                                  label={`Pharmacy ${index + 1} location`}
+                                  onResolved={(place) =>
+                                    applyResolvedPlace({ customerKey: customer.key, pharmacyKey: pharmacy.key }, place)
+                                  }
+                                />
+                              ) : (
+                                <CapturePanel
+                                  capture={pharmacy.capture}
+                                  isCapturing={captureTarget === `${customer.key}::${pharmacy.key}`}
+                                  label="Pharmacy GPS + live sign photo"
+                                  onCaptureLocation={() =>
+                                    captureLocation({ customerKey: customer.key, pharmacyKey: pharmacy.key })
+                                  }
+                                  onOpenCamera={() =>
+                                    setCameraTarget({ customerKey: customer.key, pharmacyKey: pharmacy.key })
+                                  }
+                                />
+                              )}
+                            </div>
+                            <div className="lg:col-span-6">
+                              <div className="space-y-2.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                                    Vendor Codes
+                                  </p>
+                                  <Button
+                                    className="h-7 gap-1.5 rounded-sm border border-slate-200 bg-white px-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50"
+                                    onClick={() =>
+                                      updatePharmacy(customer.key, pharmacy.key, {
+                                        vendorCodes: [...pharmacy.vendorCodes, newVendorCodeLine(defaultDistributorId)],
+                                      })
+                                    }
+                                    type="button"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    Add
+                                  </Button>
+                                </div>
+                                {pharmacy.vendorCodes.map((line) => {
+                                  const codeCheck = codeChecks[line.key];
+                                  return (
+                                  <div key={line.key}>
+                                    <div className="grid grid-cols-[1fr_1fr_32px] gap-2">
+                                      <SelectField
+                                        disabled={workspace.distributors.length === 0}
+                                        onChange={(value) => {
+                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorId: value });
+                                          checkVendorCode(line.key, value, line.distributorCode);
+                                        }}
+                                        value={line.distributorId}
+                                      >
+                                        <option value="">Vendor</option>
+                                        {workspace.distributors.map((distributor: MarketingDistributor) => (
+                                          <option key={distributor.id} value={distributor.id}>
+                                            {distributor.displayName}
+                                          </option>
+                                        ))}
+                                      </SelectField>
+                                      <Input
+                                        className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+                                        onChange={(event) => {
+                                          const nextCode = event.target.value;
+                                          updateVendorCode(customer.key, pharmacy.key, line.key, { distributorCode: nextCode });
+                                          checkVendorCode(line.key, line.distributorId, nextCode);
+                                        }}
+                                        placeholder="Code"
+                                        value={line.distributorCode}
+                                      />
+                                      <button
+                                        aria-label="Remove vendor"
+                                        className="flex h-10 w-full items-center justify-center rounded-sm border border-slate-200 bg-white text-slate-400 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                        disabled={pharmacy.vendorCodes.length === 1}
+                                        onClick={() =>
+                                          updatePharmacy(customer.key, pharmacy.key, {
+                                            vendorCodes: pharmacy.vendorCodes.length === 1
+                                              ? pharmacy.vendorCodes
+                                              : pharmacy.vendorCodes.filter((item) => item.key !== line.key),
+                                          })
+                                        }
+                                        type="button"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                    {codeCheck ? (
+                                      <p
+                                        className={`mt-1.5 flex items-center gap-1.5 text-[11px] font-bold ${
+                                          codeCheck === "tracked"
+                                            ? "text-emerald-700"
+                                            : codeCheck === "untracked"
+                                              ? "text-amber-700"
+                                              : "text-slate-500"
+                                        }`}
+                                      >
+                                        {codeCheck === "checking" ? (
+                                          <>
+                                            <LoadingSpinner />
+                                            Checking Phoenix database…
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "tracked" ? (
+                                          <>
+                                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                            In Phoenix sales database — sales can be tracked.
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "untracked" ? (
+                                          <>
+                                            <ShieldX className="h-3.5 w-3.5 shrink-0" />
+                                            Not in our database yet — sales won’t be auto-tracked.
+                                          </>
+                                        ) : null}
+                                        {codeCheck === "unknown" ? (
+                                          <>Could not check the database right now.</>
+                                        ) : null}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
+
+              <Button
+                className="h-10 w-full gap-2 rounded-sm border border-dashed border-orange-300 bg-orange-50/40 text-[13px] font-bold text-orange-700 hover:bg-orange-50"
+                onClick={() => setCustomers((current) => [...current, newCustomerLine(defaultDistributorId)])}
+                type="button"
+              >
+                <Plus className="h-4 w-4" />
+                Add Another Customer
+              </Button>
+
+              {duplicateCustomerName ? (
+                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-[12px] font-semibold text-amber-800">
+                  “{duplicateCustomerName}” is entered twice. Each customer must appear once per submission.
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <div className="flex items-center gap-2 text-[13px] font-bold text-slate-700">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-orange-500" />
-                <span>{pharmacies.length} pharmacy row{pharmacies.length === 1 ? "" : "s"} ready</span>
+                <span className="whitespace-nowrap">
+                  {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} pharmacy row{totalPharmacyCount === 1 ? "" : "s"} ready
+                </span>
               </div>
               <Button
                 className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"

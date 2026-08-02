@@ -11,7 +11,10 @@ import {
   resolveMarketingValidationActor,
   resolveMarketingValidationRecordStatus,
 } from "@/lib/marketing-requests/service";
-import type { MarketingValidationInput } from "@/lib/marketing-requests/types";
+import type {
+  MarketingValidationCustomerInput,
+  MarketingValidationInput,
+} from "@/lib/marketing-requests/types";
 
 const timestamp = "2026-05-21T10:00:00.000Z";
 
@@ -273,19 +276,24 @@ const completeInput: MarketingValidationInput = {
 };
 
 export function runMarketingValidationServiceTests() {
+  // The legacy single-customer payload (`customer` + `pharmacies`) still normalizes, so an offline
+  // replay queued before multi-customer shipped cannot 400 on arrival.
   const normalized = normalizeMarketingValidationInput(completeInput);
-  assert.equal(normalized.customer.evidenceStatus, "complete");
-  assert.equal(normalized.customer.extractedAreaName, "Glim");
-  assert.equal(normalized.customer.extractedGovernorateName, "Alexandria");
-  assert.equal(normalized.customer.validationStatus, "system_validated");
-  assert.equal(normalized.customer.mobileNumber, "01000000000");
-  assert.equal(normalized.pharmacies[0].evidenceStatus, "complete");
-  assert.equal(normalized.pharmacies[0].extractedAreaName, "Glim");
-  assert.equal(normalized.pharmacies[0].extractedGovernorateName, "Alexandria");
-  assert.equal(normalized.pharmacies[0].validationStatus, "system_validated");
-  assert.equal(normalized.pharmacies[0].vendorCodes.length, 2);
-  assert.equal(normalized.pharmacies[0].vendorCodes[0].distributorPharmacyCode, "PH-001");
-  assert.equal(normalized.pharmacies[0].vendorCodes[0].normalizedPharmacyCode, "ph-001");
+  assert.equal(normalized.customers.length, 1, "the legacy single-customer shape must still normalize");
+  const [legacyCustomer] = normalized.customers;
+  assert.equal(legacyCustomer.evidenceStatus, "complete");
+  assert.equal(legacyCustomer.extractedAreaName, "Glim");
+  assert.equal(legacyCustomer.extractedGovernorateName, "Alexandria");
+  assert.equal(legacyCustomer.validationStatus, "system_validated");
+  assert.equal(legacyCustomer.mobileNumber, "01000000000");
+  assert.equal(legacyCustomer.speciality, null, "speciality is optional and defaults to null");
+  assert.equal(legacyCustomer.pharmacies[0].evidenceStatus, "complete");
+  assert.equal(legacyCustomer.pharmacies[0].extractedAreaName, "Glim");
+  assert.equal(legacyCustomer.pharmacies[0].extractedGovernorateName, "Alexandria");
+  assert.equal(legacyCustomer.pharmacies[0].validationStatus, "system_validated");
+  assert.equal(legacyCustomer.pharmacies[0].vendorCodes.length, 2);
+  assert.equal(legacyCustomer.pharmacies[0].vendorCodes[0].distributorPharmacyCode, "PH-001");
+  assert.equal(legacyCustomer.pharmacies[0].vendorCodes[0].normalizedPharmacyCode, "ph-001");
 
   assert.equal(
     resolveMarketingSystemValidationStatus({
@@ -322,8 +330,8 @@ export function runMarketingValidationServiceTests() {
       evidencePhotoName: "",
     })),
   });
-  assert.equal(partial.pharmacies[0].evidenceStatus, "pending");
-  assert.equal(partial.pharmacies[0].validationStatus, "pending");
+  assert.equal(partial.customers[0].pharmacies[0].evidenceStatus, "pending");
+  assert.equal(partial.customers[0].pharmacies[0].validationStatus, "pending");
 
   assert.throws(
     () =>
@@ -342,12 +350,121 @@ export function runMarketingValidationServiceTests() {
       normalizeMarketingValidationInput({
         ...completeInput,
         customer: {
-          ...completeInput.customer,
+          ...completeInput.customer!,
           displayName: "",
         },
       }),
     /customer name is required/i,
   );
 
+  runMarketingMultiCustomerTests();
   runMarketingOnBehalfValidationTests();
+}
+
+/* ── Several customers in one submission, each with its OWN pharmacies ──────────────────────── */
+
+function customerPayload(
+  overrides: Partial<MarketingValidationCustomerInput> = {},
+): MarketingValidationCustomerInput {
+  return { ...completeInput.customer!, ...overrides };
+}
+
+function pharmacyPayload(displayName: string, code: string) {
+  return {
+    ...completeInput.pharmacies![0],
+    displayName,
+    vendorCodes: [{ distributorId: 1, distributorPharmacyCode: code }],
+  };
+}
+
+function runMarketingMultiCustomerTests() {
+  const twoCustomers = normalizeMarketingValidationInput({
+    customers: [
+      {
+        ...customerPayload({ displayName: "Dr Alaa Clinic", speciality: "Cardiology" }),
+        pharmacies: [pharmacyPayload("Alaa Pharmacy", "PH-100")],
+      },
+      {
+        ...customerPayload({ displayName: "Dr Mona Clinic", speciality: "Paediatrics" }),
+        pharmacies: [pharmacyPayload("Mona Pharmacy A", "PH-200"), pharmacyPayload("Mona Pharmacy B", "PH-201")],
+      },
+    ],
+  });
+
+  assert.equal(twoCustomers.customers.length, 2, "both customers must survive normalization");
+  assert.equal(twoCustomers.customers[0].displayName, "Dr Alaa Clinic");
+  assert.equal(twoCustomers.customers[1].displayName, "Dr Mona Clinic");
+
+  // The whole point of "per customer": the pharmacy lists must NOT pool. If they merged, Dr Alaa
+  // would silently acquire Dr Mona's two pharmacies and any request raised against her would
+  // attribute sales from a pharmacy she has nothing to do with.
+  assert.equal(twoCustomers.customers[0].pharmacies.length, 1, "customer 1 keeps only its own pharmacy");
+  assert.equal(twoCustomers.customers[1].pharmacies.length, 2, "customer 2 keeps only its own pharmacies");
+  assert.equal(twoCustomers.customers[0].pharmacies[0].displayName, "Alaa Pharmacy");
+  assert.deepEqual(
+    twoCustomers.customers[1].pharmacies.map((pharmacy) => pharmacy.displayName),
+    ["Mona Pharmacy A", "Mona Pharmacy B"],
+  );
+
+  assert.equal(twoCustomers.customers[0].speciality, "Cardiology");
+  assert.equal(twoCustomers.customers[1].speciality, "Paediatrics");
+
+  // Canonical casing: a payload carrying "cardiology" stores "Cardiology", so the values can be
+  // grouped later instead of fragmenting the way the raw CRM speciality text does.
+  const lowercased = normalizeMarketingValidationInput({
+    customers: [{ ...customerPayload({ speciality: "cardiology" }), pharmacies: [pharmacyPayload("P", "PH-1")] }],
+  });
+  assert.equal(lowercased.customers[0].speciality, "Cardiology");
+
+  // A speciality outside the list is refused rather than stored, so the dropdown is a real
+  // constraint and not merely a UI convenience that the API ignores.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [{ ...customerPayload({ speciality: "Astrology" }), pharmacies: [pharmacyPayload("P", "PH-1")] }],
+      }),
+    /is not a recognised speciality/i,
+    "an unknown speciality must be rejected",
+  );
+
+  // Two rows for the same customer would mint two separate records that both appear in the request
+  // dropdown, indistinguishable to whoever picks one.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [
+          { ...customerPayload({ displayName: "Dr Alaa Clinic" }), pharmacies: [pharmacyPayload("P1", "PH-1")] },
+          { ...customerPayload({ displayName: "dr  alaa   clinic" }), pharmacies: [pharmacyPayload("P2", "PH-2")] },
+        ],
+      }),
+    /appears more than once/i,
+    "the same customer twice in one submission must be rejected",
+  );
+
+  // Each customer needs its own pharmacy — an empty list must name WHICH customer is short.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [
+          { ...customerPayload({ displayName: "Dr Alaa Clinic" }), pharmacies: [pharmacyPayload("P1", "PH-1")] },
+          { ...customerPayload({ displayName: "Dr Mona Clinic" }), pharmacies: [] },
+        ],
+      }),
+    /Customer 2 needs at least one pharmacy/i,
+  );
+
+  // Validation errors stay traceable to the right customer once there are several.
+  assert.throws(
+    () =>
+      normalizeMarketingValidationInput({
+        customers: [
+          { ...customerPayload({ displayName: "Dr Alaa Clinic" }), pharmacies: [pharmacyPayload("P1", "PH-1")] },
+          {
+            ...customerPayload({ displayName: "Dr Mona Clinic" }),
+            pharmacies: [{ ...pharmacyPayload("P2", "PH-2"), displayName: "" }],
+          },
+        ],
+      }),
+    /Customer 2 pharmacy 1 name is required/i,
+  );
 }

@@ -22,6 +22,7 @@ import {
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled } from "@/lib/notifications/role-recipients";
 import { logError, logWarning } from "@/lib/observability/log";
+import { MARKETING_CUSTOMER_SPECIALITIES } from "@/lib/marketing-requests/types";
 import type {
   MarketingDistributor,
   MarketingControlSetting,
@@ -49,7 +50,9 @@ import type {
   MarketingRequestApprovalStep,
   MarketingRequestType,
   MarketingOnBehalfEmployee,
+  MarketingValidationCustomerInput,
   MarketingValidationInput,
+  MarketingValidationPharmacyInput,
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace,
@@ -567,49 +570,55 @@ const marketingFinanceEvidenceContentTypes = new Set([
   "image/webp",
 ]);
 
-type NormalizedMarketingValidationInput = {
-  customer: {
-    capturedAccuracyMeters: number | null;
-    capturedAddress: string | null;
-    capturedAt: string | null;
-    capturedLatitude: number | null;
-    capturedLongitude: number | null;
-    customerType: MarketingCustomerType;
-    displayName: string;
-    evidenceHasTimestamp: boolean;
-    evidencePhotoCapturedAt: string | null;
-    evidencePhotoName: string | null;
-    evidenceStatus: MarketingEvidenceStatus;
-    extractedAreaName: string | null;
-    extractedGovernorateName: string | null;
-    mobileNumber: string | null;
-    normalizedName: string;
-    otherTypeDescription: string | null;
-    regionName: string | null;
-    validationStatus: MarketingValidationStatus;
-  };
-  pharmacies: Array<{
-    capturedAccuracyMeters: number | null;
-    capturedAddress: string | null;
-    capturedAt: string | null;
-    capturedLatitude: number | null;
-    capturedLongitude: number | null;
-    displayName: string;
-    evidenceHasTimestamp: boolean;
-    evidencePhotoCapturedAt: string | null;
-    evidencePhotoName: string | null;
-    evidenceStatus: MarketingEvidenceStatus;
-    extractedAreaName: string | null;
-    extractedGovernorateName: string | null;
-    normalizedName: string;
-    regionName: string | null;
-    vendorCodes: Array<{
-      distributorId: number;
-      distributorPharmacyCode: string;
-      normalizedPharmacyCode: string;
-    }>;
-    validationStatus: MarketingValidationStatus;
+type NormalizedMarketingValidationPharmacy = {
+  capturedAccuracyMeters: number | null;
+  capturedAddress: string | null;
+  capturedAt: string | null;
+  capturedLatitude: number | null;
+  capturedLongitude: number | null;
+  displayName: string;
+  evidenceHasTimestamp: boolean;
+  evidencePhotoCapturedAt: string | null;
+  evidencePhotoName: string | null;
+  evidenceStatus: MarketingEvidenceStatus;
+  extractedAreaName: string | null;
+  extractedGovernorateName: string | null;
+  normalizedName: string;
+  regionName: string | null;
+  vendorCodes: Array<{
+    distributorId: number;
+    distributorPharmacyCode: string;
+    normalizedPharmacyCode: string;
   }>;
+  validationStatus: MarketingValidationStatus;
+};
+
+type NormalizedMarketingValidationCustomer = {
+  capturedAccuracyMeters: number | null;
+  capturedAddress: string | null;
+  capturedAt: string | null;
+  capturedLatitude: number | null;
+  capturedLongitude: number | null;
+  customerType: MarketingCustomerType;
+  displayName: string;
+  evidenceHasTimestamp: boolean;
+  evidencePhotoCapturedAt: string | null;
+  evidencePhotoName: string | null;
+  evidenceStatus: MarketingEvidenceStatus;
+  extractedAreaName: string | null;
+  extractedGovernorateName: string | null;
+  mobileNumber: string | null;
+  normalizedName: string;
+  otherTypeDescription: string | null;
+  /** Each customer keeps its OWN pharmacies — lists are never merged across customers. */
+  pharmacies: NormalizedMarketingValidationPharmacy[];
+  regionName: string | null;
+  speciality: string | null;
+  validationStatus: MarketingValidationStatus;
+};
+
+type NormalizedMarketingValidationInput = {
+  customers: NormalizedMarketingValidationCustomer[];
 };
 
 type MarketingSystemValidationInput = {
@@ -1314,100 +1323,169 @@ export function resolveMarketingValidationRecordStatus(params: {
   return params.isOnBehalf ? "sfe_validated" : params.systemStatus;
 }
 
-export function normalizeMarketingValidationInput(
-  input: MarketingValidationInput,
-): NormalizedMarketingValidationInput {
-  const customerDisplayName = cleanText(input.customer?.displayName);
-  if (!customerDisplayName) throw validationError("Customer name is required.");
+/**
+ * Optional, but constrained to `MARKETING_CUSTOMER_SPECIALITIES` when supplied.
+ *
+ * Matched case-insensitively and returned in the list's canonical casing, so a payload carrying
+ * "cardiology" still stores "Cardiology". Anything outside the list is refused rather than silently
+ * stored — otherwise the picker would be decorative and the free-text drift it exists to prevent
+ * would come straight back through the API.
+ */
+function normalizeCustomerSpeciality(value: unknown, label: string) {
+  const raw = cleanText(value);
+  if (!raw) return null;
 
-  const customer = {
-    capturedAccuracyMeters: nonNegativeNumber(input.customer?.capturedAccuracyMeters),
-    capturedAddress: cleanText(input.customer?.capturedAddress),
-    capturedAt: nullableIsoTimestamp(input.customer?.capturedAt, "Customer capture time"),
-    capturedLatitude: nullableCoordinate(input.customer?.capturedLatitude, "Customer latitude", -90, 90),
-    capturedLongitude: nullableCoordinate(input.customer?.capturedLongitude, "Customer longitude", -180, 180),
-    customerType: normalizeCustomerType(input.customer?.customerType),
-    displayName: customerDisplayName,
-    evidenceHasTimestamp: input.customer?.evidenceHasTimestamp === true,
-    evidencePhotoCapturedAt: nullableIsoTimestamp(input.customer?.evidencePhotoCapturedAt, "Customer photo capture time"),
-    evidencePhotoName: cleanText(input.customer?.evidencePhotoName),
-    extractedAreaName: cleanText(input.customer?.extractedAreaName),
-    extractedGovernorateName: cleanText(input.customer?.extractedGovernorateName),
-    mobileNumber: cleanText(input.customer?.mobileNumber),
-    normalizedName: normalizeLookupKey(customerDisplayName),
-    otherTypeDescription: cleanText(input.customer?.otherTypeDescription),
-    regionName: cleanText(input.customer?.regionName),
+  const match = MARKETING_CUSTOMER_SPECIALITIES.find(
+    (option) => option.toLowerCase() === raw.toLowerCase(),
+  );
+  if (!match) {
+    throw validationError(`${label} speciality "${raw}" is not a recognised speciality.`, "unknown_speciality");
+  }
+  return match;
+}
+
+function normalizeValidationPharmacy(
+  inputPharmacy: MarketingValidationPharmacyInput,
+  label: string,
+): NormalizedMarketingValidationPharmacy {
+  const displayName = cleanText(inputPharmacy?.displayName);
+  if (!displayName) throw validationError(`${label} name is required.`);
+  if (!Array.isArray(inputPharmacy.vendorCodes) || inputPharmacy.vendorCodes.length === 0) {
+    throw validationError(`${label} needs at least one vendor code.`);
+  }
+
+  const pharmacy = {
+    capturedAccuracyMeters: nonNegativeNumber(inputPharmacy.capturedAccuracyMeters),
+    capturedAddress: cleanText(inputPharmacy.capturedAddress),
+    capturedAt: nullableIsoTimestamp(inputPharmacy.capturedAt, `${label} capture time`),
+    capturedLatitude: nullableCoordinate(inputPharmacy.capturedLatitude, `${label} latitude`, -90, 90),
+    capturedLongitude: nullableCoordinate(inputPharmacy.capturedLongitude, `${label} longitude`, -180, 180),
+    displayName,
+    evidenceHasTimestamp: inputPharmacy.evidenceHasTimestamp === true,
+    evidencePhotoCapturedAt: nullableIsoTimestamp(inputPharmacy.evidencePhotoCapturedAt, `${label} photo capture time`),
+    evidencePhotoName: cleanText(inputPharmacy.evidencePhotoName),
+    extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
+    extractedGovernorateName: cleanText(inputPharmacy.extractedGovernorateName),
+    normalizedName: normalizeLookupKey(displayName),
+    regionName: cleanText(inputPharmacy.regionName),
   };
-  const customerEvidenceStatus = evidenceStatusFromInput(customer);
-  const inputPharmacies = Array.isArray(input.pharmacies) && input.pharmacies.length > 0
-    ? input.pharmacies
-    : input.pharmacy && input.distributorCode
-      ? [{ ...input.pharmacy, vendorCodes: [input.distributorCode] }]
-      : [];
-  if (inputPharmacies.length === 0) throw validationError("At least one pharmacy is required.");
-
-  const pharmacies = inputPharmacies.map((inputPharmacy, index) => {
-    const displayName = cleanText(inputPharmacy?.displayName);
-    if (!displayName) throw validationError(`Pharmacy ${index + 1} name is required.`);
-    if (!Array.isArray(inputPharmacy.vendorCodes) || inputPharmacy.vendorCodes.length === 0) {
-      throw validationError(`Pharmacy ${index + 1} needs at least one vendor code.`);
+  const pharmacyEvidenceStatus = evidenceStatusFromInput(pharmacy);
+  const seenVendorCodes = new Set<string>();
+  const vendorCodes = inputPharmacy.vendorCodes.map((vendorCode, vendorIndex) => {
+    const distributorId = numberId(vendorCode.distributorId, `${label} vendor ${vendorIndex + 1}`);
+    const distributorPharmacyCode = cleanText(vendorCode.distributorPharmacyCode);
+    if (!distributorPharmacyCode) {
+      throw validationError(`${label} vendor ${vendorIndex + 1} code is required.`);
     }
-
-    const pharmacy = {
-      capturedAccuracyMeters: nonNegativeNumber(inputPharmacy.capturedAccuracyMeters),
-      capturedAddress: cleanText(inputPharmacy.capturedAddress),
-      capturedAt: nullableIsoTimestamp(inputPharmacy.capturedAt, `Pharmacy ${index + 1} capture time`),
-      capturedLatitude: nullableCoordinate(inputPharmacy.capturedLatitude, `Pharmacy ${index + 1} latitude`, -90, 90),
-      capturedLongitude: nullableCoordinate(inputPharmacy.capturedLongitude, `Pharmacy ${index + 1} longitude`, -180, 180),
-      displayName,
-      evidenceHasTimestamp: inputPharmacy.evidenceHasTimestamp === true,
-      evidencePhotoCapturedAt: nullableIsoTimestamp(inputPharmacy.evidencePhotoCapturedAt, `Pharmacy ${index + 1} photo capture time`),
-      evidencePhotoName: cleanText(inputPharmacy.evidencePhotoName),
-      extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
-      extractedGovernorateName: cleanText(inputPharmacy.extractedGovernorateName),
-      normalizedName: normalizeLookupKey(displayName),
-      regionName: cleanText(inputPharmacy.regionName),
-    };
-    const pharmacyEvidenceStatus = evidenceStatusFromInput(pharmacy);
-    const seenVendorCodes = new Set<string>();
-    const vendorCodes = inputPharmacy.vendorCodes.map((vendorCode, vendorIndex) => {
-      const distributorId = numberId(vendorCode.distributorId, `Pharmacy ${index + 1} vendor ${vendorIndex + 1}`);
-      const distributorPharmacyCode = cleanText(vendorCode.distributorPharmacyCode);
-      if (!distributorPharmacyCode) {
-        throw validationError(`Pharmacy ${index + 1} vendor ${vendorIndex + 1} code is required.`);
-      }
-      const normalizedPharmacyCode = normalizeLookupKey(distributorPharmacyCode);
-      const key = `${distributorId}:${normalizedPharmacyCode}`;
-      if (seenVendorCodes.has(key)) {
-        throw validationError(`Pharmacy ${index + 1} has a duplicate vendor code.`);
-      }
-      seenVendorCodes.add(key);
-
-      return {
-        distributorId,
-        distributorPharmacyCode,
-        normalizedPharmacyCode,
-      };
-    });
+    const normalizedPharmacyCode = normalizeLookupKey(distributorPharmacyCode);
+    const key = `${distributorId}:${normalizedPharmacyCode}`;
+    if (seenVendorCodes.has(key)) {
+      throw validationError(`${label} has a duplicate vendor code.`);
+    }
+    seenVendorCodes.add(key);
 
     return {
-      ...pharmacy,
-      capturedAccuracyMeters: pharmacy.capturedAccuracyMeters || null,
-      evidenceStatus: pharmacyEvidenceStatus,
-      validationStatus: systemStatusFromEvidence(pharmacyEvidenceStatus),
-      vendorCodes,
+      distributorId,
+      distributorPharmacyCode,
+      normalizedPharmacyCode,
     };
   });
 
   return {
-    customer: {
-      ...customer,
-      capturedAccuracyMeters: customer.capturedAccuracyMeters || null,
-      evidenceStatus: customerEvidenceStatus,
-      validationStatus: systemStatusFromEvidence(customerEvidenceStatus),
-    },
-    pharmacies,
+    ...pharmacy,
+    capturedAccuracyMeters: pharmacy.capturedAccuracyMeters || null,
+    evidenceStatus: pharmacyEvidenceStatus,
+    validationStatus: systemStatusFromEvidence(pharmacyEvidenceStatus),
+    vendorCodes,
   };
+}
+
+function normalizeValidationCustomer(
+  inputCustomer: MarketingValidationCustomerInput | undefined,
+  inputPharmacies: MarketingValidationPharmacyInput[],
+  /** "" for a single customer so the existing messages are unchanged; "Customer 2 " when several. */
+  prefix: string,
+): NormalizedMarketingValidationCustomer {
+  const customerLabel = prefix ? prefix.trim() : "Customer";
+  const displayName = cleanText(inputCustomer?.displayName);
+  if (!displayName) throw validationError(`${customerLabel} name is required.`);
+
+  const customer = {
+    capturedAccuracyMeters: nonNegativeNumber(inputCustomer?.capturedAccuracyMeters),
+    capturedAddress: cleanText(inputCustomer?.capturedAddress),
+    capturedAt: nullableIsoTimestamp(inputCustomer?.capturedAt, `${customerLabel} capture time`),
+    capturedLatitude: nullableCoordinate(inputCustomer?.capturedLatitude, `${customerLabel} latitude`, -90, 90),
+    capturedLongitude: nullableCoordinate(inputCustomer?.capturedLongitude, `${customerLabel} longitude`, -180, 180),
+    customerType: normalizeCustomerType(inputCustomer?.customerType),
+    displayName,
+    evidenceHasTimestamp: inputCustomer?.evidenceHasTimestamp === true,
+    evidencePhotoCapturedAt: nullableIsoTimestamp(inputCustomer?.evidencePhotoCapturedAt, `${customerLabel} photo capture time`),
+    evidencePhotoName: cleanText(inputCustomer?.evidencePhotoName),
+    extractedAreaName: cleanText(inputCustomer?.extractedAreaName),
+    extractedGovernorateName: cleanText(inputCustomer?.extractedGovernorateName),
+    mobileNumber: cleanText(inputCustomer?.mobileNumber),
+    normalizedName: normalizeLookupKey(displayName),
+    otherTypeDescription: cleanText(inputCustomer?.otherTypeDescription),
+    regionName: cleanText(inputCustomer?.regionName),
+    speciality: normalizeCustomerSpeciality(inputCustomer?.speciality, customerLabel),
+  };
+  const customerEvidenceStatus = evidenceStatusFromInput(customer);
+
+  if (inputPharmacies.length === 0) {
+    throw validationError(
+      prefix ? `${customerLabel} needs at least one pharmacy.` : "At least one pharmacy is required.",
+    );
+  }
+
+  return {
+    ...customer,
+    capturedAccuracyMeters: customer.capturedAccuracyMeters || null,
+    evidenceStatus: customerEvidenceStatus,
+    pharmacies: inputPharmacies.map((inputPharmacy, index) =>
+      normalizeValidationPharmacy(inputPharmacy, `${prefix}${prefix ? "p" : "P"}harmacy ${index + 1}`),
+    ),
+    validationStatus: systemStatusFromEvidence(customerEvidenceStatus),
+  };
+}
+
+export function normalizeMarketingValidationInput(
+  input: MarketingValidationInput,
+): NormalizedMarketingValidationInput {
+  // One submission can carry several customers, each with its own pharmacies. The legacy
+  // single-customer shape still round-trips so an offline replay queued before this shipped, or any
+  // caller still posting `customer` + `pharmacies`, keeps working instead of 400-ing.
+  const multiCustomerInput = Array.isArray(input.customers) ? input.customers.filter(Boolean) : [];
+  if (multiCustomerInput.length > 0) {
+    const seenNames = new Set<string>();
+    return {
+      customers: multiCustomerInput.map((entry, index) => {
+        const prefix = multiCustomerInput.length > 1 ? `Customer ${index + 1} ` : "";
+        const normalized = normalizeValidationCustomer(
+          entry,
+          Array.isArray(entry.pharmacies) ? entry.pharmacies : [],
+          prefix,
+        );
+        // Two rows for the same customer in one submission would mint two separate records that
+        // then both surface in the request dropdown, indistinguishable to whoever picks one.
+        if (seenNames.has(normalized.normalizedName)) {
+          throw validationError(
+            `"${normalized.displayName}" appears more than once in this submission.`,
+            "duplicate_customer",
+          );
+        }
+        seenNames.add(normalized.normalizedName);
+        return normalized;
+      }),
+    };
+  }
+
+  const legacyPharmacies = Array.isArray(input.pharmacies) && input.pharmacies.length > 0
+    ? input.pharmacies
+    : input.pharmacy && input.distributorCode
+      ? [{ ...input.pharmacy, vendorCodes: [input.distributorCode] }]
+      : [];
+
+  return { customers: [normalizeValidationCustomer(input.customer, legacyPharmacies, "")] };
 }
 
 export function prepareMarketingRequestDraft(params: {
@@ -3898,7 +3976,11 @@ export async function createMarketingValidationRecord(
 
   const normalized = normalizeMarketingValidationInput(input);
   const distributorIds = Array.from(
-    new Set(normalized.pharmacies.flatMap((pharmacy) => pharmacy.vendorCodes.map((code) => code.distributorId))),
+    new Set(
+      normalized.customers.flatMap((entry) =>
+        entry.pharmacies.flatMap((pharmacy) => pharmacy.vendorCodes.map((code) => code.distributorId)),
+      ),
+    ),
   );
   const distributorsResult = await supabase
     .from("marketing_distributors")
@@ -3915,50 +3997,58 @@ export async function createMarketingValidationRecord(
     }
   }
 
-  let customerId: string | null = null;
+  // Every customer and pharmacy minted by THIS submission, so a failure part-way through a
+  // multi-customer save removes all of them rather than leaving the earlier ones stranded in the
+  // owner's book with no pharmacies attached.
+  const customerIds: string[] = [];
   const pharmacyIds: string[] = [];
   try {
+    const rows: MarketingValidationReportRow[] = [];
+    for (const normalizedCustomer of normalized.customers) {
     const customerInsert = await supabase
       .from("marketing_customers")
       .insert({
         area_id: owner.areaId ?? null,
-        captured_accuracy_meters: normalized.customer.capturedAccuracyMeters,
-        captured_address: normalized.customer.capturedAddress,
-        captured_at: normalized.customer.capturedAt,
-        captured_latitude: normalized.customer.capturedLatitude,
-        captured_longitude: normalized.customer.capturedLongitude,
+        captured_accuracy_meters: normalizedCustomer.capturedAccuracyMeters,
+        captured_address: normalizedCustomer.capturedAddress,
+        captured_at: normalizedCustomer.capturedAt,
+        captured_latitude: normalizedCustomer.capturedLatitude,
+        captured_longitude: normalizedCustomer.capturedLongitude,
         created_by_hr_id: actorHrId,
         customer_code: generateMarketingCode("MKT-HCP"),
-        customer_type: normalized.customer.customerType,
-        display_name: normalized.customer.displayName,
-        evidence_has_timestamp: normalized.customer.evidenceHasTimestamp,
-        evidence_photo_captured_at: normalized.customer.evidencePhotoCapturedAt,
-        evidence_photo_name: normalized.customer.evidencePhotoName,
-        evidence_status: normalized.customer.evidenceStatus,
-        extracted_area_name: normalized.customer.extractedAreaName,
-        extracted_governorate_name: normalized.customer.extractedGovernorateName,
+        customer_type: normalizedCustomer.customerType,
+        display_name: normalizedCustomer.displayName,
+        evidence_has_timestamp: normalizedCustomer.evidenceHasTimestamp,
+        evidence_photo_captured_at: normalizedCustomer.evidencePhotoCapturedAt,
+        evidence_photo_name: normalizedCustomer.evidencePhotoName,
+        evidence_status: normalizedCustomer.evidenceStatus,
+        extracted_area_name: normalizedCustomer.extractedAreaName,
+        extracted_governorate_name: normalizedCustomer.extractedGovernorateName,
         line_id: owner.lineId ?? null,
         manager_hr_id: owner.managerHrId ?? null,
-        normalized_name: normalized.customer.normalizedName,
-        other_type_description: normalized.customer.otherTypeDescription,
+        normalized_name: normalizedCustomer.normalizedName,
+        other_type_description: normalizedCustomer.otherTypeDescription,
         owner_hr_id: ownerHrId,
-        region_name: normalized.customer.regionName,
+        region_name: normalizedCustomer.regionName,
         updated_by_hr_id: actorHrId,
         validated_at: adminValidatedAt,
         validated_by_hr_id: adminValidatedByHrId,
         validation_notes: adminValidationNote,
         validation_status: resolveMarketingValidationRecordStatus({
           isOnBehalf,
-          systemStatus: normalized.customer.validationStatus,
+          systemStatus: normalizedCustomer.validationStatus,
         }),
       })
       .select("*")
       .single();
     if (customerInsert.error) throw customerInsert.error;
     const customer = mapCustomer(customerInsert.data as MarketingCustomerDbRow);
-    customerId = customer.id;
+    customerIds.push(customer.id);
 
-    if (normalized.customer.mobileNumber) {
+    // Speciality lives on the contact row (marketing_customers has no such column), so the contact
+    // is now written whenever EITHER a speciality or a phone was given — previously a customer with
+    // a speciality but no phone would have had nowhere to record it.
+    if (normalizedCustomer.mobileNumber || normalizedCustomer.speciality) {
       const contactInsert = await supabase
         .from("marketing_customer_contacts")
         .insert({
@@ -3966,13 +4056,13 @@ export async function createMarketingValidationRecord(
           contact_name: customer.displayName,
           created_by_hr_id: actorHrId,
           customer_id: customer.id,
-          mobile_number: normalized.customer.mobileNumber,
+          mobile_number: normalizedCustomer.mobileNumber,
+          specialty: normalizedCustomer.speciality,
         });
       if (contactInsert.error) throw contactInsert.error;
     }
 
-    const rows: MarketingValidationReportRow[] = [];
-    for (const normalizedPharmacy of normalized.pharmacies) {
+    for (const normalizedPharmacy of normalizedCustomer.pharmacies) {
       const pharmacyInsert = await supabase
         .from("marketing_pharmacies")
         .insert({
@@ -4020,7 +4110,7 @@ export async function createMarketingValidationRecord(
         const linkValidationStatus = resolveMarketingValidationRecordStatus({
           isOnBehalf,
           systemStatus: resolveMarketingSystemValidationStatus({
-            customerEvidenceStatus: normalized.customer.evidenceStatus,
+            customerEvidenceStatus: normalizedCustomer.evidenceStatus,
             pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
             referenceStatus: reference.status,
           }),
@@ -4084,7 +4174,8 @@ export async function createMarketingValidationRecord(
 
     if (isOnBehalf) {
       // An admin moving a customer into another employee's book is exactly the kind of act that has
-      // to be reconstructable later — the row itself only shows the end state.
+      // to be reconstructable later — the row itself only shows the end state. One entry per
+      // customer, so a multi-customer submission is not collapsed into a single unreadable record.
       await writeAuditLog({
         actorLoginId: resolvedActorHrId,
         entityId: customer.id,
@@ -4092,21 +4183,29 @@ export async function createMarketingValidationRecord(
         newValues: {
           customerCode: customer.customerCode,
           customerName: customer.displayName,
+          customersInSubmission: normalized.customers.length,
           onBehalfOfHrId: ownerHrId,
           onBehalfOfName: owner.displayName,
-          pharmacyCount: normalized.pharmacies.length,
+          pharmacyCount: normalizedCustomer.pharmacies.length,
           source: "marketing_validation_admin_on_behalf",
+          speciality: normalizedCustomer.speciality,
           validationStatus: "sfe_validated",
         },
         summary: `Customer ${customer.displayName} validated at the desk on behalf of ${owner.displayName} (${ownerHrId})`,
       });
     }
+    }
 
     return rows;
   } catch (error) {
-    if (customerId) await supabase.from("marketing_customers").delete().eq("id", customerId);
+    // Order matters: the link rows FK to both, and pharmacies are deleted before customers so a
+    // partially-built submission unwinds cleanly instead of tripping a foreign-key violation that
+    // would mask the real error.
     for (const pharmacyId of pharmacyIds) {
       await supabase.from("marketing_pharmacies").delete().eq("id", pharmacyId);
+    }
+    for (const rollbackCustomerId of customerIds) {
+      await supabase.from("marketing_customers").delete().eq("id", rollbackCustomerId);
     }
     throw error;
   }
