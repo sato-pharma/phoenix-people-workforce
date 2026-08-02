@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { resolveRootRedirectPath } from "@/lib/auth/root-landing";
+import { phoenixSessionCookieName } from "@/lib/auth/session-token";
 import {
   isSameOriginMutationRequest,
   requiresCsrfProtection,
@@ -72,7 +74,43 @@ export function isPreviewBuilderLoginRequest(request: NextRequest) {
   return originHeader === builderPreviewOrigin || refererOrigin === builderPreviewOrigin;
 }
 
+/**
+ * Answer "/" with a real HTTP redirect instead of a JS-dependent one.
+ *
+ * Resolving the landing path here — before rendering — is what makes the redirect a true 307.
+ * See src/lib/auth/root-landing.ts for why resolving it in app/page.tsx could not be.
+ *
+ * Fails OPEN by design: any throw (missing PHOENIX_AUTH_SECRET, malformed cookie) falls
+ * through to app/page.tsx, which still performs the same redirect the slow way. The entry
+ * point of a live HR platform must degrade to "slower" and never to a 500.
+ */
+function rootRedirectResponse(request: NextRequest) {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") return null;
+  if (request.nextUrl.pathname !== "/") return null;
+
+  try {
+    const destination = resolveRootRedirectPath(
+      request.cookies.get(phoenixSessionCookieName)?.value,
+    );
+    const url = request.nextUrl.clone();
+    url.pathname = destination;
+    url.search = "";
+
+    const response = NextResponse.redirect(url, 307);
+    // The destination depends on the session cookie, so this response is per-user. Never let an
+    // edge or intermediary hold it: a cached "/" -> /admin would be handed to signed-out visitors.
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    return response;
+  } catch {
+    return null;
+  }
+}
+
 export function proxy(request: NextRequest) {
+  const rootRedirect = rootRedirectResponse(request);
+  if (rootRedirect) return rootRedirect;
+
   if (isPreviewReadOnlyBlockedMutation(request)) {
     return NextResponse.json(
       {
@@ -126,6 +164,8 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    // "/" is matched so the entry point can be answered with a true 307 before any rendering.
+    "/",
     "/api/:path*",
     "/offers/:token/accept",
     "/offers/:token/reject",

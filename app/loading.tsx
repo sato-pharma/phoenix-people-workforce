@@ -1,3 +1,4 @@
+import { LoadingWatchdog } from "@/components/layout/loading-watchdog";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { systemUiText } from "@/config/system-settings";
 
@@ -9,6 +10,9 @@ export default function Loading() {
         <p className="text-sm font-medium text-slate-500 animate-pulse">
           {systemUiText.loadingMessage}
         </p>
+        {/* This fallback is what a stalled client bundle leaves on screen — never let it be an
+            endless spinner with no way out. */}
+        <LoadingWatchdog />
       </div>
     </div>
   );
