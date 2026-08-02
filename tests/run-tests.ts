@@ -534,6 +534,7 @@ import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
 import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
+import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
 import { runOutstationApprovalStateTests } from "./outstation-approval-state.test.ts";
@@ -1106,6 +1107,7 @@ await runTest("secret pins check (catches the version pinning that 401'd every c
 await runTest("sql backup placement (catches snapshot tables created in the anon-readable public schema)", runSqlBackupPlacementTests);
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
+await runTest("field workforce Thursday half day (Thu costs 0.5; Sat title-dependent; holiday-outage guard)", runFieldWorkforceThursdayHalfDayTests);
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);
 await runTest("outstation approval state (3-state queues partition exactly; approval beats a stale rejected status)", runOutstationApprovalStateTests);

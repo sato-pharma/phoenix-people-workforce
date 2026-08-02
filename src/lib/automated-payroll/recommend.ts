@@ -35,7 +35,12 @@ import {
 } from "@/lib/payroll/salary-source-model.ts";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
-import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
+import {
+  fieldWorkforceDeductionUnits,
+  isFieldWorkforceHalfDay,
+  isFieldWorkforceWeeklyOff,
+  sumFieldWorkforceDeductionDayWeights,
+} from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { getMappedAgentHrIds, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
 import { logError } from "@/lib/observability/log";
@@ -694,6 +699,22 @@ async function computeLeaverCrmDates(input: {
       const list = byDay.get(dateIso) ?? [];
       list.push(visit);
       byDay.set(dateIso, list);
+    }
+
+    // A degraded holiday calendar must not become a deduction. The Google Egypt calendar is the
+    // only source of MOVING Islamic/Coptic holidays (Eid al-Fitr, Eid al-Adha, Islamic New Year,
+    // the Prophet's Birthday, Coptic Christmas); when it cannot be read, getConfirmedNationalHolidays
+    // falls back to company + FIXED-date holidays and reports calendarReachable:false. Without this
+    // check every moving holiday reads as an ordinary working day and a leaver is charged
+    // no-activity for Eid, inside the settlement that is hardest to correct afterwards.
+    //
+    // Throwing is deliberate: the catch below logs and returns `empty`, so a degraded calendar
+    // yields NO deduction days rather than wrong ones — the safe direction for a final settlement.
+    if (holidayResult.calendarReachable === false || holidayResult.connected === false) {
+      throw new Error(
+        `National-holiday calendar degraded for ${input.period.year}-${pad2(input.period.month)}` +
+          ` (${holidayResult.message ?? "no detail reported"}) — refusing to classify leaver CRM days.`,
+      );
     }
 
     const holidayDates = new Set<string>();
@@ -1434,16 +1455,29 @@ async function computeCrmDeductionTotals(
     loadNoActivityNotes(cycle.startIso, cycle.endIso),
   ]);
 
+  // Job title per employee: the day WEIGHT depends on it, because Saturday is a working day for
+  // Medical Reps / District Sales Managers and a weekly off for everyone else. Passing no title
+  // would silently weight every Saturday at 0 and under-deduct — 23 of July 2026's flagged
+  // employee-days are Saturdays.
+  const titleByCompact = new Map(members.map((member) => [member.compact, member.employee.jobTitle]));
+
   const totals = new Map<string, CrmDeductionTotal>();
   for (const candidate of candidates) {
     const compact = compactHrKey(candidate.employeeHrIdCompact || candidate.employeeCode);
     if (!compact) continue;
+    const jobTitle = titleByCompact.get(compact) ?? null;
     const punched = punchedByCompact.get(compact);
     const candidateDates = Array.isArray(candidate.dates) ? candidate.dates : [];
     // Prefer explicit per-day dates so punched (office) days can be excluded; fall back to
     // the raw day count only when a candidate carries no dates.
     const keptDates = punched ? candidateDates.filter((date) => !punched.has(date)) : candidateDates;
-    const days = candidateDates.length > 0 ? keptDates.length : Number(candidate.deductionValue ?? 0);
+    // WEIGHTED, not counted: Thursday is a half day (owner rule 2026-08-02), so a no-activity
+    // Thursday costs half of Base/30. The fallback branch can only use the raw count — a
+    // candidate with no per-day dates gives nothing to weight, and inventing a weight for
+    // unknown dates would be a guess about someone's pay.
+    const days = candidateDates.length > 0
+      ? sumFieldWorkforceDeductionDayWeights(keptDates, jobTitle)
+      : Number(candidate.deductionValue ?? 0);
     const excluded = candidateDates.length - keptDates.length;
     if (days <= 0) continue;
     const source = lookupSource(sources, candidate.employeeCode);
@@ -1461,17 +1495,31 @@ async function computeCrmDeductionTotals(
     // Per-day breakdown. The deducted days split this candidate's own `value`
     // exactly, so the panel always foots to the row's Deduction Value.
     const keptSet = new Set(keptDates);
-    const perDeductedDay = distributeAmount(roundCurrency(value), keptDates.length);
-    let deductedIndex = 0;
+    // Split in HALF-DAY UNITS (Thursday 1, full day 2) rather than evenly, or a Thursday would
+    // display the same figure as a full day while the row total correctly carried half. Summing
+    // whole units back per date keeps the exact-foot guarantee distributeAmount provides.
+    const unitsByDate = new Map(keptDates.map((date) => [date, fieldWorkforceDeductionUnits(date, jobTitle)]));
+    const totalUnits = [...unitsByDate.values()].reduce((sum, units) => sum + units, 0);
+    const perUnit = distributeAmount(roundCurrency(value), totalUnits);
+    let unitIndex = 0;
     for (const dateIso of [...candidateDates].sort()) {
       const isDeducted = keptSet.has(dateIso);
       const note = notesByKey.get(`${compact}|${dateIso}`);
       if (note && note.note) existing.explained += 1;
+      let dayAmount = 0;
+      if (isDeducted) {
+        const units = unitsByDate.get(dateIso) ?? 0;
+        for (let step = 0; step < units; step += 1) dayAmount += perUnit[unitIndex++] ?? 0;
+        dayAmount = roundCurrency(dayAmount);
+      }
+      const halfDay = isFieldWorkforceHalfDay({ dateIso, title: jobTitle });
       existing.details.push({
         Date: dateIso,
         Weekday: weekdayName(dateIso),
-        Outcome: isDeducted ? "Deducted" : "Excluded — fingerprint punch (office day)",
-        Deduction: isDeducted ? (perDeductedDay[deductedIndex++] ?? 0) : 0,
+        Outcome: isDeducted
+          ? (halfDay ? "Deducted — half day (Thursday morning only)" : "Deducted")
+          : "Excluded — fingerprint punch (office day)",
+        Deduction: dayAmount,
         "Employee Note": note?.note || (note?.confirmedNoActivity ? "Confirmed no activity" : "—"),
         "HR Resolution": note ? (note.resolution ?? "Awaiting HR decision") : "—",
       });
@@ -1716,7 +1764,14 @@ async function recommendResignationCrm(
       lastWorkingDate: member.lastWorkingDate,
       period,
     });
-    const recommendedNonWorking = Math.min(daysWorked, crmDates.noActivityDates.length);
+    // Weighted, not counted — a leaver's Thursday is the same half day as anyone else's, and
+    // deducting him a full one would settle his final pay wrong at the moment it can least be
+    // corrected. Weekly-offs are already gone from noActivityDates, so every weight here is 1
+    // or 0.5 and the Working/Non-Working complement simply gains a .5.
+    const recommendedNonWorking = Math.min(
+      daysWorked,
+      sumFieldWorkforceDeductionDayWeights(crmDates.noActivityDates, member.employee.jobTitle),
+    );
     const recommendedValue = resignationCrmDeduction(baseSalary, recommendedNonWorking, period);
 
     // Trust a saved day count only if it is within the valid span. A stored
