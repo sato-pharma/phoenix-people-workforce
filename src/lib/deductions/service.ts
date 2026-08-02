@@ -6,7 +6,12 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
-import { isEligibleForPublish } from "./calculations.ts";
+import {
+  isEligibleForPublish,
+  normalizeAppliedDeductionDates,
+  resolveAppliedDeductionDates,
+  scaleDeductionAmountToDays,
+} from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
 import {
@@ -541,7 +546,12 @@ export async function insertCandidateDrafts(input: {
     for (const monthKey of monthKeys) {
       try {
         const live = await listCandidatesForMonth({ monthKey });
-        const collisions = findDayCollisions(live);
+        // Applied days, not detected days — same basis publishMonth uses. A day
+        // the reviewer already unticked is resolved, and re-warning about it
+        // would tell them to go clear something they have already cleared.
+        const collisions = findDayCollisions(
+          live.map((candidate) => ({ ...candidate, dates: resolveAppliedDeductionDates(candidate) })),
+        );
         for (const collision of collisions.slice(0, 20)) {
           warnings.push(
             // Employee NAME only — never the HR code.
@@ -684,6 +694,12 @@ function mapDecisionRow(row: Record<string, unknown> | null): DeductionsDecision
     hrNote: String(row.hr_note ?? ""),
     appliedValue: row.applied_value == null ? null : Number(row.applied_value),
     appliedAmount: row.applied_amount == null ? null : Number(row.applied_amount),
+    // null (never narrowed) and [] (every day cleared) are different answers, so
+    // this must not collapse to `?? []`. A non-array — which is what a read gets
+    // back if the applied_dates migration has not been applied yet — is treated
+    // as "never narrowed", so the read path degrades to today's behaviour rather
+    // than to a company-wide 0.00 EGP.
+    appliedDates: Array.isArray(row.applied_dates) ? (row.applied_dates as string[]) : null,
     decidedBy: (row.decided_by as string | null) ?? null,
     decidedAt: (row.decided_at as string | null) ?? null,
     actorRoleAtDecision: (row.actor_role_at_decision as string | null) ?? null,
@@ -751,18 +767,62 @@ export async function listCandidatesForMonth(input: {
   // needs a stable total order. employee_name is nullable and non-unique, so
   // paging on it can repeat or skip rows at page boundaries. Callers that need
   // display order sort in memory below.
-  const rows = await fetchAllRows<CandidateRowWithDecision>(buildQuery, "id");
+  const [rows, directory] = await Promise.all([
+    fetchAllRows<CandidateRowWithDecision>(buildQuery, "id"),
+    getEmployeeDirectory(),
+  ]);
 
   return rows
     .map((row) => {
       const { deductions_decisions: decisionRaw, ...candidateRow } = row;
       const decisionRow = Array.isArray(decisionRaw) ? (decisionRaw[0] ?? null) : decisionRaw;
+      const candidate = mapCandidateRow(candidateRow);
+      const known = directory.get(candidate.employeeHrIdCompact);
+      const storedName = candidate.employeeName?.trim();
       return {
-        ...mapCandidateRow(candidateRow),
+        ...candidate,
+        // The stored name wins when it exists — it is the name as at collection
+        // time. The directory only fills the gap that made a code appear.
+        employeeName: storedName || known?.fullName?.trim() || null,
+        hireDate: known?.hireDate ?? null,
         decision: mapDecisionRow(decisionRow),
       };
     })
+    // Sorted AFTER resolution, so a candidate that arrived without a name is
+    // filed under the name the reviewer actually sees rather than at the top.
     .sort((left, right) => String(left.employeeName ?? "").localeCompare(String(right.employeeName ?? "")));
+}
+
+type EmployeeDirectoryEntry = { fullName: string | null; hireDate: string | null };
+
+/**
+ * Compact-HR-key -> name and hire date, for display only.
+ *
+ * The candidate stores `employee_name` as it was at collection time and it is
+ * sometimes null, which made the workspace print the HR code instead — barred:
+ * a person is shown by name, never by a code. Resolving here rather than in the
+ * component keeps every consumer (table, mobile cards, XLSX export) on one
+ * answer.
+ *
+ * Deliberately non-fatal: this is presentation, and a directory hiccup must
+ * never take down a deductions read. A miss degrades to whatever the candidate
+ * already carried.
+ */
+async function getEmployeeDirectory(): Promise<Map<string, EmployeeDirectoryEntry>> {
+  const map = new Map<string, EmployeeDirectoryEntry>();
+  try {
+    const rows = await fetchAllRows<{ hr_id: string; full_name: string | null; hire_date: string | null }>(
+      () => getSupabaseAdmin().from("employees").select("hr_id, full_name, hire_date"),
+      "hr_id",
+    );
+    for (const row of rows) {
+      const key = compactDeductionsHrId(String(row.hr_id ?? ""));
+      if (key) map.set(key, { fullName: row.full_name ?? null, hireDate: row.hire_date ?? null });
+    }
+  } catch {
+    // Swallowed on purpose — see the doc comment above.
+  }
+  return map;
 }
 
 export type EmployeeMonthDeductionSummary = {
@@ -882,6 +942,78 @@ export async function getCompanyMonthSummaryByCategory(input: {
   };
 }
 
+/**
+ * Resolves what a decision actually charges once the reviewer has narrowed the
+ * days and/or typed a day count over the top.
+ *
+ * Pure, and exported for the tests: this is the money. The rules are
+ *
+ *   1. A selected day must be a day the engine detected. A reviewer removes
+ *      days; they never invent one, because an invented day has no evidence.
+ *   2. The day count follows the ticked days unless the reviewer explicitly
+ *      typed one, and can never EXCEED what was detected. 140 typed instead of
+ *      14 is a 10x pay cut that no downstream check would have caught.
+ *   3. The amount is derived from the candidate's own estimate, never taken
+ *      from the caller — a browser must not be able to dictate a payroll figure.
+ */
+export function resolveDecisionCharge(input: {
+  candidate: { unit: DeductionsCandidate["unit"]; rawValue: number; estimatedAmount: number | null; dates: readonly string[] };
+  appliedDates?: readonly unknown[] | null;
+  appliedValue?: number | null;
+}): { appliedDates: string[] | null; appliedValue: number | null; appliedAmount: number | null } {
+  const { candidate } = input;
+
+  let appliedDates: string[] | null = null;
+  if (input.appliedDates != null) {
+    const normalized = normalizeAppliedDeductionDates({
+      candidateDates: candidate.dates,
+      selected: input.appliedDates,
+    });
+    if (normalized.rejected.length > 0) {
+      throw new Error(
+        `Validation: ${normalized.rejected.join(", ")} is not one of the days detected for this deduction — a day can be removed, never added.`,
+      );
+    }
+    appliedDates = normalized.dates;
+  }
+
+  // An amount-unit candidate (loan, other, a manual entry) has no days to tick;
+  // its appliedValue IS the money, so it is passed through untouched.
+  if (candidate.unit !== "days") {
+    const value = input.appliedValue ?? null;
+    if (value != null && (!Number.isFinite(value) || value < 0)) {
+      throw new Error("Validation: the applied amount must be a non-negative number.");
+    }
+    return { appliedDates: null, appliedValue: value, appliedAmount: value };
+  }
+
+  const appliedValue = input.appliedValue ?? (appliedDates == null ? null : appliedDates.length);
+  if (appliedValue != null) {
+    if (!Number.isFinite(appliedValue) || appliedValue < 0) {
+      throw new Error("Validation: the number of deducted days must be a non-negative number.");
+    }
+    if (appliedValue > candidate.rawValue) {
+      throw new Error(
+        `Validation: cannot deduct ${appliedValue} day(s) — only ${candidate.rawValue} were detected for this employee. Lower the number or clear the deduction instead.`,
+      );
+    }
+  }
+
+  if (appliedValue == null) {
+    return { appliedDates, appliedValue: null, appliedAmount: null };
+  }
+
+  return {
+    appliedDates,
+    appliedValue,
+    appliedAmount: scaleDeductionAmountToDays({
+      estimatedAmount: candidate.estimatedAmount,
+      rawValue: candidate.rawValue,
+      appliedDays: appliedValue,
+    }),
+  };
+}
+
 /** Super-Admin-gated: record or update a candidate's decision. */
 export async function recordDecision(input: {
   actor: Pick<AccessContext, "role" | "hrId" | "loginId">;
@@ -889,8 +1021,15 @@ export async function recordDecision(input: {
   decisionStatus: DeductionsDecisionStatus;
   decisionReason: string;
   hrNote?: string;
+  /**
+   * `undefined` means "leave whatever is already recorded alone"; an explicit
+   * `null` clears it. The distinction matters because this is an UPSERT of the
+   * whole row: without it, pressing "Decide" — which says nothing about days —
+   * would silently blank a day selection the reviewer had already saved and put
+   * the deduction back to charging the full month.
+   */
   appliedValue?: number | null;
-  appliedAmount?: number | null;
+  appliedDates?: readonly unknown[] | null;
 }): Promise<DeductionsDecision> {
   assertDeductionsDecisionActor(input.actor);
   if (!deductionsDecisionStatuses.includes(input.decisionStatus)) {
@@ -901,11 +1040,70 @@ export async function recordDecision(input: {
   }
 
   const supabase = getSupabaseAdmin();
-  const candidate = await supabase.from("deductions_candidates").select("id, locked_at").eq("id", input.candidateId).single();
+  const candidate = await supabase
+    .from("deductions_candidates")
+    .select("id, locked_at, unit, raw_value, estimated_amount, dates")
+    .eq("id", input.candidateId)
+    .single();
   if (candidate.error) throw new Error(`Not found: deductions candidate could not be loaded (${candidate.error.message})`);
-  if ((candidate.data as { locked_at: string | null }).locked_at) {
+  const candidateRow = candidate.data as {
+    locked_at: string | null;
+    unit: DeductionsCandidate["unit"];
+    raw_value: number | string;
+    estimated_amount: number | string | null;
+    dates: unknown;
+  };
+  if (candidateRow.locked_at) {
     throw new Error("Conflict: this candidate is locked by a publication — it can no longer be decided directly.");
   }
+
+  // Carry forward what is already recorded for anything this call did not
+  // mention. This is an upsert of the entire row, so an omitted field would
+  // otherwise be written as null — and the "Decide" action, which has no opinion
+  // about days at all, would quietly undo a reviewer's day selection.
+  const existing = await supabase
+    .from("deductions_decisions")
+    .select("applied_value, applied_dates")
+    .eq("candidate_id", input.candidateId)
+    .maybeSingle();
+  // Refuse on a failed read rather than treating it as "there was nothing here".
+  // With maybeSingle() an absent row returns data null AND error null, so any
+  // error is a real one — and swallowing it would carry `null` forward into the
+  // upsert and blank the very day selection this read exists to protect. That is
+  // the fail-open shape: the save still reports success while quietly restoring
+  // the full month.
+  if (existing.error) {
+    throw new Error(`Failed to load the existing deduction decision: ${existing.error.message}`);
+  }
+  const existingRow = (existing.data ?? null) as { applied_value: number | string | null; applied_dates: unknown } | null;
+
+  const appliedValueInput =
+    input.appliedValue === undefined
+      ? existingRow?.applied_value == null
+        ? null
+        : Number(existingRow.applied_value)
+      : input.appliedValue;
+  const appliedDatesInput =
+    input.appliedDates === undefined
+      ? Array.isArray(existingRow?.applied_dates)
+        ? (existingRow.applied_dates as unknown[])
+        : null
+      : input.appliedDates;
+
+  // The amount is RE-DERIVED here from the candidate the database holds, never
+  // accepted from the request body. The route is Super-Admin gated, but "only an
+  // admin can send it" is not the same guarantee as "the number cannot be wrong",
+  // and this one is somebody's salary.
+  const charge = resolveDecisionCharge({
+    candidate: {
+      unit: candidateRow.unit,
+      rawValue: Number(candidateRow.raw_value),
+      estimatedAmount: candidateRow.estimated_amount == null ? null : Number(candidateRow.estimated_amount),
+      dates: Array.isArray(candidateRow.dates) ? (candidateRow.dates as string[]) : [],
+    },
+    appliedDates: appliedDatesInput,
+    appliedValue: appliedValueInput,
+  });
 
   const now = new Date().toISOString();
   const payload = {
@@ -913,8 +1111,9 @@ export async function recordDecision(input: {
     decision_status: input.decisionStatus,
     decision_reason: input.decisionStatus === "Pending" ? "" : input.decisionReason.trim(),
     hr_note: input.hrNote?.trim() ?? "",
-    applied_value: input.appliedValue ?? null,
-    applied_amount: input.appliedAmount ?? null,
+    applied_value: charge.appliedValue,
+    applied_amount: charge.appliedAmount,
+    applied_dates: charge.appliedDates,
     decided_by: input.actor.hrId ?? input.actor.loginId ?? null,
     decided_at: now,
     actor_role_at_decision: input.actor.role,

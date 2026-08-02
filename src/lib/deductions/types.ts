@@ -109,6 +109,14 @@ export type DeductionsDecision = {
   hrNote: string;
   appliedValue: number | null;
   appliedAmount: number | null;
+  /**
+   * The exact days this decision charges — always a subset of the parent
+   * candidate's `dates`. `null` means the reviewer never narrowed the selection,
+   * so every detected day applies; an EMPTY array means they cleared them all.
+   * The two are not interchangeable: treating `null` as "no days" would turn
+   * every historical decision into a 0.00 EGP deduction.
+   */
+  appliedDates: string[] | null;
   decidedBy: string | null;
   decidedAt: string | null;
   actorRoleAtDecision: string | null;
@@ -145,6 +153,14 @@ export type DeductionsCandidateDraft = {
 // one at insert time so this should only ever be null transiently).
 export type DeductionsCandidateWithDecision = DeductionsCandidate & {
   decision: DeductionsDecision | null;
+  /**
+   * Display enrichment resolved from the employees table at read time, not
+   * stored on the candidate. `employeeName` is captured when the candidate is
+   * collected and is sometimes null (5 of July 2026's 102), which used to make
+   * the workspace fall back to printing the HR code — and a raw code must never
+   * reach a screen. Optional so existing fixtures need not carry it.
+   */
+  hireDate?: string | null;
 };
 
 export const deductionsPublicationStatuses = ["published", "superseded"] as const;

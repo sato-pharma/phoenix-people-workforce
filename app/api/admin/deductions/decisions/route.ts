@@ -15,7 +15,7 @@ type DecisionBody = {
   decisionReason?: unknown;
   hrNote?: unknown;
   appliedValue?: unknown;
-  appliedAmount?: unknown;
+  appliedDates?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -37,14 +37,23 @@ export async function POST(request: Request) {
       throw new Error("Validation: decisionStatus is missing or not recognized.");
     }
 
+    // A field the caller never mentioned stays `undefined`, which recordDecision
+    // reads as "leave it as it is". Collapsing an absent key to null here is what
+    // would let the plain Decide action — which carries no day information —
+    // blank out a day selection the reviewer saved a moment earlier.
+    const has = (key: keyof DecisionBody) => Object.prototype.hasOwnProperty.call(body, key);
+
     const decision = await recordDecision({
       actor: access,
       candidateId: body.candidateId,
       decisionStatus: body.decisionStatus as DeductionsDecisionStatus,
       decisionReason: typeof body.decisionReason === "string" ? body.decisionReason : "",
       hrNote: typeof body.hrNote === "string" ? body.hrNote : undefined,
-      appliedValue: typeof body.appliedValue === "number" ? body.appliedValue : null,
-      appliedAmount: typeof body.appliedAmount === "number" ? body.appliedAmount : null,
+      appliedValue: has("appliedValue") ? (typeof body.appliedValue === "number" ? body.appliedValue : null) : undefined,
+      // Days only — the AMOUNT is never accepted from the caller. recordDecision
+      // re-derives it from the candidate the database holds, so a crafted request
+      // body cannot set what an employee is charged.
+      appliedDates: has("appliedDates") ? (Array.isArray(body.appliedDates) ? body.appliedDates : null) : undefined,
     });
 
     return NextResponse.json({ success: true, decision });

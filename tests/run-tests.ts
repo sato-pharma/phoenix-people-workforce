@@ -135,6 +135,7 @@ import { runDeductionsModulePublishTests } from "./deductions-module-publish.tes
 import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guards.test.ts";
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
+import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
@@ -727,6 +728,10 @@ await runTest("deductions module publish eligibility (mandatory-vs-approval-gate
 await runTest("deductions module CRM guards (suspect-date sync-gap detection + exclusion)", runDeductionsModuleCrmGuardsTests);
 await runTest("deductions module portal read path (dual-read-by-month merge + legacy shape mapping)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
+await runTest(
+  "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
+  runDeductionsModuleAppliedDaysTests,
+);
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
 await runTest("plan workweek + linkage (role-aware week, slots, new activity types)", runPlanWorkweekLinkageTests);
