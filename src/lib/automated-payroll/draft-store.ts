@@ -324,3 +324,28 @@ export async function deleteRunDraftRows(runId: string): Promise<void> {
   const { error } = await getSupabaseAdmin().from(DRAFT_ROWS).delete().eq("run_id", runId);
   if (error) throw error;
 }
+
+/**
+ * Drop the frozen expense figure for specific employees on a run, so the wizard falls back to
+ * the live recommendation (a null draft value is what `pick` in recommend.ts falls through on).
+ *
+ * UPDATE, not upsert, on purpose: an employee with no draft row has nothing frozen, and
+ * inventing a row for them would put a stranger on the sheet. `.not("expenses","is",null)`
+ * narrows it further to rows that actually carry a figure, so the returned count is the number
+ * of employees whose payroll figure really moved rather than the number we looked at.
+ */
+export async function clearDraftExpenses(runId: string, hrIds: string[]): Promise<string[]> {
+  const compacts = Array.from(
+    new Set(hrIds.map((hrId) => compactHrKey(hrId)).filter((compact): compact is string => Boolean(compact))),
+  );
+  if (compacts.length === 0) return [];
+  const { data, error } = await getSupabaseAdmin()
+    .from(DRAFT_ROWS)
+    .update({ expenses: null, updated_at: new Date().toISOString() })
+    .eq("run_id", runId)
+    .in("employee_hr_id_compact", compacts)
+    .not("expenses", "is", null)
+    .select("employee_hr_id");
+  if (error) throw error;
+  return ((data ?? []) as RunRow[]).map((row) => String(row.employee_hr_id ?? ""));
+}

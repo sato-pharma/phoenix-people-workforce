@@ -36,7 +36,12 @@ import { formatDateValue } from "@/lib/i18n/format";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
-import { isPayrollExpensesSchemaMissing, savePayrollExpenseApprovals } from "@/lib/outstation/expenses";
+import {
+  EXPENSE_DECISION_SELECT,
+  isPayrollExpensesSchemaMissing,
+  resyncPayrollExpenseStepForRemovedTrips,
+  savePayrollExpenseApprovals,
+} from "@/lib/outstation/expenses";
 import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
@@ -2161,7 +2166,9 @@ async function getLinkedOutstationPayrollExpense(
 ): Promise<LinkedOutstationPayrollExpense | null> {
   const { data, error } = await getSupabaseAdmin()
     .from("outstation_expenses")
-    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
+    .select(
+      `id,imported_payroll_batch_id,imported_to_payroll_at,report_id,${EXPENSE_DECISION_SELECT}`,
+    )
     .eq("trip_id", outstationPayrollTripId(requestId))
     .maybeSingle();
 
@@ -2885,7 +2892,9 @@ export async function rejectOutstationRequestAsAdmin(
   const supabase = getSupabaseAdmin();
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
     .from("outstation_expenses")
-    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
+    .select(
+      `id,imported_payroll_batch_id,imported_to_payroll_at,report_id,${EXPENSE_DECISION_SELECT}`,
+    )
     .eq("trip_id", expenseTripId);
 
   if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
@@ -2931,6 +2940,10 @@ export async function rejectOutstationRequestAsAdmin(
       .eq("trip_id", expenseTripId);
 
     if (deletePayrollError) throw new Error(deletePayrollError.message);
+
+    // The trip is gone from the expense table, but an already-confirmed payroll Expenses step
+    // still holds the figure it was confirmed with and would keep reimbursing the rejected trip.
+    await resyncPayrollExpenseStepForRemovedTrips(linkedRows);
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase
@@ -3005,7 +3018,9 @@ export async function deleteOutstationRequestAsAdmin(
 
   const { data: linkedPayrollRows, error: linkedPayrollError } = await supabase
     .from("outstation_expenses")
-    .select("id,imported_payroll_batch_id,imported_to_payroll_at,report_id,trip_id")
+    .select(
+      `id,imported_payroll_batch_id,imported_to_payroll_at,report_id,${EXPENSE_DECISION_SELECT}`,
+    )
     .eq("trip_id", expenseTripId);
 
   if (linkedPayrollError && !isPayrollExpensesSchemaMissing(linkedPayrollError)) {
@@ -3044,6 +3059,9 @@ export async function deleteOutstationRequestAsAdmin(
 
     if (deletePayrollError) throw new Error(deletePayrollError.message);
     deletedPayrollRows = count ?? linkedRows.length;
+
+    // Same reason as the rejection path: a confirmed Expenses step keeps paying a deleted trip.
+    await resyncPayrollExpenseStepForRemovedTrips(linkedRows);
 
     for (const reportId of linkedReportIds) {
       const { count: remainingRows, error: remainingRowsError } = await supabase

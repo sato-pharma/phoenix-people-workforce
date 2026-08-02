@@ -11,6 +11,12 @@ import {
 } from "@/lib/outstation/expense-metrics";
 import { PayrollConflictError } from "@/lib/payroll/errors";
 import { roundCurrency } from "@/lib/payroll/money";
+import { logError } from "@/lib/observability/log";
+import {
+  expenseDecisionsThatChanged,
+  resyncPayrollExpenseStep,
+  type ExpenseDecisionSnapshot,
+} from "@/lib/automated-payroll/expense-resync";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
@@ -1006,6 +1012,15 @@ export async function savePayrollExpenseApprovals(input: {
     };
   });
 
+  // What these trips paid BEFORE this save, so the resync below can be limited to the rows HR
+  // actually decided on. This screen submits a report's full record set on every save, so
+  // without the diff one save would clear a hand-typed wizard figure for every employee in the
+  // report — including the ones nobody looked at.
+  const before = await readExpenseDecisionSnapshots(
+    supabase,
+    payload.map((row) => String(row.trip_id ?? "")).filter(Boolean),
+  );
+
   const { data, error } = await supabase
     .from("outstation_expenses")
     .upsert(payload, { onConflict: "trip_id" })
@@ -1014,9 +1029,95 @@ export async function savePayrollExpenseApprovals(input: {
   if (error) throw error;
 
   const saved = (data ?? []).map((row) => mapExpense(row as Record<string, unknown>));
+
+  // A confirmed payroll Expenses step is a frozen snapshot and will otherwise keep paying the
+  // figures it was confirmed with — see expense-resync.ts for the July 2026 run this cost.
+  await resyncPayrollExpenseStepForRows(
+    before,
+    (data ?? []).map((row) => toExpenseDecisionSnapshot(row as Record<string, unknown>)),
+  );
+
   invalidateExecutiveDashboardCache("expense approvals saved", ["expenses", "payroll"]);
   return saved;
 }
+
+/** Row shape the expense→payroll resync diffs on. Kept narrow: this runs on every approval save. */
+const EXPENSE_DECISION_COLUMNS =
+  "trip_id,hr_id,total,approved_amount,hr_approved,status,payout_month,payout_year";
+
+function toExpenseDecisionSnapshot(row: Record<string, unknown>): ExpenseDecisionSnapshot {
+  const numberOrNull = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    approvedAmount: numberOrNull(row.approved_amount),
+    hrApproved: row.hr_approved === true,
+    hrId: row.hr_id == null ? null : String(row.hr_id),
+    payoutMonth: numberOrNull(row.payout_month),
+    payoutYear: numberOrNull(row.payout_year),
+    status: row.status == null ? null : String(row.status),
+    total: numberOrNull(row.total),
+    tripId: String(row.trip_id ?? ""),
+  };
+}
+
+/**
+ * Best-effort read of the current state of a set of trips. Returns an empty list on failure so a
+ * resync degrades to "resync nothing we can prove changed" rather than failing the approval save
+ * the user actually asked for.
+ */
+async function readExpenseDecisionSnapshots(
+  supabase: SupabaseClient,
+  tripIds: string[],
+): Promise<ExpenseDecisionSnapshot[]> {
+  if (tripIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("outstation_expenses")
+    .select(EXPENSE_DECISION_COLUMNS)
+    .in("trip_id", tripIds);
+  if (error) {
+    if (isPayrollExpensesSchemaMissing(error)) return [];
+    throw error;
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map(toExpenseDecisionSnapshot);
+}
+
+/**
+ * Push a changed expense decision into any open payroll run for its payout period.
+ *
+ * Never throws — the decision has already been written and is what the user asked for; a resync
+ * failure must not roll it back or read as "save failed". resyncPayrollExpenseStep already logs.
+ */
+async function resyncPayrollExpenseStepForRows(
+  before: ExpenseDecisionSnapshot[],
+  after: ExpenseDecisionSnapshot[],
+): Promise<void> {
+  try {
+    const target = expenseDecisionsThatChanged(before, after);
+    await resyncPayrollExpenseStep(target);
+  } catch (error) {
+    logError("Outstation: payroll expense resync could not run after an approval save", {
+      labels: { event: "outstation_expense_resync_dispatch_failed" },
+      error,
+    });
+  }
+}
+
+/**
+ * Same push, for the paths that DELETE an expense row outright (rejecting or deleting an
+ * outstation request) instead of upserting one. The row is already gone, so the "after" side is
+ * empty and every removed trip counts as changed.
+ */
+export async function resyncPayrollExpenseStepForRemovedTrips(
+  removed: Array<Record<string, unknown>>,
+): Promise<void> {
+  await resyncPayrollExpenseStepForRows(removed.map(toExpenseDecisionSnapshot), []);
+}
+
+/** Columns a caller must select before deleting, so the removed rows can still be resynced. */
+export const EXPENSE_DECISION_SELECT = EXPENSE_DECISION_COLUMNS;
 
 // Best-effort completion alert: when approved expenses are imported into a payroll
 // run, tell each matched employee their expense is now in payroll (in-app + email +
