@@ -159,6 +159,7 @@ export function ExpenseApprovalsWorkspace() {
   const [records, setRecords] = useState<LoadedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState<ExpenseApprovalFilters>({ employee: "", month: "" });
@@ -178,9 +179,15 @@ export function ExpenseApprovalsWorkspace() {
     try {
       const response = await fetch("/api/admin/outstation/expenses", { headers: { accept: "application/json" } });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.message || "Unable to load expenses.");
+      if (!response.ok) {
+        // Tracked separately from a generic failure: an expired session needs a sign-in, and
+        // Retry would just fail again.
+        setSessionExpired(response.status === 401 || payload?.error === "session_expired");
+        throw new Error(payload?.message || "Unable to load expenses.");
+      }
       setRecords(Array.isArray(payload.expenses) ? (payload.expenses as LoadedRecord[]) : []);
       setLoadError(null);
+      setSessionExpired(false);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to load expenses.");
     } finally {
@@ -861,20 +868,32 @@ export function ExpenseApprovalsWorkspace() {
               <Loader2 className="h-4 w-4 animate-spin" /> Loading trips…
             </p>
           ) : loadError ? (
-            <div className="border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700">
-              {loadError}
-              <button
-                className="ml-2 font-bold underline"
-                onClick={() => {
-                  setLoading(true);
-                  setLoadError(null);
-                  void load();
-                }}
-                type="button"
-              >
-                Retry
-              </button>
-            </div>
+            // An expired session gets a sign-in, not a Retry — retrying just fails again, and
+            // calling it a permissions problem sends the reviewer hunting through roles.
+            sessionExpired ? (
+              <div className="flex flex-wrap items-center gap-2 border border-amber-300 bg-amber-50 px-4 py-6 text-sm font-semibold text-amber-800">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Your session has expired.
+                <a className="font-bold underline hover:text-amber-950" href="/login">
+                  Sign in again
+                </a>
+              </div>
+            ) : (
+              <div className="border border-rose-200 bg-rose-50 px-4 py-6 text-sm text-rose-700">
+                {loadError}
+                <button
+                  className="ml-2 font-bold underline"
+                  onClick={() => {
+                    setLoading(true);
+                    setLoadError(null);
+                    void load();
+                  }}
+                  type="button"
+                >
+                  Retry
+                </button>
+              </div>
+            )
           ) : activeList.length === 0 ? (
             <p className={cn(PANEL_CLASS, "px-4 py-8 text-center text-sm text-slate-500")}>
               {/* An empty list because of a filter is a different fact from an empty queue —

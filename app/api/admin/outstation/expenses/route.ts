@@ -7,6 +7,7 @@ import {
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
+import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
@@ -17,6 +18,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // An expired session must not be reported as a missing permission (see
+    // api-session-response.ts). A guest is already denied everything, so this only changes
+    // how the denial reads, never who gets through.
+    const unauthenticated = unauthenticatedSessionResponse(access);
+    if (unauthenticated) return unauthenticated;
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
     const url = new URL(request.url);
     const rawMonth = url.searchParams.get("month");
@@ -78,6 +84,11 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
+    // An expired session must not be reported as a missing permission (see
+    // api-session-response.ts). A guest is already denied everything, so this only changes
+    // how the denial reads, never who gets through.
+    const unauthenticated = unauthenticatedSessionResponse(access);
+    if (unauthenticated) return unauthenticated;
     assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
 
     const body = await request.json();
