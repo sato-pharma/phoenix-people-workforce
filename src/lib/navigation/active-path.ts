@@ -85,8 +85,20 @@ export function getSections(
   moduleIds?: ModuleIdLookup,
   isSystemAdministratorWorkspace = false,
 ): NavigationSection[] {
+  // The system-administrator workspace bypasses permission/role gating so Super Admin can reach
+  // every module — but `excludedRoles` is still honoured. It expresses "this item is not FOR you",
+  // not "you lack rights": another role's personal command center is noise on a Super Admin's
+  // sidebar, and the bypass silently overrode the one mechanism for saying so. No item excluded
+  // Super Admin before this, so honouring it hides nothing that used to show.
   const visible = isSystemAdministratorWorkspace
-    ? dedupeSectionsByHref(sections)
+    ? dedupeSectionsByHref(
+        sections
+          .map((section) => ({
+            ...section,
+            items: section.items.filter((item) => roleNotExcluded(role, item.excludedRoles)),
+          }))
+          .filter((section) => section.items.length > 0),
+      )
     : sections
         .map((section) => ({
           ...section,

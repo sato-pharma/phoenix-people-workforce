@@ -195,7 +195,11 @@ const adminNavigationSectionSeeds = [
     id: "command-center",
     items: [
       { href: "/admin/ceo-command-center", icon: LayoutDashboard, label: "CEO Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO"] },
-      { href: "/admin/sfe-command-center", icon: LayoutDashboard, label: "SFE Manager Overview", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["SFE Manager"] },
+      // `roles` alone already keeps this off the CEO's sidebar, but NOT off Super Admin's — the
+      // system-administrator workspace bypasses role gating. excludedRoles is now honoured through
+      // that bypass too (see getSections), so this is the line that actually hides it. Both are
+      // listed explicitly: this is one role's personal overview, not a module anyone else works in.
+      { href: "/admin/sfe-command-center", icon: LayoutDashboard, label: "SFE Manager Overview", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
       { href: "/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       // Excluded for every role that has its OWN command center directly above — otherwise the
