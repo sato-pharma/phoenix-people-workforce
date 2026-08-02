@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -48,6 +49,11 @@ import {
 } from "@/lib/outstation/expense-approval-filters";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
 import {
+  OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
+  TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
+  classifyOutstationExpenseEligibility,
+} from "@/lib/outstation/classification";
+import {
   buildExpenseApprovalEmployeeSummary,
   totalExpenseApprovalSummary,
 } from "@/lib/outstation/expense-approval-summary";
@@ -92,6 +98,49 @@ const FILTER_CONTROL_CLASS = `${FIELD_CLASS} pr-9`;
 const MICRO_LABEL_CLASS = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
 const PANEL_CLASS = "border border-slate-200 bg-white shadow-sm";
 const KBD_CLASS = "border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600";
+
+/**
+ * How a trip's distance reads against the outstation distance floor.
+ *
+ * Driven by the shared classifier rather than a literal `< 58`, so the highlight always tracks the
+ * SAME rule the rest of the module enforces (60 km official, 58 km tolerance) — move the policy
+ * constants and this moves with them instead of quietly disagreeing.
+ *
+ * It reads the built-in policy defaults, not a per-rule row from `outstation_policy`, because this
+ * page never loads the policy table. If a custom rule ever moves the floor, that policy has to be
+ * threaded in here or the highlight would flag against the wrong number.
+ */
+function distanceFlag(km: number): { label: string; tone: "fail" | "none" | "warn" } {
+  if (!Number.isFinite(km) || km <= 0) return { label: "", tone: "none" };
+
+  const { classification } = classifyOutstationExpenseEligibility({
+    actualDistanceKm: km,
+    policy: {
+      officialMinimumDistanceKm: OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
+      toleranceMinimumDistanceKm: TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
+    },
+  });
+
+  if (classification === "not_eligible") {
+    return {
+      label: `Under the ${TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM} km outstation floor`,
+      tone: "fail",
+    };
+  }
+  if (classification === "tolerance_eligible") {
+    return {
+      label: `Within tolerance but under the official ${OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM} km`,
+      tone: "warn",
+    };
+  }
+  return { label: "", tone: "none" };
+}
+
+const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
+  fail: "bg-rose-100 font-black text-rose-700 ring-1 ring-inset ring-rose-300",
+  none: "text-slate-700",
+  warn: "bg-amber-100 font-bold text-amber-800",
+};
 
 /** Dark block header with the orange accent bar — the module's premium section divider. */
 function PanelSection({ children, title }: { children: React.ReactNode; title: string }) {
@@ -249,10 +298,13 @@ export function ExpenseApprovalsWorkspace() {
         [...pending, ...approved, ...rejected].map((record) => {
           const decision = decisionFor(record);
           return {
+            amWorkload: record.amWorkload,
             approvedAmount: decision.approvedAmount,
             claimedTotal: record.total,
             date: record.date,
             destination: record.location || record.to || "",
+            km: record.km,
+            pmWorkload: record.pmWorkload,
             specialist: record.specialist,
             state: expenseApprovalState(decision),
             tripId: record.tripId,
@@ -264,6 +316,24 @@ export function ExpenseApprovalsWorkspace() {
   const summaryTotals = useMemo(
     () => totalExpenseApprovalSummary(employeeSummaries),
     [employeeSummaries],
+  );
+
+  // Reverse a decision straight from the summary, without going back to the queue and re-finding
+  // the trip. Writes exactly what the panel's Unapprove / Undo rejection buttons write — clearing
+  // BOTH the approval flag and the rejected status, so a reversed trip lands back in Pending
+  // rather than in a half-state. Local only: Save still commits.
+  const undoDecision = useCallback(
+    (tripId: string) => {
+      setSaveMessage(null);
+      setBulkMessage(null);
+      setDecisions((current) => {
+        const record = records.find((candidate) => candidate.tripId === tripId);
+        if (!record) return current;
+        const base = current[tripId] ?? savedDecision(record);
+        return { ...current, [tripId]: { ...base, hrApproved: false, status: "" } };
+      });
+    },
+    [records],
   );
 
   const toggleEmployee = useCallback((employeeKey: string) => {
@@ -778,6 +848,7 @@ export function ExpenseApprovalsWorkspace() {
           expanded={expandedEmployees}
           narrowed={narrowed}
           onToggle={toggleEmployee}
+          onUndo={undoDecision}
           summaries={employeeSummaries}
           totals={summaryTotals}
         />
@@ -980,11 +1051,13 @@ function EmployeeSummaryPanel({
   totals,
   expanded,
   onToggle,
+  onUndo,
   narrowed,
 }: {
   expanded: Set<string>;
   narrowed: boolean;
   onToggle: (employeeKey: string) => void;
+  onUndo: (tripId: string) => void;
   summaries: ExpenseApprovalEmployeeSummary[];
   totals: ReturnType<typeof totalExpenseApprovalSummary>;
 }) {
@@ -1075,19 +1148,22 @@ function EmployeeSummaryPanel({
 
               {isOpen ? (
                 <div className="border-t border-slate-200 bg-slate-50/70 px-4 py-3">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
+                    Trips · distance and declared AM/PM workload
+                  </p>
                   {/* Wide content scrolls inside its own box — a long destination must never move
                       the page (see the route line in the decision panel). */}
                   <div className="-mx-1 overflow-x-auto px-1">
                     <div className="w-max min-w-full space-y-1.5">
                       {summary.trips.map((row) => (
                         <div
-                          className="flex items-center gap-4 border border-slate-200 bg-white px-3 py-2"
+                          className="flex items-stretch border border-slate-200 bg-white"
                           key={row.tripId}
                         >
                           <span
                             aria-hidden
                             className={cn(
-                              "h-6 w-1 shrink-0",
+                              "w-1 shrink-0",
                               row.state === "approved"
                                 ? "bg-emerald-500"
                                 : row.state === "rejected"
@@ -1095,35 +1171,83 @@ function EmployeeSummaryPanel({
                                   : "bg-amber-400",
                             )}
                           />
-                          <span className="w-24 shrink-0 whitespace-nowrap text-[11px] text-slate-500">
-                            {formatDateValue(row.date)}
-                          </span>
-                          <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs text-slate-600">
-                            {row.tripId}
-                          </span>
-                          <span className="min-w-[10rem] flex-1 whitespace-nowrap text-xs text-slate-700">
-                            {row.destination || "—"}
-                          </span>
-                          <span className="w-28 shrink-0 whitespace-nowrap text-right font-mono text-xs font-bold text-slate-900">
-                            {egp(row.approvedAmount)}
-                          </span>
-                          <span className="w-24 shrink-0 whitespace-nowrap text-right font-mono text-[11px] text-slate-400">
-                            {isAdjustedAmount(row.approvedAmount, row.claimedTotal)
-                              ? `of ${egp(row.claimedTotal)}`
-                              : ""}
-                          </span>
-                          <span
-                            className={cn(
-                              "w-20 shrink-0 whitespace-nowrap text-right text-[10px] font-black uppercase tracking-wide",
-                              row.state === "approved"
-                                ? "text-emerald-600"
-                                : row.state === "rejected"
-                                  ? "text-rose-600"
-                                  : "text-amber-600",
-                            )}
-                          >
-                            {row.state}
-                          </span>
+                          {/* Stacks into a card below `sm` and lays out as columns above it, so the
+                              action button is never stranded off the side of a scrolling row. */}
+                          <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2 sm:flex-row sm:items-center sm:gap-4">
+                            <span className="w-24 shrink-0 whitespace-nowrap text-[11px] text-slate-500">
+                              {formatDateValue(row.date)}
+                            </span>
+                            <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs text-slate-600">
+                              {row.tripId}
+                            </span>
+                            <span className="min-w-[9rem] flex-1 whitespace-nowrap text-xs text-slate-700">
+                              {row.destination || "—"}
+                            </span>
+                            <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs sm:text-right">
+                              <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">
+                                Distance{" "}
+                              </span>
+                              {row.km ? (
+                                (() => {
+                                  const flag = distanceFlag(row.km);
+                                  return (
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center gap-1 px-1.5 py-0.5",
+                                        DISTANCE_TONE_CLASS[flag.tone],
+                                      )}
+                                      title={flag.label || undefined}
+                                    >
+                                      {flag.tone === "fail" ? <AlertTriangle className="h-3 w-3" /> : null}
+                                      {formatNumberValue(row.km)} km
+                                    </span>
+                                  );
+                                })()
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </span>
+                            {/* Declared on the expense sheet — NOT the CRM evidence figure, which is
+                                a per-trip lookup and would be one request per row here. */}
+                            <span className="w-32 shrink-0 whitespace-nowrap font-mono text-xs text-slate-700 sm:text-right">
+                              <span className="text-[10px] font-black uppercase text-slate-400 sm:hidden">
+                                Declared{" "}
+                              </span>
+                              AM {formatNumberValue(row.amWorkload)} · PM {formatNumberValue(row.pmWorkload)}
+                            </span>
+                            <span className="w-28 shrink-0 whitespace-nowrap font-mono text-xs font-bold text-slate-900 sm:text-right">
+                              {egp(row.approvedAmount)}
+                            </span>
+                            <span className="w-24 shrink-0 whitespace-nowrap font-mono text-[11px] text-slate-400 sm:text-right">
+                              {isAdjustedAmount(row.approvedAmount, row.claimedTotal)
+                                ? `of ${egp(row.claimedTotal)}`
+                                : ""}
+                            </span>
+                            <span
+                              className={cn(
+                                "w-20 shrink-0 whitespace-nowrap text-[10px] font-black uppercase tracking-wide sm:text-right",
+                                row.state === "approved"
+                                  ? "text-emerald-600"
+                                  : row.state === "rejected"
+                                    ? "text-rose-600"
+                                    : "text-amber-600",
+                              )}
+                            >
+                              {row.state}
+                            </span>
+                            <span className="w-32 shrink-0 sm:text-right">
+                              {row.state === "pending" ? null : (
+                                <button
+                                  className="inline-flex items-center gap-1.5 border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                                  onClick={() => onUndo(row.tripId)}
+                                  type="button"
+                                >
+                                  <Undo2 className="h-3 w-3" />
+                                  {row.state === "approved" ? "Unapprove" : "Undo rejection"}
+                                </button>
+                              )}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1202,7 +1326,41 @@ function ExpenseDecisionPanel({
           <Fact label="Start" value={formatDateValue(record.date)} />
           <Fact label="End" value={formatDateValue(record.toDate)} />
           <Fact label="Transport" value={record.transportationType} />
-          <Fact label="Distance" value={record.km ? `${formatNumberValue(record.km)} km` : "—"} />
+          {/* Same distance floor flagged on the screen where the money is actually approved — a
+              warning that only appears in the summary would be a gap exactly where it matters. */}
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Distance</p>
+            {record.km ? (
+              (() => {
+                const flag = distanceFlag(record.km);
+                return (
+                  <>
+                    <p
+                      className={cn(
+                        "mt-0.5 inline-flex items-center gap-1 whitespace-nowrap px-1.5 py-0.5 text-sm font-semibold",
+                        DISTANCE_TONE_CLASS[flag.tone],
+                      )}
+                    >
+                      {flag.tone === "fail" ? <AlertTriangle className="h-3.5 w-3.5" /> : null}
+                      {formatNumberValue(record.km)} km
+                    </p>
+                    {flag.label ? (
+                      <p
+                        className={cn(
+                          "mt-0.5 whitespace-nowrap text-[10px] font-bold",
+                          flag.tone === "fail" ? "text-rose-600" : "text-amber-700",
+                        )}
+                      >
+                        {flag.label}
+                      </p>
+                    ) : null}
+                  </>
+                );
+              })()
+            ) : (
+              <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">—</p>
+            )}
+          </div>
           <div className="col-span-2 sm:col-span-2">
             <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Route</p>
             {/* Phoenix-submitted trips carry a full postal address here, not a city — one live row

@@ -15,10 +15,15 @@ import { expenseEmployeeKey } from "@/lib/outstation/expense-approval-filters";
 import type { ExpenseApprovalState } from "@/lib/outstation/approval-state";
 
 export type ExpenseApprovalSummaryRow = {
+  /** Declared AM workload from the expense sheet — NOT the CRM evidence figure. */
+  amWorkload: number;
   approvedAmount: number;
   claimedTotal: number;
   date: string;
   destination: string;
+  km: number;
+  /** Declared PM workload from the expense sheet — NOT the CRM evidence figure. */
+  pmWorkload: number;
   specialist: string;
   state: ExpenseApprovalState;
   tripId: string;
