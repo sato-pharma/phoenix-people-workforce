@@ -21,12 +21,15 @@ const repWorkload: RepVisitWorkload = {
   amWorkload: 3,
   campaignVisits: 9,
   dateBreakdown: [
-    { am: 3, campaign: 9, checkins: [], date: "2026-06-15", other: 1, pm: 4, regular: 2, total: 7, visits: [] },
+    { am: 3, campaign: 9, checkins: [], date: "2026-06-15", doctor: 1, institution: 0, other: 1, pharmacy: 1, pm: 4, regular: 2, total: 7, visits: [] },
   ],
+  doctorVisits: 1,
   idleDates: ["2026-06-16"],
+  institutionVisits: 0,
   matchStatus: "matched",
   matchedDates: ["2026-06-15"],
   otherVisits: 1,
+  pharmacyVisits: 1,
   pmWorkload: 4,
   regularVisits: 5,
   sourceLabel: "Live iReports360 Visits Report.",
@@ -66,9 +69,12 @@ export function runOutstationWorkloadEvidenceTests() {
 
   assert.deepEqual(
     merged.dateBreakdown,
-    [{ am: 3, date: "2026-06-15", evidenceRows: 7, pm: 4, total: 7 }],
-    "the persisted breakdown is the compact projection — per-visit and per-check-in detail must not be written into the snapshot column",
+    [{ am: 3, date: "2026-06-15", doctor: 1, evidenceRows: 7, institution: 0, pharmacy: 1, pm: 4, total: 7 }],
+    "the persisted breakdown is the compact projection — the doctor/pharmacy/institution ints ride along, but per-visit and per-check-in detail must never be written into the snapshot column",
   );
+  assert.equal(merged.doctorVisits, 1, "the trip-total kind split persists from the CRM read (display-only)");
+  assert.equal(merged.pharmacyVisits, 1);
+  assert.equal(merged.institutionVisits, 0);
 
   // --- failure of the corrected read must never block a write path ---
 

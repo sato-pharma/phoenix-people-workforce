@@ -25,11 +25,41 @@ import type { CrmCheckinRow } from "@/lib/crm/types";
 export type RepVisitDetail = {
   ampm: string | null;
   contact: string | null;
+  /** Doctor vs pharmacy vs institution — derived from `speciality`, regular visits only (the
+   * vendor sends speciality on visit_type 0 only). See classifyVisitContactKind. */
+  contactKind: VisitContactKind;
   customer: string | null;
   kind: "campaign" | "regular";
   role: "agent" | "partner";
   submittedAt: string | null;
 };
+
+export type VisitContactKind = "doctor" | "institution" | "pharmacy" | "unclassified";
+
+/** The vendor's `speciality` values that are places rather than people. Everything else with a
+ * value is a medical specialty → doctor. DISPLAY-ONLY classification (owner ruling 2026-08-02):
+ * nothing in eligibility, amounts, or deductions consumes this — it exists so approvers can see
+ * the mix. */
+const INSTITUTION_SPECIALITIES = new Set([
+  "armed forces hospital",
+  "contract",
+  "educational hospital",
+  "health insurance",
+  "hospital",
+  "polyclinics",
+  "private hospital",
+  "university hospital",
+]);
+
+/** speciality → doctor / pharmacy / institution; null/blank → unclassified (campaign and other
+ * non-regular rows carry no speciality by vendor contract). Pure and exported for the unit test. */
+export function classifyVisitContactKind(speciality: string | null | undefined): VisitContactKind {
+  const normalized = speciality?.trim().toLowerCase();
+  if (!normalized) return "unclassified";
+  if (normalized === "pharmacy") return "pharmacy";
+  if (INSTITUTION_SPECIALITIES.has(normalized)) return "institution";
+  return "doctor";
+}
 
 export type RepCheckinDetail = {
   address: string | null;
@@ -46,7 +76,12 @@ export type RepVisitWorkloadDay = {
   campaign: number;
   checkins: RepCheckinDetail[];
   date: string;
+  /** Kind split of the day's REGULAR visits (doctor + pharmacy + institution ≤ regular; the
+   * remainder had no speciality). Campaign rows never classify — the vendor omits speciality. */
+  doctor: number;
+  institution: number;
   other: number;
+  pharmacy: number;
   pm: number;
   regular: number;
   total: number;
@@ -57,10 +92,14 @@ export type RepVisitWorkload = {
   amWorkload: number;
   campaignVisits: number;
   dateBreakdown: RepVisitWorkloadDay[];
+  /** Trip-total kind split of REGULAR visits — display-only context for approvers. */
+  doctorVisits: number;
   idleDates: string[];
+  institutionVisits: number;
   matchStatus: "matched" | "no_activity" | "partial" | "unmapped";
   matchedDates: string[];
   otherVisits: number;
+  pharmacyVisits: number;
   pmWorkload: number;
   regularVisits: number;
   sourceLabel: string;
@@ -73,6 +112,7 @@ type WorkloadVisitRow = {
   crm_save_date: string | null;
   customer_name: string | null;
   double_crm_id: number | null;
+  speciality: string | null;
   visit_date: string;
   visit_type: number | null;
 };
@@ -98,8 +138,11 @@ function emptyWorkload(dates: string[], sourceLabel: string, matchStatus: RepVis
   return {
     amWorkload: 0,
     campaignVisits: 0,
-    dateBreakdown: dates.map((date) => ({ am: 0, campaign: 0, checkins: [], date, other: 0, pm: 0, regular: 0, total: 0, visits: [] })),
+    dateBreakdown: dates.map((date) => ({ am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] })),
+    doctorVisits: 0,
     idleDates: dates,
+    institutionVisits: 0,
+    pharmacyVisits: 0,
     matchStatus,
     matchedDates: [],
     otherVisits: 0,
@@ -141,7 +184,7 @@ export async function getRepTripVisitWorkload(input: {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from(CRM_VISITS_TABLE)
-    .select("agent_crm_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, visit_date, visit_type")
+    .select("agent_crm_id, ampm, contact_name, crm_save_date, customer_name, double_crm_id, speciality, visit_date, visit_type")
     .gte("visit_date", start)
     .lte("visit_date", `${end}T23:59:59.999Z`)
     .or(`agent_crm_id.eq.${crmId},double_crm_id.eq.${crmId}`);
@@ -149,7 +192,7 @@ export async function getRepTripVisitWorkload(input: {
 
   const byDate = new Map<string, RepVisitWorkloadDay>();
   for (const date of dates) {
-    byDate.set(date, { am: 0, campaign: 0, checkins: [], date, other: 0, pm: 0, regular: 0, total: 0, visits: [] });
+    byDate.set(date, { am: 0, campaign: 0, checkins: [], date, doctor: 0, institution: 0, other: 0, pharmacy: 0, pm: 0, regular: 0, total: 0, visits: [] });
   }
 
   // Who logs the GPS check-in each day: the person who SUBMITTED the visit (its agent_crm_id).
@@ -170,8 +213,15 @@ export async function getRepTripVisitWorkload(input: {
       entry.other += 1;
       continue;
     }
-    if (isRegular) entry.regular += 1;
-    else entry.campaign += 1;
+    const contactKind = classifyVisitContactKind(row.speciality);
+    if (isRegular) {
+      entry.regular += 1;
+      if (contactKind === "doctor") entry.doctor += 1;
+      else if (contactKind === "pharmacy") entry.pharmacy += 1;
+      else if (contactKind === "institution") entry.institution += 1;
+    } else {
+      entry.campaign += 1;
+    }
     entry.total += 1;
 
     const ampm = String(row.ampm ?? "").trim().toUpperCase();
@@ -187,6 +237,7 @@ export async function getRepTripVisitWorkload(input: {
     entry.visits.push({
       ampm: row.ampm ?? null,
       contact: row.contact_name ?? null,
+      contactKind,
       customer: row.customer_name ?? null,
       kind: isRegular ? "regular" : "campaign",
       role: submitter === crmId ? "agent" : "partner",
@@ -246,10 +297,13 @@ export async function getRepTripVisitWorkload(input: {
     amWorkload: dateBreakdown.reduce((sum, day) => sum + day.am, 0),
     campaignVisits: dateBreakdown.reduce((sum, day) => sum + day.campaign, 0),
     dateBreakdown,
+    doctorVisits: dateBreakdown.reduce((sum, day) => sum + day.doctor, 0),
     idleDates,
+    institutionVisits: dateBreakdown.reduce((sum, day) => sum + day.institution, 0),
     matchStatus,
     matchedDates,
     otherVisits: dateBreakdown.reduce((sum, day) => sum + day.other, 0),
+    pharmacyVisits: dateBreakdown.reduce((sum, day) => sum + day.pharmacy, 0),
     pmWorkload: dateBreakdown.reduce((sum, day) => sum + day.pm, 0),
     regularVisits: dateBreakdown.reduce((sum, day) => sum + day.regular, 0),
     sourceLabel,

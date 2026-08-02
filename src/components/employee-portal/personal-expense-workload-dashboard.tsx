@@ -90,6 +90,12 @@ type ExpenseRow = {
   transportationType: string;
   amWorkload: number;
   pmWorkload: number;
+  // Doctor/pharmacy/institution split of the trip's regular CRM visits — recorded only on
+  // Phoenix-submitted requests since the pharmacy-split change; undefined on historical /
+  // Excel-imported rows (deliberately NOT zero, so "not recorded" never reads as "none").
+  doctorVisits?: number;
+  pharmacyVisits?: number;
+  institutionVisits?: number;
   description: string;
   hrNotes: string;
   approvedAt: string; // ISO timestamp of the HR decision; "" when no decision yet
@@ -771,6 +777,9 @@ export function PersonalExpenseWorkloadDashboard({
       transportationType: canonicalizeTransport(expense.transportationType) ?? "",
       amWorkload: Number(expense.amWorkload ?? 0),
       pmWorkload: Number(expense.pmWorkload ?? 0),
+      doctorVisits: typeof expense.doctorVisits === "number" ? expense.doctorVisits : undefined,
+      pharmacyVisits: typeof expense.pharmacyVisits === "number" ? expense.pharmacyVisits : undefined,
+      institutionVisits: typeof expense.institutionVisits === "number" ? expense.institutionVisits : undefined,
       description: normalizeString(expense.description),
       hrNotes: normalizeString(expense.hrNotes || expense.description),
       approvedAt: normalizeString(expense.approvedAt ?? ""),
@@ -1874,6 +1883,35 @@ export function PersonalExpenseWorkloadDashboard({
                   </p>
                 </div>
               </div>
+              {(() => {
+                // Doctor/pharmacy/institution mix — only trips whose snapshot recorded the split
+                // (Phoenix-submitted since the pharmacy-split change); historical imports never
+                // carry it, so the line states its own scope instead of implying zeros.
+                const split = filteredTrips.reduce(
+                  (sum, row) =>
+                    row.doctorVisits === undefined && row.pharmacyVisits === undefined && row.institutionVisits === undefined
+                      ? sum
+                      : {
+                          doctor: sum.doctor + (row.doctorVisits ?? 0),
+                          institution: sum.institution + (row.institutionVisits ?? 0),
+                          pharmacy: sum.pharmacy + (row.pharmacyVisits ?? 0),
+                          recorded: sum.recorded + 1,
+                        },
+                  { doctor: 0, institution: 0, pharmacy: 0, recorded: 0 },
+                );
+                if (split.recorded === 0) return null;
+                return (
+                  <p className="border-b border-slate-200 pb-3 text-[11px] text-slate-500">
+                    <span className="font-bold uppercase tracking-[0.12em] text-slate-400">Visit mix</span>{" "}
+                    Doctor {split.doctor.toLocaleString()} · Pharmacy {split.pharmacy.toLocaleString()} · Institution{" "}
+                    {split.institution.toLocaleString()}{" "}
+                    <span className="text-slate-400">
+                      — {split.recorded.toLocaleString()} live request{split.recorded === 1 ? "" : "s"} with a recorded
+                      split only
+                    </span>
+                  </p>
+                );
+              })()}
               <div className="h-44">
                 <SafeResponsiveContainer className="h-full">
                   <BarChart data={workloadChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>

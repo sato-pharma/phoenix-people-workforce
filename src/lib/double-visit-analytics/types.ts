@@ -186,10 +186,20 @@ export type DoubleVisitExpenseWorkloadEvidence = {
   dateBreakdown: Array<{
     am: number;
     date: string;
+    /** Doctor/pharmacy/institution split of the day's REGULAR visits — display-only context,
+     * present only on snapshots written since the pharmacy-split change (optional so every
+     * stored pre-change snapshot still parses). Nothing in eligibility/amounts reads these. */
+    doctor?: number;
     evidenceRows: number;
+    institution?: number;
+    pharmacy?: number;
     pm: number;
     total: number;
   }>;
+  /** Trip-total kind split of REGULAR visits — same display-only, additive-snapshot posture. */
+  doctorVisits?: number;
+  institutionVisits?: number;
+  pharmacyVisits?: number;
   importId: string | null;
   matchedDates: string[];
   // "unmapped" arrives from the corrected CRM visit read (the rep has no CRM id, so their
