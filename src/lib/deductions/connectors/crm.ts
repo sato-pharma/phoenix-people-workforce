@@ -23,7 +23,10 @@ import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
-import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
+import {
+  isFieldWorkforceWeeklyOff,
+  sumFieldWorkforceDeductionDayWeights,
+} from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { buildFieldWorkforceRecommendationsReportForLiveMonth } from "@/lib/field-workforce-compliance/recommendations.ts";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays.ts";
@@ -321,6 +324,27 @@ async function collectLeaverCrmCandidate(input: {
     byDay.set(dateIso, list);
   }
 
+  // FAIL CLOSED on a degraded holiday calendar — the same stance getSuspectDatesForMonth and
+  // assertBaseSalaryMapLoaded already take in this connector.
+  //
+  // The Google Egypt calendar is the only source of MOVING Islamic and Coptic holidays (Eid
+  // al-Fitr, Eid al-Adha, Islamic New Year, the Prophet's Birthday, Coptic Christmas). When it
+  // cannot be read, getConfirmedNationalHolidays degrades to company + FIXED-date holidays only
+  // and says so via calendarReachable:false — every moving holiday silently becomes an ordinary
+  // working day, and a rep who correctly took Eid off is charged a no-activity deduction for it.
+  // The degraded result is also cached for 10 minutes, so one transient outage poisons every run
+  // in that window. The continuing-employee path inherits the equivalent guard from Field
+  // Workforce Compliance (isHolidaySourceDegraded); this leaver path had none, and a leaver's
+  // final settlement is the worst place to over-deduct because it is the hardest to correct.
+  if (holidayResult.calendarReachable === false || holidayResult.connected === false) {
+    throw new Error(
+      `CRM connector: the national-holiday calendar is degraded for ${input.year}-${monthStr}` +
+        ` (${holidayResult.message ?? "no detail reported"}).` +
+        " Refusing to compute leaver CRM no-activity deductions: moving Islamic/Coptic holidays" +
+        " would be missing and charged as working days.",
+    );
+  }
+
   const holidayDates = new Set<string>();
   for (const holiday of holidayResult.holidays) {
     for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
@@ -340,9 +364,13 @@ async function collectLeaverCrmCandidate(input: {
 
   if (noActivityDates.length === 0) return null;
   const monthKey = `${input.year}-${monthStr}`;
+  // Thursday is a half day (owner rule 2026-08-02), so the money comes off a WEIGHTED day count
+  // while `rawValue`/`dates` keep reporting the real number of flagged days — the evidence and
+  // the charge stay separately auditable.
+  const deductionDays = sumFieldWorkforceDeductionDayWeights(noActivityDates, input.jobTitle);
   const estimatedAmount = calculateDeductionAmountFromBaseSalary({
     baseSalary: input.baseSalary,
-    deductionDays: noActivityDates.length,
+    deductionDays,
     month: input.month,
     year: input.year,
   });
@@ -469,6 +497,20 @@ async function collectContinuingEmployeeCrmCandidates(input: {
     dateTo: `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`,
   });
 
+  // Job titles from the roster, NOT recommendation.roleName. The day weight depends on the title
+  // (Saturday is a working day for Medical Reps / District Sales Managers and a weekly off for
+  // everyone else), and roleName comes from a hierarchy snapshot that is null for a real slice of
+  // live rows — 5 of July 2026's 24 CRM candidates. A null title reads as "Saturday off" and would
+  // silently weight those Saturdays to zero, under-deducting.
+  const titleByHrIdKey = new Map<string, string | null>();
+  {
+    const { data } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      if (key) titleByHrIdKey.set(key, row.job_title);
+    }
+  }
+
   const drafts: DeductionsCandidateDraft[] = [];
   for (const recommendation of report.payrollRecommendations) {
     if (recommendation.sourceType !== "no_activity_candidate") continue;
@@ -483,9 +525,17 @@ async function collectContinuingEmployeeCrmCandidates(input: {
     // lookup is required or every base salary lookup silently misses.
     const compactKey = compactDeductionsHrId(recommendation.employeeCode);
     const baseSalary = compactKey ? (input.baseSalaryByCompact.get(compactKey) ?? null) : null;
+    // Thursday is a half day (owner rule 2026-08-02), so the charge comes off a WEIGHTED count
+    // while rawValue/dates keep reporting the real flagged days. Falls back to the unweighted
+    // count only when a recommendation carries no per-day dates — there is nothing to weight
+    // then, and inventing weights for unknown dates would be a guess about someone's pay.
+    const jobTitle = titleByHrIdKey.get(canonicalHrIdKey(recommendation.employeeCode) ?? "") ?? null;
+    const deductionDays = recommendation.dates.length > 0
+      ? sumFieldWorkforceDeductionDayWeights(recommendation.dates, jobTitle)
+      : recommendation.daysCount;
     const estimatedAmount = calculateDeductionAmountFromBaseSalary({
       baseSalary,
-      deductionDays: recommendation.daysCount,
+      deductionDays,
       month: input.month,
       year: input.year,
     });
