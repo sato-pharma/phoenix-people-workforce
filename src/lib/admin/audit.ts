@@ -30,6 +30,7 @@ export type AuditEntityType =
   | "employee_resignation"
   | "excuse_request"
   | "field_workforce_compliance_import"
+  | "marketing_customer"
   | "marketing_request"
   | "module_control_assignment"
   | "notification"

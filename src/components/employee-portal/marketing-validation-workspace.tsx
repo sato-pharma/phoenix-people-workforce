@@ -26,6 +26,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import type {
   MarketingCustomerType,
   MarketingDistributor,
+  MarketingOnBehalfEmployee,
   MarketingValidationReportRow,
   MarketingValidationStatus,
   MarketingValidationWorkspace as MarketingValidationWorkspacePayload,
@@ -181,6 +182,8 @@ type CameraTarget =
 type ValidatedCustomerGroup = {
   customerName: string;
   customerType: string;
+  /** True when a Super Admin validated this at the desk rather than a rep capturing it in the field. */
+  isAdminValidated: boolean;
   key: string;
   rows: MarketingValidationReportRow[];
   status: MarketingValidationStatus;
@@ -249,7 +252,9 @@ function newPharmacyLine(distributorId = ""): PharmacyLine {
 
 function emptyWorkspace(): MarketingValidationWorkspacePayload {
   return {
+    canValidateOnBehalf: false,
     distributors: [],
+    onBehalfEmployees: [],
     rows: [],
     summary: {
       pending: 0,
@@ -450,6 +455,15 @@ function StatusBadge({ status }: { status: MarketingValidationStatus }) {
   );
 }
 
+/** Marks a customer a Super Admin validated at the desk, so it is never mistaken for a field capture. */
+function AdminValidatedBadge() {
+  return (
+    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+      Admin validated
+    </span>
+  );
+}
+
 function CapturePanel({
   capture,
   isCapturing,
@@ -511,6 +525,171 @@ function CapturePanel({
           <p className="bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-500">{capture.photoCapturedAt}</p>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------------- Map Place Search --------------------------------------------------------------------- */
+
+type PlaceSuggestion = {
+  description: string;
+  placeId: string;
+  primaryText: string;
+  secondaryText: string | null;
+};
+
+type ResolvedPlace = {
+  area: string | null;
+  formattedAddress: string | null;
+  governorate: string | null;
+  lat: number;
+  lng: number;
+  name: string | null;
+};
+
+/**
+ * The desk equivalent of standing at the door: type the place, pick the nearest match, and that
+ * point becomes the location. Mirrors the Google Maps search box rather than asking an admin to
+ * paste coordinates — the admin knows the clinic's name, not its latitude.
+ */
+function PlaceSearchPanel({
+  capture,
+  label,
+  onResolved,
+}: {
+  capture: CaptureState;
+  label: string;
+  onResolved: (place: ResolvedPlace) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLocation = capture.latitude !== null && capture.longitude !== null;
+
+  useEffect(() => {
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, []);
+
+  function runSearch(nextQuery: string) {
+    setQuery(nextQuery);
+    setNote(null);
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+
+    const trimmed = nextQuery.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    // Debounced: every keystroke would otherwise be a billed Places call.
+    searchTimer.current = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(
+            `/api/marketing-requests/place-search?input=${encodeURIComponent(trimmed)}`,
+            { cache: "no-store" },
+          );
+          const payload = await response.json();
+          if (!response.ok) {
+            setSuggestions([]);
+            setNote(payload.message ?? "Map search is unavailable right now.");
+            return;
+          }
+          const results = (payload.suggestions ?? []) as PlaceSuggestion[];
+          setSuggestions(results);
+          if (results.length === 0) setNote("No matching place. Try the district or a nearby landmark.");
+        } catch {
+          setSuggestions([]);
+          setNote("Map search failed. Check the connection and try again.");
+        } finally {
+          setIsSearching(false);
+        }
+      })();
+    }, 350);
+  }
+
+  async function choosePlace(suggestion: PlaceSuggestion) {
+    setIsResolving(true);
+    setNote(null);
+    try {
+      const response = await fetch(
+        `/api/marketing-requests/place-search?placeId=${encodeURIComponent(suggestion.placeId)}`,
+        { cache: "no-store" },
+      );
+      const payload = await response.json();
+      if (!response.ok) {
+        setNote(payload.message ?? "That place could not be resolved to a location.");
+        return;
+      }
+      onResolved(payload.location as ResolvedPlace);
+      setSuggestions([]);
+      setQuery("");
+    } catch {
+      setNote("Could not resolve that place. Try again.");
+    } finally {
+      setIsResolving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-sm border border-sky-200 bg-sky-50/60 p-3">
+      <div className="flex items-center gap-2">
+        <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+        <p className="text-[13px] font-bold text-slate-800">{label}</p>
+      </div>
+      <p className="mt-0.5 text-[12px] font-medium text-slate-500">
+        {hasLocation
+          ? capture.address || `${capture.latitude?.toFixed(5)}, ${capture.longitude?.toFixed(5)}`
+          : "Search the address or place name, then pick the nearest point."}
+      </p>
+
+      <div className="relative mt-2.5">
+        <Input
+          className="h-10 rounded-sm border-slate-200 bg-white text-[13px]"
+          onChange={(event) => runSearch(event.target.value)}
+          placeholder="Search address or place"
+          value={query}
+        />
+        {suggestions.length > 0 ? (
+          <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-sm border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,0.14)]">
+            {suggestions.map((suggestion) => (
+              <button
+                className="flex w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-orange-50"
+                disabled={isResolving}
+                key={suggestion.placeId}
+                onClick={() => void choosePlace(suggestion)}
+                type="button"
+              >
+                <span className="text-[13px] font-bold text-slate-800">{suggestion.primaryText}</span>
+                {suggestion.secondaryText ? (
+                  <span className="text-[11px] font-medium text-slate-500">{suggestion.secondaryText}</span>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <span
+          className={`inline-flex items-center rounded-sm border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+            hasLocation
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-amber-200 bg-amber-50 text-amber-700"
+          }`}
+        >
+          {hasLocation ? "Location pinned from map" : "Location required"}
+        </span>
+        {isSearching || isResolving ? <LoadingSpinner /> : null}
+        {note ? <span className="text-[11px] font-semibold text-amber-700">{note}</span> : null}
+      </div>
     </div>
   );
 }
@@ -907,6 +1086,10 @@ export function MarketingValidationWorkspace() {
   const [customerOtherType, setCustomerOtherType] = useState("");
   const [customerCapture, setCustomerCapture] = useState<CaptureState>(emptyCapture);
   const [pharmacies, setPharmacies] = useState<PharmacyLine[]>([newPharmacyLine()]);
+  // Super Admin only. When set, the whole form switches to desk mode: the location comes from map
+  // search instead of the phone's GPS, no live photo is required, and the saved customer is owned
+  // by this employee so it lands in THEIR marketing request dropdown.
+  const [onBehalfHrId, setOnBehalfHrId] = useState("");
   const [codeChecks, setCodeChecks] = useState<Record<string, CodeCheckStatus>>({});
   const codeCheckTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [hasMounted, setHasMounted] = useState(false);
@@ -945,7 +1128,9 @@ export function MarketingValidationWorkspace() {
       }
 
       setWorkspace({
+        canValidateOnBehalf: payload.canValidateOnBehalf === true,
         distributors: payload.distributors ?? [],
+        onBehalfEmployees: payload.onBehalfEmployees ?? [],
         rows: payload.rows ?? [],
         summary: payload.summary ?? emptyWorkspace().summary,
       });
@@ -974,6 +1159,13 @@ export function MarketingValidationWorkspace() {
   }, []);
 
   const defaultDistributorId = String(workspace.distributors[0]?.id ?? "");
+  // Desk mode is driven purely by whether an employee is selected. The server re-checks the role on
+  // every submit, so this only controls what the form asks for, never what it is allowed to do.
+  const isDeskMode = workspace.canValidateOnBehalf && Boolean(onBehalfHrId);
+  const onBehalfEmployee = useMemo(
+    () => workspace.onBehalfEmployees.find((employee) => employee.hrId === onBehalfHrId) ?? null,
+    [onBehalfHrId, workspace.onBehalfEmployees],
+  );
   const validatedGroups = useMemo(() => {
     const groups = new Map<string, ValidatedCustomerGroup>();
     for (const row of workspace.rows) {
@@ -987,6 +1179,9 @@ export function MarketingValidationWorkspace() {
         groups.set(key, {
           customerName: row.customer.displayName,
           customerType: row.customer.customerType,
+          // A desk entry is the only path that stamps validated_at, so it is the honest signal for
+          // "an admin typed this" — never a field capture.
+          isAdminValidated: Boolean(row.customer.validatedAt),
           key,
           rows: [row],
           status: row.validationStatus,
@@ -1004,11 +1199,17 @@ export function MarketingValidationWorkspace() {
     [selectedValidatedGroup],
   );
 
+  // Desk mode saves straight to validated, so a missing pin would mint a "validated" customer with
+  // no coordinates at all — worse than the field path, where incomplete evidence simply parks the
+  // row on pending. Require the pin here instead.
+  const hasPin = (capture: CaptureState) => capture.latitude !== null && capture.longitude !== null;
   const canSave = Boolean(
     !isSaving &&
     customerName.trim() &&
+    (!isDeskMode || hasPin(customerCapture)) &&
     pharmacies.every((pharmacy) =>
       pharmacy.name.trim() &&
+      (!isDeskMode || hasPin(pharmacy.capture)) &&
       pharmacy.vendorCodes.length > 0 &&
       pharmacy.vendorCodes.every((line) => line.distributorId && line.distributorCode.trim()),
     ),
@@ -1160,6 +1361,44 @@ export function MarketingValidationWorkspace() {
     );
   }
 
+  /**
+   * Apply a map-picked place to the customer or a pharmacy. `capturedAt` is stamped here because the
+   * evidence model treats a location without a timestamp as no location at all — for a desk entry it
+   * records when the admin pinned it, which is the honest answer to "when was this decided".
+   */
+  function applyResolvedPlace(target: "customer" | string, place: ResolvedPlace) {
+    const address = place.formattedAddress
+      || [place.name, place.area, place.governorate].filter(Boolean).join(", ")
+      || `${place.lat.toFixed(6)}, ${place.lng.toFixed(6)}`;
+    const patch = {
+      accuracy: null,
+      address,
+      capturedAt: new Date().toISOString(),
+      latitude: place.lat,
+      longitude: place.lng,
+    };
+
+    if (target === "customer") {
+      setCustomerCapture((current) => ({ ...current, ...patch }));
+      setCustomerArea(place.area ?? "");
+      setCustomerGovernorate(place.governorate ?? "");
+      return;
+    }
+
+    setPharmacies((current) =>
+      current.map((pharmacy) =>
+        pharmacy.key === target
+          ? {
+              ...pharmacy,
+              area: place.area ?? "",
+              capture: { ...pharmacy.capture, ...patch },
+              governorate: place.governorate ?? "",
+            }
+          : pharmacy,
+      ),
+    );
+  }
+
   function applyLivePhoto(dataUrl: string, photoCapturedAt: string) {
     if (cameraTarget?.kind === "customer") {
       setCustomerCapture((current) => ({
@@ -1203,6 +1442,9 @@ export function MarketingValidationWorkspace() {
 
   function buildSubmissionPayload() {
     return {
+      // Only sent in desk mode. The server rejects it with a 403 for any role other than Super
+      // Admin, so this is a request, not a grant.
+      onBehalfOfHrId: isDeskMode ? onBehalfHrId : null,
       customer: {
         ...payloadCapture(customerCapture),
         customerType,
@@ -1241,7 +1483,11 @@ export function MarketingValidationWorkspace() {
     event.preventDefault();
     setMessage(null);
     if (!canSave) {
-      setMessage("Complete the customer, pharmacy, vendor, and code fields before saving.");
+      setMessage(
+        isDeskMode
+          ? "Complete the customer, pharmacy, vendor, and code fields, and pin a location on the map for each one, before saving."
+          : "Complete the customer, pharmacy, vendor, and code fields before saving.",
+      );
       return;
     }
 
@@ -1416,6 +1662,56 @@ export function MarketingValidationWorkspace() {
               </div>
             </div>
 
+            {/* --------- Super Admin: validate on behalf of an employee --------- */}
+            {workspace.canValidateOnBehalf ? (
+              <div className="border-b border-slate-100 bg-sky-50/50 px-4 py-4 sm:px-5">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-white text-sky-600 ring-1 ring-sky-100">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">Super Admin</p>
+                    <p className="text-[13px] font-bold text-slate-800">Validate on behalf of an employee</p>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-3 lg:grid-cols-6">
+                  <div className="lg:col-span-3">
+                    <Field label="Employee">
+                      <SelectField onChange={setOnBehalfHrId} value={onBehalfHrId}>
+                        <option value="">Not on behalf — validate as myself</option>
+                        {workspace.onBehalfEmployees.map((employee: MarketingOnBehalfEmployee) => (
+                          <option key={employee.hrId} value={employee.hrId}>
+                            {[employee.name, employee.jobTitle, employee.lineName].filter(Boolean).join(" — ")}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </Field>
+                  </div>
+                  <div className="lg:col-span-3">
+                    <Field label="What this does">
+                      <div className="flex h-10 items-center overflow-hidden rounded-sm border border-slate-200 bg-white px-3.5">
+                        <p className="overflow-hidden text-ellipsis whitespace-nowrap text-[12px] font-semibold text-slate-600">
+                          {onBehalfEmployee
+                            ? `Customer is owned by ${onBehalfEmployee.name} and appears in their marketing request list.`
+                            : "Pick an employee to search the location on a map instead of capturing GPS."}
+                        </p>
+                      </div>
+                    </Field>
+                  </div>
+                </div>
+                {isDeskMode ? (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center rounded-sm border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
+                      Desk mode — map search, no live photo
+                    </span>
+                    <span className="inline-flex items-center rounded-sm border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                      Saved as admin validated
+                    </span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-6">
               <div className="lg:col-span-2">
                 <Field label="Customer Type">
@@ -1451,13 +1747,13 @@ export function MarketingValidationWorkspace() {
                 </div>
               ) : null}
               <div className={customerType === "other" ? "lg:col-span-3" : "lg:col-span-2"}>
-                <Field label="Area (GPS)">
-                  <ReadOnlyCaptureValue placeholder="From GPS" value={customerArea} />
+                <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
+                  <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customerArea} />
                 </Field>
               </div>
               <div className={customerType === "other" ? "lg:col-span-3" : "lg:col-span-2"}>
-                <Field label="Governorate (GPS)">
-                  <ReadOnlyCaptureValue placeholder="From GPS" value={customerGovernorate} />
+                <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
+                  <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={customerGovernorate} />
                 </Field>
               </div>
               <div className="lg:col-span-2">
@@ -1472,18 +1768,30 @@ export function MarketingValidationWorkspace() {
                 </Field>
               </div>
               <div className="lg:col-span-6">
-                <Field label="Address (GPS)">
-                  <ReadOnlyCaptureValue multiline placeholder="Full address from GPS capture" value={customerCapture.address} />
+                <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
+                  <ReadOnlyCaptureValue
+                    multiline
+                    placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS capture"}
+                    value={customerCapture.address}
+                  />
                 </Field>
               </div>
               <div className="lg:col-span-6">
-                <CapturePanel
-                  capture={customerCapture}
-                  isCapturing={captureTarget === "customer"}
-                  label="Customer GPS + live sign photo"
-                  onCaptureLocation={() => captureLocation("customer")}
-                  onOpenCamera={() => setCameraTarget({ kind: "customer" })}
-                />
+                {isDeskMode ? (
+                  <PlaceSearchPanel
+                    capture={customerCapture}
+                    label="Customer location"
+                    onResolved={(place) => applyResolvedPlace("customer", place)}
+                  />
+                ) : (
+                  <CapturePanel
+                    capture={customerCapture}
+                    isCapturing={captureTarget === "customer"}
+                    label="Customer GPS + live sign photo"
+                    onCaptureLocation={() => captureLocation("customer")}
+                    onOpenCamera={() => setCameraTarget({ kind: "customer" })}
+                  />
+                )}
               </div>
 
               {/* Pharmacy section divider */}
@@ -1536,28 +1844,40 @@ export function MarketingValidationWorkspace() {
                         </Field>
                       </div>
                       <div className="lg:col-span-2">
-                        <Field label="Area (GPS)">
-                          <ReadOnlyCaptureValue placeholder="From GPS" value={pharmacy.area} />
+                        <Field label={isDeskMode ? "Area (Map)" : "Area (GPS)"}>
+                          <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.area} />
                         </Field>
                       </div>
                       <div className="lg:col-span-2">
-                        <Field label="Governorate (GPS)">
-                          <ReadOnlyCaptureValue placeholder="From GPS" value={pharmacy.governorate} />
+                        <Field label={isDeskMode ? "Governorate (Map)" : "Governorate (GPS)"}>
+                          <ReadOnlyCaptureValue placeholder={isDeskMode ? "From map search" : "From GPS"} value={pharmacy.governorate} />
                         </Field>
                       </div>
                       <div className="lg:col-span-6">
-                        <Field label="Address (GPS)">
-                          <ReadOnlyCaptureValue multiline placeholder="Full address from GPS" value={pharmacy.capture.address} />
+                        <Field label={isDeskMode ? "Address (Map)" : "Address (GPS)"}>
+                          <ReadOnlyCaptureValue
+                            multiline
+                            placeholder={isDeskMode ? "Full address from the chosen map point" : "Full address from GPS"}
+                            value={pharmacy.capture.address}
+                          />
                         </Field>
                       </div>
                       <div className="lg:col-span-6">
-                        <CapturePanel
-                          capture={pharmacy.capture}
-                          isCapturing={captureTarget === pharmacy.key}
-                          label="Pharmacy GPS + live sign photo"
-                          onCaptureLocation={() => captureLocation(pharmacy.key)}
-                          onOpenCamera={() => setCameraTarget({ kind: "pharmacy", pharmacyKey: pharmacy.key })}
-                        />
+                        {isDeskMode ? (
+                          <PlaceSearchPanel
+                            capture={pharmacy.capture}
+                            label={`Pharmacy ${index + 1} location`}
+                            onResolved={(place) => applyResolvedPlace(pharmacy.key, place)}
+                          />
+                        ) : (
+                          <CapturePanel
+                            capture={pharmacy.capture}
+                            isCapturing={captureTarget === pharmacy.key}
+                            label="Pharmacy GPS + live sign photo"
+                            onCaptureLocation={() => captureLocation(pharmacy.key)}
+                            onOpenCamera={() => setCameraTarget({ kind: "pharmacy", pharmacyKey: pharmacy.key })}
+                          />
+                        )}
                       </div>
                       <div className="lg:col-span-6">
                         <div className="space-y-2.5">
@@ -1711,9 +2031,10 @@ export function MarketingValidationWorkspace() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-[13px] font-bold text-slate-900">{group.customerName}</p>
-                              <div className="mt-1 flex items-center gap-2">
+                              <div className="mt-1 flex flex-wrap items-center gap-2">
                                 <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
+                                {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                               </div>
                             </div>
                             <button
@@ -1766,6 +2087,7 @@ export function MarketingValidationWorkspace() {
                                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                                   <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
+                                  {group.isAdminValidated ? <AdminValidatedBadge /> : null}
                                 </div>
                               </div>
                             </td>
