@@ -2,8 +2,14 @@ import ExcelJS from "exceljs";
 import { unstable_cache } from "next/cache.js";
 
 import { writeAuditLog } from "@/lib/admin/audit";
+import type { PhoenixRole } from "@/lib/auth/permissions";
 import { invalidateSalesDashboardCache } from "@/lib/dashboard/invalidation";
-import { RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
+import {
+  canViewHeadOfficeLine,
+  canViewRestrictedProducts,
+  isHeadOfficeLine,
+  RESTRICTED_PRODUCT_CODES,
+} from "@/lib/sales/access-scope";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -2265,7 +2271,9 @@ export async function getDistributorUploadStatus(period: string): Promise<Distri
   return { expectedCount, uploadedCount, awaitingCount: Math.max(0, expectedCount - uploadedCount), lastUploadedAt };
 }
 
-type SourceOfSalesSummaryRecord = {
+/** Exported so tests can drive the pure `buildSourceOfSalesDashboard` directly (it already takes
+ *  these on its public input type). */
+export type SourceOfSalesSummaryRecord = {
   batchId?: string;
   groupCode: string | null;
   groupKey: string;
@@ -2312,6 +2320,12 @@ function aggregateDashboardGroups(
 export function buildSourceOfSalesDashboard(input: {
   availablePeriods: string[];
   batches: SourceOfSalesUploadBatch[];
+  /**
+   * Strip the confidential Head Office LINE from every dimension. Same lock class as
+   * `restrictedProductCodes`, but at the line grain — see canViewHeadOfficeLine. Pass
+   * `!canViewHeadOfficeLine(role)`; the loader derives it so callers cannot forget.
+   */
+  excludeHeadOfficeLine?: boolean;
   geoSummaries?: SourceOfSalesSummaryRecord[];
   period: string | null;
   restrictedProductCodes?: string[];
@@ -2320,9 +2334,13 @@ export function buildSourceOfSalesDashboard(input: {
   const restrictedSet = input.restrictedProductCodes?.length
     ? new Set(input.restrictedProductCodes.map((c) => c.trim().toUpperCase()))
     : null;
+  const stripHeadOffice = input.excludeHeadOfficeLine === true;
 
   // ── CEO / unrestricted path ──────────────────────────────────────────────
-  if (!restrictedSet) {
+  // Only safe when BOTH locks are open. The fast path sums whole-BATCH totals, which bake in
+  // every line — so a viewer who may see restricted products but not the Head Office line (or
+  // vice versa) must take the re-derived path below instead.
+  if (!restrictedSet && !stripHeadOffice) {
     const totals = emptyTotals();
     const distributorMap = new Map<string, SourceOfSalesDashboardDistributor>();
     input.batches.forEach((batch) => {
@@ -2348,22 +2366,29 @@ export function buildSourceOfSalesDashboard(input: {
     };
   }
 
-  // ── Non-CEO path: strip restricted products from every dimension ─────────
-  // product-type summary rows carry the product code; all other group types
-  // (line/region/area/brick) have restricted value baked in from import time.
-  // We re-derive totals / byLine / byDistributor from non-restricted product rows,
+  // ── Scoped path: strip confidential products AND/OR the Head Office line ──
+  // product-type summary rows carry the product code AND the official line; all other group
+  // types (line/region/area/brick) have the confidential value baked in from import time.
+  // We re-derive totals / byLine / byProduct / byDistributor from the VISIBLE product rows,
   // and use the geoSummaries (from the DB RPC) for byRegion/byArea/byBrick.
-  const isRestricted = (code: string | null) => Boolean(code && restrictedSet.has(code.trim().toUpperCase()));
+  const isRestricted = (code: string | null) =>
+    Boolean(restrictedSet && code && restrictedSet.has(code.trim().toUpperCase()));
+  // The Head Office lock is applied at the LINE grain, so it catches every product on that line —
+  // including one that is not in RESTRICTED_PRODUCT_CODES. That is the whole point: relying on the
+  // product-code list to hide the line only works while every Head Office product happens to also
+  // be restricted, and a single new product on that line would silently reopen the leak.
+  const isHiddenRow = (row: SourceOfSalesSummaryRecord) =>
+    isRestricted(row.groupCode) || (stripHeadOffice && isHeadOfficeLine(row.officialLine));
   const productRows = input.summaries.filter((s) => s.groupType === "product");
-  const nonRestrictedProducts = productRows.filter((s) => !isRestricted(s.groupCode));
+  const visibleProducts = productRows.filter((s) => !isHiddenRow(s));
 
-  // Grand totals from non-restricted products
+  // Grand totals from the visible products only
   const totals = emptyTotals();
-  nonRestrictedProducts.forEach((row) => addDashboardTotals(totals, row));
+  visibleProducts.forEach((row) => addDashboardTotals(totals, row));
 
-  // byLine: re-aggregate from non-restricted product rows using officialLine
+  // byLine: re-aggregate from the visible product rows using officialLine
   const lineMap = new Map<string, SourceOfSalesDashboardGroup>();
-  nonRestrictedProducts.forEach((row) => {
+  visibleProducts.forEach((row) => {
     const line = row.officialLine ?? "(No Line)";
     const current = lineMap.get(line) ?? { ...emptyTotals(), code: null, key: line, label: line, line: line };
     addDashboardTotals(current, row);
@@ -2371,12 +2396,12 @@ export function buildSourceOfSalesDashboard(input: {
   });
   const byLine = [...lineMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.label.localeCompare(r.label));
 
-  // byDistributor: re-aggregate from non-restricted product rows via batchId
+  // byDistributor: re-aggregate from the visible product rows via batchId
   const batchById = new Map(input.batches.map((b) => [b.batchId, b]));
   const sheetCountByCode = new Map<string, number>();
   input.batches.forEach((b) => sheetCountByCode.set(b.distributorCode, (sheetCountByCode.get(b.distributorCode) ?? 0) + 1));
   const distMap = new Map<string, SourceOfSalesDashboardDistributor>();
-  nonRestrictedProducts.forEach((row) => {
+  visibleProducts.forEach((row) => {
     const batch = batchById.get(row.batchId ?? "");
     if (!batch) return;
     const key = batch.distributorCode;
@@ -2386,15 +2411,44 @@ export function buildSourceOfSalesDashboard(input: {
   });
   const byDistributor = [...distMap.values()].map(roundedTotals).sort((l, r) => r.totalValue - l.totalValue || l.distributorName.localeCompare(r.distributorName));
 
-  // byProduct: filter from product-type summaries
-  const byProduct = aggregateDashboardGroups(productRows.filter((s) => !isRestricted(s.groupCode)), "product");
+  // byProduct: filter from product-type summaries (same visibility rule as everything above)
+  const byProduct = aggregateDashboardGroups(visibleProducts, "product");
 
   // byRegion/byArea/byBrick: use pre-filtered geo summaries from the DB RPC when available;
   // fall back to the (inflated) pre-aggregated summaries if the RPC was skipped.
   const geoSource = input.geoSummaries ?? input.summaries;
-  const byRegion = aggregateDashboardGroups(geoSource, "region");
-  const byArea = aggregateDashboardGroups(geoSource, "area");
-  const byBrick = aggregateDashboardGroups(geoSource, "brick");
+  let byRegion = aggregateDashboardGroups(geoSource, "region");
+  let byArea = aggregateDashboardGroups(geoSource, "area");
+  let byBrick = aggregateDashboardGroups(geoSource, "brick");
+
+  // ── Geo reconciliation guard (fail closed) ───────────────────────────────
+  // The geo dimensions have NO line dimension to filter on — the RPC that produces them can only
+  // exclude PRODUCT CODES, so the loader hides the Head Office line there by excluding that line's
+  // product codes (resolved live from the master). That is exact only while the master knows every
+  // Head Office product. If an import ever lands a Head Office row whose product code is missing
+  // from the master, the code-based exclusion under-filters and the geography silently leaks.
+  //
+  // We can detect precisely that: byRegion is the same underlying value re-cut by geography, so it
+  // must sum to the authoritative line-scoped `totals`. If geography carries MORE value than the
+  // scoped total, it contains rows the line scope excluded — withhold all three geo dimensions
+  // rather than render a contaminated split. (Lower is not a leak — geography can be unmapped —
+  // so it is left alone.) Tolerance is 1.00 against values rounded to 6dp, i.e. rounding only.
+  //
+  // Only scoped viewers reach here; the unrestricted CEO/Super-Admin path returned above, reads its
+  // geography straight from the unfiltered summaries, and is deliberately not reconciled.
+  if (byRegion.length > 0) {
+    const geoValue = byRegion.reduce((sum, group) => sum + group.totalValue, 0);
+    if (geoValue - totals.totalValue > 1) {
+      console.warn(
+        "[sales dashboard] geography carries more value than the scoped total "
+          + `(${geoValue.toFixed(2)} vs ${totals.totalValue.toFixed(2)}); withholding byRegion/byArea/byBrick `
+          + "rather than showing a figure that still contains confidential rows",
+      );
+      byRegion = [];
+      byArea = [];
+      byBrick = [];
+    }
+  }
 
   return {
     availablePeriods: input.availablePeriods,
@@ -2425,7 +2479,50 @@ function mapSourceOfSalesSummary(row: Record<string, unknown>): SourceOfSalesSum
   };
 }
 
-export async function loadSourceOfSalesDashboard(period?: string | null, canViewRestricted = true): Promise<SourceOfSalesDashboard> {
+/**
+ * The product codes on the confidential Head Office line, resolved LIVE from the product master
+ * (never hardcoded — a product added to that line must be hidden the moment it exists).
+ *
+ * Returns `null` when the master cannot be read. The caller MUST then withhold the geography
+ * dimensions rather than proceed with an incomplete exclusion list: a partial list silently
+ * under-filters, which is the fail-open shape this whole guard exists to prevent.
+ */
+async function loadHeadOfficeProductCodes(): Promise<Set<string> | null> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,line");
+  if (error || !data) {
+    console.warn("[sales dashboard] could not read the product master to resolve the Head Office line", error);
+    return null;
+  }
+  const codes = new Set<string>();
+  for (const row of data as { line?: string | null; product_code?: string | null }[]) {
+    if (!isHeadOfficeLine(row.line)) continue;
+    const code = (row.product_code ?? "").trim().toUpperCase();
+    if (code) codes.add(code);
+  }
+  return codes;
+}
+
+/**
+ * Who is asking. REQUIRED — the two confidential locks (restricted products, Head Office line) are
+ * derived from the role in here, so no caller can forget one of them.
+ *
+ * This used to be a positional `canViewRestricted = true` boolean, which defaulted to FAIL OPEN and
+ * carried no line lock at all. Every caller therefore showed the confidential Head Office line to
+ * any role that could reach it — in practice the SFE Manager, the only non-Super-Admin role holding
+ * `sales:import`. Passing the role instead of pre-computed booleans is what makes that class of
+ * mistake impossible rather than merely fixed once.
+ */
+export type SourceOfSalesDashboardViewer = {
+  role: PhoenixRole;
+};
+
+export async function loadSourceOfSalesDashboard(
+  period: string | null | undefined,
+  viewer: SourceOfSalesDashboardViewer,
+): Promise<SourceOfSalesDashboard> {
+  const canViewRestricted = canViewRestrictedProducts(viewer.role);
+  const canViewHeadOffice = canViewHeadOfficeLine(viewer.role);
   const supabase = getSupabaseAdmin();
   // The brick/area/region-name masters are independent of period/batch/summary selection, so fire
   // them now in parallel instead of as extra sequential round-trips at the end. Used to self-heal
@@ -2462,6 +2559,7 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
     return buildSourceOfSalesDashboard({
       availablePeriods,
       batches: [],
+      excludeHeadOfficeLine: !canViewHeadOffice,
       period: null,
       summaries: [],
     });
@@ -2483,9 +2581,14 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
   // ID reaching the summaries query would permanently inflate this period's totals).
   const batchIds = batches.filter((batch) => batch.status === "validated").map((batch) => batch.batchId);
   if (batchIds.length === 0) {
+    // No VALIDATED batch this period. `batches` may still hold blocked uploads (the dashboard shows
+    // rejected history), and the unrestricted fast path sums whole-batch totals — which would put a
+    // blocked batch's Head Office value in front of a scoped viewer. Carry the lock so they take the
+    // re-derived path and get zeroes instead.
     return buildSourceOfSalesDashboard({
       availablePeriods,
       batches,
+      excludeHeadOfficeLine: !canViewHeadOffice,
       period: selectedPeriod,
       summaries: [],
     });
@@ -2498,31 +2601,51 @@ export async function loadSourceOfSalesDashboard(period?: string | null, canView
 
   if (summariesResult.error) throw summariesResult.error;
 
-  // For non-CEO/SuperAdmin: call the geo RPC to get region/area/brick totals with
-  // restricted products (LA003/LA004) excluded. The pre-aggregated summaries bake
-  // their value in at import time so cannot be filtered post-hoc.
+  // For non-CEO/SuperAdmin: call the geo RPC to get region/area/brick totals with the confidential
+  // rows excluded. The pre-aggregated summaries bake their value in at import time so cannot be
+  // filtered post-hoc.
+  //
+  // The RPC excludes by PRODUCT CODE, and region/area/brick carry no line dimension — so the
+  // Head Office LINE is hidden here by excluding that line's product codes, resolved live from the
+  // master. Verified against production 2026-08-02: the Head Office line holds 4 products
+  // (LA003/LA004/SS001 — already restricted — plus RY001, which is not), the master covers every
+  // code the rows actually use, no Head Office row has a blank product code, and no code is shared
+  // with another line. buildSourceOfSalesDashboard re-checks that equivalence at runtime by
+  // reconciling the geography sum against the line-scoped total, so a future import that breaks it
+  // withholds the split instead of leaking it.
   let geoSummaries: SourceOfSalesSummaryRecord[] | undefined;
-  if (!canViewRestricted && batchIds.length > 0) {
-    const geoResult = await supabase.rpc("phx_sos_geo_aggregates_without_restricted", {
-      p_batch_ids: batchIds,
-      p_exclude_codes: RESTRICTED_PRODUCT_CODES as unknown as string[],
-    });
-    if (!geoResult.error && geoResult.data) {
-      geoSummaries = (geoResult.data as Record<string, unknown>[]).map((row) => mapSourceOfSalesSummary(row));
-    } else if (geoResult.error) {
-      // Fail CLOSED: a restricted viewer must never see byRegion/byArea/byBrick fall back to the
-      // unfiltered (confidential-inclusive) summaries just because this RPC call errored. An empty
-      // geo breakdown (rather than `undefined`, which buildSourceOfSalesDashboard's geoSource ??
-      // input.summaries fallback would treat as "RPC skipped, use the inflated summaries") degrades
-      // to a blank region/area/brick section instead of leaking confidential product value.
-      console.warn("[sales dashboard] phx_sos_geo_aggregates_without_restricted failed; region/area/brick breakdown will be empty rather than falling back to unfiltered totals", geoResult.error);
+  if ((!canViewRestricted || !canViewHeadOffice) && batchIds.length > 0) {
+    const excludeCodes = new Set<string>(
+      canViewRestricted ? [] : RESTRICTED_PRODUCT_CODES.map((code) => code.trim().toUpperCase()),
+    );
+    // null ⇒ the master could not be read, so the exclusion list cannot be trusted to be complete.
+    const headOfficeCodes = canViewHeadOffice ? new Set<string>() : await loadHeadOfficeProductCodes();
+    if (!headOfficeCodes) {
       geoSummaries = [];
+    } else {
+      headOfficeCodes.forEach((code) => excludeCodes.add(code));
+      const geoResult = await supabase.rpc("phx_sos_geo_aggregates_without_restricted", {
+        p_batch_ids: batchIds,
+        p_exclude_codes: [...excludeCodes],
+      });
+      if (!geoResult.error && geoResult.data) {
+        geoSummaries = (geoResult.data as Record<string, unknown>[]).map((row) => mapSourceOfSalesSummary(row));
+      } else if (geoResult.error) {
+        // Fail CLOSED: a restricted viewer must never see byRegion/byArea/byBrick fall back to the
+        // unfiltered (confidential-inclusive) summaries just because this RPC call errored. An empty
+        // geo breakdown (rather than `undefined`, which buildSourceOfSalesDashboard's geoSource ??
+        // input.summaries fallback would treat as "RPC skipped, use the inflated summaries") degrades
+        // to a blank region/area/brick section instead of leaking confidential product value.
+        console.warn("[sales dashboard] phx_sos_geo_aggregates_without_restricted failed; region/area/brick breakdown will be empty rather than falling back to unfiltered totals", geoResult.error);
+        geoSummaries = [];
+      }
     }
   }
 
   const dashboard = buildSourceOfSalesDashboard({
     availablePeriods,
     batches,
+    excludeHeadOfficeLine: !canViewHeadOffice,
     geoSummaries,
     period: selectedPeriod,
     restrictedProductCodes: canViewRestricted ? undefined : (RESTRICTED_PRODUCT_CODES as unknown as string[]),
