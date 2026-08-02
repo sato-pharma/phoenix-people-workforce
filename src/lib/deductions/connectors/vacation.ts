@@ -12,6 +12,10 @@
 // which took every unpaid_duration_days > 0 row with no reason filter at all.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
+import { assertBaseSalaryMapLoaded } from "./health.ts";
+import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
+import { compactDeductionsHrId } from "../candidate-key.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
 
 type VacationRequestRow = {
@@ -116,6 +120,15 @@ async function collectVacationCandidatesByReason(input: {
     .gte("end_date", start);
   if (error) throw new Error(`Failed to load vacation requests: ${error.message}`);
 
+  // B6. This connector used to emit no estimatedAmount at all, so every approved
+  // unpaid-vacation candidate landed as a NULL amount — and publishMonth refuses a
+  // month containing one. A single 0.5-day request therefore blocked the WHOLE
+  // month's publish with no in-app way to resolve it (July 2026: Hany Saad Mohamed
+  // Omar). Compute the money here, exactly as the CRM and No-Records connectors do.
+  const baseSalaryByCompact = await getBaseSalaryMap();
+  // Fail closed: an empty map is a feeder outage, not "nobody has a salary".
+  assertBaseSalaryMapLoaded("Vacation connector", baseSalaryByCompact);
+
   const drafts: DeductionsCandidateDraft[] = [];
   for (const row of (data ?? []) as VacationRequestRow[]) {
     const totalUnpaidDays = unpaidDays(row.unpaid_duration_days);
@@ -128,6 +141,18 @@ async function collectVacationCandidatesByReason(input: {
     const clipped = clipLeaveToMonth({ startDate, endDate, monthKey, totalUnpaidDays });
     if (clipped.daysInMonth <= 0 || clipped.datesInMonth.length === 0) continue;
 
+    // getBaseSalaryMap is keyed by the COMPACT hr-id (hyphens stripped), not the
+    // canonical one — using the wrong key silently misses every lookup, a bug the
+    // CRM connector already hit once.
+    const compactKey = compactDeductionsHrId(row.employee_hr_id);
+    const baseSalary = compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null;
+    const estimatedAmount = calculateDeductionAmountFromBaseSalary({
+      baseSalary,
+      deductionDays: clipped.daysInMonth,
+      month: input.month,
+      year: input.year,
+    });
+
     drafts.push({
       category: input.category,
       sourceSystem: "vacation_balance",
@@ -139,7 +164,8 @@ async function collectVacationCandidatesByReason(input: {
       year: input.year,
       unit: "days",
       rawValue: clipped.daysInMonth,
-      calculationStatus: "requires_review",
+      estimatedAmount,
+      calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
       severity: "Medium",
       reason: clipped.spansMonthBoundary
         ? `${input.reasonLabel} — ${clipped.daysInMonth} of ${totalUnpaidDays} unpaid day(s) fall in this month (request runs ${startDate} to ${endDate})`
