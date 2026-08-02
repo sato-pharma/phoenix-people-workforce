@@ -53,8 +53,8 @@ export async function POST(request: Request) {
       if (replacementId) {
         await replaceSalesBatch(replacementForBatchId, replacementId, actorUsername, actorDisplayName);
         result.message = "Replacement sales sheet uploaded and applied.";
-        result.redirectTo = "/sales/queue";
-        result.previewUrl = "/sales/queue";
+        result.redirectTo = "/sales/import?tab=approvals";
+        result.previewUrl = "/sales/import?tab=approvals";
       }
     }
 

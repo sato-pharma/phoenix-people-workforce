@@ -26,6 +26,84 @@ export function runCeoCommandCenterTests() {
   assert.equal(resolveLandingPathForRole("Employee"), "/employee-portals");
   assert.equal(resolveLandingPathForRole("Medical Rep"), "/employee-portals");
 
+  // The SFE Manager lands on his own overview, not the generic /admin shell. This rule arrived
+  // incidentally inside an unrelated vacation-typography commit and had no coverage, so nothing
+  // stopped a later edit to landing.ts from dropping it silently.
+  assert.equal(
+    resolveLandingPathForRole("SFE Manager"),
+    "/admin/sfe-command-center",
+    "SFE Manager must land on the SFE Manager Overview",
+  );
+  assert.equal(resolveLandingPathForRole(" sfe manager "), "/admin/sfe-command-center");
+
+  // …and the sidebar logo must return him there too. The admin shell's generic home is
+  // /admin/access, which hard-asserts admin_access:read — a grant the SFE Manager does not hold,
+  // so falling back to it renders an error card instead of a home page.
+  const sidebarSource = readFileSync("src/components/layout/sidebar.tsx", "utf8");
+  const homeRoles = /const commandCenterHomeRoles = new Set<PhoenixRole>\(\[([^\]]*)\]\)/
+    .exec(sidebarSource)?.[1] ?? "";
+  assert.ok(
+    homeRoles.includes('"SFE Manager"') && homeRoles.includes('"CEO"'),
+    "sidebar home must resolve via resolveLandingPathForRole for both CEO and SFE Manager",
+  );
+  assert.match(
+    sidebarSource,
+    /commandCenterHomeRoles\.has\(currentRole as PhoenixRole\)\s*\n?\s*\?\s*resolveLandingPathForRole\(currentRole\)/,
+    "sidebar home path must come from resolveLandingPathForRole for command-center roles, not a hardcoded role check",
+  );
+  // A role with its own command center must not ALSO see the generic one — that put two
+  // "Command Center" entries in the SFE Manager's sidebar, the second landing on the admin-wide
+  // dashboard instead of his overview.
+  const navSource = readFileSync("src/config/system-navigation.ts", "utf8");
+  // Matched to end-of-line, not to the first `}` — the entry itself contains `{ resource: "admin" }`,
+  // so a lazy brace match truncates before ever reaching excludedRoles.
+  const genericCommandCenter = /^.*href: "\/admin", icon: LayoutDashboard, label: "Command Center".*$/m.exec(navSource)?.[0] ?? "";
+  assert.ok(genericCommandCenter.length > 0, "the generic /admin Command Center nav entry must still be findable");
+  for (const role of ["CEO", "SFE Manager"]) {
+    assert.ok(
+      genericCommandCenter.includes(`"${role}"`),
+      `${role} has a dedicated command center, so must be excluded from the generic /admin one`,
+    );
+  }
+
+  // The CEO's hero greeting names him personally and the hidden note is addressed to the Chief
+  // Executive — neither may render for any other viewer of this shared component.
+  const heroSource = readFileSync("src/components/admin/ceo-hero-identity.tsx", "utf8");
+  assert.match(
+    heroSource,
+    /personal = false/,
+    "the CEO's personal greeting/note must be opt-IN, so a new viewer cannot inherit it by default",
+  );
+  assert.match(
+    heroSource,
+    /\{personal \? <CeoHiddenNote \/> : null\}/,
+    "the note written for the Chief Executive must not render for anyone else",
+  );
+
+  // Hiding the nav entry is UX only — /admin itself must bounce these roles to their own page,
+  // or a typed URL or stale bookmark still lands them on the generic admin dashboard.
+  const adminPageSource = readFileSync("app/(admin)/admin/page.tsx", "utf8");
+  const adminRedirectRoles = /const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>\(\[([^\]]*)\]\)/
+    .exec(adminPageSource)?.[1] ?? "";
+  for (const role of ["CEO", "SFE Manager"]) {
+    assert.ok(
+      adminRedirectRoles.includes(`"${role}"`),
+      `/admin must redirect ${role} to their own command center, not just hide the nav link`,
+    );
+  }
+  assert.match(
+    adminPageSource,
+    /redirect\(resolveLandingPathForRole\(access\.role\)\)/,
+    "/admin's redirect target must come from resolveLandingPathForRole so it cannot drift from the sidebar",
+  );
+
+  const accessPageSource = readFileSync("app/(admin)/admin/access/page.tsx", "utf8");
+  assert.match(
+    accessPageSource,
+    /assertPermission\(access, "admin_access", "read"\)/,
+    "the /admin/access gate is the reason command-center roles need their own home — if this assert goes, revisit commandCenterHomeRoles",
+  );
+
   const commandCenterSource = readFileSync("src/lib/admin/command-center.ts", "utf8");
   const ceoCommandCenterSource = readFileSync("src/lib/ceo/command-center.ts", "utf8");
   const ceoComponentSource = readFileSync("src/components/admin/ceo-command-center.tsx", "utf8");
@@ -154,7 +232,7 @@ export function runCeoCommandCenterTests() {
   );
   assert.match(
     ceoComponentSource,
-    /<DataUnavailableNotice sources=\{visibleDataUnavailable\} \/>/,
+    /<DataUnavailableNotice[^>]*sources=\{visibleDataUnavailable\}/,
     "CEO fast path must render unavailable-source warnings",
   );
   assert.match(
@@ -199,6 +277,183 @@ export function runCeoCommandCenterTests() {
   );
   assert.match(ceoPhaseBSource, /SmartNavGrid access=\{access\} variant=\{variant\}/);
   assert.match(ceoPhaseBSource, /item\.href !== "\/employees" && item\.href !== "\/admin\/data-health"/);
+
+  // ── SFE Manager variant scope ──────────────────────────────────────────────
+  // /admin/sfe-command-center reuses these CEO components with variant="sfe". The SFE Manager's
+  // permission matrix grants no `employees`, `organogram`, `vacancies`, `contracts`,
+  // `resignations`, `admin` or payroll-console access, and canUseAdminOutstationWorkspace()
+  // excludes him from the admin outstation workspace. Every partition below therefore has to
+  // stay off his overview — each one previously linked him at a page that redirects to
+  // /employee-portals or renders a Forbidden card.
+  const sfeNavBlock = /const SFE_NAV_ITEMS = \[([\s\S]*?)\n\];/.exec(ceoPhaseBSource)?.[1] ?? "";
+  assert.ok(sfeNavBlock.length > 0, "SFE quick navigation must be its own list, not the CEO list filtered");
+  for (const denied of [
+    "/employees",
+    "/organogram",
+    "/admin/data-health",
+    "/admin/outstation/expense-command",
+    "/admin/m-payroll",
+  ]) {
+    assert.ok(
+      !sfeNavBlock.includes(`"${denied}"`),
+      `SFE quick navigation must not link to ${denied} — the SFE Manager is denied that route`,
+    );
+  }
+  assert.match(
+    ceoPhaseBSource,
+    /\{!isSfe \? <Section\s+title="Expense Snapshot"/,
+    "SFE overview must not render the Expense Snapshot — admin outstation workspace excludes SFE Manager",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeExpense: !isSfe/,
+    "SFE overview must skip the company-wide outstation expense fetch entirely",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeHeadcount=\{!isSfe\}/,
+    "SFE trends must drop the hire/exit chart — employee-lifecycle data is out of SFE scope",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeEmployeeLinkage=\{!isSfe\}/,
+    "SFE health breakdown must drop employee linkage — HR master-data quality is out of SFE scope",
+  );
+  assert.match(
+    ceoComponentSource,
+    /export const SFE_ATTENTION_KEYS = new Set\(\[([^\]]*)\]\)/,
+    "SFE attention rows must be an explicit allow-list, not a deny-list",
+  );
+  const sfeAttentionKeys = /export const SFE_ATTENTION_KEYS = new Set\(\[([^\]]*)\]\)/
+    .exec(ceoComponentSource)?.[1] ?? "";
+  for (const denied of ["contracts", "resignations", "salaryFlags"]) {
+    assert.ok(
+      !sfeAttentionKeys.includes(`"${denied}"`),
+      `SFE attention rows must exclude "${denied}" — that page redirects the SFE Manager to /employee-portals`,
+    );
+  }
+  assert.match(
+    ceoComponentSource,
+    /personal=\{!isSfe\}/,
+    "the SFE Manager must be greeted by his own name, not 'Dr. Anwar'",
+  );
+  assert.match(
+    ceoComponentSource,
+    /const showApprovalTiles = !isSfe/,
+    "SFE overview must hide the leave/weekly-plan approval tiles — the leave counter is structurally zero and weekly_plans:approve is CEO/Super Admin only",
+  );
+  assert.match(
+    ceoComponentSource,
+    /const totalApprovals = showApprovalTiles \?/,
+    "SFE all-clear must not be driven by approval counters the page no longer shows",
+  );
+  // The SFE Manager is responsible for SALES and CRM. Leave and fingerprint attendance are HR
+  // surfaces and must not reappear on his overview in any form — not as an attention row, not as
+  // a hub card, not as a partition, and not as a fetch he pays for.
+  assert.ok(
+    !sfeAttentionKeys.includes('"leaveSla"'),
+    "leave is HR, not sales or CRM — the leaveSla row must stay off the SFE overview",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeAttendance: !isSfe/,
+    "the SFE overview must skip the company-wide fingerprint-attendance aggregate entirely",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /\{!isSfe \? <Section\s+title="Attendance & Leave"/,
+    "the Attendance & Leave partition must not render for the SFE Manager",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeAttendanceReadiness=\{!isSfe\}/,
+    "attendance readiness scores fingerprint device mappings — it must be off the SFE health breakdown",
+  );
+  const sfeSkeleton = /sfe: \[([^\]]*)\]/.exec(ceoPhaseBSource)?.[1] ?? "";
+  assert.ok(
+    !/attendance|leave/i.test(sfeSkeleton),
+    "the SFE loading skeleton must not promise an attendance or leave partition that never arrives",
+  );
+  // The admin CRM workspace was Super-Admin-only; the owner granted it to the SFE Manager
+  // (2026-08-02) because CRM data quality is his job. Every surface must go through the ONE
+  // predicate — the previous shape was `access.role !== "Super Admin"` copied into 11 files, and a
+  // page granted without its own API routes just yields buttons that 403.
+  const crmAccessSource = readFileSync("src/lib/crm/admin-access.ts", "utf8");
+  const crmRoles = /const ADMIN_CRM_WORKSPACE_ROLES = new Set<PhoenixRole>\(\[([^\]]*)\]\)/
+    .exec(crmAccessSource)?.[1] ?? "";
+  for (const role of ["Super Admin", "SFE Manager"]) {
+    assert.ok(crmRoles.includes(`"${role}"`), `${role} must hold the admin CRM workspace`);
+  }
+  const crmGatedFiles = [
+    "app/(admin)/admin/crm/page.tsx",
+    "app/(admin)/admin/crm-integrity/page.tsx",
+    "app/(admin)/admin/double-visit-data-integrity/page.tsx",
+    "app/api/admin/crm/master-export/route.ts",
+    "app/api/admin/crm/customer-mapping/import/route.ts",
+    "app/api/admin/crm/customer-mapping/template/route.ts",
+    "app/api/admin/crm/region-mapping/import/route.ts",
+    "app/api/admin/crm/region-mapping/template/route.ts",
+    "app/api/admin/crm/resolve-customer/route.ts",
+    "app/api/admin/crm/resolve-region/route.ts",
+    "app/api/admin/visits-report/resolve-identity/route.ts",
+  ];
+  for (const file of crmGatedFiles) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /canUseAdminCrmWorkspace\(access\)/, `${file} must gate on the shared CRM predicate`);
+    assert.doesNotMatch(
+      source,
+      /access\.role !== "Super Admin"/,
+      `${file} must not keep an inline Super-Admin check alongside the shared predicate — that is how the grant half-lands`,
+    );
+  }
+  // A visits BACKFILL re-pulls from the vendor and rewrites the mirror in bulk. It is a platform
+  // operation, not CRM analysis, and was deliberately left out of the grant.
+  assert.match(
+    readFileSync("app/api/admin/visits-report/backfill/route.ts", "utf8"),
+    /access\.role !== "Super Admin"/,
+    "the visits backfill must stay Super-Admin-only — it was excluded from the SFE CRM grant on purpose",
+  );
+
+  for (const hrHref of ['"/attendance"', '"/admin/approvals/vacation"']) {
+    assert.ok(
+      !sfeNavBlock.includes(hrHref),
+      `SFE quick navigation must not link to ${hrHref} — leave and attendance are outside sales and CRM`,
+    );
+  }
+
+  // Sales + CRM is what replaces them: a real week-over-week series instead of a click-through
+  // shortcut, and CRM check-in start times instead of a fingerprint punch clock.
+  assert.match(
+    ceoPhaseBSource,
+    /includeCrmField: isSfe/,
+    "the SFE overview must load CRM field analytics",
+  );
+  assert.match(
+    ceoPhaseBSource,
+    /includeWeeklyTrend: isSfe/,
+    "the SFE overview must load the real weekly sales series",
+  );
+  assert.match(
+    ceoComponentSource,
+    /\{!isSfe \? <QuickLinkCard\s+title="Weekly Sales"/,
+    "the SFE overview must show the weekly trend, not the CEO's click-through Weekly Sales shortcut",
+  );
+  const crmFieldSource = readFileSync("src/lib/crm/sfe-field-analytics.ts", "utf8");
+  assert.match(
+    crmFieldSource,
+    /from "@\/lib\/crm\/reads"/,
+    "CRM field analytics must read through the crm reads door (single-source rule), never the mirror directly",
+  );
+  assert.match(
+    crmFieldSource,
+    /collapseDuplicateVisitSubmissions/,
+    "the SFE visit count must apply the same duplicate collapse as DV Analytics, or the two disagree",
+  );
+  assert.doesNotMatch(
+    crmFieldSource,
+    /new Date\([^)]*check_?[Dd]ate|toISOString\(\)/,
+    "CRM timestamps are already Cairo wall-clock — parsing them through Date would shift every start time",
+  );
   assert.match(attendanceAnalyticsPageSource, /canAccess\(access, "attendance", "read"\)/);
   assert.doesNotMatch(attendanceAnalyticsPageSource, /canAccess\(access, "employees", "read"\)/);
   assert.match(probationPageSource, /canReadAllProbation\(access\)/);

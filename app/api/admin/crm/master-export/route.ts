@@ -13,6 +13,7 @@ import {
   type CrmMasterMappingStatus,
 } from "@/lib/crm/master";
 import { streamCrmMasterWorkbookResponse } from "@/lib/crm/master-export-workbook";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { CRM_SCOPE_ALL } from "@/lib/crm/viewer-scope";
 
 export const runtime = "nodejs";
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
   if (!access.loginId && !access.hrId) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
-  if (access.role !== "Super Admin") {
+  if (!canUseAdminCrmWorkspace(access)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { generateSalesQueueTemplate } from "@/lib/sales/queue-template";
+import { generateSalesImportTemplate } from "@/lib/sales/import-template";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "sales", "import");
-    const buffer = await generateSalesQueueTemplate();
+    const buffer = await generateSalesImportTemplate();
     return new Response(buffer, {
       status: 200,
       headers: {

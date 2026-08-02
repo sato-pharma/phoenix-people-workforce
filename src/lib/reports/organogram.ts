@@ -98,7 +98,12 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     access.role === "CEO" ||
     access.role === "Marketing Manager" ||
     access.role === "Training Manager" ||
-    access.role === "Talent Acquisition"
+    access.role === "Talent Acquisition" ||
+    // Added 2026-08-02 on owner instruction, alongside organogram:read in the matrix. The page
+    // has TWO gates: the matrix grant admits him past the first, and without this he fell to the
+    // final `redirect("/employee-portals")` — granted on paper, still bounced in practice.
+    // Read-only company view; seat and vacancy mutations are gated separately.
+    access.role === "SFE Manager"
   );
 }
 

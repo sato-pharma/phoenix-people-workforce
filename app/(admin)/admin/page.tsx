@@ -5,13 +5,17 @@ import { Suspense } from "react";
 import { AdminCommandCenter } from "@/components/admin/admin-command-center";
 import { Card } from "@/components/ui/card";
 import { AppRouteLoadingState } from "@/components/ui/loading-state";
-import { canAccess, resolveNavigationMode, type AccessContext } from "@/lib/auth/permissions";
+import { resolveLandingPathForRole } from "@/lib/auth/landing";
+import { canAccess, resolveNavigationMode, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { getAdminCommandCenterData, loadDirectManagerName } from "@/lib/admin/command-center";
 import { resolveAccessContextFromPage, resolveViewerIdentityFromPage } from "@/lib/auth/server";
 import { uploadedEmployeePhotoUrl } from "@/lib/employees/employee-photo";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
+
+/** Keep in step with the dedicated command-center entries in system-navigation.ts. */
+const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager"]);
 
 export default async function AdminCommandPage() {
   const access = await resolveAccessContextFromPage();
@@ -20,11 +24,13 @@ export default async function AdminCommandPage() {
     redirect("/employee-portals");
   }
 
-  // The CEO has a dedicated, branded command center. Route the shared "Command Center"
-  // nav link (and any direct /admin hit) to it so the CEO never lands on the generic
-  // admin surface. Super Admin keeps /admin.
-  if (access.role === "CEO") {
-    redirect("/admin/ceo-command-center");
+  // Roles with a dedicated, branded command center never land on the generic admin surface —
+  // a direct /admin hit (typed, bookmarked, or from a stale link) goes to theirs instead.
+  // Hiding the nav entry is UX only; this is the half that actually enforces it. Destinations
+  // come from resolveLandingPathForRole so this and the sidebar cannot drift apart.
+  // Super Admin keeps /admin.
+  if (DEDICATED_COMMAND_CENTER_ROLES.has(access.role)) {
+    redirect(resolveLandingPathForRole(access.role));
   }
 
   const [canReadAdmin, canReadOverview, canReadEmployeeProfile] = await Promise.all([

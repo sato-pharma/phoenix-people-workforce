@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  ClipboardCheck,
   FileSpreadsheet,
   Filter,
   Info,
@@ -33,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
+import { SalesQueue } from "@/components/sales/sales-queue";
 import { SosCoverageTab } from "@/components/sales/sos-coverage-tab";
 import { SourceOfSalesMappingTab } from "@/components/sales/source-of-sales-mapping-tab";
 import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-products-tab";
@@ -55,6 +57,7 @@ import type {
   SourceOfSalesProduct,
   SourceOfSalesUploadBatch,
 } from "@/lib/sales/monthly-distributor-import";
+import type { SalesHistoryRow } from "@/lib/sales/types";
 import type { MappingReferences } from "@/lib/sales/normalizer/service";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -74,6 +77,13 @@ type Props = {
   initialTab?: SourceOfSalesTab;
   /** Pre-fill the Products Reference tab's search box (used with initialTab="products"). */
   initialProductsSearch?: string;
+  /**
+   * Monthly sales import batches awaiting review. The Sales Queue was retired as its own page
+   * (2026-08-02) and its review/approve/reject/replace workflow moved in here as the "Approvals"
+   * tab — it was the only surface that could approve a batch, so it could not simply be deleted.
+   */
+  initialQueue: SalesHistoryRow[] | null;
+  initialQueueError: string | null;
 };
 
 type ValidationResponse = {
@@ -931,9 +941,9 @@ function UploadStatusPanel({
   );
 }
 
-type SourceOfSalesTab = "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
+type SourceOfSalesTab = "approvals" | "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
-export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes, initialTab, initialProductsSearch }: Props) {
+export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes, initialTab, initialProductsSearch, initialQueue, initialQueueError }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const defaultDistributor = useMemo(
     () => distributors.find((distributor) => distributor.code.toUpperCase() === "PS") ?? distributors[0] ?? null,
@@ -1287,7 +1297,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
                   Dashboard
                 </Button>
               </Link>
-              <Link href="/sales/queue">
+              <Link href="/sales/import?tab=approvals">
                 <Button className="gap-2" variant="secondary">
                   <Package className="h-4 w-4" />
                   Old Queue
@@ -1338,6 +1348,18 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           >
             <FileSpreadsheet className="h-4 w-4" />
             Upload &amp; Status
+          </Button>
+          {/* Batch review/approve — the retired Sales Queue's workflow, now a tab here. */}
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "approvals" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("approvals")}
+            variant="secondary"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            Approvals
           </Button>
           <Button
             className={cn(
@@ -1395,6 +1417,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           />
         ) : activeTab === "monthly-sales" ? (
           <MonthlySalesWizard />
+        ) : activeTab === "approvals" ? (
+          <SalesQueue initialData={initialQueue} initialError={initialQueueError} />
         ) : activeTab === "sheets" ? (
           <>
             {/* Upload Status: shows which distributors have validated for the selected period */}

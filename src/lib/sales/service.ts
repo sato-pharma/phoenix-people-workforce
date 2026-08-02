@@ -780,7 +780,7 @@ async function readSalesData(options?: { batchId?: string; approvedOnly?: boolea
       approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
       rejectedBy: row.rejected_by ? String(row.rejected_by) : null,
       rejectedAt: row.rejected_at ? new Date(String(row.rejected_at)).toISOString() : null,
-      previewUrl: `/sales/queue/${row.id}`,
+      previewUrl: `/sales/import?tab=approvals&batch=${row.id}`,
       approvalBlockedReason: null,
     };
     batch.approvalBlockedReason = approvalBlockedReason(batch);
@@ -936,7 +936,7 @@ export async function getSalesDashboard(
     approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
     rejectedBy: row.rejected_by ? String(row.rejected_by) : null,
     rejectedAt: row.rejected_at ? new Date(String(row.rejected_at)).toISOString() : null,
-    previewUrl: `/sales/queue/${row.id}`,
+    previewUrl: `/sales/import?tab=approvals&batch=${row.id}`,
     approvalBlockedReason: null,
   }));
 
@@ -1414,7 +1414,7 @@ export async function createSalesImport(payload: SalesImportPayload) {
     isDuplicate,
     canApprove: failedRecords === 0 && !isDuplicate,
     approvalBlockedReason: isDuplicate ? "This batch is a duplicate of an existing upload." : failedRecords > 0 ? "This batch contains failed rows." : null,
-    previewUrl: `/sales/queue/${payload.batch.id}`,
+    previewUrl: `/sales/import?tab=approvals&batch=${payload.batch.id}`,
     blockingReasons: [],
     topFailureReasons: [],
     topWarningReasons: [],

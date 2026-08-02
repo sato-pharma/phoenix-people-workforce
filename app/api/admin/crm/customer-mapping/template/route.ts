@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { getActiveBricksForTemplateReference } from "@/lib/crm/region-brick";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { getAllCrmCustomersForTemplate } from "@/lib/crm/customer-brick";
 
 export const runtime = "nodejs";
@@ -24,9 +25,9 @@ function fileName() {
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    if (access.role !== "Super Admin") {
+    if (!canUseAdminCrmWorkspace(access)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Only Super Admin can export the CRM customer mapping template.", success: false },
+        { error: "forbidden", message: "This action is limited to the admin CRM workspace roles.", success: false },
         { status: 403 },
       );
     }

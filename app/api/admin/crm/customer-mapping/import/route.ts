@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { bulkImportCrmCustomerBrickMappings, type CrmCustomerBulkImportInputRow } from "@/lib/crm/customer-brick";
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
+import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
 
 export const runtime = "nodejs";
@@ -44,9 +45,9 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    if (access.role !== "Super Admin") {
+    if (!canUseAdminCrmWorkspace(access)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Only Super Admin can upload a CRM customer mapping.", success: false },
+        { error: "forbidden", message: "This action is limited to the admin CRM workspace roles.", success: false },
         { status: 403 },
       );
     }

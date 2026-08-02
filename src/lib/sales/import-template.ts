@@ -3,7 +3,7 @@
 // separate templates and pipelines. Headers match exactly what parseSalesUpload /
 // extractFlatSheetRows (src/lib/sales/parser.ts) and the column aliases in
 // src/lib/sales/validation.ts already recognize, so a filled copy of this file uploads
-// through the existing "Upload Sheet" flow on /sales/queue with no other changes needed.
+// through the existing "Upload Sheet" flow on /sales/import with no other changes needed.
 //
 // The "Sales Data" sheet has ONLY a header row (row 1) followed immediately by data rows
 // — no in-sheet notes/guidance row. extractFlatSheetRows() treats every row from row 2
@@ -52,7 +52,7 @@ const SAMPLE_ROWS: (string | number | null)[][] = [
   ["Yehia Kamal", "Heliopolis (vacant)", null, "B-23", "A-12", "Pedia", "Retail", "Ivyronc", "Ivyronc", 30.375, 5, 2026, 0, 0, 500, 15187.5],
 ];
 
-export async function generateSalesQueueTemplate(): Promise<ArrayBuffer> {
+export async function generateSalesImportTemplate(): Promise<ArrayBuffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Phoenix Workforce";
 
@@ -88,7 +88,7 @@ export async function generateSalesQueueTemplate(): Promise<ArrayBuffer> {
   };
 
   const introLines = [
-    "Sales Queue upload template — flat sheet format",
+    "Monthly sales upload template — flat sheet format",
     "",
     "Areas and regions are permanent and never change. Employees (reps and DSMs) come and",
     "go, so an area's HR_ID and Manager HR_ID can change over time — but the row for that",

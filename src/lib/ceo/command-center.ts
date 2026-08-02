@@ -5,11 +5,20 @@ import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
 import { buildCoachingReportAnalytics } from "@/lib/coaching/analytics";
 import { getCoachingReports } from "@/lib/coaching/service";
 import { getContractRenewalDashboardData } from "@/lib/contracts/service";
+import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
+import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
+import {
+  getSfeImsContribution,
+  getSfeTargetPerformance,
+  type SfeImsContribution,
+  type SfeTargetPerformance,
+} from "@/lib/sales/sfe-performance";
+import { getPortalWeeklyDashboard } from "@/lib/sales/weekly/portal-weekly-dashboard";
 import {
   getSalesMarketingDashboard,
   parseSalesMarketingDashboardFilters,
@@ -73,8 +82,20 @@ export type CeoCommandCenterData = {
     period: string | null;
     totalValue: number;
     totalQty: number;
+    /**
+     * Lines and regions carrying sales this period, counted from the SoS dataset itself.
+     *
+     * The headcount block's uniqueLines/uniqueAreas come from the employee directory, which is
+     * gated by canReadCompanyWorkforceAggregates (system scope, Super Admin, or CEO) — every
+     * other role reads a hard zero rather than an error. These counts are sales data, so they
+     * are real for anyone who can see the SoS dashboard at all.
+     */
+    lineCount: number;
+    regionCount: number;
     topLines: CeoTopMover[];
     topRegions: CeoTopMover[];
+    /** Every line with sales this period (not just the top movers) — the basis for line scoping. */
+    byLine: Array<{ label: string; totalValue: number; totalQty: number }>;
     byRegion: Array<{ label: string; totalValue: number; totalQty: number }>;
     byProduct: Array<{ label: string; totalValue: number; totalQty: number; line: string | null }>;
   } | null;
@@ -90,6 +111,16 @@ export type CeoCommandCenterData = {
   adminSignals: CeoAdminSignals | null;
 };
 
+
+/**
+ * Product lines the SFE partitions (targets, IMS contribution) are computed over.
+ *
+ * The confidential Head Office line is NO LONGER stripped here: loadSourceOfSalesDashboard now
+ * takes the viewer and derives canViewHeadOfficeLine itself (#1617), so every dimension including
+ * the geo rollups arrives already correct and a caller cannot forget the lock. This list remains
+ * only to scope the target and IMS partitions, which read their own datasets.
+ */
+const SFE_VISIBLE_LINES = ["CNS", "Pedia", "Anti Infective"] as const;
 
 function topMoversFromSos(
   groups: Array<{ label: string; totalValue: number }> | undefined,
@@ -245,6 +276,11 @@ export async function getCeoCommandCenterData(access: AccessContext): Promise<Ce
         period: sos.period,
         totalValue: sos.totals.totalValue,
         totalQty: sos.totals.totalQty,
+        lineCount: (sos.byLine ?? []).length,
+        regionCount: (sos.byRegion ?? []).length,
+        byLine: [...(sos.byLine ?? [])].map((l) => ({
+          label: l.label, totalValue: l.totalValue, totalQty: l.totalQty,
+        })),
         topLines: topMoversFromSos(sos.byLine),
         topRegions: topMoversFromSos(sos.byRegion),
         byRegion: [...sos.byRegion].sort((a, b) => b.totalValue - a.totalValue).map((r) => ({
@@ -491,13 +527,66 @@ export type CeoLandingDeferredData = {
   } | null;
   managersOnLeave: Array<{ name: string; hrId: string; role: string }> | null;
   adminSignals: CeoAdminSignals | null;
+  /** CRM field activity — SFE only (see CeoLandingDeferredOptions.includeCrmField). */
+  crmField: SfeCrmFieldAnalytics | null;
+  /** De-cumulated week-over-week sales — SFE only (see includeWeeklyTrend). */
+  weeklyTrend: CeoWeeklyTrendPoint[] | null;
+  /** Per-line target vs actual — SFE only (see includeSfePerformance). */
+  targets: SfeTargetPerformance | null;
+  /** Sales share vs IMS market share by area — SFE only. */
+  ims: SfeImsContribution | null;
 };
+
+export type CeoWeeklyTrendPoint = {
+  label: string;
+  weekStart: string;
+  salesValue: number;
+  /** % change vs the previous week; null at the series start or across an upload gap. */
+  deltaPct: number | null;
+};
+
+export type CeoLandingDeferredOptions = {
+  /**
+   * Outstation expense is an admin-outstation-workspace surface (canUseAdminOutstationWorkspace:
+   * Super Admin to approve, Finance Manager / CEO to read). The SFE Manager overview does not
+   * render the Expense Snapshot, so it passes `false` here and the company-wide expense read is
+   * never issued for that page. Defaults to true so the CEO page is unchanged.
+   */
+  includeExpense?: boolean;
+  /**
+   * Fingerprint attendance. The SFE Manager owns sales and CRM, so his overview measures field
+   * presence through CRM check-ins instead and never renders the attendance partition — passing
+   * `false` skips the whole company-wide attendance aggregate for that page.
+   */
+  includeAttendance?: boolean;
+  /** CRM field analytics (visits + check-in start times). Off by default: only the SFE page shows it. */
+  includeCrmField?: boolean;
+  /** Real week-over-week sales series, replacing the CEO page's click-through shortcut. */
+  includeWeeklyTrend?: boolean;
+  /** Per-line targets and IMS contribution. Line-scoped to SFE_VISIBLE_LINES. */
+  includeSfePerformance?: boolean;
+};
+
+/** Days of CRM history behind the SFE field-activity partitions. */
+const SFE_CRM_WINDOW_DAYS = 30;
 
 export async function getCeoLandingDeferred(
   access: AccessContext,
   prefetchedAdminSignals?: CeoAdminSignals | null,
+  options: CeoLandingDeferredOptions = {},
 ): Promise<CeoLandingDeferredData> {
+  const {
+    includeExpense = true,
+    includeAttendance = true,
+    includeCrmField = false,
+    includeWeeklyTrend = false,
+    includeSfePerformance = false,
+  } = options;
   const dataUnavailable: string[] = [];
+  // CRM timestamps are Cairo wall-clock, so the window is seeded from the Cairo day, not the raw
+  // UTC clock — after 22:00 Cairo those differ and the window would silently shift by a day.
+  const crmDateTo = cairoTodayIso();
+  const crmDateFrom = addDaysIso(crmDateTo, -(SFE_CRM_WINDOW_DAYS - 1));
 
   // Run all heavy sources concurrently. SoS is NOT re-fetched here — the fast path
   // already loads it and passes byRegion/byProduct via sosPrefetched prop on the page.
@@ -506,20 +595,36 @@ export async function getCeoLandingDeferred(
   // adminSignals is likewise reused from the fast path when it succeeded there (avoids
   // recomputing the same 6 heavy sub-fetches + getPlatformMetrics a second time per page
   // load); only re-fetched here if the fast path didn't compute it or its fetch failed.
-  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR] = await Promise.allSettled([
+  const [dvR, expenseR, attendanceR, marketingR, adminSignalsR, crmFieldR, weeklyR, targetsR, imsR] = await Promise.allSettled([
     getDoubleVisitDashboardData({ access }),
-    getOutstationExpenseCommandData(access, { preset: "30d" }),
-    getAttendanceAnalytics(),
+    includeExpense ? getOutstationExpenseCommandData(access, { preset: "30d" }) : Promise.resolve(null),
+    includeAttendance ? getAttendanceAnalytics() : Promise.resolve(null),
     getSalesMarketingDashboard(access, parseSalesMarketingDashboardFilters({})),
     prefetchedAdminSignals ? Promise.resolve(prefetchedAdminSignals) : getCeoAdminSignals(access),
+    includeCrmField
+      ? getSfeCrmFieldAnalytics({ dateFrom: crmDateFrom, dateTo: crmDateTo })
+      : Promise.resolve(null),
+    includeWeeklyTrend ? getPortalWeeklyDashboard({}, access) : Promise.resolve(null),
+    includeSfePerformance ? getSfeTargetPerformance(access, SFE_VISIBLE_LINES) : Promise.resolve(null),
+    includeSfePerformance ? getSfeImsContribution(SFE_VISIBLE_LINES) : Promise.resolve(null),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;
   if (!dv) dataUnavailable.push("Double-Visit Intelligence");
   const expense = expenseR.status === "fulfilled" ? expenseR.value : null;
-  if (!expense) dataUnavailable.push("Expense Snapshot");
+  // Only a real failure is "unavailable" — a deliberately skipped fetch must not raise the
+  // amber banner on a page that never shows the partition.
+  if (!expense && includeExpense) dataUnavailable.push("Expense Snapshot");
   const attendance = attendanceR.status === "fulfilled" ? attendanceR.value : null;
-  if (!attendance) dataUnavailable.push("Attendance Analytics");
+  if (!attendance && includeAttendance) dataUnavailable.push("Attendance Analytics");
+  const crmField = crmFieldR.status === "fulfilled" ? crmFieldR.value : null;
+  if (!crmField && includeCrmField) dataUnavailable.push("CRM field activity");
+  const weekly = weeklyR.status === "fulfilled" ? weeklyR.value : null;
+  if (!weekly && includeWeeklyTrend) dataUnavailable.push("Weekly sales trend");
+  const targets = targetsR.status === "fulfilled" ? targetsR.value : null;
+  if (!targets && includeSfePerformance) dataUnavailable.push("Sales targets");
+  const ims = imsR.status === "fulfilled" ? imsR.value : null;
+  if (!ims && includeSfePerformance) dataUnavailable.push("IMS contribution");
   const marketing = marketingR.status === "fulfilled" ? marketingR.value : null;
   if (!marketing) dataUnavailable.push("ROI Signal");
   const adminSignals = adminSignalsR.status === "fulfilled" ? adminSignalsR.value : null;
@@ -636,6 +741,25 @@ export async function getCeoLandingDeferred(
       }
     : null;
 
+  // Weekly sales — `trend` is already de-cumulated (real per-week values, not running totals).
+  // weekComparison carries the week-over-week delta and the spansGap suppression, so the two are
+  // joined on weekStart rather than recomputing a delta here (which would silently reinstate the
+  // inflated figure across an upload gap).
+  const weeklyTrendOut: CeoWeeklyTrendPoint[] | null = weekly
+    ? (() => {
+        const deltaByWeek = new Map<string, number | null>();
+        for (const row of weekly.data.weekComparison ?? []) {
+          if (row.weekStart) deltaByWeek.set(row.weekStart, row.deltaValuePct);
+        }
+        return (weekly.data.trend ?? []).slice(-8).map((point) => ({
+          label: point.weekNumber ? `W${point.weekNumber}` : point.weekStart.slice(5),
+          weekStart: point.weekStart,
+          salesValue: point.salesValue,
+          deltaPct: deltaByWeek.get(point.weekStart) ?? null,
+        }));
+      })()
+    : null;
+
   return {
     dataUnavailable: Array.from(new Set(dataUnavailable)),
     doubleVisit: dvOut,
@@ -644,5 +768,9 @@ export async function getCeoLandingDeferred(
     attendance: attendanceOut,
     managersOnLeave,
     adminSignals,
+    crmField,
+    weeklyTrend: weeklyTrendOut,
+    targets,
+    ims,
   };
 }

@@ -16,6 +16,7 @@ import {
   MapPinned,
   Megaphone,
   ShieldCheck,
+  Target,
   Users,
   Wallet,
 } from "lucide-react";
@@ -28,6 +29,7 @@ import type {
   CeoAttentionTone,
   CeoCommandCenterData,
 } from "@/lib/ceo/command-center";
+import { cn } from "@/lib/utils";
 
 export type CeoWelcomeProfile = {
   fullName: string;
@@ -85,7 +87,7 @@ function MetricTile({
   );
 }
 
-function DataUnavailableNotice({ sources }: { sources: string[] }) {
+function DataUnavailableNotice({ owner, sources }: { owner: string; sources: string[] }) {
   if (sources.length === 0) return null;
 
   return (
@@ -93,7 +95,7 @@ function DataUnavailableNotice({ sources }: { sources: string[] }) {
       <div className="flex items-start gap-3">
         <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
         <div>
-          <p className="text-sm font-black text-amber-900">Some CEO data sources are unavailable.</p>
+          <p className="text-sm font-black text-amber-900">Some {owner} data sources are unavailable.</p>
           <p className="mt-1 text-xs font-medium text-amber-800">
             All-clear status is paused until these sources recover: {sources.join(", ")}.
           </p>
@@ -103,6 +105,35 @@ function DataUnavailableNotice({ sources }: { sources: string[] }) {
   );
 }
 
+
+// ── SFE Manager scope ─────────────────────────────────────────────────────────
+// The SFE variant reuses this CEO layout, so every partition has to be filtered down to
+// what the SFE Manager can actually reach. His permission matrix (permissions.ts) grants
+// sales / weekly_sales / crm_visits / coaching / probation / attendance / leave / expenses /
+// double_visit_analytics / weekly_plans and NOTHING from the HR-lifecycle or finance side:
+// `contracts`, `resignations`, `employees`, `organogram`, `vacancies`, `deductions` and
+// `admin` are all absent. Linking him at a page that redirects to /employee-portals is worse
+// than not showing the row at all, so the keys below are the only attention rows that both
+// carry a number he owns and land on a page he can open.
+//
+//   contracts      -> /contracts    requires contracts:read     — denied
+//   resignations   -> /resignations requires resignations:read  — denied
+//   salaryFlags    -> /admin/m-payroll                          — payroll surface, not his
+//   leaveSla       -> /admin/approvals/vacation                 — leave is HR, not sales or CRM
+//
+// What is left is field-force performance: probation (he submits the SFE assessment) and the
+// coaching red zone (rep effectiveness). Both are sales-force questions he is measured on.
+export const SFE_ATTENTION_KEYS = new Set(["probationOverdue", "probationDue", "coaching"]);
+
+/**
+ * `dataUnavailable` is built by the shared CEO aggregator, so it can name sources the SFE
+ * Manager never sees. Warning him that "Resignation risk signals" are down — for a partition
+ * that is not on his page — reads as a system fault he has to chase. Keep only the sources
+ * that back a partition he is actually shown.
+ */
+export function isSfeDataSource(source: string) {
+  return !/(salary|payroll|resignation|contract|expense|leave|attendance)/i.test(source);
+}
 
 // ── Attention tone mapping ────────────────────────────────────────────────────
 
@@ -206,22 +237,62 @@ export function SectionShell({
   description,
   children,
   action,
+  header,
 }: {
   title: string;
   description?: string;
   children: ReactNode;
   action?: ReactNode;
+  /** Replaces the default left-aligned title row entirely. Used for the SFE department banner. */
+  header?: ReactNode;
 }) {
   return (
     <div className="border border-slate-200 bg-white">
-      <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-4">
-        <div>
-          <h2 className="text-sm font-black uppercase tracking-[0.12em] text-white">{title}</h2>
-          {description ? <p className="mt-0.5 text-[11px] text-slate-400">{description}</p> : null}
+      {header ?? (
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-900 px-5 py-4">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-[0.12em] text-white">{title}</h2>
+            {description ? <p className="mt-0.5 text-[11px] text-slate-400">{description}</p> : null}
+          </div>
+          {action}
         </div>
-        {action}
-      </div>
+      )}
       {children}
+    </div>
+  );
+}
+
+/**
+ * The SFE department banner — centered, and the one header on this page that is allowed to be
+ * a statement rather than a label. Replaces the old "SFE Manager Overview" title and its
+ * confidential-products caveat; the caveat is now enforced in the data layer and the loader
+ * (canViewHeadOfficeLine), so it no longer needs saying in a heading.
+ */
+function SfeDepartmentBanner() {
+  return (
+    // Same vertical footprint as the default header (px-5 py-4) — centered and graded, but not
+    // taller. A department banner that pushes the KPIs down the page costs more than it adds.
+    <div className="relative overflow-hidden border-b border-slate-200 bg-slate-900 px-5 py-4 text-center">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(249,115,22,0.7)_50%,transparent_100%)]"
+      />
+      <div className="relative flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+        <h2 className="bg-[linear-gradient(180deg,#FFFFFF_0%,#FFE7CF_60%,#F8B56B_100%)] bg-clip-text text-sm font-black uppercase tracking-[0.14em] text-transparent">
+          SFE Department
+        </h2>
+        <span aria-hidden="true" className="h-1 w-1 rotate-45 bg-[#F97316]" />
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#F8B56B]">
+          Where Your Achievement Belongs
+        </p>
+      </div>
+      {/* Right corner, absolutely placed so it cannot shift the centred title off-centre. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/sato-pharma-logo.png"
+        alt="SATO Pharma"
+        className="absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 opacity-95 sm:block"
+      />
     </div>
   );
 }
@@ -310,8 +381,10 @@ export function CeoCommandCenter({
 }) {
   const { attention, approvals, dataUnavailable, headcount, health, payroll, sos } = data;
   const isSfe = variant === "sfe";
-  const visibleAttention = isSfe ? attention.filter((item) => item.key !== "salaryFlags") : attention;
-  const visibleDataUnavailable = dataUnavailable.filter((source) => !isSfe || !/(salary|payroll)/i.test(source));
+  const visibleAttention = isSfe
+    ? attention.filter((item) => SFE_ATTENTION_KEYS.has(item.key))
+    : attention;
+  const visibleDataUnavailable = dataUnavailable.filter((source) => !isSfe || isSfeDataSource(source));
   const generatedLabel = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -319,8 +392,14 @@ export function CeoCommandCenter({
   }).format(new Date(data.generatedAt));
 
   const dataAvailable = visibleDataUnavailable.length === 0;
-  const totalApprovals = (approvals.leavePending ?? 0) + (approvals.plansPending ?? 0);
-  const hasUnavailableApprovals = approvals.leavePending === null || approvals.plansPending === null;
+  // Weekly-plan approval is Super Admin + CEO only (weekly_plans:approve is absent from the SFE
+  // Manager's matrix), so that tile is a number he can never action. Leave he CAN approve, but the
+  // `leaveSla` attention row below already carries the pending count and links to the same
+  // /admin/approvals/vacation page — showing both would double-count one queue.
+  const showApprovalTiles = !isSfe;
+  const totalApprovals = showApprovalTiles ? (approvals.leavePending ?? 0) + (approvals.plansPending ?? 0) : 0;
+  const hasUnavailableApprovals =
+    showApprovalTiles && (approvals.leavePending === null || approvals.plansPending === null);
   const allClear = dataAvailable && visibleAttention.length === 0 && totalApprovals === 0;
 
   return (
@@ -337,41 +416,65 @@ export function CeoCommandCenter({
             fullName={_welcome.fullName}
             roleLabel={_welcome.roleLabel}
             imageUrl={_welcome.imageUrl}
+            personal={!isSfe}
           />
         </div>
       </AdminHeroFrame>
 
-      <DataUnavailableNotice sources={visibleDataUnavailable} />
+      <DataUnavailableNotice owner={isSfe ? "SFE" : "CEO"} sources={visibleDataUnavailable} />
 
       <SectionShell
-        title={isSfe ? "SFE Manager Overview" : "Sato Pharma"}
-        description={isSfe ? "Company-wide sales and workforce signals. All product sales are included except confidential products." : "A healthier life is our commitment."}
+        title={isSfe ? "SFE Department" : "Sato Pharma"}
+        description={isSfe ? undefined : "A healthier life is our commitment."}
+        header={isSfe ? <SfeDepartmentBanner /> : undefined}
         action={
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/sato-pharma-logo.png" alt="SATO Pharma" className="mr-[28px] h-8 w-auto shrink-0" />
         }
       >
         <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricTile
-            icon={<Users className="h-3.5 w-3.5" />}
-            label="Active employees"
-            value={n(headcount.active)}
-            sub="Active and on leave"
-            tone={headcount.active > 0 ? "emerald" : "amber"}
-          />
-          <MetricTile
+          {/* Active employees reads the same directory aggregate as Lines/Areas below, so it too
+              renders a hard zero for the SFE Manager. His headline number is the sales figure. */}
+          {!isSfe ? (
+            <MetricTile
+              icon={<Users className="h-3.5 w-3.5" />}
+              label="Active employees"
+              value={n(headcount.active)}
+              sub="Active and on leave"
+              tone={headcount.active > 0 ? "emerald" : "amber"}
+            />
+          ) : (
+            <MetricTile
+              icon={<Wallet className="h-3.5 w-3.5" />}
+              label="Monthly sales"
+              value={sos ? egp(sos.totalValue) : "—"}
+              sub={sos?.period ? `Source of Sales · ${sos.period}` : "No monthly sales loaded"}
+              tone={sos && sos.totalValue > 0 ? "emerald" : "amber"}
+            />
+          )}
+          {/* Total structure and Vacancies both read the Organogram / AU seat model, which the
+              SFE Manager holds no `organogram` or `vacancies` grant for — the sales-achievement
+              tile below takes their place on his overview. */}
+          {!isSfe ? <MetricTile
             icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}
             label="Total structure"
             value={n(headcount.total)}
             sub="Employees plus vacancies"
-          />
-          <MetricTile
+          /> : null}
+          {!isSfe ? <MetricTile
             icon={<Building2 className="h-3.5 w-3.5" />}
             label="Vacancies"
             value={n(headcount.vacancies)}
             sub="Open positions"
             tone={headcount.vacancies > 0 ? "amber" : "emerald"}
-          />
+          /> : null}
+          {isSfe ? <MetricTile
+            icon={<Target className="h-3.5 w-3.5" />}
+            label="Sales achievement"
+            value={pct(health.salesAchievementRate)}
+            sub="Company sales vs target"
+            tone={health.salesAchievementRate >= 0.9 ? "emerald" : "amber"}
+          /> : null}
           {!isSfe ? <MetricTile
             icon={<ShieldCheck className="h-3.5 w-3.5" />}
             label="Employee health"
@@ -379,18 +482,38 @@ export function CeoCommandCenter({
             sub="Active/total quality"
             tone={health.employeeHealthRate >= 0.9 ? "emerald" : "amber"}
           /> : null}
-          <MetricTile
+          {/* Lines/Areas from the employee directory are gated by canReadCompanyWorkforceAggregates
+              (system scope, Super Admin, or CEO) and read a hard ZERO for everyone else — which is
+              exactly how the SFE overview came to show "Lines 0 / Areas 0" against a live 59%
+              achievement. His counts come from the SoS dataset instead: same question, sales data,
+              no HR gate. */}
+          {isSfe ? <MetricTile
+            icon={<BarChart3 className="h-3.5 w-3.5" />}
+            label="Lines selling"
+            value={n(sos?.lineCount ?? 0)}
+            sub={sos ? `In ${sos.period ?? "the latest period"}` : "No monthly sales loaded"}
+            tone={sos && sos.lineCount > 0 ? "slate" : "amber"}
+          /> : <MetricTile
             icon={<BarChart3 className="h-3.5 w-3.5" />}
             label="Lines"
             value={n(headcount.uniqueLines)}
             sub="Lookup-backed count"
-          />
-          <MetricTile
+          />}
+          {/* NOT the region count: regions cannot be filtered to his lines (see
+              applySfeSalesLineScope), so that tile would read a flat "0" and assert nobody is
+              selling anywhere. Products carry the line, so this one is real. */}
+          {isSfe ? <MetricTile
+            icon={<MapPinned className="h-3.5 w-3.5" />}
+            label="Products selling"
+            value={n(sos?.byProduct.length ?? 0)}
+            sub={sos ? `Across ${n(sos.lineCount)} lines · ${sos.period ?? "latest period"}` : "No monthly sales loaded"}
+            tone={sos && sos.byProduct.length > 0 ? "slate" : "amber"}
+          /> : <MetricTile
             icon={<MapPinned className="h-3.5 w-3.5" />}
             label="Areas"
             value={n(headcount.uniqueAreas)}
             sub="Lookup-backed count"
-          />
+          />}
           {!isSfe ? <MetricTile
             icon={<Wallet className="h-3.5 w-3.5" />}
             label="Net payroll"
@@ -411,14 +534,20 @@ export function CeoCommandCenter({
       {/* ── Attention & approvals ─────────────────────────────────────────── */}
       <SectionShell
         title="Attention & pending approvals"
-        description="What needs your decision or your eye — by priority."
+        description={
+          isSfe
+            ? "Field-force signals you can act on — probation decisions and the coaching red zone."
+            : "What needs your decision or your eye — by priority."
+        }
         action={
           !allClear ? (
+            // "Other Approvals" carries resignation / contract / outstation items only, and the
+            // SFE Manager holds none of those grants — his queue is the probation assessments.
             <Link
-              href="/admin/approvals-hub"
+              href={isSfe ? "/probation" : "/admin/approvals-hub"}
               className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
             >
-              Approvals Hub <ArrowRight aria-hidden="true" className="h-3 w-3" />
+              {isSfe ? "Probation" : "Approvals Hub"} <ArrowRight aria-hidden="true" className="h-3 w-3" />
             </Link>
           ) : null
         }
@@ -438,12 +567,12 @@ export function CeoCommandCenter({
                 <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3">
                   <AlertTriangle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
                   <span className="text-sm font-semibold text-amber-900">
-                    Not all executive risk sources loaded. This section is not treated as all clear.
+                    Not all {isSfe ? "SFE" : "executive"} risk sources loaded. This section is not treated as all clear.
                   </span>
                 </div>
               ) : null}
 
-              {totalApprovals > 0 || hasUnavailableApprovals ? (
+              {showApprovalTiles && (totalApprovals > 0 || hasUnavailableApprovals) ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   <Link
                     href="/admin/approvals/vacation"
@@ -517,9 +646,16 @@ export function CeoCommandCenter({
       {/* ── Sales performance ─────────────────────────────────────────────── */}
       <SectionShell
         title="Sales & marketing performance"
-        description="Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
+        description={
+          isSfe
+            ? "Source of Sales (monthly, live) — your lines and regions, plus the company field-sales dashboards."
+            : "Source of Sales (monthly, live) — plus one-click access to Weekly Sales and Marketing ROI dashboards."
+        }
       >
-        <div className="grid divide-x divide-slate-200 lg:grid-cols-3">
+        {/* Three columns only when there is something to put in them. The SFE variant drops the
+            Weekly Sales shortcut (it gets the real trend further down), which left the SoS card
+            alone in a third of the row and two thirds of blank white beside it. */}
+        <div className={cn("grid divide-x divide-slate-200", isSfe ? "lg:grid-cols-1" : "lg:grid-cols-3")}>
           {/* SoS — immediate */}
           <PerfCard
             title="Source of Sales"
@@ -528,7 +664,9 @@ export function CeoCommandCenter({
             headlineSub={sos?.period ? `Monthly · ${sos.period}` : "Monthly"}
             badge={sos ? <span className="text-[10px] text-slate-400">{n(sos.totalQty)} units</span> : null}
           >
-            <div className="space-y-5">
+            {/* Full-width on the SFE page, so the two tables sit side by side instead of one
+                stacked under the other across the whole screen. */}
+            <div className={cn(isSfe ? "grid gap-6 lg:grid-cols-2" : "space-y-5")}>
               <div>
                 <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Top Lines</p>
                 <CeoTopMoversTable
@@ -554,19 +692,28 @@ export function CeoCommandCenter({
             </div>
           </PerfCard>
 
-          {/* Weekly Sales — instant link card */}
-          <QuickLinkCard
+          {/* Weekly Sales — a shortcut for the CEO. The SFE Manager gets the real week-over-week
+              series instead (the "Weekly sales trend" section in Phase B), because weekly sales
+              is his job rather than something he occasionally clicks through to. */}
+          {!isSfe ? <QuickLinkCard
             title="Weekly Sales"
             icon={<Activity className="h-3.5 w-3.5" />}
             headline="7-week trend + region breakdown"
             sub="Click to open Weekly Sales"
             href="/sales/weekly/dashboard"
-          />
+          /> : null}
 
         </div>
 
         {/* ── Company field-sales command — NSM-parity dashboards at company scope ── */}
-        <div className="grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Six cards. Four columns leaves a ragged half-empty second row; three gives two full
+            rows. Scoped to the SFE variant to keep this change to the page under review. */}
+        <div
+          className={cn(
+            "grid divide-x divide-slate-200 border-t border-slate-200 sm:grid-cols-2",
+            isSfe ? "lg:grid-cols-3" : "lg:grid-cols-4",
+          )}
+        >
           <QuickLinkCard
             title="Weekly Sales · Company"
             icon={<Activity className="h-3.5 w-3.5" />}
@@ -615,16 +762,32 @@ export function CeoCommandCenter({
       {/* ── Operations hubs — consolidated cross-module quick links ─────────── */}
       <SectionShell
         title="Operations hubs"
-        description="One click into every attendance module, or every marketing & ROI module."
+        description={
+          isSfe
+            ? "One click into the CRM workspace, or every marketing & ROI module."
+            : "One click into every attendance module, or every marketing & ROI module."
+        }
       >
         <div className="grid divide-x divide-slate-200 sm:grid-cols-2">
-          <QuickLinkCard
-            title="Attendance Management"
-            icon={<Fingerprint className="h-3.5 w-3.5" />}
-            headline="Reports, reviews, policies & devices"
-            sub="Open the Attendance Management hub"
-            href="/attendance"
-          />
+          {/* Attendance is an HR hub. The SFE Manager gets the CRM workspace in its place —
+              same slot, but the module he is actually accountable for. */}
+          {isSfe ? (
+            <QuickLinkCard
+              title="CRM Workspace"
+              icon={<MapPinned className="h-3.5 w-3.5" />}
+              headline="Visits, check-ins, contacts & integrity"
+              sub="Open the CRM workspace"
+              href="/admin/crm"
+            />
+          ) : (
+            <QuickLinkCard
+              title="Attendance Management"
+              icon={<Fingerprint className="h-3.5 w-3.5" />}
+              headline="Reports, reviews, policies & devices"
+              sub="Open the Attendance Management hub"
+              href="/attendance"
+            />
+          )}
           <QuickLinkCard
             title="Marketing & ROI"
             icon={<Megaphone className="h-3.5 w-3.5" />}
@@ -639,7 +802,7 @@ export function CeoCommandCenter({
       <div className="flex items-center justify-between bg-slate-900 px-5 py-3 text-[10px] text-slate-400">
         <span className="flex items-center gap-2">
           <Users aria-hidden="true" className="h-3 w-3" />
-          Phoenix Workforce · CEO Command Center
+          Phoenix Workforce · {isSfe ? "SFE Manager Overview" : "CEO Command Center"}
         </span>
         <span className="flex items-center gap-2">
           <Wallet aria-hidden="true" className="h-3 w-3" />
