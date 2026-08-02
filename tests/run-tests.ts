@@ -475,6 +475,7 @@ import { runSosDirectInAchievementTests } from "./sos-direct-in-achievement.test
 import { runSosDirectToDmTests } from "./sos-direct-to-dm.test.ts";
 import { runClosingMatrixTargetsTests } from "./closing-matrix-targets.test.ts";
 import { runDirectRegionAllocationTests } from "./direct-region-allocation.test.ts";
+import { runDirectAmbiguousRegionBlockTests } from "./direct-ambiguous-region-block.test.ts";
 import { runSosCodedPathCrossAreaGuardTests } from "./sos-coded-path-cross-area-guard.test.ts";
 import { runSosIngestionRemainderTests } from "./sos-ingestion-remainder.test.ts";
 import { runSalesScopeBlankRegionFailClosedTests } from "./sales-scope-blank-region-fail-closed.test.ts";
@@ -1050,6 +1051,7 @@ await runTest('SoS Direct counts toward achievement (targets were set including 
 await runTest('SoS Direct reaches its region DM (not a rep), and UE-1/UE-2 exist to tag', runSosDirectToDmTests);
 await runTest('Closing Matrix target columns (missing target is "—", never a 0 that fakes achievement)', runClosingMatrixTargetsTests);
 await runTest('Direct region allocation (shares normalise to 1; a no-op where unconfigured)', runDirectRegionAllocationTests);
+await runTest('Direct ambiguous region blocks at upload (Anti Infective only; CNS/Pedia keep "UE")', runDirectAmbiguousRegionBlockTests);
 await runTest('SoS coded-path cross-area guard (blank-brick auto-fill never crosses the typed area)', runSosCodedPathCrossAreaGuardTests);
 await runTest('SoS ingestion remainder (Direct value, blank-customer info, office bad units)', runSosIngestionRemainderTests);
 await runTest('sales scope fails closed on a blank region with no seat areas', runSalesScopeBlankRegionFailClosedTests);
