@@ -26,6 +26,38 @@ export function payableExpenseAmount(
 }
 
 /**
+ * The two ends of one decision: HR either types how much to CUT off a claim, or types what to
+ * PAY, and the other figure follows. Kept here as a pure complementary pair so the two inputs can
+ * never drift apart — `approved + deduction === claimed` always holds.
+ *
+ * Both clamp into [0, claimed]. A negative deduction is not a deduction, and outstation approval
+ * exists to reduce a claim: it never pays an employee more than they asked for. A non-finite or
+ * missing entry reads as "no deduction" rather than silently zeroing someone's payable amount.
+ */
+export function approvedAmountFromDeduction(
+  claimed: number | null | undefined,
+  deduction: number | null | undefined,
+): number {
+  const claimedAmount = Math.max(0, toFiniteAmount(claimed));
+  const cut = Math.min(claimedAmount, Math.max(0, toFiniteAmount(deduction)));
+  return roundCurrency(claimedAmount - cut);
+}
+
+export function deductionFromApprovedAmount(
+  claimed: number | null | undefined,
+  approvedAmount: number | null | undefined,
+): number {
+  const claimedAmount = Math.max(0, toFiniteAmount(claimed));
+  const approved = Math.min(claimedAmount, Math.max(0, toFiniteAmount(approvedAmount)));
+  return roundCurrency(claimedAmount - approved);
+}
+
+function toFiniteAmount(value: number | null | undefined): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
  * Turns what the approvals UI submitted into what belongs in `approved_amount`.
  *
  * Returns null when HR left the claim alone, so "never adjusted" stays distinguishable from

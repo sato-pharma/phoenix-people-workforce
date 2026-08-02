@@ -43,3 +43,71 @@ export function expenseApprovalState(input: {
   if (input.hrApproved) return "approved";
   return isRejectedStatus(input.status) ? "rejected" : "pending";
 }
+
+/**
+ * Whether HR moved the payable figure off the employee's claim.
+ *
+ * Half a pound of tolerance: the figure round-trips through a number input and currency rounding,
+ * so an exact `!==` would mark untouched rows as adjusted and demand a reason for nothing.
+ */
+export function isAdjustedAmount(
+  approvedAmount: number | null | undefined,
+  claimedTotal: number | null | undefined,
+): boolean {
+  const approved = Number(approvedAmount);
+  const claimed = Number(claimedTotal);
+  if (!Number.isFinite(approved) || !Number.isFinite(claimed)) return false;
+  return Math.abs(approved - claimed) > 0.5;
+}
+
+export type BulkApprovalCandidate = {
+  approvedAmount: number;
+  claimedTotal: number;
+  hrApproved: boolean | null | undefined;
+  hrComment: string;
+  status: string | null | undefined;
+  tripId: string;
+};
+
+/**
+ * Splits a multi-select into what one bulk approval may actually touch.
+ *
+ * Bulk approve exists to clear a backlog, not to bypass the rules that guard it, so this applies
+ * the SAME two gates the single-trip Approve button applies — and nothing may be approved that the
+ * per-trip button would have refused:
+ *
+ *   - only a PENDING trip can be approved (an already-approved one is a no-op, and a rejected one
+ *     must be un-rejected deliberately — silently flipping a rejection in a batch is exactly the
+ *     kind of thing nobody notices until payroll runs);
+ *   - a trip whose amount was reduced needs a written reason first, because a deduction the
+ *     employee cannot be given a reason for is not defensible.
+ *
+ * Everything excluded is returned rather than dropped, so the UI can say precisely why a selected
+ * trip did not get approved instead of leaving the reviewer to guess.
+ */
+export function planBulkApproval(candidates: ReadonlyArray<BulkApprovalCandidate>): {
+  approvableTripIds: string[];
+  needsReasonTripIds: string[];
+  notPendingTripIds: string[];
+} {
+  const approvableTripIds: string[] = [];
+  const needsReasonTripIds: string[] = [];
+  const notPendingTripIds: string[] = [];
+
+  for (const candidate of candidates) {
+    if (expenseApprovalState(candidate) !== "pending") {
+      notPendingTripIds.push(candidate.tripId);
+      continue;
+    }
+    if (
+      isAdjustedAmount(candidate.approvedAmount, candidate.claimedTotal) &&
+      !String(candidate.hrComment ?? "").trim()
+    ) {
+      needsReasonTripIds.push(candidate.tripId);
+      continue;
+    }
+    approvableTripIds.push(candidate.tripId);
+  }
+
+  return { approvableTripIds, needsReasonTripIds, notPendingTripIds };
+}

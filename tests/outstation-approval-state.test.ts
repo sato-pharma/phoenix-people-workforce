@@ -4,7 +4,9 @@ import {
   EXPENSE_STATE_LABEL,
   REJECTED_STATUS,
   expenseApprovalState,
+  isAdjustedAmount,
   isRejectedStatus,
+  planBulkApproval,
 } from "../src/lib/outstation/approval-state.ts";
 
 export function runOutstationApprovalStateTests() {
@@ -68,6 +70,82 @@ export function runOutstationApprovalStateTests() {
     "every trip is counted exactly once, so the Pending / Approved / Rejected tab counts always add up to the total",
   );
   assert.deepEqual(counts, { approved: 2, pending: 1, rejected: 2 }, "queue split is stable");
+
+  // --- isAdjustedAmount: the tolerance that decides whether a reason is owed ---
+
+  assert.equal(isAdjustedAmount(2000, 2000), false, "an untouched claim is not an adjustment");
+  assert.equal(isAdjustedAmount(1500, 2000), true, "a 500 reduction is an adjustment");
+  assert.equal(
+    isAdjustedAmount(2000.2, 2000),
+    false,
+    "sub-half-pound drift from the number input and currency rounding must not demand a reason for nothing",
+  );
+  assert.equal(isAdjustedAmount(0, 2000), true, "approving nothing against a real claim is an adjustment");
+
+  // --- planBulkApproval: clearing a backlog must not bypass the gates that guard it ---
+
+  const candidate = (overrides: Partial<Parameters<typeof planBulkApproval>[0][number]>) => ({
+    approvedAmount: 2000,
+    claimedTotal: 2000,
+    hrApproved: false,
+    hrComment: "",
+    status: "",
+    tripId: "TRIP-X",
+    ...overrides,
+  });
+
+  const plan = planBulkApproval([
+    candidate({ tripId: "clean" }),
+    candidate({ approvedAmount: 1500, hrComment: "Hotel receipt missing", tripId: "reduced-with-reason" }),
+    candidate({ approvedAmount: 1500, hrComment: "   ", tripId: "reduced-no-reason" }),
+    candidate({ hrApproved: true, status: APPROVED_STATUS, tripId: "already-approved" }),
+    candidate({ status: REJECTED_STATUS, tripId: "already-rejected" }),
+  ]);
+
+  assert.deepEqual(
+    plan.approvableTripIds,
+    ["clean", "reduced-with-reason"],
+    "only the untouched trip and the reduced-but-explained one may be approved in bulk",
+  );
+  assert.deepEqual(
+    plan.needsReasonTripIds,
+    ["reduced-no-reason"],
+    "a reduced amount with only whitespace for a reason is BLOCKED — bulk approve must not become the way to deduct money from a rep with no explanation on file, which is the one thing the single-trip button already refuses",
+  );
+  assert.deepEqual(
+    plan.notPendingTripIds,
+    ["already-approved", "already-rejected"],
+    "a rejected trip must never be flipped to approved inside a batch — that decision has to be undone deliberately, or nobody notices until payroll runs",
+  );
+  assert.equal(
+    plan.approvableTripIds.length + plan.needsReasonTripIds.length + plan.notPendingTripIds.length,
+    5,
+    "every selected trip is accounted for, so the UI can always explain why one did not get approved",
+  );
+  assert.deepEqual(
+    planBulkApproval([]),
+    { approvableTripIds: [], needsReasonTripIds: [], notPendingTripIds: [] },
+    "an empty selection approves nothing rather than throwing",
+  );
+
+  // Whatever bulk approve lets through, the single-trip button must have let through too.
+  for (const single of [
+    candidate({ tripId: "a" }),
+    candidate({ approvedAmount: 1500, hrComment: "reason", tripId: "b" }),
+    candidate({ approvedAmount: 1500, tripId: "c" }),
+    candidate({ hrApproved: true, tripId: "d" }),
+    candidate({ status: REJECTED_STATUS, tripId: "e" }),
+  ]) {
+    const bulkAllows = planBulkApproval([single]).approvableTripIds.length === 1;
+    const singleAllows =
+      expenseApprovalState(single) === "pending" &&
+      !(isAdjustedAmount(single.approvedAmount, single.claimedTotal) && !single.hrComment.trim());
+    assert.equal(
+      bulkAllows,
+      singleAllows,
+      `bulk and single-trip approval must agree for ${single.tripId} — a batch is not a loophole`,
+    );
+  }
 
   // --- labels stay the literals the database already holds ---
 
