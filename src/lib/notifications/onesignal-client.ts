@@ -83,8 +83,57 @@ function waitForServiceWorkerReady(timeoutMs = 10_000): Promise<void> {
   return Promise.race([ready, timeout]);
 }
 
-export function requestOneSignalPermission(): Promise<EnablePushResult> {
+// Upper bound on the whole enable-push attempt. withOneSignal() only QUEUES its callback
+// onto window.OneSignalDeferred — it is the SDK that drains that queue, so if the SDK
+// never loads or OneSignal.init() throws, the callback simply never runs and a promise
+// built around it settles neither way. Without this ceiling the caller's button stays
+// disabled until the user reloads the page. Generous enough to cover a slow CDN plus the
+// 10s service-worker wait below, short enough that nobody sits in front of a dead button.
+const ENABLE_PUSH_TIMEOUT_MS = 20_000;
+
+// True when this browser has permanently blocked notifications for the origin. Once a user
+// (or an enterprise policy) blocks a site, browsers never surface the permission prompt
+// again — so optIn() cannot succeed, and cannot fail loudly either.
+function notificationsBlockedByBrowser() {
+  return typeof Notification !== "undefined" && Notification.permission === "denied";
+}
+
+// `timeoutMs` is injectable for tests only; production always uses the constant above.
+export function requestOneSignalPermission(timeoutMs = ENABLE_PUSH_TIMEOUT_MS): Promise<EnablePushResult> {
+  // Fast path for an already-blocked browser. Confirmed in production 2026-08-02 on
+  // phoenix-hr.satopharma.com: Notification.permission === "denied", zero service-worker
+  // registrations, OneSignalDeferred still holding an undrained callback, and the settings
+  // panel still disabled 22s after the click with no error rendered. The caller already
+  // renders the correct "allow notifications in your site settings" message for
+  // { optedIn: false, permission: false }, so returning that shape immediately turns a
+  // permanent freeze into instant, accurate feedback — and avoids queueing onto a dead
+  // queue in the first place.
+  if (notificationsBlockedByBrowser()) {
+    return Promise.resolve({ optedIn: false, permission: false });
+  }
+
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new Error(
+          "Push notifications didn't finish setting up in time. Reload the page and try again — if it keeps happening, a browser extension, VPN, or your network may be blocking OneSignal.",
+        ),
+      );
+    }, timeoutMs);
+
+    // Every exit path goes through here so a late callback after the timeout cannot
+    // resolve an already-rejected promise (silently doing nothing) or leave the timer
+    // running past a successful opt-in.
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      finish();
+    };
+
     withOneSignal(async (OneSignal) => {
       try {
         // Wait for the service worker to reach "active" state before calling optIn().
@@ -93,12 +142,14 @@ export function requestOneSignalPermission(): Promise<EnablePushResult> {
         // called against a registration that is still in the installing/waiting phase.
         await waitForServiceWorkerReady();
         await OneSignal.User.PushSubscription.optIn();
-        resolve({
-          optedIn: OneSignal.User.PushSubscription.optedIn,
-          permission: OneSignal.Notifications.permission,
-        });
+        settle(() =>
+          resolve({
+            optedIn: OneSignal.User.PushSubscription.optedIn,
+            permission: OneSignal.Notifications.permission,
+          }),
+        );
       } catch (error) {
-        reject(error instanceof Error ? error : new Error("Unable to enable push notifications."));
+        settle(() => reject(error instanceof Error ? error : new Error("Unable to enable push notifications.")));
       }
     });
   });
