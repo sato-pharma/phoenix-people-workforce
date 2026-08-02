@@ -1102,6 +1102,59 @@ function detectDateColumnDayFirst(values: unknown[]): boolean | undefined {
   return sawMonthFirst ? false : undefined;
 }
 
+/**
+ * Source-of-Sales region codes that are AMBIGUOUS for a line's Direct channel.
+ *
+ * A Direct row carries a region but never an area, so its District Manager is resolved from the
+ * region alone (au.f_monthly_achievement's region_dm lookup). That works only while the region
+ * maps to ONE DM territory. Anti Infective splits Upper Egypt into UE-1 and UE-2, so a Direct row
+ * tagged plain "UE" belongs to two managers at once and therefore reaches neither.
+ *
+ * Not hypothetical: 3,110 units / 208,652.40 EGP accumulated exactly that way over six months.
+ * 19 rows were recoverable from a place name buried in the customer text; the remaining 16 — five
+ * with no customer name at all — had to be split by an owner-set 1:2 territory rule
+ * (au.direct_region_allocation) because nothing in the row said where they belonged. Blocking at
+ * upload is what stops it recurring.
+ *
+ * Deliberately per-LINE, not global: CNS and Pedia have a single Upper Egypt region with one DM,
+ * so "UE" is unambiguous for them and must keep importing normally.
+ */
+const AMBIGUOUS_DIRECT_REGIONS: ReadonlyArray<{
+  choices: string;
+  detail: string;
+  /** Normalised official line. Matched against the PRODUCT's line — where the line is resolved. */
+  lineKey: string;
+  lineLabel: string;
+  regionCode: string;
+}> = [
+  {
+    choices: "UE-1 or UE-2",
+    detail:
+      "UE-1 covers Minia 1, Minia 2 and Fayoum-Beni Suef; UE-2 covers Assuit 1/2, Sohag 1/2 and Qena 1/2.",
+    lineKey: "anti infective",
+    lineLabel: "Anti Infective",
+    regionCode: "UE",
+  },
+];
+
+/**
+ * The ambiguity rule matching a Direct row, or null when the (line, region) pair is unambiguous.
+ * Pure — exported so the rule can be unit-tested without building a workbook.
+ */
+export function ambiguousDirectRegion(
+  officialLine: string | null | undefined,
+  regionCode: string | null | undefined,
+): (typeof AMBIGUOUS_DIRECT_REGIONS)[number] | null {
+  const line = String(officialLine ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const region = String(regionCode ?? "").trim().toUpperCase();
+  if (!line || !region) return null;
+  return AMBIGUOUS_DIRECT_REGIONS.find((rule) => rule.lineKey === line && rule.regionCode === region) ?? null;
+}
+
 function addIssue(
   issues: DistributorSalesValidationIssue[],
   rowNumber: number,
@@ -1520,6 +1573,25 @@ async function parseDistributorSalesWorkbookBuffer(input: {
       if (!brickId) addIssue(rowIssues, rowNumber, headerMap.template.fields.brickId ?? "Brick ID", rawBrickId, "Brick ID is required.");
     }
     if (!regionCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.regionCode, rawRegionCode, "Region code is required.");
+    // A Direct row has no area, so its DM is resolved from the region alone. When that region
+    // covers two DM territories the row reaches NEITHER manager — it is not a rounding problem,
+    // the value simply lands nowhere. Blocking (severity defaults to "failure", which populates
+    // blockingReasons and holds the batch at "blocked") is deliberate: the alternative is another
+    // month of sales that can only ever be split by an assumption. Scoped to the Direct channel
+    // and to the specific ambiguous (line, region) pairs, so every other upload is untouched.
+    if (isDirect) {
+      const ambiguous = ambiguousDirectRegion(productReference?.line, regionCode);
+      if (ambiguous) {
+        addIssue(
+          rowIssues,
+          rowNumber,
+          headerMap.template.fields.regionCode,
+          rawRegionCode,
+          `${ambiguous.lineLabel} Direct sales cannot use region "${ambiguous.regionCode}" — it covers two district managers, ` +
+            `so this row would reach neither. Use ${ambiguous.choices}. ${ambiguous.detail}`,
+        );
+      }
+    }
     if (!productCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.productCode, rawProductCode, "Product code is required.");
     if (!rowDistributorCode) addIssue(rowIssues, rowNumber, headerMap.template.fields.distributorCode, rawDistributorCode, "Distributor code is required.");
     if (rowDistributorCode && rowDistributorCode !== selectedDistributorCode) {
