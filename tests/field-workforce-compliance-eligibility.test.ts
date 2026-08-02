@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 
-import { isFieldWorkforceComplianceEligibleTitle } from "../src/lib/field-workforce-compliance/eligibility.ts";
+import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "../src/lib/field-workforce-compliance/eligibility.ts";
 import {
   buildIReports360FieldWorkforceMatrix,
   visitFromMirrorRow,
@@ -697,4 +697,39 @@ export function runFieldWorkforceComplianceEligibilityTests() {
   assert.equal(crossCheckResult.get("d-1|2026-05-12"), "av_with_partial_punch", "AV day with a punch and 2h worked (<5h) -> av_with_partial_punch (half-day)");
   assert.equal(crossCheckResult.get("d-1|2026-05-13"), "av_with_partial_punch", "AV day with a punch but unresolvable duration defaults to the half-day bucket, not the full contradiction");
   assert.equal(crossCheckResult.size, 5, "exactly the five real disagreements are recorded, nothing else");
+  // logsOwnCrmVisitsTitle — who can honestly be judged on NOT logging a CRM visit.
+  //
+  // Deliberately narrower than isFieldWorkforceComplianceEligibleTitle: a rep owns a
+  // contact list and enters visits, so an empty day is that rep's own signal. A manager
+  // has no contact list and does not hand-enter visits — the rep submits and TAGS them —
+  // so a manager's empty day measures the rep's data entry, which the manager cannot fix.
+  //
+  // July 2026: 16 managers/PMs carried 131,741.94 EGP (77% of the CRM category), and on
+  // 35 of those charged days the person had CLOCKED IN on the fingerprint device.
+  for (const repTitle of ["Medical Representative", "Medical Rep", "medical rep", "  MEDICAL   REPRESENTATIVE  "]) {
+    assert.ok(logsOwnCrmVisitsTitle(repTitle), `${repTitle} owns a contact list and logs visits, so a no-activity day is their own signal`);
+  }
+  for (const managerTitle of [
+    "National Sales Manager",
+    "Regional Sales Manager",
+    "District Sales Manager",
+    "District Manager",
+    "Group Product Manager",
+    "Product Manager",
+    "Marketing Manager",
+    "Training Manager",
+    "Sfe Manager",
+  ]) {
+    assert.ok(
+      !logsOwnCrmVisitsTitle(managerTitle),
+      `${managerTitle} has no contact list and appears in CRM only when a rep tags them — their absence is the rep's data entry, not their own work, and they cannot correct it`,
+    );
+    assert.ok(
+      isFieldWorkforceComplianceEligibleTitle(managerTitle),
+      `${managerTitle} must STILL be field-workforce eligible — this predicate narrows deduction scope only, it does not remove anyone from the compliance report`,
+    );
+  }
+  for (const headOffice of ["Ceo", "Hr Manager", "Admin Assistant", "Qppv", "Office Coordinator", null, ""]) {
+    assert.ok(!logsOwnCrmVisitsTitle(headOffice), `${headOffice ?? "(blank)"} has no CRM obligation at all`);
+  }
 }

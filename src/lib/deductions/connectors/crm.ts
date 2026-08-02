@@ -22,7 +22,7 @@
 import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { scanVisitsForRange, scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
-import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
+import { isFieldWorkforceComplianceEligibleTitle, logsOwnCrmVisitsTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import { isFieldWorkforceWeeklyOff } from "@/lib/field-workforce-compliance/weekend-policy.ts";
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { buildFieldWorkforceRecommendationsReportForLiveMonth } from "@/lib/field-workforce-compliance/recommendations.ts";
@@ -576,5 +576,31 @@ export async function collectCrmCandidates(input: {
   // fourth branch cannot reintroduce it. Safe because the SYSTEMIC case is already
   // guarded by assertBaseSalaryMapLoaded above: reaching here means the map loaded
   // and this employee genuinely is not in it.
-  return collected.filter((draft) => draft.estimatedAmount != null);
+  const withAmount = collected.filter((draft) => draft.estimatedAmount != null);
+
+  // ONLY THOSE WHO LOG THEIR OWN VISITS CAN BE JUDGED ON NOT LOGGING THEM.
+  //
+  // A Medical Rep owns a contact list and enters visits, so an empty day is that rep's
+  // own signal. A manager has no contact list and does not hand-enter visits — the rep
+  // submits and TAGS them — so a manager's empty day measures the rep's data entry, and
+  // the manager has no mechanism to correct it. See logsOwnCrmVisitsTitle.
+  //
+  // July 2026: 16 managers/PMs held 131,741.94 EGP, 77% of this category, and 35 of those
+  // charged days had a fingerprint punch (53,258.06 EGP) — charged for missing field
+  // visits while demonstrably clocked in at the office.
+  const titleByKey = new Map<string, string | null>();
+  {
+    const { data } = await getSupabaseAdmin().from("employees").select("hr_id,job_title");
+    for (const row of (data ?? []) as Array<{ hr_id: string; job_title: string | null }>) {
+      const key = canonicalHrIdKey(row.hr_id);
+      if (key) titleByKey.set(key, row.job_title);
+    }
+  }
+  // Fail closed on an unreadable roster: with no titles we cannot tell a rep from a
+  // manager, and guessing in the permissive direction is what charged managers in the
+  // first place. An empty roster means no candidates, not "everyone qualifies".
+  return withAmount.filter((draft) => {
+    const key = canonicalHrIdKey(draft.employeeHrId);
+    return key ? logsOwnCrmVisitsTitle(titleByKey.get(key) ?? null) : false;
+  });
 }
