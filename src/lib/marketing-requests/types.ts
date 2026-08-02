@@ -294,6 +294,60 @@ export type MarketingCustomerPharmacy = {
   validationStatus: MarketingValidationStatus;
 };
 
+/**
+ * The speciality options offered on a validated customer.
+ *
+ * Deliberately a fixed list rather than the raw `speciality` text iReports360 syncs onto
+ * `crm_visits`: that vendor field is free text with inconsistent casing and near-duplicates, and
+ * feeding it into a picker would reproduce the mess it already contains. A closed list keeps the
+ * spelling stable so these can ever be grouped or counted. Server-validated in
+ * `normalizeMarketingValidationInput` — a value outside this list is rejected, so the dropdown is
+ * a real constraint and not just a UI convenience.
+ */
+export const MARKETING_CUSTOMER_SPECIALITIES = [
+  "General Practitioner",
+  "Internal Medicine",
+  "Cardiology",
+  "Chest",
+  "Dermatology",
+  "Endocrinology",
+  "ENT",
+  "Gastroenterology",
+  "General Surgery",
+  "Nephrology",
+  "Neurology",
+  "Obstetrics & Gynaecology",
+  "Oncology",
+  "Ophthalmology",
+  "Orthopaedics",
+  "Paediatrics",
+  "Psychiatry",
+  "Rheumatology",
+  "Urology",
+] as const;
+
+export type MarketingCustomerSpeciality = (typeof MARKETING_CUSTOMER_SPECIALITIES)[number];
+
+export type MarketingValidationCustomerInput = {
+  capturedAccuracyMeters?: number | null;
+  capturedAddress?: string | null;
+  capturedAt?: string | null;
+  capturedLatitude?: number | null;
+  capturedLongitude?: number | null;
+  customerType: MarketingCustomerType;
+  displayName: string;
+  evidenceHasTimestamp?: boolean;
+  evidencePhotoCapturedAt?: string | null;
+  evidencePhotoName?: string | null;
+  extractedAreaName?: string | null;
+  extractedGovernorateName?: string | null;
+  mobileNumber?: string | null;
+  otherTypeDescription?: string | null;
+  regionName?: string | null;
+  /** Optional — a hospital or chain account often has no single speciality. */
+  speciality?: string | null;
+};
+
 export type MarketingValidationInput = {
   /**
    * Super-Admin-only: validate this customer FOR another employee. The records are owned by the
@@ -302,23 +356,16 @@ export type MarketingValidationInput = {
    * see `assertMarketingOnBehalfAccess`. Omit for the normal field-rep flow.
    */
   onBehalfOfHrId?: string | null;
-  customer: {
-    capturedAccuracyMeters?: number | null;
-    capturedAddress?: string | null;
-    capturedAt?: string | null;
-    capturedLatitude?: number | null;
-    capturedLongitude?: number | null;
-    customerType: MarketingCustomerType;
-    displayName: string;
-    evidenceHasTimestamp?: boolean;
-    evidencePhotoCapturedAt?: string | null;
-    evidencePhotoName?: string | null;
-    extractedAreaName?: string | null;
-    extractedGovernorateName?: string | null;
-    mobileNumber?: string | null;
-    otherTypeDescription?: string | null;
-    regionName?: string | null;
-  };
+  /**
+   * One submission may validate several customers, each carrying ITS OWN pharmacies — two doctors
+   * in the same building are not assumed to dispense through the same pharmacy, so the lists never
+   * merge. Takes precedence over the single-customer fields below when present.
+   */
+  customers?: Array<MarketingValidationCustomerInput & {
+    pharmacies?: MarketingValidationPharmacyInput[];
+  }>;
+  /** Legacy single-customer shape. Still accepted so an in-flight offline replay cannot 400. */
+  customer?: MarketingValidationCustomerInput;
   distributorCode?: {
     distributorId: number | string;
     distributorPharmacyCode: string;
