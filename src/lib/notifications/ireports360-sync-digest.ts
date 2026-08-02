@@ -13,12 +13,16 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 export type IReports360SyncJobName =
   | "ireports360-visits-sync"
   | "ireports360-visits-reconcile"
-  | "ireports360-visits-live-sync";
+  | "ireports360-visits-live-sync"
+  | "ireports360-live-poll";
 
 const JOB_LABELS: Record<IReports360SyncJobName, string> = {
   "ireports360-visits-reconcile": "Weekly Wide Reconciliation",
   "ireports360-visits-sync": "Daily Visits Sync",
   "ireports360-visits-live-sync": "Live Morning Sync (8:30 AM-12:01 PM)",
+  // The in-process continuous poller (src/lib/crm/live-poller.ts). Only ever notifies on a
+  // SUSTAINED failure streak — success at its cadence would be pure noise.
+  "ireports360-live-poll": "Continuous Live Poll",
 };
 
 export type IReports360SyncNotifyInput =

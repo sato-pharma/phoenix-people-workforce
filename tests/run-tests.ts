@@ -159,6 +159,7 @@ import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
 import { runCrmLiveSyncWindowTests } from "./crm-live-sync-window.test.ts";
+import { runCrmLivePollerTests } from "./crm-live-poller.test.ts";
 import { runCrmDuplicateVisitCollapseTests } from "./crm-duplicate-visit-collapse.test.ts";
 import { runCrmMasterExportWorkbookTests } from "./crm-master-export-workbook.test.ts";
 import { runCrmDegradationPolicyTests } from "./crm-degradation-policy.test.ts";
@@ -740,6 +741,7 @@ await runTest("crm visit time (GPS check-in → save time → none; never visit_
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
 await runTest("crm live-sync window (8:30 AM-12:01 PM Cairo boundary, inclusive both ends)", runCrmLiveSyncWindowTests);
+await runTest("crm live poller (stable fingerprint, delta vs memo, cadence tiers, upsert-filter seam, startup guards)", runCrmLivePollerTests);
 await runTest("crm duplicate visit collapse (contact-keyed: one rep+contact+day = one stop; comment text never groups)", runCrmDuplicateVisitCollapseTests);
 await runTest("crm master export streaming workbook (multi-page, uncapped, valid xlsx, error aborts)", runCrmMasterExportWorkbookTests);
 await runTest("crm degradation policy (a failed read never manufactures a classification; filters cannot lie)", runCrmDegradationPolicyTests);

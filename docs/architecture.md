@@ -107,6 +107,15 @@ Every cron sets `maxDuration = 300` and carries a named Healthchecks.io dead-man
 (`withDeadMansSwitch`). Notification outbox and probation reminder processing are shared through
 `src/lib/notifications/scheduled-processing.ts` and run from the 5-minute outbox-drain job.
 
+**Continuous CRM live poll** (`src/lib/crm/live-poller.ts`, started from `instrumentation.ts`):
+in addition to the scheduled visit-sync jobs, the production app process itself polls iReports360
+continuously — 60s in the 08:00–12:30 Cairo compliance window, 120s daytime, 300s overnight — and
+invokes the sync engine only when a fetched window actually changed, upserting just the changed
+rows. Gated behind `PHOENIX_LIVE_CRM_POLL=true` + a production build + Railway's production
+environment, so it can never run from a dev machine. Heartbeats to the
+`phoenix-ireports360-live-poll` Healthchecks slug; the scheduled rolling sync and weekly wide
+reconcile remain the correctness backstop for edits/deletions older than its 2-day horizon.
+
 The in-app `/admin/cron-control` dashboard can view/pause/resume/run/reschedule these live, but
 does **not** update `setup-gcp-cron.sh` — if you reschedule a job there, update that script's
 `--schedule`/`--time-zone` flags by hand or a future re-run will silently revert it.

@@ -61,6 +61,17 @@ export function dedupeByKey<T>(rows: T[], keyOf: (row: T) => number | string): T
   return Array.from(new Map(rows.map((row) => [keyOf(row), row])).values());
 }
 
+/** Narrows the UPSERT set to `onlyIds` when the caller (the live poller) already knows which rows
+ * changed — pass-through when `onlyIds` is absent, which is every scheduled/manual caller today.
+ * SAFETY-CRITICAL SCOPE: this must only ever be applied to the upsert arrays, NEVER to the
+ * deduped full-fetch arrays that drive delete-reconciliation below — reconciliation must always
+ * see everything the fetch saw, or every unchanged row would read as "absent from the CRM" and be
+ * deleted. Pure and exported for exactly that regression test. */
+export function filterRowsToUpsert<T>(rows: T[], keyOf: (row: T) => number, onlyIds?: ReadonlySet<number>): T[] {
+  if (!onlyIds) return rows;
+  return rows.filter((row) => onlyIds.has(keyOf(row)));
+}
+
 /** Splits `rows` into `chunkSize`-sized chunks and upserts them with up to `concurrency` chunk
  * requests in flight at once, instead of one-at-a-time — see upsertConcurrency's doc comment for
  * why sequential chunking alone was the cause of repeated cron timeouts. Returns the total row
@@ -297,10 +308,25 @@ async function backfillMissingCheckinAddresses(
  * idempotent. Logs a row in ireports360_visits_sync_runs for every attempt, success or
  * failure, so sync freshness is visible instead of silent.
  */
+/** A vendor fetch the live poller already performed for this exact window — passed in so the
+ * engine can skip its own login+fetch (halving vendor traffic) and, crucially, so `capturedAt`
+ * (taken BEFORE that fetch) drives the concurrent-sync deletion guard instead of a later
+ * timestamp, keeping the guard strictly conservative. */
+export type PrefetchedCrmWindow = {
+  capturedAt: string;
+  checkins: IReports360Checkin[];
+  visits: IReports360Visit[];
+};
+
 export async function syncIReports360Visits(input: {
   dateFrom: string;
   dateTo: string;
   trigger: VisitsSyncTrigger;
+  /** See PrefetchedCrmWindow. Absent on every scheduled/manual caller — behavior is unchanged. */
+  prefetched?: PrefetchedCrmWindow;
+  /** When present, only these crm ids are UPSERTED (the live poller's changed-row delta). The
+   * full fetch still drives reconciliation, invalid-date counting, and post-exit detection. */
+  onlyUpsertIds?: { checkinIds: ReadonlySet<number>; visitIds: ReadonlySet<number> };
 }): Promise<{
   /** Visits whose CRM slot resolved to someone who had already left on the visit date, so the
    * post-exit guard refused the attribution. >0 means a slot was probably handed to a replacement
@@ -336,30 +362,37 @@ export async function syncIReports360Visits(input: {
   try {
     // Taken BEFORE the vendor fetch: it is the instant this run's view of the CRM was captured.
     // Any mirror row synced at/after this is newer than our snapshot and must be excluded from the
-    // deletion set below, not treated as something the CRM deleted.
-    const runStartedAt = new Date().toISOString();
-    const config = getIReports360Config();
-    const token = await iReports360Login(config);
+    // deletion set below, not treated as something the CRM deleted. When the live poller hands us
+    // its own already-fetched window, its pre-fetch capture instant is the honest value here.
+    const runStartedAt = input.prefetched?.capturedAt ?? new Date().toISOString();
     let checkinsFailed = false;
-    const [visits, checkins] = await Promise.all([
-      iReports360GetVisits(config, token, input.dateFrom, input.dateTo),
-      // GPS check-ins are a best-effort overlay for visits, never required for the sync to
-      // succeed — a check-ins API problem must not fail the whole run (same rule already
-      // applied to the single-rep FWC drill-down this pattern is mirrored from). But it must not
-      // be SILENT either: this used to swallow the error with no log and no counter, so a
-      // permanently-broken /checkins endpoint (auth scope, rename, 500) would stop check-in
-      // syncing forever while every run still reported success. Every visit's time then silently
-      // degrades from the GPS tier to the save tier (see resolveVisitTime) with no visible change
-      // of state. Now logged and flagged so "0 check-ins" can be told apart from "check-ins broke".
-      iReports360GetCheckins(config, token, input.dateFrom, input.dateTo).catch((error: unknown) => {
-        checkinsFailed = true;
-        logError("iReports360 check-ins fetch failed; visits still synced without the GPS overlay", {
-          labels: { event: "crm_sync_checkins_fetch_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
-          error,
-        });
-        return [] as IReports360Checkin[];
-      }),
-    ]);
+    let visits: IReports360Visit[];
+    let checkins: IReports360Checkin[];
+    if (input.prefetched) {
+      ({ visits, checkins } = input.prefetched);
+    } else {
+      const config = getIReports360Config();
+      const token = await iReports360Login(config);
+      [visits, checkins] = await Promise.all([
+        iReports360GetVisits(config, token, input.dateFrom, input.dateTo),
+        // GPS check-ins are a best-effort overlay for visits, never required for the sync to
+        // succeed — a check-ins API problem must not fail the whole run (same rule already
+        // applied to the single-rep FWC drill-down this pattern is mirrored from). But it must not
+        // be SILENT either: this used to swallow the error with no log and no counter, so a
+        // permanently-broken /checkins endpoint (auth scope, rename, 500) would stop check-in
+        // syncing forever while every run still reported success. Every visit's time then silently
+        // degrades from the GPS tier to the save tier (see resolveVisitTime) with no visible change
+        // of state. Now logged and flagged so "0 check-ins" can be told apart from "check-ins broke".
+        iReports360GetCheckins(config, token, input.dateFrom, input.dateTo).catch((error: unknown) => {
+          checkinsFailed = true;
+          logError("iReports360 check-ins fetch failed; visits still synced without the GPS overlay", {
+            labels: { event: "crm_sync_checkins_fetch_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+            error,
+          });
+          return [] as IReports360Checkin[];
+        }),
+      ]);
+    }
 
     const [employees, resolutions] = await Promise.all([
       getEmployeeDirectoryRows({ includeInactive: true }),
@@ -391,10 +424,18 @@ export async function syncIReports360Visits(input: {
       return count + (agent.blockedHrId ? 1 : 0);
     }, 0);
 
+    // The upsert set may be narrowed to the live poller's changed-row delta; the deduped
+    // full-fetch arrays above stay untouched because reconciliation below MUST see the whole
+    // fetch (see filterRowsToUpsert's doc comment).
+    const visitRowsForUpsert = filterRowsToUpsert(
+      validVisitRows,
+      (row) => row.crm_visit_id,
+      input.onlyUpsertIds?.visitIds,
+    );
     const visitsUpserted = await upsertRowsConcurrently(
       supabase,
       visitsTable,
-      validVisitRows,
+      visitRowsForUpsert,
       "crm_visit_id",
       upsertBatchSize,
       upsertConcurrency,
@@ -402,11 +443,17 @@ export async function syncIReports360Visits(input: {
 
     const checkinRows = checkins.map((checkin) => rowFromCheckin(checkin, maps));
     const dedupedCheckinRows = dedupeByKey(checkinRows, (row) => row.crm_checkin_id);
-    await backfillMissingCheckinAddresses(supabase, dedupedCheckinRows);
+    const checkinRowsForUpsert = filterRowsToUpsert(
+      dedupedCheckinRows,
+      (row) => row.crm_checkin_id,
+      input.onlyUpsertIds?.checkinIds,
+    );
+    // Address backfill only needs to consider rows actually being written this run.
+    await backfillMissingCheckinAddresses(supabase, checkinRowsForUpsert);
     const checkinsUpserted = await upsertRowsConcurrently(
       supabase,
       checkinsTable,
-      dedupedCheckinRows,
+      checkinRowsForUpsert,
       "crm_checkin_id",
       upsertBatchSize,
       upsertConcurrency,

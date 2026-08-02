@@ -193,8 +193,21 @@ export function runVisitsReportSyncTests() {
   // client — locked in as static source assertions (same established pattern as above).
   assert.match(
     service,
-    /await backfillMissingCheckinAddresses\(supabase, dedupedCheckinRows\);/,
-    "the address backfill must run on the deduped check-in rows before they're upserted",
+    /await backfillMissingCheckinAddresses\(supabase, checkinRowsForUpsert\);/,
+    "the address backfill must run on the exact check-in rows being upserted this run",
+  );
+  // The live poller narrows the UPSERT arrays to its changed-row delta (filterRowsToUpsert) —
+  // but delete-reconciliation MUST keep deriving its fresh-id sets from the deduped FULL fetch,
+  // or every unchanged row would look absent from the CRM and be deleted as stale.
+  assert.match(
+    service,
+    /const freshIds = new Set\(dedupedVisitRows\.map\(\(row\) => row\.crm_visit_id\)\);/,
+    "visit reconciliation must build its fresh-id set from the full deduped fetch, never the (possibly delta-narrowed) upsert array",
+  );
+  assert.match(
+    service,
+    /const freshCheckinIds = new Set\(dedupedCheckinRows\.map\(\(row\) => row\.crm_checkin_id\)\);/,
+    "check-in reconciliation must build its fresh-id set from the full deduped fetch, never the (possibly delta-narrowed) upsert array",
   );
   assert.match(
     service,

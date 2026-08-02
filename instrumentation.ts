@@ -4,8 +4,23 @@
 
 import type { Instrumentation } from "next";
 
-// No-op: server error forwarding lives in onRequestError below.
-export async function register() {}
+// Starts the continuous iReports360 live poller (src/lib/crm/live-poller.ts) exactly once per
+// server process. The import MUST stay dynamic and inside the nodejs-runtime guard: this hook is
+// bundled for BOTH runtimes (see the edge-safety note below), and the poller pulls in the whole
+// CRM/Supabase server stack. The poller's own guards (PHOENIX_LIVE_CRM_POLL flag, production
+// build, Railway production env) make this a no-op everywhere except the live Railway service —
+// and a startup failure must never break boot, hence the catch.
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    try {
+      const { startLiveCrmPoller } = await import("@/lib/crm/live-poller");
+      const result = startLiveCrmPoller();
+      if (!result.started) console.log(`[crm:live-poll] not started: ${result.reason}`);
+    } catch (error) {
+      console.error("[crm:live-poll] failed to start:", error);
+    }
+  }
+}
 
 // Deliberately avoids importing any server-only module (session/crypto code
 // lives behind resolveAccessContext, which needs Node's crypto — unavailable
