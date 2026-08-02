@@ -18,7 +18,12 @@ import {
   requiredMinutesForHalfDayVacation,
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
+// The DEDUCTIONS implementation (Base ÷ ACTUAL calendar days). See the note in
+// attendance/employee-day-report.ts: there are two functions with this name and the
+// ÷30 one takes no month, so importing the wrong one type-checks and silently pays a
+// different number. THIS file is the one the deductions Fingerprint connector reads
+// (`row.deductionValue`), so it is the load site that actually moves money.
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { getApprovedLeaveDayMap } from "@/lib/attendance/working-days";
 import { getApprovedExcuseDayMap } from "@/lib/attendance/approved-excuse-days";
 import { getCrmActivityDayMaps } from "@/lib/attendance/crm-day-maps";
@@ -446,6 +451,10 @@ function statusFromFlexibleHours(input: {
   // An approved Am/Pm-Only vacation covering this day halves the required
   // presence instead of judging against the full scheduled day.
   halfDayVacationPart: HalfDayVacationPart | null;
+  // The day being charged, so the day rate divides by THAT month's actual
+  // calendar days. Required, not optional: an optional month would silently
+  // fall back to a flat 30 again, which is the exact defect this closes.
+  reportDate: string;
 }): PolicyAttendanceStatusResult {
   const scheduledStartMinutes = policyTimeToMinutes(input.policy.scheduled_start) ?? 9 * 60;
   const requiredMinutes = requiredMinutesForHalfDayVacation(input.policy.required_minutes!, input.halfDayVacationPart);
@@ -465,7 +474,12 @@ function statusFromFlexibleHours(input: {
 
   const status = result.status === "Short hours" ? "Short day" : result.status === "Missing punch" ? "Single punch" : result.status;
   const deductionValue = result.deductionDays > 0
-    ? calculateDeductionAmountFromBaseSalary({ baseSalary: input.baseSalary ?? 0, deductionDays: result.deductionDays })
+    ? calculateDeductionAmountFromBaseSalary({
+        baseSalary: input.baseSalary ?? 0,
+        deductionDays: result.deductionDays,
+        month: Number(input.reportDate.slice(5, 7)),
+        year: Number(input.reportDate.slice(0, 4)),
+      })
     : 0;
 
   return {
@@ -714,6 +728,7 @@ export async function getFingerprintAttendanceReport(input: {
           halfDayVacationPart,
           lastPunchMinutes,
           policy,
+          reportDate: bucket.reportDate,
           rules: policyRules,
           visiblePunchCount: visiblePunchTimes.length,
         })
@@ -723,6 +738,7 @@ export async function getFingerprintAttendanceReport(input: {
           firstPunchMinutes,
           lastPunchMinutes,
           policy,
+          reportDate: bucket.reportDate,
           rules: policyRules,
           visiblePunchCount: visiblePunchTimes.length,
         });

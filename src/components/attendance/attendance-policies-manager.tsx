@@ -285,6 +285,10 @@ function previewRows(form: PolicyForm) {
       firstPunchMinutes: sample.first,
       lastPunchMinutes: sample.last,
       policy,
+      // Illustrative preview only — alongside the fixed 15,000 sample salary, this
+      // just picks a 30-day month so the worked example stays stable. Real
+      // deductions divide by the actual calendar days of the day being charged.
+      reportDate: "2026-09-15",
       rules,
       visiblePunchCount: 2,
     });

@@ -33,7 +33,23 @@ import {
   type FlexibleHoursConfig,
 } from "@/lib/attendance/flexible-hours";
 import { validationError } from "@/lib/http/api-errors";
-import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions-governance/calculations.ts";
+// The DEDUCTIONS implementation (Base ÷ ACTUAL calendar days), not the
+// deductions-governance one that divides by a flat 30.
+//
+// 🔴 THERE ARE TWO FUNCTIONS WITH THIS NAME. They differ only in the divisor, and the
+// ÷30 version takes no month at all — so calling the wrong one is invisible: it type-checks
+// perfectly and simply produces a different number. This file imported the ÷30 version, so
+// every fingerprint deduction ignored the owner's standing "day rate = Base ÷ actual
+// calendar days, EVERYWHERE" rule while every other category honoured it.
+//
+// Measured on July 2026 production (31 days): Ali Mohamed Ali 90,000 ÷ 30 × 2.13 = 6,390.00
+// where ÷31 gives 6,183.87; Ahmed El Maraghy 37,500 ÷ 30 × 3.26 = 4,075.00. Across the
+// category that over-charged ~3.3% (~789 EGP of 24,460.21) — and would UNDER-charge 6.7%
+// in February, so it is wrong in both directions, not merely conservative.
+//
+// deductions-governance/calculations.ts keeps its ÷30 deliberately: it still feeds the
+// legacy governance module and Automated Payroll, which are out of scope here.
+import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { getAttendanceRoster } from "@/lib/attendance/roster";
 import { cairoTodayIso } from "@/lib/attendance/working-days";
 import { buildDeductionCandidateKey } from "@/lib/deductions-governance/candidate-key.ts";
@@ -361,7 +377,14 @@ export async function getEmployeeDayByDayReport(input: {
       : result.status === "Short hours" ? "short_hours"
       : "missing_punch";
     const deductionValue = result.deductionDays > 0
-      ? calculateDeductionAmountFromBaseSalary({ baseSalary: employee.base_salary ?? 0, deductionDays: result.deductionDays }) ?? 0
+      ? calculateDeductionAmountFromBaseSalary({
+          baseSalary: employee.base_salary ?? 0,
+          deductionDays: result.deductionDays,
+          // The day being charged decides the divisor, so a month-boundary range
+          // cannot bill January days at February's rate.
+          month: Number(dateIso.slice(5, 7)),
+          year: Number(dateIso.slice(0, 4)),
+        }) ?? 0
       : 0;
     days.push({
       dateIso,
@@ -623,7 +646,12 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
     // stored ceiling in sync so a correct, higher value isn't rejected against a stale one.
     const estimatedAmount =
       dayReport.baseSalary != null
-        ? (calculateDeductionAmountFromBaseSalary({ baseSalary: dayReport.baseSalary, deductionDays: systemDays }) ?? null)
+        ? (calculateDeductionAmountFromBaseSalary({
+            baseSalary: dayReport.baseSalary,
+            deductionDays: systemDays,
+            month: Number(monthKey.slice(5, 7)),
+            year: Number(monthKey.slice(0, 4)),
+          }) ?? null)
         : null;
     const { error: updateError } = await getSupabaseAdmin()
       .from("deduction_candidates")
@@ -646,7 +674,12 @@ export async function upsertAndDecideEmployeeDayDeduction(input: {
       deductionValue: Math.round(systemDays * 100) / 100,
       estimatedAmount:
         dayReport.baseSalary != null
-          ? (calculateDeductionAmountFromBaseSalary({ baseSalary: dayReport.baseSalary, deductionDays: systemDays }) ?? null)
+          ? (calculateDeductionAmountFromBaseSalary({
+              baseSalary: dayReport.baseSalary,
+              deductionDays: systemDays,
+              month: Number(monthKey.slice(5, 7)),
+              year: Number(monthKey.slice(0, 4)),
+            }) ?? null)
           : null,
       calculationStatus: "calculated",
       severity: "Medium",
