@@ -51,11 +51,13 @@ export type TripWorkloadEvidence = {
   sourceLabel: string;
 };
 
+// "unmapped" means the rep has no CRM identity mapping — no visit evidence exists either way,
+// so it must read as a warning, never a neutral badge.
 const statusTone: Record<string, "success" | "warning" | "danger" | "neutral"> = {
   matched: "success",
   no_activity: "danger",
   partial: "warning",
-  unmapped: "neutral",
+  unmapped: "warning",
 };
 
 function fmt(value: number) {
