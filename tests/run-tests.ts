@@ -89,7 +89,6 @@ import { runProbationDevActionsTests } from "./probation-dev-actions.test.ts";
 import { runProbationConfigEditorTests } from "./probation-config-editor.test.ts";
 import { runProbationCrmUnmappedTests } from "./probation-crm-unmapped.test.ts";
 import { runProbationFeedbackInboxTests } from "./probation-feedback-inbox.test.ts";
-import { runProbationTelegramChannelTests } from "./probation-telegram-channel.test.ts";
 import { runProbationOutcomesAnalyticsTests } from "./probation-outcomes-analytics.test.ts";
 import { runProbationCaptureUisTests } from "./probation-capture-uis.test.ts";
 import { runProbationAuditFixesTests } from "./probation-audit-fixes.test.ts";
@@ -656,7 +655,6 @@ await runTest("probation development actions (E1 wire the stub)", runProbationDe
 await runTest("probation config editor (E5 validation + save wiring)", runProbationConfigEditorTests);
 await runTest("probation CRM-unmapped badge (E6 classifier + dashboard wiring)", runProbationCrmUnmappedTests);
 await runTest("probation manager feedback inbox (E2 portal wiring)", runProbationFeedbackInboxTests);
-await runTest("probation telegram channel (E3 full-content alerts)", runProbationTelegramChannelTests);
 await runTest("probation outcomes analytics (E4 rollups + predictiveness)", runProbationOutcomesAnalyticsTests);
 await runTest("probation capture UIs (C1–C6 feedback/assessment/dev-action write forms)", runProbationCaptureUisTests);
 await runTest("probation audit fixes (F1–F13 pre-merge hardening)", runProbationAuditFixesTests);

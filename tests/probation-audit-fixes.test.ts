@@ -64,9 +64,8 @@ export function runProbationAuditFixesTests() {
   const assess = src("src/lib/probation/intelligence/assessments.ts");
   assert.match(assess, /resolveConfidentialNote/, "F9: confidential note is preserved, not blindly nulled");
 
-  // ── F10: milestone email only within the recent grace window ──
-  const emails = src("src/lib/probation/intelligence/probation-emails.ts");
-  assert.match(emails, /day > m\.day \+ MILESTONE_GRACE_DAYS/, "F10: milestone emails gated to a recent window");
+  // F10's milestone-email grace window went with probation-emails.ts, deleted 2026-08-02 after
+  // the milestone sweep was retired and all three of the module's exports were left uncalled.
 
   // ── F11: probation termination suppresses the resignation-workflow notification ──
   assert.match(decision, /suppressWorkflowNotification: true/, "F11: terminate suppresses the resignation notification");

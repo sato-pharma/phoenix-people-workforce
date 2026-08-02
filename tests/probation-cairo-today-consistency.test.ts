@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 
 // Source-text regression guard (matching this repo's own idiom for pinning fixes to
 // DB-querying functions the Node unit-test harness can't easily exercise end-to-end):
-// getProbationDashboard, buildConsolidatedReport, and probation-emails' sendDvSnapshotEmail /
-// processProbationMilestoneEmails each independently derived "today" from `nowIso.slice(0, 10)`
+// getProbationDashboard and buildConsolidatedReport each independently derived "today" from
+// `nowIso.slice(0, 10)` (as did probation-emails, deleted 2026-08-02)
 // — a naive UTC-calendar-day slice, wrong for the ~1-3h/night Cairo is already on the next
 // calendar day but the UTC instant hasn't rolled over yet. Each also called
 // probationDaysRemaining(hireDate) with NO reference argument, silently defaulting to the live
@@ -39,20 +39,9 @@ export function runProbationCairoTodayConsistencyTests() {
     "buildConsolidatedReport must pass the same nowIso-derived reference to probationDaysRemaining as currentProbationDay receives",
   );
 
-  const emails = src("src/lib/probation/intelligence/probation-emails.ts");
-  assert.doesNotMatch(emails, NAIVE_UTC_SLICE, "probation-emails.ts must not derive today via a naive UTC slice of nowIso");
-  // Two call sites (sendDvSnapshotEmail, processProbationMilestoneEmails) must both use it.
-  const cairoTodayMatches = emails.match(new RegExp(CAIRO_TODAY_FROM_NOW_ISO, "g")) ?? [];
-  assert.equal(cairoTodayMatches.length, 2, "probation-emails.ts must derive today via the Cairo-aware helper in both sendDvSnapshotEmail and processProbationMilestoneEmails");
-  // processProbationWeeklyDigest's own cairoDate(now) was already correct — must still be there.
-  assert.match(emails, /const today = cairoDate\(now\);/, "processProbationWeeklyDigest's already-correct Cairo-aware today must be untouched");
-  // buildCaseContext must thread the (already Cairo-resolved) `today` string through to
-  // probationDaysRemaining rather than letting it silently default to the live clock.
-  assert.match(
-    emails,
-    /probationDaysRemaining\(hireDate,\s*new Date\(`\$\{today\}T00:00:00Z`\)\)/,
-    "buildCaseContext must pass today through to probationDaysRemaining instead of defaulting",
-  );
+  // probation-emails.ts was deleted 2026-08-02 (all three exports uncalled), so its two
+  // Cairo-today call sites and the buildCaseContext threading guard are gone with it. The
+  // dashboard.ts, consolidated-report.ts and service.ts guards below are unaffected.
 
   // probation/service.ts used to independently reinvent this exact math (its own local
   // daysRemaining()/probationEndDate()/probationDays=90) instead of importing the canonical
