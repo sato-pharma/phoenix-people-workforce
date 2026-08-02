@@ -652,6 +652,47 @@ export function buildAreaReferencesFromRows(
   });
 }
 
+/**
+ * Lines whose Monthly Closing sheet groups areas by the ORGANOGRAM's district territory rather
+ * than by the area's static geographic region.
+ *
+ * Only Anti Infective, by owner decision (2026-08-02). Its rule is genuinely per-line — "only in
+ * Anti Infective, Fayoum belongs to GZ and Beni Suef belongs to UE-1; in other lines these areas
+ * belong to GZ" — and an area carries ONE static region_code, so the rule cannot be expressed on
+ * the area row. AIF is also the only line that splits Upper Egypt into UE-1/UE-2 DM territories.
+ *
+ * Deliberately NOT applied to CNS or Pedia: their organogram rows would additionally move Down
+ * town CA→GZ, Kafr El-Sheikh 1 D1→AB and Helwan-Maadi GZ→CA, restating two monthly sheets nobody
+ * asked to change. Adding a line here silently rewrites that line's region subtotals — confirm
+ * with the owner before doing it.
+ */
+export const CLOSING_ORGANOGRAM_REGION_LINES: ReadonlySet<string> = new Set(["anti_infective"]);
+
+/**
+ * Re-points each area at the district territory that actually owns it for the selected line.
+ *
+ * Only `carries_target` rows are supplied by the caller: an area the line treats as "Other"
+ * (other_line_specific / other_permanent) is not that line's territory, and folding its sales into
+ * the "Others" block would misstate the geography — those areas keep their static region.
+ *
+ * Pure, so the grouping rule is unit-tested without a database.
+ */
+export function applyOperationalRegions(
+  areas: SalesAreaReference[],
+  operationalRegionByArea: Map<string, string>,
+  regionNameByCode: Map<string, string>,
+): SalesAreaReference[] {
+  return areas.map((area) => {
+    const operational = operationalRegionByArea.get(normalizeCode(area.areaCode));
+    if (!operational || operational === normalizeCode(area.regionCode)) return area;
+    return {
+      ...area,
+      regionCode: operational,
+      regionName: regionNameByCode.get(operational) || operational,
+    };
+  });
+}
+
 function normalizeDisplay(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -3208,7 +3249,10 @@ export type MonthlyClosingDirectCell = {
   salesValue: number;
 };
 
-const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "AB", "D1", "D2", "OT"] as const;
+// UE-1/UE-2 are Anti Infective's two Upper Egypt DM territories. They sit immediately after plain
+// UE so the Upper Egypt blocks stay adjacent on the sheet instead of falling to the bottom as
+// unranked codes.
+const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "UE-1", "UE-2", "AB", "D1", "D2", "OT"] as const;
 
 function monthlyClosingRegionRank(regionCode: string) {
   const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(regionCode as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
@@ -3658,7 +3702,36 @@ export async function listMonthlyClosingPeriods(): Promise<string[]> {
     .sort((left, right) => right.localeCompare(left));
 }
 
-async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
+/**
+ * area_code → the district territory owning it for this line, from the organogram.
+ *
+ * `au_v_line_area_map` already filters to the open (effective_to is null) rows, so this is
+ * today's structure. Restricted to `carries_target` — see applyOperationalRegions.
+ */
+async function loadOperationalRegionByArea(auLineCode: string): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("au_v_line_area_map")
+    .select("area_code,operational_region_code,carries_target")
+    .eq("line_code", auLineCode)
+    .eq("carries_target", true);
+  if (error) throw toQueryError(error);
+
+  const byArea = new Map<string, string>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const areaCode = normalizeCode(row.area_code);
+    const regionCode = normalizeCode(row.operational_region_code);
+    if (areaCode && regionCode) byArea.set(areaCode, regionCode);
+  }
+  return byArea;
+}
+
+/**
+ * @param auLineCode canonical au line_code for the selected line, or null. When it is a line
+ * listed in CLOSING_ORGANOGRAM_REGION_LINES the returned areas carry their organogram district
+ * territory instead of their static geographic region.
+ */
+async function listActiveSalesAreas(auLineCode?: string | null): Promise<SalesAreaReference[]> {
   const supabase = getSupabaseAdmin();
   // Region name is sourced from the regions master and joined by region_code. The areas
   // table does NOT carry region_name in every Supabase project (schema diverges across
@@ -3682,8 +3755,15 @@ async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
   const regionNameByCode = buildRegionNameByCode(
     (regionsResult.data ?? []) as Array<Record<string, unknown>>,
   );
-  return buildAreaReferencesFromRows(
+  const areas = buildAreaReferencesFromRows(
     (areasResult.data ?? []) as Array<Record<string, unknown>>,
+    regionNameByCode,
+  );
+
+  if (!auLineCode || !CLOSING_ORGANOGRAM_REGION_LINES.has(auLineCode)) return areas;
+  return applyOperationalRegions(
+    areas,
+    await loadOperationalRegionByArea(auLineCode),
     regionNameByCode,
   );
 }
@@ -3734,7 +3814,7 @@ export async function loadMonthlyClosing(input?: {
   // area skeleton + product columns so the UI renders an empty (zeroed) matrix cleanly.
   if (!selectedLine || !selectedPeriod) {
     const [areas, products] = await Promise.all([
-      listActiveSalesAreas(),
+      listActiveSalesAreas(resolveTargetLineCode(selectedLine)),
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
     ]);
     return buildMonthlyClosingMatrix({
@@ -3755,7 +3835,7 @@ export async function loadMonthlyClosing(input?: {
   // none, and every target cell renders "—".
   const targetLineCode = resolveTargetLineCode(selectedLine);
   const [areas, products, aggregateData, directData, targetRows] = await Promise.all([
-    listActiveSalesAreas(),
+    listActiveSalesAreas(targetLineCode),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
     rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
