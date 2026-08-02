@@ -80,4 +80,65 @@ export async function runResignationScopeCheckTests() {
     /input:\s*\{\s*access\?:\s*AccessContext;/,
     "runContractRenewalWorkflow's input.access must be widened to AccessContext",
   );
+
+  // (g) THE OTHER WRITE PATH. /api/resignations POST -> createResignation ->
+  // createResignationForEmployee takes the target employee from the caller-supplied payload
+  // (input.employeeHrId), not from the URL, and until 2026-08-02 had no scope check at all —
+  // it could not even perform one, because `access` was narrowed to the role and carried no
+  // hrId. That was survivable only because resignations:create was held solely by Super Admin
+  // and Talent Acquisition, whom canSeeEmployee passes company-wide anyway; widening that
+  // grant to Employee/Medical Rep/manager roles without this guard would have let any account
+  // submit a resignation for any other employee.
+  assert.match(
+    resignationsService,
+    /export\s+async\s+function\s+createResignation\(\s*input:\s*CreateResignationInput,\s*actor:\s*string,\s*access\?:\s*AccessContext,/,
+    "createResignation must accept access?: AccessContext (widened from Pick<AccessContext, \"role\">)",
+  );
+  assert.match(
+    resignationsService,
+    /async\s+function\s+createResignationForEmployee\(\s*input:\s*CreateResignationInput,\s*actor:\s*string,\s*employee:\s*DirectoryEmployee,\s*access\?:\s*AccessContext,/,
+    "createResignationForEmployee must accept access?: AccessContext, or it cannot scope-check at all",
+  );
+  assert.doesNotMatch(
+    resignationsService,
+    /function\s+createResignation\([^)]*access\?:\s*Pick<AccessContext,\s*"role">/,
+    "createResignation must no longer narrow access to Pick<AccessContext, \"role\">",
+  );
+  assert.doesNotMatch(
+    resignationsService,
+    /function\s+createResignationForEmployee\([^)]*access\?:\s*Pick<AccessContext,\s*"role">/,
+    "createResignationForEmployee must no longer narrow access to Pick<AccessContext, \"role\">",
+  );
+
+  const createFnStart = resignationsService.indexOf("async function createResignationForEmployee");
+  assert.ok(createFnStart >= 0, "could not locate createResignationForEmployee in service.ts");
+  const createFnEnd = resignationsService.indexOf("\nfunction ", createFnStart + 1);
+  const createFnBody = resignationsService.slice(
+    createFnStart,
+    createFnEnd > 0 ? createFnEnd : resignationsService.length,
+  );
+
+  const createRoleCheckIdx = createFnBody.indexOf("assertResignationWorkflowTransition(");
+  const createScopeCheckIdx = createFnBody.indexOf("canSeeEmployee(scopedAccess, employee)");
+  const createInsertIdx = createFnBody.indexOf("insertResignationRecord(");
+
+  assert.ok(
+    createScopeCheckIdx >= 0,
+    "createResignationForEmployee must call canSeeEmployee(scopedAccess, employee) — without it the payload-supplied employeeHrId is unscoped",
+  );
+  assert.ok(createRoleCheckIdx >= 0, "createResignationForEmployee must still call assertResignationWorkflowTransition");
+  assert.ok(createInsertIdx >= 0, "createResignationForEmployee must still call insertResignationRecord");
+  assert.ok(
+    createRoleCheckIdx < createScopeCheckIdx && createScopeCheckIdx < createInsertIdx,
+    "ordering must be role check -> scope check -> mutate (assertResignationWorkflowTransition -> canSeeEmployee -> insertResignationRecord)",
+  );
+
+  const createScopeWindow = createFnBody.slice(
+    createScopeCheckIdx,
+    Math.min(createFnBody.length, createScopeCheckIdx + 300),
+  );
+  assert.ok(
+    /Forbidden:/.test(createScopeWindow),
+    "createResignationForEmployee's scope check must throw an error prefixed with \"Forbidden:\" (matches isForbiddenError convention)",
+  );
 }
