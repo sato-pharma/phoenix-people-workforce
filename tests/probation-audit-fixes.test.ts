@@ -85,8 +85,8 @@ export function runProbationAuditFixesTests() {
   const prov = src("src/lib/probation/provisioning.ts");
   assert.match(prov, /countUnresolvedProvisioningFailures/, "F13: provisioning failures have a reader");
   assert.match(dvSync, /isProbationSchemaMissing/, "F13: dv-sync skips quietly when tables are missing");
-  const sla = src("src/lib/probation/intelligence/feedback-sla-reminders.ts");
-  assert.match(sla, /isProbationSchemaMissing/, "F13: SLA sweep skips quietly when tables are missing");
+  // The feedback SLA sweep was retired 2026-08-02 (module deleted), so its schema-missing guard
+  // no longer exists to assert on.
 
   // ── F3: go-live backfill is wired behind a probation-admin route (dry-run by default) ──
   const backfillRoute = src("app/api/probation/backfill/route.ts");
