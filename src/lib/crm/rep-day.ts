@@ -50,8 +50,17 @@ export type IReports360DayRoute = {
   legs: IReports360DayRouteLeg[];
 };
 
+export type IReports360RepDayCheckin = IReports360Checkin & {
+  /**
+   * Rep name when this check-in is BORROWED — i.e. this person was the double/triple-visitor and
+   * the named rep is the one who physically checked in and submitted the visit. null when the
+   * person logged the check-in themselves.
+   */
+  via: string | null;
+};
+
 export type IReports360RepDayResult = {
-  checkins: IReports360Checkin[];
+  checkins: IReports360RepDayCheckin[];
   rep: { crmId: string | null; fullName: string | null; hrId: string } | null;
   route: IReports360DayRoute | null;
   visits: IReports360RepDayVisit[];
@@ -106,6 +115,33 @@ async function getCachedDrivingRoute(
   if (routeCache.size >= ROUTE_CACHE_MAX) routeCache.clear();
   routeCache.set(cacheKey, route);
   return route;
+}
+
+/**
+ * Whose GPS check-ins make up this person's route on a given day.
+ *
+ * Returns ownerCrmId -> the rep's display name when the check-in is BORROWED, or null when the
+ * person logged it themselves.
+ *
+ * Managers (DM/TM/NSM) have no contact list and never hand-enter a CRM visit — the rep enters it
+ * and tags them as the double-visitor — so a manager logs no check-in of their own. Their route is
+ * therefore the check-ins of the SUBMITTERS of the visits they appear in. Their own id is always
+ * included: it covers a rep who submitted their own visits, and the triple-visit case where a DM
+ * submits while tagging the NSM.
+ *
+ * Pass visits already filtered to this person and day (and with departed agents excluded), so a
+ * borrowed check-in can never originate from a visit the caller refuses to display.
+ */
+export function resolveRepDayCheckinOwners(
+  agentId: number,
+  dayVisits: Array<{ agentID: number; agentName?: string | null }>,
+): Map<number, string | null> {
+  const owners = new Map<number, string | null>([[agentId, null]]);
+  for (const visit of dayVisits) {
+    if (visit.agentID === agentId || owners.has(visit.agentID)) continue;
+    owners.set(visit.agentID, cleanAgentDisplayName(visit.agentName));
+  }
+  return owners;
 }
 
 /** Readable partner name for display: strips the "( Area / Line )" annotation and dots, keeps case. */
@@ -230,9 +266,24 @@ async function buildRepDayResult(
         role,
       };
     });
-  const checkins = allCheckins
+  // Whose check-ins are THIS person's route today.
+  //
+  // Managers (DM/TM/NSM) have no contact list and never hand-enter a CRM visit — the rep enters it
+  // and tags them as the double-visitor. A manager therefore logs NO check-in of their own, and
+  // filtering to `checkin.agentID === agentId` left them with an EMPTY route while their visits
+  // listed fine (verified in production: A-7, crm 1234, had 0 own check-ins on Jun 14 while the rep
+  // he double-visited, crm 1483, had 4 mappable ones).
+  //
+  // The day's check-in owners are the SUBMITTERS of the visits this person appears in, plus their
+  // own id — which covers a rep who submitted their own visits and the triple-visit case where a DM
+  // submits while tagging the NSM. Derived from `dayVisits`, so departed-agent exclusion already
+  // applies and a borrowed check-in can never come from a visit this page refuses to show.
+  const checkinOwners = resolveRepDayCheckinOwners(agentId, dayVisits);
+
+  const checkins: IReports360RepDayCheckin[] = allCheckins
     .filter((checkin) => !excludedAgentIds.has(checkin.agentID))
-    .filter((checkin) => checkin.agentID === agentId && (checkin.checkDate ?? "").slice(0, 10) === day)
+    .filter((checkin) => checkinOwners.has(checkin.agentID) && (checkin.checkDate ?? "").slice(0, 10) === day)
+    .map((checkin) => ({ ...checkin, via: checkinOwners.get(checkin.agentID) ?? null }))
     // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
     // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
     // data. The route legs below are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
@@ -289,8 +340,20 @@ async function fetchRepDayFromMirror(
   if (error) throw new Error(error.message);
   const allVisits = ((data ?? []) as unknown as RepDayVisitMirrorRow[]).map(visitFromMirrorRow);
 
+  // Fetch check-ins for every SUBMITTER of the day's visits, not just this person. A manager never
+  // submits, so `[agentId]` alone returned nothing and their route was empty no matter how
+  // buildRepDayResult filtered. The live source needs no equivalent change — it already pulls the
+  // whole day's check-ins and lets buildRepDayResult decide.
+  //
+  // Over-fetching slightly is safe and deliberate: buildRepDayResult re-derives the owner set from
+  // the exclusion-filtered visits, so a departed submitter's check-ins are dropped there.
+  const checkinAgentIds = new Set<number>([agentId]);
+  for (const visit of allVisits) {
+    if (Number.isFinite(visit.agentID)) checkinAgentIds.add(visit.agentID);
+  }
+
   const checkinRows = await queryCheckins<CrmCheckinRow>({
-    agentCrmIds: [agentId],
+    agentCrmIds: Array.from(checkinAgentIds),
     dateFrom: day,
     dateTo: day,
     orderBy: "check_date",
