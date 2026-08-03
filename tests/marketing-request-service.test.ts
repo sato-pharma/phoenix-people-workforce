@@ -857,6 +857,22 @@ export async function runMarketingRequestServiceTests() {
     "summary counts must be computed from the Phoenix subset",
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* An approver must stay in their OWN shell through the decision.           */
+  /* ---------------------------------------------------------------------- */
+
+  // MarketingRequestInbox defaults decisionBasePath to the PORTAL. The admin inbox rendered it
+  // with no prop, so an SFE Manager — an admin-shell role, and this page's principal user — was
+  // thrown out to /employee-portals the moment they clicked "Validate & Forward" mid-decision.
+  // The workspace twin (admin-shell-employee-pages.tsx) already passed the admin path; this page
+  // was simply missed.
+  const adminInboxPageSource = source("app/(admin)/admin/marketing-requests/inbox/page.tsx");
+  assert.match(
+    adminInboxPageSource,
+    /decisionBasePath="\/workspace\/marketing-requests\/decision"/,
+    "the admin marketing inbox must send decisions to the admin shell, never the employee portal",
+  );
+
   const draftWorkspaceSource = source("src/components/employee-portal/marketing-request-drafts.tsx");
   assert.match(
     draftWorkspaceSource,

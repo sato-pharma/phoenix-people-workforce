@@ -16,7 +16,10 @@ export default async function AdminMarketingInboxPage() {
           Marketing requests that are currently waiting for your approval decision. Approve, return, or reject each one.
         </p>
       </div>
-      <MarketingRequestInbox />
+      {/* MarketingRequestInbox defaults decisionBasePath to the PORTAL. This page is the admin
+          shell and its principal user is the SFE Manager, an admin-shell role — without this prop
+          an SFE clicking "Validate & Forward" was thrown out to /employee-portals mid-decision. */}
+      <MarketingRequestInbox decisionBasePath="/workspace/marketing-requests/decision" />
     </div>
   );
 }
