@@ -4251,6 +4251,18 @@ function assertMarketingRegisterAccess(access: AccessContext) {
   }
 }
 
+/**
+ * Whether a request was actually raised in Phoenix, as opposed to loaded by the legacy
+ * spreadsheet import.
+ *
+ * Fail-safe direction matters: anything that is NOT explicitly a Phoenix origin counts as
+ * imported. A future import that forgets to set `origin` then lands in the archive rather than
+ * silently padding the live register — the failure mode the owner asked to remove.
+ */
+export function isPhoenixOriginatedRequest(origin: string | null | undefined): boolean {
+  return String(origin ?? "").trim().toLowerCase() === "phoenix";
+}
+
 export async function getMarketingAllRequestsWorkspace(
   access: AccessContext,
 ): Promise<MarketingAllRequestsWorkspace> {
@@ -4269,7 +4281,13 @@ export async function getMarketingAllRequestsWorkspace(
   if (requestsResult.error) throw requestsResult.error;
   if (customersResult.error) throw customersResult.error;
 
-  const requests = ((requestsResult.data ?? []) as MarketingRequestDbRow[]).map(mapRequest);
+  const requestDbRows = (requestsResult.data ?? []) as MarketingRequestDbRow[];
+  const requests = requestDbRows.map(mapRequest);
+  // `origin` is not carried on the mapped domain object, and the register splits on it — so read
+  // it from the raw rows rather than widening MarketingRequest for one caller.
+  const originByRequestId = new Map(
+    requestDbRows.map((row) => [String(row.id), (row as { origin?: string | null }).origin ?? null] as const),
+  );
   const customerNameById = new Map(
     ((customersResult.data ?? []) as Array<{ display_name: string | null; id: string }>)
       .map((row) => [row.id, row.display_name ?? ""] as const),
@@ -4307,7 +4325,9 @@ export async function getMarketingAllRequestsWorkspace(
       customerName: customerNameById.get(request.customerId) || "Unknown customer",
       estimatedCost: toNumber(request.estimatedCost),
       id: request.id,
+      isPhoenixSubmission: isPhoenixOriginatedRequest(originByRequestId.get(request.id)),
       lineName: requester?.lineName ?? null,
+      origin: originByRequestId.get(request.id) ?? null,
       payDate: request.payDate,
       requestCode: request.requestCode,
       requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
@@ -4320,12 +4340,18 @@ export async function getMarketingAllRequestsWorkspace(
     };
   });
 
+  // Status counts describe the PHOENIX side only. Counting them across all 218 rows would report
+  // "101 approved" from a June spreadsheet import as if it were live Phoenix work.
+  const phoenixRows = rows.filter((row) => row.isPhoenixSubmission);
+
   return {
     rows,
     summary: {
-      approved: rows.filter((row) => approvedMarketingRequestStatuses.includes(row.status)).length,
-      inApproval: rows.filter((row) => row.status === "pending_approval").length,
-      returned: rows.filter((row) => row.status === "returned").length,
+      approved: phoenixRows.filter((row) => approvedMarketingRequestStatuses.includes(row.status)).length,
+      imported: rows.length - phoenixRows.length,
+      inApproval: phoenixRows.filter((row) => row.status === "pending_approval").length,
+      phoenix: phoenixRows.length,
+      returned: phoenixRows.filter((row) => row.status === "returned").length,
       total: rows.length,
     },
   };

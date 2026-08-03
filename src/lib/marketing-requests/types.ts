@@ -489,7 +489,17 @@ export type MarketingAllRequestsRow = {
   customerName: string;
   estimatedCost: number;
   id: string;
+  /**
+   * True when the request was raised in Phoenix; false when it came from the legacy spreadsheet
+   * import. This is the axis the register splits on — deliberately NOT `status`. In production 217
+   * of 218 rows are `xlsx_import`, and only 106 of those are `archived`; the other 111 are
+   * approved/rejected imports. Splitting on status alone would leave those 111 legacy rows sitting
+   * in the live view. Owner instruction, 2026-08-03: separate the archived from what was submitted
+   * on Phoenix.
+   */
+  isPhoenixSubmission: boolean;
   lineName: string | null;
+  origin: string | null;
   payDate: string | null;
   requestCode: string;
   requesterName: string;
@@ -506,7 +516,11 @@ export type MarketingAllRequestsWorkspace = {
   rows: MarketingAllRequestsRow[];
   summary: {
     approved: number;
+    /** Everything not raised in Phoenix — the legacy import, whatever its status. */
+    imported: number;
     inApproval: number;
+    /** Raised in Phoenix, at any status. */
+    phoenix: number;
     returned: number;
     total: number;
   };

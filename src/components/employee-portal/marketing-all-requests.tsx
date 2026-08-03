@@ -25,7 +25,7 @@ const PAGE_SIZE = 25;
 function emptyWorkspace(): MarketingAllRequestsWorkspace {
   return {
     rows: [],
-    summary: { approved: 0, inApproval: 0, returned: 0, total: 0 },
+    summary: { approved: 0, imported: 0, inApproval: 0, phoenix: 0, returned: 0, total: 0 },
   };
 }
 
@@ -105,11 +105,20 @@ function RequestRowCard({ row }: { row: MarketingAllRequestsRow }) {
   );
 }
 
+/**
+ * Which half of the register is on screen.
+ *
+ * Defaults to "phoenix" because that is the live work. In production 217 of 218 rows are a June
+ * spreadsheet import; showing them together buried the one real request under 217 dead ones.
+ */
+type RegisterScope = "phoenix" | "imported";
+
 export function MarketingAllRequests() {
   const [workspace, setWorkspace] = useState<MarketingAllRequestsWorkspace>(emptyWorkspace);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [scope, setScope] = useState<RegisterScope>("phoenix");
 
   async function loadWorkspace() {
     setIsLoading(true);
@@ -142,21 +151,31 @@ export function MarketingAllRequests() {
     return () => window.clearTimeout(timeout);
   }, []);
 
-  const totalPages = Math.max(1, Math.ceil(workspace.rows.length / PAGE_SIZE));
+  const scopedRows = useMemo(
+    () => workspace.rows.filter((row) => (scope === "phoenix" ? row.isPhoenixSubmission : !row.isPhoenixSubmission)),
+    [scope, workspace.rows],
+  );
+  const totalPages = Math.max(1, Math.ceil(scopedRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pagedRows = useMemo(
-    () => workspace.rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [safePage, workspace.rows],
+    () => scopedRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [safePage, scopedRows],
   );
-  const pageLabel = workspace.rows.length === 0
+  const pageLabel = scopedRows.length === 0
     ? "0 requests"
-    : `${(safePage - 1) * PAGE_SIZE + 1}-${Math.min(safePage * PAGE_SIZE, workspace.rows.length)} of ${workspace.rows.length} requests`;
+    : `${(safePage - 1) * PAGE_SIZE + 1}-${Math.min(safePage * PAGE_SIZE, scopedRows.length)} of ${scopedRows.length} requests`;
+
+  function selectScope(next: RegisterScope) {
+    setScope(next);
+    setPage(1);
+  }
 
   return (
     <div className="space-y-6">
       <PortalSection className="p-4 sm:p-5">
         <div className="grid gap-3 md:grid-cols-5">
-          <PortalMetricCard label="All requests" value={workspace.summary.total} />
+          {/* Counts describe the Phoenix side only — see the summary comment in the service. */}
+          <PortalMetricCard label="Submitted on Phoenix" value={workspace.summary.phoenix} />
           <PortalMetricCard accent="amber" label="In approval" value={workspace.summary.inApproval} />
           <PortalMetricCard accent="rose" label="Returned" value={workspace.summary.returned} />
           <PortalMetricCard accent="emerald" label="Approved" value={workspace.summary.approved} />
@@ -177,17 +196,52 @@ export function MarketingAllRequests() {
         </div>
       ) : null}
 
+      {/* Archived/imported is kept behind its own switch rather than mixed in — owner instruction
+          2026-08-03. Both counts stay visible so the archive is never hidden, only separated. */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          className={`rounded border px-3.5 py-2 text-xs font-black transition ${
+            scope === "phoenix"
+              ? "border-orange-300 bg-orange-50 text-orange-800"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+          onClick={() => selectScope("phoenix")}
+          type="button"
+        >
+          Submitted on Phoenix ({workspace.summary.phoenix})
+        </button>
+        <button
+          className={`rounded border px-3.5 py-2 text-xs font-black transition ${
+            scope === "imported"
+              ? "border-orange-300 bg-orange-50 text-orange-800"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+          onClick={() => selectScope("imported")}
+          type="button"
+        >
+          Archived / imported ({workspace.summary.imported})
+        </button>
+      </div>
+
       <PortalSection
-        actions={<Badge variant="neutral">{workspace.rows.length} requests</Badge>}
+        actions={<Badge variant="neutral">{scopedRows.length} requests</Badge>}
         eyebrow="Marketing Requests"
-        title="Every request on the system, and where each one is stopped"
+        title={
+          scope === "phoenix"
+            ? "Requests raised on Phoenix, and where each one is stopped"
+            : "Archived requests loaded from the legacy spreadsheet import"
+        }
       >
         <PortalResponsiveDataList
           empty={
             !isLoading ? (
               <PortalEmptyState
-                message="Every marketing request raised on the system will appear here, with the step it is waiting on."
-                title="No marketing requests yet"
+                message={
+                  scope === "phoenix"
+                    ? "Every marketing request raised on Phoenix will appear here, with the step it is waiting on."
+                    : "Requests loaded from the legacy spreadsheet import will appear here."
+                }
+                title={scope === "phoenix" ? "No Phoenix requests yet" : "No archived requests"}
               />
             ) : (
               <div className="px-4 py-8 text-center text-sm font-semibold text-slate-500">
