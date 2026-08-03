@@ -26,11 +26,22 @@ export type DirectOrderDetailField = {
 
 const DASH = "—";
 
+/**
+ * Money, with NULL rendered as a dash rather than as zero.
+ *
+ * The null check is explicit and comes FIRST because `Number(null)` is `0`, which passes
+ * `Number.isFinite` — so the obvious one-liner prints an unset price as "0 EGP". On the screen
+ * where an order is approved, "0 EGP" and "not set" are completely different statements, and
+ * this shipped that way once (an unset public price read as zero on a live bonus order).
+ */
 const money = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return DASH;
   const n = Number(value);
   return Number.isFinite(n) ? `${n.toLocaleString("en-US", { maximumFractionDigits: 2 })} EGP` : DASH;
 };
+/** Same null-before-Number ordering as `money`, for the same reason. */
 const units = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return DASH;
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : DASH;
 };
@@ -120,11 +131,17 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
 
   // BOTH prices are always shown, not just the one that priced this deal. Which basis was used
   // is stated explicitly, so an approver never has to infer it from which field is present.
+  //
+  // "not set" and "0 EGP" must never be confused: a price that was never entered is a data gap,
+  // a price of zero would be a free product. `priceWithNote` keeps those distinct on every branch.
+  const priceWithNote = (value: number | null | undefined, note: string): string =>
+    value == null ? `${DASH} (not set — ${note})` : `${money(value)} (${note})`;
+
   fields.push({
     label: "Pharmacy price",
     value:
       request.dealType !== "bonus"
-        ? `${money(request.pharmacyPriceSnapshot)} (not used — discount deal)`
+        ? priceWithNote(request.pharmacyPriceSnapshot, "not used — discount deal")
         : request.pharmacyPriceSnapshot == null
           ? `${DASH} (not set — valued at the factory price)`
           : `${money(request.pharmacyPriceSnapshot)} (used for this deal)`,
@@ -133,8 +150,8 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     label: "Public price",
     value:
       request.dealType === "discount"
-        ? `${money(request.publicPriceSnapshot)} (used for this deal)`
-        : `${money(request.publicPriceSnapshot)} (not used — bonus deal)`,
+        ? priceWithNote(request.publicPriceSnapshot, "used for this deal")
+        : priceWithNote(request.publicPriceSnapshot, "not used — bonus deal"),
   });
   if (request.dealType === "discount") {
     fields.push({ label: "Discount %", value: `${(request.discountPct ?? 0).toLocaleString("en-US")}%` });
@@ -151,7 +168,9 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     { label: "Region", value: codeNameLabel(geo.region?.name, geo.region?.code) },
     { label: "Medical rep", value: formatMedicalRep(medicalRep) },
     { label: "Collection date", value: dateOnly(request.collectionDate) },
-    { label: "Sales month", value: request.salesMonth ?? `${DASH} (set on final approval)` },
+    // Finance books this now, so the old "(set on final approval)" copy was stale the moment
+    // the month stopped being derived from the approval date.
+    { label: "Sales month", value: request.salesMonth ?? `${DASH} (not booked into a month yet)` },
     { label: "Submitted", value: dateOnly(request.createdAt) },
     { label: "Pharmacy registered by", value: text(pharmacy?.createdByHrId) },
     { label: "Pharmacy status", value: pharmacy ? (pharmacy.active ? "Active" : "Inactive") : DASH },
