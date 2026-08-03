@@ -46,8 +46,10 @@ import {
   buildExpenseApprovalFilterOptions,
   countActiveExpenseApprovalFilters,
   matchesExpenseApprovalFilters,
+  matchesExpenseApprovalSearchText,
 } from "@/lib/outstation/expense-approval-filters";
 import type { ExpenseApprovalFilters } from "@/lib/outstation/expense-approval-filters";
+import { ExpenseExportButton } from "@/components/outstation/expense-shared/expense-export-button";
 import {
   OFFICIAL_OUTSTATION_MINIMUM_DISTANCE_KM,
   TOLERANCE_OUTSTATION_MINIMUM_DISTANCE_KM,
@@ -242,14 +244,30 @@ export function ExpenseApprovalsWorkspace() {
   const activeFilterCount = countActiveExpenseApprovalFilters(filters);
   const narrowed = activeFilterCount > 0 || search.trim().length > 0;
 
+  // What the XLSX export will contain: the SAME month/employee/search narrowing as the queue
+  // above, but spanning all three decision states at once (a status column tells them apart) —
+  // "for the filtered period and person" means everything for that scope, not just whichever tab
+  // happens to be open. Computed here, client-side, purely so the button can show a real count and
+  // disable itself on zero; the export route re-derives the same rows from the database using the
+  // identical shared filter functions, so the two can never disagree.
+  const exportCount = useMemo(
+    () =>
+      records.filter(
+        (record) => matchesExpenseApprovalFilters(record, filters) && matchesExpenseApprovalSearchText(record, search),
+      ).length,
+    [records, filters, search],
+  );
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (filters.month) params.set("month", filters.month);
+    if (filters.employee) params.set("employee", filters.employee);
+    if (search.trim()) params.set("search", search.trim());
+    const query = params.toString();
+    return query ? `/api/admin/outstation/expenses/export?${query}` : "/api/admin/outstation/expenses/export";
+  }, [filters, search]);
+
   const { pending, approved, rejected } = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    const matches = (record: LoadedRecord) =>
-      !query ||
-      [record.specialist, record.hrId ?? "", record.tripId, record.location, record.to]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
+    const matches = (record: LoadedRecord) => matchesExpenseApprovalSearchText(record, search);
     const visible = records.filter(
       (record) => matchesExpenseApprovalFilters(record, filters) && matches(record),
     );
@@ -561,6 +579,9 @@ export function ExpenseApprovalsWorkspace() {
   return (
     <div className="space-y-5">
       <AdminPageHero
+        actions={
+          <ExpenseExportButton disabled={loading || exportCount === 0} href={exportHref} />
+        }
         badges={
           <>
             <AdminInsightChip tone="orange">
@@ -570,6 +591,11 @@ export function ExpenseApprovalsWorkspace() {
             {dirtyCount > 0 ? (
               <AdminInsightChip tone="emerald">{formatNumberValue(dirtyCount)} unsaved</AdminInsightChip>
             ) : null}
+            {/* The export reflects the SAVED database state — an unsaved decision would make the
+                exported file disagree with payroll, so this count is a reminder to Save first. */}
+            <AdminInsightChip tone="slate">
+              {formatNumberValue(exportCount)} export{narrowed ? " (filtered)" : ""}
+            </AdminInsightChip>
           </>
         }
         description="Review each trip against its real CRM field activity, adjust the payable amount if needed, and approve."
