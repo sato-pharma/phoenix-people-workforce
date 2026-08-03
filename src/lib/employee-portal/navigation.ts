@@ -14,6 +14,7 @@ export type EmployeePortalNavVisibility = {
   showIncentiveTab?: boolean;
   showMarketingRequestsTab?: boolean;
   showMarketingInboxTab?: boolean;
+  showMarketingAllRequestsTab?: boolean;
   showMarketingCustomerDatabaseTab?: boolean;
   showMarketingControlTab?: boolean;
   showMarketingRoiTrackingTab?: boolean;
@@ -216,11 +217,33 @@ export function shouldShowEmployeePortalMarketingQuickAction(
   return canUseEmployeePortalMarketingRequests(roleLabel, accessRole);
 }
 
+/**
+ * SFE Manager joined Super Admin here on owner instruction (2026-08-03): the SFE Manager owns
+ * customer validation, so it has to see every customer employees have submitted — validated and
+ * unvalidated alike — not just the ones that already cleared. Kept to these two: this table shows
+ * raw submitted evidence (addresses, phone numbers, live photos) for the whole company.
+ */
 export function canUseEmployeePortalMarketingCustomerDatabase(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ) {
-  return resolvePortalRole(roleLabel, accessRole) === "Super Admin";
+  const role = resolvePortalRole(roleLabel, accessRole);
+  return role === "Super Admin" || role === "SFE Manager";
+}
+
+/**
+ * Company-wide marketing request register (owner instruction, 2026-08-03).
+ *
+ * Marketing Manager, SFE Manager and Super Admin must be able to see EVERY request on the system
+ * and where each one is stopped. Deliberately narrower than marketingRequestRoles: a District
+ * Manager or Medical Rep still sees only their own subtree, through the normal workspace.
+ */
+export function canUseEmployeePortalMarketingAllRequests(
+  roleLabel: string | null | undefined,
+  accessRole?: string | null | undefined,
+) {
+  const role = resolvePortalRole(roleLabel, accessRole);
+  return role === "Marketing Manager" || role === "SFE Manager" || role === "Super Admin";
 }
 
 export function canUseEmployeePortalMarketingRoiTracking(
@@ -301,6 +324,7 @@ export function resolveEmployeePortalNavVisibility(
   // employee-portal user — everyone must be able to reach their HR team.
   const showMarketingRequestsTab = canUseEmployeePortalMarketingRequests(resolvedRole);
   const showMarketingInboxTab = canUseEmployeePortalMarketingRequests(resolvedRole);
+  const showMarketingAllRequestsTab = canUseEmployeePortalMarketingAllRequests(resolvedRole);
   const showMarketingCustomerDatabaseTab = canUseEmployeePortalMarketingCustomerDatabase(resolvedRole);
   const showMarketingControlTab = canUseEmployeePortalMarketingControl(resolvedRole);
   const showMarketingRoiTrackingTab = canUseEmployeePortalMarketingRoiTracking(resolvedRole);
@@ -360,6 +384,7 @@ export function resolveEmployeePortalNavVisibility(
     showExpenseActionTab: isA3Account ? false : showExpenseActionTab,
     showExpenseDashboardTab: isA3Account ? false : showExpenseDashboardTab,
     showIncentiveTab: isA3Account ? false : baseShowIncentiveTab,
+    showMarketingAllRequestsTab,
     showMarketingCustomerDatabaseTab,
     showMarketingControlTab,
     showMarketingInboxTab,

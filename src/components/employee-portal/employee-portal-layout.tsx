@@ -173,6 +173,7 @@ function buildEmployeePortalSections({
   showIncentiveTab = true,
   showMarketingRequestsTab = false,
   showMarketingInboxTab = false,
+  showMarketingAllRequestsTab = false,
   showMarketingCustomerDatabaseTab = false,
   showMarketingControlTab = false,
   showMarketingCoverageReportTab = false,
@@ -340,6 +341,9 @@ function buildEmployeePortalSections({
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests/validation", label: "Customer Validation", icon: ShieldCheck }] : []),
         ...(showMarketingRequestsTab ? [{ href: "/employee-portals/marketing-requests", label: "Marketing Requests", icon: Send }] : []),
         ...(showMarketingControlTab ? [{ href: "/employee-portals/marketing-requests/control", label: "Marketing Control", icon: Settings2 }] : []),
+        // Company-wide register — every request and where it is stopped. Sits beside the personal
+        // workspace above, which deliberately shows an oversight role only its OWN requests.
+        ...(showMarketingAllRequestsTab ? [{ href: "/employee-portals/marketing-requests/all", label: "All Marketing Requests", icon: ClipboardList }] : []),
         ...(showMarketingCustomerDatabaseTab ? [{ href: "/employee-portals/marketing-requests/customer-database", label: "Customer Database", icon: Database }] : []),
         ...(showMarketingCoverageReportTab ? [{ href: "/employee-portals/marketing-requests/coverage-report", label: "Coverage Report", icon: MapPinned }] : []),
         ...(showRoiIntelligenceTab ? [{ href: "/employee-portals/roi", label: "ROI Dashboard", icon: Target }] : []),
