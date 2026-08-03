@@ -141,20 +141,23 @@ export function runFieldWorkforceThursdayHalfDayTests() {
   // ---- the money sites must actually use the weight -----------------------
   // A pure rule nothing calls is worth nothing: this module's rules have been half-implemented
   // before, with one surface corrected while the others kept paying the old figure.
-  assert.match(
+  //
+  // Since 2026-08-03 Automated Payroll's CONTINUING-employee CRM figure is no
+  // longer computed here at all — it is whatever the Deductions module confirmed
+  // (see automated-payroll/deductions-source.ts), and that module's own CRM
+  // connector applies the weighting before a candidate is ever created. So the
+  // rule now has ONE home instead of two, and the connector assertions below are
+  // what keep it honest. The leaver settlement is still computed in payroll and
+  // must still weight.
+  assert.doesNotMatch(
     recommendSource,
     /sumFieldWorkforceDeductionDayWeights\(keptDates, jobTitle\)/,
-    "Automated Payroll's CRM totals must weight the kept dates — this is the figure that actually reaches the payroll sheet",
+    "payroll must not recompute the continuing-employee CRM figure — it pays what the Deductions module confirmed",
   );
   assert.match(
     recommendSource,
     /sumFieldWorkforceDeductionDayWeights\(\s*crmDates\.noActivityDates/,
-    "the leaver CRM path must weight too, or a leaver's final settlement keeps the full-day charge",
-  );
-  assert.match(
-    recommendSource,
-    /fieldWorkforceDeductionUnits\(date, jobTitle\)/,
-    "the per-day breakdown must split in half-day units, or a Thursday line displays a full day's money while the row total carries half",
+    "the leaver CRM path is still computed in payroll, so it must weight too, or a leaver's final settlement keeps the full-day charge",
   );
   assert.match(
     crmConnectorSource,

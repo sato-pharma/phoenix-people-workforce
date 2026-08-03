@@ -1,6 +1,4 @@
-import { PAYROLL_CYCLE_ANCHOR_DAY, resolveCycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
-
-import type { PayrollPeriod, StepDefinition, StepKey } from "./types.ts";
+import type { PayrollPeriod, StepDefinition, StepDetailColumn, StepKey } from "./types.ts";
 
 /**
  * Declarative config for every wizard step. Drives the generic recommendation
@@ -23,6 +21,22 @@ const MONTH_NAMES = [
 export function monthNameAndYear(month: number, year: number): string {
   return `${MONTH_NAMES[Math.max(0, Math.min(11, month - 1))]} ${year}`;
 }
+
+/**
+ * The shared breakdown behind any figure sourced from the Deductions module
+ * (owner request 2026-08-03). One shape for every deduction step, because they
+ * all now explain themselves the same way: which approved candidate, which days,
+ * how much, and what state the reviewer left it in. Declared once so a step's
+ * panel and its xlsx Detail sheet can never drift apart.
+ */
+export const DEDUCTION_DETAIL_COLUMNS: StepDetailColumn[] = [
+  { key: "Category", label: "Category" },
+  { key: "Dates", label: "Dates" },
+  { key: "Days", label: "Days" },
+  { key: "Amount", label: "Amount", money: true },
+  { key: "Status", label: "Status" },
+  { key: "Reason", label: "Reason" },
+];
 
 export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
   p1_new_hires: {
@@ -78,7 +92,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p1_fingerprint",
     phase: "part1",
     title: "Fingerprint deductions",
-    subtitle: "Attendance/fingerprint deductions (days × Base/30). These reduce Part 1. Edit or confirm.",
+    subtitle:
+      "Attendance/fingerprint deductions confirmed in the Deductions module — this step no longer recalculates them, it pays what you approved there (owner request 2026-08-03). Fingerprint needs an explicit \"Approved for Payroll\" on that page: anything still Pending shows 0.00 here until you decide it. Expand a row to see each approved deduction behind the figure. These reduce Part 1. Edit or confirm.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [
       { key: "fingerprintDays", label: "Deduction Days", kind: "days" },
@@ -86,6 +101,8 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     ],
     hasReason: false,
     isHoldStep: false,
+    detailNoun: "approved deduction",
+    detailColumns: DEDUCTION_DETAIL_COLUMNS,
   },
   p1_crm: {
     key: "p1_crm",
@@ -215,7 +232,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part1",
     title: "Other Deductions (Loan & Other)",
     subtitle:
-      "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
+      "Loan repayment or any other manual deduction for Part 1 — shown only for this month's resignations and one-part-salary employees. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module (owner request 2026-08-03); continuing two-part employees take theirs on the Part 2 \"Any more deductions?\" step instead. Expand a row to see what made up the figure. Type days to auto-calculate the value (Base/30 × days), or leave days blank and type the value directly. Reason is optional.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Net Salary", label: "Net Salary" },
@@ -324,64 +341,34 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Vacation (no balance)",
     subtitle:
-      "Leave beyond the employee's balance, deducted from salary. ONLY employees who actually owe something are listed — anyone whose leave their balance fully covered is left off, though their balance is still debited when you confirm. Highest deduction first. Continuing two-part employees only; resignations and one-part-salary employees are settled in Part 1 instead. Expand a row to see each leave day, which source it came from, and how much of it the balance absorbed. Edit or confirm.",
+      "Unpaid-vacation deductions confirmed in the Deductions module — this step no longer recalculates them, it pays what you approved there (owner request 2026-08-03). Covers both vacation categories, and each needs an explicit \"Approved for Payroll\" on that page. ONLY employees who actually owe something are listed. Highest deduction first. Continuing two-part employees only; resignations and one-part-salary employees are settled in Part 1 instead. Confirming this step still debits leave balances exactly as before — that bookkeeping is separate from the money. Expand a row to see each approved deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Unpaid Days (Phoenix)", label: "Unpaid Days (Phoenix)" },
-      { key: "CRM Leave Days", label: "CRM Leave Days" },
-      { key: "Balance Days Used", label: "Balance Days Used" },
-      { key: "CRM Unpaid (no balance)", label: "CRM Unpaid (no balance)" },
+      { key: "Deducted Days", label: "Deducted Days" },
+      { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
     fields: [{ key: "unpaidVacations", label: "Deduction Value", kind: "money" }],
     hasReason: false,
     isHoldStep: false,
-    detailNoun: "leave entry",
-    detailNounPlural: "leave entries",
-    // The two sources follow DIFFERENT rules, which is exactly why the breakdown
-    // is worth showing: a Phoenix request already carries payment_status=unpaid,
-    // so it deducts in full regardless of balance, while CRM-recorded leave is
-    // balance-first and only the days beyond the balance cost money. The "Basis"
-    // column states which rule produced each line so the two never look
-    // inconsistent with each other.
-    detailColumns: [
-      { key: "Source", label: "Source" },
-      { key: "Dates", label: "Dates" },
-      { key: "Type", label: "Type" },
-      { key: "Days", label: "Days" },
-      { key: "Covered by Balance", label: "Covered by Balance" },
-      { key: "Deducted Days", label: "Deducted Days" },
-      { key: "Deduction", label: "Deduction", money: true },
-      { key: "Basis", label: "Basis" },
-    ],
+    detailNoun: "approved deduction",
+    detailColumns: DEDUCTION_DETAIL_COLUMNS,
   },
   p2_crm: {
     key: "p2_crm",
     phase: "part2",
     title: "CRM (no activity)",
-    subtitle: "Field CRM no-activity days (days × Base/30). Office days with a fingerprint punch are already excluded. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Edit or confirm.",
+    subtitle:
+      "CRM no-activity deductions you marked \"Approved for Payroll\" in the Deductions module — this step no longer recalculates them, and nothing you have not confirmed is deducted (owner rule 2026-08-03). A flagged day sitting Pending on that page pays 0.00 here until you approve it, so this total can be lower than the Deductions Overview for the same month — the gap is exactly the rows still awaiting your decision. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Expand a row to see each confirmed deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "No-Activity Days", label: "No-Activity Days" },
-      { key: "Office (punched)", label: "Office (punched)" },
-      { key: "Explained", label: "Explained" },
+      { key: "Deducted Days", label: "Deducted Days" },
+      { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
     fields: [{ key: "crm", label: "Deduction Value", kind: "money" }],
     hasReason: false,
     isHoldStep: false,
-    detailNoun: "day",
-    // Lists the office-punch days too, not only the deducted ones — "3 days were
-    // excluded" is unverifiable without seeing WHICH three. Employee Note / HR
-    // Resolution come from the No Activity Days clarification workspace: an
-    // employee may already have explained the day, and HR should not deduct it
-    // blind (92 clarifications were filed for July 2026 with none decided).
-    detailColumns: [
-      { key: "Date", label: "Date" },
-      { key: "Weekday", label: "Weekday" },
-      { key: "Outcome", label: "Outcome" },
-      { key: "Deduction", label: "Deduction", money: true },
-      { key: "Employee Note", label: "Employee Note" },
-      { key: "HR Resolution", label: "HR Resolution" },
-    ],
+    detailNoun: "confirmed deduction",
+    detailColumns: DEDUCTION_DETAIL_COLUMNS,
   },
   p2_additions: {
     key: "p2_additions",
@@ -401,11 +388,14 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     key: "p2_manual_deductions",
     phase: "part2",
     title: "Any more deductions?",
-    subtitle: "Add any other deduction per employee, with a reason. Leave 0 for none.",
+    subtitle:
+      "Add any other deduction per employee, with a reason. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module for continuing two-part employees (owner request 2026-08-03) — resignations and one-part-salary employees take theirs on the Part 1 Other Deductions tab instead, so nobody is charged twice. Expand a row to see what made up the figure. Edit freely, or leave 0 for none.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [{ key: "manualOtherDeductions", label: "Value", kind: "money" }],
     hasReason: true,
     isHoldStep: false,
+    detailNoun: "confirmed deduction",
+    detailColumns: DEDUCTION_DETAIL_COLUMNS,
   },
   p2_holds: {
     key: "p2_holds",
@@ -426,14 +416,19 @@ export function stepDefinition(stepKey: StepKey): StepDefinition {
 /**
  * The real date range a step draws from, resolved for one run.
  *
- * The three Part-2 feeder steps sit next to each other and look like they cover
- * the same dates. They do not, and none of them said so:
+ * These steps sit next to each other and look like they cover the same dates.
+ * They do not, and none of them said so:
  *  - expenses — a FINANCE TAG (payout_month/payout_year), not a date range at
  *    all. Verified in production 2026-08-01: rows tagged payout_month=7 carry
  *    expense_date in June, so the July sheet reimburses June trips.
- *  - vacation — the plain calendar month.
- *  - CRM      — the day-24 payroll cycle (24th of the previous month → 23rd of
- *    this one), so a late-June absence is deducted on the July sheet.
+ *  - fingerprint / CRM / vacation — the Deductions module's own `month_key`,
+ *    i.e. the plain calendar month.
+ *
+ * CRM used to name the day-24 payroll cycle here, and that is now WRONG: since
+ * 2026-08-03 the CRM figure is whatever the Deductions module holds for this
+ * month_key, not a cycle-windowed recomputation. Leaving the old label would
+ * describe a window the number no longer comes from — which is exactly the
+ * "correct figure looks wrong" problem this function exists to prevent.
  *
  * Returns null for steps with no meaningful window (manual entry, holds).
  * Pure — safe to call from the client grid; unit-tested directly.
@@ -443,14 +438,8 @@ export function stepWindowLabel(stepKey: StepKey, period: PayrollPeriod): string
   if (stepKey === "p2_expenses") {
     return `Trips finance tagged for the ${monthText} payout. The trip dates themselves are often earlier — expand a row to see them.`;
   }
-  if (stepKey === "p2_vacation") {
-    const lastDay = new Date(Date.UTC(period.year, period.month, 0)).getUTCDate();
-    const mm = String(period.month).padStart(2, "0");
-    return `Leave dated ${period.year}-${mm}-01 to ${period.year}-${mm}-${String(lastDay).padStart(2, "0")} (the calendar month).`;
-  }
-  if (stepKey === "p2_crm") {
-    const cycle = resolveCycleWindow(`${period.year}-${String(period.month).padStart(2, "0")}-01`);
-    return `The day-${PAYROLL_CYCLE_ANCHOR_DAY} payroll cycle: ${cycle.startIso} to ${cycle.endIso} — not the calendar month.`;
+  if (stepKey === "p1_fingerprint" || stepKey === "p2_crm" || stepKey === "p2_vacation") {
+    return `Only the ${monthText} deductions you marked "Approved for Payroll" in the Deductions module. Anything still Pending there pays nothing here — approve it on the Deductions page, not here.`;
   }
   return null;
 }

@@ -75,37 +75,40 @@ export function runAutomatedPayrollStepDetailTests() {
   assert.equal(weekdayName(""), "", "an unparseable date yields no weekday rather than 'Invalid Date'");
   assert.equal(weekdayName("not-a-date"), "");
 
-  // ---- stepWindowLabel: the three windows are genuinely different ----------
+  // ---- stepWindowLabel: each step must name the window it REALLY reads ------
   const july = { month: 7, year: 2026 };
 
-  // The CRM step reads the day-24 cycle, so a late-June absence lands on the
-  // July sheet. This is the single most confusing thing about the step.
-  const crmLabel = stepWindowLabel("p2_crm", july) ?? "";
-  assert.match(crmLabel, /2026-06-24/, "the July CRM step starts on 24 June, not 1 July");
-  assert.match(crmLabel, /2026-07-23/, "the July CRM step ends on 23 July, not 31 July");
-  assert.match(crmLabel, /not the calendar month/, "the label must say out loud that this is not the calendar month");
-
-  // Year rollover: January's cycle must reach back into the previous year.
-  const januaryCrmLabel = stepWindowLabel("p2_crm", { month: 1, year: 2026 }) ?? "";
-  assert.match(januaryCrmLabel, /2025-12-24/, "January's cycle starts 24 December of the previous year");
-  assert.match(januaryCrmLabel, /2026-01-23/);
-
-  // Vacation IS the plain calendar month — and must differ from the CRM window.
-  const vacationLabel = stepWindowLabel("p2_vacation", july) ?? "";
-  assert.match(vacationLabel, /2026-07-01/);
-  assert.match(vacationLabel, /2026-07-31/, "July has 31 days");
-  assert.notEqual(vacationLabel, crmLabel, "vacation and CRM must never claim the same window");
-  assert.match(
-    stepWindowLabel("p2_vacation", { month: 2, year: 2026 }) ?? "",
-    /2026-02-28/,
-    "February 2026 is not a leap year",
-  );
+  // Fingerprint / CRM / vacation all read the Deductions module's own month_key
+  // since 2026-08-03. CRM's label used to name the day-24 cycle, and keeping
+  // that would describe a window the figure no longer comes from — the exact
+  // "correct figure looks wrong" trap this function exists to close.
+  for (const stepKey of ["p1_fingerprint", "p2_crm", "p2_vacation"] as const) {
+    const label = stepWindowLabel(stepKey, july) ?? "";
+    assert.match(label, /July 2026/, `${stepKey} must name the month it reads from the Deductions module`);
+    assert.match(
+      label,
+      /Deductions module/,
+      `${stepKey} must say where the figure comes from, so nobody edits it in the wrong place`,
+    );
+    assert.doesNotMatch(
+      label,
+      /2026-06-24|2026-07-23/,
+      `${stepKey} must not still claim the day-24 cycle — nothing reads that window any more`,
+    );
+  }
 
   // Expenses is a finance TAG, not a date range — the label has to say so,
-  // because the trips themselves are routinely from an earlier month.
+  // because the trips themselves are routinely from an earlier month. It is the
+  // one Part-2 step NOT sourced from the Deductions module, so it must stay
+  // distinct from the three above.
   const expensesLabel = stepWindowLabel("p2_expenses", july) ?? "";
   assert.match(expensesLabel, /July 2026/, "the payout tag is named by month, not by date range");
   assert.match(expensesLabel, /often earlier/, "must warn that the trip dates are not the payroll month");
+  assert.notEqual(
+    expensesLabel,
+    stepWindowLabel("p2_crm", july),
+    "expenses is finance-tagged, not deductions-sourced — the two must never claim the same window",
+  );
 
   // Steps with no meaningful window must stay silent rather than guess.
   assert.equal(stepWindowLabel("p2_additions", july), null);
@@ -131,8 +134,28 @@ export function runAutomatedPayrollStepDetailTests() {
   assert.ok(expenseContextKeys.includes("Trip Dates"), "p2_expenses must summarise the trip date span on the collapsed row");
 
   // Plural forms must be declared wherever adding "s" is wrong — this shipped to
-  // the owner reading "3 leave entrys".
-  assert.equal(STEP_DEFINITIONS.p2_vacation.detailNounPlural, "leave entries");
+  // the owner reading "3 leave entrys". Every noun in use must survive that test.
+  for (const stepKey of ["p1_fingerprint", "p2_expenses", "p2_vacation", "p2_crm"] as const) {
+    const definition = STEP_DEFINITIONS[stepKey];
+    const noun = definition.detailNoun ?? "line";
+    const plural = definition.detailNounPlural ?? `${noun}s`;
+    assert.doesNotMatch(
+      plural,
+      /(entrys|ys$)/,
+      `${stepKey} renders "${plural}" — declare detailNounPlural when adding "s" is wrong`,
+    );
+  }
+
+  // The three deductions-sourced steps must all explain themselves with the SAME
+  // breakdown shape — one figure, one story, whichever step you are on.
+  for (const stepKey of ["p1_fingerprint", "p2_crm", "p2_vacation"] as const) {
+    const keys = (STEP_DEFINITIONS[stepKey].detailColumns ?? []).map((column) => column.key);
+    assert.deepEqual(
+      keys,
+      ["Category", "Dates", "Days", "Amount", "Status", "Reason"],
+      `${stepKey} must use the shared deduction breakdown columns`,
+    );
+  }
 
   // ---- Health Day is WORK, not leave (owner ruling 2026-08-01) --------------
   // "health day is a normal working day its an activity they do for patients in

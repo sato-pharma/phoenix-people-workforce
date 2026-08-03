@@ -3,15 +3,13 @@ import {
   getEmployeeDirectoryRows,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { loadEmployeeDayPunchMinutes } from "@/lib/attendance/punch-minutes";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
-import {
-  listCrmDeductionCandidates,
-  listFingerprintDeductionCandidates,
-  syncCrmLiveMonthCandidates,
-} from "@/lib/payroll/copilot/deductions-review.ts";
-import { resolveCycleWindow } from "@/lib/payroll/copilot/cycle-window.ts";
+// The old governance deduction feeders (listFingerprintDeductionCandidates,
+// listCrmDeductionCandidates, syncCrmLiveMonthCandidates) are deliberately no
+// longer imported. Fingerprint, CRM and unpaid vacation now read the Deductions
+// module HR actually confirms in — see deductions-source.ts for why, and for
+// the production numbers that proved the two systems had never been connected.
 import { buildFeederStates, compactHrKey } from "@/lib/payroll/copilot/feeders.ts";
 import {
   computeJoinerPay,
@@ -20,6 +18,13 @@ import {
 } from "@/lib/payroll/copilot/proration.ts";
 import { listUnpaidVacationCandidates } from "@/lib/payroll/copilot/vacation-settlement.ts";
 import type { DeductionInboxRow } from "@/lib/deductions-governance/service";
+import { deductionsCategoryLabel } from "@/lib/deductions/calculations";
+import {
+  linesFor,
+  loadConfirmedDeductions,
+  type DeductionLine,
+  type EmployeeDeductions,
+} from "./deductions-source.ts";
 import {
   calculateDeductionAmountFromBaseSalary,
   resolveDayBasedDeductionAmount,
@@ -36,8 +41,6 @@ import {
 import { buildFieldWorkforceCompliancePreviewFromVisitsReport } from "@/lib/field-workforce-compliance/ireports360-source.ts";
 import { isFieldWorkforceComplianceEligibleTitle } from "@/lib/field-workforce-compliance/eligibility.ts";
 import {
-  fieldWorkforceDeductionUnits,
-  isFieldWorkforceHalfDay,
   isFieldWorkforceWeeklyOff,
   sumFieldWorkforceDeductionDayWeights,
 } from "@/lib/field-workforce-compliance/weekend-policy.ts";
@@ -47,7 +50,6 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { calculatePaymentForRequest } from "@/lib/vacation/service";
 
-import { actorId } from "./permissions.ts";
 import { monthNameAndYear } from "./step-definitions.ts";
 import type {
   DraftRow,
@@ -470,36 +472,6 @@ export function formatDateRange(startIso: string, endIso: string): string {
   const end = (endIso ?? "").slice(0, 10);
   if (start && end && start !== end) return `${start} → ${end}`;
   return start || end || "—";
-}
-
-/** Compact-keyed set of dates on which each employee has a fingerprint punch (office day). */
-async function loadPunchedDatesByCompact(
-  period: PayrollPeriod,
-  hrIds: string[],
-): Promise<Map<string, Set<string>>> {
-  const byCompact = new Map<string, Set<string>>();
-  if (hrIds.length === 0) return byCompact;
-  try {
-    const { start, end } = periodBounds(period);
-    const punchMap = await loadEmployeeDayPunchMinutes({
-      dateFromIso: start,
-      dateToIso: end,
-      employeeHrIds: hrIds,
-    });
-    for (const [hrId, byDate] of punchMap) {
-      const compact = compactHrKey(hrId);
-      if (!compact) continue;
-      const dates = byCompact.get(compact) ?? new Set<string>();
-      for (const dateIso of byDate.keys()) dates.add(dateIso);
-      byCompact.set(compact, dates);
-    }
-  } catch (error) {
-    logError("Automated payroll: punch-date load threw an exception", {
-      labels: { event: "automated_payroll_punch_date_load_threw", month: period.month, year: period.year },
-      error,
-    });
-  }
-  return byCompact;
 }
 
 function eachDateInclusive(startIso: string, endIso: string): string[] {
@@ -945,33 +917,61 @@ export function aggregateDeductionRows(
   return totals;
 }
 
-async function recommendFingerprint(
-  access: AccessContext,
+/**
+ * Fingerprint deductions, sourced from the Deductions module HR actually
+ * confirms in (owner-reported 2026-08-03 — see deductions-source.ts for the
+ * two-systems history and the production numbers that proved the split).
+ *
+ * Only candidates the module considers payable reach this step. Fingerprint
+ * requires an explicit approval there, so a month whose candidates are all still
+ * Pending recommends 0.00 — correctly. That is a decision HR has not made yet,
+ * not a figure this step lost, and it is visible on the Deductions Fingerprint
+ * tab rather than silently applied here.
+ */
+function recommendFingerprint(
   members: PopulationMember[],
-  sources: Map<string, PayrollSalarySource>,
-  period: PayrollPeriod,
+  deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
-): Promise<StepRow[]> {
-  const { rows: candidates } = await listFingerprintDeductionCandidates(access, period);
-  const totals = aggregateDeductionRows(candidates, sources);
-  const byCompact = new Map(members.map((member) => [member.compact, member]));
+): StepRow[] {
   const rows: StepRow[] = [];
-  for (const [compact, total] of totals) {
-    const member = byCompact.get(compact);
-    if (!member) continue;
-    const draft = drafts.get(compact);
+  for (const member of members) {
+    const entry = deductions.get(member.compact);
+    const lines = linesFor(deductions, member.compact, "fingerprint");
+    const value = roundCurrency(entry?.buckets.fingerprint ?? 0);
+    const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
+    const draft = drafts.get(member.compact);
+    // An employee with nothing confirmed and nothing already saved has no reason
+    // to occupy a row — same shape this step always had.
+    if (value === 0 && days === 0 && draft?.fingerprintValue == null && draft?.fingerprintDays == null) {
+      continue;
+    }
     const row = baseRow(member);
-    const days = roundCurrency(total.days);
-    const value = roundCurrency(total.value);
     row.context = { "Hire Date": member.employee.hireDate ?? "" };
     row.recommended = { fingerprintDays: days, fingerprintValue: value };
     row.values = {
       fingerprintDays: pick(draft?.fingerprintDays, days),
       fingerprintValue: pick(draft?.fingerprintValue, value),
     };
+    row.details = deductionDetailLines(lines);
     rows.push(row);
   }
   return rows;
+}
+
+/**
+ * The confirmed-deduction lines behind one figure, in the shared breakdown shape
+ * (see DEDUCTION_DETAIL_COLUMNS in step-definitions.ts). Built from the same
+ * lines the bucket total was summed from, so the panel always foots to the row.
+ */
+function deductionDetailLines(lines: DeductionLine[]): StepRowDetail[] {
+  return lines.map((line) => ({
+    Category: deductionsCategoryLabel(line.category),
+    Dates: line.dates.length ? formatDateRange(line.dates[0], line.dates[line.dates.length - 1]) : "—",
+    Days: line.days,
+    Amount: line.amount,
+    Status: line.status,
+    Reason: line.reason || "—",
+  }));
 }
 
 // ---- Part 2 -----------------------------------------------------------------
@@ -1336,71 +1336,58 @@ export async function settleCrmLeaveBalanceForPeriod(input: {
   return { settled };
 }
 
-async function recommendVacation(
+/**
+ * Unpaid-vacation deductions for continuing two-part employees, sourced from the
+ * Deductions module HR confirms in (owner-reported 2026-08-03 — see
+ * deductions-source.ts). Covers BOTH of the module's vacation categories,
+ * `unpaid_vacation` and `insufficient_balance_vacation`, which share the same
+ * `unpaid_vacations` salary column there.
+ *
+ * Both require an explicit "Approved for Payroll" in the module, so nothing is
+ * deducted here that HR has not decided.
+ *
+ * THE LEAVE-BALANCE DRAW-DOWN IS DELIBERATELY UNTOUCHED. Confirming this step
+ * still settles CRM-only leave against the balance ledger via
+ * computeVacationDeductionTotals inside run-service.ts (owner rule 2026-07-21) —
+ * that is leave BOOKKEEPING, a different question from what salary is deducted,
+ * and it runs independently of what this feeder displays. Sourcing the money
+ * from the module does not change how many balance days an employee consumed.
+ */
+function recommendVacation(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
-  period: PayrollPeriod,
+  deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
-): Promise<StepRow[]> {
-  const { totals, detailsByCompact } = await computeVacationDeductionTotals(members, sources, period);
-  const byCompact = new Map(members.map((member) => [member.compact, member]));
+): StepRow[] {
   const rows: StepRow[] = [];
-  for (const [compact, total] of totals) {
-    const member = byCompact.get(compact);
+  for (const member of members) {
     // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
     // double-deducting the same days. See isSettledInPart1.
-    if (!member || isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
-    const draft = drafts.get(compact);
-    const amount = roundCurrency(total.v2Amount + total.crmAmount);
+    if (isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
+    const lines = linesFor(deductions, member.compact, "unpaidVacation");
+    const amount = roundCurrency(deductions.get(member.compact)?.buckets.unpaidVacation ?? 0);
+    const draft = drafts.get(member.compact);
 
     // This step is "Vacation (NO balance)" — it exists to decide salary
-    // deductions. An employee whose leave the balance fully absorbed owes
-    // nothing and has nothing for HR to decide, so listing them is noise
-    // (owner, 2026-08-01: "still showing employees have normal vacation
-    // balance").
-    //
-    // Safe to hide because the balance draw-down does NOT come from these rows:
-    // confirming the step recomputes crmLeaveSettlements straight from
-    // computeVacationDeductionTotals (run-service.ts), independently of what is
-    // displayed — so a hidden employee's balance is still debited exactly as
-    // before. A row HR has manually typed a value into is always kept, so an
-    // edit can never disappear.
-    const draftedAmount = draft?.unpaidVacations ?? 0;
-    if (amount === 0 && draftedAmount === 0) continue;
+    // deductions. An employee who owes nothing has nothing for HR to decide, so
+    // listing them is noise (owner, 2026-08-01). A row HR has typed a value into
+    // is always kept, so an edit can never disappear.
+    if (amount === 0 && (draft?.unpaidVacations ?? 0) === 0) continue;
 
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
-      "Unpaid Days (Phoenix)": roundCurrency(total.v2Days),
-      "CRM Leave Days": roundCurrency(total.crmDays),
-      // Partial coverage: how many of those leave days the balance absorbed, so
-      // the remaining deducted days are explainable.
-      "Balance Days Used": roundCurrency(total.crmBalanceDays),
-      "CRM Unpaid (no balance)": roundCurrency(total.crmUnpaidDays),
+      "Deducted Days": roundCurrency(lines.reduce((sum, line) => sum + line.days, 0)),
+      "Confirmed Lines": lines.length,
     };
-    row.details = detailsByCompact.get(compact) ?? [];
+    row.details = deductionDetailLines(lines);
     row.recommended = { unpaidVacations: amount };
     row.values = { unpaidVacations: pick(draft?.unpaidVacations, amount) };
     rows.push(row);
   }
-
-  // Anyone actually losing salary first; balance-only rows (deduction 0) sink to
-  // the bottom. They must stay ON the step — settleCrmLeaveBalanceForPeriod
-  // debits their balance when it is confirmed (owner rule 2026-07-21), so
-  // dropping them would silently gift free leave days — but they should not be
-  // the first thing HR reads when scanning for money.
   rows.sort((left, right) => (right.values.unpaidVacations ?? 0) - (left.values.unpaidVacations ?? 0));
   return rows;
 }
-
-type CrmDeductionTotal = {
-  days: number;
-  value: number;
-  officeExcluded: number;
-  /** How many of this employee's flagged days they have already written an explanation for. */
-  explained: number;
-  details: StepRowDetail[];
-};
 
 const WEEKDAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
@@ -1411,231 +1398,46 @@ export function weekdayName(dateIso: string): string {
   return WEEKDAY_NAMES[new Date(ms).getUTCDay()];
 }
 
-type NoActivityNote = { note: string; resolution: string | null; confirmedNoActivity: boolean };
 
 /**
- * What each employee already SAID about a flagged no-activity day, keyed
- * `compact|date`.
+ * CRM no-activity deductions for continuing two-part employees, sourced from the
+ * Deductions module HR confirms in (owner-reported 2026-08-03 — see
+ * deductions-source.ts).
  *
- * HISTORICAL ONLY. Employees used to explain a "No Activity Recorded" day in the
- * private-calendar workspace and HR resolved it deducted / not_deducted. None of
- * that reached payroll: checked in production 2026-08-01, July had 92
- * clarifications filed and 0 decided, so this step was about to deduct days
- * people had already explained. That workflow has since been RETIRED along with
- * the No Activity Days module, so no new rows are ever written — this read
- * survives only so the notes already on file still surface next to the money.
+ * CRM is the module's one MANDATORY category ("whoever has N days must be
+ * deducted"), so a candidate counts unless HR explicitly cleared it with "Do Not
+ * Take Action" — it does not wait for an approval the way fingerprint does.
  *
- * Deliberately a direct defensive read: a missing note must never block the
- * money, so a failure here is logged and swallowed rather than thrown.
+ * The isSettledInPart1 skip is unchanged and load-bearing: leavers and one-part
+ * employees settle in Part 1, and deducting them here as well would charge the
+ * same days twice. Guarded by tests/automated-payroll-part1-scope.test.ts.
  */
-async function loadNoActivityNotes(startIso: string, endIso: string): Promise<Map<string, NoActivityNote>> {
-  const byKey = new Map<string, NoActivityNote>();
-  try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("private_calendar_no_activity_clarifications")
-      .select("employee_hr_id,activity_date,clarification_text,confirmed_no_activity,resolution")
-      .gte("activity_date", startIso)
-      .lte("activity_date", endIso);
-    if (error) {
-      logError("Automated payroll: no-activity clarifications load failed (non-fatal)", {
-        labels: { event: "automated_payroll_no_activity_notes_load_failed", startIso, endIso },
-        error,
-      });
-      return byKey;
-    }
-    for (const row of (data ?? []) as Array<{
-      employee_hr_id: string | null;
-      activity_date: string | null;
-      clarification_text: string | null;
-      confirmed_no_activity: boolean | null;
-      resolution: string | null;
-    }>) {
-      const compact = compactHrKey(row.employee_hr_id ?? "");
-      const dateIso = (row.activity_date ?? "").slice(0, 10);
-      if (!compact || !dateIso) continue;
-      byKey.set(`${compact}|${dateIso}`, {
-        confirmedNoActivity: row.confirmed_no_activity === true,
-        note: (row.clarification_text ?? "").trim(),
-        resolution: row.resolution,
-      });
-    }
-  } catch (error) {
-    logError("Automated payroll: no-activity clarifications load threw an exception", {
-      labels: { event: "automated_payroll_no_activity_notes_load_threw", startIso, endIso },
-      error,
-    });
-  }
-  return byKey;
-}
-
-/**
- * CRM no-activity deduction totals for every member (punch-excluded, owner rule
- * 2026-07-20). Shared by the Part-2 CRM step (everyone except leavers) and the
- * Resignation step (leavers only).
- *
- * Also builds the per-day breakdown behind each total (owner request
- * 2026-08-01), including the days EXCLUDED as office punches — "3 days were
- * excluded" is unverifiable without seeing which three.
- */
-async function computeCrmDeductionTotals(
-  access: AccessContext,
+function recommendCrm(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
-  period: PayrollPeriod,
-): Promise<Map<string, CrmDeductionTotal>> {
-  // Refresh the CURRENT month's pending candidates before reading them.
-  //
-  // `deduction_candidates` is only written in bulk by a sync that runs the
-  // following month (verified in production 2026-08-01: May's rows were created
-  // 6 Jun, June's on 7 Jul, and month_key 2026-07 did not exist at all). So a
-  // run processed inside its own month saw almost nothing and silently
-  // UNDER-deducted: for the July run, whose cycle is 24 Jun - 23 Jul, only the
-  // handful of June-dated candidates on/after the 24th survived the window
-  // filter — AI-0002 could show at most 1 day while 1-23 July went unmeasured.
-  //
-  // Payroll Copilot's own CRM tab has always called this before reading
-  // (app/api/payroll/copilot/[runId]/deductions/crm/route.ts); Automated Payroll
-  // never did, so the two screens disagreed while sharing one table. Insert-only,
-  // idempotent, and it swallows its own errors — a sync failure degrades to the
-  // old already-synced view rather than blocking payroll.
-  await syncCrmLiveMonthCandidates(period, actorId(access));
-
-  const { rows: candidates } = await listCrmDeductionCandidates(access, period);
-  // Owner rule (2026-07-20): a no-CRM-activity day with a fingerprint punch is an office
-  // day, not an absence — drop punched dates before deducting (field reps show CRM activity
-  // only on field-visit days; office days have a punch and no CRM visit).
-  // The notes window is the day-24 payroll cycle these candidates are scoped to, NOT the
-  // calendar month — see stepWindowLabel.
-  const cycle = resolveCycleWindow(`${period.year}-${pad2(period.month)}-01`);
-  const [punchedByCompact, notesByKey] = await Promise.all([
-    loadPunchedDatesByCompact(period, members.map((member) => member.employee.hrId)),
-    loadNoActivityNotes(cycle.startIso, cycle.endIso),
-  ]);
-
-  // Job title per employee: the day WEIGHT depends on it, because Saturday is a working day for
-  // Medical Reps / District Sales Managers and a weekly off for everyone else. Passing no title
-  // would silently weight every Saturday at 0 and under-deduct — 23 of July 2026's flagged
-  // employee-days are Saturdays.
-  const titleByCompact = new Map(members.map((member) => [member.compact, member.employee.jobTitle]));
-
-  const totals = new Map<string, CrmDeductionTotal>();
-  for (const candidate of candidates) {
-    const compact = compactHrKey(candidate.employeeHrIdCompact || candidate.employeeCode);
-    if (!compact) continue;
-    const jobTitle = titleByCompact.get(compact) ?? null;
-    const punched = punchedByCompact.get(compact);
-    const candidateDates = Array.isArray(candidate.dates) ? candidate.dates : [];
-    // Prefer explicit per-day dates so punched (office) days can be excluded; fall back to
-    // the raw day count only when a candidate carries no dates.
-    const keptDates = punched ? candidateDates.filter((date) => !punched.has(date)) : candidateDates;
-    // WEIGHTED, not counted: Thursday is a half day (owner rule 2026-08-02), so a no-activity
-    // Thursday costs half of Base/30. The fallback branch can only use the raw count — a
-    // candidate with no per-day dates gives nothing to weight, and inventing a weight for
-    // unknown dates would be a guess about someone's pay.
-    const days = candidateDates.length > 0
-      ? sumFieldWorkforceDeductionDayWeights(keptDates, jobTitle)
-      : Number(candidate.deductionValue ?? 0);
-    const excluded = candidateDates.length - keptDates.length;
-    if (days <= 0) continue;
-    const source = lookupSource(sources, candidate.employeeCode);
-    const value =
-      calculateDeductionAmountFromBaseSalary({
-        baseSalary: source?.baseSalary ?? undefined,
-        deductionDays: days,
-      }) ?? 0;
-    const existing =
-      totals.get(compact) ?? { days: 0, value: 0, officeExcluded: 0, explained: 0, details: [] };
-    existing.days += days;
-    existing.value += value;
-    existing.officeExcluded += excluded;
-
-    // Per-day breakdown. The deducted days split this candidate's own `value`
-    // exactly, so the panel always foots to the row's Deduction Value.
-    const keptSet = new Set(keptDates);
-    // Split in HALF-DAY UNITS (Thursday 1, full day 2) rather than evenly, or a Thursday would
-    // display the same figure as a full day while the row total correctly carried half. Summing
-    // whole units back per date keeps the exact-foot guarantee distributeAmount provides.
-    const unitsByDate = new Map(keptDates.map((date) => [date, fieldWorkforceDeductionUnits(date, jobTitle)]));
-    const totalUnits = [...unitsByDate.values()].reduce((sum, units) => sum + units, 0);
-    const perUnit = distributeAmount(roundCurrency(value), totalUnits);
-    let unitIndex = 0;
-    for (const dateIso of [...candidateDates].sort()) {
-      const isDeducted = keptSet.has(dateIso);
-      const note = notesByKey.get(`${compact}|${dateIso}`);
-      if (note && note.note) existing.explained += 1;
-      let dayAmount = 0;
-      if (isDeducted) {
-        const units = unitsByDate.get(dateIso) ?? 0;
-        for (let step = 0; step < units; step += 1) dayAmount += perUnit[unitIndex++] ?? 0;
-        dayAmount = roundCurrency(dayAmount);
-      }
-      const halfDay = isFieldWorkforceHalfDay({ dateIso, title: jobTitle });
-      existing.details.push({
-        Date: dateIso,
-        Weekday: weekdayName(dateIso),
-        Outcome: isDeducted
-          ? (halfDay ? "Deducted — half day (Thursday morning only)" : "Deducted")
-          : "Excluded — fingerprint punch (office day)",
-        Deduction: dayAmount,
-        "Employee Note": note?.note || (note?.confirmedNoActivity ? "Confirmed no activity" : "—"),
-        "HR Resolution": note ? (note.resolution ?? "Awaiting HR decision") : "—",
-      });
-    }
-
-    // A candidate can carry a raw day COUNT with no per-day dates (the fallback
-    // the `days` line above already handles for the money). Without this the
-    // panel would silently foot to less than the row it explains, which reads as
-    // a bug in the deduction rather than as missing source data. Say so instead.
-    if (candidateDates.length === 0) {
-      existing.details.push({
-        Date: "—",
-        Weekday: "—",
-        Outcome: `${roundCurrency(days)} day(s) flagged — source recorded no per-day dates`,
-        Deduction: roundCurrency(value),
-        "Employee Note": "—",
-        "HR Resolution": "—",
-      });
-    }
-
-    totals.set(compact, existing);
-  }
-
-  return totals;
-}
-
-async function recommendCrm(
-  access: AccessContext,
-  members: PopulationMember[],
-  sources: Map<string, PayrollSalarySource>,
-  period: PayrollPeriod,
+  deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
-): Promise<StepRow[]> {
-  const totals = await computeCrmDeductionTotals(access, members, sources, period);
-  const byCompact = new Map(members.map((member) => [member.compact, member]));
+): StepRow[] {
   const rows: StepRow[] = [];
-  for (const [compact, total] of totals) {
-    const member = byCompact.get(compact);
-    // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
-    // double-deducting the same days. See isSettledInPart1.
-    if (!member || isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
-    const draft = drafts.get(compact);
-    const value = roundCurrency(total.value);
+  for (const member of members) {
+    if (isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
+    const lines = linesFor(deductions, member.compact, "crm");
+    const value = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
+    const draft = drafts.get(member.compact);
+    if (value === 0 && draft?.crm == null) continue;
+
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
-      "No-Activity Days": roundCurrency(total.days),
-      "Office (punched)": total.officeExcluded,
-      // Days the employee has already written an explanation for. Non-zero here
-      // means confirming this step deducts days someone has contested.
-      Explained: total.explained,
+      "Deducted Days": roundCurrency(lines.reduce((sum, line) => sum + line.days, 0)),
+      "Confirmed Lines": lines.length,
     };
-    row.details = [...total.details].sort((left, right) =>
-      String(left.Date ?? "").localeCompare(String(right.Date ?? "")),
-    );
+    row.details = deductionDetailLines(lines);
     row.recommended = { crm: value };
     row.values = { crm: pick(draft?.crm, value) };
     rows.push(row);
   }
+  rows.sort((left, right) => (right.values.crm ?? 0) - (left.values.crm ?? 0));
   return rows;
 }
 
@@ -1654,14 +1456,45 @@ function recommendAdditions(members: PopulationMember[], drafts: Map<string, Dra
   });
 }
 
-function recommendManualDeductions(members: PopulationMember[], drafts: Map<string, DraftRow>): StepRow[] {
+/**
+ * Part 2 "Any more deductions?" — HR's free-text catch-all, now ALSO the landing
+ * place for confirmed loan / other deductions from the Deductions module for
+ * continuing two-part employees (owner request 2026-08-03).
+ *
+ * Those two categories previously had nowhere to go for this population: the
+ * Part 1 Other Deductions tab is scoped to `isSettledInPart1` employees, so a
+ * confirmed loan for an ordinary two-part employee was approved in the module
+ * and then silently reached no step at all. The same predicate splits the two
+ * populations here, so a given employee's loan/other is offered in exactly one
+ * place and can never be charged twice.
+ */
+function recommendManualDeductions(
+  members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
+  deductions: Map<string, EmployeeDeductions>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
+    // Settled-in-Part-1 employees take their loan/other on the Part 1 tab.
+    const settledInPart1 = isSettledInPart1(member, lookupSource(sources, member.employee.hrId));
+    const confirmed = settledInPart1
+      ? 0
+      : roundCurrency(
+          (deductions.get(member.compact)?.buckets.loan ?? 0) +
+            (deductions.get(member.compact)?.buckets.other ?? 0),
+        );
     row.context = { "Hire Date": member.employee.hireDate ?? "" };
-    row.recommended = { manualOtherDeductions: 0 };
-    row.values = { manualOtherDeductions: pick(draft?.manualOtherDeductions, 0) };
+    row.recommended = { manualOtherDeductions: confirmed };
+    row.values = { manualOtherDeductions: pick(draft?.manualOtherDeductions, confirmed) };
     row.reason = draft?.manualReason ?? null;
+    row.details = settledInPart1
+      ? []
+      : deductionDetailLines([
+          ...linesFor(deductions, member.compact, "loan"),
+          ...linesFor(deductions, member.compact, "other"),
+        ]);
     return row;
   });
 }
@@ -1983,6 +1816,7 @@ function recommendP1NoRecord(
 function recommendP1OtherDeductions(
   members: PopulationMember[],
   sources: Map<string, PayrollSalarySource>,
+  deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
 ): StepRow[] {
   const rows: StepRow[] = [];
@@ -1991,17 +1825,28 @@ function recommendP1OtherDeductions(
     if (!isSettledInPart1(member, source)) continue;
     const draft = drafts.get(member.compact);
     const row = part1ManualDeductionBaseRow(member, source);
-    row.recommended = { p1odLoanDays: 0, p1odLoanValue: 0, p1odOtherDays: 0, p1odOtherValue: 0 };
+    // Confirmed loan / other deductions from the Deductions module land here for
+    // employees settled in Part 1 (owner request 2026-08-03). Everyone else gets
+    // them on the Part 2 manual-deductions step — the isSettledInPart1 split is
+    // what keeps the two populations disjoint so neither charges the same money.
+    // HR can still type a figure on top; a saved value always wins via `pick`.
+    const loan = roundCurrency(deductions.get(member.compact)?.buckets.loan ?? 0);
+    const other = roundCurrency(deductions.get(member.compact)?.buckets.other ?? 0);
+    row.recommended = { p1odLoanDays: 0, p1odLoanValue: loan, p1odOtherDays: 0, p1odOtherValue: other };
     row.values = {
       p1odLoanDays: pick(draft?.p1odLoanDays, 0),
-      p1odLoanValue: pick(draft?.p1odLoanValue, 0),
+      p1odLoanValue: pick(draft?.p1odLoanValue, loan),
       p1odOtherDays: pick(draft?.p1odOtherDays, 0),
-      p1odOtherValue: pick(draft?.p1odOtherValue, 0),
+      p1odOtherValue: pick(draft?.p1odOtherValue, other),
     };
     row.reasons = {
       p1odLoanReason: draft?.p1odLoanReason ?? "",
       p1odOtherReason: draft?.p1odOtherReason ?? "",
     };
+    row.details = deductionDetailLines([
+      ...linesFor(deductions, member.compact, "loan"),
+      ...linesFor(deductions, member.compact, "other"),
+    ]);
     rows.push(row);
   }
   return rows;
@@ -2071,7 +1916,7 @@ export async function recommendStep(input: {
     case "p1_resignations":
       return recommendResignations(input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
-      return recommendFingerprint(input.access, input.members, input.sources, input.period, drafts);
+      return recommendFingerprint(input.members, await loadConfirmedDeductions(input.period), drafts);
     case "p1_crm":
       return recommendP1Crm(input.members, input.sources, input.period, drafts);
     case "p1_resignation_crm":
@@ -2081,19 +1926,39 @@ export async function recommendStep(input: {
     case "p1_no_record":
       return recommendP1NoRecord(input.members, input.sources, drafts);
     case "p1_other_deductions":
-      return recommendP1OtherDeductions(input.members, input.sources, drafts);
+      return recommendP1OtherDeductions(
+        input.members,
+        input.sources,
+        await loadConfirmedDeductions(input.period),
+        drafts,
+      );
     case "p1_special_situations":
       return recommendSpecialSituations(input.members, input.sources, drafts);
     case "p2_expenses":
       return recommendExpenses(input.members, input.period, drafts);
     case "p2_vacation":
-      return recommendVacation(input.members, input.sources, input.period, drafts);
+      return recommendVacation(
+        input.members,
+        input.sources,
+        await loadConfirmedDeductions(input.period),
+        drafts,
+      );
     case "p2_crm":
-      return recommendCrm(input.access, input.members, input.sources, input.period, drafts);
+      return recommendCrm(
+        input.members,
+        input.sources,
+        await loadConfirmedDeductions(input.period),
+        drafts,
+      );
     case "p2_additions":
       return recommendAdditions(input.members, drafts);
     case "p2_manual_deductions":
-      return recommendManualDeductions(input.members, drafts);
+      return recommendManualDeductions(
+        input.members,
+        input.sources,
+        await loadConfirmedDeductions(input.period),
+        drafts,
+      );
     case "p1_holds":
     case "p2_holds":
       return recommendHolds(input.members, drafts);
