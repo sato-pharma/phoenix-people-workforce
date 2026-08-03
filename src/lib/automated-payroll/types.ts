@@ -123,6 +123,13 @@ export type DraftRow = {
   fingerprintValue: number | null;
   // Part 2 — additions.
   expenses: number | null;
+  /**
+   * Optional HR note behind the outstation expense figure. Free text, never
+   * money. Matters most for an employee HR ADDED BY HAND on the expenses step:
+   * the payout-tagged feeder produced no trip for them, so this note is the only
+   * record of why the amount is being reimbursed.
+   */
+  expensesNote: string | null;
   incentive: number | null;
   bonus: number | null;
   overtime: number | null;
@@ -240,6 +247,13 @@ export type StepRow = {
   /** Short explanation shown beside a read-only row, e.g. "settles in August". */
   readOnlyNote?: string;
   /**
+   * HR added this employee to the step by hand — no feeder produced them (owner
+   * request 2026-08-03). Only steps declaring `allowsManualRows` can carry one.
+   * Purely a display/label flag: a manual row saves through the exact same
+   * draft-row path as a recommended one, so the money behaves identically.
+   */
+  manual?: boolean;
+  /**
    * The source lines behind this row's single recommended figure — the trips
    * behind an expense total, the days behind a deduction — keyed by the step's
    * `detailColumns` (owner request 2026-08-01: "which days, where").
@@ -352,6 +366,17 @@ export type StepDefinition = {
    */
   detailNounPlural?: string;
   /**
+   * HR may add an employee this step's feeder didn't produce, and type the
+   * figure by hand (owner request 2026-08-03 for outstation expenses: a trip
+   * that never reached the expense table still has to be reimbursed).
+   *
+   * Only safe on a step whose figure is a plain amount HR owns end-to-end. NOT
+   * for a step whose number is derived from employment facts — a proration or a
+   * day-rate deduction typed against an employee the feeder deliberately left
+   * out would be a wrong number with no way to notice.
+   */
+  allowsManualRows?: boolean;
+  /**
    * Plain-English statement of the exact date range this step draws from, shown
    * beside the step title. The three Part-2 feeder steps sit next to each other
    * but cover DIFFERENT windows — expenses by finance payout tag, vacation by
@@ -408,17 +433,35 @@ export type ReconciliationTotals = {
 };
 
 /**
+ * Which installment a Non-Employees Payroll entry is paid with (owner request
+ * 2026-08-03). "first" is the module's original — and still default — behaviour.
+ */
+export type NonEmployeePart = "first" | "second";
+
+export const NON_EMPLOYEE_PARTS: readonly NonEmployeePart[] = ["first", "second"] as const;
+
+export function isNonEmployeePart(value: unknown): value is NonEmployeePart {
+  return value === "first" || value === "second";
+}
+
+/**
  * Non-Employees Payroll (owner rule 2026-07-25): people paid a monthly salary
  * with NO employee/HR_ID record at all. A free-form, HR-authored list per run —
  * added/removed manually each month, never derived from the employee
  * population. Flat total only, no deductions/additions, no lifecycle. Kept
  * deliberately separate from DraftRow/AssembledRow — these people must never
  * generate a real employee salary_record; they are appended only to the
- * exported Part 1 sheet's own section and its grand total.
+ * exported sheets and the bank files, never to salary_records.
+ *
+ * `part` (owner request 2026-08-03) says which installment the amount is paid
+ * with, and is the single input to all three places that used to assume "first":
+ * which run phase the entry can still be edited in, which internal sheet lists
+ * it, and which FAB/CIB bank file carries it.
  */
 export type NonEmployeePayrollRow = {
   id: string;
   runId: string;
+  part: NonEmployeePart;
   fullNameAr: string;
   fullNameEn: string;
   totalSalary: number;
@@ -435,4 +478,18 @@ export type NonEmployeePayrollInput = {
   totalSalary: number;
   bankName?: string | null;
   bankAccount?: string | null;
+  /** Defaults to "first" — the behaviour every entry had before this field existed. */
+  part?: NonEmployeePart;
+};
+
+/**
+ * An employee HR may add by hand to a step that `allowsManualRows`, i.e. someone
+ * in this run's payroll population who the step's feeder produced no row for.
+ * Names only — enough to find the right person and label the row they create.
+ */
+export type ManualRowCandidate = {
+  hrId: string;
+  fullName: string;
+  jobTitle: string | null;
+  line: string | null;
 };

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Info } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Info, Plus, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/automated-payroll/conflicts";
 import { stepDefinition, stepWindowLabel } from "@/lib/automated-payroll/step-definitions";
 import type {
+  ManualRowCandidate,
   PayrollPeriod,
   StepDefinition,
   StepEditInput,
@@ -124,6 +125,177 @@ function DetailPanel({ definition, row }: { definition: StepDefinition; row: Ste
   );
 }
 
+/**
+ * "Add employee" for a step that `allowsManualRows` — outstation expenses today
+ * (owner request 2026-08-03): someone whose trip never reached the expense table
+ * still has to be reimbursed, and until now there was no way to put them on the
+ * sheet at all.
+ *
+ * Deliberately a PICKER over this run's payroll population, never a free-text
+ * name: the amount is written to a real employee's draft row, so the person has
+ * to be a real payroll employee. Someone with no employee record belongs in
+ * Non-Employees Payroll instead, which is a separate list for exactly that.
+ */
+function AddEmployeePanel({
+  candidates,
+  moneyLabel,
+  noteLabel,
+  onAdd,
+}: {
+  candidates: ManualRowCandidate[];
+  moneyLabel: string;
+  noteLabel: string | null;
+  onAdd: (candidate: ManualRowCandidate, amount: number, note: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<ManualRowCandidate | null>(null);
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  /** The suggestion list is absolutely positioned, so it only renders while the
+   * field is actually in use — otherwise it sits on top of the amount input. */
+  const [focused, setFocused] = useState(false);
+
+  const matches = useMemo(() => {
+    const text = query.trim().toLowerCase();
+    if (!text) return candidates.slice(0, 8);
+    return candidates
+      .filter(
+        (candidate) =>
+          candidate.fullName.toLowerCase().includes(text) || candidate.hrId.toLowerCase().includes(text),
+      )
+      .slice(0, 8);
+  }, [candidates, query]);
+
+  const reset = () => {
+    setQuery("");
+    setPicked(null);
+    setAmount("");
+    setNote("");
+  };
+
+  const amountValue = Number(amount);
+  const canAdd = picked !== null && Number.isFinite(amountValue) && amountValue > 0;
+
+  if (!open) {
+    return (
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)} className="self-start gap-1.5">
+        <Plus className="size-4" />
+        Add employee
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border-l-4 border-amber-400 bg-amber-50/60 px-4 py-3">
+      <div>
+        <div className="text-sm font-black text-slate-900">Add an employee by hand</div>
+        <p className="mt-0.5 text-xs text-slate-600">
+          For someone whose trip never reached the expense table. Pick the employee, type what to reimburse, and say
+          why — the amount is paid exactly like a system-recommended one, so the note is the only record of where it
+          came from.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+        <div className="relative flex flex-col gap-1 lg:w-80">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Employee</span>
+          <Input
+            value={picked ? `${picked.fullName} (${picked.hrId})` : query}
+            placeholder="Search by name or HR_ID…"
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onChange={(event) => {
+              setPicked(null);
+              setQuery(event.target.value);
+            }}
+            className={fieldClassName}
+          />
+          {!picked && focused ? (
+            <div className="absolute left-0 right-0 top-full z-10 max-h-64 overflow-y-auto border border-slate-200 bg-white shadow-lg">
+              {matches.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-slate-400">
+                  {candidates.length === 0
+                    ? "Every employee on payroll is already listed on this step."
+                    : "No employee matches that."}
+                </div>
+              ) : (
+                matches.map((candidate) => (
+                  <button
+                    key={candidate.hrId}
+                    type="button"
+                    // preventDefault on mousedown: a blur would unmount this
+                    // list before the click could land on it.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => setPicked(candidate)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-orange-50"
+                  >
+                    <span className="overflow-hidden whitespace-nowrap text-slate-800">{candidate.fullName}</span>
+                    <span className="shrink-0 font-mono text-slate-500">{candidate.hrId}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <label className="flex flex-col gap-1 lg:w-40">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{moneyLabel}</span>
+          <Input
+            type="number"
+            value={amount}
+            placeholder="0"
+            onChange={(event) => setAmount(event.target.value)}
+            className={cn(fieldClassName, "text-right")}
+          />
+        </label>
+
+        {noteLabel ? (
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{noteLabel}</span>
+            <Input
+              value={note}
+              placeholder="Why is this being reimbursed?"
+              onChange={(event) => setNote(event.target.value)}
+              className={fieldClassName}
+            />
+          </label>
+        ) : null}
+
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            disabled={!canAdd}
+            onClick={() => {
+              if (!picked) return;
+              onAdd(picked, amountValue, note.trim());
+              reset();
+            }}
+            className="h-9 border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+          >
+            Add to step
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-9"
+            onClick={() => {
+              reset();
+              setOpen(false);
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-500">
+        Added rows are not saved until you press Save or Confirm below.
+      </p>
+    </div>
+  );
+}
+
 export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfirmed }: Props) {
   const definition = stepDefinition(stepKey);
   const [rows, setRows] = useState<StepRow[]>([]);
@@ -136,6 +308,15 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   const [search, setSearch] = useState("");
   /** hrIds whose per-line breakdown is open. Keyed by hrId, never by index — see setValue. */
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  /** Employees still addable by hand — empty unless the step allows manual rows. */
+  const [candidates, setCandidates] = useState<ManualRowCandidate[]>([]);
+  /**
+   * Manual rows HR removed but hasn't saved yet. They must be REMEMBERED, not
+   * just dropped from `rows`: their amount is already sitting in the employee's
+   * draft row, so a save that simply omits them would leave the money on the
+   * sheet with nothing on screen. `toEdits` turns each one into an explicit zero.
+   */
+  const [removedManual, setRemovedManual] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(async () => {
@@ -146,6 +327,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load step.");
       setRows(data.rows as StepRow[]);
+      setCandidates((data.candidates ?? []) as ManualRowCandidate[]);
+      setRemovedManual([]);
       const run = data.run as { month?: number; year?: number } | undefined;
       setPeriod(
         run?.month && run?.year ? { month: Number(run.month), year: Number(run.year) } : null,
@@ -173,22 +356,81 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   }, [load]);
 
   const toEdits = useCallback((): StepEditInput[] => {
-    return (
-      rows
-        // Informational rows (notice-period employees) are never saved. Their
-        // settlement belongs to the month they actually leave; sending them here
-        // could stamp this month's figures onto their draft row.
-        .filter((row) => !row.readOnly)
-        .map((row) => ({
-          hrId: row.hrId,
-          values: row.values,
-          reasons: row.reasons,
-          selects: row.selects,
-          reason: row.reason,
-          onHold: row.onHold,
-        }))
+    const edits = rows
+      // Informational rows (notice-period employees) are never saved. Their
+      // settlement belongs to the month they actually leave; sending them here
+      // could stamp this month's figures onto their draft row.
+      .filter((row) => !row.readOnly)
+      .map((row) => ({
+        hrId: row.hrId,
+        values: row.values,
+        reasons: row.reasons,
+        selects: row.selects,
+        reason: row.reason,
+        onHold: row.onHold,
+      }));
+
+    // Removed manual rows are sent as an explicit zero — see `removedManual`.
+    const moneyFields = definition.fields.filter((field) => field.kind === "money" || field.kind === "days");
+    const textFields = definition.fields.filter((field) => field.kind === "text");
+    for (const hrId of removedManual) {
+      edits.push({
+        hrId,
+        values: Object.fromEntries(moneyFields.map((field) => [field.key, 0])),
+        reasons: Object.fromEntries(textFields.map((field) => [field.key, ""])),
+        selects: {},
+        reason: null,
+        onHold: false,
+      });
+    }
+    return edits;
+  }, [rows, removedManual, definition.fields]);
+
+  /**
+   * Put an employee the feeder never produced onto the step (owner request
+   * 2026-08-03). The row is a normal StepRow from here on — it edits, saves,
+   * confirms and exports through exactly the same path as a recommended one —
+   * with `recommended` left at 0, because the system recommended nothing.
+   */
+  const addManualRow = (candidate: ManualRowCandidate, amount: number, note: string) => {
+    const moneyKey = definition.fields.find((field) => field.kind === "money")?.key;
+    const noteKey = definition.fields.find((field) => field.kind === "text")?.key;
+    setRows((prev) => [
+      ...prev,
+      {
+        hrId: candidate.hrId,
+        fullName: candidate.fullName,
+        jobTitle: candidate.jobTitle,
+        line: candidate.line,
+        context: Object.fromEntries(definition.contextColumns.map((column) => [column.key, ""])),
+        values: moneyKey ? { [moneyKey]: amount } : {},
+        recommended: moneyKey ? { [moneyKey]: 0 } : {},
+        reasons: noteKey ? { [noteKey]: note } : {},
+        reason: null,
+        onHold: false,
+        manual: true,
+      },
+    ]);
+    setCandidates((prev) => prev.filter((entry) => entry.hrId !== candidate.hrId));
+    // Re-adding after a removal in the same session must not still send the zero.
+    setRemovedManual((prev) => prev.filter((hrId) => hrId !== candidate.hrId));
+    // An active search would otherwise hide the row that was just added.
+    setSearch("");
+    setDirty(true);
+  };
+
+  const removeManualRow = (row: StepRow) => {
+    setRows((prev) => prev.filter((entry) => entry.hrId !== row.hrId));
+    setRemovedManual((prev) => (prev.includes(row.hrId) ? prev : [...prev, row.hrId]));
+    setCandidates((prev) =>
+      prev.some((entry) => entry.hrId === row.hrId)
+        ? prev
+        : [...prev, { hrId: row.hrId, fullName: row.fullName, jobTitle: row.jobTitle, line: row.line }].sort(
+            (left, right) => left.fullName.localeCompare(right.fullName),
+          ),
     );
-  }, [rows]);
+    setDirty(true);
+  };
 
   // Every setter below keys off `hrId`, NOT array position — `rows` renders as
   // `filteredRows` once the search box (below) is active, so a positional index would
@@ -320,6 +562,8 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save.");
       setDirty(false);
+      // The zeros have landed; re-sending them on the next save is pointless.
+      setRemovedManual([]);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Failed to save.");
     } finally {
@@ -414,10 +658,13 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
   }, [rows, search]);
 
   /** Same precedence for the grid row tint and the mobile card border. */
-  const rowTone = (row: StepRow): "hold" | "conflict" | "leaver" | "notice" | null => {
+  const rowTone = (row: StepRow): "hold" | "conflict" | "manual" | "leaver" | "notice" | null => {
     if (row.onHold) return "hold";
     if (hasConflict(row)) return "conflict";
     if (row.readOnly) return "notice";
+    // Above "leaver": that a figure was typed by a person rather than derived
+    // from data is the more important thing to see on a payroll screen.
+    if (row.manual) return "manual";
     if (row.lifecycle === "leaver") return "leaver";
     return null;
   };
@@ -539,6 +786,17 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
         </div>
       ) : null}
 
+      {/* Above the grid and above the empty state on purpose: a step with no rows
+          at all is exactly when HR most needs to be able to add one. */}
+      {definition.allowsManualRows && !locked ? (
+        <AddEmployeePanel
+          candidates={candidates}
+          moneyLabel={definition.fields.find((field) => field.kind === "money")?.label ?? "Value"}
+          noteLabel={definition.fields.find((field) => field.kind === "text")?.label ?? null}
+          onAdd={addManualRow}
+        />
+      ) : null}
+
       {rows.length > 0 ? (
         <Input
           value={search}
@@ -608,6 +866,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                       tone === "hold" && "bg-rose-50 hover:bg-rose-50",
                       tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50 hover:bg-orange-50",
                       tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70 hover:bg-sky-50",
+                      tone === "manual" && "border-l-4 border-l-amber-400 bg-amber-50/60 hover:bg-amber-50",
                       tone === "leaver" && "bg-red-50 hover:bg-red-50",
                       !tone && (index % 2 ? "bg-slate-50/60" : "bg-white"),
                     )}
@@ -647,6 +906,15 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           Notice period
                         </Badge>
                       ) : null}
+                      {row.manual ? (
+                        <Badge
+                          variant="warning"
+                          className="shrink-0"
+                          title="No trip behind this figure — the amount was typed by hand"
+                        >
+                          Added manually
+                        </Badge>
+                      ) : null}
                       {hasDetail && lineCount > 0 ? (
                         <button
                           type="button"
@@ -654,6 +922,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                           className="shrink-0 whitespace-nowrap text-xs font-medium text-orange-600 underline-offset-2 hover:underline"
                         >
                           {detailLabel(row)}
+                        </button>
+                      ) : null}
+                      {/* Removing lives on the row rather than in its own grid
+                          column: the column template is per-step and shared with
+                          the header, so a conditional column would misalign
+                          every other row. */}
+                      {row.manual && !locked ? (
+                        <button
+                          type="button"
+                          onClick={() => removeManualRow(row)}
+                          aria-label={`Remove ${row.fullName} from this step`}
+                          title="Remove this manually added employee"
+                          className="flex size-5 shrink-0 items-center justify-center text-slate-400 transition hover:text-rose-600"
+                        >
+                          <X className="size-3.5" />
                         </button>
                       ) : null}
                     </div>
@@ -748,6 +1031,7 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                     tone === "hold" && "border-rose-200 bg-rose-50",
                     tone === "conflict" && "border-l-4 border-l-orange-400 bg-orange-50",
                     tone === "notice" && "border-l-4 border-l-sky-400 bg-sky-50/70",
+                    tone === "manual" && "border-l-4 border-l-amber-400 bg-amber-50/60",
                     tone === "leaver" && "bg-red-50",
                   )}
                 >
@@ -763,10 +1047,21 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
                       </div>
                       <div className="font-mono text-xs text-slate-500">{row.hrId}</div>
                     </div>
-                    <div className="flex shrink-0 gap-1.5">
+                    <div className="flex shrink-0 items-center gap-1.5">
                       {tone === "hold" ? <Badge variant="danger">HOLD</Badge> : null}
                       {tone === "conflict" ? <Badge variant="warning">Already settled</Badge> : null}
                       {row.readOnly ? <Badge variant="neutral">Notice period</Badge> : null}
+                      {row.manual ? <Badge variant="warning">Added manually</Badge> : null}
+                      {row.manual && !locked ? (
+                        <button
+                          type="button"
+                          onClick={() => removeManualRow(row)}
+                          aria-label={`Remove ${row.fullName} from this step`}
+                          className="flex size-6 items-center justify-center text-slate-400 transition hover:text-rose-600"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      ) : null}
                     </div>
                   </div>
 

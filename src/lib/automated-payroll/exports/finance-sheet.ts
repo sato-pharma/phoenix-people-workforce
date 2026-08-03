@@ -17,7 +17,11 @@ export async function buildFinanceSheetWorkbook(input: {
   run: MonthlySalaryRun;
   rows: AssembledRow[];
   scope: "part1" | "full";
-  /** People paid a monthly salary with no employee/HR_ID record (Part 1 scope only). */
+  /**
+   * People paid a monthly salary with no employee/HR_ID record. The CALLER
+   * decides which ones belong in this scope — first-installment entries for
+   * "part1", all of them for "full" (owner request 2026-08-03).
+   */
   nonEmployees?: NonEmployeePayrollRow[];
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();

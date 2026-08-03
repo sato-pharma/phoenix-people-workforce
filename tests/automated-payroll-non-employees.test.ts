@@ -69,6 +69,7 @@ export async function runAutomatedPayrollNonEmployeesTests() {
   const row = (totalSalary: number): NonEmployeePayrollRow => ({
     id: "id",
     runId: "run",
+    part: "first",
     fullNameAr: "اسم",
     fullNameEn: "Name",
     totalSalary,

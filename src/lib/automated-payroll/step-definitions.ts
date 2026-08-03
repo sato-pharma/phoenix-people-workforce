@@ -286,15 +286,21 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     phase: "part2",
     title: "Outstation expenses",
     subtitle:
-      "Outstation expenses to reimburse (added to pay, in Part 2). Expand any employee to see each trip — dates, route, distance and the cost split that makes up their total. Rows still awaiting HR approval in the Expense Command Center are INCLUDED here, because this wizard is the approval point; the trip's \"HR Approved\" line tells you which ones. Edit or confirm.",
+      "Outstation expenses to reimburse (added to pay, in Part 2). Expand any employee to see each trip — dates, route, distance and the cost split that makes up their total. Rows still awaiting HR approval in the Expense Command Center are INCLUDED here, because this wizard is the approval point; the trip's \"HR Approved\" line tells you which ones. Someone whose trip never reached the expense table at all won't be listed — use \"Add employee\" to put them on the sheet and type the amount yourself, with a note saying why. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
       { key: "Trips", label: "Trips" },
       { key: "Trip Dates", label: "Trip Dates" },
     ],
-    fields: [{ key: "expenses", label: "Expenses", kind: "money" }],
+    fields: [
+      { key: "expenses", label: "Expenses", kind: "money" },
+      { key: "expensesNote", label: "Note", kind: "text" },
+    ],
     hasReason: false,
     isHoldStep: false,
+    // The one step where the figure is a plain amount HR owns end-to-end, so a
+    // hand-added employee can't produce a silently wrong derived number.
+    allowsManualRows: true,
     detailNoun: "trip",
     detailColumns: [
       { key: "Dates", label: "Dates" },

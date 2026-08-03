@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import { deleteNonEmployeePayrollEntry, updateNonEmployeePayrollEntry } from "@/lib/automated-payroll/non-employees";
 import type { NonEmployeePayrollInput } from "@/lib/automated-payroll/types";
+import { isNonEmployeePart } from "@/lib/automated-payroll/types";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -19,12 +20,18 @@ export async function PUT(
     const { runId, id } = await params;
     const access = await resolveAccessContext(request);
     const body = (await request.json().catch(() => ({}))) as Partial<NonEmployeePayrollInput>;
+    if (body.part !== undefined && !isNonEmployeePart(body.part)) {
+      return jsonError(new Error("Validation: part must be either first or second."));
+    }
     const input: NonEmployeePayrollInput = {
       fullNameAr: String(body.fullNameAr ?? ""),
       fullNameEn: String(body.fullNameEn ?? ""),
       totalSalary: Number(body.totalSalary ?? 0),
       bankName: body.bankName ?? null,
       bankAccount: body.bankAccount ?? null,
+      // Omitted keeps the entry where it is — an edit form that doesn't know
+      // about parts must never silently move money to the other installment.
+      part: body.part,
     };
     const row = await updateNonEmployeePayrollEntry(access, runId, id, input);
     return NextResponse.json({ success: true, row });

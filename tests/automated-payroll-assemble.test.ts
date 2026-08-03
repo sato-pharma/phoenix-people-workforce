@@ -85,6 +85,7 @@ function draft(hrId: string, patch: Partial<DraftRow>): DraftRow {
     fingerprintDays: null,
     fingerprintValue: null,
     expenses: null,
+    expensesNote: null,
     incentive: null,
     bonus: null,
     overtime: null,

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { stepDefinition } from "@/lib/automated-payroll/step-definitions";
 import type {
   MonthlySalaryRun,
+  NonEmployeePart,
   ReconciliationTotals,
   StepKey,
   StepState,
@@ -40,8 +41,12 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [run, setRun] = useState<MonthlySalaryRun | null>(null);
   const [stepStates, setStepStates] = useState<StepState[]>([]);
   const [activeStep, setActiveStep] = useState<StepKey | null>(null);
-  const [nonEmployeesOpen, setNonEmployeesOpen] = useState(false);
-  const [nonEmployeeCount, setNonEmployeeCount] = useState(0);
+  /** Which installment's Non-Employees Payroll list is open, if any. */
+  const [nonEmployeesOpen, setNonEmployeesOpen] = useState<NonEmployeePart | null>(null);
+  const [nonEmployeeCount, setNonEmployeeCount] = useState<Record<NonEmployeePart, number>>({
+    first: 0,
+    second: 0,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -58,6 +63,15 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const part1AllConfirmed = part1Confirmed === PART1_STEP_KEYS.length;
   const part2AllConfirmed = part2Confirmed === PART2_STEP_KEYS.length;
 
+  /**
+   * Stable by design: the panel's own loader depends on this callback, so an
+   * inline arrow here would give it a new identity every render and spin its
+   * load effect forever.
+   */
+  const onNonEmployeeCount = useCallback((part: NonEmployeePart, count: number) => {
+    setNonEmployeeCount((prev) => ({ ...prev, [part]: count }));
+  }, []);
+
   const loadRun = useCallback(async (m: number, y: number) => {
     setBusy(true);
     setError(null);
@@ -68,7 +82,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
       setRecon(null);
-      setNonEmployeeCount(0);
+      setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
 
       // Load the population diff eagerly rather than behind a button: the bug
@@ -214,7 +228,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             type="button"
             onClick={() => {
               setActiveStep(key);
-              setNonEmployeesOpen(false);
+              setNonEmployeesOpen(null);
             }}
             className={cn(
               "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
@@ -245,26 +259,33 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * recommend against, just a free-form list HR authors directly (owner rule
    * 2026-07-25) — so it gets its own pill outside the confirm-tracked strip
    * rather than a fake entry in PART1_STEP_KEYS.
+   *
+   * One pill per installment (owner request 2026-08-03), each rendered inside
+   * its own part's strip: a Part 2 non-employee is paid with Part 2, and burying
+   * that list under the Part 1 heading is exactly how it would get missed.
    */
-  const renderNonEmployeesPill = () => (
-    <button
-      type="button"
-      onClick={() => {
-        setNonEmployeesOpen(true);
-        setActiveStep(null);
-      }}
-      className={cn(
-        "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
-        nonEmployeesOpen
-          ? "border-orange-500 bg-orange-50 text-slate-900"
-          : "border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
-      )}
-    >
-      <span className="whitespace-nowrap">
-        Non-Employees Payroll{nonEmployeeCount > 0 ? ` (${nonEmployeeCount})` : ""}
-      </span>
-    </button>
-  );
+  const renderNonEmployeesPill = (part: NonEmployeePart) => {
+    const count = nonEmployeeCount[part];
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setNonEmployeesOpen(part);
+          setActiveStep(null);
+        }}
+        className={cn(
+          "flex items-center gap-1.5 border px-2.5 py-1.5 text-xs transition-colors",
+          nonEmployeesOpen === part
+            ? "border-orange-500 bg-orange-50 text-slate-900"
+            : "border-dashed border-slate-300 bg-white text-slate-600 hover:bg-slate-50",
+        )}
+      >
+        <span className="whitespace-nowrap">
+          Non-Employees Payroll{count > 0 ? ` (${count})` : ""}
+        </span>
+      </button>
+    );
+  };
 
   const phaseTone: Record<MonthlySalaryRun["phase"], "orange" | "emerald" | "neutral" | "slate"> = {
     part1: "orange",
@@ -409,7 +430,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {renderStepPills(PART1_STEP_KEYS)}
-              {renderNonEmployeesPill()}
+              {renderNonEmployeesPill("first")}
             </div>
 
             <div className="border-t border-slate-200 pt-3">
@@ -446,7 +467,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                       </Button>
                     </div>
                   </div>
-                  {renderStepPills(PART2_STEP_KEYS)}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {renderStepPills(PART2_STEP_KEYS)}
+                    {renderNonEmployeesPill("second")}
+                  </div>
                 </div>
               )}
             </div>
@@ -547,10 +571,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           <div className={cn(adminPanelClassName, "p-4")}>
             {nonEmployeesOpen ? (
               <NonEmployeesPanel
-                key={run.id}
+                key={`${run.id}-${nonEmployeesOpen}`}
                 runId={run.id}
-                locked={run.phase !== "part1"}
-                onChange={setNonEmployeeCount}
+                part={nonEmployeesOpen}
+                locked={run.phase !== (nonEmployeesOpen === "first" ? "part1" : "part2")}
+                onChange={onNonEmployeeCount}
               />
             ) : activeStep ? (
               <RecommendationStep

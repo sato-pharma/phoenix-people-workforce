@@ -4,7 +4,13 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { writeAutomatedPayrollAudit } from "./audit.ts";
 import { getRunById } from "./draft-store.ts";
 import { actorId, assertAutomatedPayrollHrActor } from "./permissions.ts";
-import type { MonthlySalaryRun, NonEmployeePayrollInput, NonEmployeePayrollRow } from "./types.ts";
+import type {
+  MonthlySalaryRun,
+  NonEmployeePart,
+  NonEmployeePayrollInput,
+  NonEmployeePayrollRow,
+} from "./types.ts";
+import { isNonEmployeePart } from "./types.ts";
 
 /**
  * Non-Employees Payroll: a small, standalone CRUD surface for people paid a
@@ -12,6 +18,12 @@ import type { MonthlySalaryRun, NonEmployeePayrollInput, NonEmployeePayrollRow }
  * doc comment in types.ts). Deliberately independent of the DraftRow/StepKey
  * wizard machinery — there is no population to recommend against, just a
  * free-form list HR adds to and removes from directly.
+ *
+ * Each entry belongs to ONE installment (owner request 2026-08-03). The list
+ * shipped as Part-1-only; some of these people are paid with the second
+ * installment instead, and `part` is what says so. It is the single input to
+ * every rule that used to be hardcoded to "first" — the edit window, the sheet,
+ * and the bank file.
  */
 
 const TABLE = "automated_payroll_non_employees";
@@ -22,6 +34,10 @@ function mapRow(row: Row): NonEmployeePayrollRow {
   return {
     id: String(row.id),
     runId: String(row.run_id),
+    // Defaulted rather than asserted: an environment where the `part` migration
+    // hasn't landed yet returns rows without the column, and every one of those
+    // rows means "first" — the only behaviour that existed before it.
+    part: isNonEmployeePart(row.part) ? row.part : "first",
     fullNameAr: String(row.full_name_ar ?? ""),
     fullNameEn: String(row.full_name_en ?? ""),
     totalSalary: Number(row.total_salary ?? 0),
@@ -33,18 +49,31 @@ function mapRow(row: Row): NonEmployeePayrollRow {
   };
 }
 
-async function requireEditableRun(runId: string): Promise<MonthlySalaryRun> {
+/** The run phase in which a given part's entries may still be edited. */
+const EDITABLE_PHASE: Record<NonEmployeePart, MonthlySalaryRun["phase"]> = {
+  first: "part1",
+  second: "part2",
+};
+
+/**
+ * A part's entries lock the same moment that part's own wizard tabs lock, so an
+ * edit can never land after that installment's sheet has already been executed:
+ * Part 1 entries close when Part 1 is confirmed, Part 2 entries when Part 2 is.
+ */
+async function requireEditableRun(runId: string, part: NonEmployeePart): Promise<MonthlySalaryRun> {
   const run = await getRunById(runId);
   if (!run) throw new Error("Not found: payroll run does not exist.");
   if (run.phase === "published") throw new Error("Conflict: this run is already published.");
   if (run.phase === "cancelled") throw new Error("Conflict: this run was cancelled.");
-  // Non-Employees Payroll is a Part 1 concern (their whole amount pays with Part
-  // 1, per owner rule) — lock it the same moment every other Part 1 tab locks,
-  // so an edit can never land after the Part 1 sheet has already been executed.
-  if (run.phase !== "part1") {
-    throw new Error("Conflict: Non-Employees Payroll can only be edited while Part 1 is open.");
+  if (run.phase !== EDITABLE_PHASE[part]) {
+    const label = part === "first" ? "Part 1" : "Part 2";
+    throw new Error(`Conflict: ${label} Non-Employees Payroll can only be edited while ${label} is open.`);
   }
   return run;
+}
+
+function resolvePart(value: NonEmployeePart | undefined | null): NonEmployeePart {
+  return isNonEmployeePart(value) ? value : "first";
 }
 
 function validateInput(input: NonEmployeePayrollInput): void {
@@ -52,6 +81,9 @@ function validateInput(input: NonEmployeePayrollInput): void {
   if (!input.fullNameEn?.trim()) throw new Error("Validation: English name is required.");
   if (!Number.isFinite(input.totalSalary) || input.totalSalary < 0) {
     throw new Error("Validation: Total Salary must be a non-negative number.");
+  }
+  if (input.part !== undefined && !isNonEmployeePart(input.part)) {
+    throw new Error("Validation: part must be either first or second.");
   }
 }
 
@@ -70,11 +102,31 @@ function isMissingTableError(error: unknown): boolean {
 }
 
 /**
+ * True when the error means the `part` COLUMN isn't in this environment yet
+ * (Postgres 42703 / PostgREST's PGRST204 schema-cache miss) — the code shipping
+ * ahead of its own migration. Same add-only tolerance as isMissingTableError,
+ * one column narrower.
+ */
+function isMissingPartColumnError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  const message = String((error as { message?: string } | null)?.message ?? error ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || (message.includes("part") && message.includes("column"));
+}
+
+/**
  * Raw fetch, no access check — for trusted internal callers that have already
  * gated the caller themselves (e.g. buildFinanceSheet asserts the finance-actor
  * role, which is a different set of roles than the HR-only gate below).
+ *
+ * `part` filters in memory rather than in SQL on purpose: `select("*")` still
+ * succeeds on an environment where the column hasn't landed, where mapRow reads
+ * every row as "first" — a `.eq("part", …)` would error out instead and take the
+ * Part 1 sheet down with it.
  */
-export async function getNonEmployeePayrollRows(runId: string): Promise<NonEmployeePayrollRow[]> {
+export async function getNonEmployeePayrollRows(
+  runId: string,
+  part?: NonEmployeePart,
+): Promise<NonEmployeePayrollRow[]> {
   const { data, error } = await getSupabaseAdmin()
     .from(TABLE)
     .select("*")
@@ -84,17 +136,64 @@ export async function getNonEmployeePayrollRows(runId: string): Promise<NonEmplo
     if (isMissingTableError(error)) return [];
     throw error;
   }
-  return ((data ?? []) as Row[]).map(mapRow);
+  const rows = ((data ?? []) as Row[]).map(mapRow);
+  return part ? nonEmployeesForPart(rows, part) : rows;
+}
+
+/** The entries paid with one installment. Pure — the one filter every export shares. */
+export function nonEmployeesForPart(
+  rows: NonEmployeePayrollRow[],
+  part: NonEmployeePart,
+): NonEmployeePayrollRow[] {
+  return rows.filter((row) => row.part === part);
 }
 
 export async function listNonEmployeePayroll(
   access: AccessContext,
   runId: string,
+  part?: NonEmployeePart,
 ): Promise<NonEmployeePayrollRow[]> {
   assertAutomatedPayrollHrActor(access);
   const run = await getRunById(runId);
   if (!run) throw new Error("Not found: payroll run does not exist.");
-  return getNonEmployeePayrollRows(runId);
+  return getNonEmployeePayrollRows(runId, part);
+}
+
+/** The stored entry, so update/delete can gate on the part it ACTUALLY belongs to. */
+async function requireEntry(runId: string, id: string): Promise<NonEmployeePayrollRow> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(TABLE)
+    .select("*")
+    .eq("id", id)
+    .eq("run_id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Not found: non-employee entry does not exist on this run.");
+  return mapRow(data as Row);
+}
+
+/**
+ * Writes the `part` column, retrying once without it if this environment hasn't
+ * had the migration applied yet. A "first" entry is unaffected by the retry —
+ * that is the column default and the module's original behaviour — but a
+ * "second" entry silently becoming a Part 1 one would move real money to the
+ * wrong installment, so that case fails loudly instead.
+ */
+async function writeWithPart<T>(
+  part: NonEmployeePart,
+  payload: Record<string, unknown>,
+  // PromiseLike, not Promise: a PostgREST builder is a thenable without
+  // .catch/.finally, so `Promise` would not accept it.
+  write: (body: Record<string, unknown>) => PromiseLike<{ data: T | null; error: unknown }>,
+): Promise<{ data: T | null; error: unknown }> {
+  const first = await write({ ...payload, part });
+  if (!first.error || !isMissingPartColumnError(first.error)) return first;
+  if (part === "second") {
+    throw new Error(
+      "Conflict: Part 2 Non-Employees Payroll needs a database migration that hasn't been applied to this environment yet.",
+    );
+  }
+  return write(payload);
 }
 
 export async function addNonEmployeePayrollEntry(
@@ -103,12 +202,13 @@ export async function addNonEmployeePayrollEntry(
   input: NonEmployeePayrollInput,
 ): Promise<NonEmployeePayrollRow> {
   assertAutomatedPayrollHrActor(access);
-  await requireEditableRun(runId);
   validateInput(input);
+  const part = resolvePart(input.part);
+  await requireEditableRun(runId, part);
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(TABLE)
-    .insert({
+  const { data, error } = await writeWithPart<Row>(
+    part,
+    {
       run_id: runId,
       full_name_ar: input.fullNameAr.trim(),
       full_name_en: input.fullNameEn.trim(),
@@ -116,16 +216,16 @@ export async function addNonEmployeePayrollEntry(
       bank_name: input.bankName?.trim() || null,
       bank_account: input.bankAccount?.trim() || null,
       created_by: actorId(access),
-    })
-    .select("*")
-    .single();
+    },
+    (body) => getSupabaseAdmin().from(TABLE).insert(body).select("*").single(),
+  );
   if (error) throw error;
   const row = mapRow(data as Row);
   await writeAutomatedPayrollAudit({
     runId,
     actorHrId: actorId(access),
     action: "non_employee_added",
-    detail: { id: row.id, fullNameEn: row.fullNameEn, totalSalary: row.totalSalary },
+    detail: { id: row.id, part: row.part, fullNameEn: row.fullNameEn, totalSalary: row.totalSalary },
   });
   return row;
 }
@@ -137,23 +237,28 @@ export async function updateNonEmployeePayrollEntry(
   input: NonEmployeePayrollInput,
 ): Promise<NonEmployeePayrollRow> {
   assertAutomatedPayrollHrActor(access);
-  await requireEditableRun(runId);
   validateInput(input);
 
-  const { data, error } = await getSupabaseAdmin()
-    .from(TABLE)
-    .update({
+  // Gate on the part it is stored under AND the part it would become, so an edit
+  // can never move an entry into an installment that is already closed, nor out
+  // of one that is.
+  const existing = await requireEntry(runId, id);
+  const part = input.part === undefined ? existing.part : resolvePart(input.part);
+  await requireEditableRun(runId, existing.part);
+  if (part !== existing.part) await requireEditableRun(runId, part);
+
+  const { data, error } = await writeWithPart<Row>(
+    part,
+    {
       full_name_ar: input.fullNameAr.trim(),
       full_name_en: input.fullNameEn.trim(),
       total_salary: input.totalSalary,
       bank_name: input.bankName?.trim() || null,
       bank_account: input.bankAccount?.trim() || null,
       updated_at: new Date().toISOString(),
-    })
-    .eq("id", id)
-    .eq("run_id", runId)
-    .select("*")
-    .maybeSingle();
+    },
+    (body) => getSupabaseAdmin().from(TABLE).update(body).eq("id", id).eq("run_id", runId).select("*").maybeSingle(),
+  );
   if (error) throw error;
   if (!data) throw new Error("Not found: non-employee entry does not exist on this run.");
   return mapRow(data as Row);
@@ -165,7 +270,8 @@ export async function deleteNonEmployeePayrollEntry(
   id: string,
 ): Promise<void> {
   assertAutomatedPayrollHrActor(access);
-  await requireEditableRun(runId);
+  const existing = await requireEntry(runId, id);
+  await requireEditableRun(runId, existing.part);
 
   const { error } = await getSupabaseAdmin().from(TABLE).delete().eq("id", id).eq("run_id", runId);
   if (error) throw error;
@@ -173,11 +279,11 @@ export async function deleteNonEmployeePayrollEntry(
     runId,
     actorHrId: actorId(access),
     action: "non_employee_removed",
-    detail: { id },
+    detail: { id, part: existing.part },
   });
 }
 
-/** Sum of every non-employee's Total Salary for a run — the amount added to the Part 1 sheet's grand total. */
+/** Sum of every non-employee's Total Salary in the list handed in — the amount folded into that sheet's total. */
 export function sumNonEmployeePayroll(rows: NonEmployeePayrollRow[]): number {
   return Math.round(rows.reduce((sum, row) => sum + row.totalSalary, 0) * 100) / 100;
 }

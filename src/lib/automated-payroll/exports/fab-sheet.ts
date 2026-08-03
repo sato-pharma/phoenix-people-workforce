@@ -57,16 +57,21 @@ export function fabRowsForScope(rows: AssembledRow[], scope: "part1" | "part2"):
  * FAB-bank Non-Employees Payroll rows (people paid a monthly salary with no
  * employee/HR_ID record — owner rule 2026-07-25/26 misses this without it, since
  * they are a completely separate data source from AssembledRow and don't run
- * through fabRowsForScope at all). Their whole totalSalary pays out with Part 1
- * (same rule as the internal review sheets — see sheet.ts's
- * writePayrollWorksheet), so they only ever appear on the "part1" scope.
+ * through fabRowsForScope at all).
+ *
+ * Each entry's own `part` decides which file carries it (owner request
+ * 2026-08-03). This used to hard-return [] for "part2", on the assumption that
+ * every non-employee pays with Part 1 — so a second-installment non-employee
+ * would have been left out of the bank transfer entirely and simply not get
+ * paid. Zero-amount and account-less rows are still dropped, same as employees.
  */
 export function fabRowsForNonEmployees(
   nonEmployees: NonEmployeePayrollRow[],
   scope: "part1" | "part2",
 ): FabSheetRow[] {
-  if (scope !== "part1") return [];
+  const part = scope === "part1" ? "first" : "second";
   return nonEmployees
+    .filter((entry) => entry.part === part)
     .filter((entry) => (entry.bankName ?? "").trim().toUpperCase() === "FAB")
     .map((entry) => ({
       fullName: entry.fullNameEn,

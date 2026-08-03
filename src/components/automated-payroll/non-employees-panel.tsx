@@ -5,13 +5,20 @@ import { Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { NonEmployeePayrollInput, NonEmployeePayrollRow } from "@/lib/automated-payroll/types";
+import type {
+  NonEmployeePart,
+  NonEmployeePayrollInput,
+  NonEmployeePayrollRow,
+} from "@/lib/automated-payroll/types";
 import { cn } from "@/lib/utils";
 
 type Props = {
   runId: string;
+  /** Which installment's list this panel edits (owner request 2026-08-03). */
+  part: NonEmployeePart;
   locked: boolean;
-  onChange?: (count: number) => void;
+  /** Must be referentially stable — the loader below depends on it. */
+  onChange?: (part: NonEmployeePart, count: number) => void;
 };
 
 const fieldClassName =
@@ -35,10 +42,14 @@ type NewRow = NonEmployeePayrollInput & { tempId: string };
  * Non-Employees Payroll (owner rule 2026-07-25): people paid a monthly salary
  * with no employee/HR_ID record at all — a free-form, HR-authored list per run.
  * Deliberately NOT the generic RecommendationStep grid: there is no population
- * to recommend against, just direct add/edit/delete. Their whole amount pays
- * with Part 1, so this panel locks the same moment every Part 1 tab locks.
+ * to recommend against, just direct add/edit/delete.
+ *
+ * One panel per installment (owner request 2026-08-03). Each list only ever
+ * loads, adds to and edits its own `part`, and locks the same moment that part's
+ * own wizard tabs lock — so the two can never overwrite each other and a Part 1
+ * entry can't be edited after Part 1 has been executed.
  */
-export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
+export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
   const [rows, setRows] = useState<NonEmployeePayrollRow[]>([]);
   const [edits, setEdits] = useState<Record<string, NonEmployeePayrollInput>>({});
   const [newRows, setNewRows] = useState<NewRow[]>([]);
@@ -50,7 +61,7 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees`);
+      const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees?part=${part}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load Non-Employees Payroll.");
       const loaded = data.rows as NonEmployeePayrollRow[];
@@ -69,13 +80,13 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
           ]),
         ),
       );
-      onChange?.(loaded.length);
+      onChange?.(part, loaded.length);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load Non-Employees Payroll.");
     } finally {
       setLoading(false);
     }
-  }, [runId, onChange]);
+  }, [runId, part, onChange]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -95,7 +106,7 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees/${id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, part }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to save.");
@@ -143,7 +154,7 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
       const res = await fetch(`/api/automated-payroll/runs/${runId}/non-employees`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, part }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to add.");
@@ -160,24 +171,29 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
     rows.reduce((sum, row) => sum + row.totalSalary, 0) +
     newRows.reduce((sum, row) => sum + (Number(row.totalSalary) || 0), 0);
 
+  const partLabel = part === "first" ? "Part 1" : "Part 2";
+
   if (loading) {
-    return <div className="p-6 text-sm text-slate-500">Loading Non-Employees Payroll…</div>;
+    return <div className="p-6 text-sm text-slate-500">Loading {partLabel} Non-Employees Payroll…</div>;
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-base font-black tracking-tight text-slate-900">Non-Employees Payroll</h3>
+        <h3 className="text-base font-black tracking-tight text-slate-900">
+          Non-Employees Payroll — {partLabel}
+        </h3>
         <p className="mt-0.5 text-sm text-slate-500">
-          People paid a monthly salary with no employee record in the system — entered fresh each run. Their whole
-          amount pays with Part 1, counted into the Part 1 sheet&apos;s grand total. No deductions or additions.
+          People paid a monthly salary with no employee record in the system — entered fresh each run. Everyone listed
+          here is paid with {partLabel}, counted into the {partLabel} sheet&apos;s total and its FAB/CIB bank file. No
+          deductions or additions. {part === "first" ? "Part 2" : "Part 1"} has its own separate list.
         </p>
       </div>
 
       {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
       {locked ? (
         <div className="border-l-4 border-slate-300 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
-          Read-only — this can only be edited while Part 1 is open.
+          Read-only — this can only be edited while {partLabel} is open.
         </div>
       ) : null}
 
@@ -315,7 +331,7 @@ export function NonEmployeesPanel({ runId, locked, onChange }: Props) {
 
           {rows.length === 0 && newRows.length === 0 ? (
             <div className="border-b border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
-              No non-employees this month.
+              No {partLabel} non-employees this month.
             </div>
           ) : null}
         </div>

@@ -13,7 +13,7 @@ import {
   fabRowsForNonEmployees,
   fabRowsForScope,
 } from "../src/lib/automated-payroll/exports/fab-sheet.ts";
-import type { NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
+import type { NonEmployeePart, NonEmployeePayrollRow } from "../src/lib/automated-payroll/types.ts";
 import type { SalaryValidationRow } from "../src/lib/payroll/salary-import.ts";
 
 /**
@@ -87,10 +87,12 @@ function buildNonEmployeeRow(overrides: {
   totalSalary?: number;
   bankName?: string | null;
   bankAccount?: string | null;
+  part?: NonEmployeePart;
 }): NonEmployeePayrollRow {
   return {
     id: "id",
     runId: "run",
+    part: overrides.part ?? "first",
     fullNameAr: "اسم",
     fullNameEn: overrides.fullNameEn ?? "Non Employee Person",
     totalSalary: overrides.totalSalary ?? 3000,
