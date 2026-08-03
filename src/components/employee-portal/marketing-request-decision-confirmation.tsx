@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { MarketingSalesEvidencePanel } from "@/components/marketing-requests/marketing-sales-evidence-panel";
 import type {
   MarketingRequestDecision,
   MarketingRequestDecisionSummary,
@@ -111,6 +112,14 @@ export function MarketingRequestDecisionConfirmation({
                 Pending your approval
               </span>
             </div>
+          </div>
+
+          {/* Evidence sits ABOVE the ask on purpose: the SFE Validation step exists to judge whether
+              this customer is worth spending on, and that judgement should be made before reading
+              what is being spent — not after. Inline so the approver never navigates away
+              mid-decision (see the shell-redirect bug this replaced). */}
+          <div className="mt-4">
+            <MarketingSalesEvidencePanel requestId={summary.requestId} />
           </div>
 
           <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">What&apos;s being requested</p>

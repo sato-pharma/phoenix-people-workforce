@@ -873,6 +873,74 @@ export async function runMarketingRequestServiceTests() {
     "the admin marketing inbox must send decisions to the admin shell, never the employee portal",
   );
 
+  /* ---------------------------------------------------------------------- */
+  /* SFE Validation must decide on EVIDENCE, not on the ask alone.           */
+  /* ---------------------------------------------------------------------- */
+
+  const evidenceSource = source("src/lib/marketing-requests/sales-evidence.ts");
+  const evidencePanelSource = source("src/components/marketing-requests/marketing-sales-evidence-panel.tsx");
+  const decisionConfirmationSource = source("src/components/employee-portal/marketing-request-decision-confirmation.tsx");
+
+  // Only rows that are BOTH valid AND inside a validated batch may count — the same gate marketing
+  // ROI attribution uses. Anything looser shows the approver numbers the ROI engine will not
+  // honour, which is worse than showing nothing.
+  assert.match(evidenceSource, /"validation_state", "valid"/, "sales evidence must count only rows marked valid");
+  assert.match(
+    evidenceSource,
+    /source_of_sales_import_batches[\s\S]{0,220}"status", "validated"/,
+    "sales evidence must count only rows inside a validated batch",
+  );
+
+  // Run-rate is per ACTIVE month, not per calendar month in the range: a pharmacy that bought in 3
+  // of 6 months has a 3-month run-rate, and averaging over the gaps would understate it.
+  assert.match(
+    evidenceSource,
+    /activeMonths > 0 \? round2\(totalValue \/ activeMonths\) : 0/,
+    "the monthly run-rate must divide by ACTIVE months, never by the calendar range",
+  );
+  assert.match(
+    evidenceSource,
+    /projectedShortfall: round2\(Math\.max\(0, ask\.requiredRoiValue - projectedOverWindow\)\)/,
+    "the shortfall must be measured against the request's own required return",
+  );
+
+  // A customer with no history must SAY so. An empty table reads as "the system is broken" rather
+  // than "this customer is unproven" — the same misleading-zero trap as the products label above.
+  assert.match(
+    evidencePanelSource,
+    /No historical sales/,
+    "a customer with no sales history must be labelled, not rendered as an empty table",
+  );
+  assert.match(
+    evidencePanelSource,
+    /unproven customer, not missing data/,
+    "the no-sales state must distinguish an unproven customer from absent data",
+  );
+  assert.match(
+    evidencePanelSource,
+    /no validated distributor pharmacy code/,
+    "a customer with no matchable pharmacy code must explain why nothing could be matched",
+  );
+
+  // Evidence sits above the ask, and inline — the approver must never navigate away mid-decision.
+  assert.match(
+    decisionConfirmationSource,
+    /<MarketingSalesEvidencePanel requestId=\{summary\.requestId\} \/>/,
+    "the decision surface must show sales evidence inline",
+  );
+  assert.match(
+    decisionConfirmationSource,
+    /MarketingSalesEvidencePanel[\s\S]{0,700}What&apos;s being requested/,
+    "sales evidence must appear BEFORE the ask, so the customer is judged before the spend is read",
+  );
+
+  // Reject and return already require a reason; pin it so the requirement cannot be dropped.
+  assert.match(
+    decisionConfirmationSource,
+    /\(decision === "reject" \|\| decision === "return"\) && !decisionComment/,
+    "reject and return must require a written reason",
+  );
+
   const draftWorkspaceSource = source("src/components/employee-portal/marketing-request-drafts.tsx");
   assert.match(
     draftWorkspaceSource,
