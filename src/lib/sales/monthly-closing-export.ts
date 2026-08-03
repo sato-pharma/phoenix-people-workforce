@@ -274,6 +274,10 @@ function writeTotalSheet(
   headline: ClosingHeadline | null,
   details: ClosingDetailsResult,
   dataSheetName: string,
+  // True when the whole workbook is a filtered slice: the headline row then names the FILTERED
+  // matrix total (which still ties, because every sheet was built from the same rows), so a
+  // reader never mistakes it for the whole-month published number.
+  filtered = false,
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
     views: [{ state: "frozen", ySplit: 5 }],
@@ -387,10 +391,12 @@ function writeTotalSheet(
   const headlineRows: CellValue[][] = headline
     ? [
       [
-        "Closing Matrix grand total",
+        filtered ? "Closing Matrix grand total (filtered)" : "Closing Matrix grand total",
         headline.salesUnits,
         headline.salesValue,
-        "Published headline for this line and month.",
+        filtered
+          ? "Grand total of the filtered Closing Matrix sheet in this workbook."
+          : "Published headline for this line and month.",
       ],
       [
         "Difference",
@@ -409,7 +415,10 @@ function writeTotalSheet(
       { label: "Note", width: 52 },
     ],
     note: headline
-      ? "The closing matrix counts every imported row except Direct orders and confidential products. " +
+      ? (filtered
+        ? "This workbook is a FILTERED slice — every sheet, including the Closing Matrix, was built " +
+          "from the same filtered rows (the filter is named on the Closing Matrix sheet). "
+        : "The closing matrix counts every imported row except Direct orders and confidential products. ") +
         "The two Excluded lines below are real sales the headline does not include; the Data-quality " +
         "lines ARE included in the headline but point at rows worth fixing."
       : "This export is scoped to your access and has no company-wide Closing Matrix to compare " +
@@ -627,7 +636,7 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
   return zebra ? ZEBRA : null;
 }
 
-function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs) {
+function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs, note?: string) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
   const productCols = products.length * 5;
@@ -740,6 +749,18 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   }
   if (matrix.companyTotal) {
     writeRow("grand", "", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand", true);
+  }
+
+  // Filter stamp — a filtered workbook gets forwarded like any other, so the sheet itself must
+  // say what slice it covers. Written after every data row, so nothing above it moves.
+  if (note) {
+    rowIndex += 1;
+    sheet.mergeCells(rowIndex, 1, rowIndex, totalCols);
+    const noteCell = sheet.getCell(rowIndex, 1);
+    noteCell.value = note;
+    noteCell.font = { color: { argb: SLATE }, italic: true, name: "Calibri", size: 10 };
+    noteCell.alignment = { horizontal: "left", vertical: "middle" };
+    sheet.getRow(rowIndex).height = 16;
   }
 
   sheet.getColumn(1).width = 12;
@@ -938,6 +959,7 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
     { label: "Tgt Units", numFmt: UNITS_FMT, right: true },
     { dataBar: true, label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 16 },
     { label: "Tgt Value", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "Tgt % of Line", numFmt: PCT_FMT, right: true, width: 13 },
     { label: "Ach %", numFmt: PCT_FMT, right: true },
   ];
   bandHeader(sheet, matrix.line, matrix.period, "Target vs Achievement", columns.length);
@@ -949,6 +971,20 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
   const SALES_VALUE_COL = columnLetter(5);
   const TARGET_VALUE_COL = columnLetter(6);
 
+  // The grand-total row index, known BEFORE building the rows (areas + one REGION TOTAL per
+  // region), because every "Tgt % of Line" cell divides by the grand total's target on that row.
+  const dataRowCount = matrix.regions.reduce((count, region) => count + region.areas.length + 1, 0);
+  const grandRow = FIRST_DATA_ROW + dataRowCount;
+  const grandTargetValue = matrix.grandTotal.rowTotal.targetValue;
+  // Live share of the line's total target. Blank-guarded on the ROW's own target first: in Excel
+  // a blank cell divided by a number is 0, which would print a fake "0.0%" for an area that
+  // simply has no target — and a blank target on this sheet must never read as a zero.
+  const contributionCell = (excelRow: number, targetValue: number | null): CellValue =>
+    F(
+      `IFERROR(IF(${TARGET_VALUE_COL}${excelRow}="","",${TARGET_VALUE_COL}${excelRow}/$${TARGET_VALUE_COL}$${grandRow}),"")`,
+      targetValue !== null && grandTargetValue ? targetValue / grandTargetValue : 0,
+    );
+
   const rows: CellValue[][] = [];
   const push = (region: string, area: string, cell: MonthlyClosingCell) => {
     const excelRow = FIRST_DATA_ROW + rows.length;
@@ -959,6 +995,7 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
       cell.targetUnits,
       cell.salesValue,
       cell.targetValue,
+      contributionCell(excelRow, cell.targetValue),
       // Live division, blank when there is no target to divide by.
       F(
         `IFERROR(${SALES_VALUE_COL}${excelRow}/${TARGET_VALUE_COL}${excelRow},"")`,
@@ -974,7 +1011,6 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
     push(region.regionName, `${region.regionName} — REGION TOTAL`, region.subtotal.rowTotal);
   });
 
-  const grandRow = FIRST_DATA_ROW + rows.length;
   const totals: CellValue[] = [
     "NATIONAL",
     "Grand Total",
@@ -982,6 +1018,8 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
     matrix.grandTotal.rowTotal.targetUnits,
     matrix.grandTotal.rowTotal.salesValue,
     matrix.grandTotal.rowTotal.targetValue,
+    // The line total's share of itself: 100% whenever any target exists, blank otherwise.
+    contributionCell(grandRow, grandTargetValue),
     F(
       `IFERROR(${SALES_VALUE_COL}${grandRow}/${TARGET_VALUE_COL}${grandRow},"")`,
       matrix.grandTotal.rowTotal.achievement ?? 0,
@@ -996,10 +1034,11 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
     columns,
     note: hasAnyTarget
       ? "Achievement % is a live formula (Sales Value ÷ Tgt Value) on each row, so it stays correct " +
-        "if a figure is edited. A blank target means no target was uploaded for that area and " +
-        "product — it is NOT a target of zero, and no achievement is claimed against it. " +
-        "Region totals divide summed sales by summed targets; they are never the average of the " +
-        "area percentages."
+        "if a figure is edited. Tgt % of Line is the row's target share of the line's total target " +
+        "(REGION TOTAL rows show the whole region's share). A blank target means no target was " +
+        "uploaded for that area and product — it is NOT a target of zero, and no achievement or " +
+        "share is claimed against it. Region totals divide summed sales by summed targets; they " +
+        "are never the average of the area percentages."
       : "No targets are loaded for this line and month, so every target and achievement cell is " +
         "blank. This is an absence of data, not a target of zero — upload the line's targets to " +
         "populate this sheet.",
@@ -1042,6 +1081,22 @@ export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
   details?: ClosingDetailsResult,
+  options?: {
+    /**
+     * Human-readable summary of the on-screen filter (names, never codes), stamped on the
+     * Closing Matrix sheet and reflected in the Total sheet's reconciliation labels. Present
+     * whenever the workbook covers a slice rather than the whole month — a forwarded file must
+     * say so itself.
+     */
+    filterNote?: string;
+    /**
+     * False when a row-level filter (distributor, Included/Excluded, free-text search) is
+     * active: targets are set per area & product for the whole company, so an achievement
+     * sheet against a row-level slice would compare one distributor's sales to a target that
+     * was never set for it. Omitting the sheet is honest; showing a fake % is not.
+     */
+    includeTargetSheet?: boolean;
+  },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
@@ -1050,10 +1105,13 @@ export async function buildMonthlyClosingWorkbook(
   // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
-  writeMatrixSheet(workbook, matrix, ref);
+  writeMatrixSheet(workbook, matrix, ref, options?.filterNote);
   // Directly after the matrix: the same numbers judged against their targets. It sits here rather
   // than at the end because "did we hit the number" is the second question a reader asks.
-  writeTargetAchievementSheet(workbook, matrix);
+  // Omitted for row-level filtered exports — see the option's own comment.
+  if (options?.includeTargetSheet !== false) {
+    writeTargetAchievementSheet(workbook, matrix);
+  }
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
   writeGapsSheet(workbook, comparison, ref);
@@ -1072,11 +1130,14 @@ export async function buildMonthlyClosingWorkbook(
       details.line,
       details.period,
     );
+    // The headline is the matrix IN THIS WORKBOOK — filtered or not. Under a row-level filter
+    // the route rebuilds the matrix from the same rows Data will show, so the tie holds by
+    // construction on every path; `filtered` only changes how the tie is labelled.
     const headline: ClosingHeadline = {
       salesUnits: matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
       salesValue: matrix.grandTotal.rowTotal.salesValue,
     };
-    writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data");
+    writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data", Boolean(options?.filterNote));
     if (confidential.length > 0) {
       writeRawDataSheet(
         workbook,
@@ -1099,9 +1160,10 @@ export async function buildMonthlyClosingWorkbook(
  * Details-only export: just "Data" (+ "Total" + "Confidential" when applicable) — no Matrix,
  * Comparison, Rankings, Gaps, or Summary. For a viewer whose access is scoped to part of the
  * company (a single line, region, or product allowlist), the full Closing Matrix + distributor
- * comparison are unscoped, company-wide reads (loadMonthlyClosing / loadMonthlyClosingComparison
- * have no region/product narrowing) — sending them to a scoped viewer would leak data outside
- * their access. `loadMonthlyClosingDetails`, by contrast, is already correctly scoped (region,
+ * comparison are company-wide reads that answer to nobody's access (loadMonthlyClosing /
+ * loadMonthlyClosingComparison narrow only by the caller's on-screen filter, which is a
+ * convenience and not a permission check) — sending them to a scoped viewer would leak data
+ * outside their access. `loadMonthlyClosingDetails`, by contrast, is properly scoped (region,
  * per-user product allowlist, confidential lock), so this builder is safe for any caller: it can
  * only ever contain what the viewer was already allowed to see.
  *

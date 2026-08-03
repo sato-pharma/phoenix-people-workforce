@@ -426,6 +426,105 @@ export type AssembleComparisonInput = {
   period: string | null;
 };
 
+/** The on-screen filter, in the dimensions the comparison's leaf rows actually carry. */
+export type ComparisonScope = {
+  areaCodes?: string[];
+  distributorCodes?: string[];
+  productCodes?: string[];
+  regionCodes?: string[];
+  /** Free text over the area's code or name — the same match the closing matrix filter uses. */
+  search?: string;
+};
+
+const scopeCodeSet = (values?: string[]) => {
+  const codes = (values ?? []).map((value) => value.trim().toUpperCase()).filter(Boolean);
+  return codes.length > 0 ? new Set(codes) : null;
+};
+
+/**
+ * Narrows the comparison's leaf rows to the filter the reader has on screen, so the Comparison,
+ * Rankings, Gaps and Summary sheets cover the same slice as the Matrix and Data sheets instead of
+ * always covering the whole month. Pure, and it only ever DROPS rows — every derived number stays
+ * a real sum over real leaves, because assembleComparison recomputes them all from what is left.
+ *
+ * The masters are narrowed with the same predicate, and that is the part worth understanding:
+ * masterAreas/masterBricks are the denominator for white space ("areas with zero sales") and for
+ * totalAreas/totalBricks. Leaving them national while the leaf rows are filtered to one region
+ * would report every area in the rest of the country as an unsold gap.
+ *
+ * Two dimensions cannot be honoured here, because the RPC rows do not carry them:
+ *  - product — only distProductRows has a productCode, so a product filter narrows the product
+ *    tables while the customer and brick rankings stay at their full-line values.
+ *  - inclusion — the closing RPCs already return only the rows that feed the closing, so there is
+ *    no excluded bucket here to slice.
+ */
+export function scopeComparisonInput(
+  input: AssembleComparisonInput,
+  scope: ComparisonScope | undefined,
+): AssembleComparisonInput {
+  if (!scope) return input;
+  const regions = scopeCodeSet(scope.regionCodes);
+  const areas = scopeCodeSet(scope.areaCodes);
+  const products = scopeCodeSet(scope.productCodes);
+  const distributors = scopeCodeSet(scope.distributorCodes);
+  const search = (scope.search ?? "").trim().toLowerCase();
+  if (!regions && !areas && !products && !distributors && !search) return input;
+
+  const { areaName } = input.maps;
+  // One place predicate for every leaf set and both masters, so a filter can never narrow one
+  // sheet and quietly leave another at its whole-month numbers.
+  const keepPlace = (regionCode: string, areaCode: string) => {
+    if (regions && !regions.has(regionCode.trim().toUpperCase())) return false;
+    if (areas && !areas.has(areaCode.trim().toUpperCase())) return false;
+    if (search) {
+      const haystack = `${areaCode.trim().toLowerCase()} ${(areaName.get(areaCode) ?? "").toLowerCase()}`;
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  };
+  const keepDistributor = (distributorCode: string) =>
+    !distributors || distributors.has(distributorCode.trim().toUpperCase());
+
+  const brickRows = input.brickRows.filter(
+    (row) => keepPlace(row.regionCode, row.areaCode) && keepDistributor(row.distributorCode),
+  );
+  const customerRows = input.customerRows.filter(
+    (row) => keepPlace(row.regionCode, row.areaCode) && keepDistributor(row.distributorCode),
+  );
+  const distProductRows = input.distProductRows.filter(
+    (row) =>
+      keepPlace(row.regionCode, row.areaCode)
+      && keepDistributor(row.distributorCode)
+      && (!products || products.has(row.productCode.trim().toUpperCase())),
+  );
+  const masterAreas = input.masterAreas.filter((area) => keepPlace(area.regionCode, area.areaCode));
+  const masterBricks = input.masterBricks.filter((brick) => keepPlace(brick.regionCode, brick.areaCode));
+
+  // The region NAME MAP is a universe, not just a lookup: productGaps asks "which regions is this
+  // product missing from?" against every key in it. Left whole, a Delta 2 export would report
+  // "missing from Cairo" — a gap outside the slice the reader asked for, and one they cannot act
+  // on. Narrow it to the regions that survived, which also keeps their own labels resolving.
+  const survivingRegions = new Set<string>([
+    ...masterAreas.map((area) => area.regionCode),
+    ...distProductRows.map((row) => row.regionCode),
+    ...brickRows.map((row) => row.regionCode),
+    ...customerRows.map((row) => row.regionCode),
+  ]);
+  const regionName = new Map(
+    [...input.maps.regionName].filter(([code]) => survivingRegions.has(code)),
+  );
+
+  return {
+    ...input,
+    brickRows,
+    customerRows,
+    distProductRows,
+    maps: { ...input.maps, regionName },
+    masterAreas,
+    masterBricks,
+  };
+}
+
 // Turns the mapped leaf rows + masters into the full comparison. Shared by the Monthly Closing
 // loader (one line) and the Executive Report loader (all lines, line label "All Lines"). Every
 // higher-level number is DERIVED from the leaf rows the RPCs return — never by summing
@@ -561,17 +660,17 @@ function emptyComparison(line: string | null, period: string | null): MonthlyClo
   };
 }
 
-export async function loadMonthlyClosingComparison(line: string | null, period: string | null): Promise<MonthlyClosingComparison> {
-  if (!line || !period) return emptyComparison(line, period);
+/** Reference data every comparison needs regardless of where its leaf rows come from. */
+type ComparisonMasters = {
+  maps: AssembleComparisonInput["maps"];
+  masterAreas: AssembleComparisonInput["masterAreas"];
+  masterBricks: AssembleComparisonInput["masterBricks"];
+};
 
+async function loadComparisonMasters(): Promise<ComparisonMasters> {
   const supabase = getSupabaseAdmin();
-  // Paginated reads — these aggregates can exceed PostgREST's 1000-row cap (e.g. a line with
-  // thousands of customers), which would otherwise truncate the comparison.
-  const [references, distProductData, brickData, customerData, brickMasterResult] = await Promise.all([
+  const [references, brickMasterResult] = await Promise.all([
     loadSalesReferenceData(),
-    rpcAll(supabase, "phx_closing_distributor_product", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "product_code"]),
-    rpcAll(supabase, "phx_closing_brick", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]),
-    rpcAll(supabase, "phx_closing_customers", { p_line: line, p_period: period }, ["client_code", "distributor_code"]),
     supabase.from("source_of_sales_bricks").select("brick_id,brick_name,area_code,region_code").eq("active", true),
   ]);
 
@@ -590,6 +689,26 @@ export async function loadMonthlyClosingComparison(line: string | null, period: 
     areaCode: String(b.area_code ?? ""), brickId: String(b.brick_id ?? ""), brickName: String(b.brick_name ?? "") || String(b.brick_id ?? ""), regionCode: String(b.region_code ?? ""),
   }));
 
+  return { maps: { areaName, areaRegion, distributorName, regionName }, masterAreas, masterBricks };
+}
+
+export async function loadMonthlyClosingComparison(
+  line: string | null,
+  period: string | null,
+  scope?: ComparisonScope,
+): Promise<MonthlyClosingComparison> {
+  if (!line || !period) return emptyComparison(line, period);
+
+  const supabase = getSupabaseAdmin();
+  // Paginated reads — these aggregates can exceed PostgREST's 1000-row cap (e.g. a line with
+  // thousands of customers), which would otherwise truncate the comparison.
+  const [masters, distProductData, brickData, customerData] = await Promise.all([
+    loadComparisonMasters(),
+    rpcAll(supabase, "phx_closing_distributor_product", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "product_code"]),
+    rpcAll(supabase, "phx_closing_brick", { p_line: line, p_period: period }, ["distributor_code", "region_code", "area_code", "brick_id"]),
+    rpcAll(supabase, "phx_closing_customers", { p_line: line, p_period: period }, ["client_code", "distributor_code"]),
+  ]);
+
   const distProductRows: DistProductRow[] = (distProductData as Array<Record<string, unknown>>).map((row) => ({
     areaCode: String(row.area_code ?? ""), distributorCode: String(row.distributor_code ?? ""), productCode: String(row.product_code ?? ""),
     productName: String(row.product_name ?? "") || String(row.product_code ?? ""), regionCode: String(row.region_code ?? ""),
@@ -605,14 +724,122 @@ export async function loadMonthlyClosingComparison(line: string | null, period: 
     regionCode: String(row.region_code ?? ""), units: Number(row.units ?? 0), value: Number(row.value ?? 0),
   }));
 
-  return assembleComparison({
+  // Scope BEFORE assembling: every ranking, mix, gap and insight is derived inside
+  // assembleComparison, so narrowing the leaves here narrows all of them at once — including the
+  // hidden Calc sheet the report formulas read from.
+  return assembleComparison(scopeComparisonInput({
     brickRows,
     customerRows,
     distProductRows,
     line,
-    maps: { areaName, areaRegion, distributorName, regionName },
-    masterAreas,
-    masterBricks,
+    maps: masters.maps,
+    masterAreas: masters.masterAreas,
+    masterBricks: masters.masterBricks,
     period,
+  }, scope));
+}
+
+/** The slice of a detail row the from-rows comparison needs — structural, so this module never
+ * imports the details module (which would be a cycle). */
+export type ComparisonSourceRow = {
+  areaCode: string;
+  brickId: string;
+  brickName: string;
+  clientCode: string;
+  clientName: string;
+  distributorCode: string;
+  includedInClosing: boolean;
+  productCode: string;
+  productName: string;
+  qty: number;
+  regionCode: string;
+  salesValue: number;
+};
+
+/**
+ * Groups filtered invoice rows into the same three leaf shapes the closing RPCs return, using the
+ * same measures (`units` = Σ qty, mirroring the RPCs' sum(total_qty); `value` = Σ salesValue,
+ * mirroring sum(effective_units x factory_price)). Only rows feeding the closing count — the RPCs
+ * never see excluded rows either, so a from-rows comparison stays comparable to an RPC one.
+ *
+ * Rows with no brick stay out of the brick leaves and rows with no customer code stay out of the
+ * customer leaves, exactly as they are absent from phx_closing_brick / phx_closing_customers.
+ */
+export function comparisonLeavesFromRows(
+  rows: ComparisonSourceRow[],
+): Pick<AssembleComparisonInput, "brickRows" | "customerRows" | "distProductRows"> {
+  const distProduct = new Map<string, DistProductRow>();
+  const bricks = new Map<string, BrickRow>();
+  const customers = new Map<string, CustomerRow>();
+
+  rows.forEach((row) => {
+    if (!row.includedInClosing) return;
+
+    const dpKey = `${row.distributorCode}|${row.regionCode}|${row.areaCode}|${row.productCode}`;
+    const dp = distProduct.get(dpKey) ?? {
+      areaCode: row.areaCode, distributorCode: row.distributorCode, productCode: row.productCode,
+      productName: row.productName || row.productCode, regionCode: row.regionCode, units: 0, value: 0,
+    };
+    dp.units += row.qty;
+    dp.value += row.salesValue;
+    distProduct.set(dpKey, dp);
+
+    if (row.brickId.trim()) {
+      const brickKey = `${row.distributorCode}|${row.regionCode}|${row.areaCode}|${row.brickId}`;
+      const brick = bricks.get(brickKey) ?? {
+        areaCode: row.areaCode, brickId: row.brickId, distributorCode: row.distributorCode,
+        regionCode: row.regionCode, units: 0, value: 0,
+      };
+      brick.units += row.qty;
+      brick.value += row.salesValue;
+      bricks.set(brickKey, brick);
+    }
+
+    if (row.clientCode.trim()) {
+      const customerKey = `${row.distributorCode}|${row.clientCode}`;
+      const customer = customers.get(customerKey) ?? {
+        areaCode: row.areaCode, brickId: row.brickId, clientCode: row.clientCode,
+        clientName: row.clientName || row.clientCode, distributorCode: row.distributorCode,
+        regionCode: row.regionCode, units: 0, value: 0,
+      };
+      customer.units += row.qty;
+      customer.value += row.salesValue;
+      customers.set(customerKey, customer);
+    }
   });
+
+  const rounded = <T extends { units: number; value: number }>(leaf: T): T => ({
+    ...leaf, units: round(leaf.units), value: round(leaf.value),
+  });
+  return {
+    brickRows: [...bricks.values()].map(rounded),
+    customerRows: [...customers.values()].map(rounded),
+    distProductRows: [...distProduct.values()].map(rounded),
+  };
+}
+
+/**
+ * The comparison for a ROW-LEVEL filtered export: same masters, same assembly, but the leaves come
+ * from the exact invoice rows the Data sheet will show instead of from the whole-month RPCs. This
+ * is what lets the Comparison / Rankings / Gaps / Summary sheets — and the hidden Calc sheet the
+ * Closing Matrix sheet's live formulas read — follow a distributor, Included/Excluded, free-text
+ * or product filter that the aggregates cannot express. `scope` still narrows the masters, so the
+ * white-space denominators cover the filtered place, not the whole country.
+ */
+export async function loadMonthlyClosingComparisonFromRows(
+  line: string | null,
+  period: string | null,
+  rows: ComparisonSourceRow[],
+  scope?: ComparisonScope,
+): Promise<MonthlyClosingComparison> {
+  if (!line || !period) return emptyComparison(line, period);
+  const masters = await loadComparisonMasters();
+  return assembleComparison(scopeComparisonInput({
+    ...comparisonLeavesFromRows(rows),
+    line,
+    maps: masters.maps,
+    masterAreas: masters.masterAreas,
+    masterBricks: masters.masterBricks,
+    period,
+  }, scope));
 }

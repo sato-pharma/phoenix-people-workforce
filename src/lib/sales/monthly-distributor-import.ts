@@ -3614,6 +3614,102 @@ export function filterMonthlyClosingMatrix(
   };
 }
 
+/** The slice of a detail row this rebuild needs — structural, so the details module never has to
+ * be imported here (which would be a cycle). `qty` mirrors the RPC's `sum(total_qty)` units and
+ * `salesValue` its `sum(effective_units * factory_price)` value, so a rebuilt cell carries the
+ * same measures as an RPC-built one. */
+export type MatrixRebuildRow = {
+  areaCode: string;
+  includedInClosing: boolean;
+  productCode: string;
+  qty: number;
+  salesValue: number;
+};
+
+/**
+ * Rebuilds every cell of an already place/product-filtered matrix from raw invoice rows, for the
+ * export path where a row-level filter (distributor, Included/Excluded, free-text search) is
+ * active. Those filters slice INSIDE an area x product cell, which the aggregate RPCs cannot
+ * express — so the cells are re-summed from the exact rows the Data sheet will show, and the
+ * matrix ties to the audit pair by construction.
+ *
+ * What deliberately changes shape here:
+ *  - Only rows feeding the closing are summed (Data still lists excluded rows; the CLOSING
+ *    matrix has always meant included-only). An Excluded-only filter therefore yields a zero
+ *    matrix, which is true: no closing sales exist in that slice.
+ *  - Targets and achievement become null. Targets are set per area & product for the whole
+ *    company; a distributor-sliced actual against a whole-company target would manufacture a
+ *    fake achievement %. Blank reads as "—", never as a lie.
+ *  - Direct (company channel) rows, Direct – National and the company total are dropped. Direct
+ *    orders are not distributor invoice rows, so no row-level filter can apply to them.
+ *  - Areas keep their row even at zero — the place skeleton is the filtered matrix's, so "this
+ *    distributor sold nothing in Mansoura" stays visible instead of vanishing.
+ */
+export function rebuildMatrixFromRows(
+  matrix: MonthlyClosingMatrix,
+  rows: MatrixRebuildRow[],
+): MonthlyClosingMatrix {
+  const sums = new Map<string, { salesUnits: number; salesValue: number }>();
+  rows.forEach((row) => {
+    if (!row.includedInClosing) return;
+    const key = `${normalizeCode(row.areaCode)} ${normalizeCode(row.productCode)}`;
+    const entry = sums.get(key) ?? { salesUnits: 0, salesValue: 0 };
+    entry.salesUnits += row.qty;
+    entry.salesValue += row.salesValue;
+    sums.set(key, entry);
+  });
+
+  const cellFor = (areaCode: string, productCode: string): MonthlyClosingCell => {
+    const found = sums.get(`${normalizeCode(areaCode)} ${normalizeCode(productCode)}`);
+    const cell = emptyClosingCell();
+    if (found) {
+      cell.salesUnits = found.salesUnits;
+      cell.salesValue = found.salesValue;
+    }
+    return roundedClosingCell(cell);
+  };
+
+  const regions: MonthlyClosingRegionGroup[] = matrix.regions.map((region) => {
+    const areas = region.areas
+      .filter((area) => !area.isDirect)
+      .map((area) => {
+        const cells = matrix.columns.map((column) => cellFor(area.areaCode, column.productCode));
+        return { ...area, cells, rowTotal: sumClosingRowTotal(cells) };
+      });
+    const subtotalCells = matrix.columns.map((_column, columnIndex) => {
+      const cell = emptyClosingCell();
+      areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
+      return roundedClosingCell(cell);
+    });
+    return {
+      areas,
+      regionCode: region.regionCode,
+      regionName: region.regionName,
+      subtotal: {
+        cells: subtotalCells,
+        kind: "regionSubtotal",
+        regionCode: region.regionCode,
+        regionName: region.regionName,
+        rowTotal: sumClosingRowTotal(subtotalCells),
+      },
+    };
+  });
+
+  const grandCells = matrix.columns.map((_column, columnIndex) => {
+    const cell = emptyClosingCell();
+    regions.forEach((region) => region.areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex])));
+    return roundedClosingCell(cell);
+  });
+
+  return {
+    ...matrix,
+    companyTotal: null,
+    directNational: null,
+    grandTotal: { cells: grandCells, kind: "grandTotal", rowTotal: sumClosingRowTotal(grandCells) },
+    regions,
+  };
+}
+
 export async function listMonthlyClosingLines(): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase

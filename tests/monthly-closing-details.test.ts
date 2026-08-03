@@ -406,6 +406,109 @@ export async function runMonthlyClosingDetailsTests() {
     assert.ok(!names.includes("Data"), "no raw Data sheet without details");
   }
 
+  // ── "Tgt % of Line" — each row's target share of the line's total target ───
+  // Two areas with targets 500 and 1,500: shares must be 25% and 75%, the region and grand rows
+  // 100%, every cell a live formula dividing by the ABSOLUTE grand-total target cell.
+  {
+    const cellWith = (salesValue: number, targetValue: number | null) => ({
+      achievement: targetValue ? salesValue / targetValue : null,
+      salesUnits: salesValue / 10,
+      salesValue,
+      targetUnits: targetValue === null ? null : targetValue / 10,
+      targetValue,
+    });
+    const areaWith = (areaCode: string, areaName: string, salesValue: number, targetValue: number | null) => ({
+      areaCode, areaName, cells: [cellWith(salesValue, targetValue)], kind: "area" as const,
+      regionCode: "CA", regionName: "Cairo", rowTotal: cellWith(salesValue, targetValue),
+    });
+    const targeted: MonthlyClosingMatrix = {
+      availableLines: ["Pedia"],
+      availablePeriods: ["2026-06"],
+      columns: [{ family: "Lacto", productCode: "LA001", productName: "Lacto Advanced 1" }],
+      grandTotal: { cells: [cellWith(1600, 2000)], kind: "grandTotal", rowTotal: cellWith(1600, 2000) },
+      line: "Pedia",
+      period: "2026-06",
+      regions: [{
+        areas: [areaWith("CA1", "Heliopolis", 400, 500), areaWith("CA2", "Nasr City", 1200, 1500)],
+        regionCode: "CA", regionName: "Cairo",
+        subtotal: { cells: [cellWith(1600, 2000)], kind: "regionSubtotal", regionCode: "CA", regionName: "Cairo", rowTotal: cellWith(1600, 2000) },
+      }],
+    };
+    const buffer = await buildMonthlyClosingWorkbook(targeted, comparisonStub());
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    const shares: number[] = [];
+    workbook.getWorksheet("Target vs Achievement")!.eachRow((sheetRow) => {
+      sheetRow.eachCell((cell) => {
+        const value = cell.value as { formula?: string; result?: unknown } | null;
+        if (value && typeof value === "object" && typeof value.formula === "string"
+          && value.formula.includes("/$F$")) {
+          shares.push(Number(value.result ?? Number.NaN));
+        }
+      });
+    });
+    assert.deepEqual(
+      shares,
+      [0.25, 0.75, 1, 1],
+      "area shares 25%/75%, region total 100%, grand total 100% — all against the absolute grand target",
+    );
+  }
+
+  // ── Filtered workbooks say so on the file itself, and stay honest about targets ───
+  // A row-level filtered export rebuilds every sheet from the same rows, so the tie to the
+  // matrix HOLDS — but the file must (a) name its own filter on the Closing Matrix sheet, (b)
+  // label the headline as the filtered total, and (c) omit Target vs Achievement, because a
+  // company-set target cannot be sliced by distributor/inclusion/search.
+  {
+    const workbookOf = async (options?: { filterNote?: string; includeTargetSheet?: boolean }) => {
+      const buffer = await buildMonthlyClosingWorkbook(
+        matrixStub(1000, 10),
+        comparisonStub(),
+        detailsStub([row({ id: 1, qty: 10, factoryPrice: 100 })]),
+        options,
+      );
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+      const textsOf = (sheetName: string) => {
+        const texts: string[] = [];
+        workbook.getWorksheet(sheetName)?.eachRow((sheetRow) => {
+          sheetRow.eachCell((cell) => {
+            if (typeof cell.value === "string") texts.push(cell.value);
+          });
+        });
+        return texts;
+      };
+      return { names: workbook.worksheets.map((sheet) => sheet.name), textsOf };
+    };
+
+    const unfiltered = await workbookOf();
+    assert.ok(unfiltered.names.includes("Target vs Achievement"), "an unfiltered export keeps the target sheet");
+    assert.ok(
+      unfiltered.textsOf("Target vs Achievement").includes("Tgt % of Line"),
+      "each targeted row carries its share of the whole line's target",
+    );
+    assert.ok(
+      unfiltered.textsOf("Total").some((text) => text.includes("Closing Matrix grand total")
+        && !text.includes("(filtered)")),
+      "…and its headline is the published month",
+    );
+
+    const NOTE = "Filtered export — this workbook covers only: Distributor: Ibn Sina.";
+    const filtered = await workbookOf({ filterNote: NOTE, includeTargetSheet: false });
+    assert.ok(
+      !filtered.names.includes("Target vs Achievement"),
+      "a row-level filtered export omits Target vs Achievement instead of faking an achievement %",
+    );
+    assert.ok(
+      filtered.textsOf("Closing Matrix").some((text) => text === NOTE),
+      "the Closing Matrix sheet carries the filter stamp verbatim",
+    );
+    assert.ok(
+      filtered.textsOf("Total").some((text) => text.includes("Closing Matrix grand total (filtered)")),
+      "the Total sheet still ties — to the filtered matrix, and says so",
+    );
+  }
+
   // ── The scoped (Details-only) export never leaks the Matrix/Comparison sheets ──
   // This is what a non-admin, scope-limited viewer (DM/RM/NSM/PM/GPM) downloads: the exact
   // rows their Details tab already shows them, with no company-wide sheet alongside it.
