@@ -136,6 +136,7 @@ import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guard
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
+import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
@@ -734,6 +735,10 @@ await runTest("deductions module safety guards (the 9 PR-1 defects — including
 await runTest(
   "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
   runDeductionsModuleAppliedDaysTests,
+);
+await runTest(
+  "deductions holiday bridge (nearest WORKING day either side of a governmental holiday, never double-charged)",
+  runDeductionsHolidayBridgeTests,
 );
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);

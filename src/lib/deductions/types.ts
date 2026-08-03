@@ -161,6 +161,19 @@ export type DeductionsCandidateWithDecision = DeductionsCandidate & {
    * reach a screen. Optional so existing fixtures need not carry it.
    */
   hireDate?: string | null;
+  /**
+   * Any of this candidate's days that sit directly beside a governmental
+   * holiday (nearest WORKING day either side — see holiday-bridge.ts).
+   * Display annotation resolved at read time; it explains a row, it does not
+   * change what the row charges.
+   */
+  holidayBridges?: Array<{
+    date: string;
+    adjacentTo: "before" | "after";
+    holidayName: string;
+    holidayStartDate: string;
+    holidayEndDate: string;
+  }>;
 };
 
 export const deductionsPublicationStatuses = ["published", "superseded"] as const;

@@ -13,6 +13,8 @@ import {
   scaleDeductionAmountToDays,
 } from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
+import { computeHolidayBridgeDays, isFieldForceWorkingDay, type HolidayBridgeDay } from "./holiday-bridge.ts";
+import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { assertDeductionsDecisionActor } from "./permissions.ts";
 import {
   buildDeductionsCandidateKey,
@@ -767,10 +769,14 @@ export async function listCandidatesForMonth(input: {
   // needs a stable total order. employee_name is nullable and non-unique, so
   // paging on it can repeat or skip rows at page boundaries. Callers that need
   // display order sort in memory below.
-  const [rows, directory] = await Promise.all([
+  const [rows, directory, bridgeDays] = await Promise.all([
     fetchAllRows<CandidateRowWithDecision>(buildQuery, "id"),
     getEmployeeDirectory(),
+    getHolidayBridgeDaysForMonth(monthKey),
   ]);
+  // Annotation only — an unreachable calendar just means no badges on the table,
+  // which is harmless. The CONNECTOR refuses outright in that case; see there.
+  const bridgeByDate = new Map(bridgeDays.bridgeDays.map((bridge) => [bridge.date, bridge]));
 
   return rows
     .map((row) => {
@@ -785,12 +791,75 @@ export async function listCandidatesForMonth(input: {
         // time. The directory only fills the gap that made a code appear.
         employeeName: storedName || known?.fullName?.trim() || null,
         hireDate: known?.hireDate ?? null,
+        // Which of THIS candidate's days sit directly beside a governmental
+        // holiday. Annotation only — it explains a row, it does not change what
+        // the row charges.
+        holidayBridges: candidate.dates
+          .map((date) => bridgeByDate.get(date))
+          .filter((bridge): bridge is HolidayBridgeDay => Boolean(bridge)),
         decision: mapDecisionRow(decisionRow),
       };
     })
     // Sorted AFTER resolution, so a candidate that arrived without a name is
     // filed under the name the reviewer actually sees rather than at the top.
     .sort((left, right) => String(left.employeeName ?? "").localeCompare(String(right.employeeName ?? "")));
+}
+
+/**
+ * The governmental-holiday bridge days that land inside this month.
+ *
+ * Holidays from the ADJACENT months are pulled in too: a holiday on the 1st
+ * bridges the last working day of the prior month, and one on the 31st bridges
+ * into the next — reading only this month's holidays would silently drop both.
+ *
+ * Defensive on purpose. This annotates rows for display; a holiday-calendar
+ * hiccup must show an unannotated table, never fail the whole deductions read.
+ */
+export async function getHolidayBridgeDaysForMonth(
+  monthKey: string,
+): Promise<{ bridgeDays: HolidayBridgeDay[]; calendarReachable: boolean }> {
+  const [yearStr, monthStr] = monthKey.split("-");
+  const year = Number.parseInt(yearStr ?? "", 10);
+  const month = Number.parseInt(monthStr ?? "", 10);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return { bridgeDays: [], calendarReachable: false };
+
+  const periods = [
+    month === 1 ? { month: 12, year: year - 1 } : { month: month - 1, year },
+    { month, year },
+    month === 12 ? { month: 1, year: year + 1 } : { month: month + 1, year },
+  ];
+
+  try {
+    const results = await Promise.all(periods.map((period) => getConfirmedNationalHolidays(period)));
+    // Every month must have been READ, not merely "connected". When the Egypt
+    // holiday calendar is unreachable the result can still carry a hardcoded
+    // company entry while every public holiday is missing — and a missing
+    // holiday reads downstream as an ordinary working day. That would let this
+    // flag a day that was actually a national holiday and deduct a day's pay
+    // for it. The module's own doc comment warns money-safe consumers to gate
+    // on exactly this flag.
+    const calendarReachable = results.every((result) => result.calendarReachable);
+    const seen = new Set<string>();
+    const holidays = [];
+    for (const result of results) {
+      for (const holiday of result.holidays) {
+        if (seen.has(holiday.id)) continue;
+        seen.add(holiday.id);
+        holidays.push({
+          id: holiday.id,
+          name: holiday.name,
+          startDate: holiday.startDate,
+          endDate: holiday.endDate ?? null,
+        });
+      }
+    }
+    return {
+      bridgeDays: computeHolidayBridgeDays({ holidays, monthKey, isWorkingDay: isFieldForceWorkingDay }),
+      calendarReachable,
+    };
+  } catch {
+    return { bridgeDays: [], calendarReachable: false };
+  }
 }
 
 type EmployeeDirectoryEntry = { fullName: string | null; hireDate: string | null };

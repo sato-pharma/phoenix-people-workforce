@@ -6,6 +6,7 @@ import { buildManualDeductionDraft } from "@/lib/deductions/connectors/manual.ts
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
 import { insertCandidateDrafts } from "@/lib/deductions/service.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,16 +42,34 @@ export async function POST(request: Request) {
       throw new Error('Validation: unit must be "days" or "amount".');
     }
 
+    // Base salary and name are read SERVER-side from the employees table, never
+    // taken from the request. The amount a manual day costs is payroll, so it is
+    // derived here from the record of truth; and the name is resolved so the row
+    // can never fall back to displaying an HR code.
+    const { data: employeeRow, error: employeeError } = await getSupabaseAdmin()
+      .from("employees")
+      .select("hr_id, full_name, base_salary")
+      .eq("hr_id", body.employeeHrId.trim())
+      .maybeSingle();
+    if (employeeError) {
+      throw new Error(`Employee lookup failed: ${employeeError.message}`);
+    }
+    if (!employeeRow) {
+      throw new Error("Not found: no employee matches that record.");
+    }
+    const employee = employeeRow as { hr_id: string; full_name: string | null; base_salary: number | null };
+
     const draft = buildManualDeductionDraft({
       category: body.category,
-      employeeHrId: body.employeeHrId,
-      employeeName: typeof body.employeeName === "string" ? body.employeeName : null,
+      employeeHrId: employee.hr_id,
+      employeeName: employee.full_name,
       month: Number(body.month),
       year: Number(body.year),
       unit: body.unit,
       value: Number(body.value),
       reason: typeof body.reason === "string" ? body.reason : "",
       enteredBy: access.hrId ?? access.loginId ?? "unknown",
+      baseSalary: employee.base_salary,
     });
 
     const result = await insertCandidateDrafts({

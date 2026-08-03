@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Download, PlayCircle, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, PlayCircle, RotateCcw, UserPlus, XCircle } from "lucide-react";
 
 import {
   DEDUCTIONS_CATEGORY_CONFIG,
@@ -17,6 +17,8 @@ type CandidateApiRow = {
   employeeName: string | null;
   /** Resolved from the employees table at read time — see service.ts. */
   hireDate?: string | null;
+  /** Days of this candidate that sit directly beside a governmental holiday. */
+  holidayBridges?: Array<{ date: string; adjacentTo: "before" | "after"; holidayName: string }>;
   monthKey: string;
   unit: "days" | "amount";
   rawValue: number;
@@ -75,6 +77,53 @@ function hireDateLabel(value: string | null | undefined): string {
   if (!year || !month || !day) return "—";
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "UTC", year: "numeric" }).format(
     new Date(Date.UTC(year, month - 1, day)),
+  );
+}
+
+/** Sunday-first, matching buildHrCalendarDays in hr-calendar/calendar-logic.ts. */
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"] as const;
+
+/** Friday is the one day off for EVERY population — see isFieldWorkforceWeeklyOff. */
+const FRIDAY_COLUMN = 5;
+
+/**
+ * The month laid out as a real calendar: leading blanks to the first weekday,
+ * then every day, padded to whole weeks. Sunday-first to match the HR calendar
+ * this company already reads.
+ *
+ * Built in UTC from the month key's own parts. A local-time Date would put the
+ * first-of-month on the wrong weekday for anyone east of GMT, which silently
+ * rotates the entire grid by a day.
+ */
+function buildMonthGrid(monthKey: string): Array<string | null> {
+  const [year, month] = monthKey.split("-").map(Number);
+  if (!year || !month) return [];
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells: Array<string | null> = Array.from({ length: firstWeekday }, () => null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+/**
+ * "6 Oct · before" — which governmental holiday this row's day touches, and on
+ * which side. Named because "flagged" alone leaves the reviewer to work out
+ * WHY, and the reason is the entire justification for the deduction.
+ */
+function HolidayBridgeCell({ row }: { row: CandidateApiRow }) {
+  const bridges = row.holidayBridges ?? [];
+  if (bridges.length === 0) return <span className="text-slate-300">—</span>;
+  return (
+    <span className="flex flex-col gap-0.5">
+      {bridges.map((bridge) => (
+        <span className="whitespace-nowrap text-[11px] font-bold text-orange-700" key={`${bridge.date}:${bridge.adjacentTo}`}>
+          {dayOfMonth(bridge.date)} {bridge.adjacentTo === "before" ? "before" : "after"} {bridge.holidayName}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -163,6 +212,8 @@ function DeductionDaysEditor({
   const [error, setError] = useState<string | null>(null);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const detectedSet = useMemo(() => new Set(detected), [detected]);
+  const monthGrid = useMemo(() => buildMonthGrid(row.monthKey), [row.monthKey]);
   const parsedQuantity = Number(quantity);
   const quantityValid = quantity.trim() !== "" && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
   const overDetected = quantityValid && row.unit === "days" && parsedQuantity > row.rawValue;
@@ -255,32 +306,72 @@ function DeductionDaysEditor({
               Clear all
             </button>
           </div>
-          {/* A control grid, not a paragraph: fixed columns so a 19-day month
-              lays out deliberately instead of reflowing like wrapped text. */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5">
-            {detected.map((date) => {
-              const checked = selectedSet.has(date);
-              return (
-                <label
+          {/* A real month calendar, not a row of chips. "Days 5, 8, 12, 14, 18…"
+              tells a reviewer nothing about the SHAPE of the absence; the same
+              days on a calendar immediately show whether someone missed every
+              Sunday, a solid week, or scattered singles. Days the engine did not
+              flag are still drawn, greyed and inert, because the gaps are half
+              the picture. */}
+          <div className="inline-block border border-slate-200 bg-white p-2">
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAY_LABELS.map((label, index) => (
+                <div
                   className={[
-                    "flex cursor-pointer items-center gap-1.5 whitespace-nowrap border px-2 py-1 text-xs font-bold tabular-nums transition",
-                    checked
-                      ? "border-orange-400 bg-white text-slate-900"
-                      : "border-slate-200 bg-slate-100 text-slate-400 line-through",
+                    "px-1 pb-1 text-center text-[10px] font-black uppercase tracking-[0.06em]",
+                    index === FRIDAY_COLUMN ? "text-orange-500" : "text-slate-400",
                   ].join(" ")}
-                  key={date}
+                  key={label}
                 >
-                  <input
-                    checked={checked}
-                    className="h-3.5 w-3.5 accent-orange-500"
-                    onChange={() => toggleDay(date)}
-                    type="checkbox"
-                  />
-                  Day {dayOfMonth(date)}
-                </label>
-              );
-            })}
+                  {label}
+                </div>
+              ))}
+              {monthGrid.map((date, index) => {
+                if (!date) return <div className="h-9" key={`pad-${index}`} />;
+                const isFriday = index % 7 === FRIDAY_COLUMN;
+                if (!detectedSet.has(date)) {
+                  return (
+                    <div
+                      className={[
+                        "flex h-9 min-w-[2.4rem] items-center justify-center text-xs tabular-nums",
+                        isFriday ? "bg-orange-50/60 text-slate-300" : "text-slate-300",
+                      ].join(" ")}
+                      key={date}
+                    >
+                      {dayOfMonth(date)}
+                    </div>
+                  );
+                }
+                const checked = selectedSet.has(date);
+                return (
+                  <label
+                    className={[
+                      "flex h-9 min-w-[2.4rem] cursor-pointer items-center justify-center gap-1 whitespace-nowrap border text-xs font-bold tabular-nums transition",
+                      checked
+                        ? "border-orange-400 bg-white text-slate-900"
+                        : "border-slate-200 bg-slate-100 text-slate-400 line-through",
+                    ].join(" ")}
+                    key={date}
+                    title={date}
+                  >
+                    <input
+                      checked={checked}
+                      className="h-3 w-3 accent-orange-500"
+                      onChange={() => toggleDay(date)}
+                      type="checkbox"
+                    />
+                    {dayOfMonth(date)}
+                  </label>
+                );
+              })}
+            </div>
           </div>
+          {/* Friday is the only day off for EVERY population — Saturday depends
+              on the job title (isFieldWorkforceWeeklyOff), so it is deliberately
+              not tinted here rather than asserting a rule that is wrong for half
+              the company. */}
+          <p className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+            Tickable days are the ones detected · greyed days were not flagged · Friday column tinted
+          </p>
         </div>
       ) : (
         <p className="text-xs font-semibold text-slate-500">
@@ -552,6 +643,270 @@ function CandidateDecideRow({
   );
 }
 
+type EmployeeMatch = { hrId: string; name: string; jobTitle: string | null; employmentStatus: string | null };
+
+/**
+ * Add an employee to a manual category (Loan / Other) and deduct from them.
+ *
+ * Only these two categories: the other five are DETECTED from source data, and
+ * hand-adding a row there would be inventing evidence. The manual API already
+ * existed but nothing on this screen called it, so the only way to add somebody
+ * was a hand-crafted request.
+ *
+ * The employee is chosen by NAME. The amount for a days entry is priced by the
+ * server from the employee's base salary — the preview here is exactly that
+ * same figure, fetched for the one selected person, so what you see before
+ * saving is what gets written.
+ */
+function AddManualDeduction({
+  category,
+  monthKey,
+  onAdded,
+}: {
+  category: Extract<DeductionsCategory, "loan" | "other">;
+  monthKey: string;
+  onAdded: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [matches, setMatches] = useState<EmployeeMatch[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [picked, setPicked] = useState<{ hrId: string; name: string; dayRate: number | null } | null>(null);
+  const [unit, setUnit] = useState<"days" | "amount">("days");
+  const [value, setValue] = useState("1");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const parsedValue = Number(value);
+  const valueValid = value.trim() !== "" && Number.isFinite(parsedValue) && parsedValue > 0;
+  const preview =
+    unit === "amount"
+      ? valueValid
+        ? parsedValue
+        : null
+      : valueValid && picked?.dayRate != null
+        ? Math.round(picked.dayRate * parsedValue * 100) / 100
+        : null;
+
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMatches([]);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      fetchJson<{ employees: EmployeeMatch[] }>(`/api/admin/deductions/employees?q=${encodeURIComponent(term)}`)
+        .then((payload) => {
+          if (!cancelled) setMatches(payload.employees);
+        })
+        .catch(() => {
+          if (!cancelled) setMatches([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  async function pick(match: EmployeeMatch) {
+    setError(null);
+    setPicked({ hrId: match.hrId, name: match.name, dayRate: null });
+    setQuery(match.name);
+    setMatches([]);
+    try {
+      const payload = await fetchJson<{ employee: { hrId: string; name: string | null; dayRate: number | null } }>(
+        `/api/admin/deductions/employees?hrId=${encodeURIComponent(match.hrId)}&monthKey=${monthKey}`,
+      );
+      setPicked({ hrId: match.hrId, name: payload.employee.name || match.name, dayRate: payload.employee.dayRate });
+    } catch (pickError) {
+      setError(pickError instanceof Error ? pickError.message : "Could not load that employee's day rate.");
+    }
+  }
+
+  async function submit() {
+    if (!picked) {
+      setError("Choose an employee first.");
+      return;
+    }
+    if (!valueValid) {
+      setError(unit === "days" ? "Enter how many days." : "Enter an amount.");
+      return;
+    }
+    if (!reason.trim()) {
+      setError("A reason is required — this writes an approved deduction.");
+      return;
+    }
+    const [year, month] = monthKey.split("-").map(Number);
+    setSaving(true);
+    setError(null);
+    try {
+      await fetchJson("/api/admin/deductions/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category,
+          employeeHrId: picked.hrId,
+          month,
+          year,
+          unit,
+          value: parsedValue,
+          reason: reason.trim(),
+        }),
+      });
+      setPicked(null);
+      setQuery("");
+      setValue("1");
+      setReason("");
+      setOpen(false);
+      onAdded();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not add this deduction.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-slate-700 transition hover:border-orange-400 hover:text-orange-600"
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        <UserPlus className="h-3.5 w-3.5" />
+        Add employee
+      </button>
+    );
+  }
+
+  return (
+    <div className="w-full space-y-3 border border-orange-200 bg-orange-50/50 p-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="relative flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            Employee
+          </span>
+          <input
+            className="w-72 border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPicked(null);
+            }}
+            placeholder="Type a name…"
+            value={query}
+          />
+          {matches.length > 0 ? (
+            <ul className="absolute top-full z-10 max-h-56 w-72 overflow-y-auto border border-slate-300 bg-white shadow-lg">
+              {matches.map((match) => (
+                <li key={match.hrId}>
+                  <button
+                    className="flex w-full flex-col items-start gap-0.5 px-2 py-1.5 text-left transition hover:bg-orange-50"
+                    onClick={() => pick(match)}
+                    type="button"
+                  >
+                    <span className="whitespace-nowrap text-xs font-bold text-slate-900">{match.name}</span>
+                    {match.jobTitle ? (
+                      <span className="whitespace-nowrap text-[10px] text-slate-500">{match.jobTitle}</span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {searching ? <span className="text-[10px] font-semibold text-slate-400">Searching…</span> : null}
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            Deduct by
+          </span>
+          <select
+            className="border border-slate-300 bg-white px-2 py-1 text-sm font-semibold text-slate-900 focus:border-orange-400 focus:outline-none"
+            onChange={(event) => setUnit(event.target.value === "amount" ? "amount" : "days")}
+            value={unit}
+          >
+            <option value="days">Days</option>
+            <option value="amount">Amount (EGP)</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            {unit === "days" ? "Days" : "Amount"}
+          </span>
+          <input
+            className="w-28 border border-slate-300 bg-white px-2 py-1 text-sm font-black tabular-nums text-slate-900 focus:border-orange-400 focus:outline-none"
+            inputMode="decimal"
+            min={0}
+            onChange={(event) => setValue(event.target.value)}
+            step={unit === "days" ? "0.5" : "1"}
+            type="number"
+            value={value}
+          />
+        </label>
+
+        <div className="flex flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            Amount
+          </span>
+          <p className="whitespace-nowrap py-1 text-sm font-black tabular-nums text-slate-900">
+            {preview != null ? `${money(preview)} EGP` : picked && unit === "days" ? "no base salary on record" : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-1 flex-col gap-1">
+          <span className="whitespace-nowrap text-[11px] font-black uppercase tracking-[0.1em] text-slate-500">
+            Reason
+          </span>
+          <input
+            className="w-full border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 focus:border-orange-400 focus:outline-none"
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why is this being deducted?"
+            value={reason}
+          />
+        </label>
+        <div className="flex items-center gap-1.5">
+          <button
+            className="whitespace-nowrap bg-slate-900 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-white transition hover:bg-slate-700 disabled:opacity-50"
+            disabled={saving}
+            onClick={submit}
+            type="button"
+          >
+            {saving ? "Adding…" : "Add deduction"}
+          </button>
+          <button
+            className="whitespace-nowrap px-2 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500 transition hover:text-slate-800"
+            disabled={saving}
+            onClick={() => setOpen(false)}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {/* A manual entry auto-approves on insert — there is nothing to decide
+          about a number a human just typed — so the warning belongs here, before
+          the click, not in a confirmation nobody reads. */}
+      <p className="whitespace-nowrap text-[11px] font-bold text-amber-800">
+        This is added as “Approved for Payroll” immediately and will publish with the month.
+      </p>
+
+      {error ? <p className="text-[11px] font-semibold text-red-700">{error}</p> : null}
+    </div>
+  );
+}
+
 function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCategory; monthKey: string; canDecide: boolean }) {
   const [rows, setRows] = useState<CandidateApiRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -560,6 +915,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
   // with up to ~19 days — rendering every checkbox at once would put thousands
   // of live inputs on the page for no benefit.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Bumped to force a refetch after a manual entry is added, so the new row
+  // appears without a full page reload.
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -579,7 +937,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
     return () => {
       cancelled = true;
     };
-  }, [category, monthKey]);
+  }, [category, monthKey, reloadToken]);
 
   function handleDecided(candidateId: string, decision: CandidateApiRow["decision"]) {
     setRows((current) => current.map((row) => (row.id === candidateId ? { ...row, decision } : row)));
@@ -610,6 +968,15 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
         </div>
       </div>
 
+      {/* Manual categories only. Loan and Other have no source system to scan,
+          so an employee is added by hand; the other five are DETECTED, and
+          hand-adding a row there would be inventing evidence for a deduction. */}
+      {canDecide && (category === "loan" || category === "other") ? (
+        <div className="flex flex-wrap items-start gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
+          <AddManualDeduction category={category} monthKey={monthKey} onAdded={() => setReloadToken((n) => n + 1)} />
+        </div>
+      ) : null}
+
       {error ? (
         <div className="flex items-center gap-2 border-b border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold text-red-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
@@ -632,6 +999,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   <th className="whitespace-nowrap px-4 py-2">Hire date</th>
                   <th className="px-4 py-2">Days</th>
                   <th className="px-4 py-2">Dates deducted</th>
+                  <th className="whitespace-nowrap px-4 py-2">Holiday bridge</th>
                   <th className="px-4 py-2">Amount</th>
                   <th className="px-4 py-2">Reason</th>
                   <th className="px-4 py-2">Status</th>
@@ -679,6 +1047,9 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         <td className="whitespace-nowrap px-4 py-2.5 text-xs text-slate-700">
                           <DayList row={row} />
                         </td>
+                        <td className="px-4 py-2.5">
+                          <HolidayBridgeCell row={row} />
+                        </td>
                         <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
                           {amount != null ? money(amount) : "requires review"}
                         </td>
@@ -703,7 +1074,7 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                       </tr>
                       {canDecide && editingId === row.id ? (
                         <tr className="border-b border-slate-200 bg-white">
-                          <td className="px-4 pb-3" colSpan={8}>
+                          <td className="px-4 pb-3" colSpan={9}>
                             <DeductionDaysEditor onClose={() => setEditingId(null)} onSaved={handleDecided} row={row} />
                           </td>
                         </tr>
@@ -733,6 +1104,11 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                   <p className="mt-1 text-xs tabular-nums text-slate-700">
                     Dates: <DayList row={row} />
                   </p>
+                  {(row.holidayBridges ?? []).length > 0 ? (
+                    <p className="mt-1">
+                      <HolidayBridgeCell row={row} />
+                    </p>
+                  ) : null}
                   {row.reason ? <p className="mt-1 text-xs text-slate-600">{row.reason}</p> : null}
                   {canDecide ? (
                     <button
