@@ -143,3 +143,28 @@ export function matchesExpenseApprovalFilters(
 export function countActiveExpenseApprovalFilters(filters: ExpenseApprovalFilters): number {
   return (filters.month ? 1 : 0) + (filters.employee ? 1 : 0);
 }
+
+export type ExpenseApprovalSearchRecord = {
+  hrId?: string | null;
+  location: string;
+  specialist: string;
+  to: string;
+  tripId: string;
+};
+
+/**
+ * The free-text box's own match rule — extracted so the XLSX export can narrow by the SAME
+ * query the reviewer typed on screen. One function, used by both sides, so an export can never
+ * disagree with what the search box is currently showing.
+ */
+export function matchesExpenseApprovalSearchText(
+  record: ExpenseApprovalSearchRecord,
+  query: string,
+): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [record.specialist, record.hrId ?? "", record.tripId, record.location, record.to]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalized);
+}

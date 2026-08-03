@@ -546,6 +546,7 @@ import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.t
 import { runOutstationApprovalStateTests } from "./outstation-approval-state.test.ts";
 import { runOutstationExpenseApprovalFiltersTests } from "./outstation-expense-approval-filters.test.ts";
 import { runOutstationExpenseApprovalSummaryTests } from "./outstation-expense-approval-summary.test.ts";
+import { runOutstationExpenseApprovalExportTests } from "./outstation-expense-approval-export.test.ts";
 import { runApiSessionExpiredResponseTests } from "./api-session-expired-response.test.ts";
 import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-evidence.test.ts";
 
@@ -1136,6 +1137,7 @@ await runTest("outstation approval state (3-state queues partition exactly; appr
 await runTest("outstation expense approval filters (trip months bucket in Cairo, not UTC; one employee is one option even when their HR ID never mapped)", runOutstationExpenseApprovalFiltersTests);
 await runTest("api session-expired response (an expired session answers 401 sign-in, not a 403 permissions denial; a signed-in caller still gets their own 403)", runApiSessionExpiredResponseTests);
 await runTest("outstation expense approval summary (per-employee roll-up buckets every trip once; approved money is HR's figure, rejected money is the claim)", runOutstationExpenseApprovalSummaryTests);
+await runTest("outstation expense approval export (before/after deduction pair, status label, distance flag, and the SAME shared filters as the queue)", runOutstationExpenseApprovalExportTests);
 await runTest("outstation workload evidence (solo days count as worked; campaign cap keeps double-visit counts)", runOutstationWorkloadEvidenceTests);
 
 await runTest("crm rep-day check-in attribution (managers borrow the rep's check-ins; an ordinary rep's route is unchanged)", runCrmRepDayCheckinAttributionTests);
