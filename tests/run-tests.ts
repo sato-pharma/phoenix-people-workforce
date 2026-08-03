@@ -504,6 +504,7 @@ import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-ex
 import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-review.test.ts";
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
+import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
 import { runAnalyticsConfidentialProductCodeNormalizeTests } from "./analytics-confidential-product-code-normalize.test.ts";
 import { runAnalyticsDimProductsHeadOfficeExclusionTests } from "./analytics-dim-products-head-office-exclusion.test.ts";
@@ -1108,7 +1109,8 @@ await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)"
 await runTest("payroll copilot expense review (month-lag: pays prior month's outstation)", runPayrollCopilotExpenseReviewTests);
 await runTest("payroll copilot holiday bridging (mandatory before/after national-holiday deduction)", runPayrollCopilotHolidayBridgingTests);
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
-await runTest("direct orders approval flow (ladder per role, sequential gating, bonus cap, value)", runDirectOrdersApprovalFlowTests);
+await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
+await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
 await runTest("analytics dim_products excludes confidential Head Office line (filter dropdown leak fix)", runAnalyticsDimProductsHeadOfficeExclusionTests);
 await runTest("migrations secdef revoke guard (new public SECURITY DEFINER fns must revoke PUBLIC EXECUTE)", runMigrationsSecdefRevokeGuardTests);

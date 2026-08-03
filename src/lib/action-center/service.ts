@@ -170,7 +170,13 @@ function mapMyDirectOrder(row: DirectOrderApprovalListItem): MyRequestItem {
       directOrderDealLine(row),
       // Bonus units never enter value — see src/lib/direct-orders/approval-flow.ts.
       { label: "Sales value", value: egp(row.salesValue) },
-      ...(row.bonusOverCap ? [{ label: "Over cap", value: "Yes — CEO decision required" }] : []),
+      { label: "Pharmacy", value: `${row.pharmacyName} (${row.pharmacyCode})` },
+      { label: "Area", value: row.areaName || "—" },
+      { label: "Medical rep", value: row.medicalRepVacant ? "Vacant" : row.medicalRepName || "—" },
+      ...(row.bonusOverCap ? [{ label: "Over cap", value: "Yes — flagged for approvers, not blocked" }] : []),
+      ...(row.missingPharmacyPrice
+        ? [{ label: "Pharmacy price", value: "Not set — valued at the factory price" }]
+        : []),
     ],
     decisionNote: null,
   };

@@ -1,6 +1,11 @@
 import Link from "next/link";
 
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import {
+  buildDirectOrderDetailFields,
+  dealFieldLabel,
+  formatDealValue,
+} from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -9,7 +14,9 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</dt>
-      <dd className="mt-0.5 text-sm font-semibold text-slate-900">{value}</dd>
+      {/* Never wrap (owner rule). The grid sits inside an overflow-x-auto wrapper, so a long
+          value scrolls rather than clipping. */}
+      <dd className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">{value}</dd>
     </div>
   );
 }
@@ -40,7 +47,13 @@ export function DirectOrderRequestDetail({
     );
   }
 
-  const { request, requesterName, pharmacy, steps, availableActions, bonusOverCap } = detail;
+  const { request, distributors, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
+  // ONE shared field list, built in the domain. The admin screen and the portal screen each
+  // used to hand-maintain their own copy, which is how both ended up printing raw brick/area
+  // codes — fixing it in one place could never have fixed the other.
+  const allFields = buildDirectOrderDetailFields(detail);
+  const gridFields = allFields.filter((field) => field.layout !== "full");
+  const fullFields = allFields.filter((field) => field.layout === "full" && field.label !== "Distributor codes");
 
   return (
     <div className="space-y-5">
@@ -56,31 +69,78 @@ export function DirectOrderRequestDetail({
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </header>
 
-        <dl className="grid grid-cols-2 gap-4 px-4 py-4 md:grid-cols-4">
-          <Field label="Requester" value={`${requesterName} · ${request.requesterRole}`} />
-          <Field label="Line" value={request.line} />
-          <Field label="Factory price" value={money(request.factoryPriceSnapshot)} />
-          <Field label="Status" value={request.status.replace(/_/g, " ")} />
-          <Field
-            label="Pharmacy"
-            value={pharmacy ? `${pharmacy.pharmacyName} (${pharmacy.phoenixPharmacyCode})` : "—"}
-          />
-          <Field label="Brick / Area" value={pharmacy ? `${pharmacy.brickId ?? "—"} / ${pharmacy.areaCode ?? "—"}` : "—"} />
-          <Field label="Pharmacy address" value={pharmacy?.pharmacyAddress || "—"} />
-          <Field label="Collection date" value={request.collectionDate ?? "—"} />
-          <Field
-            label={request.dealType === "discount" ? "Discount" : "Bonus"}
-            value={
-              <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                {request.dealType === "discount"
-                  ? `${(request.discountPct ?? 0).toLocaleString("en-US")}%`
-                  : request.bonus.toLocaleString("en-US")}
-                {bonusOverCap ? " · over cap (CEO override)" : ""}
-              </span>
-            }
-          />
-          <Field label="Sales month" value={request.salesMonth ?? "— (set on final approval)"} />
-        </dl>
+        {bonusOverCap || missingPharmacyPrice ? (
+          <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
+            {bonusOverCap ? (
+              <p className="text-[12px] font-bold text-amber-900">
+                Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
+              </p>
+            ) : null}
+            {missingPharmacyPrice ? (
+              <p className="text-[12px] font-bold text-amber-900">
+                No pharmacy price was set for this product — the value above uses the factory price.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="overflow-x-auto">
+          <dl className="grid grid-cols-2 gap-4 px-4 py-4 md:grid-cols-4">
+            {gridFields.map((field) => (
+              <Field key={field.label} label={field.label} value={field.value} />
+            ))}
+            {/* The one field the component still owns: it needs an over-cap colour treatment. */}
+            <Field
+              label={dealFieldLabel(request)}
+              value={
+                <span className={bonusOverCap ? "text-rose-600" : undefined}>
+                  {formatDealValue(request)}
+                  {bonusOverCap ? " · over cap" : ""}
+                </span>
+              }
+            />
+          </dl>
+        </div>
+
+        {fullFields.map((field) => (
+          <dl key={field.label} className="border-t border-[#eef1f3] px-4 py-3">
+            <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{field.label}</dt>
+            <dd className="mt-0.5 text-sm font-semibold text-slate-900">{field.value}</dd>
+          </dl>
+        ))}
+
+        {/* Distributors get a row each rather than one joined string: three pairs runs ~80
+            characters, which would either wrap or blow the grid. This mirrors the layout the
+            pharmacy-variance table already uses for exactly this data, and the mapped-brick
+            column surfaces a geography variance right inside the approval window. */}
+        <div className="border-t border-[#eef1f3] px-4 py-3">
+          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Distributors</p>
+          {distributors.length === 0 ? (
+            <p className="mt-0.5 text-sm font-semibold text-slate-900">—</p>
+          ) : (
+            <div className="mt-1.5 overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[#eef1f3] text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="whitespace-nowrap px-2 py-1">Distributor</th>
+                    <th className="whitespace-nowrap px-2 py-1">Customer code</th>
+                    <th className="whitespace-nowrap px-2 py-1">Mapped brick</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {distributors.map((row) => (
+                    <tr key={`${row.distributorName}-${row.customerCode}`} className="border-b border-[#eef1f3]">
+                      <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.customerCode}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {request.bonusOverrideReason ? (
           <p className="border-t border-[#eef1f3] px-4 py-2 text-xs text-slate-500">
             Note: {request.bonusOverrideReason}

@@ -5,8 +5,9 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 //
 // A Direct Order Request is a SINGLE line (one product + one pharmacy) submitted
 // by a sales/marketing manager and approved up a sequential chain that always
-// ends at the CEO. Money-critical: `salesValue` is always `approvedQty ×
-// factoryPrice` (bonus units never enter value); the bonus is separately capped.
+// ends at the CEO. Money-critical: for a BONUS deal `salesValue` is `approvedQty ×
+// pharmacyPrice` (bonus units never enter value); the bonus is separately capped, and
+// exceeding that cap FLAGS the request rather than blocking it.
 //
 // Requesters (phase 1, managers only): District Manager, Regional Manager,
 // National Sales Manager, Product Manager, Group Product Manager.
@@ -108,15 +109,23 @@ export type DirectOrderRequest = {
   line: string;
   productCode: string;
   productName: string;
+  /** Kept as a reference even for bonus deals, which now price on `pharmacyPriceSnapshot`. */
   factoryPriceSnapshot: number;
+  /**
+   * The pharmacy price this BONUS request was actually valued at. NULL means either a discount
+   * deal, or a bonus deal that fell back to the factory price because the product had no
+   * pharmacy price at submit time — which is exactly what `missingPharmacyPrice` reports.
+   * Snapshotted rather than re-read, so it keeps describing THIS row after the master changes.
+   */
+  pharmacyPriceSnapshot: number | null;
   qty: number;
   bonus: number;
   bonusOverrideReason: string | null;
-  /** 'bonus' → value = qty × factoryPrice; 'discount' → value = qty × publicPrice × (1−disc%). */
+  /** 'bonus' → value = qty × pharmacyPrice; 'discount' → value = qty × publicPrice × (1−disc%). */
   dealType: DirectOrderDealType;
   discountPct: number | null;
   publicPriceSnapshot: number | null;
-  /** Bonus mode: qty × factoryPrice. Discount mode: qty × publicPrice × (1−disc%). */
+  /** Bonus mode: qty × pharmacyPrice. Discount mode: qty × publicPrice × (1−disc%). */
   salesValue: number;
   pharmacyId: string;
   /** YYYY-MM; set to the CEO-final-approval month on final approval. */
@@ -147,6 +156,50 @@ export type DirectOrderAvailableActions = {
   return: boolean;
 };
 
+/** A code paired with its human name. The UI shows the NAME (owner rule: names, never codes). */
+export type DirectOrderCodeName = { code: string; name: string };
+
+/**
+ * A pharmacy's geography resolved to NAMES. Each entry is null when the master data has no
+ * row for that code — a data gap, never a crash. The wrapper itself is non-nullable so
+ * components never write `detail.geo?.brick?.name ?? "—"` chains; the fallback lives in one
+ * place (buildDirectOrderDetailFields).
+ */
+export type DirectOrderPharmacyGeo = {
+  brick: DirectOrderCodeName | null;
+  area: DirectOrderCodeName | null;
+  region: DirectOrderCodeName | null;
+};
+
+/**
+ * One distributor pairing on the approval window, with its mapped brick already resolved to a
+ * NAME. The raw pairs live on `DirectOrderPharmacy.distributorCodes`; this is the display form,
+ * so a component never has to reach for a bare `mappedBrickId`.
+ */
+export type DirectOrderDistributorRow = {
+  distributorName: string;
+  customerCode: string;
+  /** The brick the customer map resolves this code to; null when the code is unmapped. */
+  mappedBrickName: string | null;
+};
+
+/**
+ * The medical rep covering a pharmacy's (line, area), resolved LIVE from the seat model at
+ * read time. Never stored on the request and never a form field — the org tree is the truth.
+ *
+ * `resolved` and `isVacant` mean different things and must not be collapsed: no REP seat at all
+ * for this (line, area) is "we cannot say" (UI shows "—"), whereas a seat that exists with no
+ * occupant is a genuine, reportable vacancy (UI shows "Vacant").
+ */
+export type DirectOrderAreaRep = {
+  resolved: boolean;
+  isVacant: boolean;
+  repHrId: string | null;
+  repName: string | null;
+  /** Every occupied rep seat on this (line, area); >1 only on a split area. Never truncated. */
+  repNames: string[];
+};
+
 /** A row in the "Direct Orders Approvals" list (awaiting or history). Names, never bare codes. */
 export type DirectOrderApprovalListItem = {
   id: string;
@@ -163,14 +216,25 @@ export type DirectOrderApprovalListItem = {
   salesValue: number;
   pharmacyName: string;
   pharmacyCode: string;
+  /** Geography as NAMES (owner rule). "" when the master data has no name for the code. */
+  brickName: string;
+  areaName: string;
+  regionName: string;
+  /** Rep display name; "" when vacant OR unresolved — `medicalRepVacant` distinguishes them. */
+  medicalRepName: string;
+  medicalRepVacant: boolean;
+  /** Distributor NAMES only ("Ibn Sina · Overseas"); the name→code pairs live on the detail. */
+  distributorNames: string;
   status: DirectOrderStatus;
   createdAt: string;
   decidedAt: string | null;
   /** The rung currently waiting (empty for terminal requests). */
   activeStepLabel: string;
   activeStepOrder: number | null;
-  /** True when the bonus/discount exceeds its product cap (only the CEO may finalize it). */
+  /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
+  /** True when a bonus deal fell back to the factory price because no pharmacy price was set. */
+  missingPharmacyPrice: boolean;
 };
 
 /** Everything the detail page needs, including the viewer's allowed actions. */
@@ -189,6 +253,8 @@ export type DirectOrderReportRow = {
   productCode: string;
   productName: string;
   factoryPriceSnapshot: number;
+  /** The pharmacy price a bonus deal was valued at; null = discount deal, or factory fallback. */
+  pharmacyPriceSnapshot: number | null;
   qty: number;
   bonus: number;
   bonusOverrideReason: string | null;
@@ -231,10 +297,20 @@ export type DirectOrderApprovalDetail = {
   request: DirectOrderRequest;
   requesterName: string;
   pharmacy: DirectOrderPharmacy | null;
+  /** Brick / area / region as NAMES. Non-null wrapper; see DirectOrderPharmacyGeo. */
+  geo: DirectOrderPharmacyGeo;
+  /** Resolved live from the seat model on every read. Non-null wrapper; see DirectOrderAreaRep. */
+  medicalRep: DirectOrderAreaRep;
+  /** "Ibn Sina: 1234567; Overseas: 7654321" — the same projection the report and email use. */
+  distributorCodesText: string;
+  /** The same pairs as display rows, with mapped bricks resolved to names. */
+  distributors: DirectOrderDistributorRow[];
   steps: Array<DirectOrderStepState & { approverName: string | null }>;
   availableActions: DirectOrderAvailableActions;
-  /** True when the bonus exceeds its product cap (only the CEO may finalize it). */
+  /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
+  /** True when a bonus deal fell back to the factory price because no pharmacy price was set. */
+  missingPharmacyPrice: boolean;
 };
 
 export type DirectOrderWorkspaceData = {

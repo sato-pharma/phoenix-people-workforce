@@ -5,7 +5,20 @@ import { useRouter } from "next/navigation";
 
 import type { DirectOrderCapRow } from "@/lib/direct-orders/caps";
 
-type ProductOption = { productCode: string; productName: string; publicPrice: number | null };
+type ProductOption = {
+  productCode: string;
+  productName: string;
+  factoryPrice: number;
+  /** Values DISCOUNT deals. */
+  publicPrice: number | null;
+  /** Values BONUS deals. null = not set; submissions fall back to the factory price. */
+  pharmacyPrice: number | null;
+};
+
+/** Per-row draft edits, keyed by product code. Absent = the row is showing its saved value. */
+type PriceEdits = Record<string, { publicPrice: string; pharmacyPrice: string }>;
+
+const priceText = (value: number | null): string => (value == null ? "" : String(value));
 
 const GLOBAL = "__GLOBAL__";
 
@@ -43,9 +56,21 @@ export function DirectOrderCapsManager({
   const [ovBonus, setOvBonus] = useState("");
   const [ovDiscount, setOvDiscount] = useState("");
 
-  // public-price state
-  const [ppProduct, setPpProduct] = useState("");
-  const [ppValue, setPpValue] = useState("");
+  // Per-row price edits. A row's input shows its draft if one exists, otherwise its saved value.
+  const [edits, setEdits] = useState<PriceEdits>({});
+  const [productFilter, setProductFilter] = useState("");
+
+  function draftFor(product: ProductOption) {
+    return (
+      edits[product.productCode] ?? {
+        publicPrice: priceText(product.publicPrice),
+        pharmacyPrice: priceText(product.pharmacyPrice),
+      }
+    );
+  }
+  function editRow(product: ProductOption, patch: Partial<{ publicPrice: string; pharmacyPrice: string }>) {
+    setEdits((prev) => ({ ...prev, [product.productCode]: { ...draftFor(product), ...patch } }));
+  }
 
   async function run(fn: () => Promise<void>, message: string) {
     setBusy(true);
@@ -64,6 +89,12 @@ export function DirectOrderCapsManager({
 
   const inputClass = "w-24 border border-slate-300 px-2 py-1 text-sm";
   const productName = (code: string) => products.find((p) => p.productCode === code)?.productName ?? code;
+  const filter = productFilter.trim().toLowerCase();
+  const visibleProducts = filter
+    ? products.filter(
+        (p) => p.productName.toLowerCase().includes(filter) || p.productCode.toLowerCase().includes(filter),
+      )
+    : products;
 
   return (
     <div className="space-y-6">
@@ -151,41 +182,121 @@ export function DirectOrderCapsManager({
         ) : null}
       </section>
 
-      {/* Public prices (for discount mode) */}
+      {/* Product prices — the one place both deal types get their price basis. */}
       <section className="border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 text-[11px] font-black uppercase tracking-wider text-slate-500">Public prices (used by discount deals)</h3>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase text-slate-500">
-              <th className="px-2 py-1">Product</th>
-              <th className="px-2 py-1">Public price</th>
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p) => (
-              <tr key={p.productCode} className="border-b border-slate-100">
-                <td className="px-2 py-1.5">{p.productName} <span className="text-slate-400">({p.productCode})</span></td>
-                <td className="px-2 py-1.5">{p.publicPrice == null ? <span className="text-rose-500">not set</span> : `${p.publicPrice} EGP`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {canEdit ? (
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
-            <label className="text-sm">
-              <span className="block text-[11px] font-bold text-slate-500">Product</span>
-              <select className="border border-slate-300 px-2 py-1 text-sm" value={ppProduct} onChange={(e) => setPpProduct(e.target.value)}>
-                <option value="">Select…</option>
-                {products.map((p) => <option key={p.productCode} value={p.productCode}>{p.productName}</option>)}
-              </select>
-            </label>
-            <label className="text-sm"><span className="block text-[11px] font-bold text-slate-500">Public price (EGP)</span>
-              <input className={inputClass} value={ppValue} onChange={(e) => setPpValue(e.target.value)} placeholder="0" /></label>
-            <button type="button" disabled={busy || !ppProduct} className="bg-slate-800 px-3 py-1.5 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-50"
-              onClick={() => run(() => postCaps({ action: "publicPrice", productCode: ppProduct, publicPrice: ppValue === "" ? null : Number(ppValue) }), "Public price saved.")}>
-              Set public price
-            </button>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Product prices</h3>
+            <p className="mt-1 text-[11px] text-slate-500">
+              A BONUS direct order is valued at qty × pharmacy price. A DISCOUNT order is valued at
+              qty × public price × (1 − discount %). A product with no pharmacy price still submits —
+              it falls back to the factory price and is flagged for the approver.
+            </p>
           </div>
+          <label className="text-sm">
+            <span className="block text-[11px] font-bold text-slate-500">Find a product</span>
+            <input
+              className="w-56 border border-slate-300 px-2 py-1 text-sm"
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              placeholder="Name or code…"
+            />
+          </label>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase text-slate-500">
+                <th className="whitespace-nowrap px-2 py-1">Product</th>
+                <th className="whitespace-nowrap px-2 py-1 text-right">Factory price</th>
+                <th className="whitespace-nowrap px-2 py-1 text-right">Public price (discount)</th>
+                <th className="whitespace-nowrap px-2 py-1 text-right">Pharmacy price (bonus)</th>
+                {canEdit ? <th className="px-2 py-1" /> : null}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleProducts.length === 0 ? (
+                <tr>
+                  <td className="px-2 py-3 text-slate-400" colSpan={5}>
+                    No product matches “{productFilter}”.
+                  </td>
+                </tr>
+              ) : (
+                visibleProducts.map((p) => {
+                  const draft = draftFor(p);
+                  return (
+                    <tr key={p.productCode} className="border-b border-slate-100">
+                      <td className="whitespace-nowrap px-2 py-1.5">
+                        {p.productName} <span className="text-slate-400">({p.productCode})</span>
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-500">
+                        {p.factoryPrice.toLocaleString("en-US")} EGP
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                        {canEdit ? (
+                          <input
+                            className={`${inputClass} text-right`}
+                            value={draft.publicPrice}
+                            onChange={(e) => editRow(p, { publicPrice: e.target.value })}
+                            placeholder="not set"
+                            inputMode="decimal"
+                          />
+                        ) : p.publicPrice == null ? (
+                          <span className="text-rose-500">not set</span>
+                        ) : (
+                          `${p.publicPrice.toLocaleString("en-US")} EGP`
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                        {canEdit ? (
+                          <input
+                            className={`${inputClass} text-right`}
+                            value={draft.pharmacyPrice}
+                            onChange={(e) => editRow(p, { pharmacyPrice: e.target.value })}
+                            placeholder="not set"
+                            inputMode="decimal"
+                          />
+                        ) : p.pharmacyPrice == null ? (
+                          <span className="text-rose-500">not set</span>
+                        ) : (
+                          `${p.pharmacyPrice.toLocaleString("en-US")} EGP`
+                        )}
+                      </td>
+                      {canEdit ? (
+                        <td className="whitespace-nowrap px-2 py-1.5 text-right">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="bg-slate-800 px-3 py-1 text-xs font-bold text-white hover:bg-slate-900 disabled:opacity-50"
+                            onClick={() =>
+                              run(
+                                () =>
+                                  postCaps({
+                                    action: "productPrices",
+                                    productCode: p.productCode,
+                                    publicPrice: draft.publicPrice.trim() === "" ? null : Number(draft.publicPrice),
+                                    pharmacyPrice: draft.pharmacyPrice.trim() === "" ? null : Number(draft.pharmacyPrice),
+                                  }),
+                                `Prices saved for ${p.productName}.`,
+                              )
+                            }
+                          >
+                            Save
+                          </button>
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {canEdit ? (
+          <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+            Every active product already has a row — adding a price means typing into a row that reads
+            “not set”. Leave a field blank (or 0) to clear it back to unset.
+          </p>
         ) : null}
       </section>
     </div>

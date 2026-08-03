@@ -33,9 +33,25 @@ import {
   type DirectOrderCaps,
 } from "@/lib/direct-orders/caps";
 import {
+  buildDirectOrderNotificationLine,
+  buildDirectOrderNotificationMetrics,
+  type DirectOrderNotifyContext,
+} from "@/lib/direct-orders/approval-fields";
+import {
+  codeNameLabel,
+  formatDistributorCodesText,
+  formatDistributorNames,
+  loadDirectOrderGeoNames,
+  resolveDirectOrderGeo,
+  toDistributorRows,
+} from "@/lib/direct-orders/geo-names";
+import { resolveAreaRep, resolveAreaRepsForLineAreas, areaRepKey, type AreaRepAssignment } from "@/lib/employees/area-rep-resolver";
+import {
   DIRECT_ORDER_REQUESTER_ROLES,
   isDirectOrderRequesterRole,
   type DirectOrderApprovalDetail,
+  type DirectOrderAreaRep,
+  type DirectOrderPharmacyGeo,
   type DirectOrderApprovalListItem,
   type DirectOrderDealType,
   type DirectOrderDecision,
@@ -66,11 +82,15 @@ function requireActorHrId(access: AccessContext): string {
 }
 
 /**
- * True when a request's bonus (or discount) exceeds its product's configured cap —
- * the single flag that (a) surfaces as "over cap" in every list/detail view and
- * (b) gates final approval to the actual CEO in decideDirectOrder. Submission itself
- * is NOT gated by this — an over-cap request still enters the normal approval chain,
- * which always ends at the CEO rung regardless.
+ * True when a request's bonus (or discount) exceeds its product's configured cap.
+ *
+ * This is a FLAG, never a gate (owner rule, 2026-08-03): it surfaces as "over cap" in every
+ * list and detail view, tags the approver's notification, and is recorded as an event when
+ * such a request is finalized — but it never blocks submission and never blocks a decision.
+ * The chain already always ends at the CEO rung regardless.
+ *
+ * Derived on read rather than persisted, because a cap is CONFIG: re-reading it means the
+ * badge always reflects today's cap rather than the cap that happened to apply at submit time.
  */
 function isRequestOverCap(
   request: Pick<DirectOrderRequest, "dealType" | "discountPct" | "bonus" | "qty" | "productCode">,
@@ -79,6 +99,60 @@ function isRequestOverCap(
   return request.dealType === "discount"
     ? (request.discountPct ?? 0) > resolveDiscountCapPct(caps, request.productCode)
     : request.bonus > maxBonusUnits({ qty: request.qty, capPct: resolveBonusCapPct(caps, request.productCode) });
+}
+
+/**
+ * True when a BONUS request's value fell back to the factory price because its product had no
+ * pharmacy price at submit time.
+ *
+ * Deliberately derived from the SNAPSHOT, not from the live product master — the opposite
+ * choice to isRequestOverCap above, and for the opposite reason. A cap is config that may
+ * legitimately change; this is a fact about how THIS row's sales_value was actually computed.
+ * Re-deriving it from the master would silently clear the flag the day the owner sets a
+ * pharmacy price, on a row whose stored value was never recomputed.
+ */
+function isFallbackPricedRequest(
+  request: Pick<DirectOrderRequest, "dealType" | "pharmacyPriceSnapshot">,
+): boolean {
+  return request.dealType === "bonus" && request.pharmacyPriceSnapshot == null;
+}
+
+/** Convert the resolver's assignment into the view-model shape (null = no seat, "we cannot say"). */
+function toDirectOrderAreaRep(assignment: AreaRepAssignment | null | undefined): DirectOrderAreaRep {
+  if (!assignment) return { resolved: false, isVacant: false, repHrId: null, repName: null, repNames: [] };
+  return {
+    resolved: true,
+    isVacant: assignment.isVacant,
+    repHrId: assignment.repHrId,
+    repName: assignment.repName,
+    repNames: assignment.repNames,
+  };
+}
+
+/**
+ * Assemble everything the approver's notification names: pharmacy, geography as NAMES, the
+ * area's medical rep and the distributor pairs. Best-effort — every lookup inside fails soft,
+ * because a notification must never be the reason a submission or a decision fails.
+ */
+async function buildNotifyContext(
+  request: DirectOrderRequest,
+  requesterName: string,
+  pharmacy: DirectOrderPharmacy | null,
+): Promise<DirectOrderNotifyContext> {
+  const [geoMaps, rep] = await Promise.all([
+    loadDirectOrderGeoNames(),
+    resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }),
+  ]);
+  return {
+    request,
+    requesterName,
+    pharmacyName: pharmacy?.pharmacyName ?? "",
+    pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "",
+    geo: resolveDirectOrderGeo(pharmacy, geoMaps),
+    medicalRep: toDirectOrderAreaRep(rep),
+    distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
+    distributorNames: formatDistributorNames(pharmacy?.distributorCodes),
+  };
 }
 
 // ── Recipient resolution ──────────────────────────────────────────────────────
@@ -107,6 +181,12 @@ async function notifyDirectOrder(input: {
   requestId: string;
   subjectHrId: string;
   href?: string;
+  /**
+   * Label/value rows for the notification EMAIL's details table. The `message` string has to
+   * survive Telegram's 900-char hard slice, so the full pharmacy / geography / distributor
+   * picture rides here instead of being crammed into the body.
+   */
+  metrics?: Array<{ label: string; value: string }>;
 }): Promise<void> {
   const href = input.href ?? `/admin/approvals/direct-orders/${encodeURIComponent(input.requestId)}`;
   const recipientHrIds = Array.from(
@@ -123,6 +203,7 @@ async function notifyDirectOrder(input: {
         channels: NOTIFY_CHANNELS,
         actionUrl: href,
         category: "direct_order_request",
+        email: input.metrics?.length ? { metrics: input.metrics } : undefined,
         eventType: input.eventType,
         message: input.message,
         metadata: {
@@ -212,6 +293,7 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     productCode: String(row.product_code ?? ""),
     productName: String(row.product_name ?? ""),
     factoryPriceSnapshot: Number(row.factory_price_snapshot ?? 0),
+    pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
     qty: Number(row.qty ?? 0),
     bonus: Number(row.bonus ?? 0),
     bonusOverrideReason: row.bonus_override_reason ? String(row.bonus_override_reason) : null,
@@ -517,22 +599,31 @@ export async function submitDirectOrder(
   let bonus = 0;
   let discountPct: number | null = null;
   let publicPrice: number | null = null;
+  let pharmacyPrice: number | null = null;
   let salesValue: number;
-  // Over-cap no longer blocks submission — it just flags the request (list badge +
-  // notification) and, per the CEO-only gate in decideDirectOrder below, restricts who
-  // may finalize it. The chain already always ends at the CEO rung regardless.
+  // Over-cap does NOT block submission and does NOT restrict who may finalize (owner rule,
+  // 2026-08-03). It flags the request: an "over cap" badge on every list and detail view, a
+  // tag on the approver's notification, and an event when it is finalized. The chain already
+  // always ends at the CEO rung regardless.
   let overCap: boolean;
 
+  // Both money inputs are read FRESH from the table rather than taken off `product`.
+  // `listSourceOfSalesProducts()` is unstable_cache'd with a 600s revalidate and no price
+  // setter busts that tag, so a price the owner just typed could be up to ten minutes stale.
+  // A cached factory price is fine for a dropdown label; it is not fine for a sales value.
+  const { data: priceRow } = await supabase
+    .from("source_of_sales_products")
+    .select("public_price, pharmacy_price")
+    .eq("product_code", product.productCode)
+    .maybeSingle();
+  const prices = priceRow as { public_price?: number | null; pharmacy_price?: number | null } | null;
+
   if (dealType === "discount") {
-    // Discount uses the PUBLIC price; value = qty × public × (1 − disc%). No bonus.
-    const { data: priceRow } = await supabase
-      .from("source_of_sales_products")
-      .select("public_price")
-      .eq("product_code", product.productCode)
-      .maybeSingle();
-    publicPrice = (priceRow as { public_price?: number | null } | null)?.public_price != null
-      ? Number((priceRow as { public_price?: number | null }).public_price)
-      : null;
+    // Discount uses the PUBLIC price; value = qty × public × (1 − disc%). No bonus. UNCHANGED.
+    publicPrice = prices?.public_price != null ? Number(prices.public_price) : null;
+    // NOTE: discount mode still HARD-BLOCKS on a missing public price, whereas bonus mode below
+    // falls back and flags. That asymmetry is deliberate and pre-existing — do not "harmonize"
+    // the two paths without the owner deciding which way they should converge.
     if (publicPrice == null || publicPrice <= 0) {
       badRequest(`No public price is set for ${product.productName}. Ask an admin to set it before using discount mode.`);
     }
@@ -541,21 +632,24 @@ export async function submitDirectOrder(
     overCap = !validateDiscount({ discountPct, capPct }).withinCap;
     salesValue = computeDiscountSalesValue({ qty, publicPrice: publicPrice as number, discountPct });
   } else {
-    // Bonus: value = qty × factory price (bonus excluded); bonus capped by config.
+    // Bonus: value = qty × PHARMACY price (bonus units excluded); bonus capped by config.
+    // When the product has no pharmacy price yet we fall back to the factory price and FLAG it
+    // — never block. `pharmacyPrice` stays null in that case so the stored row records which
+    // basis was actually used (see isFallbackPricedRequest).
     bonus = Math.floor(Number(input.bonus) || 0);
     const capPct = resolveBonusCapPct(caps, product.productCode);
     overCap = !validateBonus({ qty, bonus, capPct }).withinCap;
-    salesValue = computeDirectOrderSalesValue({ qty, factoryPrice: product.factoryPrice });
+    const rawPharmacyPrice = prices?.pharmacy_price != null ? Number(prices.pharmacy_price) : null;
+    pharmacyPrice = rawPharmacyPrice != null && rawPharmacyPrice > 0 ? rawPharmacyPrice : null;
+    salesValue = computeDirectOrderSalesValue({ qty, pharmacyPrice: pharmacyPrice ?? product.factoryPrice });
   }
 
-  // Validate the pharmacy belongs to a real registry row.
-  const { data: pharmacyRow, error: pharmacyError } = await supabase
-    .from("direct_order_pharmacies")
-    .select("id")
-    .eq("id", input.pharmacyId)
-    .maybeSingle();
-  if (pharmacyError) throw pharmacyError;
-  if (!pharmacyRow) badRequest("Pharmacy not found — pick an existing one or add a new pharmacy first.");
+  // Load the pharmacy in full (a missing map entry IS "not found") — the approver's
+  // notification names the pharmacy, its geography and its distributors, so the bare
+  // existence probe this replaced no longer carries enough.
+  const pharmacies = await loadPharmaciesByIds([input.pharmacyId]);
+  const pharmacy = pharmacies.get(input.pharmacyId) ?? null;
+  if (!pharmacy) badRequest("Pharmacy not found — pick an existing one or add a new pharmacy first.");
 
   // Governance: the registry validates that this role may submit from draft.
   await assertDirectOrderWorkflowTransition({
@@ -583,6 +677,9 @@ export async function submitDirectOrder(
       deal_type: dealType,
       discount_pct: discountPct,
       public_price_snapshot: publicPrice,
+      // NULL on a bonus deal means "fell back to the factory price" — the row stays honest
+      // about its own basis even after the product later gets a pharmacy price.
+      pharmacy_price_snapshot: dealType === "bonus" ? pharmacyPrice : null,
       sales_value: salesValue,
       pharmacy_id: input.pharmacyId,
       collection_date: collectionDate,
@@ -620,17 +717,35 @@ export async function submitDirectOrder(
     actorHrId: access.hrId,
     eventType: "submitted",
     message: `Submitted ${product.productName} × ${qty}.`,
+    // Record which price basis produced this sales_value, so the timeline can answer
+    // "why is this number what it is" without re-deriving it from a master that has moved on.
+    metadata: {
+      basis: dealType === "bonus" ? (pharmacyPrice == null ? "factory_price_fallback" : "pharmacy_price") : "public_price",
+      pharmacyPriceSnapshot: pharmacyPrice,
+      factoryPriceSnapshot: product.factoryPrice,
+      publicPriceSnapshot: publicPrice,
+      salesValue,
+      overCap,
+    },
   });
 
+  const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
+  const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
   const firstStep = chain[0];
   const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
-  const overCapTag = overCap ? (dealType === "discount" ? "[High Discount] " : "[High Bonus] ") : "";
+  // Tags compose — an over-cap order on a product with no pharmacy price must show BOTH.
+  const tags = [
+    overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
+    dealType === "bonus" && pharmacyPrice == null ? "[No pharmacy price]" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const capNote = overCap ? ` This ${dealType} exceeds the cap — flagged, not blocked.` : "";
   await notifyDirectOrder({
     recipients: [...firstApprovers, ...(await ccRecipients())],
-    title: `${overCapTag}Direct order awaiting your approval`,
-    message: overCap
-      ? `A direct order (${product.productName} × ${qty}) needs your approval — this ${dealType} exceeds the cap and can only be finalized by the CEO.`
-      : `A direct order (${product.productName} × ${qty}) needs your approval.`,
+    title: `${tags ? `${tags} ` : ""}Direct order awaiting your approval`,
+    message: `${buildDirectOrderNotificationLine(notifyContext)}${capNote}`,
+    metrics: buildDirectOrderNotificationMetrics(notifyContext),
     eventType: "submitted",
     requestId: request.id,
     subjectHrId: actorHrId,
@@ -677,13 +792,10 @@ export async function decideDirectOrder(
   if ((input.decision === "reject" || input.decision === "return") && !comment) {
     badRequest("A reason is required to reject or return a request.");
   }
-  // Over-cap (bonus OR discount) can only be finalized by a CEO override.
-  if (input.decision === "approve" && isCeoStep(activeStep)) {
-    const caps = await loadDirectOrderCaps();
-    if (isRequestOverCap(request, caps) && access.role !== "CEO" && !isSuperAdmin) {
-      badRequest("This order's bonus/discount exceeds the cap; only the CEO can approve it.");
-    }
-  }
+  // NOTE: there is deliberately NO cap gate here. An over-cap bonus or discount is FLAGGED,
+  // never blocked (owner rule, 2026-08-03) — it climbs the ordinary chain and any assigned
+  // approver may finalize it. The accountability lives in the over_cap_finalized event and
+  // the audit entry written below, not in a refusal.
 
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
@@ -714,12 +826,15 @@ export async function decideDirectOrder(
   if (rpcError) throw rpcError;
   const result = mapRequestRow((Array.isArray(updated) ? updated[0] : updated) as Record<string, unknown>);
 
+  const caps = await loadDirectOrderCaps();
+  const overCap = isRequestOverCap(request, caps);
+
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
     entityId: request.id,
     oldValues: { status: request.status },
-    newValues: { status: result.status, decision: input.decision, step: activeStep.order },
+    newValues: { status: result.status, decision: input.decision, step: activeStep.order, overCap },
     summary: `Direct order ${input.decision} by ${access.hrId} → ${result.status}.`,
   });
   await insertEvent({
@@ -729,21 +844,64 @@ export async function decideDirectOrder(
     message: comment ?? `${input.decision} at step ${activeStep.order}.`,
   });
 
+  // An over-cap order that reaches final approval is recorded explicitly. This is what
+  // replaced the old CEO-only gate: the answer to "who let this through" is an event, not
+  // a refusal — and it is the first time that has been recorded at all.
+  if (input.decision === "approve" && evaluation.isFinal && overCap) {
+    await insertEvent({
+      requestId: request.id,
+      actorHrId: access.hrId,
+      eventType: "over_cap_finalized",
+      message: `Finalized while over cap by ${access.role}.`,
+      metadata: {
+        actorRole: access.role,
+        isSuperAdmin,
+        dealType: request.dealType,
+        qty: request.qty,
+        bonus: request.bonus,
+        discountPct: request.discountPct,
+        salesValue: request.salesValue,
+        overrideReason: request.bonusOverrideReason,
+      },
+    });
+  }
+
   // Notify the requester on every decision; the next approver when the chain advances.
   const cc = await ccRecipients();
   const recipients: Array<string | null | undefined> = [request.requesterHrId, ...cc];
+  let nextLabel: string | null = null;
   if (result.status === "pending_approval") {
     const nextSteps = await loadSteps(request.id);
     const next = resolveActiveStep(nextSteps);
     if (next) {
       const nextApprovers = next.kind === "role" && next.role ? await hrIdsForRole(next.role) : [next.approverHrId];
       recipients.push(...nextApprovers);
+      nextLabel = next.label;
     }
   }
+
+  const nameOf = await nameLookup();
+  const pharmacyForNotice = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+  const decisionContext = await buildNotifyContext(
+    request,
+    nameOf(request.requesterHrId) ?? request.requesterHrId,
+    pharmacyForNotice,
+  );
+  // Third person, deliberately: this goes to the NEXT approver and the SFE/Super-Admin CC set
+  // as well as the requester, so the old "Your direct order …" was wrong for most of the people
+  // who received it.
+  const actorName = nameOf(access.hrId) ?? access.hrId ?? access.role;
+  const decisionSentence =
+    `${decisionContext.requesterName}'s direct order for ` +
+    `${codeNameLabel(decisionContext.pharmacyName, decisionContext.pharmacyCode)} — ` +
+    `${request.productName} × ${request.qty} — was ${input.decision}d by ${actorName}` +
+    `${comment ? `: ${comment}` : "."}` +
+    `${nextLabel ? ` Now awaiting ${nextLabel}.` : ""}`;
   await notifyDirectOrder({
     recipients,
     title: `Direct order ${result.status.replace("_", " ")}`,
-    message: `Your direct order (${request.productName} × ${request.qty}) was ${input.decision}d${comment ? `: ${comment}` : "."}`,
+    message: decisionSentence,
+    metrics: buildDirectOrderNotificationMetrics(decisionContext),
     eventType: input.decision,
     requestId: request.id,
     subjectHrId: request.requesterHrId,
@@ -799,6 +957,12 @@ export async function reverseDirectOrder(
       product_code: original.productCode,
       product_name: original.productName,
       factory_price_snapshot: original.factoryPriceSnapshot,
+      // A reversal mirrors its original exactly, so it must carry the same pricing basis.
+      // KNOWN GAP (pre-existing, separate ticket): deal_type, discount_pct and
+      // public_price_snapshot are NOT copied here, so every reversal row reads deal_type
+      // 'bonus' by column default even when reversing a discount order. Any query that
+      // filters direct_order_requests by deal_type must also exclude reversal rows.
+      pharmacy_price_snapshot: original.pharmacyPriceSnapshot,
       qty: original.qty,
       bonus: original.bonus,
       bonus_override_reason: `Reversal of ${original.id}: ${reason}`,
@@ -968,13 +1132,21 @@ function nameLookup(): Promise<(hrId: string | null | undefined) => string | nul
   });
 }
 
+/**
+ * `missingPharmacyPrice` is computed here rather than passed in (unlike `bonusOverCap`, which
+ * needs the caps config): it is a pure function of the request row, so the call sites stay
+ * untouched instead of growing a sixth positional boolean.
+ */
 function toApprovalListItem(
   request: DirectOrderRequest,
   active: DirectOrderStepState | null,
   requesterName: string | null,
   pharmacy: DirectOrderPharmacy | null,
   bonusOverCap: boolean,
+  geo: DirectOrderPharmacyGeo,
+  rep: AreaRepAssignment | null,
 ): DirectOrderApprovalListItem {
+  const medicalRep = toDirectOrderAreaRep(rep);
   return {
     id: request.id,
     requesterHrId: request.requesterHrId,
@@ -989,12 +1161,49 @@ function toApprovalListItem(
     salesValue: request.salesValue,
     pharmacyName: pharmacy?.pharmacyName ?? "—",
     pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+    // Names, never codes — but fall back to the code rather than showing nothing when the
+    // master data has no name for it.
+    brickName: geo.brick?.name || geo.brick?.code || "",
+    areaName: geo.area?.name || geo.area?.code || "",
+    regionName: geo.region?.name || geo.region?.code || "",
+    medicalRepName: medicalRep.repName ?? "",
+    medicalRepVacant: medicalRep.resolved && medicalRep.isVacant,
+    distributorNames: formatDistributorNames(pharmacy?.distributorCodes),
     status: request.status,
     createdAt: request.createdAt,
     decidedAt: request.decidedAt,
     activeStepLabel: active?.label ?? "",
     activeStepOrder: active?.order ?? null,
     bonusOverCap,
+    missingPharmacyPrice: isFallbackPricedRequest(request),
+  };
+}
+
+/**
+ * Geography names + area reps for a batch of requests, loaded ONCE per list page.
+ *
+ * Both underlying loads are TTL-cached in-process, which is what keeps this affordable on
+ * the nav-badge path: countDirectOrderAwaiting → getDirectOrderWorkspaceData runs on every
+ * admin render.
+ */
+async function loadListDecorations(
+  requests: DirectOrderRequest[],
+  pharmacies: Map<string, DirectOrderPharmacy>,
+  nameOf: (hrId: string | null | undefined) => string | null,
+) {
+  const pairs = requests.map((request) => ({
+    line: request.line,
+    areaCode: pharmacies.get(request.pharmacyId)?.areaCode ?? null,
+  }));
+  const [geoMaps, reps] = await Promise.all([
+    loadDirectOrderGeoNames(),
+    resolveAreaRepsForLineAreas(pairs, { nameOf }),
+  ]);
+  return {
+    geoFor: (request: DirectOrderRequest) =>
+      resolveDirectOrderGeo(pharmacies.get(request.pharmacyId) ?? null, geoMaps),
+    repFor: (request: DirectOrderRequest) =>
+      reps.get(areaRepKey(request.line, pharmacies.get(request.pharmacyId)?.areaCode ?? null)) ?? null,
   };
 }
 
@@ -1020,17 +1229,27 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
     : { data: [] as Array<Record<string, unknown>> };
   const historyRequests = ((historyRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
 
-  const stepsByReq = await loadStepsForRequests([...pending, ...historyRequests].map((r) => r.id));
-  const pharmacies = await loadPharmaciesByIds([...pending, ...historyRequests].map((r) => r.pharmacyId));
+  const allRequests = [...pending, ...historyRequests];
+  const stepsByReq = await loadStepsForRequests(allRequests.map((r) => r.id));
+  const pharmacies = await loadPharmaciesByIds(allRequests.map((r) => r.pharmacyId));
   const nameOf = await nameLookup();
   const caps = await loadDirectOrderCaps();
+  const decorations = await loadListDecorations(allRequests, pharmacies, nameOf);
 
   const awaiting: DirectOrderApprovalListItem[] = [];
   for (const request of pending) {
     const active = resolveActiveStep(stepsByReq.get(request.id) ?? []);
     if (!viewerCanActOnStep(access, active)) continue;
     awaiting.push(
-      toApprovalListItem(request, active, nameOf(request.requesterHrId), pharmacies.get(request.pharmacyId) ?? null, isRequestOverCap(request, caps)),
+      toApprovalListItem(
+        request,
+        active,
+        nameOf(request.requesterHrId),
+        pharmacies.get(request.pharmacyId) ?? null,
+        isRequestOverCap(request, caps),
+        decorations.geoFor(request),
+        decorations.repFor(request),
+      ),
     );
   }
   const history: DirectOrderApprovalListItem[] = historyRequests.map((request) =>
@@ -1040,6 +1259,8 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
       nameOf(request.requesterHrId),
       pharmacies.get(request.pharmacyId) ?? null,
       isRequestOverCap(request, caps),
+      decorations.geoFor(request),
+      decorations.repFor(request),
     ),
   );
   return { awaiting, history };
@@ -1065,6 +1286,7 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
   const pharmacies = await loadPharmaciesByIds(requests.map((r) => r.pharmacyId));
   const nameOf = await nameLookup();
   const caps = await loadDirectOrderCaps();
+  const decorations = await loadListDecorations(requests, pharmacies, nameOf);
   return requests.map((request) =>
     toApprovalListItem(
       request,
@@ -1072,6 +1294,8 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
       nameOf(request.requesterHrId),
       pharmacies.get(request.pharmacyId) ?? null,
       isRequestOverCap(request, caps),
+      decorations.geoFor(request),
+      decorations.repFor(request),
     ),
   );
 }
@@ -1095,19 +1319,30 @@ async function resolveDirectOrderRequesterLineName(access: AccessContext): Promi
   return (row?.lineName ?? "").trim();
 }
 
+export type DirectOrderProductOption = {
+  productCode: string;
+  productName: string;
+  line: string;
+  factoryPrice: number;
+  /** Prices discount deals. */
+  publicPrice: number | null;
+  /** Prices bonus deals. null = not set yet; the submit path falls back to factoryPrice. */
+  pharmacyPrice: number | null;
+};
+
 /**
- * Field-line products for the submit form (code, name, line, factory + public price).
+ * Field-line products for the submit form (code, name, line, factory + public + pharmacy price).
  * Scoped to the caller's own line when `access` is given — a CNS rep must never be
  * offered a Pedia/Anti Infective product. Omit `access` for an unscoped admin listing
- * (e.g. the caps editor, which manages caps across every product regardless of line).
+ * (e.g. the price/caps editor, which manages every product regardless of line).
  */
-export async function listDirectOrderProductOptions(access?: AccessContext): Promise<
-  Array<{ productCode: string; productName: string; line: string; factoryPrice: number; publicPrice: number | null }>
-> {
+export async function listDirectOrderProductOptions(
+  access?: AccessContext,
+): Promise<DirectOrderProductOption[]> {
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("source_of_sales_products")
-    .select("product_code, product_name, line, factory_price, public_price")
+    .select("product_code, product_name, line, factory_price, public_price, pharmacy_price")
     .eq("active", true)
     .neq("line", "IGNORE");
   if (access) {
@@ -1122,6 +1357,7 @@ export async function listDirectOrderProductOptions(access?: AccessContext): Pro
       line: String(p.line ?? ""),
       factoryPrice: Number(p.factory_price ?? 0),
       publicPrice: p.public_price == null ? null : Number(p.public_price),
+      pharmacyPrice: p.pharmacy_price == null ? null : Number(p.pharmacy_price),
     }))
     .sort((a, b) => a.productName.localeCompare(b.productName));
 }
@@ -1136,8 +1372,17 @@ export async function listDirectOrderProductOptions(access?: AccessContext): Pro
  * pharmacy's geography. Omit `access` for an unscoped listing.
  */
 export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext): Promise<{
-  areas: Array<{ areaCode: string; areaName: string; regionCode: string }>;
-  bricks: Array<{ brickId: string; brickName: string; areaCode: string; regionCode: string }>;
+  areas: Array<{ areaCode: string; areaName: string; regionCode: string; regionName: string }>;
+  bricks: Array<{
+    brickId: string;
+    brickName: string;
+    areaCode: string;
+    // Area and region NAMES ride along so the submit forms can label a picked brick with
+    // names instead of codes — ref.bricks already carries them, they were simply dropped here.
+    areaName: string;
+    regionCode: string;
+    regionName: string;
+  }>;
 }> {
   const ref = await loadSalesReferenceData({ includeCustomerBricks: false });
 
@@ -1164,19 +1409,32 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
     }
   }
 
+  const regionNameByCode = new Map((ref.regions ?? []).map((region) => [region.regionCode, region.regionName]));
   const areas = (ref.areas ?? [])
     .filter((area) =>
       areaCodesInScopeOverride
         ? areaCodesInScopeOverride.has(area.areaCode.toUpperCase())
         : !regionCodesInScope || regionCodesInScope.has(area.regionCode.toUpperCase()),
     )
-    .map((area) => ({ areaCode: area.areaCode, areaName: area.areaName, regionCode: area.regionCode }))
+    .map((area) => ({
+      areaCode: area.areaCode,
+      areaName: area.areaName,
+      regionCode: area.regionCode,
+      regionName: regionNameByCode.get(area.regionCode) ?? "",
+    }))
     .sort((a, b) => a.areaName.localeCompare(b.areaName));
   const areaCodesInScope = new Set(areas.map((area) => area.areaCode.toUpperCase()));
 
   const bricks = (ref.bricks ?? [])
     .filter((brick) => areaCodesInScope.has(brick.areaCode.toUpperCase()))
-    .map((brick) => ({ brickId: brick.brickId, brickName: brick.brickName, areaCode: brick.areaCode, regionCode: brick.regionCode }))
+    .map((brick) => ({
+      brickId: brick.brickId,
+      brickName: brick.brickName,
+      areaCode: brick.areaCode,
+      areaName: brick.areaName,
+      regionCode: brick.regionCode,
+      regionName: brick.regionName,
+    }))
     .sort((a, b) => (a.brickName || a.brickId).localeCompare(b.brickName || b.brickId));
 
   return { areas, bricks };
@@ -1189,19 +1447,34 @@ export async function getDirectOrderApprovalDetail(
   const loaded = await getDirectOrderRequest(access, requestId);
   if (!loaded) return null;
   const { request, steps } = loaded;
-  const nameOf = await nameLookup();
-  const pharmacies = await loadPharmaciesByIds([request.pharmacyId]);
+  const [nameOf, pharmacies, caps] = await Promise.all([
+    nameLookup(),
+    loadPharmaciesByIds([request.pharmacyId]),
+    loadDirectOrderCaps(),
+  ]);
+  const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+  // Geography names and the area's medical rep are resolved HERE, at the single choke point
+  // every approval surface reads, rather than in the components — which is why both of them
+  // used to print raw brick/area codes.
+  const [geoMaps, rep] = await Promise.all([
+    loadDirectOrderGeoNames(),
+    resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
+  ]);
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
-  const caps = await loadDirectOrderCaps();
   const bonusOverCap = isRequestOverCap(request, caps);
   return {
     request,
     requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
-    pharmacy: pharmacies.get(request.pharmacyId) ?? null,
+    pharmacy,
+    geo: resolveDirectOrderGeo(pharmacy, geoMaps),
+    medicalRep: toDirectOrderAreaRep(rep),
+    distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
+    distributors: toDistributorRows(pharmacy?.distributorCodes, geoMaps),
     steps: steps.map((step) => ({ ...step, approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
+    missingPharmacyPrice: isFallbackPricedRequest(request),
   };
 }
 
@@ -1292,25 +1565,14 @@ export async function getDirectOrderReport(
   const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
   const nameOf = await nameLookup();
 
-  // Resolve brick/area/region CODES → NAMES for display (owner wants both).
-  const ref = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const brickNameById = new Map<string, string>();
-  const areaNameByCode = new Map<string, string>();
-  const regionNameByCode = new Map<string, string>();
-  for (const brick of ref.bricks ?? []) {
-    if (brick.brickId) brickNameById.set(brick.brickId, brick.brickName);
-    if (brick.areaCode) areaNameByCode.set(brick.areaCode, brick.areaName);
-    if (brick.regionCode) regionNameByCode.set(brick.regionCode, brick.regionName);
-  }
-  for (const area of ref.areas ?? []) if (area.areaCode) areaNameByCode.set(area.areaCode, area.areaName);
-  for (const region of ref.regions ?? []) if (region.regionCode) regionNameByCode.set(region.regionCode, region.regionName);
+  // Resolve brick/area/region CODES → NAMES for display (owner wants both). Shared with the
+  // approval detail and the approvals lists — see @/lib/direct-orders/geo-names.
+  const { brickNameById, areaNameByCode, regionNameByCode } = await loadDirectOrderGeoNames();
 
   return requests.map((request) => {
     const active = resolveActiveStep(stepsByReq.get(request.id) ?? []);
     const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
-    const distributorCodesText = (pharmacy?.distributorCodes ?? [])
-      .map((code) => `${code.distributorName}: ${code.customerCode}`)
-      .join("; ");
+    const distributorCodesText = formatDistributorCodesText(pharmacy?.distributorCodes);
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
@@ -1321,6 +1583,7 @@ export async function getDirectOrderReport(
       productCode: request.productCode,
       productName: request.productName,
       factoryPriceSnapshot: request.factoryPriceSnapshot,
+      pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
       qty: request.qty,
       bonus: request.bonus,
       bonusOverrideReason: request.bonusOverrideReason,
@@ -1467,9 +1730,7 @@ export async function listPharmacyGeoVariances(
     .eq("geo_variance_resolved", false);
   const pharmacies = ((data ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
   await attachDistributorCodes(pharmacies);
-  const ref = await loadSalesReferenceData({ includeCustomerBricks: false });
-  const brickName = new Map<string, string>();
-  for (const brick of ref.bricks ?? []) if (brick.brickId) brickName.set(brick.brickId, brick.brickName);
+  const { brickNameById: brickName } = await loadDirectOrderGeoNames();
 
   const rows: PharmacyGeoVariance[] = [];
   for (const pharmacy of pharmacies) {
@@ -1532,16 +1793,82 @@ export async function resolvePharmacyGeoVariance(
   });
 }
 
-/** Set a product's public price (used by discount deals). Super Admin only. */
-export async function setProductPublicPrice(
+/**
+ * Zero is stored as NULL, deliberately.
+ *
+ * A product priced "0" would read as "0.00 EGP" in the admin table while the submit path's
+ * `> 0` guard treated it as unset and fell back to the factory price — two surfaces disagreeing
+ * about the same product. Collapsing 0 to NULL makes the table, the missing-price flag and the
+ * fallback agree on one meaning: "not set".
+ */
+function normalizeProductPrice(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
+/**
+ * Set a product's public price (discount deals) and/or its pharmacy price (bonus deals).
+ * Super Admin only.
+ *
+ * One write, not two: the admin table's per-row Save edits both cells, and two sequential
+ * requests could leave a row half-saved. Patch semantics — a key absent from `input` is left
+ * untouched, so a partial save never nulls the other price.
+ *
+ * Audited, unlike the setter it replaces. That was arguably tolerable when public price only
+ * affected discount deals; pharmacy price now determines `sales_value` directly, hence
+ * achievement and incentives, so an unlogged edit here is an unlogged money change.
+ */
+export async function setDirectOrderProductPrices(
   access: AccessContext,
-  input: { productCode: string; publicPrice: number | null },
+  input: { productCode: string; publicPrice?: number | null; pharmacyPrice?: number | null },
 ): Promise<void> {
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: only a System Admin can set public prices.");
   }
+  const productCode = String(input.productCode ?? "").trim();
+  if (!productCode) badRequest("A product code is required.");
+
+  const patch: Record<string, number | null> = {};
+  if (Object.prototype.hasOwnProperty.call(input, "publicPrice")) {
+    patch.public_price = normalizeProductPrice(input.publicPrice);
+  }
+  if (Object.prototype.hasOwnProperty.call(input, "pharmacyPrice")) {
+    patch.pharmacy_price = normalizeProductPrice(input.pharmacyPrice);
+  }
+  if (Object.keys(patch).length === 0) return;
+
   const supabase = getSupabaseAdmin();
-  const price = input.publicPrice == null ? null : Math.max(0, Number(input.publicPrice));
-  const { error } = await supabase.from("source_of_sales_products").update({ public_price: price }).eq("product_code", input.productCode);
+  // Read first so the audit entry can answer "what was it before" — an audit without the
+  // prior value cannot reconstruct a mispriced month.
+  const { data: before } = await supabase
+    .from("source_of_sales_products")
+    .select("public_price, pharmacy_price")
+    .eq("product_code", productCode)
+    .maybeSingle();
+
+  const { error } = await supabase.from("source_of_sales_products").update(patch).eq("product_code", productCode);
   if (error) throw error;
+
+  const priorRow = before as { public_price?: number | null; pharmacy_price?: number | null } | null;
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `product-price:${productCode}`,
+    oldValues: {
+      publicPrice: priorRow?.public_price ?? null,
+      pharmacyPrice: priorRow?.pharmacy_price ?? null,
+    },
+    newValues: patch,
+    summary: `Direct-order product prices updated for ${productCode} by ${access.hrId ?? "unknown"}.`,
+  });
+}
+
+/** Back-compat wrapper for the existing "publicPrice" API action. */
+export async function setProductPublicPrice(
+  access: AccessContext,
+  input: { productCode: string; publicPrice: number | null },
+): Promise<void> {
+  await setDirectOrderProductPrices(access, { productCode: input.productCode, publicPrice: input.publicPrice });
 }

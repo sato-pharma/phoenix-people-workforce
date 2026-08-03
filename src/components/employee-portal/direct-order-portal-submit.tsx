@@ -27,9 +27,23 @@ import type {
   DirectOrderPharmacy,
 } from "@/lib/direct-orders/types";
 
-type ProductOption = { productCode: string; productName: string; line: string; factoryPrice: number; publicPrice: number | null };
-type AreaOption = { areaCode: string; areaName: string; regionCode: string };
-type BrickOption = { brickId: string; brickName: string; areaCode: string; regionCode: string };
+type ProductOption = {
+  productCode: string;
+  productName: string;
+  line: string;
+  factoryPrice: number;
+  publicPrice: number | null;
+  pharmacyPrice: number | null;
+};
+type AreaOption = { areaCode: string; areaName: string; regionCode: string; regionName: string };
+type BrickOption = {
+  brickId: string;
+  brickName: string;
+  areaCode: string;
+  areaName: string;
+  regionCode: string;
+  regionName: string;
+};
 type DistributorOption = { distributorCode: string; distributorName: string };
 export type SubmitFormCaps = {
   globalBonusCapPct: number;
@@ -112,13 +126,16 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
   const discountCapPct = product ? caps.byProduct[product.productCode]?.discountCapPct ?? caps.globalDiscountCapPct : caps.globalDiscountCapPct;
   const maxBonus = product ? maxBonusUnits({ qty: qtyNum, capPct: bonusCapPct }) : 0;
   const hasPublicPrice = !!(product && product.publicPrice != null && product.publicPrice > 0);
+  const hasPharmacyPrice = !!(product && product.pharmacyPrice != null && product.pharmacyPrice > 0);
+  // Must reproduce the SERVER's fallback exactly, or the previewed number changes on submit.
+  const bonusBasis = product ? (hasPharmacyPrice ? product.pharmacyPrice! : product.factoryPrice) : 0;
 
   const overCap = dealType === "discount" ? discountNum > discountCapPct : bonusNum > maxBonus;
   const salesValue = !product
     ? 0
     : dealType === "discount"
       ? computeDiscountSalesValue({ qty: qtyNum, publicPrice: product.publicPrice ?? 0, discountPct: discountNum })
-      : computeDirectOrderSalesValue({ qty: qtyNum, factoryPrice: product.factoryPrice });
+      : computeDirectOrderSalesValue({ qty: qtyNum, pharmacyPrice: bonusBasis });
   const visibleBricks = useMemo(
     () => (newAreaCode ? bricks.filter((b) => b.areaCode === newAreaCode) : []),
     [bricks, newAreaCode],
@@ -192,7 +209,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the direct order.");
       setOk(
         overCap
-          ? "Direct order submitted -- flagged as over cap; it will need final CEO approval."
+          ? "Direct order submitted -- flagged as over cap for your approvers, and on its way to the first of them."
           : "Direct order submitted -- it is now with your first approver.",
       );
       setProductCode("");
@@ -277,13 +294,20 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
             </p>
           ) : null}
 
+          {dealType === "bonus" && product && !hasPharmacyPrice ? (
+            <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+              No pharmacy price is set for {product.productName} -- this order will be valued at the factory
+              price and flagged for the approver. Ask an admin to set the pharmacy price.
+            </p>
+          ) : null}
+
           {overCap ? (
             <div className="space-y-2 rounded border border-amber-300 bg-amber-50 px-3 py-2.5">
               <p className="text-[12px] font-bold text-amber-800">
-                Over cap -- this request will still submit and go through the normal approval chain, but only the CEO can give the final sign-off.
+                Over cap -- this request still submits and goes through the normal approval chain. It is flagged for every approver, not blocked.
               </p>
               <div>
-                <label className={fieldLabelClassName}>Note for the CEO (optional)</label>
+                <label className={fieldLabelClassName}>Note for the approvers (optional)</label>
                 <textarea className={portalInputClassName} rows={2} value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Why this exceeds the cap..." />
               </div>
             </div>
@@ -297,7 +321,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
               product
                 ? dealType === "discount"
                   ? `${qtyNum.toLocaleString("en-US")} x ${money(product.publicPrice ?? 0)} x (1 - ${discountNum}%)`
-                  : `${qtyNum.toLocaleString("en-US")} x ${money(product.factoryPrice)}`
+                  : `${qtyNum.toLocaleString("en-US")} x ${money(bonusBasis)} ${hasPharmacyPrice ? "pharmacy price" : "factory price (no pharmacy price set)"}`
                 : undefined
             }
           />
@@ -361,7 +385,9 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                   ))}
                 </select>
                 {selectedBrick ? (
-                  <p className="text-[11px] text-slate-500">Area {selectedBrick.areaCode} - Region {selectedBrick.regionCode}</p>
+                  <p className="text-[11px] text-slate-500">
+                    Area {selectedBrick.areaName || selectedBrick.areaCode} - Region {selectedBrick.regionName || selectedBrick.regionCode}
+                  </p>
                 ) : null}
                 <input className={portalInputClassName} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
                 <input className={portalInputClassName} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />

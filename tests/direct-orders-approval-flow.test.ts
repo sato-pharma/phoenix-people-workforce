@@ -101,10 +101,101 @@ export function runDirectOrdersApprovalFlowTests() {
   assert.equal(computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 25 }), 6900);
   assert.equal(computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 0 }), 9200);
 
-  // ── Bonus-mode value = qty × factory price, bonus NEVER counted ─────────────
-  assert.equal(computeDirectOrderSalesValue({ qty: 100, factoryPrice: 111.15 }), 11115);
-  assert.equal(computeDirectOrderSalesValue({ qty: 0, factoryPrice: 50 }), 0);
-  assert.equal(computeDirectOrderSalesValue({ qty: 200, factoryPrice: 30.375 }), 6075);
+  // ── Bonus-mode value = qty × PHARMACY price, bonus NEVER counted ────────────
+  // Owner change 2026-08-03: bonus deals moved off the factory price onto a per-product
+  // "pharmacy price". Discount deals (asserted just above) are deliberately UNCHANGED.
+  assert.equal(computeDirectOrderSalesValue({ qty: 100, pharmacyPrice: 111.15 }), 11115);
+  assert.equal(computeDirectOrderSalesValue({ qty: 0, pharmacyPrice: 50 }), 0);
+  assert.equal(computeDirectOrderSalesValue({ qty: 200, pharmacyPrice: 30.375 }), 6075);
+  // The parameter is pharmacyPrice, not factoryPrice. `pnpm typecheck` is the real guard
+  // against a stale caller; this pins the RUNTIME consequence — 0, i.e. visibly wrong rather
+  // than plausibly wrong, so a missed call site can never quietly bill the old basis.
+  assert.equal(
+    computeDirectOrderSalesValue({ qty: 100, factoryPrice: 90 } as unknown as { qty: number; pharmacyPrice: number }),
+    0,
+  );
+  // The two modes must not share a price source.
+  assert.notEqual(
+    computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 0 }),
+    computeDirectOrderSalesValue({ qty: 100, pharmacyPrice: 80 }),
+  );
+
+  // ── Over cap FLAGS, it never blocks (owner rule, 2026-08-03) ────────────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      serviceSource,
+      /only the CEO can approve it/,
+      "the CEO-only finalization gate must be gone — an over-cap order is flagged, never rejected",
+    );
+    assert.doesNotMatch(serviceSource, /exceeds the cap; only/, "no cap-based badRequest may remain");
+    // …but removing the BLOCK must not remove the FLAG or its accountability trail.
+    assert.match(serviceSource, /function isRequestOverCap\(/, "the over-cap flag itself must survive");
+    assert.match(
+      serviceSource,
+      /over_cap_finalized/,
+      "finalizing an over-cap order must still be recorded as an event — the audit replaced the gate",
+    );
+  }
+
+  // ── A missing pharmacy price falls back and flags; it never blocks ──────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const submitIdx = serviceSource.indexOf("export async function submitDirectOrder(");
+    assert.ok(submitIdx > -1, "submitDirectOrder must still exist");
+    const submitBody = serviceSource.slice(submitIdx, serviceSource.indexOf("// ── Decide", submitIdx));
+
+    assert.match(
+      submitBody,
+      /select\("public_price, pharmacy_price"\)/,
+      "both money inputs must be read FRESH from the table — listSourceOfSalesProducts is unstable_cache'd for 600s and no price setter busts it",
+    );
+    assert.match(submitBody, /pharmacy_price_snapshot/, "the pricing basis must be snapshotted onto the request");
+
+    // The bonus branch must contain NO badRequest at all. Checked on the branch body rather than
+    // by pattern-matching a message, because a block can be written either side of the value line
+    // and either order would read as "no pharmacy price … badRequest".
+    const bonusBranch = submitBody.slice(
+      submitBody.indexOf("// Bonus: value = qty × PHARMACY price"),
+      submitBody.indexOf("// Load the pharmacy in full"),
+    );
+    assert.ok(bonusBranch.length > 0, "the bonus pricing branch must still be identifiable");
+    assert.doesNotMatch(
+      bonusBranch,
+      /badRequest/,
+      "a missing pharmacy price must fall back and flag, never block — the bonus branch may not refuse anything",
+    );
+    assert.match(bonusBranch, /pharmacyPrice \?\? product\.factoryPrice/, "the fallback basis is the factory price");
+    assert.match(
+      serviceSource,
+      /function isFallbackPricedRequest\(/,
+      "the missing-price flag must be derived from the SNAPSHOT, so it keeps telling the truth after the product master changes",
+    );
+  }
+
+  // ── The xlsx column list and the row builder are positional twins ───────────
+  // They have no compile-time link: adding to one and not the other silently shifts every
+  // later column in the owner's export, so the header would sit above the wrong data.
+  {
+    const workbookSource = readFileSync(new URL("../src/lib/direct-orders/report-workbook.ts", import.meta.url), "utf8");
+    const columnsBlock = workbookSource.slice(
+      workbookSource.indexOf("export const DIRECT_ORDER_REPORT_COLUMNS"),
+      workbookSource.indexOf("export function directOrderReportRowCells"),
+    );
+    const rowsBlock = workbookSource.slice(
+      workbookSource.indexOf("export function directOrderReportRowCells"),
+      workbookSource.indexOf("export async function buildDirectOrdersReportWorkbook"),
+    );
+    const columnCount = (columnsBlock.match(/\{ label: "/g) ?? []).length;
+    const cellCount = (rowsBlock.match(/^\s{4}row\./gm) ?? []).length;
+    assert.equal(
+      columnCount,
+      cellCount,
+      `the xlsx column list (${columnCount}) and the row builder (${cellCount}) must stay the same length`,
+    );
+    assert.match(columnsBlock, /\{ label: "Pharmacy price"/, "the report must expose the pharmacy price");
+    assert.match(rowsBlock, /row\.pharmacyPriceSnapshot/, "the row builder must emit the pharmacy price");
+  }
 
   // ── resolveActiveStep ───────────────────────────────────────────────────────
   const chain = steps(
