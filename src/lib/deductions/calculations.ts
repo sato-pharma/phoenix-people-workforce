@@ -101,11 +101,31 @@ export function salaryRecordsColumnForCategory(category: DeductionsCategory): De
  * The two disagreeing is exactly how HR ended up reading a number ~3x larger
  * than what publish would actually commit.
  */
+/**
+ * Sources whose candidates always need an explicit "Approved for Payroll",
+ * whatever their category's own rule says. A category cannot express this on its
+ * own: these rows deliberately live in a mandatory category so reviewers find
+ * them in the right place, and the safety property has to travel with the SOURCE
+ * instead.
+ */
+const ALWAYS_REQUIRE_APPROVAL_SOURCE_SYSTEMS = new Set<string>(["dsm_no_record"]);
+
 export function isEligibleForPublish(candidate: {
   category: DeductionsCategory;
+  sourceSystem?: string | null;
   decision?: { decisionStatus?: string | null } | null;
 }): boolean {
   const status = candidate.decision?.decisionStatus ?? "Pending";
+  // Owner's instruction (2026-08-03): district-manager no-record days are NEVER
+  // auto-published. They sit in the CRM tab so a reviewer finds them beside the
+  // reps' days, but CRM is mandatory-unless-cleared — inheriting that would mean
+  // a brand-new rule, applied to a population that was excluded after a
+  // 131,741.94 EGP incident, publishing itself with nobody having looked. The
+  // source system rather than the category decides, so the reps' long-standing
+  // mandatory behaviour is untouched.
+  if (ALWAYS_REQUIRE_APPROVAL_SOURCE_SYSTEMS.has(String(candidate.sourceSystem ?? ""))) {
+    return status === "Approved for Payroll";
+  }
   if (!deductionsCategoryRequiresApproval(candidate.category)) {
     return status !== "Do Not Take Action";
   }

@@ -137,6 +137,7 @@ import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
+import { runDeductionsDsmNoRecordTests } from "./deductions-dsm-no-record.test.ts";
 import { runWeeklyPlanningFoundationTests } from "./weekly-planning-foundation.test.ts";
 import { runWeeklyMonthlyPlansV1Tests } from "./weekly-monthly-plans-v1.test.ts";
 import { runPlanWorkweekLinkageTests } from "./plan-workweek-linkage.test.ts";
@@ -739,6 +740,10 @@ await runTest(
 await runTest(
   "deductions holiday bridge (nearest WORKING day either side of a governmental holiday, never double-charged)",
   runDeductionsHolidayBridgeTests,
+);
+await runTest(
+  "deductions DSM no-record (the narrow manager exception, and every guard that keeps a gap from becoming a wrong deduction)",
+  runDeductionsDsmNoRecordTests,
 );
 await runTest("weekly planning foundation", runWeeklyPlanningFoundationTests);
 await runTest("weekly monthly plans v1", runWeeklyMonthlyPlansV1Tests);
