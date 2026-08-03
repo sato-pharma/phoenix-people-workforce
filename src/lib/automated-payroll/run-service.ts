@@ -55,9 +55,11 @@ import {
 } from "./recommend.ts";
 import { reconcile } from "./reconcile.ts";
 import type { PayrollSalarySource } from "@/lib/payroll/salary-source.ts";
+import { stepDefinition } from "./step-definitions.ts";
 import type {
   DraftRow,
   DraftRowPatch,
+  ManualRowCandidate,
   MonthlySalaryRun,
   PayrollPeriod,
   ReconciliationTotals,
@@ -109,8 +111,8 @@ const NUMERIC_FIELDS: (keyof DraftRowPatch)[] = [
   "specialAdditionValue",
 ];
 
-/** Maps a Part 1 manual-deduction-tab text field key to its DraftRowPatch reason field. */
-const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
+/** Maps a "text"-kind step field key to the DraftRowPatch text column it persists to. */
+const TEXT_FIELDS: Record<string, keyof DraftRowPatch> = {
   p1odCrmReason: "p1odCrmReason",
   // Resignations CRM tab reuses the p1od_crm_reason column (its employees —
   // leavers — never overlap with the p1_crm tab's continuing employees), under
@@ -120,6 +122,9 @@ const OTHER_DEDUCTIONS_REASON_FIELDS: Record<string, keyof DraftRowPatch> = {
   p1odNoRecordReason: "p1odNoRecordReason",
   p1odLoanReason: "p1odLoanReason",
   p1odOtherReason: "p1odOtherReason",
+  // Part 2 — the outstation expenses step's "why" column (owner request
+  // 2026-08-03), the only record behind a manually added employee's amount.
+  expensesNote: "expensesNote",
 };
 
 /** Maps a "select"-kind field key to its DraftRowPatch field (currently just Special Situations). */
@@ -177,7 +182,7 @@ function stepEditToPatch(stepKey: StepKey, edit: StepEditInput, isLeaverEmployee
     patch.manualReason = edit.reason;
   }
   if (edit.reasons) {
-    for (const [key, field] of Object.entries(OTHER_DEDUCTIONS_REASON_FIELDS)) {
+    for (const [key, field] of Object.entries(TEXT_FIELDS)) {
       const value = edit.reasons[key];
       if (value !== undefined) (patch as unknown as Record<string, string>)[field as string] = value;
     }
@@ -301,18 +306,56 @@ async function loadRunContext(period: PayrollPeriod, runId: string): Promise<{
   return { members, sources, draftRows };
 }
 
+/**
+ * Employees HR may still add by hand to a step: this run's payroll population
+ * minus whoever the step already lists. Empty for every step that doesn't
+ * declare `allowsManualRows`, so no other step can be handed a picker it has no
+ * business having.
+ *
+ * Drawn from the SAME `members` list every step is built from, which is what
+ * keeps a manually added employee a real payroll employee — never a free-text
+ * name. Someone with no employee record belongs in Non-Employees Payroll.
+ */
+function manualRowCandidates(
+  stepKey: StepKey,
+  members: PopulationMember[],
+  rows: StepRow[],
+): ManualRowCandidate[] {
+  if (!stepDefinition(stepKey).allowsManualRows) return [];
+  const listed = new Set(rows.map((row) => compactHrKey(row.hrId)).filter(Boolean));
+  return members
+    .filter((member) => !listed.has(member.compact))
+    .map((member) => ({
+      hrId: member.employee.hrId,
+      fullName: member.employee.fullName,
+      jobTitle: member.employee.jobTitle,
+      line: member.employee.lineName,
+    }))
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
+}
+
 export async function getStepRecommendation(
   access: AccessContext,
   runId: string,
   stepKey: StepKey,
-): Promise<{ run: MonthlySalaryRun; rows: StepRow[]; state: StepState | null }> {
+): Promise<{
+  run: MonthlySalaryRun;
+  rows: StepRow[];
+  state: StepState | null;
+  candidates: ManualRowCandidate[];
+}> {
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period, runId);
   const rows = await recommendStep({ access, period, stepKey, members, sources, draftRows });
   const states = await listStepStates(runId);
-  return { run, rows, state: states.find((state) => state.stepKey === stepKey) ?? null };
+  return {
+    run,
+    rows,
+    state: states.find((state) => state.stepKey === stepKey) ?? null,
+    candidates: manualRowCandidates(stepKey, members, rows),
+  };
 }
 
 function assertStepPhaseAllowed(run: MonthlySalaryRun, stepKey: StepKey): void {
@@ -337,7 +380,7 @@ export async function saveStep(
 
   // Notice-period rows are display-only (see confirmStep). Drop any that reach
   // here — including via a re-uploaded xlsx, which bypasses the UI entirely.
-  const { rows: currentRows } = await getStepRecommendation(access, runId, stepKey);
+  const { rows: currentRows, candidates } = await getStepRecommendation(access, runId, stepKey);
   const readOnlyHrIds = new Set(
     currentRows.filter((row) => row.readOnly).map((row) => row.hrId.toLowerCase()),
   );
@@ -345,8 +388,22 @@ export async function saveStep(
   const leaverHrIds = new Set(
     currentRows.filter((row) => row.lifecycle === "leaver").map((row) => row.hrId.toLowerCase()),
   );
+  // A step that allows manual rows accepts HR_IDs it has never displayed, so
+  // there is no row to validate an incoming edit against. Bound it to this run's
+  // payroll population (its own rows + everyone still addable) — otherwise a
+  // typo'd or invented id quietly creates a draft row for someone not on
+  // payroll. Deliberately scoped to manual-row steps: every other step's write
+  // set is unchanged, including the xlsx re-upload path.
+  const populationHrIds = stepDefinition(stepKey).allowsManualRows
+    ? new Set(
+        [...currentRows.map((row) => row.hrId), ...candidates.map((candidate) => candidate.hrId)].map((hrId) =>
+          hrId.toLowerCase(),
+        ),
+      )
+    : null;
   const patches = edits
     .filter((edit) => !readOnlyHrIds.has(String(edit.hrId ?? "").toLowerCase()))
+    .filter((edit) => !populationHrIds || populationHrIds.has(String(edit.hrId ?? "").toLowerCase()))
     .map((edit) => {
       const isLeaver = leaverHrIds.has(String(edit.hrId ?? "").toLowerCase());
       const patch = stepEditToPatch(stepKey, edit, isLeaver);
@@ -893,13 +950,17 @@ export async function buildRunSheet(
           run,
           rows,
           previousNetByHrIdCompact: await previousMonthNetSalaryByHrIdCompact(period),
-          nonEmployees: await getNonEmployeePayrollRows(runId),
+          // First-installment entries only: the Part 1 sheet is what finance
+          // executes for Part 1, and a Part 2 non-employee is not paid then.
+          nonEmployees: await getNonEmployeePayrollRows(runId, "first"),
           previousSummary: await previousMonthSummary(period, "first_part"),
         })
       : await buildFullSheetWorkbook({
           run,
           rows,
           previousSummary: await previousMonthSummary(period, "month_salary"),
+          // BOTH parts: the full sheet is the month's complete picture, and
+          // their amount lands under Month Salary either way.
           nonEmployees: await getNonEmployeePayrollRows(runId),
         });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
@@ -968,7 +1029,9 @@ export async function buildFinanceSheet(
     run,
     rows,
     scope,
-    nonEmployees: await getNonEmployeePayrollRows(run.id),
+    // Mirrors buildRunSheet exactly: the Part 1 scope pays first-installment
+    // entries, the full scope shows the month's whole picture.
+    nonEmployees: await getNonEmployeePayrollRows(run.id, scope === "part1" ? "first" : undefined),
   });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `Automated-Payroll-${label}-${scope}-finance.xlsx` };
@@ -1037,8 +1100,8 @@ export async function buildFabSheet(
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
   // them, so they'd silently be missing from the real bank file without this
-  // (owner-reported 2026-07-26). Only appear on "part1": their whole
-  // totalSalary pays out with Part 1, same as the internal review sheets.
+  // (owner-reported 2026-07-26). Which scope carries an entry is its own `part`
+  // (owner request 2026-08-03) — fabRowsForNonEmployees does that filtering.
   const fabRows = [
     ...fabRowsForScope(rows, scope),
     ...fabRowsForNonEmployees(await getNonEmployeePayrollRows(run.id), scope),

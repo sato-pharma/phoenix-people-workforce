@@ -536,6 +536,7 @@ import { runSqlBackupPlacementTests } from "./sql-backup-placement.test.ts";
 import { runAutomatedPayrollStepDetailTests } from "./automated-payroll-step-detail.test.ts";
 import { runAutomatedPayrollRejectedExpensesTests } from "./automated-payroll-rejected-expenses.test.ts";
 import { runAutomatedPayrollExpenseResyncTests } from "./automated-payroll-expense-resync.test.ts";
+import { runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests } from "./automated-payroll-manual-expenses-and-part2-non-employees.test.ts";
 import { runFieldWorkforceThursdayHalfDayTests } from "./field-workforce-thursday-half-day.test.ts";
 import { runDeductionsModuleNoRecordsScopeTests } from "./deductions-module-no-records-scope.test.ts";
 import { runOutstationApprovedAmountTests } from "./outstation-approved-amount.test.ts";
@@ -1115,6 +1116,7 @@ await runTest("sql backup placement (catches snapshot tables created in the anon
 await runTest("automated payroll step detail (breakdown foots to the row total; the 3 Part-2 windows stay distinct)", runAutomatedPayrollStepDetailTests);
 await runTest("automated payroll rejected expenses (an HR rejection must not be reimbursed; pending still flows)", runAutomatedPayrollRejectedExpensesTests);
 await runTest("automated payroll expense resync (an approval changed after the step was confirmed must reach payroll)", runAutomatedPayrollExpenseResyncTests);
+await runTest("automated payroll manual expenses + Part 2 non-employees (a hand-added employee survives reload; a Part 2 non-employee reaches the bank file)", runAutomatedPayrollManualExpensesAndPart2NonEmployeesTests);
 await runTest("field workforce Thursday half day (Thu costs 0.5; Sat title-dependent; holiday-outage guard)", runFieldWorkforceThursdayHalfDayTests);
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);

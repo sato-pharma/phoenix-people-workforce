@@ -981,7 +981,36 @@ async function recommendExpenses(
   period: PayrollPeriod,
   drafts: Map<string, DraftRow>,
 ): Promise<StepRow[]> {
-  const tripsByCompact = await loadPayoutExpenseTrips(period);
+  return buildExpenseStepRows(members, await loadPayoutExpenseTrips(period), drafts);
+}
+
+/**
+ * The Outstation expenses step's rows: one per employee the payout-tagged
+ * expense feeder produced trips for, PLUS one per employee HR added by hand
+ * (owner request 2026-08-03).
+ *
+ * The manual pass is what makes "add employee" survive a page reload. A
+ * hand-typed amount is written to the same `expenses` draft column a recommended
+ * one uses, so assembleRows already pays it — but this function used to build
+ * its row list purely by iterating trips, so the moment HR reloaded, an employee
+ * with no trips vanished from the screen while still being paid. Money that is
+ * on the sheet but not on the screen is exactly the failure this module exists
+ * to prevent, so a draft expense with no trip behind it re-renders as its own
+ * row instead.
+ *
+ * Setting a manual row to 0 is how HR removes it: nothing is left to pay, so it
+ * stops being listed on the next load. A ZERO on a trip-backed row means
+ * something different — HR reviewed real trips and refused them — and that row
+ * keeps rendering because the trips loop, not this one, produces it.
+ *
+ * Pure (trips are passed in, not fetched) so the persistence rule is unit-tested
+ * without a database.
+ */
+export function buildExpenseStepRows(
+  members: PopulationMember[],
+  tripsByCompact: Map<string, PayoutExpenseTrip[]>,
+  drafts: Map<string, DraftRow>,
+): StepRow[] {
   const byCompact = new Map(members.map((member) => [member.compact, member]));
   const rows: StepRow[] = [];
   for (const [compact, trips] of tripsByCompact) {
@@ -1037,8 +1066,36 @@ async function recommendExpenses(
     }));
     row.recommended = { expenses: value };
     row.values = { expenses: pick(draft?.expenses, value) };
+    row.reasons = { expensesNote: draft?.expensesNote ?? "" };
     rows.push(row);
   }
+
+  // Manually added employees — see this function's doc comment. Ordered after
+  // the feeder rows and by name, so a hand-added row is easy to spot rather than
+  // interleaved into a list HR reads as "what the system found".
+  const manual: StepRow[] = [];
+  for (const member of members) {
+    if (tripsByCompact.has(member.compact)) continue;
+    const draft = drafts.get(member.compact);
+    const amount = draft?.expenses;
+    if (amount == null || amount === 0) continue;
+    const row = baseRow(member);
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      Trips: 0,
+      "Trip Dates": "—",
+    };
+    // Recommended 0, not `amount`: the system recommends nothing here, and the
+    // grid's diff/reset must not present a hand-typed figure as system-derived.
+    row.recommended = { expenses: 0 };
+    row.values = { expenses: amount };
+    row.reasons = { expensesNote: draft?.expensesNote ?? "" };
+    row.manual = true;
+    manual.push(row);
+  }
+  manual.sort((left, right) => left.fullName.localeCompare(right.fullName));
+  rows.push(...manual);
+
   return rows;
 }
 

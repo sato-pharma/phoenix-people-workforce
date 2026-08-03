@@ -349,10 +349,11 @@ export async function buildFullSheetWorkbook(input: {
   /** Headcount + total Month Salary from the previous month's published run, if any. */
   previousSummary?: PeriodSummary | null;
   /**
-   * People paid a monthly salary with no employee/HR_ID record. They pay with
-   * Part 1, but their money still leaves the company this month, so the FULL
-   * sheet (finance's complete monthly picture) must account for it too — owner
-   * decision 2026-07-25. They still never reach salary_records.
+   * People paid a monthly salary with no employee/HR_ID record. Whichever
+   * installment each is paid with, their money still leaves the company this
+   * month, so the FULL sheet (finance's complete monthly picture) carries BOTH
+   * parts — owner decision 2026-07-25, extended 2026-08-03 when Part 2 entries
+   * became possible. They still never reach salary_records.
    */
   nonEmployees?: NonEmployeePayrollRow[];
 }): Promise<Buffer> {

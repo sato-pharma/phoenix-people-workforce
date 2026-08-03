@@ -78,6 +78,7 @@ function mapDraftRow(row: RunRow): DraftRow {
     fingerprintDays: numeric(row.fingerprint_days),
     fingerprintValue: numeric(row.fingerprint_value),
     expenses: numeric(row.expenses),
+    expensesNote: (row.expenses_note as string | null) ?? null,
     incentive: numeric(row.incentive),
     bonus: numeric(row.bonus),
     overtime: numeric(row.overtime),
@@ -293,6 +294,7 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   num("specialAdditionDays", "special_addition_days");
   num("specialAdditionValue", "special_addition_value");
   num("firstPartFrozen", "first_part_frozen");
+  if (patch.expensesNote !== undefined) db.expenses_note = patch.expensesNote;
   if (patch.manualReason !== undefined) db.manual_reason = patch.manualReason;
   if (patch.p1odCrmReason !== undefined) db.p1od_crm_reason = patch.p1odCrmReason;
   if (patch.p1odVacationReason !== undefined) db.p1od_vacation_reason = patch.p1odVacationReason;
@@ -307,6 +309,25 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   return db;
 }
 
+/**
+ * True when the error means a column isn't in this environment yet (Postgres
+ * 42703 / PostgREST's PGRST204 schema-cache miss) rather than a real failure.
+ */
+function isMissingColumnError(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42703" || code === "PGRST204";
+}
+
+/**
+ * Columns that carry no money and may legitimately be absent on an environment
+ * whose migrations haven't caught up with the deployed code. Dropped and retried
+ * rather than failing the whole write: `expenses_note` is an HR annotation, and
+ * losing the note is a far smaller harm than an entire payroll step refusing to
+ * save because one text column is missing. Anything that affects an amount is
+ * deliberately NOT in this list — a silently dropped figure is a wrong sheet.
+ */
+const OPTIONAL_DRAFT_COLUMNS = ["expenses_note"] as const;
+
 /** Upsert a batch of per-employee draft edits (one step's worth). */
 export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): Promise<void> {
   if (patches.length === 0) return;
@@ -314,10 +335,18 @@ export async function upsertDraftRows(runId: string, patches: DraftRowPatch[]): 
     .filter((patch) => compactHrKey(patch.employeeHrId))
     .map((patch) => draftPatchToDb(runId, patch));
   if (rows.length === 0) return;
-  const { error } = await getSupabaseAdmin()
-    .from(DRAFT_ROWS)
-    .upsert(rows, { onConflict: "run_id,employee_hr_id_compact" });
-  if (error) throw error;
+  const client = getSupabaseAdmin();
+  const { error } = await client.from(DRAFT_ROWS).upsert(rows, { onConflict: "run_id,employee_hr_id_compact" });
+  if (!error) return;
+  if (!isMissingColumnError(error)) throw error;
+
+  const stripped = rows.map((row) => {
+    const copy = { ...row };
+    for (const column of OPTIONAL_DRAFT_COLUMNS) delete copy[column];
+    return copy;
+  });
+  const retry = await client.from(DRAFT_ROWS).upsert(stripped, { onConflict: "run_id,employee_hr_id_compact" });
+  if (retry.error) throw retry.error;
 }
 
 export async function deleteRunDraftRows(runId: string): Promise<void> {
