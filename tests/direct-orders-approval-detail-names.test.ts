@@ -263,7 +263,31 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // should never have to infer the basis from which field happens to be missing.
     assert.match(valueOf("Pharmacy price"), /used for this deal/);
     assert.match(valueOf("Public price"), /not used — bonus deal/);
+
+    // "not set" must never render as "0 EGP". `Number(null)` is 0 and passes Number.isFinite,
+    // so the obvious formatter prints an unset price as zero — which shipped once and, on the
+    // screen where money is approved, states that the product is free rather than unpriced.
+    // This detail fixture has NO public price, so that is exactly the case under test.
+    assert.doesNotMatch(
+      valueOf("Public price"),
+      /\b0 EGP\b/,
+      "an unset price must read as a dash, never as 0 EGP — those mean different things",
+    );
+    assert.match(valueOf("Public price"), /not set/, "an unset price must say so");
     assert.doesNotMatch(valueOf("Medical rep"), /\bHR[-_]?\d/i, "a rep's HR_ID must never leak to the approver");
+
+    // A price of ZERO is a real value and must still render as a number, not collapse to the
+    // same "not set" text — the two are only distinguishable if zero survives.
+    const zeroPriced = buildDirectOrderDetailFields(
+      detail({ request: request({ dealType: "discount", publicPriceSnapshot: 0, discountPct: 0 }) }),
+    );
+    const zeroPublic = zeroPriced.find((field) => field.label === "Public price")?.value ?? "";
+    assert.match(zeroPublic, /\b0 EGP\b/, "a genuine zero price must still print as 0 EGP");
+    assert.doesNotMatch(zeroPublic, /not set/, "a genuine zero is not the same as unset");
+
+    // The sales month is Finance's to book — the old "(set on final approval)" copy is stale.
+    assert.match(valueOf("Sales month"), /not booked into a month yet/);
+    assert.doesNotMatch(valueOf("Sales month"), /set on final approval/);
 
     // Never truncate (owner rule).
     for (const field of fields) {

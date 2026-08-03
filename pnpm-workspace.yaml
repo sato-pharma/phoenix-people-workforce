@@ -10,8 +10,21 @@ overrides:
   "@opentelemetry/core": ^2.8.0
   "@opentelemetry/resources": ^2.8.0
   "@opentelemetry/sdk-trace-base": ^2.8.0
-  "brace-expansion@1": ^1.1.16
-  "brace-expansion@2": ^2.1.2
+  # Bumped 2026-08-03 for GHSA-rgw5-rvv9-x895 (DoS via unbounded intermediate arrays, which
+  # bypasses the earlier CVE-2026-14257 mitigation). The previous ^1.1.16 / ^2.1.2 ranges
+  # ALLOWED the patched versions but the lockfile still resolved below them, so the audit
+  # failed on every PR until the floors themselves moved. Reached only transitively, via
+  # exceljs > archiver/unzipper > glob/minimatch.
+  "brace-expansion@1": ^1.1.18
+  "brace-expansion@2": ^2.1.4
+  # The advisory covers `>=4.0.0 <5.0.9` and patches at `>=5.0.9`, i.e. the 4.x line's fix ships
+  # inside 5.x. The selector must be `@5`, NOT `@4`: this graph had already resolved to 5.0.8, so
+  # an `@4` selector matches nothing and silently leaves the vulnerable version in place — the
+  # lockfile is the only way to tell, since the override is accepted either way.
+  # Reached via shadcn > ts-morph > minimatch. NOTE: `shadcn` is a scaffolding CLI sitting in
+  # `dependencies` rather than `devDependencies`, which is why a build-time tool appears under
+  # `pnpm audit --prod` at all. Worth moving, but not inside an unrelated fix.
+  "brace-expansion@5": ^5.0.9
   body-parser: ^2.3.0
   fast-uri: ^3.1.3
   "@hono/node-server": ^2.0.5

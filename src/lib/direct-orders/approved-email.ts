@@ -21,11 +21,15 @@ import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 /** Fixed primary recipient for the approved-order notification (owner-specified). */
 const DIRECT_ORDER_APPROVED_TO = "ahmed.elmaraghy@satopharma.com";
 
+// The null check must come BEFORE Number(): `Number(null)` is 0 and passes Number.isFinite, so
+// the obvious one-liner reports an unset price as "0.00" in an email about money.
 const money = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return "—";
   const n = Number(value);
   return Number.isFinite(n) ? n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
 };
 const units = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return "—";
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
 };
