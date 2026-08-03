@@ -28,6 +28,8 @@ import type {
   MarketingControlSetting,
   MarketingControlSettingGroup,
   MarketingControlWorkspace,
+  MarketingAllRequestsRow,
+  MarketingAllRequestsWorkspace,
   MarketingApprovedRequestRow,
   MarketingCustomer,
   MarketingCustomerDatabaseWorkspace,
@@ -886,10 +888,15 @@ export function assertMarketingRequestAccess(access: AccessContext) {
   assertMarketingAccess(access);
 }
 
+/**
+ * Must stay in lockstep with canUseEmployeePortalMarketingCustomerDatabase — the nav gate only
+ * hides the link, this is the boundary. SFE Manager added on owner instruction (2026-08-03): it
+ * owns customer validation and needs sight of every submitted customer, validated or not.
+ */
 function assertMarketingCustomerDatabaseAccess(access: AccessContext) {
   if (access.scope === "system") return;
-  if (access.role !== "Super Admin") {
-    throw forbiddenError("Forbidden: only Super Admin can view the validation dev database.");
+  if (access.role !== "Super Admin" && access.role !== "SFE Manager") {
+    throw forbiddenError(`Forbidden: ${access.role} cannot view the customer validation database.`);
   }
 }
 
@@ -4209,6 +4216,110 @@ export async function createMarketingValidationRecord(
     }
     throw error;
   }
+}
+
+/**
+ * Company-wide register of EVERY marketing request, at every status, with live tracking.
+ *
+ * Deliberately not folded into the personal draft workspace: that surface narrows company-wide
+ * roles to their own requests (scopeTrackingToOwnRequests) so a Marketing Manager's Drafts tab is
+ * not flooded with all 200+ company requests. Widening it there would break the personal view, so
+ * oversight gets its own surface — owner instruction, 2026-08-03.
+ *
+ * Also distinct from ROI Tracking, which only covers approvedMarketingRequestStatuses and so can
+ * never show a request that is stuck in approval — exactly the case this register exists for.
+ */
+const marketingRegisterRoles = new Set<AccessContext["role"]>([
+  "Marketing Manager",
+  "SFE Manager",
+  "Super Admin",
+]);
+
+function assertMarketingRegisterAccess(access: AccessContext) {
+  if (access.scope === "system") return;
+  if (!marketingRegisterRoles.has(access.role)) {
+    throw forbiddenError(`Forbidden: ${access.role} cannot view the company marketing request register.`);
+  }
+}
+
+export async function getMarketingAllRequestsWorkspace(
+  access: AccessContext,
+): Promise<MarketingAllRequestsWorkspace> {
+  assertMarketingRegisterAccess(access);
+
+  const supabase = getSupabaseAdmin();
+  const [requestsResult, customersResult, employeeRows] = await Promise.all([
+    supabase
+      .from("marketing_requests")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    supabase.from("marketing_customers").select("id, display_name"),
+    loadEmployeeDirectoryRows(),
+  ]);
+  if (requestsResult.error) throw requestsResult.error;
+  if (customersResult.error) throw customersResult.error;
+
+  const requests = ((requestsResult.data ?? []) as MarketingRequestDbRow[]).map(mapRequest);
+  const customerNameById = new Map(
+    ((customersResult.data ?? []) as Array<{ display_name: string | null; id: string }>)
+      .map((row) => [row.id, row.display_name ?? ""] as const),
+  );
+  const requesterByHrId = new Map(
+    employeeRows.map((row) => [normalizeHrId(row.hrId), row] as const),
+  );
+
+  // Batched: PostgREST folds every .in() value into the URL, and an unbatched list of a few
+  // hundred request ids can push it past undici's header limit.
+  const stepsByRequestId = new Map<string, MarketingRequestApprovalStep[]>();
+  for (const batch of chunk(requests.map((request) => request.id))) {
+    const stepsResult = await supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .in("request_id", batch)
+      .order("sequence", { ascending: true });
+    if (stepsResult.error) throw stepsResult.error;
+    for (const row of (stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+      const step = mapApprovalStep(row);
+      stepsByRequestId.set(step.requestId, [...(stepsByRequestId.get(step.requestId) ?? []), step]);
+    }
+  }
+
+  const rows: MarketingAllRequestsRow[] = requests.map((request) => {
+    const progress = buildMarketingStepProgress(stepsByRequestId.get(request.id) ?? [], employeeRows);
+    const requester = requesterByHrId.get(normalizeHrId(request.requesterHrId)) ?? null;
+
+    return {
+      // Line/area come from the requester's directory row rather than the request's own ids so the
+      // register shows human-readable names without two more joins (owner rule: never raw codes).
+      areaName: requester?.areaName ?? null,
+      currentApproverName: progress?.currentApproverName ?? null,
+      currentStepName: progress?.currentStepName ?? null,
+      customerName: customerNameById.get(request.customerId) || "Unknown customer",
+      estimatedCost: toNumber(request.estimatedCost),
+      id: request.id,
+      lineName: requester?.lineName ?? null,
+      payDate: request.payDate,
+      requestCode: request.requestCode,
+      requesterName: employeeNameByHrId(employeeRows, request.requesterHrId),
+      roiCoverageRatio: request.roiCoverageRatio ?? null,
+      roiStatus: request.roiStatus ?? null,
+      status: request.status,
+      stepSequence: progress?.sequence ?? null,
+      submittedAt: request.submittedAt,
+      totalGatingSteps: progress?.totalGatingSteps ?? null,
+    };
+  });
+
+  return {
+    rows,
+    summary: {
+      approved: rows.filter((row) => approvedMarketingRequestStatuses.includes(row.status)).length,
+      inApproval: rows.filter((row) => row.status === "pending_approval").length,
+      returned: rows.filter((row) => row.status === "returned").length,
+      total: rows.length,
+    },
+  };
 }
 
 export async function getMarketingRequestDraftWorkspace(access: AccessContext): Promise<MarketingRequestDraftWorkspace> {

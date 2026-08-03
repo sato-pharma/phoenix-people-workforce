@@ -473,6 +473,45 @@ export type MarketingCustomerDatabaseWorkspace = {
   };
 };
 
+/**
+ * One row of the company-wide request register (Marketing Manager / SFE Manager / Super Admin).
+ *
+ * Distinct from MarketingApprovedRequestRow (approved-and-later only) and from the personal
+ * workspace, which deliberately narrows company-wide roles to their OWN requests so their Drafts
+ * tab is not flooded. This register is the opposite: every request at every status, each carrying
+ * where it is stopped and who it is pending with right now.
+ */
+export type MarketingAllRequestsRow = {
+  areaName: string | null;
+  /** Null only while a request has no approval chain yet (a draft). */
+  currentApproverName: string | null;
+  currentStepName: string | null;
+  customerName: string;
+  estimatedCost: number;
+  id: string;
+  lineName: string | null;
+  payDate: string | null;
+  requestCode: string;
+  requesterName: string;
+  roiCoverageRatio: number | null;
+  roiStatus: string | null;
+  status: MarketingRequest["status"];
+  /** "step 2 of 4" — sequence is null for a request with no chain. */
+  stepSequence: number | null;
+  submittedAt: string | null;
+  totalGatingSteps: number | null;
+};
+
+export type MarketingAllRequestsWorkspace = {
+  rows: MarketingAllRequestsRow[];
+  summary: {
+    approved: number;
+    inApproval: number;
+    returned: number;
+    total: number;
+  };
+};
+
 export type MarketingApprovedRequestRow = {
   contactForMoneyTransfer: string;
   customerName: string;

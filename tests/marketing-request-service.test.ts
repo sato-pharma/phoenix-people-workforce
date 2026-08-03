@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { createAccessContext } from "@/lib/auth/permissions";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
+  canUseEmployeePortalMarketingAllRequests,
+  canUseEmployeePortalMarketingCustomerDatabase,
+} from "@/lib/employee-portal/navigation";
+import {
   buildMarketingApprovedRequestRows,
   buildMarketingDraftProductScope,
   buildMarketingManagerChain,
@@ -761,6 +765,55 @@ export async function runMarketingRequestServiceTests() {
     (draftsRouteSource.match(/logMarketingDraftFailure\(\{/g) ?? []).length,
     3,
     "every drafts-route failure path (load, csrf reject, create) must be logged",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Company-wide marketing oversight (owner instruction, 2026-08-03).        */
+  /* ---------------------------------------------------------------------- */
+
+  // The customer database carries raw submitted field evidence for the whole company — addresses,
+  // phone numbers, live photos. SFE Manager joined Super Admin because it owns validation and must
+  // see every customer employees submitted, validated or not. Nobody else is admitted.
+  assert.equal(canUseEmployeePortalMarketingCustomerDatabase("SFE Manager"), true, "SFE Manager sees the customer database");
+  assert.equal(canUseEmployeePortalMarketingCustomerDatabase("Super Admin"), true, "Super Admin sees the customer database");
+  assert.equal(canUseEmployeePortalMarketingCustomerDatabase("Marketing Manager"), false, "Marketing Manager is not admitted to the customer database");
+  assert.equal(canUseEmployeePortalMarketingCustomerDatabase("District Manager"), false, "a District Manager never sees company-wide customer evidence");
+  assert.equal(canUseEmployeePortalMarketingCustomerDatabase("Medical Rep"), false, "a Medical Rep never sees company-wide customer evidence");
+
+  // The request register is the oversight trio. A line/team role keeps its own bounded subtree
+  // through the normal workspace and must NOT gain company-wide sight of every request.
+  assert.equal(canUseEmployeePortalMarketingAllRequests("Marketing Manager"), true, "Marketing Manager sees every request");
+  assert.equal(canUseEmployeePortalMarketingAllRequests("SFE Manager"), true, "SFE Manager sees every request");
+  assert.equal(canUseEmployeePortalMarketingAllRequests("Super Admin"), true, "Super Admin sees every request");
+  assert.equal(canUseEmployeePortalMarketingAllRequests("National Sales Manager"), false, "an NSM stays scoped to its own subtree");
+  assert.equal(canUseEmployeePortalMarketingAllRequests("District Manager"), false, "a District Manager stays scoped to its own subtree");
+  assert.equal(canUseEmployeePortalMarketingAllRequests("Medical Rep"), false, "a Medical Rep stays scoped to its own subtree");
+
+  // The register must stay a SEPARATE surface. Folding it into the personal draft workspace would
+  // undo scopeTrackingToOwnRequests, which exists so an oversight role's own Drafts / In-approval
+  // lists are not flooded with every request in the company.
+  assert.match(
+    serviceSource,
+    /export async function getMarketingAllRequestsWorkspace/,
+    "the company-wide request register must exist as its own service entry point",
+  );
+  assert.match(
+    serviceSource,
+    /scopeTrackingToOwnRequests/,
+    "the personal workspace must keep narrowing company-wide roles to their own requests",
+  );
+
+  // Tracking is the whole point of the register: a row must carry the step AND the person.
+  const allRequestsSource = source("src/components/employee-portal/marketing-all-requests.tsx");
+  assert.match(
+    allRequestsSource,
+    /currentApproverName[\s\S]{0,120}currentStepName/,
+    "each register row must show who a request is pending with and which step it is stopped at",
+  );
+  assert.match(
+    allRequestsSource,
+    /Not submitted yet/,
+    "a request with no approval chain must say so rather than render an empty tracking cell",
   );
 
   const draftWorkspaceSource = source("src/components/employee-portal/marketing-request-drafts.tsx");

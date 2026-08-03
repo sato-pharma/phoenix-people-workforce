@@ -518,6 +518,10 @@ export function runEmployeePortalNavigationTests() {
   //   so the module's own server-side gate would reject an MM submission anyway
   // - Monthly Closing is hidden: MM is NOT in PORTAL_CLOSING_ROLES (Head-Office line, so the portal
   //   can never resolve a meaningful published closing for them — see monthly-closing-portal.ts)
+  // - All Marketing Requests is VISIBLE to MM but not GPM: the company-wide request register is
+  //   the oversight trio only (Marketing Manager / SFE Manager / Super Admin), owner instruction
+  //   2026-08-03. A GPM keeps its bounded subtree through the normal workspace, so this is a
+  //   deliberate divergence — see canUseEmployeePortalMarketingAllRequests.
   assert.deepEqual(
     {
       ...marketingManagerDefault,
@@ -527,10 +531,13 @@ export function runEmployeePortalNavigationTests() {
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
       showDirectOrdersReportTab: groupProductManagerDefault.showDirectOrdersReportTab,
       showMonthlyClosingTab: groupProductManagerDefault.showMonthlyClosingTab,
+      showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, and Monthly Closing)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, Monthly Closing, and the company-wide All Marketing Requests register)",
   );
+  assert.equal(marketingManagerDefault.showMarketingAllRequestsTab, true, "Marketing Manager sees the company-wide request register");
+  assert.equal(groupProductManagerDefault.showMarketingAllRequestsTab, false, "Group Product Manager stays scoped to its own subtree — no company-wide register");
   assert.equal(groupProductManagerDefault.showDoubleVisitReportTab, true, "Group Product Manager sees the Double Visit Report tab (in DV_FOCUS_ROLES)");
   assert.equal(marketingManagerDefault.showDoubleVisitReportTab, false, "Marketing Manager does NOT get the Double Visit Report tab (not in DV_FOCUS_ROLES — its page would redirect)");
   assert.equal(groupProductManagerDefault.showIncentiveTab, true, "Group Product Manager still sees Incentive (only MM is hidden)");

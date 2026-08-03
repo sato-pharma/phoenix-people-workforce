@@ -352,6 +352,16 @@ const adminNavigationSectionSeeds = [
         label: "Marketing Approval Inbox",
         roles: ["District Manager", "Super Admin", "SFE Manager"],
       },
+      // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
+      // where each one is stopped. Deliberately separate from the inbox above, which only carries
+      // what is waiting on YOUR decision: an oversight role needs the ones waiting on everyone
+      // else too. Marketing Manager is portal-only and reaches the same page via the portal.
+      {
+        href: "/admin/marketing-requests/all",
+        icon: ClipboardList,
+        label: "All Marketing Requests",
+        roles: ["Super Admin", "SFE Manager"],
+      },
     ],
     // Title removed on owner instruction (2026-08-02). It repeated the button beneath it
     // word-for-word; the header row is hidden for an empty label.
@@ -879,17 +889,28 @@ const employeePortalNavigationSectionSeeds = [
           "Super Admin",
         ],
       },
+      // Company-wide register (owner instruction, 2026-08-03): every request on the system with
+      // the step it is stopped at. The Approval Inbox above only carries what is waiting on YOUR
+      // decision, so it can never answer "where is everything else?" for an oversight role.
+      {
+        href: "/employee-portals/marketing-requests/all",
+        icon: ClipboardList,
+        label: "All Marketing Requests",
+        roles: ["Marketing Manager", "SFE Manager", "Super Admin"],
+      },
       {
         href: "/employee-portals/marketing-requests/control",
         icon: Settings2,
         label: "Marketing Control",
         roles: ["SFE Manager", "Super Admin"],
       },
+      // SFE Manager added 2026-08-03 alongside Super Admin — it owns validation, so it must see
+      // every customer employees submitted, validated or not.
       {
         href: "/employee-portals/marketing-requests/customer-database",
         icon: Database,
         label: "Customer Database",
-        roles: ["Super Admin"],
+        roles: ["SFE Manager", "Super Admin"],
       },
       {
         href: "/employee-portals/marketing-requests/coverage-report",
@@ -1461,7 +1482,7 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     icon: Database,
     label: "Customer Database",
     description: "Validation view of customer, pharmacy, and distributor-code rows for marketing requests.",
-    roles: ["Super Admin"],
+    roles: ["SFE Manager", "Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
