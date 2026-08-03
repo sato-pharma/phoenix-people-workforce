@@ -8,6 +8,10 @@ import {
   canUseEmployeePortalMarketingCustomerDatabase,
 } from "@/lib/employee-portal/navigation";
 import {
+  marketingRequestNotificationUrl,
+  resolveMarketingRequestDestination,
+} from "@/lib/marketing-requests/notification-link";
+import {
   buildMarketingApprovedRequestRows,
   buildMarketingDraftProductScope,
   buildMarketingManagerChain,
@@ -821,6 +825,66 @@ export async function runMarketingRequestServiceTests() {
     draftWorkspaceSource,
     /workspace\.requesterLineName === null \?[\s\S]{0,240}No product line assigned/,
     "the Products label must warn when the requester has no product line assigned",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Notification deep-links must resolve to the viewer's OWN shell.          */
+  /* ---------------------------------------------------------------------- */
+
+  // The approver chain spans both shells — admin (Super Admin / SFE / Marketing Manager) and
+  // portal (National Sales Manager / District Manager) — but a notification stores ONE actionUrl
+  // shared by every recipient. Both old branches hardcoded a shell and so were wrong for half the
+  // chain: the view link went to /admin/approvals-hub (which excludes marketing by design) and the
+  // decision links went to the portal (which bounces admin-shell approvers to /overview).
+  const REQ_ID = "09d4d45b-49fd-49b1-a2e8-99ec85e976a3";
+
+  assert.equal(
+    marketingRequestNotificationUrl(REQ_ID),
+    `/marketing-requests/${REQ_ID}`,
+    "the stored notification link must be shell-neutral",
+  );
+  assert.equal(
+    marketingRequestNotificationUrl(REQ_ID, "approve"),
+    `/marketing-requests/${REQ_ID}?decision=approve`,
+    "a decision link must carry the decision through the shell-neutral link",
+  );
+
+  // No decision -> the inbox for that viewer's shell. Owner rule: the inbox is the marketing hub.
+  assert.equal(
+    resolveMarketingRequestDestination({ navigationMode: "admin", requestId: REQ_ID }),
+    `/admin/marketing-requests/inbox?request=${REQ_ID}`,
+    "an admin-shell viewer lands in the admin marketing inbox",
+  );
+  assert.equal(
+    resolveMarketingRequestDestination({ navigationMode: "employee-portal", requestId: REQ_ID }),
+    `/employee-portals/marketing-requests/inbox?request=${REQ_ID}`,
+    "a portal viewer (NSM / District Manager) lands in the portal marketing inbox",
+  );
+
+  // With a decision -> that request's decision page, in the viewer's shell.
+  assert.equal(
+    resolveMarketingRequestDestination({ decision: "approve", navigationMode: "admin", requestId: REQ_ID }),
+    `/workspace/marketing-requests/decision/${REQ_ID}?decision=approve`,
+    "an admin-shell approver decides in the admin workspace, never the portal",
+  );
+  assert.equal(
+    resolveMarketingRequestDestination({ decision: "return", navigationMode: "employee-portal", requestId: REQ_ID }),
+    `/employee-portals/marketing-requests/decision/${REQ_ID}?decision=return`,
+    "a portal approver decides in the portal",
+  );
+
+  // An unknown decision must never be reflected back into the URL.
+  assert.equal(
+    resolveMarketingRequestDestination({ decision: "drop-tables", navigationMode: "admin", requestId: REQ_ID }),
+    `/admin/marketing-requests/inbox?request=${REQ_ID}`,
+    "an unrecognised decision falls back to the inbox rather than being echoed into the URL",
+  );
+
+  // The regression that cost a 12-hour stall: marketing notifications pointing at the approvals hub.
+  assert.doesNotMatch(
+    serviceSource,
+    /approvals-hub\?module=marketing/,
+    "marketing notifications must never deep-link to the approvals hub, which excludes marketing by design",
   );
 
   /* ---------------------------------------------------------------------- */

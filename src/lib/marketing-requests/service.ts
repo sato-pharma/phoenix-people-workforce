@@ -14,6 +14,7 @@ import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -2053,9 +2054,17 @@ async function createMarketingApprovalSteps(params: {
   return ((data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
 }
 
+/**
+ * Both branches used to hardcode a shell, and both were wrong for half the approver chain.
+ *
+ * The view link pointed at `/admin/approvals-hub`, which excludes marketing BY DESIGN (see
+ * src/lib/action-center/service.ts: "Marketing is intentionally excluded everywhere — it keeps its
+ * own dedicated inbox"), so it could never show the request. The decision links pointed at the
+ * portal, which redirects admin-shell approvers to /overview. A notification's actionUrl is stored
+ * once and shared by every recipient, so the link has to be shell-neutral and resolve per viewer.
+ */
 function marketingActionUrl(requestId: string, decision?: "approve" | "reject" | "return") {
-  const base = `/employee-portals/marketing-requests/decision/${encodeURIComponent(requestId)}`;
-  return decision ? `${base}?decision=${decision}` : `/admin/approvals-hub?module=marketing&id=${encodeURIComponent(requestId)}`;
+  return marketingRequestNotificationUrl(requestId, decision);
 }
 
 function marketingTelegramButtons(requestId: string) {
