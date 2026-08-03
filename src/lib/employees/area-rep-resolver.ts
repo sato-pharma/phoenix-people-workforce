@@ -125,7 +125,11 @@ export function selectAreaRepsFromSeats(
  */
 export async function resolveAreaRepsForLineAreas(
   pairs: Array<{ line: string | null | undefined; areaCode: string | null | undefined }>,
-  options?: { nameOf?: (hrId: string | null) => string | null },
+  // REQUIRED, deliberately. This was optional and defaulted to "resolve no names", which
+  // degrades every rep to a raw HR_ID — and a real notification shipped reading
+  // "Medical rep pd-0005" because one of two call sites forgot to pass it. A required
+  // parameter makes that a compile error instead of a silent downgrade in production.
+  options: { nameOf: (hrId: string | null) => string | null },
 ): Promise<Map<string, AreaRepAssignment>> {
   const wanted = new Set(pairs.map((pair) => areaRepKey(pair.line, pair.areaCode)).filter(Boolean));
   if (wanted.size === 0) return new Map();
@@ -133,8 +137,7 @@ export async function resolveAreaRepsForLineAreas(
   try {
     const { data, error } = await getSupabaseAdmin().from("au_v_org_tree").select(SEAT_COLUMNS);
     if (error) throw error;
-    const nameOf = options?.nameOf ?? (() => null);
-    const all = selectAreaRepsFromSeats((data ?? []) as AreaRepSeatRow[], nameOf);
+    const all = selectAreaRepsFromSeats((data ?? []) as AreaRepSeatRow[], options.nameOf);
     // Return only what was asked for, so a caller cannot accidentally leak the whole org tree.
     const scoped = new Map<string, AreaRepAssignment>();
     for (const key of wanted) {
@@ -154,7 +157,7 @@ export async function resolveAreaRepsForLineAreas(
 /** Single-pair convenience. null = no REP seat for this (line, area) — "we cannot say". */
 export async function resolveAreaRep(
   input: { line: string | null | undefined; areaCode: string | null | undefined },
-  options?: { nameOf?: (hrId: string | null) => string | null },
+  options: { nameOf: (hrId: string | null) => string | null },
 ): Promise<AreaRepAssignment | null> {
   const key = areaRepKey(input.line, input.areaCode);
   if (!key) return null;

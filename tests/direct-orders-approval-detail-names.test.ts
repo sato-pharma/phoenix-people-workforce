@@ -274,7 +274,14 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "an unset price must read as a dash, never as 0 EGP — those mean different things",
     );
     assert.match(valueOf("Public price"), /not set/, "an unset price must say so");
-    assert.doesNotMatch(valueOf("Medical rep"), /\bHR[-_]?\d/i, "a rep's HR_ID must never leak to the approver");
+    // Any letters-dash-digits HR_ID shape, not just "HR-####". The narrow pattern this replaces
+    // missed a REAL leak: a sent notification read "Medical rep pd-0005", because HR IDs in this
+    // system take forms like pd-0005, ai-0007, B-185 and AA — nothing resembling "HR-".
+    assert.doesNotMatch(
+      valueOf("Medical rep"),
+      /\b[A-Za-z]{1,3}-\d{2,}\b/,
+      "a rep's HR_ID must never leak to the approver — show the name",
+    );
 
     // A price of ZERO is a real value and must still render as a number, not collapse to the
     // same "not set" text — the two are only distinguishable if zero survives.
@@ -597,8 +604,28 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(line, /Sara Hassan/);
     assert.doesNotMatch(line, /\bCA-07\b/, "the notification must name the area, not code it");
 
+    // The NOTIFICATION is where the HR_ID actually leaked in production ("Medical rep pd-0005"),
+    // because buildNotifyContext resolved the rep WITHOUT an employee-name lookup while the
+    // approval window resolved it WITH one. Assert the body too, not just the detail field.
+    //
+    // Scoped to the rep clause on purpose: the line legitimately contains a pharmacy code
+    // (DOP-000123) with the same letters-dash-digits shape, so asserting over the whole string
+    // fails on correct output.
+    const repClause = /Medical rep ([^.]+)\./.exec(line)?.[1] ?? "";
+    assert.ok(repClause.length > 0, "the notification must state a medical rep");
+    assert.doesNotMatch(
+      repClause,
+      /\b[A-Za-z]{1,3}-\d{2,}\b/,
+      "the notification must name the rep, never fall back to their HR_ID",
+    );
+
     // The email metrics table carries the full distributor→customer-code pairs the one-liner drops.
     const metrics = buildDirectOrderNotificationMetrics(ctx);
+    assert.doesNotMatch(
+      metrics.find((metric) => metric.label === "Medical rep")?.value ?? "",
+      /\b[A-Za-z]{1,3}-\d{2,}\b/,
+      "the email metrics table must name the rep too",
+    );
     const metricValue = (label: string) => metrics.find((metric) => metric.label === label)?.value ?? "";
     assert.equal(metricValue("Distributor codes"), "Ibn Sina: 1234567; Overseas: 7654321");
     assert.equal(metricValue("Pharmacy"), "El Ezaby (DOP-000123)");
@@ -649,6 +676,42 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const detailBody = serviceSource.slice(detailIdx, detailIdx + 2200);
     assert.match(detailBody, /loadDirectOrderGeoNames\(/, "the detail payload must resolve geography names");
     assert.match(detailBody, /resolveAreaRep\(/, "the detail payload must resolve the area's medical rep");
+
+    // `nameOf` is a REQUIRED parameter on the resolver, so a call site cannot silently fall back
+    // to raw HR_IDs. Typecheck is the real guard; this pins the intent so nobody re-adds a default.
+    const resolverSource = readFileSync(
+      new URL("../src/lib/employees/area-rep-resolver.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      resolverSource,
+      /options: \{ nameOf: \(hrId: string \| null\) => string \| null \}/,
+      "nameOf must be REQUIRED — an optional one shipped a notification reading 'Medical rep pd-0005'",
+    );
+    assert.doesNotMatch(
+      resolverSource,
+      /options\?\.nameOf \?\?/,
+      "no silent default: forgetting the lookup must be a compile error, not a downgrade",
+    );
+    // EVERY call site must pass a real lookup — not just one of them. A bare `assert.match`
+    // here is worthless: it passes as soon as ONE site is correct, which is exactly the state
+    // that shipped (the detail path had it, the notification path did not).
+    const repCalls = [...serviceSource.matchAll(/resolveAreaRep\([\s\S]{0,160}?\)\s*,?\s*$/gm)];
+    const repCallSites = [...serviceSource.matchAll(/resolveAreaRep\(/g)];
+    assert.ok(repCallSites.length >= 2, "expected at least the detail and notification call sites");
+    for (const match of repCalls) {
+      assert.match(
+        match[0],
+        /\{ nameOf \}/,
+        `every resolveAreaRep call must pass the employee-name lookup — found: ${match[0].trim()}`,
+      );
+    }
+    // And nobody may re-introduce a null lookup to satisfy the required parameter.
+    assert.doesNotMatch(
+      serviceSource,
+      /nameOf:\s*\(\)\s*=>\s*null/,
+      "passing a null-returning lookup defeats the required parameter and leaks HR_IDs again",
+    );
     // Proves the name-map extraction actually replaced the duplicates rather than adding a third.
     assert.doesNotMatch(
       serviceSource,
