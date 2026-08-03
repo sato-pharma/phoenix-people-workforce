@@ -50,7 +50,10 @@ function MultiSelect({
         )}
         <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
       </summary>
-      <div className="absolute left-0 z-40 mt-1 max-h-72 w-64 overflow-auto border border-[#D8E0EA] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
+      {/* z-50 on purpose: the closing matrix's sticky Area / Area Name headers sit at z-40, and an
+          equal z-index would let the later-in-DOM table header paint over this panel and eat its
+          clicks. Keep this above whatever the table uses. */}
+      <div className="absolute left-0 z-50 mt-1 max-h-72 w-64 overflow-auto border border-[#D8E0EA] bg-white p-2 shadow-[0_18px_42px_rgba(15,23,42,0.16)]">
         <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">{count} selected</span>
           <button className="text-xs font-bold text-[#F97316] hover:underline" onClick={onClear} type="button">Clear</button>

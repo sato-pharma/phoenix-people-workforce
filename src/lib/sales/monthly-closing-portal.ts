@@ -255,15 +255,63 @@ export function scopeMatrixToRegionNames(
   matrix: MonthlyClosingMatrix,
   names: Set<string>,
 ): MonthlyClosingMatrix {
-  const regions = matrix.regions.filter((region) => names.has(canonicalizeRegionName(region.regionName)));
+  return scopeMatrixByRegion(matrix, (region) => names.has(canonicalizeRegionName(region)));
+}
+
+/**
+ * Shared core of the two region scopers. Matching happens per AREA rather than per region, because
+ * the closing now groups areas by the ORGANOGRAM: on Anti Infective there is no "Upper Egypt"
+ * region at all, only "Upper Egypt 1" and "Upper Egypt 2".
+ *
+ * Every Upper Egypt employee is labelled "Upper Egypt" in the employee master (verified in
+ * production: 26 of them, none labelled with a 1 or a 2), so a region-name bound would match no
+ * region on that line — and applyRegionScope treats "matched nothing" as a data gap and hands back
+ * the UN-narrowed matrix. A viewer scoped to one region would have seen the entire company.
+ *
+ * So an area is kept when its own group matches OR the region it sits in geographically matches.
+ * That keeps UE1..UE8 visible to an Upper Egypt viewer wherever the organogram put them, without
+ * handing them GZ6 — a Giza area that happens to sit under the same district manager.
+ *
+ * When nothing has been re-homed (no sourceRegion on any area) this is exactly the old whole-region
+ * filter: every area of a matching region matches, and none of a non-matching one does.
+ */
+function scopeMatrixByRegion(
+  matrix: MonthlyClosingMatrix,
+  matches: (regionNameOrCode: string) => boolean,
+  matchCode?: (code: string) => boolean,
+): MonthlyClosingMatrix {
   const columnCount = matrix.columns.length;
-  const grandCells = Array.from({ length: columnCount }, (_, index) =>
-    sumCells(
-      regions
-        .map((region) => region.subtotal.cells[index])
-        .filter((cell): cell is MonthlyClosingCell => Boolean(cell)),
-    ),
-  );
+  const cellsAt = (rows: Array<{ cells: MonthlyClosingCell[] }>) =>
+    Array.from({ length: columnCount }, (_, index) =>
+      sumCells(rows.map((row) => row.cells[index]).filter((cell): cell is MonthlyClosingCell => Boolean(cell))),
+    );
+  const hit = (name: string, code: string) => (matchCode ? matchCode(code) : matches(name));
+
+  const regions = matrix.regions
+    .map((region) => {
+      const groupMatches = hit(region.regionName, region.regionCode);
+      const areas = region.areas.filter((area) => {
+        // The synthetic Direct row has no geography of its own — it belongs to whichever territory
+        // survived, so it rides along rather than being matched on its own.
+        if (area.isDirect) return true;
+        if (groupMatches) return true;
+        return area.sourceRegionName !== undefined
+          ? hit(area.sourceRegionName, area.sourceRegionCode ?? "")
+          : false;
+      });
+      // A group kept only by its Direct row would be a region the viewer has no areas in.
+      if (areas.length === 0 || areas.every((area) => area.isDirect)) return null;
+      if (areas.length === region.areas.length && groupMatches) return region;
+      const subtotalCells = cellsAt(areas);
+      return {
+        ...region,
+        areas,
+        subtotal: { ...region.subtotal, cells: subtotalCells, rowTotal: sumCells(subtotalCells) },
+      };
+    })
+    .filter((region): region is (typeof matrix.regions)[number] => region !== null);
+
+  const grandCells = cellsAt(regions.map((region) => region.subtotal));
   const grandTotal: MonthlyClosingGrandTotalRow = {
     kind: "grandTotal",
     cells: grandCells,
@@ -465,21 +513,11 @@ export function scopeMatrixToRegions(
   codes: Set<string>,
 ): MonthlyClosingMatrix {
   const allowed = new Set([...codes].map((code) => code.trim().toUpperCase()));
-  const regions = matrix.regions.filter((region) => allowed.has((region.regionCode ?? "").trim().toUpperCase()));
-  const columnCount = matrix.columns.length;
-  const grandCells = Array.from({ length: columnCount }, (_, index) =>
-    sumCells(
-      regions
-        .map((region) => region.subtotal.cells[index])
-        .filter((cell): cell is MonthlyClosingCell => Boolean(cell)),
-    ),
+  return scopeMatrixByRegion(
+    matrix,
+    () => false,
+    (code) => allowed.has((code ?? "").trim().toUpperCase()),
   );
-  const grandTotal: MonthlyClosingGrandTotalRow = {
-    kind: "grandTotal",
-    cells: grandCells,
-    rowTotal: sumCells(grandCells),
-  };
-  return { ...matrix, regions, grandTotal, directNational: null, companyTotal: null };
 }
 
 /**

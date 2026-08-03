@@ -572,8 +572,28 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
         return employee ? canSeeEmployee(scopedAccess, employee) : false;
       });
   const workflowHrIds = new Set(workflowRecords.map((record) => normalizeHrId(record.employeeHrId)));
+
+  // Legacy/compatibility records must obey the SAME scope rule as the workflow records above.
+  // They previously did not, which leaked in two ways for any non-company reader: every past
+  // leaver's name appeared regardless of scope, and — worse — an employee whose workflow record
+  // had just been filtered out was absent from workflowHrIds, so their exit resurfaced here as a
+  // legacy row. That made the filter above bypassable rather than merely incomplete. It was
+  // unreachable in practice only because resignations:read is held solely by Super Admin, CEO and
+  // Talent Acquisition, all of whom isCompanyResignationReader short-circuits — masked by the
+  // narrow grant, not by any scoping. Keep this before widening resignations:read.
+  const canSeeLegacyResignation = (hrId: string) => {
+    if (isCompanyResignationReader(scopedAccess)) return true;
+    // loadHistoricalResignedEmployees selects no manager_hr_id, so prefer the directory row that
+    // carries the real manager chain. The manager-less stand-in still lets canSeeEmployee match
+    // the viewer's own hrId (an employee keeps seeing their own exit record), while a
+    // manager-of-report relationship we cannot prove fails closed.
+    const directoryRow = employeesByHrId.get(normalizeHrId(hrId));
+    return canSeeEmployee(scopedAccess, directoryRow ?? { hrId, managerHrId: null });
+  };
+
   const legacyRecords = historicalEmployees
     .filter((employee) => !workflowHrIds.has(normalizeHrId(employee.hr_id)))
+    .filter((employee) => canSeeLegacyResignation(employee.hr_id))
     .map(mapLegacyResignationEmployee);
   const records = [...workflowRecords, ...legacyRecords].sort((left, right) => {
     const dateCompare = right.submittedDate.localeCompare(left.submittedDate);
