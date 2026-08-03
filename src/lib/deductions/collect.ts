@@ -11,6 +11,7 @@
 // one at a time via `collectOneConnectorForMonth`.
 
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
+import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
 import { collectHolidayBridgeCandidates } from "./connectors/holiday-bridge.ts";
 import { collectCrmCandidates } from "./connectors/crm.ts";
 import { collectNoRecordsActivityCandidates } from "./connectors/no-records-activity.ts";
@@ -26,6 +27,7 @@ export type DeductionCollectorKey =
   | "no_records_activity"
   | "unpaid_vacation"
   | "insufficient_balance_vacation"
+  | "dsm_no_record"
   | "holiday_bridge";
 
 export type MonthlyCollectionResult = Record<DeductionCollectorKey, CandidateDraftInsertResult>;
@@ -53,6 +55,10 @@ export const DEDUCTION_COLLECTORS: readonly Collector[] = [
   // and its historical rows stay untouched; only the live collection step is retired.
   { key: "unpaid_vacation", label: "Unpaid Vacation", run: collectUnpaidVacationCandidates },
   { key: "insufficient_balance_vacation", label: "Insufficient Balance Vacation", run: collectInsufficientBalanceVacationCandidates },
+  // After the four that own their own populations, before holiday_bridge. Like
+  // holiday_bridge it dedups against the live ledger, so it must not run before
+  // the categories whose days it needs to avoid.
+  { key: "dsm_no_record", label: "District manager CRM no-record days", run: collectDsmNoRecordCandidates },
   // LAST on purpose. Its dedup reads the live ledger to skip any employee-day
   // another category already charges, so it must run after those categories
   // have been written — running it first would find an empty ledger and

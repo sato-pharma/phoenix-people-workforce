@@ -287,12 +287,33 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
     // report created=0 forever and be indistinguishable from a broken connector.
     // holiday_bridge was then added, taking it back to 5. The exact keys are
     // pinned just below.
-    assert.equal(DEDUCTION_COLLECTORS.length, 5, "the five live automated connectors must stay registered");
+    assert.equal(DEDUCTION_COLLECTORS.length, 6, "the six live automated connectors must stay registered");
     assert.deepEqual(
       DEDUCTION_COLLECTORS.map((collector) => collector.key),
-      ["fingerprint", "crm", "unpaid_vacation", "insufficient_balance_vacation", "holiday_bridge"],
+      [
+        "fingerprint",
+        "crm",
+        "unpaid_vacation",
+        "insufficient_balance_vacation",
+        "dsm_no_record",
+        "holiday_bridge",
+      ],
       "connector order is the documented run order; changing it changes what an interrupted run leaves behind",
     );
+    // Both ledger-reading connectors must follow the four that own their own
+    // populations. Either one running earlier would dedup against an incomplete
+    // ledger and manufacture the same-day duplicates the owner's rule forbids.
+    {
+      const order = DEDUCTION_COLLECTORS.map((collector) => collector.key);
+      assert.ok(
+        order.indexOf("dsm_no_record") > order.indexOf("crm"),
+        "dsm_no_record must run after crm — it skips days the rep pipeline already charged",
+      );
+      assert.ok(
+        order.indexOf("holiday_bridge") > order.indexOf("dsm_no_record"),
+        "holiday_bridge must run after dsm_no_record for the same reason",
+      );
+    }
     assert.equal(
       DEDUCTION_COLLECTORS[DEDUCTION_COLLECTORS.length - 1]?.key,
       "holiday_bridge",
