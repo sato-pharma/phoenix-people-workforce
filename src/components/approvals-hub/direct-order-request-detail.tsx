@@ -31,9 +31,14 @@ const STEP_TONE: Record<string, string> = {
 export function DirectOrderRequestDetail({
   detail,
   backHref,
+  // The same component serves an APPROVER (reached from the approvals queue) and the REQUESTER
+  // tracking their own order (reached from "My direct orders"). Only the return path differs —
+  // sending a requester back to an approvals queue they may not even have would be a dead end.
+  backLabel = "Back to Direct Orders Approvals",
 }: {
   detail: DirectOrderApprovalDetail | null;
   backHref: string;
+  backLabel?: string;
 }) {
   if (!detail) {
     return (
@@ -70,7 +75,7 @@ export function DirectOrderRequestDetail({
   return (
     <div className="space-y-5">
       <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
-        ← Back to Direct Orders Approvals
+        ← {backLabel}
       </Link>
 
       <section className="border border-[#e4e9ec] bg-white">

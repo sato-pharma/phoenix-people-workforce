@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Send } from "lucide-react";
+import { ChevronRight, Send } from "lucide-react";
 
 import {
   PortalDesktopTable,
@@ -447,6 +448,15 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                 meta={`${r.line} - ${r.pharmacyName}`}
                 status={<StatusPill status={r.status} />}
                 accent={r.status === "approved" ? "emerald" : r.status === "rejected" ? "rose" : "orange"}
+                actions={
+                  <Link
+                    href={`/employee-portals/direct-orders/${encodeURIComponent(r.id)}`}
+                    className="flex h-11 flex-1 items-center justify-center gap-1 rounded bg-slate-900 text-sm font-black text-white transition hover:bg-black"
+                  >
+                    Track
+                    <ChevronRight className="h-4 w-4" />
+                  </Link>
+                }
               >
                 <PortalRecordFields
                   fields={[
@@ -481,6 +491,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                     <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Pharmacy</th>
                     <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Status</th>
                     <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Waiting on</th>
+                    <th className="px-3 py-2" />
                   </tr>
                 </thead>
                 <tbody>
@@ -502,7 +513,17 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                       <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                       <td className="px-3 py-2">{r.pharmacyName}</td>
                       <td className="px-3 py-2"><StatusPill status={r.status} /></td>
-                      <td className="px-3 py-2 text-slate-600">{r.status === "pending_approval" ? r.activeStepLabel || "-" : "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                        {r.status === "pending_approval" ? r.activeStepLabel || "-" : "-"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <Link
+                          href={`/employee-portals/direct-orders/${encodeURIComponent(r.id)}`}
+                          className="font-bold text-orange-600 hover:text-orange-700"
+                        >
+                          Track -&gt;
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

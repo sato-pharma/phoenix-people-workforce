@@ -954,6 +954,129 @@ export async function decideDirectOrder(
   return result;
 }
 
+// ── Approval-chain backfill (re-seed an untouched chain onto today's ladder) ──
+
+/**
+ * Rebuild a pending request's approval chain using the CURRENT ladder.
+ *
+ * Approval steps are written once, at submission, and never rebuilt — so an order submitted
+ * before a ladder change keeps the old chain forever. When SFE Manager validation was added as
+ * the opening rung (2026-08-03), every in-flight order still routed straight past it. This
+ * re-seeds those chains so they run the normal workflow.
+ *
+ * REFUSES when any step has already been DECIDED. Deleting a decided step would erase a real
+ * person's approval or rejection — an audit record, not scaffolding. Only a chain where nobody
+ * has acted yet can be safely replaced, and that check is the whole safety of this function.
+ *
+ * The rebuild uses buildApprovalChain, the same function submit uses, so a backfilled chain is
+ * identical to one the requester would get by resubmitting today — no second definition of the
+ * ladder to drift.
+ */
+export async function rebuildDirectOrderApprovalChain(
+  access: AccessContext,
+  input: { requestId: string },
+): Promise<{ requestId: string; previousLabels: string[]; nextLabels: string[] }> {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: only a System Admin can rebuild an approval chain.");
+  }
+  const supabase = getSupabaseAdmin();
+
+  const { data: current, error: loadError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!current) badRequest("Direct order request not found.");
+  const request = mapRequestRow(current as Record<string, unknown>);
+  if (request.status !== "pending_approval") {
+    badRequest(`Only a pending request can have its chain rebuilt; this one is ${request.status}.`);
+  }
+
+  const { data: stepRows, error: stepsError } = await supabase
+    .from("direct_order_approval_steps")
+    .select("*")
+    .eq("request_id", request.id)
+    .order("step_order", { ascending: true });
+  if (stepsError) throw stepsError;
+  const existing = (stepRows ?? []) as Array<Record<string, unknown>>;
+
+  // The safety gate. A decided step is somebody's recorded decision.
+  const decided = existing.filter(
+    (row) => String(row.status ?? "pending") !== "pending" || row.decided_by_hr_id || row.decided_at,
+  );
+  if (decided.length > 0) {
+    badRequest(
+      `This chain already has ${decided.length} decided step(s); rebuilding would erase a real approval. ` +
+        "Return the request to the requester and have them resubmit instead.",
+    );
+  }
+
+  const previousLabels = existing.map((row) => String(row.label ?? ""));
+  const chain = await buildApprovalChain({
+    requesterHrId: request.requesterHrId,
+    requesterRole: request.requesterRole,
+  });
+  const nextLabels = chain.map((step) => step.label);
+
+  const { error: deleteError } = await supabase
+    .from("direct_order_approval_steps")
+    .delete()
+    .eq("request_id", request.id);
+  if (deleteError) throw deleteError;
+
+  const { error: insertError } = await supabase.from("direct_order_approval_steps").insert(
+    chain.map((step) => ({
+      request_id: request.id,
+      step_order: step.order,
+      approver_kind: step.kind,
+      approver_role: step.role,
+      approver_hr_id: step.approverHrId,
+      label: step.label,
+      status: "pending",
+    })),
+  );
+  if (insertError) throw insertError;
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: request.id,
+    oldValues: { steps: previousLabels },
+    newValues: { steps: nextLabels },
+    summary: `Direct order approval chain rebuilt by ${access.hrId ?? "unknown"}.`,
+  });
+  await insertEvent({
+    requestId: request.id,
+    actorHrId: access.hrId,
+    eventType: "chain_rebuilt",
+    message: `Approval chain rebuilt: ${previousLabels.join(" → ") || "(none)"} → ${nextLabels.join(" → ")}.`,
+    metadata: { previousLabels, nextLabels },
+  });
+
+  // Tell the NEW first rung it is waiting on them — a rebuilt chain that nobody is told about
+  // is a request that silently stalls.
+  const [firstStep] = chain;
+  if (firstStep) {
+    const firstApprovers =
+      firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+    const nameOf = await nameLookup();
+    const pharmacy = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    const ctx = await buildNotifyContext(request, nameOf(request.requesterHrId) ?? request.requesterHrId, pharmacy);
+    await notifyDirectOrder({
+      recipients: [...firstApprovers, ...(await ccRecipients())],
+      title: "Direct order awaiting your approval",
+      message: buildDirectOrderNotificationLine(ctx),
+      metrics: buildDirectOrderNotificationMetrics(ctx),
+      eventType: "submitted",
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+    });
+  }
+
+  return { requestId: request.id, previousLabels, nextLabels };
+}
+
 // ── Reversal (create a reversing request that re-enters approval) ─────────────
 
 export async function reverseDirectOrder(
