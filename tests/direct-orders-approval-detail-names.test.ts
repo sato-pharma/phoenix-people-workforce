@@ -496,6 +496,77 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(detailBody, /pharmacyHistory,/, "direct-order history keeps its own field");
   }
 
+  // ── The pharmacy-price recompute script ────────────────────────────────────
+  // This restates reported sales and therefore achievement, so its guard rails are asserted
+  // rather than trusted to review.
+  {
+    const script = readFileSync(
+      new URL("../scripts/direct-orders-pharmacy-price-backfill.ts", import.meta.url),
+      "utf8",
+    );
+
+    // Truth set. The reversal clause is the non-obvious one: reverseDirectOrder does not copy
+    // deal_type, so EVERY reversal row reads 'bonus' by default even when it reverses a
+    // discount order. Without this filter the script would destroy their mirror-of-original value.
+    assert.match(script, /\.eq\("deal_type", "bonus"\)/, "discount orders price on the public price and must not be touched");
+    assert.match(
+      script,
+      /\.is\("reversal_of_request_id", null\)/,
+      "reversals read deal_type 'bonus' regardless of what they reverse — they must be excluded",
+    );
+    assert.doesNotMatch(
+      script,
+      /"rejected"|"reversed"/,
+      "rejected and reversed orders record a decision against the old number and must not be rewritten",
+    );
+
+    // The value must come from the domain function, not a formula copied into a script that
+    // then drifts from the rule it is meant to apply.
+    assert.match(
+      script,
+      /computeDirectOrderSalesValue\(\{ qty, pharmacyPrice \}\)/,
+      "the recompute must call the domain function, never re-derive qty × price",
+    );
+
+    // Two independent flags, and a production ref check on top.
+    assert.match(
+      script,
+      /options\.apply !== true \|\| options\["confirm-restates-achievement"\] !== true/,
+      "writing must require BOTH flags",
+    );
+    assert.match(script, /Refusing to write to PRODUCTION without --project-ref/, "production needs an explicit ref");
+
+    // A missing price must be reported, never silently left on the old basis — that is how a
+    // restatement half-happens and nobody notices.
+    assert.match(script, /no pharmacy price set for this product/, "unpriced products must be reported as skips");
+
+    // The pre-image must be written BEFORE any update, and must capture sos_batch_id, because
+    // the rebuild re-stamps it and no other record of the old batch survives.
+    const preImageIdx = script.indexOf("Pre-image written");
+    const firstUpdateIdx = script.indexOf('.from("direct_order_requests")\n      .update(');
+    assert.ok(preImageIdx > -1 && firstUpdateIdx > -1, "the script must both back up and update");
+    assert.ok(preImageIdx < firstUpdateIdx, "the pre-image must be written BEFORE the first write");
+    assert.match(script, /sos_batch_id/, "the pre-image must capture sos_batch_id — the rebuild re-stamps it");
+
+    // Only approved orders sit in a Source-of-Sales batch, so only those drive a rebuild.
+    assert.match(
+      script,
+      /approvedChanges\.map\(\(change\) => change\.salesMonth\)/,
+      "re-injection must be driven by APPROVED orders' booked months only",
+    );
+  }
+
+  // The backup snapshot must not live in `public` — a backup table there is anon-reachable.
+  {
+    const backup = readFileSync(
+      new URL("../supabase/direct-orders-pharmacy-price-backfill-backup.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(backup, /create schema if not exists direct_orders_backup_/, "the snapshot must live in a dated schema");
+    assert.doesNotMatch(backup, /create table if not exists public\./, "never snapshot into public");
+    assert.match(backup, /revoke all on schema[\s\S]*from public/, "revoke from PUBLIC, not just anon/authenticated");
+  }
+
   // ── The approver's notification ─────────────────────────────────────────────
   {
     const ctx = {
