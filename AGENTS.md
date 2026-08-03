@@ -122,6 +122,14 @@ These are the owner's own decisions, stated across many sessions. They are not s
   "as many questions as needed to get it right" and for far fewer interruptions — the resolution is
   that scope, business rules, and data-correctness questions are always worth asking, while
   permission to do obvious low-risk work is not.
+- **Ask business-fact questions as an XLSX with dropdowns, not in prose** (his rule, 2026-08-03,
+  after classifying 16 Arabic-named bricks this way). Whenever the doubt is "which of these does
+  each of these belong to" — bricks to areas, areas to regions, people to seats, products to lines —
+  build one row per item with a locked data-validation list of the allowed answers, send the file,
+  and read the answers back. He fills it and returns it. This applies **everywhere in the repo**, not
+  just Source of Sales. Include whatever context makes the call easy (current value, recent sales)
+  and a free-text Note column. Never guess an item to avoid asking, and never hand back a list of
+  items for him to answer in chat.
 - Take ownership. Automate the work rather than returning a checklist he has to execute.
 
 **How to build**

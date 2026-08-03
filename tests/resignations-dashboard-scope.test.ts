@@ -84,4 +84,33 @@ export function runResignationsDashboardScopeTests() {
     /getResignationsDashboardData\(access\)/,
     "src/lib/action-center/service.ts must keep passing access to getResignationsDashboardData",
   );
+
+  // (g) THE LEGACY HALF. The canSeeEmployee filter in (b) only covers workflow records; the
+  // historical/compatibility rows appended afterwards used to bypass it entirely. For a
+  // non-company reader that leaked every past leaver's name, and it also made (b) bypassable:
+  // an employee whose workflow record was filtered out fell out of workflowHrIds, so their exit
+  // reappeared as a legacy row. Both halves must obey the same scope rule.
+  assert.match(
+    fnBody,
+    /\.filter\(\(employee\) => canSeeLegacyResignation\(employee\.hr_id\)\)\s*\.map\(mapLegacyResignationEmployee\)/,
+    "legacy resignation records must be scope-filtered by canSeeLegacyResignation before mapping",
+  );
+  assert.doesNotMatch(
+    fnBody,
+    /\.filter\(\(employee\) => !workflowHrIds\.has\(normalizeHrId\(employee\.hr_id\)\)\)\s*\.map\(mapLegacyResignationEmployee\)/,
+    "legacy records must not go straight from the dedup filter to .map — that is the unscoped leak",
+  );
+
+  // the helper keeps the company-reader short-circuit, and falls back to a manager-less
+  // stand-in so an unprovable manager-of-report relationship fails closed rather than open.
+  assert.match(
+    fnBody,
+    /const canSeeLegacyResignation = \(hrId: string\) => \{[\s\S]{0,800}isCompanyResignationReader\(scopedAccess\)/,
+    "canSeeLegacyResignation must short-circuit for company resignation readers",
+  );
+  assert.match(
+    fnBody,
+    /canSeeEmployee\(scopedAccess, directoryRow \?\? \{ hrId, managerHrId: null \}\)/,
+    "canSeeLegacyResignation must fail closed via a manager-less stand-in when the leaver is absent from the directory",
+  );
 }

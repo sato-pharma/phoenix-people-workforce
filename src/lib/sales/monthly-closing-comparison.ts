@@ -525,6 +525,23 @@ export function scopeComparisonInput(
   };
 }
 
+/**
+ * `productGaps` reads "every region that exists" off the region-name map's keys, so a
+ * geography-filtered export would otherwise report every OTHER region in the company as a gap —
+ * naming regions the reader deliberately filtered out. Narrow the map to the regions the scoped
+ * area master still covers. With no geography filter the map is returned as-is, so an unfiltered
+ * export is unchanged.
+ */
+export function scopeRegionNames(
+  regionName: Map<string, string>,
+  scopedMasterAreas: { regionCode: string }[],
+  scope: ComparisonScope | undefined,
+): Map<string, string> {
+  if (!scope?.areaCodes && !scope?.regionCodes) return regionName;
+  const kept = new Set(scopedMasterAreas.map((area) => area.regionCode).filter(Boolean));
+  return new Map([...regionName].filter(([code]) => kept.has(code)));
+}
+
 // Turns the mapped leaf rows + masters into the full comparison. Shared by the Monthly Closing
 // loader (one line) and the Executive Report loader (all lines, line label "All Lines"). Every
 // higher-level number is DERIVED from the leaf rows the RPCs return — never by summing
@@ -727,7 +744,7 @@ export async function loadMonthlyClosingComparison(
   // Scope BEFORE assembling: every ranking, mix, gap and insight is derived inside
   // assembleComparison, so narrowing the leaves here narrows all of them at once — including the
   // hidden Calc sheet the report formulas read from.
-  return assembleComparison(scopeComparisonInput({
+  const scoped = scopeComparisonInput({
     brickRows,
     customerRows,
     distProductRows,
@@ -736,7 +753,17 @@ export async function loadMonthlyClosingComparison(
     masterAreas: masters.masterAreas,
     masterBricks: masters.masterBricks,
     period,
-  }, scope));
+  }, scope);
+
+  // The region NAME map is scoped separately because productGaps treats its keys as "every region
+  // that exists" — left whole, a Delta-only export names every other region as a gap.
+  return assembleComparison({
+    ...scoped,
+    maps: {
+      ...scoped.maps,
+      regionName: scopeRegionNames(scoped.maps.regionName, scoped.masterAreas, scope),
+    },
+  });
 }
 
 /** The slice of a detail row the from-rows comparison needs — structural, so this module never

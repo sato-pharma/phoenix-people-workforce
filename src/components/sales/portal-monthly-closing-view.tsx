@@ -89,16 +89,44 @@ export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selec
     startTransition(() => router.push(`${pathname}?${query.toString()}`));
   }
 
-  // Reuses the shared scoped export route. The body is only the line/period selection — the server
-  // re-derives the rows from this caller's own access, so a portal viewer only ever gets their own
-  // scoped Data + Total sheets (no Matrix/Comparison, which are unscoped admin-only reads).
+  // Reuses the shared scoped export route. The server re-derives the rows from this caller's own
+  // access, so a portal viewer only ever gets their own scoped Data + Total sheets (no
+  // Matrix/Comparison, which are unscoped admin-only reads).
+  //
+  // The filter is sent as the codes the on-screen matrix actually kept, not as the raw filter: this
+  // branch of the route has no server-side matrix to resolve the free-text search against, and the
+  // details search matches client and brick names too, which would let rows from outside the
+  // filtered areas back into the workbook. Codes can only narrow — the route applies them after the
+  // access scope, never instead of it.
   async function handleExport() {
     if (!line || !selectedPeriod) return;
     setIsExporting(true);
     setExportError(null);
     try {
+      const hasGeographyFilter =
+        filter.regionCodes.length > 0 || filter.areaCodes.length > 0 || filter.search.trim().length > 0;
+      const scope = filteredMatrix
+        ? {
+          // Areas only. The matrix groups by the organogram, so its region codes (UE-1, UE-2) are
+          // not the geographic codes the raw rows carry — sending them would filter to nothing.
+          ...(hasGeographyFilter
+            ? {
+              areaCodes: [
+                ...new Set(
+                  filteredMatrix.regions.flatMap((region) =>
+                    region.areas.filter((area) => !area.isDirect).map((area) => area.areaCode),
+                  ),
+                ),
+              ],
+            }
+            : {}),
+          ...(filter.productCodes.length > 0
+            ? { productCodes: filteredMatrix.columns.map((column) => column.productCode) }
+            : {}),
+        }
+        : {};
       const response = await fetch("/api/sales/monthly-closing/export", {
-        body: JSON.stringify({ line, period: selectedPeriod }),
+        body: JSON.stringify({ line, period: selectedPeriod, ...scope }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });

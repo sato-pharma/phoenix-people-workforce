@@ -10,6 +10,13 @@ import {
   isHeadOfficeLine,
   RESTRICTED_PRODUCT_CODES,
 } from "@/lib/sales/access-scope";
+import {
+  allocateDirectToOperationalRegions,
+  applyOperationalRegions,
+  loadDirectSubmitters,
+  loadLineOperationalRegions,
+  loadRegionBySubmitter,
+} from "@/lib/sales/closing-organogram-regions";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
@@ -26,6 +33,9 @@ export type SalesAreaRegionReference = {
   areaName: string;
   regionCode: string;
   regionName: string;
+  /** Set only when the organogram re-homed this area for the selected line — see MonthlyClosingAreaRow. */
+  sourceRegionCode?: string;
+  sourceRegionName?: string;
 };
 
 export type SalesRegionReference = {
@@ -3141,6 +3151,12 @@ export type MonthlyClosingAreaRow = {
   regionCode: string;
   regionName: string;
   rowTotal: MonthlyClosingCell;
+  // Where the area sits GEOGRAPHICALLY, kept only when the organogram moved it somewhere else on
+  // this line. Access scoping resolves a viewer by their region NAME, and every Upper Egypt
+  // employee is labelled "Upper Egypt" — never "Upper Egypt 1"/"Upper Egypt 2" — so without this
+  // a split line would match no region for them and fail OPEN to the whole company.
+  sourceRegionCode?: string;
+  sourceRegionName?: string;
 };
 
 export type MonthlyClosingSubtotalRow = {
@@ -3208,7 +3224,9 @@ export type MonthlyClosingDirectCell = {
   salesValue: number;
 };
 
-const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "AB", "D1", "D2", "OT"] as const;
+// UE-1 / UE-2 sit exactly where the single "UE" used to: on a line whose organogram splits Upper
+// Egypt across two district managers, the reader still expects to find Upper Egypt in that slot.
+const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "UE-1", "UE-2", "AB", "D1", "D2", "OT"] as const;
 
 function monthlyClosingRegionRank(regionCode: string) {
   const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(regionCode as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
@@ -3344,6 +3362,12 @@ export function buildMonthlyClosingMatrix(input: {
       regionCode,
       regionName: normalizeDisplay(area.regionName) || regionCode,
       rowTotal: sumClosingRowTotal(cells),
+      ...(area.sourceRegionCode
+        ? {
+          sourceRegionCode: normalizeCode(area.sourceRegionCode),
+          sourceRegionName: normalizeDisplay(area.sourceRegionName) || normalizeCode(area.sourceRegionCode),
+        }
+        : {}),
     };
     if (!areaRowsByRegion.has(regionCode)) areaRowsByRegion.set(regionCode, []);
     areaRowsByRegion.get(regionCode)?.push(row);
@@ -3829,12 +3853,15 @@ export async function loadMonthlyClosing(input?: {
   // Without a line or a validated month there is nothing to aggregate — still return the
   // area skeleton + product columns so the UI renders an empty (zeroed) matrix cleanly.
   if (!selectedLine || !selectedPeriod) {
-    const [areas, products] = await Promise.all([
+    const [areas, products, operationalRegions] = await Promise.all([
       listActiveSalesAreas(),
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
+      loadLineOperationalRegions(resolveTargetLineCode(selectedLine)),
     ]);
     return buildMonthlyClosingMatrix({
-      areas,
+      // Even the empty skeleton groups by the organogram, so the region filter offers the same
+      // regions before and after a month is picked.
+      areas: applyOperationalRegions(areas, operationalRegions),
       availableLines,
       availablePeriods,
       cells: [],
@@ -3850,7 +3877,10 @@ export async function loadMonthlyClosing(input?: {
   // disagree about a target. A line that resolves to no target code — Head Office — simply gets
   // none, and every target cell renders "—".
   const targetLineCode = resolveTargetLineCode(selectedLine);
-  const [areas, products, aggregateData, directData, targetRows] = await Promise.all([
+  const [
+    areas, products, aggregateData, directData, targetRows,
+    operationalRegions, directSubmitters, regionBySubmitter,
+  ] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
@@ -3858,6 +3888,13 @@ export async function loadMonthlyClosing(input?: {
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
+    // Which DM territory owns each area on THIS line. Null (Head Office, or an org-chart outage)
+    // keeps the geographic grouping the matrix has always used.
+    loadLineOperationalRegions(targetLineCode),
+    // Who booked each Direct sale, and which territory that manager runs — so a Direct row tagged
+    // with a region the line has split is credited to its real owner rather than estimated.
+    loadDirectSubmitters(selectedLine, selectedPeriod),
+    loadRegionBySubmitter(targetLineCode),
   ]);
 
   const targets: MonthlyClosingTargetCell[] = targetRows
@@ -3883,8 +3920,18 @@ export async function loadMonthlyClosing(input?: {
     salesValue: Number(row.sales_value ?? 0),
   }));
 
-  const matrix = buildMonthlyClosingMatrix({
+  // Order matters: the Direct allocation reads the GEOGRAPHIC regions (that is what a Direct row is
+  // tagged with) and must therefore run against `areas` before they are re-labelled below.
+  const allocatedDirect = allocateDirectToOperationalRegions(directCells, {
     areas,
+    cells,
+    map: operationalRegions,
+    submitters: directSubmitters,
+    regionBySubmitter,
+  });
+
+  const matrix = buildMonthlyClosingMatrix({
+    areas: applyOperationalRegions(areas, operationalRegions),
     availableLines,
     availablePeriods,
     cells,
@@ -3894,5 +3941,5 @@ export async function loadMonthlyClosing(input?: {
     targets,
   });
 
-  return injectDirectIntoMatrix(matrix, directCells);
+  return injectDirectIntoMatrix(matrix, allocatedDirect);
 }

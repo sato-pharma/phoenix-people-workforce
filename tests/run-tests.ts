@@ -222,6 +222,8 @@ import { runSosCustomerMapBrickFillTests } from "./sos-customer-map-brick-fill.t
 import { runCustomerDirectoryTests } from "./customer-directory.test.ts";
 import { runCustomerMappingTests } from "./sales-customer-mapping.test.ts";
 import { runMonthlyClosingComparisonTests } from "./monthly-closing-comparison.test.ts";
+import { runMonthlyClosingExportScopeTests } from "./monthly-closing-export-scope.test.ts";
+import { runClosingOrganogramRegionsTests } from "./closing-organogram-regions.test.ts";
 import { runDirectChannelTests } from "./direct-channel.test.ts";
 import { runSosResolveBrickPrecedenceTests } from "./sos-resolve-brick-precedence.test.ts";
 import { runSosBrickCoverageTests } from "./sos-brick-coverage.test.ts";
@@ -832,6 +834,8 @@ await runTest("sos code canonical (leading-zero drift)", runSosCodeCanonicalTest
 await runTest("customer directory", runCustomerDirectoryTests);
 await runTest("customer mapping", runCustomerMappingTests);
 await runTest("monthly closing comparison", runMonthlyClosingComparisonTests);
+await runTest("monthly closing export scope (filter reaches every sheet)", runMonthlyClosingExportScopeTests);
+await runTest("closing organogram regions (areas follow the org chart, per line)", runClosingOrganogramRegionsTests);
 await runTest("direct channel", runDirectChannelTests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
