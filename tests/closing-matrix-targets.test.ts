@@ -4,6 +4,7 @@ import {
   buildMonthlyClosingMatrix,
   injectDirectIntoMatrix,
   filterMonthlyClosingMatrix,
+  rebuildMatrixFromRows,
   type MonthlyClosingTargetCell,
   type SalesAreaReference,
   type SalesProductReference,
@@ -148,5 +149,52 @@ export function runClosingMatrixTargetsTests() {
     assert.equal(ca1.targetValue, 0, "a real 0 target is still reported as entered");
     assert.equal(ca1.achievement, null, "but achievement against 0 must be null, never Infinity");
     assert.ok(Number.isFinite(ca1.salesValue));
+  }
+
+  // ── rebuildMatrixFromRows — row-level filtered exports re-sum every cell from the invoice
+  // rows the Data sheet shows, because a distributor / Included-Excluded / search filter slices
+  // INSIDE a cell, which the aggregate matrix cannot express. ──
+  {
+    const skeleton = build([{ areaCode: "CA1", productCode: "P1", targetUnits: 50, targetValue: 500 }]);
+    const row = (areaCode: string, qty: number, salesValue: number, includedInClosing = true) =>
+      ({ areaCode, includedInClosing, productCode: "P1", qty, salesValue });
+
+    // One distributor's rows only: CA1 keeps 25/250, CA2 drops to zero but KEEPS ITS ROW.
+    const rebuilt = rebuildMatrixFromRows(skeleton, [
+      row("CA1", 25, 250),
+      row("CA1", 5, 50, false), // excluded row — must not count
+    ]);
+    const ca1 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA1")!;
+    const ca2 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA2")!;
+    assert.equal(ca1.cells[0].salesValue, 250, "the cell is re-summed from the filtered rows");
+    assert.equal(ca1.cells[0].salesUnits, 25);
+    assert.equal(ca2.cells[0].salesValue, 0, "an area the filter left empty shows zero");
+    assert.ok(rebuilt.regions.flatMap((r) => r.areas).some((a) => a.areaCode === "CA2"),
+      "…but keeps its row — 'sold nothing here' must stay visible");
+    assert.equal(rebuilt.grandTotal.rowTotal.salesValue, 250, "grand total = exactly the filtered rows");
+
+    // Targets/achievement go null: they are company-set per area & product and cannot be sliced.
+    assert.equal(ca1.cells[0].targetValue, null, "a row-level slice must not claim a target");
+    assert.equal(ca1.cells[0].achievement, null, "…nor a fake achievement %");
+
+    // Direct rows and the company total are dropped — Direct orders are not distributor invoice
+    // rows, so no row-level filter can apply to them.
+    const withDirect = injectDirectIntoMatrix(skeleton, [
+      { productCode: "P1", regionCode: "CA", salesUnits: 7, salesValue: 70 },
+    ]);
+    const rebuiltFromDirect = rebuildMatrixFromRows(withDirect, [row("CA1", 25, 250)]);
+    assert.ok(
+      rebuiltFromDirect.regions.flatMap((r) => r.areas).every((a) => !a.isDirect),
+      "Direct area rows are dropped from a row-level filtered matrix",
+    );
+    assert.equal(rebuiltFromDirect.companyTotal, null);
+    assert.equal(rebuiltFromDirect.directNational, null);
+    assert.equal(rebuiltFromDirect.grandTotal.rowTotal.salesValue, 250,
+      "the grand total covers the filtered distributor rows only");
+
+    // Excluded-only filter: every row is excluded from the closing, so the closing matrix is
+    // honestly zero — never a whole-month number next to an excluded-only Data sheet.
+    const excludedOnly = rebuildMatrixFromRows(skeleton, [row("CA1", 9, 90, false)]);
+    assert.equal(excludedOnly.grandTotal.rowTotal.salesValue, 0);
   }
 }

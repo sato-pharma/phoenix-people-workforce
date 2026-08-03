@@ -145,7 +145,24 @@ export function ClosingDetailsPanel({ line, period, showConfidentialToggle = fal
     setExportError(null);
     try {
       const response = await fetch("/api/sales/monthly-closing/export", {
-        body: JSON.stringify({ includeConfidential, line, period }),
+        // Send the on-screen filter too. Without it the workbook was always the whole month while
+        // the panel showed a narrowed slice, so "export what I am looking at" produced a different
+        // set of numbers. These filters narrow only — the server still re-derives every row from
+        // the caller's own access, so this can never widen what the export contains.
+        //
+        // The free text goes as `detailSearch`, not `search`: this box also matches customer and
+        // product names, which the area x product Closing Matrix sheet cannot match at all.
+        body: JSON.stringify({
+          areaCodes: areaCode ? [areaCode] : [],
+          detailSearch: debouncedSearch,
+          distributorCodes: distributorCode ? [distributorCode] : [],
+          inclusion,
+          includeConfidential,
+          line,
+          period,
+          productCodes: productCode ? [productCode] : [],
+          regionCodes: regionCode ? [regionCode] : [],
+        }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
