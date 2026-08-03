@@ -29,7 +29,7 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] border-collapse text-sm">
+      <table className="w-full min-w-[1040px] border-collapse text-sm">
         <thead>
           <tr className="border-b border-[#e4e9ec] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
             <th className="px-3 py-2">Requester</th>
@@ -38,6 +38,8 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
             <th className="px-3 py-2 text-right">Bonus</th>
             <th className="px-3 py-2 text-right">Value</th>
             <th className="px-3 py-2">Pharmacy</th>
+            <th className="px-3 py-2">Geography</th>
+            <th className="px-3 py-2">Medical rep</th>
             {showWaiting ? <th className="px-3 py-2">Waiting on</th> : <th className="px-3 py-2">Status</th>}
             <th className="px-3 py-2">Submitted</th>
             <th className="px-3 py-2" />
@@ -55,7 +57,7 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
                 <div className="text-[11px] text-slate-500">{row.line}</div>
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
+              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                 {bonusCell(row)}
                 {row.bonusOverCap ? (
                   <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
@@ -63,12 +65,27 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
                   </span>
                 ) : null}
               </td>
-              <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
-              <td className="px-3 py-2">
+              <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums">
+                {money(row.salesValue)}
+                {row.missingPharmacyPrice ? (
+                  <span className="ml-1.5 inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
+                    no pharmacy price
+                  </span>
+                ) : null}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2">
                 <div className="text-slate-800">{row.pharmacyName}</div>
                 <div className="text-[11px] text-slate-500">{row.pharmacyCode}</div>
               </td>
-              <td className="px-3 py-2">{showWaiting ? row.activeStepLabel || "—" : <StatusPill status={row.status} />}</td>
+              {/* Names, never codes — the codes are one click away on the detail. */}
+              <td className="whitespace-nowrap px-3 py-2">
+                <div className="text-slate-800">{row.areaName || "—"}</div>
+                <div className="text-[11px] text-slate-500">{row.brickName || "—"}</div>
+              </td>
+              <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                {row.medicalRepVacant ? "Vacant" : row.medicalRepName || "—"}
+              </td>
+              <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "—" : <StatusPill status={row.status} />}</td>
               <td className="px-3 py-2 text-slate-600">{shortDate(row.createdAt)}</td>
               <td className="px-3 py-2 text-right">
                 <Link href={`${base}/${encodeURIComponent(row.id)}`} className="font-bold text-orange-600 hover:text-orange-700">

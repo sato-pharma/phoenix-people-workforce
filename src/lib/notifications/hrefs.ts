@@ -103,5 +103,21 @@ export function notificationHrefForViewerRole(input: {
     }
   }
 
+  // Direct-order approvals — notifyDirectOrder always writes the ADMIN path, so a portal-shell
+  // manager (District / Regional / National Sales / Product Manager — every direct-order requester
+  // role except Super Admin and CEO) landed outside their own shell. Remapping here rather than at
+  // the write site also repairs every notification already sitting in the table, because this runs
+  // at read time.
+  {
+    const current =
+      fallback.startsWith("/admin/approvals/direct-orders") ||
+      fallback.startsWith("/employee-portals/approvals/direct-orders");
+    if (current) {
+      const id = /\/approvals\/direct-orders\/([^/?#]+)/.exec(fallback)?.[1] ?? null;
+      const base = isPortal ? "/employee-portals/approvals/direct-orders" : "/admin/approvals/direct-orders";
+      return id ? `${base}/${id}` : base;
+    }
+  }
+
   return fallback;
 }

@@ -14,7 +14,8 @@ import type {
 // for edit; approving the last (CEO) rung finalizes as `approved`.
 //
 // Bonus is capped (25% of qty; Ivyronc 30%) and NEVER enters the sales value —
-// value is always `approvedQty × factoryPrice`.
+// value is always `approvedQty × pharmacyPrice`. Exceeding a cap does NOT block: the
+// request is flagged and still climbs the normal chain (owner rule, 2026-08-03).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CEO_ROLE: PhoenixRole = "CEO";
@@ -82,10 +83,20 @@ export function validateDiscount(input: { discountPct: number; capPct: number })
 
 // ── Sales value ───────────────────────────────────────────────────────────────
 
-/** Bonus-mode: value = qty × factory price, 2dp. Bonus units are NEVER counted. */
-export function computeDirectOrderSalesValue(input: { qty: number; factoryPrice: number }): number {
+/**
+ * Bonus-mode: value = qty × PHARMACY price, 2dp. Bonus units are NEVER counted.
+ *
+ * The parameter is deliberately RENAMED from `factoryPrice` rather than given a new meaning:
+ * renaming breaks compilation at every call site, so `pnpm typecheck` enumerates them. On a
+ * money change that is the feature — a back-compat signature accepting either key would let a
+ * missed caller keep compiling while silently pricing on the wrong basis.
+ *
+ * Falling back to the factory price when a product has no pharmacy price yet belongs to the
+ * CALLER (which also flags the fallback), not to this pure helper.
+ */
+export function computeDirectOrderSalesValue(input: { qty: number; pharmacyPrice: number }): number {
   const qty = Math.max(0, Number(input.qty) || 0);
-  const price = Math.max(0, Number(input.factoryPrice) || 0);
+  const price = Math.max(0, Number(input.pharmacyPrice) || 0);
   return Math.round(qty * price * 100) / 100;
 }
 

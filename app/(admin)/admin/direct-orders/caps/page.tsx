@@ -22,14 +22,20 @@ export default async function DirectOrderCapsPage() {
     <div className="space-y-5">
       <AdminPageHero
         eyebrow="Direct Orders"
-        title="Bonus & Discount Caps"
-        description="Set the bonus and discount caps and product public prices. System Admin edits; SFE Manager and CEO view."
+        title="Caps & Product Prices"
+        description="Set the bonus and discount caps, the pharmacy price that values bonus orders, and the public price that values discount orders. System Admin edits; SFE Manager and CEO view."
         icon={<Percent className="h-3.5 w-3.5" />}
       />
       <DirectOrderCapsManager
         rows={caps.rows}
         canEdit={caps.canEdit}
-        products={products.map((p) => ({ productCode: p.productCode, productName: p.productName, publicPrice: p.publicPrice }))}
+        products={products.map((p) => ({
+          productCode: p.productCode,
+          productName: p.productName,
+          factoryPrice: p.factoryPrice,
+          publicPrice: p.publicPrice,
+          pharmacyPrice: p.pharmacyPrice,
+        }))}
       />
     </div>
   );

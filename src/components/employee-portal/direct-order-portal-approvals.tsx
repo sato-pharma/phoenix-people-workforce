@@ -73,13 +73,19 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
               { label: "Qty", value: row.qty.toLocaleString("en-US") },
               { label: "Bonus", value: bonusCell(row) },
               { label: "Pharmacy", value: row.pharmacyName },
+              // The card used to drop the pharmacy code entirely — an approver on a phone
+              // could not tell two same-named pharmacies apart.
+              { label: "Code", value: row.pharmacyCode },
+              { label: "Area", value: row.areaName || "-" },
+              { label: "Brick", value: row.brickName || "-" },
+              { label: "Medical rep", value: row.medicalRepVacant ? "Vacant" : row.medicalRepName || "-" },
               { label: showWaiting ? "Waiting on" : "Submitted", value: showWaiting ? row.activeStepLabel || "-" : shortDate(row.createdAt) },
             ]}
           />
         </PortalRecordCard>
       )}
       renderTable={() => (
-        <PortalDesktopTable minWidth="920px">
+        <PortalDesktopTable minWidth="1120px">
           <thead className="bg-slate-900 text-white">
             <tr>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Requester</th>
@@ -88,6 +94,8 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
               <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Bonus</th>
               <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Value</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Pharmacy</th>
+              <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Geography</th>
+              <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Medical rep</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">{showWaiting ? "Waiting on" : "Status"}</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Submitted</th>
               <th className="px-3 py-2" />
@@ -107,11 +115,19 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
                 <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{bonusCell(row)}</td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
-                <td className="px-3 py-2">
+                <td className="whitespace-nowrap px-3 py-2">
                   <div className="text-slate-800">{row.pharmacyName}</div>
                   <div className="text-[11px] text-slate-500">{row.pharmacyCode}</div>
                 </td>
-                <td className="px-3 py-2">{showWaiting ? row.activeStepLabel || "-" : <StatusPill status={row.status} />}</td>
+                {/* Names, never codes. */}
+                <td className="whitespace-nowrap px-3 py-2">
+                  <div className="text-slate-800">{row.areaName || "-"}</div>
+                  <div className="text-[11px] text-slate-500">{row.brickName || "-"}</div>
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                  {row.medicalRepVacant ? "Vacant" : row.medicalRepName || "-"}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "-" : <StatusPill status={row.status} />}</td>
                 <td className="px-3 py-2 text-slate-600">{shortDate(row.createdAt)}</td>
                 <td className="px-3 py-2 text-right">
                   <Link href={`${base}/${encodeURIComponent(row.id)}`} className="font-bold text-orange-600 hover:text-orange-700">

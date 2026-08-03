@@ -12,6 +12,11 @@ import {
   PortalSection,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  buildDirectOrderDetailFields,
+  dealFieldLabel,
+  formatDealValue,
+} from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -224,7 +229,12 @@ export function DirectOrderPortalDetail({
     );
   }
 
-  const { request, requesterName, pharmacy, steps, availableActions, bonusOverCap } = detail;
+  const { request, distributors, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
+  // Same shared field list the admin approval screen renders — see approval-fields.ts for why
+  // it lives in the domain rather than being hand-maintained twice.
+  const allFields = buildDirectOrderDetailFields(detail);
+  const gridFields = allFields.filter((field) => field.layout !== "full");
+  const addressField = allFields.find((field) => field.label === "Pharmacy address");
 
   return (
     <div className="space-y-5 pb-24 md:pb-0">
@@ -239,31 +249,63 @@ export function DirectOrderPortalDetail({
           </h2>
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </div>
+        {bonusOverCap || missingPharmacyPrice ? (
+          <div className="space-y-1 border-b border-slate-100 bg-amber-50 px-4 py-2.5 sm:px-5">
+            {bonusOverCap ? (
+              <p className="text-[12px] font-bold text-amber-900">
+                Over cap -- this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
+              </p>
+            ) : null}
+            {missingPharmacyPrice ? (
+              <p className="text-[12px] font-bold text-amber-900">
+                No pharmacy price was set for this product -- the value above uses the factory price.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="p-4 sm:p-5">
+          {/* PortalRecordFields wraps by design (break-words). That is the deliberate mobile
+              exception to the never-wrap rule: forcing nowrap here would give a phone a
+              horizontally-scrolling screen. Desktop tables never wrap; mobile cards do. */}
           <PortalRecordFields
             fields={[
-              { label: "Requester", value: `${requesterName} - ${request.requesterRole}` },
-              { label: "Line", value: request.line },
-              { label: "Factory price", value: money(request.factoryPriceSnapshot) },
-              { label: "Status", value: request.status.replace(/_/g, " ") },
-              { label: "Pharmacy", value: pharmacy ? `${pharmacy.pharmacyName} (${pharmacy.phoenixPharmacyCode})` : "-" },
-              { label: "Brick / Area", value: pharmacy ? `${pharmacy.brickId ?? "-"} / ${pharmacy.areaCode ?? "-"}` : "-" },
-              { label: "Pharmacy address", value: pharmacy?.pharmacyAddress || "-" },
-              { label: "Collection date", value: request.collectionDate ?? "-" },
+              ...gridFields
+                .filter((field) => field.label !== "Pharmacy address")
+                .map((field) => ({ label: field.label, value: field.value })),
               {
-                label: request.dealType === "discount" ? "Discount" : "Bonus",
+                label: dealFieldLabel(request),
                 value: (
                   <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                    {request.dealType === "discount"
-                      ? `${(request.discountPct ?? 0).toLocaleString("en-US")}%`
-                      : request.bonus.toLocaleString("en-US")}
-                    {bonusOverCap ? " - over cap (CEO override)" : ""}
+                    {formatDealValue(request)}
+                    {bonusOverCap ? " - over cap" : ""}
                   </span>
                 ),
               },
-              { label: "Sales month", value: request.salesMonth ?? "- (set on final approval)" },
             ]}
           />
+          {addressField ? (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Pharmacy address</p>
+              <p className="mt-0.5 text-sm font-semibold text-slate-800">{addressField.value}</p>
+            </div>
+          ) : null}
+          {/* One row per distributor pair — byte-identical treatment to the distributor block
+              on the sibling portal submit page, so this matches the portal's established look. */}
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Distributors</p>
+            {distributors.length === 0 ? (
+              <p className="mt-0.5 text-sm font-semibold text-slate-800">-</p>
+            ) : (
+              <div className="mt-1.5 space-y-1 rounded border border-slate-100 bg-slate-50 p-3">
+                {distributors.map((row) => (
+                  <div key={`${row.distributorName}-${row.customerCode}`} className="text-xs font-bold text-slate-800">
+                    {row.distributorName} - {row.customerCode}
+                    {row.mappedBrickName ? ` -> ${row.mappedBrickName}` : " -> not mapped"}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {request.bonusOverrideReason ? (
             <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Note: {request.bonusOverrideReason}</p>
           ) : null}

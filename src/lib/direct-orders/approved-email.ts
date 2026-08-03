@@ -12,6 +12,7 @@ import {
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
 } from "@/emails/phoenix-email-layout";
+import { codeNameLabel } from "@/lib/direct-orders/geo-names";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -28,12 +29,8 @@ const units = (value: number | null | undefined): string => {
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n).toLocaleString("en-US") : "—";
 };
-const codeName = (name: string | null | undefined, code: string | null | undefined): string => {
-  const n = (name ?? "").trim();
-  const c = (code ?? "").trim();
-  if (n && c) return `${n} (${c})`;
-  return n || c || "—";
-};
+/** Shared with the approval window, so the email and the screen phrase geography identically. */
+const codeName = codeNameLabel;
 
 /** Active CEO + Super Admin work emails (the CC set), resolved live — never hardcoded,
  *  so executive account changes take effect automatically. Mirrors the SoS report delivery. */
@@ -84,7 +81,9 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
     const dealLine =
       row.dealType === "discount"
         ? `Discount ${row.discountPct ?? 0}% · public price ${money(row.publicPriceSnapshot)}`
-        : `Bonus ${units(row.bonus)} units · factory price ${money(row.factoryPriceSnapshot)}`;
+        : row.pharmacyPriceSnapshot == null
+          ? `Bonus ${units(row.bonus)} units · factory price ${money(row.factoryPriceSnapshot)} (no pharmacy price set)`
+          : `Bonus ${units(row.bonus)} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
 
     const metadataRows: Array<{ label: string; value: string | number | null | undefined }> = [
       { label: "Request ID", value: row.id },

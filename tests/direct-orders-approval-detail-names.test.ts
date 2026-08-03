@@ -1,0 +1,409 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import {
+  DIRECT_ORDER_CORE_FIELD_LABELS,
+  DIRECT_ORDER_NOTIFICATION_MAX_CHARS,
+  buildDirectOrderDetailFields,
+  buildDirectOrderNotificationLine,
+  buildDirectOrderNotificationMetrics,
+  formatMedicalRep,
+} from "../src/lib/direct-orders/approval-fields.ts";
+import { codeNameLabel, formatDistributorCodesText, formatDistributorNames } from "../src/lib/direct-orders/geo-names.ts";
+import {
+  areaRepKey,
+  normalizeLineKey,
+  selectAreaRepsFromSeats,
+  type AreaRepSeatRow,
+} from "../src/lib/employees/area-rep-resolver.ts";
+import type { DirectOrderApprovalDetail, DirectOrderRequest } from "../src/lib/direct-orders/types.ts";
+
+function request(overrides: Partial<DirectOrderRequest> = {}): DirectOrderRequest {
+  return {
+    id: "req-1",
+    requesterHrId: "HR-100",
+    requesterRole: "District Manager",
+    status: "pending_approval",
+    line: "CNS",
+    productCode: "CN001",
+    productName: "Roya",
+    factoryPriceSnapshot: 90,
+    pharmacyPriceSnapshot: 111.15,
+    qty: 100,
+    bonus: 25,
+    bonusOverrideReason: null,
+    dealType: "bonus",
+    discountPct: null,
+    publicPriceSnapshot: null,
+    salesValue: 11115,
+    pharmacyId: "ph-1",
+    salesMonth: null,
+    collectionDate: "2026-09-15",
+    marketingRequestId: null,
+    paymentDate: null,
+    paidAmount: null,
+    remainingAmount: null,
+    sosBatchId: null,
+    reversalOfRequestId: null,
+    reversedByRequestId: null,
+    createdAt: "2026-08-03T09:00:00.000Z",
+    decidedAt: null,
+    ...overrides,
+  };
+}
+
+function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrderApprovalDetail {
+  return {
+    request: request(),
+    requesterName: "Mahmoud Adel",
+    pharmacy: {
+      id: "ph-1",
+      phoenixPharmacyCode: "DOP-000123",
+      pharmacyName: "El Ezaby",
+      brickId: "BR-01",
+      areaCode: "CA-07",
+      regionCode: "RG-1",
+      doctorName: "Dr Nour",
+      pharmacyAddress: "12 El Merghany Street, Heliopolis, Cairo",
+      distributorCodes: [],
+      geoVarianceResolved: false,
+      createdByHrId: "HR-100",
+      active: true,
+    },
+    geo: {
+      brick: { code: "BR-01", name: "Heliopolis" },
+      area: { code: "CA-07", name: "Cairo East" },
+      region: { code: "RG-1", name: "Greater Cairo" },
+    },
+    medicalRep: { resolved: true, isVacant: false, repHrId: "HR-900", repName: "Sara Hassan", repNames: ["Sara Hassan"] },
+    distributorCodesText: "Ibn Sina: 1234567; Overseas: 7654321",
+    distributors: [],
+    steps: [],
+    availableActions: { approve: true, reject: true, return: true },
+    bonusOverCap: false,
+    missingPharmacyPrice: false,
+    ...overrides,
+  };
+}
+
+function seat(overrides: Partial<AreaRepSeatRow> = {}): AreaRepSeatRow {
+  return {
+    seat_id: "SEAT-1",
+    seat_tier: "REP",
+    line_code: "cns",
+    line_name: "CNS",
+    area_code: "CA-07",
+    is_other_pseudo_dm: false,
+    occupant_hr_id: "HR-900",
+    is_vacant: false,
+    ...overrides,
+  };
+}
+
+// The resolver hands `nameOf` a NORMALIZED hr id (lower-cased), and the real lookup it is given
+// in production (service.ts `nameLookup()`) canonicalizes its keys, so it matches regardless of
+// casing. This stub does the same rather than comparing raw strings.
+const nameOf = (hrId: string | null) => {
+  const key = String(hrId ?? "").trim().toLowerCase();
+  if (key === "hr-900") return "Sara Hassan";
+  if (key === "hr-901") return "Omar Fathy";
+  return null;
+};
+
+export function runDirectOrdersApprovalDetailNamesTests() {
+  // ── Line-key normalization ──────────────────────────────────────────────────
+  // This is the single highest-value assertion in the file. au.lines seeds the Anti Infective
+  // line as 'Anti infective' (lower-case i) while the app's canonical name is "Anti Infective";
+  // a case-sensitive match would silently drop that entire line's reps from every approval
+  // window, with no error anywhere.
+  assert.equal(normalizeLineKey("CNS"), "cns");
+  assert.equal(normalizeLineKey("cns"), "cns");
+  for (const spelling of ["Anti Infective", "Anti infective", "anti_infective", "Anti-Infective"]) {
+    assert.equal(normalizeLineKey(spelling), "antiinfective", `"${spelling}" must collapse to one key`);
+  }
+  assert.equal(normalizeLineKey(null), "");
+
+  // areaRepKey is case-insensitive on the area code, and never matches on a missing half.
+  assert.equal(areaRepKey("CNS", "ca-07"), "cns|CA-07");
+  assert.equal(areaRepKey("CNS", "CA-07"), "cns|CA-07");
+  assert.equal(areaRepKey("", "CA-07"), "");
+  assert.equal(areaRepKey("CNS", null), "");
+
+  // ── Seat selection ──────────────────────────────────────────────────────────
+  {
+    const map = selectAreaRepsFromSeats([seat()], nameOf);
+    const hit = map.get("cns|CA-07");
+    assert.equal(hit?.repName, "Sara Hassan");
+    assert.equal(hit?.isVacant, false);
+    // Indexed under the line CODE too, so either spelling in the request resolves.
+    assert.ok(map.has("cns|CA-07"));
+  }
+  {
+    // An occupied seat wins over a vacant one on the same (line, area).
+    const map = selectAreaRepsFromSeats(
+      [seat({ seat_id: "SEAT-1", is_vacant: true, occupant_hr_id: null }), seat({ seat_id: "SEAT-2" })],
+      nameOf,
+    );
+    assert.equal(map.get("cns|CA-07")?.isVacant, false);
+    assert.equal(map.get("cns|CA-07")?.repName, "Sara Hassan");
+  }
+  {
+    // A genuinely vacant area resolves, but with no rep — different from "unresolved".
+    const map = selectAreaRepsFromSeats([seat({ is_vacant: true, occupant_hr_id: null })], nameOf);
+    assert.equal(map.get("cns|CA-07")?.isVacant, true);
+    assert.equal(map.get("cns|CA-07")?.repName, null);
+  }
+  {
+    // The per-line "Others" bucket holds no real people and must be ignored entirely.
+    const map = selectAreaRepsFromSeats([seat({ is_other_pseudo_dm: true })], nameOf);
+    assert.equal(map.size, 0);
+  }
+  {
+    // Non-REP tiers never answer "who is the medical rep".
+    const map = selectAreaRepsFromSeats([seat({ seat_tier: "DM" })], nameOf);
+    assert.equal(map.size, 0);
+  }
+  {
+    // Two reps on one split area: BOTH names, never truncated.
+    const map = selectAreaRepsFromSeats(
+      [seat({ seat_id: "SEAT-1" }), seat({ seat_id: "SEAT-2", occupant_hr_id: "HR-901" })],
+      nameOf,
+    );
+    const hit = map.get("cns|CA-07");
+    assert.equal(hit?.repNames.length, 2);
+    assert.match(hit?.repName ?? "", /Sara Hassan/);
+    assert.match(hit?.repName ?? "", /Omar Fathy/);
+    assert.doesNotMatch(hit?.repName ?? "", /…|\.\.\./, "rep names must never be truncated");
+  }
+  {
+    // A seat whose line_name is null still matches via line_code.
+    const map = selectAreaRepsFromSeats([seat({ line_name: null })], nameOf);
+    assert.equal(map.get("cns|CA-07")?.repName, "Sara Hassan");
+  }
+  {
+    // An unknown (line, area) is ABSENT, which the UI renders "—". It must not read "Vacant",
+    // which would be a false statement about the org.
+    const map = selectAreaRepsFromSeats([seat()], nameOf);
+    assert.equal(map.get("pedia|CA-07"), undefined);
+  }
+
+  // ── Medical-rep display ─────────────────────────────────────────────────────
+  assert.equal(formatMedicalRep({ resolved: false, isVacant: false, repHrId: null, repName: null, repNames: [] }), "—");
+  assert.equal(formatMedicalRep({ resolved: true, isVacant: true, repHrId: null, repName: null, repNames: [] }), "Vacant");
+  assert.equal(
+    formatMedicalRep({ resolved: true, isVacant: false, repHrId: "HR-900", repName: "Sara Hassan", repNames: ["Sara Hassan"] }),
+    "Sara Hassan",
+  );
+
+  // ── codeNameLabel puts the NAME first ───────────────────────────────────────
+  assert.equal(codeNameLabel("Heliopolis", "BR-01"), "Heliopolis (BR-01)");
+  assert.equal(codeNameLabel("", "BR-01"), "BR-01", "an unnamed brick falls back to its code, never to blank");
+  assert.equal(codeNameLabel("Heliopolis", ""), "Heliopolis");
+  assert.equal(codeNameLabel(null, null), "—");
+
+  // ── Distributor projections ─────────────────────────────────────────────────
+  assert.equal(formatDistributorCodesText([]), "");
+  assert.equal(
+    formatDistributorCodesText([
+      { distributorCode: "IBN", distributorName: "Ibn Sina", customerCode: "111", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null },
+      { distributorCode: "OVS", distributorName: "Overseas", customerCode: "222", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null },
+    ]),
+    "Ibn Sina: 111; Overseas: 222",
+  );
+  assert.equal(
+    formatDistributorNames([
+      { distributorCode: "IBN", distributorName: "Ibn Sina", customerCode: "111", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null },
+      { distributorCode: "OVS", distributorName: "Overseas", customerCode: "222", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null },
+    ]),
+    "Ibn Sina · Overseas",
+  );
+
+  // ── The approval window's field list ────────────────────────────────────────
+  {
+    const fields = buildDirectOrderDetailFields(detail());
+    const labels = fields.map((field) => field.label);
+    const valueOf = (label: string) => fields.find((field) => field.label === label)?.value ?? "";
+
+    // Completeness bar: everything the approved-order email has always shown must also appear
+    // on the screen where the decision is actually made.
+    for (const label of DIRECT_ORDER_CORE_FIELD_LABELS) {
+      assert.ok(labels.includes(label), `the approval window must show "${label}"`);
+    }
+
+    // Names, never codes — and name FIRST, not code first.
+    assert.equal(valueOf("Brick"), "Heliopolis (BR-01)");
+    assert.doesNotMatch(valueOf("Brick"), /^BR-01/, "the brick must read name-first, not code-first");
+    assert.equal(valueOf("Area"), "Cairo East (CA-07)");
+    assert.equal(valueOf("Region"), "Greater Cairo (RG-1)");
+    // The old combined "Brick / Area" cell is what forced the bare-code format; it must be gone.
+    assert.ok(!labels.includes("Brick / Area"), "brick and area must be separate fields");
+
+    assert.equal(valueOf("Pharmacy"), "El Ezaby (DOP-000123)");
+    assert.equal(valueOf("Doctor"), "Dr Nour");
+    assert.equal(valueOf("Medical rep"), "Sara Hassan");
+    assert.doesNotMatch(valueOf("Medical rep"), /\bHR[-_]?\d/i, "a rep's HR_ID must never leak to the approver");
+
+    // Never truncate (owner rule).
+    for (const field of fields) {
+      assert.doesNotMatch(field.value, /…|\.\.\./, `"${field.label}" must not be truncated`);
+      assert.doesNotMatch(field.value, /undefined|null/, `"${field.label}" must not leak a JS placeholder`);
+    }
+
+    // Long free text is marked full-width so it never has to squeeze into the grid.
+    assert.equal(fields.find((field) => field.label === "Pharmacy address")?.layout, "full");
+  }
+  {
+    // Unmapped geography degrades to the bare code, never to "undefined".
+    const fields = buildDirectOrderDetailFields(
+      detail({ geo: { brick: { code: "BR-99", name: "" }, area: null, region: null } }),
+    );
+    const valueOf = (label: string) => fields.find((field) => field.label === label)?.value ?? "";
+    assert.equal(valueOf("Brick"), "BR-99");
+    assert.equal(valueOf("Area"), "—");
+  }
+  {
+    // A bonus deal that fell back must say so where the approver reads the price.
+    const fields = buildDirectOrderDetailFields(
+      detail({ request: request({ pharmacyPriceSnapshot: null }), missingPharmacyPrice: true }),
+    );
+    const value = fields.find((field) => field.label === "Pharmacy price")?.value ?? "";
+    assert.match(value, /not set/i, "a fallback-priced bonus order must show that no pharmacy price was set");
+  }
+  {
+    // A discount deal shows the public price instead — and no pharmacy price field at all.
+    const fields = buildDirectOrderDetailFields(
+      detail({ request: request({ dealType: "discount", discountPct: 25, publicPriceSnapshot: 92, pharmacyPriceSnapshot: null }) }),
+    );
+    const labels = fields.map((field) => field.label);
+    assert.ok(labels.includes("Public price"));
+    assert.ok(!labels.includes("Pharmacy price"), "a discount deal is not priced on the pharmacy price");
+  }
+  {
+    // Finance fields stay hidden until they hold a value — an approver should not read three
+    // empty rows on an order that has not been collected yet.
+    const emptyLabels = buildDirectOrderDetailFields(detail()).map((field) => field.label);
+    assert.ok(!emptyLabels.includes("Paid"));
+    const paidLabels = buildDirectOrderDetailFields(
+      detail({ request: request({ paidAmount: 5000, paymentDate: "2026-09-20" }) }),
+    ).map((field) => field.label);
+    assert.ok(paidLabels.includes("Paid"));
+    assert.ok(paidLabels.includes("Payment date"));
+  }
+
+  // ── The approver's notification ─────────────────────────────────────────────
+  {
+    const ctx = {
+      request: request(),
+      requesterName: "Mahmoud Adel",
+      pharmacyName: "El Ezaby",
+      pharmacyCode: "DOP-000123",
+      geo: detail().geo,
+      medicalRep: detail().medicalRep,
+      distributorCodesText: "Ibn Sina: 1234567; Overseas: 7654321",
+      distributorNames: "Ibn Sina · Overseas",
+    };
+    const line = buildDirectOrderNotificationLine(ctx);
+
+    // Telegram collapses all whitespace then hard-slices at 900 chars with no ellipsis, and
+    // the transport prepends a module line of its own — so this must stay comfortably short.
+    assert.ok(
+      line.length <= DIRECT_ORDER_NOTIFICATION_MAX_CHARS,
+      `the notification body must stay under ${DIRECT_ORDER_NOTIFICATION_MAX_CHARS} chars for Telegram (was ${line.length})`,
+    );
+    // The three things the owner said were missing.
+    assert.match(line, /El Ezaby/, "the pharmacy NAME must reach the approver");
+    assert.match(line, /DOP-000123/, "the pharmacy CODE must reach the approver");
+    assert.match(line, /Ibn Sina/, "the DISTRIBUTOR must reach the approver");
+    // Geography by name, and the area's rep.
+    assert.match(line, /Cairo East/);
+    assert.match(line, /Heliopolis/);
+    assert.match(line, /Sara Hassan/);
+    assert.doesNotMatch(line, /\bCA-07\b/, "the notification must name the area, not code it");
+
+    // The email metrics table carries the full distributor→customer-code pairs the one-liner drops.
+    const metrics = buildDirectOrderNotificationMetrics(ctx);
+    const metricValue = (label: string) => metrics.find((metric) => metric.label === label)?.value ?? "";
+    assert.equal(metricValue("Distributor codes"), "Ibn Sina: 1234567; Overseas: 7654321");
+    assert.equal(metricValue("Pharmacy"), "El Ezaby (DOP-000123)");
+    assert.equal(metricValue("Medical rep"), "Sara Hassan");
+    assert.equal(metricValue("Area"), "Cairo East (CA-07)");
+  }
+
+  // ── Regression locks on the surfaces that had the bug ───────────────────────
+  {
+    const adminDetail = readFileSync(
+      new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
+      "utf8",
+    );
+    const portalDetail = readFileSync(
+      new URL("../src/components/employee-portal/direct-order-portal-detail.tsx", import.meta.url),
+      "utf8",
+    );
+
+    // The exact bug: both screens printed `${pharmacy.brickId} / ${pharmacy.areaCode}`.
+    // `\.?\.?` also catches the optional-chained `pharmacy?.brickId` form — without it a
+    // reintroduced raw-code field slips straight past this lock (confirmed by mutation).
+    for (const [name, source] of [["admin", adminDetail], ["portal", portalDetail]] as const) {
+      assert.doesNotMatch(source, /pharmacy\??\.brickId/, `the ${name} approval window must not print a raw brick code`);
+      assert.doesNotMatch(source, /pharmacy\??\.areaCode/, `the ${name} approval window must not print a raw area code`);
+      assert.doesNotMatch(source, /"Brick \/ Area"/, `the ${name} approval window must not combine brick and area into one cell`);
+      // Both must render the SHARED list — which is what stops them drifting apart again.
+      assert.match(
+        source,
+        /buildDirectOrderDetailFields\(/,
+        `the ${name} approval window must render the shared field list, not its own copy`,
+      );
+    }
+  }
+  {
+    // The portal's mobile card dropped the pharmacy code, so an approver on a phone could not
+    // tell two same-named pharmacies apart.
+    const portalList = readFileSync(
+      new URL("../src/components/employee-portal/direct-order-portal-approvals.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(portalList, /row\.pharmacyCode/, "the portal approvals card must show the pharmacy code");
+    assert.match(portalList, /row\.medicalRepName/, "the portal approvals list must show the medical rep");
+  }
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    // Enrichment happens at the single read choke point, not in a component.
+    const detailIdx = serviceSource.indexOf("export async function getDirectOrderApprovalDetail(");
+    const detailBody = serviceSource.slice(detailIdx, detailIdx + 2200);
+    assert.match(detailBody, /loadDirectOrderGeoNames\(/, "the detail payload must resolve geography names");
+    assert.match(detailBody, /resolveAreaRep\(/, "the detail payload must resolve the area's medical rep");
+    // Proves the name-map extraction actually replaced the duplicates rather than adding a third.
+    assert.doesNotMatch(
+      serviceSource,
+      /const brickNameById = new Map/,
+      "the brick/area/region name maps must come from the shared geo-names helper, not a local copy",
+    );
+    // The approver's notification must carry the full picture, not just product × qty.
+    assert.doesNotMatch(
+      serviceSource,
+      /A direct order \(\$\{product\.productName\} × \$\{qty\}\) needs your approval\./,
+      "the thin product-only notification body must be gone",
+    );
+    assert.match(serviceSource, /buildDirectOrderNotificationMetrics\(/, "notifications must carry an email metrics table");
+  }
+  {
+    // Portal-shell managers must land in their own shell, not /admin/....
+    const hrefs = readFileSync(new URL("../src/lib/notifications/hrefs.ts", import.meta.url), "utf8");
+    assert.match(
+      hrefs,
+      /\/employee-portals\/approvals\/direct-orders/,
+      "direct-order notification links must be remapped for portal-shell viewers",
+    );
+  }
+  {
+    // The submit forms labelled a picked brick with codes only because the options omitted names.
+    for (const path of [
+      "../src/components/direct-orders/direct-order-submit-form.tsx",
+      "../src/components/employee-portal/direct-order-portal-submit.tsx",
+    ]) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      assert.match(source, /selectedBrick\.areaName/, `${path} must label the picked brick's area by NAME`);
+      assert.match(source, /selectedBrick\.regionName/, `${path} must label the picked brick's region by NAME`);
+    }
+  }
+}

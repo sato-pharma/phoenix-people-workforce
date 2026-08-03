@@ -72,6 +72,12 @@ const COLUMNS: Col[] = [
   { key: "qty", label: "Qty", numeric: true, render: (r) => units(r.qty) },
   { key: "bonus", label: "Bonus", numeric: true, render: (r) => units(r.bonus) },
   { key: "factoryPriceSnapshot", label: "Factory price", numeric: true, render: (r) => money(r.factoryPriceSnapshot) },
+  {
+    key: "pharmacyPriceSnapshot",
+    label: "Pharmacy price",
+    numeric: true,
+    render: (r) => (r.pharmacyPriceSnapshot == null ? "-" : money(r.pharmacyPriceSnapshot)),
+  },
   { key: "salesValue", label: "Sales value", numeric: true, render: (r) => money(r.salesValue) },
   { key: "dealType", label: "Deal", render: (r) => (r.dealType === "discount" ? "Discount" : "Bonus") },
   { key: "discountPct", label: "Disc %", numeric: true, render: (r) => (r.discountPct == null ? "-" : `${r.discountPct}%`) },

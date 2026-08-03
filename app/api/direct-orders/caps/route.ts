@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { deleteDirectOrderCap, listDirectOrderCaps, upsertDirectOrderCap } from "@/lib/direct-orders/caps";
-import { setProductPublicPrice } from "@/lib/direct-orders/service";
+import { setDirectOrderProductPrices, setProductPublicPrice } from "@/lib/direct-orders/service";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -32,9 +32,18 @@ export async function POST(request: Request) {
       bonusCapPct?: number | null;
       discountCapPct?: number | null;
       publicPrice?: number | null;
+      pharmacyPrice?: number | null;
     };
     if (body.action === "delete") {
       await deleteDirectOrderCap(access, String(body.productCode ?? ""));
+    } else if (body.action === "productPrices") {
+      // One atomic write for the price grid's per-row Save — two sequential requests could
+      // leave a row half-saved.
+      await setDirectOrderProductPrices(access, {
+        productCode: String(body.productCode ?? ""),
+        publicPrice: body.publicPrice ?? null,
+        pharmacyPrice: body.pharmacyPrice ?? null,
+      });
     } else if (body.action === "publicPrice") {
       await setProductPublicPrice(access, { productCode: String(body.productCode ?? ""), publicPrice: body.publicPrice ?? null });
     } else {
