@@ -261,8 +261,17 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   const [{ data: employeeRows, error: employeeError }, visits, { data: requestRows, error: requestError }] =
     await Promise.all([
       supabase.from("employees").select("hr_id,full_name,crm_id,hire_date"),
-      scanVisitsForRangeIncludingDeparted<{ agent_crm_id: unknown; visit_date: unknown; visit_type: unknown }>({
-        columns: "agent_crm_id,visit_date,visit_type",
+      // `ampm` and the NON-vacation rows are both needed to spot a part-day. A
+      // rep can log AM annual leave and then work the afternoon — see the mixed
+      // day below — and filtering to visit_type -4 before looking would throw
+      // away the very evidence that says it was half a day.
+      scanVisitsForRangeIncludingDeparted<{
+        agent_crm_id: unknown;
+        visit_date: unknown;
+        visit_type: unknown;
+        ampm: unknown;
+      }>({
+        columns: "agent_crm_id,visit_date,visit_type,ampm",
         dateFrom: start,
         dateTo: end,
       }),
@@ -274,6 +283,31 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   if (employeeError) throw new Error(`Vacation connector: employees read failed: ${employeeError.message}`);
   if (requestError) throw new Error(`Vacation connector: vacation request read failed: ${requestError.message}`);
   const visitRows = visits.filter((visit) => Number(visit.visit_type) === CRM_ANNUAL_VACATION_VISIT_TYPE);
+
+  // MIXED DAYS: a date carrying BOTH a vacation record and real work.
+  //
+  // Owner's rule (2026-08-03): such a day must not be charged as a full day
+  // unattended. Measured on July 2026 production, 19 days across 17 people look
+  // like this — roughly one vacation day in four — and each was being charged at
+  // 1.00 day. One rep logged AM annual leave and then filed 9 afternoon records;
+  // he was charged a full day three times over.
+  //
+  // The `ampm` values are kept as evidence rather than acted on: the system can
+  // see it was probably half a day, but the owner confirms full/AM/PM and the
+  // applied value follows that decision, because this is pay.
+  const workAmpmByDay = new Map<string, Set<string>>();
+  const vacationAmpmByDay = new Map<string, Set<string>>();
+  for (const visit of visits) {
+    const crmId = String(visit.agent_crm_id ?? "").trim();
+    const day = String(visit.visit_date ?? "").slice(0, 10);
+    if (!crmId || !day) continue;
+    const key = `${crmId}:${day}`;
+    const ampm = String(visit.ampm ?? "").trim().toUpperCase();
+    const bucket = Number(visit.visit_type) === CRM_ANNUAL_VACATION_VISIT_TYPE ? vacationAmpmByDay : workAmpmByDay;
+    const set = bucket.get(key) ?? new Set<string>();
+    if (ampm) set.add(ampm);
+    bucket.set(key, set);
+  }
 
   const employeeByCrmId = new Map<string, { hrId: string; name: string | null; hireDate: string | null }>();
   for (const row of (employeeRows ?? []) as Array<{ hr_id: string; full_name: string | null; crm_id: string | null; hire_date: string | null }>) {
@@ -291,9 +325,13 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   }
 
   // One entry per (employee, day): several -4 rows on one date is still one vacation day.
-  const daysByHrId = new Map<string, { name: string | null; hireDate: string | null; days: Set<string> }>();
+  const daysByHrId = new Map<
+    string,
+    { name: string | null; hireDate: string | null; crmId: string; days: Set<string> }
+  >();
   for (const visit of (visitRows ?? []) as Array<{ agent_crm_id: unknown; visit_date: unknown }>) {
-    const employee = employeeByCrmId.get(String(visit.agent_crm_id ?? "").trim());
+    const crmId = String(visit.agent_crm_id ?? "").trim();
+    const employee = employeeByCrmId.get(crmId);
     if (!employee) continue;
     const day = String(visit.visit_date ?? "").slice(0, 10);
     if (!day) continue;
@@ -301,7 +339,12 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     // An HR request already covers this day — the request path above owns it, and taking
     // it here too would double-book the same absence.
     if (covered) continue;
-    const entry = daysByHrId.get(employee.hrId) ?? { name: employee.name, hireDate: employee.hireDate, days: new Set<string>() };
+    const entry = daysByHrId.get(employee.hrId) ?? {
+      name: employee.name,
+      hireDate: employee.hireDate,
+      crmId,
+      days: new Set<string>(),
+    };
     entry.days.add(day);
     daysByHrId.set(employee.hrId, entry);
   }
@@ -347,6 +390,14 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
       });
       if (estimatedAmount == null) continue; // no salary basis => no salary-based deduction
 
+      // Did this SAME day also carry real work? If so it is very likely a part
+      // day, and it is flagged for the owner to confirm full/AM/PM rather than
+      // charged at 1.00 on the connector's own authority.
+      const dayKey = `${entry.crmId}:${day}`;
+      const workAmpm = [...(workAmpmByDay.get(dayKey) ?? [])].sort();
+      const vacationAmpm = [...(vacationAmpmByDay.get(dayKey) ?? [])].sort();
+      const isMixedDay = workAmpm.length > 0;
+
       drafts.push({
         category: input.category,
         sourceSystem: "crm_vacation_signal",
@@ -357,13 +408,25 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
         month: input.month,
         year: input.year,
         unit: "days",
+        // Still 1 — that is what was DETECTED. The reviewer lowers it to 0.5 via
+        // the applied-days control if they judge it a half day. Pre-setting 0.5
+        // here would be the connector deciding, which is what the flag exists to
+        // avoid.
         rawValue: 1,
         estimatedAmount,
-        calculationStatus: "calculated",
-        severity: "Medium",
-        reason: `Vacation taken on CRM with no HR request, and not covered by balance (${reason})`,
+        // requires_review is the flag. A mixed day must never look settled.
+        calculationStatus: isMixedDay ? "requires_review" : "calculated",
+        severity: isMixedDay ? "Review" : "Medium",
+        reason: isMixedDay
+          ? `REVIEW: vacation AND work recorded on the same day (leave ${vacationAmpm.join("/") || "?"}, work ${workAmpm.join("/")}) — confirm full day, AM or PM before deducting`
+          : `Vacation taken on CRM with no HR request, and not covered by balance (${reason})`,
         evidence: {
           source: "ireports360 visit_type -4 (Annual Vacation)",
+          // The AM/PM split is recorded whether or not it is a mixed day, so a
+          // reviewer can see WHY it was flagged without leaving the screen.
+          mixedDay: isMixedDay,
+          vacationAmpm,
+          workAmpm,
           unpaidReason: reason,
           entitlementDays: snapshot.entitlementDays,
           balanceBeforeDays: Math.round(balanceBefore * 100) / 100,

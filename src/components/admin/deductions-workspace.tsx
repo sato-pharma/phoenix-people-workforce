@@ -1053,7 +1053,17 @@ function CategoryTab({ category, monthKey, canDecide }: { category: DeductionsCa
                         <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-slate-700">
                           {amount != null ? money(amount) : "requires review"}
                         </td>
-                        <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">{row.reason ?? "—"}</td>
+                        <td className="max-w-xs px-4 py-2.5 text-xs text-slate-600">
+                          {/* A candidate the engine could not settle on its own —
+                              a vacation day that also carried real work, for
+                              instance — must not read like every other row. */}
+                          {row.calculationStatus === "requires_review" ? (
+                            <span className="mr-1.5 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.08em] text-amber-800">
+                              Needs your review
+                            </span>
+                          ) : null}
+                          {row.reason ?? "—"}
+                        </td>
                         <td className="px-4 py-2.5">
                           <StatusBadge status={row.decision?.decisionStatus ?? null} />
                         </td>
