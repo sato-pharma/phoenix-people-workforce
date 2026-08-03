@@ -215,9 +215,13 @@ function DirectOrderPortalDecisionActions({
 export function DirectOrderPortalDetail({
   detail,
   backHref,
+  // Serves both the approver and the requester tracking their own order — only the return path
+  // differs. See the admin component for the reasoning.
+  backLabel = "Back to Direct Orders Approvals",
 }: {
   detail: DirectOrderApprovalDetail | null;
   backHref: string;
+  backLabel?: string;
 }) {
   if (!detail) {
     return (
@@ -251,7 +255,7 @@ export function DirectOrderPortalDetail({
   return (
     <div className="space-y-5 pb-24 md:pb-0">
       <Link href={backHref} className="inline-flex items-center gap-1 text-sm font-bold text-orange-600 hover:text-orange-700">
-        <ArrowLeft className="h-4 w-4" /> Back to Direct Orders Approvals
+        <ArrowLeft className="h-4 w-4" /> {backLabel}
       </Link>
 
       <PortalSection>

@@ -574,6 +574,121 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(backup, /revoke all on schema[\s\S]*from public/, "revoke from PUBLIC, not just anon/authenticated");
   }
 
+  // ── A requester tracks their OWN order in the same detail an approver reads ─
+  // Owner requirement: the submitter must be able to follow their request and see exactly which
+  // rung holds it — not a reduced summary. Same component, same payload, different framing.
+  {
+    const adminPage = readFileSync(
+      new URL("../app/(admin)/admin/direct-orders/[id]/page.tsx", import.meta.url),
+      "utf8",
+    );
+    const portalPage = readFileSync(
+      new URL("../app/employee-portals/direct-orders/[id]/page.tsx", import.meta.url),
+      "utf8",
+    );
+
+    for (const [name, source] of [["admin", adminPage], ["portal", portalPage]] as const) {
+      // The SAME payload builder as the approval window — a second, thinner read model is exactly
+      // how the two views would drift apart.
+      assert.match(
+        source,
+        /getDirectOrderApprovalDetail\(access, id\)/,
+        `the ${name} tracking page must reuse the approval payload, not a reduced one`,
+      );
+      // No hand-rolled permission gate: the service already answers null out of scope, and its
+      // scope rule admits a requester for their own request. A second gate here could only ever
+      // disagree with the first.
+      assert.doesNotMatch(
+        source,
+        /isDirectOrderRequesterRole|assertPermission/,
+        `the ${name} tracking page must not add a second permission gate`,
+      );
+      assert.match(source, /backLabel=/, `the ${name} tracking page must not send the requester back to an approvals queue`);
+    }
+
+    // Both detail components must accept the label so one component can serve both audiences.
+    for (const path of [
+      "../src/components/approvals-hub/direct-order-request-detail.tsx",
+      "../src/components/employee-portal/direct-order-portal-detail.tsx",
+    ]) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      assert.match(source, /backLabel = "Back to Direct Orders Approvals"/, `${path} must default to the approver wording`);
+      assert.doesNotMatch(
+        source,
+        /Back to Direct Orders Approvals\s*\n\s*<\/Link>/,
+        `${path} must render the label, not a hardcoded approvals string`,
+      );
+    }
+
+    // The requester reaches it from their own list — a detail page nobody can navigate to is
+    // the state this fixes.
+    const adminList = readFileSync(
+      new URL("../src/components/direct-orders/direct-order-submit-form.tsx", import.meta.url),
+      "utf8",
+    );
+    const portalList = readFileSync(
+      new URL("../src/components/employee-portal/direct-order-portal-submit.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(adminList, /\/admin\/direct-orders\/\$\{encodeURIComponent\(r\.id\)\}/, "admin rows must link to the tracking view");
+    assert.match(
+      portalList,
+      /\/employee-portals\/direct-orders\/\$\{encodeURIComponent\(r\.id\)\}/,
+      "portal rows must link to the tracking view",
+    );
+
+    // A requester must NEVER see Approve on their own request. Both decision panels bail out
+    // when no action is available — that is what keeps this page read-only for them.
+    for (const path of [
+      "../src/components/approvals-hub/decision-actions.tsx",
+      "../src/components/employee-portal/direct-order-portal-detail.tsx",
+    ]) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      assert.match(
+        source,
+        /if \(available\.length === 0\) return null;/,
+        `${path} must render nothing when the viewer has no available action`,
+      );
+    }
+  }
+
+  // ── Rebuilding an approval chain must never erase a real decision ──────────
+  // This function DELETES approval steps. The only thing making that safe is that it refuses
+  // when anybody has already acted — a decided step is a person's recorded approval or
+  // rejection, not scaffolding.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const idx = serviceSource.indexOf("export async function rebuildDirectOrderApprovalChain(");
+    assert.ok(idx > -1, "the chain-rebuild entry point must exist");
+    const body = serviceSource.slice(idx, serviceSource.indexOf("// ── Reversal", idx));
+
+    assert.match(body, /Forbidden: only a System Admin can rebuild an approval chain\./);
+    assert.match(body, /request\.status !== "pending_approval"/, "only a pending request may be rebuilt");
+
+    // THE safety gate.
+    assert.match(
+      body,
+      /decided\.length > 0/,
+      "rebuilding must refuse when any step is already decided — deleting one erases a real approval",
+    );
+    assert.match(
+      body,
+      /!== "pending" \|\| row\.decided_by_hr_id \|\| row\.decided_at/,
+      "a step counts as decided by status OR decider OR decision time — any one of the three",
+    );
+    // The guard must run BEFORE the delete, or it protects nothing.
+    assert.ok(
+      body.indexOf("decided.length > 0") > -1 &&
+        body.indexOf("decided.length > 0") < body.indexOf(".delete()"),
+      "the decided-step guard must run BEFORE the delete",
+    );
+    // Reuse the SAME builder submit uses, so a backfilled chain equals a resubmitted one.
+    assert.match(body, /await buildApprovalChain\(\{/, "must reuse buildApprovalChain, not redefine the ladder");
+    // A rebuilt chain nobody is told about is a request that silently stalls.
+    assert.match(body, /notifyDirectOrder\(\{/, "the new first rung must be notified");
+    assert.match(body, /eventType: "chain_rebuilt"/, "the before/after must be recorded on the timeline");
+  }
+
   // ── The approver's notification ─────────────────────────────────────────────
   {
     const ctx = {

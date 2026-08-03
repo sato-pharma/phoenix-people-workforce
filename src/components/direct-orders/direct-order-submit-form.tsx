@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import {
@@ -428,6 +429,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <th className="px-3 py-2">Pharmacy</th>
                   <th className="px-3 py-2">Status</th>
                   <th className="px-3 py-2">Waiting on</th>
+                  <th className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody>
@@ -453,7 +455,19 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         {r.status.replace(/_/g, " ")}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-slate-600">{r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}
+                    </td>
+                    {/* The requester could see a summary row but never open it. Track leads to the
+                        SAME detail the approvers read, so they can see exactly which rung holds it. */}
+                    <td className="whitespace-nowrap px-3 py-2 text-right">
+                      <Link
+                        href={`/admin/direct-orders/${encodeURIComponent(r.id)}`}
+                        className="font-bold text-orange-600 hover:text-orange-700"
+                      >
+                        Track →
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>
