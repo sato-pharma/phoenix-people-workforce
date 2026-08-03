@@ -15,6 +15,7 @@ import {
   buildMarketingApprovedRequestRows,
   buildMarketingDraftProductScope,
   buildMarketingManagerChain,
+  isPhoenixOriginatedRequest,
   normalizeMarketingRequestDraftInput,
   prepareMarketingRequestDraft,
   resolveLineCcHrIds,
@@ -818,6 +819,42 @@ export async function runMarketingRequestServiceTests() {
     allRequestsSource,
     /Not submitted yet/,
     "a request with no approval chain must say so rather than render an empty tracking cell",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Archived / imported must stay OFF the live register (owner, 2026-08-03). */
+  /* ---------------------------------------------------------------------- */
+
+  // The split axis is `origin`, NOT `status`. In production 217 of 218 rows are xlsx_import and
+  // only 106 of those are `archived` — the other 111 are approved/rejected imports. Splitting on
+  // status alone would leave those 111 legacy rows padding the live view, which is the exact
+  // problem this separation exists to remove.
+  assert.equal(isPhoenixOriginatedRequest("phoenix"), true, "a Phoenix-raised request is live work");
+  assert.equal(isPhoenixOriginatedRequest("  Phoenix  "), true, "origin matching tolerates casing and padding");
+  assert.equal(isPhoenixOriginatedRequest("xlsx_import"), false, "the legacy spreadsheet import is not Phoenix work");
+
+  // Fail-safe direction: anything that is not explicitly Phoenix lands in the archive. A future
+  // import that forgets to set `origin` must not silently pad the live register.
+  assert.equal(isPhoenixOriginatedRequest(null), false, "a null origin is treated as imported, never as live Phoenix work");
+  assert.equal(isPhoenixOriginatedRequest(""), false, "an empty origin is treated as imported");
+  assert.equal(isPhoenixOriginatedRequest("some_future_import"), false, "an unknown origin defaults to the archive side");
+
+  assert.match(
+    allRequestsSource,
+    /isPhoenixSubmission/,
+    "the register must filter its rows by Phoenix origin, not by status",
+  );
+  assert.match(
+    allRequestsSource,
+    /Archived \/ imported/,
+    "the archived side must stay reachable behind its own switch rather than being dropped",
+  );
+  // Status counts must describe the Phoenix side only — counting all 218 would report a June
+  // spreadsheet import's "101 approved" as live Phoenix work.
+  assert.match(
+    serviceSource,
+    /const phoenixRows = rows\.filter\(\(row\) => row\.isPhoenixSubmission\)/,
+    "summary counts must be computed from the Phoenix subset",
   );
 
   const draftWorkspaceSource = source("src/components/employee-portal/marketing-request-drafts.tsx");
