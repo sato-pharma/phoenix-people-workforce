@@ -47,7 +47,7 @@ export function DirectOrderRequestDetail({
     );
   }
 
-  const { request, distributors, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
+  const { request, distributors, pharmacyHistory, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
   // ONE shared field list, built in the domain. The admin screen and the portal screen each
   // used to hand-maintain their own copy, which is how both ended up printing raw brick/area
   // codes — fixing it in one place could never have fixed the other.
@@ -123,16 +123,22 @@ export function DirectOrderRequestDetail({
                 <thead>
                   <tr className="border-b border-[#eef1f3] text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
                     <th className="whitespace-nowrap px-2 py-1">Distributor</th>
+                    <th className="whitespace-nowrap px-2 py-1">Distributor code</th>
                     <th className="whitespace-nowrap px-2 py-1">Customer code</th>
                     <th className="whitespace-nowrap px-2 py-1">Mapped brick</th>
+                    <th className="whitespace-nowrap px-2 py-1">Mapped area</th>
+                    <th className="whitespace-nowrap px-2 py-1">Mapped region</th>
                   </tr>
                 </thead>
                 <tbody>
                   {distributors.map((row) => (
-                    <tr key={`${row.distributorName}-${row.customerCode}`} className="border-b border-[#eef1f3]">
+                    <tr key={`${row.distributorCode}-${row.customerCode}`} className="border-b border-[#eef1f3]">
                       <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.distributorCode || "—"}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.customerCode}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedAreaName ?? "not mapped"}</td>
+                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedRegionName ?? "not mapped"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -146,6 +152,73 @@ export function DirectOrderRequestDetail({
             Note: {request.bonusOverrideReason}
           </p>
         ) : null}
+      </section>
+
+      {/* What this pharmacy normally takes — the context an approver needs to judge a quantity.
+          The request being decided is excluded, so the baseline never contains the number under
+          judgement. */}
+      <section className="border border-[#e4e9ec] bg-white">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
+          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
+            Pharmacy history — by month, product and distributor
+          </h3>
+          <span className="text-[11px] font-bold text-slate-500">excludes this request</span>
+        </header>
+        {pharmacyHistory.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-slate-500">
+            No other direct orders recorded for this pharmacy yet — this is its first.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2">Month</th>
+                  <th className="whitespace-nowrap px-3 py-2">Product</th>
+                  <th className="whitespace-nowrap px-3 py-2">Distributor</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Orders</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Qty</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Bonus</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pharmacyHistory.map((row) => (
+                  <tr
+                    key={`${row.month}-${row.productCode}-${row.distributorCode}`}
+                    className="border-b border-[#eef1f3]"
+                  >
+                    <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">
+                      {row.month}
+                      {row.monthIsProvisional ? (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                          not final
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">
+                      {row.productName} <span className="text-slate-400">({row.productCode})</span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">
+                      {row.distributorName}
+                      {row.distributorCode ? <span className="text-slate-400"> ({row.distributorCode})</span> : null}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{row.orders}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900">
+                      {row.qty.toLocaleString("en-US")}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">
+                      {row.bonus.toLocaleString("en-US")}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums text-slate-900">
+                      {money(row.salesValue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="border border-[#e4e9ec] bg-white">

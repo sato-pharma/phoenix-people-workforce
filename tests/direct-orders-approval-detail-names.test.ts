@@ -9,7 +9,12 @@ import {
   buildDirectOrderNotificationMetrics,
   formatMedicalRep,
 } from "../src/lib/direct-orders/approval-fields.ts";
-import { codeNameLabel, formatDistributorCodesText, formatDistributorNames } from "../src/lib/direct-orders/geo-names.ts";
+import {
+  codeNameLabel,
+  formatDistributorCodesText,
+  formatDistributorNames,
+  toDistributorRows,
+} from "../src/lib/direct-orders/geo-names.ts";
 import {
   areaRepKey,
   normalizeLineKey,
@@ -78,6 +83,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     medicalRep: { resolved: true, isVacant: false, repHrId: "HR-900", repName: "Sara Hassan", repNames: ["Sara Hassan"] },
     distributorCodesText: "Ibn Sina: 1234567; Overseas: 7654321",
     distributors: [],
+    pharmacyHistory: [],
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
@@ -241,6 +247,19 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.equal(valueOf("Pharmacy"), "El Ezaby (DOP-000123)");
     assert.equal(valueOf("Doctor"), "Dr Nour");
     assert.equal(valueOf("Medical rep"), "Sara Hassan");
+
+    // Owner rule: never skip a detail. The company's own codes get their OWN labelled fields
+    // rather than living only inside a parenthesis on another field's value.
+    assert.equal(valueOf("Sato pharmacy code"), "DOP-000123");
+    assert.equal(valueOf("Sato product code"), "CN001");
+    assert.equal(valueOf("Deal type"), "Bonus");
+    assert.equal(valueOf("Pharmacy registered by"), "HR-100");
+    assert.equal(valueOf("Pharmacy status"), "Active");
+
+    // BOTH prices are always present, each stating whether it priced THIS deal — an approver
+    // should never have to infer the basis from which field happens to be missing.
+    assert.match(valueOf("Pharmacy price"), /used for this deal/);
+    assert.match(valueOf("Public price"), /not used — bonus deal/);
     assert.doesNotMatch(valueOf("Medical rep"), /\bHR[-_]?\d/i, "a rep's HR_ID must never leak to the approver");
 
     // Never truncate (owner rule).
@@ -270,13 +289,19 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(value, /not set/i, "a fallback-priced bonus order must show that no pharmacy price was set");
   }
   {
-    // A discount deal shows the public price instead — and no pharmacy price field at all.
+    // A discount deal shows BOTH prices too (owner rule: never skip a detail), each stating
+    // whether it priced this deal, plus the discount percentage.
     const fields = buildDirectOrderDetailFields(
       detail({ request: request({ dealType: "discount", discountPct: 25, publicPriceSnapshot: 92, pharmacyPriceSnapshot: null }) }),
     );
     const labels = fields.map((field) => field.label);
+    const valueOf = (label: string) => fields.find((field) => field.label === label)?.value ?? "";
     assert.ok(labels.includes("Public price"));
-    assert.ok(!labels.includes("Pharmacy price"), "a discount deal is not priced on the pharmacy price");
+    assert.ok(labels.includes("Pharmacy price"), "every price is shown; which one applied is stated, not implied");
+    assert.match(valueOf("Public price"), /used for this deal/);
+    assert.match(valueOf("Pharmacy price"), /not used — discount deal/);
+    assert.equal(valueOf("Deal type"), "Discount");
+    assert.equal(valueOf("Discount %"), "25%");
   }
   {
     // Finance fields stay hidden until they hold a value — an approver should not read three
@@ -288,6 +313,90 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     ).map((field) => field.label);
     assert.ok(paidLabels.includes("Paid"));
     assert.ok(paidLabels.includes("Payment date"));
+  }
+
+  // ── Distributor rows keep the CODE as well as the name ─────────────────────
+  {
+    const maps = {
+      brickNameById: new Map([["BR-01", "Heliopolis"]]),
+      areaNameByCode: new Map([["CA-07", "Cairo East"]]),
+      regionNameByCode: new Map([["RG-1", "Greater Cairo"]]),
+    };
+    const rows = toDistributorRows(
+      [
+        { distributorCode: "IbnSina", distributorName: "Ibn Sina", customerCode: "1234567", mappedBrickId: "BR-01", mappedAreaCode: "CA-07", mappedRegionCode: "RG-1" },
+        { distributorCode: "OVS", distributorName: "Overseas", customerCode: "7654321", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null },
+      ],
+      maps,
+    );
+    assert.equal(rows[0].distributorName, "Ibn Sina");
+    assert.equal(rows[0].distributorCode, "IbnSina", "the distributor CODE must survive, not just its name");
+    assert.equal(rows[0].customerCode, "1234567");
+    // Mapped geography resolves to names, never bare codes.
+    assert.equal(rows[0].mappedBrickName, "Heliopolis");
+    assert.equal(rows[0].mappedAreaName, "Cairo East");
+    assert.equal(rows[0].mappedRegionName, "Greater Cairo");
+    // An unmapped code stays null so the UI can say "not mapped" rather than printing nothing.
+    assert.equal(rows[1].mappedBrickName, null);
+    assert.equal(rows[1].mappedAreaName, null);
+    // A code with no master-data name falls back to the code, never to blank.
+    const unnamed = toDistributorRows(
+      [{ distributorCode: "X", distributorName: "X Dist", customerCode: "9", mappedBrickId: "BR-99", mappedAreaCode: null, mappedRegionCode: null }],
+      maps,
+    );
+    assert.equal(unnamed[0].mappedBrickName, "BR-99");
+  }
+
+  // ── Both approval surfaces must render the distributor code ────────────────
+  {
+    for (const path of [
+      "../src/components/approvals-hub/direct-order-request-detail.tsx",
+      "../src/components/employee-portal/direct-order-portal-detail.tsx",
+    ]) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      assert.match(source, /row\.distributorCode/, `${path} must show the distributor code`);
+      assert.match(source, /row\.mappedAreaName/, `${path} must show the mapped area`);
+      assert.match(source, /pharmacyHistory/, `${path} must render the pharmacy history`);
+    }
+  }
+
+  // ── The pharmacy picker must not offer the company's own direct channel ────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.match(
+      serviceSource,
+      /DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES/,
+      "the distributor picker must exclude the company's own direct channel",
+    );
+    const excludedBlock = serviceSource.slice(
+      serviceSource.indexOf("const DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES"),
+      serviceSource.indexOf("export async function listDirectOrderDistributorOptions"),
+    );
+    assert.match(excludedBlock, /"direct"/, "Direct (Company) must be excluded from the picker");
+    assert.match(excludedBlock, /"directreq"/, "the reserved SoS pseudo-distributor must be excluded too");
+    // The exclusion is a PICKER filter only — it must never touch stored pairs.
+    const optionsBlock = serviceSource.slice(
+      serviceSource.indexOf("export async function listDirectOrderDistributorOptions"),
+      serviceSource.indexOf("// ── Submit"),
+    );
+    assert.doesNotMatch(optionsBlock, /delete|update\(/, "removing an option must never rewrite stored data");
+  }
+
+  // ── Pharmacy history excludes the request being decided ────────────────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const historyIdx = serviceSource.indexOf("async function loadPharmacyOrderHistory(");
+    assert.ok(historyIdx > -1, "the pharmacy history loader must exist");
+    const historyBody = serviceSource.slice(historyIdx, serviceSource.indexOf("export async function getDirectOrderApprovalDetail(", historyIdx));
+    assert.match(
+      historyBody,
+      /=== excludeRequestId\) continue/,
+      "the order under judgement must be excluded from its own baseline",
+    );
+    assert.match(historyBody, /is\("reversal_of_request_id", null\)/, "reversals would double the picture");
+    assert.match(historyBody, /neq\("status", "rejected"\)/, "a rejected order was never supplied");
+    assert.match(historyBody, /sales_month/, "the month must prefer the real sales month");
+    assert.match(historyBody, /monthIsProvisional/, "a not-yet-final month must be marked, not silently mixed in");
   }
 
   // ── The approver's notification ─────────────────────────────────────────────
