@@ -11,6 +11,7 @@
 // one at a time via `collectOneConnectorForMonth`.
 
 import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
+import { collectHolidayBridgeCandidates } from "./connectors/holiday-bridge.ts";
 import { collectCrmCandidates } from "./connectors/crm.ts";
 import { collectNoRecordsActivityCandidates } from "./connectors/no-records-activity.ts";
 import {
@@ -24,7 +25,8 @@ export type DeductionCollectorKey =
   | "crm"
   | "no_records_activity"
   | "unpaid_vacation"
-  | "insufficient_balance_vacation";
+  | "insufficient_balance_vacation"
+  | "holiday_bridge";
 
 export type MonthlyCollectionResult = Record<DeductionCollectorKey, CandidateDraftInsertResult>;
 
@@ -51,6 +53,11 @@ export const DEDUCTION_COLLECTORS: readonly Collector[] = [
   // and its historical rows stay untouched; only the live collection step is retired.
   { key: "unpaid_vacation", label: "Unpaid Vacation", run: collectUnpaidVacationCandidates },
   { key: "insufficient_balance_vacation", label: "Insufficient Balance Vacation", run: collectInsufficientBalanceVacationCandidates },
+  // LAST on purpose. Its dedup reads the live ledger to skip any employee-day
+  // another category already charges, so it must run after those categories
+  // have been written — running it first would find an empty ledger and
+  // manufacture the exact duplicates the rule forbids.
+  { key: "holiday_bridge", label: "Governmental-holiday bridging", run: collectHolidayBridgeCandidates },
 ];
 
 const COLLECTORS_BY_KEY = new Map(DEDUCTION_COLLECTORS.map((collector) => [collector.key, collector]));

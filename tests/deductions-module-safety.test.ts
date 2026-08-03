@@ -281,15 +281,22 @@ export async function runDeductionsModuleSafetyTests(): Promise<void> {
   // test — the failure only appears at production data volume — so these are
   // WIRING assertions that keep the shape which makes the timeout impossible.
   {
-    // Was 5. no_records_activity was retired once its connector lost its population —
-    // field workforce belongs to `crm`, Head Office has no CRM obligation, and between
-    // them that is everybody — so a registered step would report created=0 forever and
-    // be indistinguishable from a broken connector. The exact keys are pinned just below.
-    assert.equal(DEDUCTION_COLLECTORS.length, 4, "the four live automated connectors must stay registered");
+    // Was 5, then 4: no_records_activity was retired once its connector lost its
+    // population — field workforce belongs to `crm`, Head Office has no CRM
+    // obligation, and between them that is everybody — so a registered step would
+    // report created=0 forever and be indistinguishable from a broken connector.
+    // holiday_bridge was then added, taking it back to 5. The exact keys are
+    // pinned just below.
+    assert.equal(DEDUCTION_COLLECTORS.length, 5, "the five live automated connectors must stay registered");
     assert.deepEqual(
       DEDUCTION_COLLECTORS.map((collector) => collector.key),
-      ["fingerprint", "crm", "unpaid_vacation", "insufficient_balance_vacation"],
+      ["fingerprint", "crm", "unpaid_vacation", "insufficient_balance_vacation", "holiday_bridge"],
       "connector order is the documented run order; changing it changes what an interrupted run leaves behind",
+    );
+    assert.equal(
+      DEDUCTION_COLLECTORS[DEDUCTION_COLLECTORS.length - 1]?.key,
+      "holiday_bridge",
+      "holiday_bridge must run LAST — its dedup reads the live ledger to skip days another category already charges, so running it earlier would find an empty ledger and manufacture the duplicates the rule forbids",
     );
 
     assert.equal(isDeductionCollectorKey("crm"), true);

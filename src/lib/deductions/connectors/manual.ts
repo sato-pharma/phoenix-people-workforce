@@ -8,6 +8,7 @@
 // directly typed in adds friction with no governance value, unlike a computed
 // candidate that genuinely needs a human decision.
 
+import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { hashStable } from "../candidate-key.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory, DeductionsUnit } from "../types.ts";
 
@@ -21,6 +22,15 @@ export type ManualDeductionEntryInput = {
   value: number;
   reason: string;
   enteredBy: string;
+  /**
+   * The employee's base salary, required to price a DAYS entry.
+   *
+   * Without it a day-based manual entry was inserted with no amount at all and
+   * `requires_review` — which publish then refuses outright ("no computable
+   * amount"), so adding an employee by days produced a row that could never be
+   * paid. Amount-unit entries ignore this: the typed figure IS the money.
+   */
+  baseSalary?: number | null;
 };
 
 export function buildManualDeductionDraft(input: ManualDeductionEntryInput): DeductionsCandidateDraft {
@@ -54,6 +64,20 @@ export function buildManualDeductionDraft(input: ManualDeductionEntryInput): Ded
     `${input.unit}|${input.value}|${input.reason.trim().replace(/\s+/g, " ").toLowerCase()}`,
   );
 
+  // An amount entry IS the money. A days entry is priced the same way every
+  // other category prices a day — base ÷ actual calendar days in the month —
+  // via the shared helper, so a manually added day can never cost a different
+  // amount from a detected one for the same person in the same month.
+  const estimatedAmount =
+    input.unit === "amount"
+      ? input.value
+      : calculateDeductionAmountFromBaseSalary({
+          baseSalary: input.baseSalary,
+          deductionDays: input.value,
+          month: input.month,
+          year: input.year,
+        });
+
   return {
     category: input.category,
     sourceSystem: "manual_hr",
@@ -65,8 +89,10 @@ export function buildManualDeductionDraft(input: ManualDeductionEntryInput): Ded
     year: input.year,
     unit: input.unit,
     rawValue: input.value,
-    estimatedAmount: input.unit === "amount" ? input.value : null,
-    calculationStatus: input.unit === "amount" ? "calculated" : "requires_review",
+    estimatedAmount,
+    // Still "requires review" when a days entry could not be priced (no base
+    // salary on record) — that is a real gap a human must resolve, not a zero.
+    calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
     reason: input.reason.trim(),
     evidence: { enteredBy: input.enteredBy },
     dates: [anchorDate],
