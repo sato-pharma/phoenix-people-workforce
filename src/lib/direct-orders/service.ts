@@ -52,6 +52,7 @@ import {
   type DirectOrderApprovalDetail,
   type DirectOrderAreaRep,
   type DirectOrderPharmacyGeo,
+  type DirectOrderPharmacyHistoryRow,
   type DirectOrderApprovalListItem,
   type DirectOrderDealType,
   type DirectOrderDecision,
@@ -524,6 +525,19 @@ export async function createDirectOrderPharmacy(
 }
 
 /** List distributors for the pharmacy form (by name). */
+/**
+ * Distributor codes that must never be OFFERED when registering a pharmacy.
+ *
+ * `DirectReq` is the reserved pseudo-distributor the module injects approved orders into Source
+ * of Sales under — it is bookkeeping, never a real trading partner. `Direct` is the company's own
+ * direct channel, excluded on the owner's instruction (2026-08-03): a direct-order pharmacy must
+ * be registered against the distributor that actually supplies it.
+ *
+ * This filters the PICKER only. Pharmacies already saved against one of these keep their pairs
+ * and still display them on the approval window — removing an option must never rewrite history.
+ */
+const DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES = new Set(["direct", "directreq"]);
+
 export async function listDirectOrderDistributorOptions(): Promise<Array<{ distributorCode: string; distributorName: string }>> {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
@@ -533,6 +547,7 @@ export async function listDirectOrderDistributorOptions(): Promise<Array<{ distr
     .order("distributor_name", { ascending: true });
   return ((data ?? []) as Array<{ distributor_code: string; distributor_name: string | null }>)
     .filter((row) => row.distributor_code)
+    .filter((row) => !DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES.has(row.distributor_code.trim().toLowerCase()))
     .map((row) => ({ distributorCode: row.distributor_code, distributorName: row.distributor_name ?? row.distributor_code }));
 }
 
@@ -1440,6 +1455,86 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
   return { areas, bricks };
 }
 
+/**
+ * A pharmacy's ordering history, summarized month x product x distributor.
+ *
+ * Answers the question an approver actually has in front of a number: is this the quantity this
+ * pharmacy normally takes of this product, or a multiple of it? The request being decided is
+ * EXCLUDED — including it would fold the figure under judgement into the baseline used to judge it.
+ *
+ * Month is the sales month once an order is final-approved; before that there is no sales month,
+ * so the submission month stands in and is marked provisional rather than silently mixed in.
+ *
+ * Distributor comes from the pharmacy's registered pairs (a request carries no distributor of its
+ * own), so a pharmacy supplied by two distributors yields a row per distributor per month/product.
+ * Reversals are excluded: they mirror their original and would double the picture.
+ */
+async function loadPharmacyOrderHistory(
+  pharmacy: DirectOrderPharmacy | null,
+  excludeRequestId: string,
+): Promise<DirectOrderPharmacyHistoryRow[]> {
+  if (!pharmacy) return [];
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("direct_order_requests")
+      .select("id, product_code, product_name, qty, bonus, sales_value, sales_month, created_at, status, reversal_of_request_id")
+      .eq("pharmacy_id", pharmacy.id)
+      .is("reversal_of_request_id", null)
+      .neq("status", "rejected")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+
+    const distributors = pharmacy.distributorCodes.length
+      ? pharmacy.distributorCodes
+      : [{ distributorCode: "", distributorName: "—", customerCode: "", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null }];
+
+    const byKey = new Map<string, DirectOrderPharmacyHistoryRow>();
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      if (String(row.id) === excludeRequestId) continue;
+      const salesMonth = row.sales_month ? String(row.sales_month) : null;
+      const month = salesMonth ?? String(row.created_at ?? "").slice(0, 7);
+      if (!month) continue;
+      for (const distributor of distributors) {
+        const key = `${month}|${String(row.product_code)}|${distributor.distributorCode}`;
+        const existing = byKey.get(key) ?? {
+          month,
+          monthIsProvisional: salesMonth == null,
+          productCode: String(row.product_code ?? ""),
+          productName: String(row.product_name ?? ""),
+          distributorName: distributor.distributorName || distributor.distributorCode || "—",
+          distributorCode: distributor.distributorCode,
+          orders: 0,
+          qty: 0,
+          bonus: 0,
+          salesValue: 0,
+        };
+        existing.orders += 1;
+        existing.qty += Number(row.qty ?? 0);
+        existing.bonus += Number(row.bonus ?? 0);
+        existing.salesValue += Number(row.sales_value ?? 0);
+        // A bucket is only firm once EVERY order in it has a real sales month.
+        if (salesMonth == null) existing.monthIsProvisional = true;
+        byKey.set(key, existing);
+      }
+    }
+
+    return [...byKey.values()].sort(
+      (a, b) =>
+        b.month.localeCompare(a.month) ||
+        a.productName.localeCompare(b.productName) ||
+        a.distributorName.localeCompare(b.distributorName),
+    );
+  } catch (error) {
+    // Best-effort context, never a reason the approval screen fails to open.
+    logError("Direct order pharmacy history failed", {
+      labels: { event: "direct_order_pharmacy_history_failed", pharmacyId: pharmacy.id },
+      error,
+    });
+    return [];
+  }
+}
+
 export async function getDirectOrderApprovalDetail(
   access: AccessContext,
   requestId: string,
@@ -1456,9 +1551,10 @@ export async function getDirectOrderApprovalDetail(
   // Geography names and the area's medical rep are resolved HERE, at the single choke point
   // every approval surface reads, rather than in the components — which is why both of them
   // used to print raw brick/area codes.
-  const [geoMaps, rep] = await Promise.all([
+  const [geoMaps, rep, pharmacyHistory] = await Promise.all([
     loadDirectOrderGeoNames(),
     resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
+    loadPharmacyOrderHistory(pharmacy, request.id),
   ]);
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
@@ -1471,6 +1567,7 @@ export async function getDirectOrderApprovalDetail(
     medicalRep: toDirectOrderAreaRep(rep),
     distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
     distributors: toDistributorRows(pharmacy?.distributorCodes, geoMaps),
+    pharmacyHistory,
     steps: steps.map((step) => ({ ...step, approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,

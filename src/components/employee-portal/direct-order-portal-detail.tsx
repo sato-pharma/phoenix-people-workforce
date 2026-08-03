@@ -229,7 +229,7 @@ export function DirectOrderPortalDetail({
     );
   }
 
-  const { request, distributors, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
+  const { request, distributors, pharmacyHistory, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
   // Same shared field list the admin approval screen renders — see approval-fields.ts for why
   // it lives in the domain rather than being hand-maintained twice.
   const allFields = buildDirectOrderDetailFields(detail);
@@ -296,11 +296,18 @@ export function DirectOrderPortalDetail({
             {distributors.length === 0 ? (
               <p className="mt-0.5 text-sm font-semibold text-slate-800">-</p>
             ) : (
-              <div className="mt-1.5 space-y-1 rounded border border-slate-100 bg-slate-50 p-3">
+              <div className="mt-1.5 space-y-2 rounded border border-slate-100 bg-slate-50 p-3">
                 {distributors.map((row) => (
-                  <div key={`${row.distributorName}-${row.customerCode}`} className="text-xs font-bold text-slate-800">
-                    {row.distributorName} - {row.customerCode}
-                    {row.mappedBrickName ? ` -> ${row.mappedBrickName}` : " -> not mapped"}
+                  <div key={`${row.distributorCode}-${row.customerCode}`} className="space-y-0.5">
+                    <div className="text-xs font-bold text-slate-800">
+                      {row.distributorName}
+                      {row.distributorCode ? ` (${row.distributorCode})` : ""}
+                    </div>
+                    <div className="text-[11px] text-slate-600">Customer code: {row.customerCode}</div>
+                    <div className="text-[11px] text-slate-500">
+                      Mapped: {row.mappedBrickName ?? "not mapped"} / {row.mappedAreaName ?? "not mapped"} /{" "}
+                      {row.mappedRegionName ?? "not mapped"}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -309,6 +316,52 @@ export function DirectOrderPortalDetail({
           {request.bonusOverrideReason ? (
             <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">Note: {request.bonusOverrideReason}</p>
           ) : null}
+        </div>
+      </PortalSection>
+
+      {/* What this pharmacy normally takes. The request being decided is excluded, so the
+          baseline never contains the number under judgement. Card-per-bucket on a phone,
+          matching the portal's list idiom rather than forcing a wide table onto it. */}
+      <PortalSection eyebrow="Context" title="Pharmacy history">
+        <div className="p-4 sm:p-5">
+          {pharmacyHistory.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No other direct orders recorded for this pharmacy yet - this is its first.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                By month, product and distributor - excludes this request
+              </p>
+              {pharmacyHistory.map((row) => (
+                <div
+                  key={`${row.month}-${row.productCode}-${row.distributorCode}`}
+                  className="rounded border border-slate-100 bg-slate-50 p-3"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-xs font-black text-slate-900">
+                      {row.month}
+                      {row.monthIsProvisional ? (
+                        <span className="ml-1.5 text-[10px] font-bold uppercase text-amber-700">not final</span>
+                      ) : null}
+                    </span>
+                    <span className="text-xs font-black text-slate-900">{money(row.salesValue)}</span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-bold text-slate-700">
+                    {row.productName} ({row.productCode})
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {row.distributorName}
+                    {row.distributorCode ? ` (${row.distributorCode})` : ""}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-600">
+                    {row.orders} order{row.orders === 1 ? "" : "s"} - qty {row.qty.toLocaleString("en-US")} - bonus{" "}
+                    {row.bonus.toLocaleString("en-US")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </PortalSection>
 

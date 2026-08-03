@@ -75,8 +75,11 @@ export const DIRECT_ORDER_CORE_FIELD_LABELS: readonly string[] = [
   "Requester",
   "Line",
   "Product",
+  "Sato product code",
   "Status",
+  "Deal type",
   "Pharmacy",
+  "Sato pharmacy code",
   "Doctor",
   "Brick",
   "Area",
@@ -86,6 +89,7 @@ export const DIRECT_ORDER_CORE_FIELD_LABELS: readonly string[] = [
   "Sales month",
   "Pharmacy address",
   "Distributor codes",
+  "Pharmacy registered by",
 ] as const;
 
 /**
@@ -104,28 +108,41 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     { label: "Requester", value: `${requesterName} · ${request.requesterHrId} · ${request.requesterRole}` },
     { label: "Line", value: text(request.line) },
     { label: "Product", value: codeNameLabel(request.productName, request.productCode) },
+    // The company's own product code, given its own field rather than left in a parenthesis —
+    // the owner reads it as a value in its own right, not as a decoration on the name.
+    { label: "Sato product code", value: text(request.productCode) },
     { label: "Status", value: request.status.replace(/_/g, " ") },
+    { label: "Deal type", value: request.dealType === "discount" ? "Discount" : "Bonus" },
     { label: "Quantity", value: units(request.qty) },
     { label: "Sales value", value: money(request.salesValue) },
     { label: "Factory price", value: money(request.factoryPriceSnapshot) },
   ];
 
-  // Bonus deals price on the pharmacy price; discount deals on the public price. Show the one
-  // that actually determined this row's value, and say so plainly when it fell back.
-  if (request.dealType === "bonus") {
-    fields.push({
-      label: "Pharmacy price",
-      value:
-        request.pharmacyPriceSnapshot == null
+  // BOTH prices are always shown, not just the one that priced this deal. Which basis was used
+  // is stated explicitly, so an approver never has to infer it from which field is present.
+  fields.push({
+    label: "Pharmacy price",
+    value:
+      request.dealType !== "bonus"
+        ? `${money(request.pharmacyPriceSnapshot)} (not used — discount deal)`
+        : request.pharmacyPriceSnapshot == null
           ? `${DASH} (not set — valued at the factory price)`
-          : money(request.pharmacyPriceSnapshot),
-    });
-  } else {
-    fields.push({ label: "Public price", value: money(request.publicPriceSnapshot) });
+          : `${money(request.pharmacyPriceSnapshot)} (used for this deal)`,
+  });
+  fields.push({
+    label: "Public price",
+    value:
+      request.dealType === "discount"
+        ? `${money(request.publicPriceSnapshot)} (used for this deal)`
+        : `${money(request.publicPriceSnapshot)} (not used — bonus deal)`,
+  });
+  if (request.dealType === "discount") {
+    fields.push({ label: "Discount %", value: `${(request.discountPct ?? 0).toLocaleString("en-US")}%` });
   }
 
   fields.push(
     { label: "Pharmacy", value: codeNameLabel(pharmacy?.pharmacyName, pharmacy?.phoenixPharmacyCode) },
+    { label: "Sato pharmacy code", value: text(pharmacy?.phoenixPharmacyCode) },
     { label: "Doctor", value: text(pharmacy?.doctorName) },
     // Three separate fields, never a combined "Brick / Area" cell — cramming two geographies
     // into one value is what forced the bare-code "a / b" format this replaces.
@@ -136,6 +153,16 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     { label: "Collection date", value: dateOnly(request.collectionDate) },
     { label: "Sales month", value: request.salesMonth ?? `${DASH} (set on final approval)` },
     { label: "Submitted", value: dateOnly(request.createdAt) },
+    { label: "Pharmacy registered by", value: text(pharmacy?.createdByHrId) },
+    { label: "Pharmacy status", value: pharmacy ? (pharmacy.active ? "Active" : "Inactive") : DASH },
+    {
+      label: "Geography check",
+      value: pharmacy
+        ? pharmacy.geoVarianceResolved
+          ? "Resolved"
+          : "Not flagged"
+        : DASH,
+    },
   );
 
   // Conditional — only once they carry a value.

@@ -95,17 +95,27 @@ export function formatDistributorNames(codes: DirectOrderPharmacyDistributorCode
   return (codes ?? []).map((code) => code.distributorName || code.distributorCode).join(" · ");
 }
 
-/** Pure: the pairs as display rows, with each mapped brick resolved to its NAME. */
+/**
+ * Pure: the pairs as display rows — distributor NAME and CODE both kept, and every mapped
+ * geography resolved to a name. Nothing is dropped: the approver sees which distributor, under
+ * which distributor code, files this pharmacy under which customer code, mapped where.
+ */
 export function toDistributorRows(
   codes: DirectOrderPharmacyDistributorCode[] | null | undefined,
   maps: DirectOrderGeoNameMaps,
 ): DirectOrderDistributorRow[] {
+  const named = (code: string | null | undefined, names: Map<string, string>): string | null => {
+    const trimmed = (code ?? "").trim();
+    if (!trimmed) return null;
+    return names.get(trimmed) ?? trimmed;
+  };
   return (codes ?? []).map((code) => ({
     distributorName: code.distributorName || code.distributorCode,
+    distributorCode: code.distributorCode,
     customerCode: code.customerCode,
-    mappedBrickName: code.mappedBrickId
-      ? maps.brickNameById.get(code.mappedBrickId) ?? code.mappedBrickId
-      : null,
+    mappedBrickName: named(code.mappedBrickId, maps.brickNameById),
+    mappedAreaName: named(code.mappedAreaCode, maps.areaNameByCode),
+    mappedRegionName: named(code.mappedRegionCode, maps.regionNameByCode),
   }));
 }
 

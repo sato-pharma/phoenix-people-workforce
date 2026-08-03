@@ -178,9 +178,34 @@ export type DirectOrderPharmacyGeo = {
  */
 export type DirectOrderDistributorRow = {
   distributorName: string;
+  /** The distributor's own code, e.g. "Direct", "IbnSina". Shown alongside the name, never instead. */
+  distributorCode: string;
+  /** The code THIS distributor files the pharmacy under (their customer number). */
   customerCode: string;
-  /** The brick the customer map resolves this code to; null when the code is unmapped. */
+  /** Where the customer map resolves this code to — names, null when the code is unmapped. */
   mappedBrickName: string | null;
+  mappedAreaName: string | null;
+  mappedRegionName: string | null;
+};
+
+/**
+ * One summarized line of a pharmacy's ordering history: what it took of a product, from a
+ * distributor, in a month. Aggregated across every request for that pharmacy so an approver
+ * can see the pattern before deciding — is this the usual quantity, or ten times it?
+ */
+export type DirectOrderPharmacyHistoryRow = {
+  /** YYYY-MM. The sales month once final-approved, otherwise the month it was submitted. */
+  month: string;
+  /** True when `month` came from the submission date because the order is not yet final. */
+  monthIsProvisional: boolean;
+  productCode: string;
+  productName: string;
+  distributorName: string;
+  distributorCode: string;
+  orders: number;
+  qty: number;
+  bonus: number;
+  salesValue: number;
 };
 
 /**
@@ -303,8 +328,14 @@ export type DirectOrderApprovalDetail = {
   medicalRep: DirectOrderAreaRep;
   /** "Ibn Sina: 1234567; Overseas: 7654321" — the same projection the report and email use. */
   distributorCodesText: string;
-  /** The same pairs as display rows, with mapped bricks resolved to names. */
+  /** The same pairs as display rows, with codes kept and mapped geography resolved to names. */
   distributors: DirectOrderDistributorRow[];
+  /**
+   * This pharmacy's ordering history — month x product x distributor — EXCLUDING the request
+   * being decided, so the approver reads "what it normally takes" rather than a total that
+   * already contains the number they are judging.
+   */
+  pharmacyHistory: DirectOrderPharmacyHistoryRow[];
   steps: Array<DirectOrderStepState & { approverName: string | null }>;
   availableActions: DirectOrderAvailableActions;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
