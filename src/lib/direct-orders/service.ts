@@ -141,9 +141,14 @@ async function buildNotifyContext(
   requesterName: string,
   pharmacy: DirectOrderPharmacy | null,
 ): Promise<DirectOrderNotifyContext> {
+  // `nameOf` is REQUIRED, not optional polish: without it selectAreaRepsFromSeats falls back to
+  // the raw HR_ID, and a real notification went out reading "Medical rep pd-0005" instead of the
+  // rep's name. The approval WINDOW always passed a lookup in, so the two paths disagreed and
+  // only the notification leaked an id.
+  const nameOf = await nameLookup();
   const [geoMaps, rep] = await Promise.all([
     loadDirectOrderGeoNames(),
-    resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }),
+    resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
   ]);
   return {
     request,
