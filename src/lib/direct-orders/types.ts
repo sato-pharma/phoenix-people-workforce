@@ -193,6 +193,27 @@ export type DirectOrderDistributorRow = {
  * distributor, in a month. Aggregated across every request for that pharmacy so an approver
  * can see the pattern before deciding — is this the usual quantity, or ten times it?
  */
+/**
+ * Where a line of sales came from. The two must never be summed blindly: RETAIL is what the
+ * distributor invoiced this pharmacy (uploaded monthly from their file); DIRECT is what Phoenix
+ * booked from an approved direct order. They are different channels and are reported separately.
+ */
+export type DirectOrderSalesSource = "retail" | "direct";
+
+/** One month of retail (distributor-invoiced) sales for a pharmacy, per product and distributor. */
+export type DirectOrderRetailHistoryRow = {
+  month: string;
+  productCode: string;
+  productName: string;
+  distributorName: string;
+  distributorCode: string;
+  /** The distributor's own customer code for this pharmacy — how the match was made. */
+  customerCode: string;
+  qty: number;
+  bonus: number;
+  salesValue: number;
+};
+
 export type DirectOrderPharmacyHistoryRow = {
   /** YYYY-MM. The sales month once final-approved, otherwise the month it was submitted. */
   month: string;
@@ -336,12 +357,26 @@ export type DirectOrderApprovalDetail = {
    * already contains the number they are judging.
    */
   pharmacyHistory: DirectOrderPharmacyHistoryRow[];
+  /**
+   * Retail sales the DISTRIBUTORS invoiced this pharmacy, kept strictly separate from the
+   * direct-order history above. Matched on (distributor code + customer code) together —
+   * a customer code alone is not unique across distributors and would attribute another
+   * pharmacy's sales to this one.
+   */
+  retailHistory: DirectOrderRetailHistoryRow[];
+  /** True when the pharmacy has no distributor pair that can be matched to retail sales at all. */
+  retailUnmatchable: boolean;
   steps: Array<DirectOrderStepState & { approverName: string | null }>;
   availableActions: DirectOrderAvailableActions;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
   /** True when a bonus deal fell back to the factory price because no pharmacy price was set. */
   missingPharmacyPrice: boolean;
+  /**
+   * Whether THIS viewer may book the order into a sales month. Finance (Ahmed El Maraghy) and
+   * Super Admin can; the CEO and SFE Manager see the month but cannot change it.
+   */
+  canSetSalesMonth: boolean;
 };
 
 export type DirectOrderWorkspaceData = {

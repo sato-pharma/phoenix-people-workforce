@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
+import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
 import {
   buildDirectOrderDetailFields,
   dealFieldLabel,
@@ -47,7 +48,18 @@ export function DirectOrderRequestDetail({
     );
   }
 
-  const { request, distributors, pharmacyHistory, steps, availableActions, bonusOverCap, missingPharmacyPrice } = detail;
+  const {
+    request,
+    distributors,
+    pharmacyHistory,
+    retailHistory,
+    retailUnmatchable,
+    canSetSalesMonth,
+    steps,
+    availableActions,
+    bonusOverCap,
+    missingPharmacyPrice,
+  } = detail;
   // ONE shared field list, built in the domain. The admin screen and the portal screen each
   // used to hand-maintain their own copy, which is how both ended up printing raw brick/area
   // codes — fixing it in one place could never have fixed the other.
@@ -147,6 +159,13 @@ export function DirectOrderRequestDetail({
           )}
         </div>
 
+        <DirectOrderSalesMonthControl
+          requestId={request.id}
+          salesMonth={request.salesMonth}
+          canEdit={canSetSalesMonth}
+          status={request.status}
+        />
+
         {request.bonusOverrideReason ? (
           <p className="border-t border-[#eef1f3] px-4 py-2 text-xs text-slate-500">
             Note: {request.bonusOverrideReason}
@@ -154,13 +173,74 @@ export function DirectOrderRequestDetail({
         ) : null}
       </section>
 
-      {/* What this pharmacy normally takes — the context an approver needs to judge a quantity.
-          The request being decided is excluded, so the baseline never contains the number under
-          judgement. */}
+      {/* RETAIL — what the distributors invoiced this pharmacy. Kept strictly separate from the
+          direct-order history below: they are different channels and summing them would double
+          count. Matched on (distributor code + customer code) together, because a customer code
+          alone is not unique across distributors. */}
       <section className="border border-[#e4e9ec] bg-white">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
-            Pharmacy history — by month, product and distributor
+            Retail sales — from the distributors
+          </h3>
+          <span className="text-[11px] font-bold text-slate-500">all months on record</span>
+        </header>
+        {retailUnmatchable ? (
+          <p className="px-4 py-4 text-sm text-slate-500">
+            This pharmacy has no distributor customer code on file, so its retail sales cannot be
+            matched. Register it against the distributor that actually supplies it to see them here.
+          </p>
+        ) : retailHistory.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-slate-500">
+            No distributor sales found for this pharmacy&apos;s customer codes.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2">Month</th>
+                  <th className="whitespace-nowrap px-3 py-2">Product</th>
+                  <th className="whitespace-nowrap px-3 py-2">Distributor</th>
+                  <th className="whitespace-nowrap px-3 py-2">Customer code</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Qty</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Bonus</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {retailHistory.map((row) => (
+                  <tr key={`${row.month}-${row.productCode}-${row.distributorCode}`} className="border-b border-[#eef1f3]">
+                    <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">{row.month}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">
+                      {row.productName} <span className="text-slate-400">({row.productCode})</span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">
+                      {row.distributorName} <span className="text-slate-400">({row.distributorCode})</span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{row.customerCode}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900">
+                      {row.qty.toLocaleString("en-US")}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">
+                      {row.bonus.toLocaleString("en-US")}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums text-slate-900">
+                      {money(row.salesValue)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* DIRECT — what Phoenix booked from approved direct orders. The request being decided is
+          excluded, so the baseline never contains the number under judgement. */}
+      <section className="border border-[#e4e9ec] bg-white">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
+          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
+            Direct sales — from Phoenix direct orders
           </h3>
           <span className="text-[11px] font-bold text-slate-500">excludes this request</span>
         </header>

@@ -74,13 +74,9 @@ export function runDirectOrdersApprovalFlowTests() {
   assert.deepEqual(directOrderManagementLadder("Product Manager"), []);
   assert.deepEqual(directOrderManagementLadder("Group Product Manager"), []);
 
-  // Every chain ends at the CEO.
-  assert.deepEqual(directOrderExpectedRoleChain("District Manager"), ["Regional Manager", "National Sales Manager", "CEO"]);
-  assert.deepEqual(directOrderExpectedRoleChain("Product Manager"), ["CEO"]);
-  assert.equal(directOrderExpectedStepCount("District Manager"), 3);
-  assert.equal(directOrderExpectedStepCount("Regional Manager"), 2);
-  assert.equal(directOrderExpectedStepCount("National Sales Manager"), 1);
-  assert.equal(directOrderExpectedStepCount("Group Product Manager"), 1);
+  // The MANAGEMENT ladder above is the sales line only — it deliberately excludes both the
+  // opening SFE rung and the closing CEO rung. The full chain (SFE + line + CEO) is asserted
+  // in its own block further down.
 
   // ── Bonus cap: config-driven percentage (25% default, 30% for an Ivyronc override) ──
   assert.equal(maxBonusUnits({ qty: 100, capPct: 25 }), 25);
@@ -119,6 +115,49 @@ export function runDirectOrdersApprovalFlowTests() {
     computeDiscountSalesValue({ qty: 100, publicPrice: 92, discountPct: 0 }),
     computeDirectOrderSalesValue({ qty: 100, pharmacyPrice: 80 }),
   );
+
+  // ── SFE Manager validates FIRST, on every chain (owner rule, 2026-08-03) ───
+  {
+    for (const role of [
+      "District Manager",
+      "Regional Manager",
+      "National Sales Manager",
+      "Product Manager",
+      "Group Product Manager",
+    ] as const) {
+      const chain = directOrderExpectedRoleChain(role);
+      assert.equal(chain[0], "SFE Manager", `${role}'s chain must OPEN with SFE validation`);
+      assert.equal(chain[chain.length - 1], "CEO", `${role}'s chain must still END at the CEO`);
+    }
+    // The sales line still sits between SFE and the CEO, in order.
+    assert.deepEqual(directOrderExpectedRoleChain("District Manager"), [
+      "SFE Manager",
+      "Regional Manager",
+      "National Sales Manager",
+      "CEO",
+    ]);
+    assert.deepEqual(directOrderExpectedRoleChain("Product Manager"), ["SFE Manager", "CEO"]);
+    // Every chain grew by exactly one rung.
+    assert.equal(directOrderExpectedStepCount("District Manager"), 4);
+    assert.equal(directOrderExpectedStepCount("Regional Manager"), 3);
+    assert.equal(directOrderExpectedStepCount("National Sales Manager"), 2);
+    assert.equal(directOrderExpectedStepCount("Product Manager"), 2);
+    assert.equal(directOrderExpectedStepCount("Group Product Manager"), 2);
+
+    // A role rung must be actionable BY ROLE. The service used to special-case the CEO only,
+    // which would have left the new SFE rung actionable by nobody at all.
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      serviceSource,
+      /isCeoStep\(activeStep\)\s*\n?\s*\?\s*access\.role === "CEO"/,
+      "authorization must match on the rung's KIND, not on the CEO specifically",
+    );
+    assert.match(
+      serviceSource,
+      /activeStep\.kind === "role"/,
+      "the decide path must resolve any role rung, not just the CEO's",
+    );
+  }
 
   // ── Over cap FLAGS, it never blocks (owner rule, 2026-08-03) ────────────────
   {
