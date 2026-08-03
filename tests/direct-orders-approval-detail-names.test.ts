@@ -84,6 +84,9 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     distributorCodesText: "Ibn Sina: 1234567; Overseas: 7654321",
     distributors: [],
     pharmacyHistory: [],
+    retailHistory: [],
+    retailUnmatchable: false,
+    canSetSalesMonth: false,
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
@@ -397,6 +400,76 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(historyBody, /neq\("status", "rejected"\)/, "a rejected order was never supplied");
     assert.match(historyBody, /sales_month/, "the month must prefer the real sales month");
     assert.match(historyBody, /monthIsProvisional/, "a not-yet-final month must be marked, not silently mixed in");
+  }
+
+  // ── Finance owns the sales month; the CEO does not ─────────────────────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+
+    // The month must NO LONGER be derived from the approval clock.
+    assert.doesNotMatch(
+      serviceSource,
+      /const salesMonth = input\.decision === "approve" && evaluation\.isFinal/,
+      "the sales month must not be derived from the approval date any more",
+    );
+    assert.match(serviceSource, /export async function setDirectOrderSalesMonth\(/, "Finance needs an explicit setter");
+    assert.match(
+      serviceSource,
+      /DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = "B-185"/,
+      "the setter is Ahmed El Maraghy by HR_ID — not the Finance Manager ROLE, so a future second holder cannot inherit it silently",
+    );
+
+    // Changing the month must rebuild BOTH periods, or the sales double or vanish.
+    const setterIdx = serviceSource.indexOf("export async function setDirectOrderSalesMonth(");
+    const setterBody = serviceSource.slice(setterIdx, setterIdx + 3200);
+    assert.match(
+      setterBody,
+      /\[previousMonth, nextMonth\]/,
+      "a month change must rebuild the OLD period as well as the new one",
+    );
+    assert.match(setterBody, /phx_rebuild_direct_order_sos_batch/, "the rebuild must actually run");
+
+    // The migration must preserve a month Finance set, rather than blanking it on approval.
+    const migration = readFileSync(
+      new URL("../supabase/migrations/20260803160000_direct_orders_finance_sales_month.sql", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      migration,
+      /coalesce\(p_sales_month, sales_month\)/,
+      "approving with no month supplied must LEAVE Finance's month, never clear it",
+    );
+    assert.match(
+      migration,
+      /v_row\.sales_month is not null/,
+      "an order with no month must inject into no period at all",
+    );
+  }
+
+  // ── Retail and direct sales are separate, and matched safely ───────────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const retailIdx = serviceSource.indexOf("async function loadPharmacyRetailHistory(");
+    assert.ok(retailIdx > -1, "retail history must have its own loader, separate from direct orders");
+    const retailBody = serviceSource.slice(retailIdx, serviceSource.indexOf("export async function getDirectOrderApprovalDetail(", retailIdx));
+
+    // THE correctness point: a customer code alone is not unique across distributors. In live
+    // data code "124" is one pharmacy at distributor EG and a different one in the direct-order
+    // registry — matching on the code alone would show a stranger's sales on this screen.
+    assert.match(
+      retailBody,
+      /\$\{pair\.distributorCode\.toLowerCase\(\)\}\|\$\{pair\.customerCode\}/,
+      "retail sales must be matched on (distributor code + customer code) TOGETHER",
+    );
+    assert.match(retailBody, /allowed\.has\(/, "rows outside the pharmacy's own pairs must be dropped");
+    // A pharmacy with no usable pair is reported, not shown as a misleading zero.
+    assert.match(retailBody, /unmatchable: true/, "an unmatchable pharmacy must say so rather than show zero");
+
+    // The two channels must never be merged into one figure.
+    const detailIdx = serviceSource.indexOf("export async function getDirectOrderApprovalDetail(");
+    const detailBody = serviceSource.slice(detailIdx, detailIdx + 3000);
+    assert.match(detailBody, /retailHistory: retail\.rows/, "retail rides its own field");
+    assert.match(detailBody, /pharmacyHistory,/, "direct-order history keeps its own field");
   }
 
   // ── The approver's notification ─────────────────────────────────────────────

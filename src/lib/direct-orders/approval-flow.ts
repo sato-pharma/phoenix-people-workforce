@@ -8,10 +8,11 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 // Pure, database-free decision core for the Direct Order approval chain.
 //
-// The chain is a strictly-ordered sequence of management approvals that always
-// ends at the CEO. A rung is actionable only after every lower-order rung is
-// approved. Any reject is final; a return sends the request back to the requester
-// for edit; approving the last (CEO) rung finalizes as `approved`.
+// The chain is a strictly-ordered sequence that always OPENS with SFE Manager validation
+// and always ENDS at the CEO, with the requester's own management line in between. A rung is
+// actionable only after every lower-order rung is approved. Any reject is final; a return sends
+// the request back to the requester for edit; approving the last (CEO) rung finalizes as
+// `approved`.
 //
 // Bonus is capped (25% of qty; Ivyronc 30%) and NEVER enters the sales value —
 // value is always `approvedQty × pharmacyPrice`. Exceeding a cap does NOT block: the
@@ -19,6 +20,16 @@ import type {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CEO_ROLE: PhoenixRole = "CEO";
+
+/**
+ * The validation rung that opens every chain (owner rule, 2026-08-03).
+ *
+ * SFE validates the request before it costs the sales line any time — so a malformed or
+ * out-of-policy order is caught at step 1 rather than after three managers have signed it.
+ * Like the CEO rung it is resolved BY ROLE, not to a person, so a change of post-holder does
+ * not strand an in-flight request on someone who has left the seat.
+ */
+export const SFE_VALIDATION_ROLE: PhoenixRole = "SFE Manager";
 
 /**
  * Expected management-rung roles for a requester (the CEO rung is always appended
@@ -44,9 +55,17 @@ export function directOrderManagementLadder(requesterRole: PhoenixRole): Phoenix
   }
 }
 
-/** Full expected role sequence including the trailing CEO rung. */
+/**
+ * Full expected role sequence: SFE validation, then the requester's management line, then the CEO.
+ * Every chain opens with SFE and closes with the CEO, whatever sits between.
+ */
 export function directOrderExpectedRoleChain(requesterRole: PhoenixRole): PhoenixRole[] {
-  return [...directOrderManagementLadder(requesterRole), CEO_ROLE];
+  return [SFE_VALIDATION_ROLE, ...directOrderManagementLadder(requesterRole), CEO_ROLE];
+}
+
+/** True for the opening SFE validation rung. */
+export function isSfeValidationStep(step: Pick<DirectOrderStepState, "kind" | "role">): boolean {
+  return step.kind === "role" && step.role === SFE_VALIDATION_ROLE;
 }
 
 /** Number of approval rungs a request of this requester role will have. */

@@ -20,7 +20,7 @@ import {
   computeDirectOrderSalesValue,
   computeDiscountSalesValue,
   evaluateStepAction,
-  isCeoStep,
+  SFE_VALIDATION_ROLE,
   maxBonusUnits,
   resolveActiveStep,
   validateBonus,
@@ -53,6 +53,7 @@ import {
   type DirectOrderAreaRep,
   type DirectOrderPharmacyGeo,
   type DirectOrderPharmacyHistoryRow,
+  type DirectOrderRetailHistoryRow,
   type DirectOrderApprovalListItem,
   type DirectOrderDealType,
   type DirectOrderDecision,
@@ -254,6 +255,11 @@ async function buildApprovalChain(input: {
   };
 
   const rungs: Array<Omit<DirectOrderStepState, "status" | "order">> = [];
+  // SFE Manager validates FIRST, ahead of the sales line (owner rule, 2026-08-03). A ROLE rung
+  // like the CEO's — whoever currently holds SFE Manager acts on it — so it survives a change of
+  // post-holder without touching any in-flight request.
+  rungs.push({ kind: "role", role: SFE_VALIDATION_ROLE, approverHrId: null, label: "SFE Manager" });
+
   const straightToCeo =
     input.requesterRole === "Product Manager" || input.requesterRole === "Group Product Manager";
 
@@ -795,9 +801,11 @@ export async function decideDirectOrder(
   if (!activeStep) badRequest("There is no pending approval step on this request.");
 
   // Fine authorization: the caller must be the assigned approver of the active step.
+  // Matched on `kind`, not on the CEO specifically — the chain now opens with an SFE Manager
+  // role rung, and a CEO-only special case would leave that rung actionable by nobody.
   const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
-  const isAssigned = isCeoStep(activeStep)
-    ? access.role === "CEO"
+  const isAssigned = activeStep.kind === "role"
+    ? Boolean(activeStep.role) && access.role === activeStep.role
     : canonicalHrIdKey(access.hrId) === canonicalHrIdKey(activeStep.approverHrId ?? "");
   if (!isSuperAdmin && !isAssigned) {
     badRequest("Only the current assigned approver can act on this request.");
@@ -825,7 +833,11 @@ export async function decideDirectOrder(
 
   const now = new Date();
   const stepNextStatus = input.decision === "approve" ? "approved" : input.decision === "reject" ? "rejected" : null;
-  const salesMonth = input.decision === "approve" && evaluation.isFinal ? now.toISOString().slice(0, 7) : null;
+  // The sales month is NO LONGER derived from the approval date (owner rule, 2026-08-03).
+  // Finance chooses it per order — see setDirectOrderSalesMonth — because the month an order is
+  // signed off in is frequently not the month it should be booked into. Passing null leaves the
+  // stored month untouched, so approving never overwrites a month Finance already picked.
+  const salesMonth = null;
 
   const { data: updated, error: rpcError } = await supabase.rpc("phx_apply_direct_order_decision", {
     p_request_id: request.id,
@@ -1050,10 +1062,11 @@ async function canViewDirectOrderRequest(
 ): Promise<boolean> {
   if (resolveDirectOrderReportScope(access) === "all") return true;
 
-  // An assigned approver (person rung, or the role-resolved CEO rung) may always open the request.
+  // An assigned approver may always open the request — whether their rung names them personally
+  // or names their ROLE (SFE Manager validation, CEO final).
   const viewerKey = canonicalHrIdKey(access.hrId ?? "");
   if (viewerKey && steps.some((step) => canonicalHrIdKey(step.approverHrId ?? "") === viewerKey)) return true;
-  if (access.role === "CEO" && steps.some((step) => isCeoStep(step))) return true;
+  if (steps.some((step) => step.kind === "role" && step.role && step.role === access.role)) return true;
 
   const requesterKey = canonicalHrIdKey(request.requesterHrId ?? "");
   if (!requesterKey || !viewerKey) return false;
@@ -1082,11 +1095,18 @@ export async function getDirectOrderRequest(
 // ── Approvals-hub reads (this hub surface is the SOLE approval gate) ──────────
 
 /** Can the viewer act on `step` right now? Super Admin/system can act on any step. */
+/**
+ * Whether the viewer may act on this rung.
+ *
+ * A ROLE rung is matched by role, a PERSON rung by HR_ID. This is written against `kind`
+ * rather than against the CEO specifically: the chain now opens with an SFE Manager role rung
+ * too, and a CEO-only special case would have left that rung actionable by nobody.
+ */
 function viewerCanActOnStep(access: AccessContext, step: DirectOrderStepState | null): boolean {
   if (!step) return false;
   if (access.role === "Super Admin" || access.scope === "system") return true;
-  return isCeoStep(step)
-    ? access.role === "CEO"
+  return step.kind === "role"
+    ? Boolean(step.role) && access.role === step.role
     : canonicalHrIdKey(access.hrId) === canonicalHrIdKey(step.approverHrId ?? "");
 }
 
@@ -1535,6 +1555,83 @@ async function loadPharmacyOrderHistory(
   }
 }
 
+/**
+ * Retail sales the DISTRIBUTORS invoiced this pharmacy — the other half of the picture next to
+ * its Phoenix direct orders, and deliberately never merged with them.
+ *
+ * The match is on (distributor_code AND client_code) TOGETHER. A customer code is not unique
+ * across distributors: in live data, code "124" belongs to one pharmacy at distributor EG and a
+ * different pharmacy in the direct-order registry. Matching on the code alone would quietly
+ * attribute a stranger's sales to this pharmacy on the screen where money is approved.
+ *
+ * A pharmacy registered only against the company's own `Direct` channel cannot be matched at all
+ * — those uploaded rows carry no client code — which is reported as `retailUnmatchable` rather
+ * than shown as a misleading zero.
+ */
+async function loadPharmacyRetailHistory(
+  pharmacy: DirectOrderPharmacy | null,
+): Promise<{ rows: DirectOrderRetailHistoryRow[]; unmatchable: boolean }> {
+  const pairs = (pharmacy?.distributorCodes ?? []).filter((pair) => pair.distributorCode && pair.customerCode);
+  if (pairs.length === 0) return { rows: [], unmatchable: true };
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const customerCodes = [...new Set(pairs.map((pair) => pair.customerCode))];
+    const { data, error } = await supabase
+      .from("source_of_sales_import_rows")
+      .select("client_code, product_code, product_name, qty, bonus_qty, value, batch_id, source_of_sales_import_batches!inner(distributor_code, period)")
+      .in("client_code", customerCodes);
+    if (error) throw error;
+
+    // (distributor, customer code) is the only safe key — see the note above.
+    const allowed = new Set(pairs.map((pair) => `${pair.distributorCode.toLowerCase()}|${pair.customerCode}`));
+    const nameByCode = new Map(pairs.map((pair) => [pair.distributorCode.toLowerCase(), pair.distributorName]));
+
+    const byKey = new Map<string, DirectOrderRetailHistoryRow>();
+    for (const raw of (data ?? []) as Array<Record<string, unknown>>) {
+      const batch = raw.source_of_sales_import_batches as { distributor_code?: string; period?: string } | null;
+      const distributorCode = String(batch?.distributor_code ?? "");
+      const clientCode = String(raw.client_code ?? "");
+      if (!allowed.has(`${distributorCode.toLowerCase()}|${clientCode}`)) continue;
+      const month = String(batch?.period ?? "");
+      if (!month) continue;
+
+      const productCode = String(raw.product_code ?? "");
+      const key = `${month}|${productCode}|${distributorCode}`;
+      const existing = byKey.get(key) ?? {
+        month,
+        productCode,
+        productName: String(raw.product_name ?? ""),
+        distributorName: nameByCode.get(distributorCode.toLowerCase()) || distributorCode,
+        distributorCode,
+        customerCode: clientCode,
+        qty: 0,
+        bonus: 0,
+        salesValue: 0,
+      };
+      existing.qty += Number(raw.qty ?? 0);
+      existing.bonus += Number(raw.bonus_qty ?? 0);
+      existing.salesValue += Number(raw.value ?? 0);
+      byKey.set(key, existing);
+    }
+
+    const rows = [...byKey.values()].sort(
+      (a, b) =>
+        b.month.localeCompare(a.month) ||
+        a.productName.localeCompare(b.productName) ||
+        a.distributorName.localeCompare(b.distributorName),
+    );
+    return { rows, unmatchable: false };
+  } catch (error) {
+    // Context only — never a reason the approval screen fails to open.
+    logError("Direct order retail history failed", {
+      labels: { event: "direct_order_retail_history_failed", pharmacyId: pharmacy?.id ?? "" },
+      error,
+    });
+    return { rows: [], unmatchable: false };
+  }
+}
+
 export async function getDirectOrderApprovalDetail(
   access: AccessContext,
   requestId: string,
@@ -1551,10 +1648,11 @@ export async function getDirectOrderApprovalDetail(
   // Geography names and the area's medical rep are resolved HERE, at the single choke point
   // every approval surface reads, rather than in the components — which is why both of them
   // used to print raw brick/area codes.
-  const [geoMaps, rep, pharmacyHistory] = await Promise.all([
+  const [geoMaps, rep, pharmacyHistory, retail] = await Promise.all([
     loadDirectOrderGeoNames(),
     resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
     loadPharmacyOrderHistory(pharmacy, request.id),
+    loadPharmacyRetailHistory(pharmacy),
   ]);
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
@@ -1568,10 +1666,13 @@ export async function getDirectOrderApprovalDetail(
     distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
     distributors: toDistributorRows(pharmacy?.distributorCodes, geoMaps),
     pharmacyHistory,
+    retailHistory: retail.rows,
+    retailUnmatchable: retail.unmatchable,
     steps: steps.map((step) => ({ ...step, approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
     missingPharmacyPrice: isFallbackPricedRequest(request),
+    canSetSalesMonth: canSetDirectOrderSalesMonth(access),
   };
 }
 
@@ -1888,6 +1989,98 @@ export async function resolvePharmacyGeoVariance(
     newValues: { action: input.action },
     summary: `Pharmacy geo variance ${input.action} by ${access.hrId ?? "unknown"}.`,
   });
+}
+
+// ── Sales month (Finance-owned) ──────────────────────────────────────────────
+
+/**
+ * The one person the owner named to book a direct order into a month (2026-08-03):
+ * Ahmed El Maraghy, Finance Manager. Deliberately an HR_ID and not the "Finance Manager" ROLE —
+ * this moves money between months, and a second Finance Manager joining later must not inherit
+ * that silently. If the duty moves, this constant is the single line to change.
+ */
+export const DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = "B-185";
+
+/** Ahmed, or a Super Admin. The CEO and SFE Manager can SEE the month but never set it. */
+export function canSetDirectOrderSalesMonth(access: AccessContext): boolean {
+  if (access.scope === "system" || access.role === "Super Admin") return true;
+  return canonicalHrIdKey(access.hrId) === canonicalHrIdKey(DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID);
+}
+
+/**
+ * Book a direct order into a sales month — or un-book it by passing null.
+ *
+ * The month decides which month's Source-of-Sales the order lands in, so a CHANGE has to rebuild
+ * BOTH periods: the old one to take the value out, the new one to put it in. Rebuilding only the
+ * new month would leave the sales counted twice; only the old, and they would vanish. The rebuild
+ * is idempotent (rebuild-from-truth) and each call is its own transaction, so a partial failure
+ * leaves a period consistent rather than half-written.
+ *
+ * Only an APPROVED order injects; a month set earlier simply waits for the approval to land.
+ */
+export async function setDirectOrderSalesMonth(
+  access: AccessContext,
+  input: { requestId: string; salesMonth: string | null },
+): Promise<DirectOrderRequest> {
+  await assertPermission(access, "direct_orders", "read");
+  if (!canSetDirectOrderSalesMonth(access)) {
+    throw new Error("Forbidden: only Finance (Ahmed El Maraghy) or a System Admin can set the sales month.");
+  }
+
+  const nextMonth = input.salesMonth === null ? null : String(input.salesMonth).trim();
+  if (nextMonth !== null && !/^\d{4}-\d{2}$/.test(nextMonth)) {
+    badRequest("Pick a month in YYYY-MM form, e.g. 2026-07.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: loadError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!current) badRequest("Direct order request not found.");
+  const before = mapRequestRow(current as Record<string, unknown>);
+  const previousMonth = before.salesMonth;
+  if (previousMonth === nextMonth) return before;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_requests")
+    .update({ sales_month: nextMonth, updated_at: new Date().toISOString() })
+    .eq("id", input.requestId)
+    .select("*")
+    .single();
+  if (updateError) throw updateError;
+  const after = mapRequestRow(updated as Record<string, unknown>);
+
+  // Rebuild every period this move touched. Sequential, because the RPC takes a per-period
+  // advisory lock; de-duplicated so setting a month for the first time rebuilds once.
+  const periods = [...new Set([previousMonth, nextMonth].filter((m): m is string => Boolean(m)))];
+  for (const period of periods) {
+    const { error: rpcError } = await supabase.rpc("phx_rebuild_direct_order_sos_batch", {
+      p_period: period,
+      p_actor: access.hrId ?? "finance",
+    });
+    if (rpcError) throw rpcError;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: after.id,
+    oldValues: { salesMonth: previousMonth },
+    newValues: { salesMonth: nextMonth, rebuiltPeriods: periods },
+    summary: `Direct order sales month set to ${nextMonth ?? "none"} by ${access.hrId ?? "unknown"}.`,
+  });
+  await insertEvent({
+    requestId: after.id,
+    actorHrId: access.hrId,
+    eventType: "sales_month_set",
+    message: `Sales month ${previousMonth ? `changed from ${previousMonth} ` : "set "}to ${nextMonth ?? "none"}.`,
+    metadata: { previousMonth, nextMonth, rebuiltPeriods: periods },
+  });
+
+  return after;
 }
 
 /**
