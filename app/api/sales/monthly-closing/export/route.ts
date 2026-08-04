@@ -17,6 +17,8 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { netStoreSplitByAreaProduct, splitStoreSalesAcrossCityAreas } from "@/lib/sales/store-sales-city-split";
+import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -176,7 +178,18 @@ export async function POST(request: Request) {
 
       // Under a row-level filter the aggregate matrix cannot express the slice — rebuild its
       // cells from the same rows, so sheet 1 and the audit pair describe one population.
-      const workbookMatrix = rowLevelActive ? rebuildMatrixFromRows(matrix, details.rows) : matrix;
+      const rebuiltMatrix = rowLevelActive ? rebuildMatrixFromRows(matrix, details.rows) : matrix;
+
+      // The store split. A wholesaler supplies its whole city rather than only the area it stands
+      // in, so its sell-in on Pedia / Anti Infective / CNS is shared evenly across that city's
+      // areas and each area's share reaches whoever holds its line seat. SALES move; TARGETS are
+      // never touched, so achievement re-derives as the new sales over the same target. The grand
+      // total cannot change — a store's sale is redistributed inside one city and one product —
+      // which is what keeps the Total sheet's tie to the headline intact.
+      const workbookMatrix = applyStoreSplitToMatrix(
+        rebuiltMatrix,
+        netStoreSplitByAreaProduct(splitStoreSalesAcrossCityAreas(details.rows).movements),
+      );
 
       // The filter stamp, in human names (standing rule: names, never raw codes). Options lists
       // come from the caller's own scope, so every filterable code resolves; a code that matched
