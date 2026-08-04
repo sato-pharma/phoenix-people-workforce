@@ -98,6 +98,9 @@ export function DistributorCustomerPicker({
   }, [query, areaCode, row.distributorCode, searchable]);
 
   const picked = Boolean(row.customerCode && row.customerName);
+  // Same separator set the server refuses — see assertSingleCustomerCode. Derived, not stored,
+  // so it cannot drift out of sync with what was typed.
+  const multiCodeAttempt = manual && /[\\/,;|\s]/.test(row.customerCode.trim());
 
   return (
     <div className="mb-2 space-y-1.5 border border-slate-200 p-2">
@@ -227,11 +230,21 @@ export function DistributorCustomerPicker({
             className={inputClassName}
             value={row.customerCode}
             onChange={(event) => onChange({ customerCode: event.target.value, customerName: "" })}
-            placeholder="Customer code (from the distributor's invoice)"
+            placeholder="ONE customer code — no spaces or slashes"
           />
+          {/* Mirrors assertSingleCustomerCode on the server. Caught here so the submitter sees it
+              while typing rather than as a rejection after filling the whole form; the server
+              check is the one that actually enforces it. */}
+          {multiCodeAttempt ? (
+            <p className="text-[11px] font-bold text-rose-600">
+              That looks like more than one code. Enter ONE code here and add a second distributor
+              row for the other — two codes in one box match nothing at all.
+            </p>
+          ) : null}
           <p className="text-[11px] font-semibold text-amber-700">
-            This code is not being matched against the distributor&apos;s list. The order still submits,
-            but the pharmacy is held for SFE review and a System Admin acknowledgment.
+            This code is not being matched against the distributor&apos;s list. The order still submits
+            and SFE still reviews it, but it cannot receive FINAL approval until a System Admin
+            acknowledges the pharmacy.
           </p>
           <button
             type="button"

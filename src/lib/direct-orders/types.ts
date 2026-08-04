@@ -358,6 +358,17 @@ export type DirectOrderApprovalDetail = {
   geo: DirectOrderPharmacyGeo;
   /** Resolved live from the seat model on every read. Non-null wrapper; see DirectOrderAreaRep. */
   medicalRep: DirectOrderAreaRep;
+  /**
+   * The product's CURRENT prices, distinct from the snapshots on the request.
+   *
+   * A snapshot is null whenever that basis did not price THIS deal — a discount order stores no
+   * pharmacy price. Reading that as "no pharmacy price exists" is wrong, and was actively
+   * misleading: a live discount order displayed "Pharmacy price — not set" for a product whose
+   * pharmacy price was 281.688. These fields let the window distinguish "never entered" from
+   * "entered, but not the basis for this deal".
+   */
+  productPharmacyPrice: number | null;
+  productPublicPrice: number | null;
   /** "Ibn Sina: 1234567; Overseas: 7654321" — the same projection the report and email use. */
   distributorCodesText: string;
   /** The same pairs as display rows, with codes kept and mapped geography resolved to names. */

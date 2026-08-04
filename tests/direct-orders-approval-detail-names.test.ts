@@ -79,6 +79,8 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       createdByHrId: "HR-100",
       active: true,
     },
+    productPharmacyPrice: null,
+    productPublicPrice: null,
     geo: {
       brick: { code: "BR-01", name: "Heliopolis" },
       area: { code: "CA-07", name: "Cairo East" },
@@ -576,6 +578,85 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(backup, /create schema if not exists direct_orders_backup_/, "the snapshot must live in a dated schema");
     assert.doesNotMatch(backup, /create table if not exists public\./, "never snapshot into public");
     assert.match(backup, /revoke all on schema[\s\S]*from public/, "revoke from PUBLIC, not just anon/authenticated");
+  }
+
+  // ── One code per field; an unverified pharmacy cannot be finalized ─────────
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+
+    // A live pharmacy was registered as "829575 \ 1533576" — two codes in a box built for one.
+    // That whole string is matched against the catalogue, so it equals NEITHER code and the
+    // pharmacy silently matches nothing.
+    // Plain substring, not a regex literal: the pattern itself contains a slash, and escaping it
+    // inside a regex here is how this assertion first failed to parse at all.
+    assert.ok(
+      serviceSource.includes("const CUSTOMER_CODE_SEPARATORS ="),
+      "there must be an explicit separator set for customer codes",
+    );
+    assert.match(serviceSource, /function assertSingleCustomerCode\(/, "there must be a single-code guard");
+    assert.match(
+      serviceSource,
+      /assertSingleCustomerCode\(customerCode\);/,
+      "pharmacy creation must run the single-code guard on every pair",
+    );
+    // The same distributor twice is refused in words, not as an opaque unique-violation.
+    assert.match(serviceSource, /appears twice\. A pharmacy holds ONE customer code per distributor/);
+
+    // THE one deliberate block in the module: an unverified pharmacy cannot reach FINAL approval.
+    const decideIdx = serviceSource.indexOf("export async function decideDirectOrder(");
+    const decideBody = serviceSource.slice(decideIdx, serviceSource.indexOf("// ── Reversal", decideIdx));
+    assert.match(
+      decideBody,
+      /input\.decision === "approve" && evaluation\.isFinal/,
+      "the pharmacy gate must apply to the FINAL approval only",
+    );
+    assert.match(decideBody, /verificationStatus === "pending_review"/, "an unverified pharmacy must block finalization");
+    assert.match(decideBody, /A System Admin must/, "the refusal must say what is needed to clear it");
+    // Earlier rungs must NOT be blocked — SFE and the sales line still review normally.
+    const gateIdx = decideBody.indexOf('verificationStatus === "pending_review"');
+    const beforeGate = decideBody.slice(0, gateIdx);
+    assert.doesNotMatch(
+      beforeGate,
+      /pending_review[\s\S]*badRequest/,
+      "only the final rung may refuse — earlier approvals must still pass",
+    );
+
+    // A price that did not price THIS deal is not the same as a price that does not exist.
+    const fieldsSource = readFileSync(new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url), "utf8");
+    assert.match(fieldsSource, /const unusedPrice = \(snapshot: number \| null, current: number \| null/);
+    assert.match(fieldsSource, /const value = snapshot \?\? current;/, "fall back to the product's CURRENT price");
+
+    // Pinned end to end: a DISCOUNT deal whose product HAS a pharmacy price must not read "not set".
+    const discountFields = buildDirectOrderDetailFields(
+      detail({
+        request: request({ dealType: "discount", discountPct: 20, publicPriceSnapshot: 330, pharmacyPriceSnapshot: null }),
+        productPharmacyPrice: 281.688,
+        productPublicPrice: 330,
+      }),
+    );
+    const pharmacyPriceValue = discountFields.find((field) => field.label === "Pharmacy price")?.value ?? "";
+    assert.doesNotMatch(
+      pharmacyPriceValue,
+      /not set/,
+      "a saved pharmacy price must never read 'not set' just because this deal did not use it",
+    );
+    // 281.69, not 281.688: money() renders 2dp. The STORED value stays exact (281.688) and is
+    // what the sales-value calculation uses — only the display rounds.
+    assert.match(pharmacyPriceValue, /281\.69/, "the saved price must be visible on the approval window");
+    assert.match(pharmacyPriceValue, /not used — discount deal/, "…and still say it was not the basis");
+
+    // …but a product that genuinely has none still says so.
+    const trulyUnset = buildDirectOrderDetailFields(
+      detail({
+        request: request({ dealType: "discount", discountPct: 20, publicPriceSnapshot: 330, pharmacyPriceSnapshot: null }),
+        productPharmacyPrice: null,
+      }),
+    );
+    assert.match(
+      trulyUnset.find((field) => field.label === "Pharmacy price")?.value ?? "",
+      /not set/,
+      "a product with no pharmacy price at all must still read 'not set'",
+    );
   }
 
   // ── Picking the pharmacy from the distributor's own customer list ──────────
