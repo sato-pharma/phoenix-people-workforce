@@ -544,6 +544,29 @@ export type MarketingApproverInboxWorkspace = {
   rows: MarketingApproverInboxRow[];
   /** Requests where the actor is a CC reviewer and may post a non-blocking comment. */
   advisoryRows: MarketingApproverInboxRow[];
+  /**
+   * Requests COMING to the actor — they hold a later step that has not opened yet.
+   *
+   * Owner instruction, 2026-08-04. Before this, the inbox queried `status = 'current'` only, so an
+   * approver saw nothing at all until the request reached their own rung. The CEO sits at step 4
+   * of 4: a request could be submitted, approved by the NSM and sit for days at SFE while their
+   * inbox read empty — on the hook for something they could not see. These rows are read-only
+   * (no decision is theirs to make yet) and carry where the request is stopped and for how long.
+   */
+  upcomingRows: MarketingApproverUpcomingRow[];
+};
+
+/** A request heading toward the actor, with its live position in the chain. */
+export type MarketingApproverUpcomingRow = MarketingApproverInboxRow & {
+  /** Whole days since submission — the number that makes a stall visible. */
+  ageDays: number;
+  /** Who is holding it right now (null if the chain has no open step). */
+  awaitingApproverName: string | null;
+  /** The step it is stopped at right now — NOT the actor's own step. */
+  awaitingStepName: string | null;
+  /** The actor's own rung, so "yours is step 4 of 4" is answerable. */
+  myStepSequence: number;
+  totalGatingSteps: number;
 };
 
 export type PreparedMarketingRequestDraft = {
@@ -5092,7 +5115,7 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   // `assigned_hr_id` is stored in the employee master's real casing, while the session id is
   // lower-cased — match every HR_ID dialect so the inbox is not silently empty for an approver.
   const actorHrKeys = hrIdLookupKeys(actorHrId);
-  const [gatingResult, ccResult] = await Promise.all([
+  const [gatingResult, ccResult, upcomingResult] = await Promise.all([
     supabase
       .from("marketing_request_approval_steps")
       .select("*")
@@ -5104,12 +5127,25 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
       .select("*")
       .eq("is_cc", true)
       .in("assigned_hr_id", actorHrKeys),
+    // Steps that are MINE but have not opened yet — the request is heading toward me. Without
+    // this the inbox is blank for every approver above rung 1 until the moment they are needed,
+    // which is exactly when it is too late to have been watching.
+    supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .eq("status", "pending")
+      .eq("is_cc", false)
+      .in("assigned_hr_id", actorHrKeys),
   ]);
   if (gatingResult.error) throw gatingResult.error;
   if (ccResult.error) throw ccResult.error;
+  if (upcomingResult.error) throw upcomingResult.error;
   const gatingSteps = ((gatingResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
   const ccSteps = ((ccResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
-  if (gatingSteps.length === 0 && ccSteps.length === 0) return { advisoryRows: [], rows: [] };
+  const upcomingSteps = ((upcomingResult.data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
+  if (gatingSteps.length === 0 && ccSteps.length === 0 && upcomingSteps.length === 0) {
+    return { advisoryRows: [], rows: [], upcomingRows: [] };
+  }
 
   // A CC reviewer may comment only while the gating step it is attached to is the current one.
   const ccRequestIds = Array.from(new Set(ccSteps.map((step) => step.requestId)));
@@ -5128,8 +5164,26 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   }
   const activeCcSteps = ccSteps.filter((step) => currentStepCodeByRequest.get(step.requestId) === step.stepCode);
 
-  const requestIds = Array.from(new Set([...gatingSteps, ...activeCcSteps].map((step) => step.requestId)));
-  if (requestIds.length === 0) return { advisoryRows: [], rows: [] };
+  const requestIds = Array.from(
+    new Set([...gatingSteps, ...activeCcSteps, ...upcomingSteps].map((step) => step.requestId)),
+  );
+  if (requestIds.length === 0) return { advisoryRows: [], rows: [], upcomingRows: [] };
+
+  // Every gating step of the upcoming requests, so each row can name WHERE it is stopped and how
+  // far along it is. Loaded once for the whole set rather than per request.
+  const allStepsByRequest = new Map<string, MarketingRequestApprovalStep[]>();
+  for (const batch of chunk(requestIds)) {
+    const stepsResult = await supabase
+      .from("marketing_request_approval_steps")
+      .select("*")
+      .in("request_id", batch)
+      .eq("is_cc", false);
+    if (stepsResult.error) throw stepsResult.error;
+    for (const row of (stepsResult.data ?? []) as MarketingRequestApprovalStepDbRow[]) {
+      const step = mapApprovalStep(row);
+      allStepsByRequest.set(step.requestId, [...(allStepsByRequest.get(step.requestId) ?? []), step]);
+    }
+  }
   const [requestsResult, employeeRows] = await Promise.all([
     supabase.from("marketing_requests").select("*").in("id", requestIds).eq("status", "pending_approval"),
     loadEmployeeDirectoryRows(),
@@ -5187,11 +5241,36 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
     const request = requestById.get(step.requestId);
     if (request) advisoryRows.push(buildRow(step, request));
   }
+  const upcomingRows: MarketingApproverUpcomingRow[] = [];
+  for (const step of upcomingSteps) {
+    const request = requestById.get(step.requestId);
+    if (!request) continue;
+    const chain = (allStepsByRequest.get(step.requestId) ?? []).sort((left, right) => left.sequence - right.sequence);
+    const holder = chain.find((chainStep) => chainStep.status === "current") ?? null;
+    // Age is measured from SUBMISSION, not from when it reached the current holder: the question
+    // an approver waiting downstream is asking is "how long has this been in the system?".
+    const submittedAtMs = request.submittedAt ? Date.parse(request.submittedAt) : Number.NaN;
+    const ageDays = Number.isFinite(submittedAtMs)
+      ? Math.max(0, Math.floor((Date.now() - submittedAtMs) / 86_400_000))
+      : 0;
+
+    upcomingRows.push({
+      ...buildRow(step, request),
+      ageDays,
+      awaitingApproverName: holder ? employeeNameByHrId(employeeRows, holder.assignedHrId) : null,
+      awaitingStepName: holder?.stepName ?? null,
+      myStepSequence: step.sequence,
+      totalGatingSteps: chain.length,
+    });
+  }
+
   const bySubmittedAt = (left: MarketingApproverInboxRow, right: MarketingApproverInboxRow) =>
     (left.submittedAt ?? "").localeCompare(right.submittedAt ?? "");
   rows.sort(bySubmittedAt);
   advisoryRows.sort(bySubmittedAt);
-  return { advisoryRows, rows };
+  // Oldest first — a request that has been sitting longest is the one worth chasing.
+  upcomingRows.sort((left, right) => right.ageDays - left.ageDays);
+  return { advisoryRows, rows, upcomingRows };
 }
 
 export type MarketingOverviewMetrics = {
@@ -5224,7 +5303,7 @@ export async function getMarketingOverview(access: AccessContext): Promise<Marke
 
   const [inbox, inApprovalResult, returnedResult, validationPendingResult, approvedResult] = await Promise.all([
     getApproverPendingRequests(access).catch(
-      () => ({ advisoryRows: [], rows: [] }) as MarketingApproverInboxWorkspace,
+      () => ({ advisoryRows: [], rows: [], upcomingRows: [] }) as MarketingApproverInboxWorkspace,
     ),
     supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "pending_approval"),
     supabase.from("marketing_requests").select("id", { count: "exact", head: true }).eq("status", "returned"),
