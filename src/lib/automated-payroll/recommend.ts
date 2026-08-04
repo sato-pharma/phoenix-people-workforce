@@ -1404,9 +1404,18 @@ export function weekdayName(dateIso: string): string {
  * Deductions module HR confirms in (owner-reported 2026-08-03 — see
  * deductions-source.ts).
  *
- * CRM is the module's one MANDATORY category ("whoever has N days must be
- * deducted"), so a candidate counts unless HR explicitly cleared it with "Do Not
- * Take Action" — it does not wait for an approval the way fingerprint does.
+ * 🔴 CRM IS THE MODULE'S ONE MANDATORY CATEGORY ("whoever has N days must be
+ * deducted") — AND THAT RULE DOES NOT APPLY HERE. In the module a pending CRM
+ * row publishes unless HR clears it; on this step it pays NOTHING until it is
+ * explicitly "Approved for Payroll", exactly like every other category. That is
+ * the owner's 2026-08-03 rule for money, and buildDeductionBuckets is where it
+ * is enforced — this function just spends what that gate released.
+ *
+ * Do not "restore consistency" by reinstating mandatory-unless-cleared here. It
+ * would immediately release every pending CRM row, including the district-manager
+ * no-record days that #1654 made never-auto-publish — measured on production
+ * 2026-08-04, one such July row worth 8,709.68 EGP is sitting at Pending right
+ * now. Pinned by tests/payroll-deduction-gate-composes-with-publish-rule.test.ts.
  *
  * The isSettledInPart1 skip is unchanged and load-bearing: leavers and one-part
  * employees settle in Part 1, and deducting them here as well would charge the
