@@ -3234,7 +3234,9 @@ function monthlyClosingRegionRank(regionCode: string) {
   return index === -1 ? MONTHLY_CLOSING_REGION_ORDER.length : index;
 }
 
-function emptyClosingCell(): MonthlyClosingCell {
+// Exported so the store-split matrix adjustment rolls up with the EXACT same arithmetic the
+// matrix was built with — a second, parallel implementation would be free to drift.
+export function emptyClosingCell(): MonthlyClosingCell {
   return { achievement: null, salesUnits: 0, salesValue: 0, targetUnits: null, targetValue: null };
 }
 
@@ -3252,7 +3254,7 @@ function addTarget(left: number | null, right: number | null): number | null {
 }
 
 /** Roll-up adds the sales figures AND the targets; achievement is re-derived from the sums. */
-function addClosingSales(target: MonthlyClosingCell, source: MonthlyClosingCell) {
+export function addClosingSales(target: MonthlyClosingCell, source: MonthlyClosingCell) {
   target.salesUnits += source.salesUnits;
   target.salesValue += source.salesValue;
   target.targetUnits = addTarget(target.targetUnits, source.targetUnits);
@@ -3269,7 +3271,7 @@ function closingAchievement(cell: MonthlyClosingCell): number | null {
   return cell.salesValue / cell.targetValue;
 }
 
-function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
+export function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
   const rounded: MonthlyClosingCell = {
     achievement: null,
     salesUnits: Number(cell.salesUnits.toFixed(6)),
@@ -3281,7 +3283,7 @@ function roundedClosingCell(cell: MonthlyClosingCell): MonthlyClosingCell {
   return rounded;
 }
 
-function sumClosingRowTotal(cells: MonthlyClosingCell[]): MonthlyClosingCell {
+export function sumClosingRowTotal(cells: MonthlyClosingCell[]): MonthlyClosingCell {
   const total = emptyClosingCell();
   cells.forEach((cell) => addClosingSales(total, cell));
   return roundedClosingCell(total);

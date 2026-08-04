@@ -5,6 +5,7 @@ import type { MonthlyClosingCell, MonthlyClosingMatrix } from "@/lib/sales/month
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
+import { summariseStoreSplitByArea, type StoreSplitAreaSummary } from "@/lib/sales/store-sales-city-split";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -1331,6 +1332,67 @@ function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosing
   });
 }
 
+/**
+ * Store Split — the wholesaler redistribution, shown rather than folded in.
+ *
+ * A STORE (wholesaler / warehouse / trading company, identified by name — see
+ * src/lib/sales/customer-channel.ts) supplies a whole city, not just the area it stands in. So its
+ * sell-in is divided evenly across the AREAS of that city and each area's share reaches whoever
+ * holds that area's line seat. This sheet is the audit of that move: for every area and line it
+ * shows what the area books today, what its own stores sent out to the city, what it received
+ * back, and where it lands.
+ *
+ * It is a SEPARATE sheet on purpose. The owner chose to see the split beside the normal numbers
+ * rather than have it disappear into the headline, so the Closing Matrix opposite is untouched and
+ * a reader can always see exactly why a rep's number moved. `Net` sums to zero across the areas of
+ * any city — the split moves money between areas, it never creates or destroys any.
+ */
+function writeStoreSplitSheet(
+  workbook: ExcelJS.Workbook,
+  line: string | null,
+  period: string | null,
+  summary: StoreSplitAreaSummary[],
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Store Split"), { views: [{ state: "frozen", ySplit: 5 }] });
+  bandHeader(sheet, line, period, "Store Split — wholesaler sales shared across each city's areas", 11);
+
+  const totalOut = summary.reduce((sum, entry) => sum + entry.movedOutValue, 0);
+  const cities = new Set(summary.map((entry) => entry.city)).size;
+
+  writeTable(sheet, 4, {
+    columns: [
+      { label: "Area", width: 24 },
+      { label: "Code", width: 10 },
+      { label: "City", width: 20 },
+      { label: "Line", width: 16 },
+      { label: "Sales now", numFmt: VALUE_FMT, right: true },
+      { label: "Store sales sent out", numFmt: VALUE_FMT, right: true },
+      { label: "City share received", numFmt: VALUE_FMT, right: true },
+      { label: "Net store split", numFmt: VALUE_FMT, right: true },
+      { label: "Sales after split", numFmt: VALUE_FMT, right: true },
+      { label: "Units net", numFmt: UNITS_FMT, right: true },
+    ],
+    note: summary.length === 0
+      ? "No store customers in this period — nothing to redistribute."
+      : `${totalOut.toLocaleString("en-US", { maximumFractionDigits: 0 })} EGP of store sales redistributed across ${cities} cities. `
+        + "Net sums to zero within every city: the split moves money between areas, never creates it. "
+        + "Head Office line and pharmacy customers are not touched.",
+    rows: summary.map((entry) => [
+      entry.areaName,
+      entry.areaCode,
+      entry.city,
+      entry.line,
+      entry.beforeValue,
+      entry.movedOutValue,
+      entry.receivedValue,
+      entry.netValue,
+      entry.afterValue,
+      entry.netQty,
+    ]),
+    title: "Store sales redistributed by city",
+  });
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -1370,6 +1432,11 @@ export async function buildMonthlyClosingWorkbook(
   // ever appearing in another month — August onwards the module supplies the area itself.
   if (matrix.period === JULY_2026_DIRECT_PERIOD) {
     writeJulyDirectSheet(workbook, matrix);
+  }
+  // Right after the matrix and its targets: why a rep's number differs from the raw area total.
+  // Built from the SAME detail rows the Data sheet shows, so the two can never disagree.
+  if (details) {
+    writeStoreSplitSheet(workbook, matrix.line, matrix.period, summariseStoreSplitByArea(details.rows));
   }
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);

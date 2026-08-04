@@ -593,6 +593,8 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
+import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
+import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1246,6 +1248,16 @@ await runTest("sales vs target (no target reads as null not 0%, July 2026 has no
 await runTest(
   "SoS customer channel (six Arabic keywords ⇒ store; ة/ه fold; channel totals cover the whole side)",
   runSalesCustomerChannelTests,
+);
+
+await runTest(
+  "store sales city split (a store's sales divide evenly across its city's AREAS; total preserved exactly; Head Office and pharmacies untouched)",
+  runStoreSalesCitySplitTests,
+);
+
+await runTest(
+  "store split applied to the closing matrix (sales move between areas, TARGETS are never touched, achievement re-derives, grand total holds)",
+  runStoreSplitMatrixTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
