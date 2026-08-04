@@ -210,6 +210,7 @@ function buildEmployeePortalSections({
   showWeeklyTab = false,
   showMonthlyClosingTab = false,
   showSalesAnalyticsTab = false,
+  showSalesVsTargetTab = false,
   showTerritoryDrilldownTab = false,
   showTerritoryManagementTab = false,
   showCrmMasterTab = false,
@@ -283,6 +284,9 @@ function buildEmployeePortalSections({
     {
       title: "Sales",
       items: [
+        // First in the section on purpose: the owner expects this to be the field force's
+        // most-opened dashboard, and it is the only one a Medical Rep can open at all.
+        ...(showSalesVsTargetTab ? [{ href: "/employee-portals/sales-vs-target", label: "Sales vs Target", icon: Target }] : []),
         ...(showSourceOfSalesTab ? [{ href: "/employee-portals/source-of-sales", label: "Source of Sales", icon: ChartColumnBig }] : []),
         ...(showWeeklyTab ? [{ href: "/employee-portals/weekly-sales", label: "Weekly Sales", icon: CalendarRange }] : []),
         ...(showMonthlyClosingTab ? [{ href: "/employee-portals/monthly-closing", label: "Monthly Closing", icon: CalendarRange }] : []),

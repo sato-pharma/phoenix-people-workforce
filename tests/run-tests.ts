@@ -585,6 +585,8 @@ import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts"
 
 
 
+import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1226,6 +1228,8 @@ await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4
 await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
+
+await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
