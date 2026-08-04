@@ -50,8 +50,15 @@ export type IReports360DayRoute = {
   legs: IReports360DayRouteLeg[];
 };
 
+export type IReports360RepDayCheckin = IReports360Checkin & {
+  /** Borrowed-attribution label: the submitting rep's display name when this GPS stop was logged by
+   * the rep a manager rode along with (managers never check in themselves); `null` for the person's
+   * own check-in. */
+  viaName: string | null;
+};
+
 export type IReports360RepDayResult = {
-  checkins: IReports360Checkin[];
+  checkins: IReports360RepDayCheckin[];
   rep: { crmId: string | null; fullName: string | null; hrId: string } | null;
   route: IReports360DayRoute | null;
   visits: IReports360RepDayVisit[];
@@ -230,9 +237,21 @@ async function buildRepDayResult(
         role,
       };
     });
-  const checkins = allCheckins
+  // Managers (DM/TM/NSM) never check in themselves — the Medical Rep logs the GPS stop and tags the
+  // manager as the double/triple visitor. So this person's route for the day belongs to the
+  // SUBMITTERS of that day's visits: themselves when they were the primary agent, the rep when they
+  // were the tagged double. Without this a manager's drill-down shows visits but an empty route.
+  // `agentId` stays an owner so a plain rep's own check-ins still show even on a day whose only
+  // visit row was excluded.
+  const ownerIds = new Set<number>([agentId, ...dayVisits.map((visit) => visit.agentID)]);
+  const ownerNameById = new Map<number, string>();
+  for (const visit of dayVisits) {
+    const name = cleanAgentDisplayName(visit.agentName);
+    if (name && !ownerNameById.has(visit.agentID)) ownerNameById.set(visit.agentID, name);
+  }
+  const checkins: IReports360RepDayCheckin[] = allCheckins
     .filter((checkin) => !excludedAgentIds.has(checkin.agentID))
-    .filter((checkin) => checkin.agentID === agentId && (checkin.checkDate ?? "").slice(0, 10) === day)
+    .filter((checkin) => ownerIds.has(checkin.agentID) && (checkin.checkDate ?? "").slice(0, 10) === day)
     // Plain string comparison, not localeCompare: these are ISO timestamps, and locale collation
     // gives digits/hyphens variable weight, so the order would depend on the runtime's locale + ICU
     // data. The route legs below are aligned to THIS order (leg[i] = stop[i] -> stop[i+1]).
@@ -240,7 +259,13 @@ async function buildRepDayResult(
       const a = String(left.checkDate ?? "");
       const b = String(right.checkDate ?? "");
       return a < b ? -1 : a > b ? 1 : 0;
-    });
+    })
+    // Borrowed-attribution label: null for the person's OWN check-in, the submitting rep's display
+    // name when a manager rode along with that rep. This annotation never shifts check_date.
+    .map((checkin) => ({
+      ...checkin,
+      viaName: checkin.agentID === agentId ? null : (ownerNameById.get(checkin.agentID) ?? null),
+    }));
 
   // Cached Google driving route through the coordinate-bearing check-ins (in time order),
   // aligned to the same filter+sort the map uses so leg[i] is stop[i] -> stop[i+1].
@@ -289,8 +314,12 @@ async function fetchRepDayFromMirror(
   if (error) throw new Error(error.message);
   const allVisits = ((data ?? []) as unknown as RepDayVisitMirrorRow[]).map(visitFromMirrorRow);
 
+  // Check-ins belong to the visit SUBMITTERS, not the drilled person: a manager's GPS route is the
+  // rep's, stored under the rep's agent_crm_id (see buildRepDayResult). Pull every submitter's
+  // check-ins for the day; buildRepDayResult narrows to this person's owners and labels the borrow.
+  const checkinOwnerIds = Array.from(new Set<number>([agentId, ...allVisits.map((visit) => visit.agentID)]));
   const checkinRows = await queryCheckins<CrmCheckinRow>({
-    agentCrmIds: [agentId],
+    agentCrmIds: checkinOwnerIds,
     dateFrom: day,
     dateTo: day,
     orderBy: "check_date",

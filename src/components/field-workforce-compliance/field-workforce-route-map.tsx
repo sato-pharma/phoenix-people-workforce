@@ -18,6 +18,9 @@ export type RouteCheckin = {
   id: number;
   lat: number | null;
   lon: number | null;
+  /** Submitting rep's name when this stop was borrowed for a manager who rode along (managers never
+   * check in themselves); `null`/absent for the person's own check-in. Rendered as "via <rep>". */
+  viaName?: string | null;
 };
 
 export type RouteLeg = {
@@ -174,7 +177,7 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
               label: String(index + 1),
               map,
               position: { lat: point.lat, lng: point.lon },
-              title: `${index + 1}. ${point.contactName ?? point.address ?? "Check-in"} (${formatTime(point.checkDate)})`,
+              title: `${index + 1}. ${point.contactName ?? point.address ?? "Check-in"} (${formatTime(point.checkDate)})${point.viaName ? ` · via ${point.viaName}` : ""}`,
             }));
           });
         }
@@ -258,6 +261,7 @@ export function FieldWorkforceRouteMap({ checkins, route }: { checkins: RouteChe
                     <div className="min-w-0 flex-1">
                       <p className="font-bold text-slate-900">{point.contactName ?? point.address ?? "Check-in"}</p>
                       {point.address && point.contactName ? <p className="truncate text-xs text-slate-500">{point.address}</p> : null}
+                      {point.viaName ? <p className="text-xs font-semibold text-orange-600">via {point.viaName}</p> : null}
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="font-semibold text-slate-900">{formatTime(point.checkDate)}</p>
