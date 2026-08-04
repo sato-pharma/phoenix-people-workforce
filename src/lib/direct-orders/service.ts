@@ -21,8 +21,7 @@ import {
   computeDiscountSalesValue,
   evaluateStepAction,
   SFE_VALIDATION_ROLE,
-  SYSTEM_ADMIN_ACK_ROLE,
-  isSystemAdminAckStep,
+  isPharmacyConfirmingStep,
   maxBonusUnits,
   resolveActiveStep,
   validateBonus,
@@ -245,23 +244,6 @@ function directoryLookup(directory: EmployeeDirectoryData) {
 }
 
 /**
- * Is this pharmacy still waiting for a System Admin to acknowledge it?
- *
- * Read straight from the row rather than from a caller-supplied flag: the chain shape depends on
- * it, and a stale flag would build a chain with a rung that should not be there (or, worse,
- * without the one that should).
- */
-async function isPharmacyAwaitingReview(pharmacyId: string): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("direct_order_pharmacies")
-    .select("verification_status")
-    .eq("id", pharmacyId)
-    .maybeSingle();
-  return String((data as { verification_status?: string } | null)?.verification_status ?? "verified") === "pending_review";
-}
-
-/**
  * Build the ordered approval chain. Sales roles climb their ACTUAL manager chain
  * (managerHrId) up to — but not including — the CEO; Product/Group-Product Managers
  * go straight to the CEO. The final rung is always the CEO resolved by role.
@@ -269,12 +251,6 @@ async function isPharmacyAwaitingReview(pharmacyId: string): Promise<boolean> {
 async function buildApprovalChain(input: {
   requesterHrId: string;
   requesterRole: PhoenixRole;
-  /**
-   * True when Phoenix does not recognise the request's pharmacy, which inserts the System Admin
-   * acknowledgment rung directly after SFE. Defaults to false so a caller that forgets it gets
-   * the ordinary chain rather than a phantom rung.
-   */
-  pharmacyUnverified?: boolean;
 }): Promise<Array<Omit<DirectOrderStepState, "status">>> {
   const directory = await getEmployeeDirectory();
   const lookup = directoryLookup(directory);
@@ -290,18 +266,10 @@ async function buildApprovalChain(input: {
   // post-holder without touching any in-flight request.
   rungs.push({ kind: "role", role: SFE_VALIDATION_ROLE, approverHrId: null, label: "SFE Manager" });
 
-  // A pharmacy Phoenix does not recognise adds ONE rung, right behind SFE (owner rule,
-  // 2026-08-04). Behind SFE and not in front of it because SFE is the one who can say whether
-  // this pharmacy should exist at all; the System Admin then confirms its codes. Asking the
-  // admin first would make them adjudicate a request the sales side may reject anyway.
-  if (input.pharmacyUnverified) {
-    rungs.push({
-      kind: "role",
-      role: SYSTEM_ADMIN_ACK_ROLE,
-      approverHrId: null,
-      label: "System Admin (new pharmacy)",
-    });
-  }
+  // An unrecognised pharmacy adds NO rung (owner rule, 2026-08-04: "remove the super admin from
+  // the approval workflow of the direct orders"). SFE was always the one who could say whether the
+  // pharmacy should exist at all, so confirming its codes rides on the rung above rather than
+  // waiting for a second person — see `isPharmacyConfirmingStep` in approval-flow.ts.
 
   const straightToCeo =
     input.requesterRole === "Product Manager" || input.requesterRole === "Group Product Manager";
@@ -747,6 +715,24 @@ export async function acknowledgeDirectOrderPharmacy(
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: only a System Admin can acknowledge a pharmacy.");
   }
+  await markDirectOrderPharmacyVerified(access, input);
+}
+
+/**
+ * The pharmacy write itself, with NO role check of its own.
+ *
+ * Two callers, authorized two different ways, which is exactly why the check cannot live in here:
+ * {@link acknowledgeDirectOrderPharmacy} (the standalone registry action) gates on holding Super
+ * Admin, while the approval flow gates on *being the assigned approver of the confirming rung* —
+ * a District Manager can never reach it, but the SFE Manager whose rung this is must.
+ *
+ * Not exported: keeping it module-private is what stops a future caller from acquiring an
+ * unauthenticated pharmacy write by importing the convenient-looking function.
+ */
+async function markDirectOrderPharmacyVerified(
+  access: AccessContext,
+  input: { pharmacyId: string },
+): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { data: before } = await supabase
     .from("direct_order_pharmacies")
@@ -1309,7 +1295,6 @@ export async function submitDirectOrder(
   const chain = await buildApprovalChain({
     requesterHrId: actorHrId,
     requesterRole: access.role,
-    pharmacyUnverified: pharmacy.verificationStatus === "pending_review",
   });
 
   const { data: inserted, error: insertError } = await supabase
@@ -1453,19 +1438,18 @@ export async function decideDirectOrder(
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
 
-  // Backstop for chains built BEFORE the System Admin rung existed (owner rule, 2026-08-04).
+  // Backstop: nothing reaches `approved` against a pharmacy nobody confirmed.
   //
-  // New requests on an unrecognised pharmacy carry the rung, so the admin has already decided long
-  // before the CEO sees it and this never fires. Requests submitted earlier have no such rung, and
-  // for those the last approval is the moment money enters Source of Sales against a distributor
-  // code nobody confirmed — so it still refuses there. Rebuilding the chain (or acknowledging the
-  // pharmacy directly) clears it.
+  // On a current chain the SFE rung has already confirmed the pharmacy long before the CEO sees
+  // it, so this never fires. It still refuses for a chain that somehow carries no confirming rung
+  // at all, because the last approval is the moment money enters Source of Sales against a
+  // distributor code nobody checked. Confirming the pharmacy in the registry clears it.
   if (input.decision === "approve" && evaluation.isFinal) {
     const pharmacyForGate = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
     if (pharmacyForGate?.verificationStatus === "pending_review") {
       badRequest(
         `${pharmacyForGate.pharmacyName} (${pharmacyForGate.phoenixPharmacyCode}) is a new pharmacy that Phoenix ` +
-          "has not confirmed yet, so this order cannot be finalized. A System Admin has to check it first. " +
+          "has not confirmed yet, so this order cannot be finalized. The SFE Manager has to check it first. " +
           "Every approval already given on this request stands.",
       );
     }
@@ -1519,16 +1503,20 @@ export async function decideDirectOrder(
     message: comment ?? `${input.decision} at step ${activeStep.order}.`,
   });
 
-  // Approving the System Admin rung IS the acknowledgment — there is no second button to press.
+  // Approving the confirming rung IS the acknowledgment — there is no second button to press.
   //
-  // Keeping them separate is what made the old design fail: the admin could approve the request
-  // and still leave the pharmacy unverified, so the CEO hit the block anyway and nobody could tell
-  // which of the two actions was outstanding. One rung, one decision, one state change.
+  // Keeping them separate is what made the original design fail: the approver could approve the
+  // request and still leave the pharmacy unverified, so the CEO hit the block anyway and nobody
+  // could tell which of the two actions was outstanding. One rung, one decision, one state change.
+  //
+  // That rung is SFE on every current chain, and a legacy Super Admin rung on requests chained
+  // before it was retired — `isPharmacyConfirmingStep` covers both, so an in-flight old request
+  // still clears its pharmacy instead of stranding it.
   //
   // Only on approve: rejecting or returning must leave the pharmacy unconfirmed, because the
   // reason for the rejection may well BE that the pharmacy is wrong.
-  if (input.decision === "approve" && isSystemAdminAckStep(activeStep)) {
-    await acknowledgeDirectOrderPharmacy(access, { pharmacyId: request.pharmacyId });
+  if (input.decision === "approve" && isPharmacyConfirmingStep(activeStep)) {
+    await markDirectOrderPharmacyVerified(access, { pharmacyId: request.pharmacyId });
   }
 
   // An over-cap order that reaches final approval is recorded explicitly. This is what
@@ -1671,7 +1659,6 @@ export async function rebuildDirectOrderApprovalChain(
   const chain = await buildApprovalChain({
     requesterHrId: request.requesterHrId,
     requesterRole: request.requesterRole,
-    pharmacyUnverified: await isPharmacyAwaitingReview(request.pharmacyId),
   });
   const nextLabels = chain.map((step) => step.label);
 
@@ -1759,7 +1746,6 @@ export async function reverseDirectOrder(
   const chain = await buildApprovalChain({
     requesterHrId: actorHrId,
     requesterRole: access.role,
-    pharmacyUnverified: await isPharmacyAwaitingReview(original.pharmacyId),
   });
 
   const { data: inserted, error: insertError } = await supabase

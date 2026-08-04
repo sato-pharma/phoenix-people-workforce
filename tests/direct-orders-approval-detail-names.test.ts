@@ -611,7 +611,11 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "the pharmacy gate must apply to the FINAL approval only",
     );
     assert.match(decideBody, /verificationStatus === "pending_review"/, "an unverified pharmacy must block finalization");
-    assert.match(decideBody, /A System Admin has to check it first/, "the refusal must say what is needed to clear it");
+    assert.match(
+      decideBody,
+      /The SFE Manager has to check it first/,
+      "the refusal must name who clears it — SFE, since the Super Admin rung is retired",
+    );
     // Plain English, checked as a rule rather than a one-off: "catalogue" is the word the owner
     // said he could not understand ("i donot under4stand"), and it had leaked into three surfaces.
     for (const [label, source] of [
@@ -751,57 +755,59 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "the customer-map lookup must be skipped entirely when no codes were given",
     );
 
-    // ── The extra rung, and the fact that approving it IS the acknowledgment ────────────────
+    // ── No Super Admin rung, and approving the SFE rung IS the acknowledgment ───────────────
+    // (owner rule, 2026-08-04: "remove the super admin from the approval workflow".)
     const chainIdx = serviceSource.indexOf("async function buildApprovalChain(");
     const chainBody = serviceSource.slice(chainIdx, serviceSource.indexOf("// ── Row mappers", chainIdx));
-    assert.match(
-      chainBody,
-      /if \(input\.pharmacyUnverified\) \{[\s\S]{0,240}role: SYSTEM_ADMIN_ACK_ROLE/,
-      "the ack rung must be added only when the pharmacy is unrecognised",
-    );
-    // Order matters: SFE is pushed first, the admin second, the management line after both.
     assert.ok(
-      chainBody.indexOf("SFE_VALIDATION_ROLE") < chainBody.indexOf("SYSTEM_ADMIN_ACK_ROLE"),
-      "SFE must be pushed onto the chain before the System Admin rung",
+      !/rungs\.push\(\{[\s\S]{0,200}Super Admin/.test(chainBody),
+      "no chain may push a Super Admin rung — the rung is retired",
     );
     assert.ok(
-      chainBody.indexOf("SYSTEM_ADMIN_ACK_ROLE") < chainBody.indexOf("const straightToCeo"),
-      "the System Admin rung must come before the management line, not after it",
+      !chainBody.includes("pharmacyUnverified"),
+      "the chain shape must not depend on the pharmacy any more",
+    );
+    assert.ok(
+      chainBody.indexOf("SFE_VALIDATION_ROLE") < chainBody.indexOf("const straightToCeo"),
+      "SFE must still be pushed onto the chain before the management line",
     );
 
-    // Every caller that builds a chain must pass the flag — a missed one silently drops the rung
-    // and the request goes back to failing at the CEO with nobody having been asked.
-    const chainCallSites = serviceSource.match(/buildApprovalChain\(\{[\s\S]{0,320}?\}\)/g) ?? [];
-    assert.equal(chainCallSites.length, 3, "submit, rebuild and reverse each build a chain");
-    for (const [index, call] of chainCallSites.entries()) {
-      assert.match(call, /pharmacyUnverified:/, `buildApprovalChain call ${index + 1} must pass pharmacyUnverified`);
-    }
-
-    // Approving the rung IS the acknowledgment — one decision, one state change. Keeping them
-    // separate is what let an admin approve the request and still leave the pharmacy unverified,
-    // so the CEO hit the block anyway and nobody could tell which action was outstanding.
+    // Approving the confirming rung IS the acknowledgment — one decision, one state change.
+    // Keeping them separate is what let an approver clear the request and still leave the
+    // pharmacy unverified, so the CEO hit the block anyway and nobody could tell which action
+    // was outstanding.
     const decideStart = serviceSource.indexOf("export async function decideDirectOrder(");
     const decideSource = serviceSource.slice(decideStart, serviceSource.indexOf("// ── Reversal", decideStart));
     assert.match(
       decideSource,
-      /input\.decision === "approve" && isSystemAdminAckStep\(activeStep\)[\s\S]{0,200}acknowledgeDirectOrderPharmacy\(/,
-      "approving the System Admin rung must verify the pharmacy",
+      /input\.decision === "approve" && isPharmacyConfirmingStep\(activeStep\)[\s\S]{0,200}markDirectOrderPharmacyVerified\(/,
+      "approving the confirming rung must verify the pharmacy",
     );
     // Only on approve: a rejection may well BE because the pharmacy is wrong.
-    const ackCall = decideSource.slice(0, decideSource.indexOf("acknowledgeDirectOrderPharmacy("));
+    const ackCall = decideSource.slice(0, decideSource.indexOf("markDirectOrderPharmacyVerified("));
     assert.match(
-      ackCall.slice(-160),
+      ackCall.slice(-260),
       /input\.decision === "approve"/,
       "the acknowledgment must be guarded by the approve decision, not fire on any decision",
     );
 
-    // Acknowledgment is Super-Admin only: an approver holds direct_orders:approve but must not
-    // be able to self-clear the pharmacy they are approving against.
+    // The STANDALONE registry action stays Super-Admin only. The in-flow path is authorized by
+    // being the assigned approver of the confirming rung instead, which is why the write itself
+    // lives in a module-private helper rather than behind this exported guard.
     const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
     const ackBody = serviceSource.slice(ackIdx, ackIdx + 1600);
     assert.match(ackBody, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
     assert.match(ackBody, /Forbidden: only a System Admin can acknowledge a pharmacy\./);
-    assert.match(ackBody, /writeRequiredAuditLog\(/, "clearing a pharmacy must be audited with its prior state");
+    assert.ok(
+      !/export async function markDirectOrderPharmacyVerified\(/.test(serviceSource),
+      "the unguarded pharmacy write must stay module-private, never exported",
+    );
+    const writeIdx = serviceSource.indexOf("async function markDirectOrderPharmacyVerified(");
+    assert.match(
+      serviceSource.slice(writeIdx, writeIdx + 1600),
+      /writeRequiredAuditLog\(/,
+      "clearing a pharmacy must be audited with its prior state",
+    );
 
     // The flag is pointless if the approver cannot see it.
     const adminDetail = readFileSync(
@@ -1255,21 +1261,29 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "the registry is Super Admin + SFE Manager",
     );
 
-    // THE boundary. SFE may register and edit, but must NOT be able to clear a pharmacy that is
-    // already holding an order — that is the System Admin rung, and SFE sits on the rung directly
-    // before it. Letting SFE clear it would let the first approver dissolve the second approver's
-    // step on a request they are about to sign.
+    // THE boundary, restated (owner rule, 2026-08-04: "remove the super admin from the approval
+    // workflow of the direct orders").
+    //
+    // It used to read "SFE must never clear a pharmacy", because SFE sat on the rung directly
+    // before the System Admin rung and clearing it would have dissolved the next approver's step
+    // on a request SFE was about to sign. That rung is now retired, so there is no second step
+    // left to dissolve — SFE confirming the pharmacy IS the intended behaviour, and it happens by
+    // approving SFE's own rung, never as a free-standing action.
+    //
+    // What still has to hold: the STANDALONE registry action stays Super-Admin-only, so an SFE
+    // Manager cannot clear an arbitrary pharmacy they are not currently approving. Slice to the
+    // exported function's own body so a neighbouring helper's prose cannot satisfy or trip this.
     const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
-    const ackBody = serviceSource.slice(ackIdx, ackIdx + 1200);
+    const ackBody = serviceSource.slice(ackIdx, serviceSource.indexOf("\n}\n", ackIdx));
     assert.match(
       ackBody,
       /access\.scope === "system" \|\| access\.role === "Super Admin"/,
-      "clearing a pharmacy must stay Super Admin, never widen to the registry roles",
+      "the standalone acknowledgment must stay Super Admin, never widen to the registry roles",
     );
     assert.doesNotMatch(
       ackBody,
       /PHARMACY_REGISTRY_ROLES|canManagePharmacyRegistry|SFE Manager/,
-      "the acknowledgment must not be gated by the registry roles — SFE would clear its own next step",
+      "the standalone acknowledgment must not be gated by the registry roles",
     );
 
     // Every registry write is gated in the SERVICE, not in the route or the component. The route

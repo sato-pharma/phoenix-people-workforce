@@ -14,11 +14,11 @@ import type {
 // the request back to the requester for edit; approving the last (CEO) rung finalizes as
 // `approved`.
 //
-//   pharmacy Phoenix knows      SFE → management line → CEO
-//   pharmacy Phoenix does not   SFE → System Admin → management line → CEO
+//   every request              SFE → management line → CEO
 //
-// The second shape is the ONLY difference an unrecognised pharmacy makes. It never blocks
-// submission and never skips a rung — it adds one.
+// An unrecognised pharmacy no longer changes that shape (owner rule, 2026-08-04, superseding the
+// System Admin rung added earlier the same day). Confirming a hand-typed pharmacy's codes is now
+// part of the SFE validation rung rather than a rung of its own — see `isSfeValidationStep`.
 //
 // Bonus is capped (25% of qty; Ivyronc 30%) and NEVER enters the sales value —
 // value is always `approvedQty × pharmacyPrice`. Exceeding a cap does NOT block: the
@@ -38,20 +38,20 @@ const CEO_ROLE: PhoenixRole = "CEO";
 export const SFE_VALIDATION_ROLE: PhoenixRole = "SFE Manager";
 
 /**
- * The extra rung a request gets when Phoenix does not recognise its pharmacy (owner rule,
- * 2026-08-04). It sits immediately AFTER SFE and only exists on those requests.
+ * LEGACY ONLY — the Super Admin rung is no longer built into any chain (owner rule, 2026-08-04:
+ * "remove the super admin from the approval workflow of the direct orders").
  *
- * A pharmacy is "not recognised" when the submitter typed it in by hand rather than picking one
- * Phoenix already knows — which covers all three ways that happens: a brand-new pharmacy, a
- * customer code that is not in the distributor's own list, and no distributor or code at all.
+ * It is kept solely to RECOGNISE rungs on requests chained before that rule, so approving one of
+ * those still confirms the pharmacy instead of silently doing nothing. Do not add it to a new
+ * chain — {@link directOrderExpectedRoleChain} deliberately never emits it.
  *
- * Why a rung and not a side-channel: as a separate acknowledge button it was invisible. Nobody was
- * waiting on it, nothing showed it was outstanding, and the request only revealed the problem at
- * the CEO's final approval — after three managers had already signed. As a rung it appears in the
- * chain, in the approvals queue, and in the requester's own tracking view, so "waiting on System
- * Admin" is something you can SEE from the moment it is true.
+ * Why the rung existed at all, and where that job went: a hand-typed pharmacy needs somebody to
+ * confirm its distributor codes are real, or a mistyped code mis-attributes retail sales forever.
+ * That check now rides on the SFE validation rung, which is mandatory, always first, and already
+ * the "should this pharmacy exist at all" decision — so the confirmation is still visible in the
+ * chain and now happens EARLIER than it did as its own rung.
  */
-export const SYSTEM_ADMIN_ACK_ROLE: PhoenixRole = "Super Admin";
+export const LEGACY_SYSTEM_ADMIN_ACK_ROLE: PhoenixRole = "Super Admin";
 
 /**
  * Expected management-rung roles for a requester (the CEO rung is always appended
@@ -78,23 +78,14 @@ export function directOrderManagementLadder(requesterRole: PhoenixRole): Phoenix
 }
 
 /**
- * Full expected role sequence: SFE validation, then — only when Phoenix does not recognise the
- * pharmacy — a System Admin acknowledgment, then the requester's management line, then the CEO.
- * Every chain opens with SFE and closes with the CEO, whatever sits between.
+ * Full expected role sequence: SFE validation, then the requester's management line, then the CEO.
  *
- * `pharmacyUnverified` defaults to false so a caller that has not loaded the pharmacy gets the
- * ordinary chain rather than silently adding a rung nobody expects.
+ * The shape no longer varies with the pharmacy. Whether Phoenix recognises the pharmacy or not,
+ * the chain is the same length and the same rungs — confirming a hand-typed pharmacy is part of
+ * the SFE rung, not a rung of its own.
  */
-export function directOrderExpectedRoleChain(
-  requesterRole: PhoenixRole,
-  options?: { pharmacyUnverified?: boolean },
-): PhoenixRole[] {
-  return [
-    SFE_VALIDATION_ROLE,
-    ...(options?.pharmacyUnverified ? [SYSTEM_ADMIN_ACK_ROLE] : []),
-    ...directOrderManagementLadder(requesterRole),
-    CEO_ROLE,
-  ];
+export function directOrderExpectedRoleChain(requesterRole: PhoenixRole): PhoenixRole[] {
+  return [SFE_VALIDATION_ROLE, ...directOrderManagementLadder(requesterRole), CEO_ROLE];
 }
 
 /** True for the opening SFE validation rung. */
@@ -103,22 +94,33 @@ export function isSfeValidationStep(step: Pick<DirectOrderStepState, "kind" | "r
 }
 
 /**
- * True for the System Admin acknowledgment rung.
+ * True for a LEGACY System Admin acknowledgment rung on a request chained before that rung was
+ * retired. New chains never contain one; this exists so approving an old one still confirms the
+ * pharmacy rather than quietly leaving it unverified.
  *
  * Deliberately matched on `kind === "role"` as well as the role name: a PERSON rung whose occupant
  * happens to be a Super Admin is an ordinary management rung and must not silently verify a
  * pharmacy on approval.
  */
-export function isSystemAdminAckStep(step: Pick<DirectOrderStepState, "kind" | "role">): boolean {
-  return step.kind === "role" && step.role === SYSTEM_ADMIN_ACK_ROLE;
+export function isLegacySystemAdminAckStep(
+  step: Pick<DirectOrderStepState, "kind" | "role">,
+): boolean {
+  return step.kind === "role" && step.role === LEGACY_SYSTEM_ADMIN_ACK_ROLE;
+}
+
+/**
+ * True for any rung whose approval confirms a hand-typed pharmacy: the SFE validation rung on
+ * every current chain, or a legacy System Admin rung on an older one.
+ */
+export function isPharmacyConfirmingStep(
+  step: Pick<DirectOrderStepState, "kind" | "role">,
+): boolean {
+  return isSfeValidationStep(step) || isLegacySystemAdminAckStep(step);
 }
 
 /** Number of approval rungs a request of this requester role will have. */
-export function directOrderExpectedStepCount(
-  requesterRole: PhoenixRole,
-  options?: { pharmacyUnverified?: boolean },
-): number {
-  return directOrderExpectedRoleChain(requesterRole, options).length;
+export function directOrderExpectedStepCount(requesterRole: PhoenixRole): number {
+  return directOrderExpectedRoleChain(requesterRole).length;
 }
 
 // ── Bonus & discount caps (config-driven; percentages 0–100) ─────────────────
