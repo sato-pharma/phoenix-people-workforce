@@ -227,20 +227,40 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
               <span className="italic text-slate-400">No contact person recorded.</span>
             )}
           </p>
-          <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
-            <Camera className="h-3 w-3 shrink-0 text-slate-400" />
-            {detail.evidencePhotoName ? (
-              // The IMAGE itself is not stored anywhere (marketing_evidence_files is empty and no
-              // bucket holds these captures), so claiming to show "the photo" would be a lie. The
-              // filename is genuinely all that exists — say exactly that.
-              <>
-                Live capture recorded: {detail.evidencePhotoName}
-                <span className="italic text-slate-400"> — filename only, the image is not stored</span>
-              </>
-            ) : (
-              <span className="italic text-slate-400">No live capture recorded for this customer.</span>
-            )}
-          </p>
+          {/* The caveat that used to live here ("filename only, the image is not stored") was
+              correct when it was written: the captured bytes were discarded in the browser and
+              nothing but the name reached the server. The image is now retained in the private
+              `marketing-evidence` bucket and served through a short-lived signed URL, so the photo
+              is shown when one genuinely exists. A name with no image keeps the old honest wording,
+              because for every customer validated before 2026-08-04 that is still the whole truth. */}
+          {detail.evidencePhotoUrl ? (
+            <figure className="rounded-sm border border-slate-200">
+              {/* Plain <img>: the src is a short-lived signed URL into a private bucket, which the
+                  Next image optimizer can neither fetch nor cache on the approver's behalf. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                alt={`Live capture of ${detail.customerName ?? "the customer"} premises`}
+                className="h-56 w-full rounded-t-sm bg-slate-50 object-contain"
+                src={detail.evidencePhotoUrl}
+              />
+              <figcaption className="flex items-center gap-1.5 border-t border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-700">
+                <Camera className="h-3 w-3 shrink-0 text-slate-400" />
+                Live capture on file{detail.evidencePhotoName ? `: ${detail.evidencePhotoName}` : ""}
+              </figcaption>
+            </figure>
+          ) : (
+            <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
+              <Camera className="h-3 w-3 shrink-0 text-slate-400" />
+              {detail.evidencePhotoName ? (
+                <>
+                  Live capture recorded: {detail.evidencePhotoName}
+                  <span className="italic text-slate-400"> — filename only, no image was retained</span>
+                </>
+              ) : (
+                <span className="italic text-slate-400">No live capture recorded for this customer.</span>
+              )}
+            </p>
+          )}
         </div>
       </Section>
 

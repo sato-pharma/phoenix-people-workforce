@@ -17,6 +17,12 @@ import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { conflictError, forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
+import {
+  deleteMarketingEvidencePhotos,
+  loadMarketingEvidencePhoto,
+  parseMarketingEvidencePhotoDataUrl,
+  storeMarketingEvidencePhoto,
+} from "@/lib/marketing-requests/evidence-photo-storage";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
@@ -218,8 +224,23 @@ export type MarketingRequestDecisionSummary = {
   customerGovernorate: string | null;
   customerSpeciality: string | null;
   customerType: string | null;
-  /** Live capture proof from validation — the approver can see the shop front was photographed. */
+  /**
+   * The live capture photo's filename.
+   *
+   * On its own this is NOT proof and must never be presented as such — for every customer created
+   * before 2026-08-04 the bytes were discarded in the browser and only this string was kept.
+   * `evidencePhotoUrl` is the field that says whether an image actually exists.
+   */
   evidencePhotoName: string | null;
+  /**
+   * Short-lived signed URL for the retained shop-front photo, or null when no image was kept.
+   *
+   * Minted server-side by the service-role client against the PRIVATE `marketing-evidence` bucket —
+   * the bucket is never public because these frames carry a GPS stamp of a real business address.
+   * Sourced from `marketing_evidence_files`, which only ever has a row when bytes were genuinely
+   * written, so a value here is evidence and a null is an honest absence.
+   */
+  evidencePhotoUrl: string | null;
   notes: string | null;
   requestDate: string | null;
   roiCoverageRatio: number | null;
@@ -705,6 +726,8 @@ type NormalizedMarketingValidationPharmacy = {
   displayName: string;
   evidenceHasTimestamp: boolean;
   evidencePhotoCapturedAt: string | null;
+  /** Validated JPEG data URL, carried to the post-insert storage write. Never persisted as text. */
+  evidencePhotoDataUrl: string | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
   extractedAreaName: string | null;
@@ -729,6 +752,8 @@ type NormalizedMarketingValidationCustomer = {
   displayName: string;
   evidenceHasTimestamp: boolean;
   evidencePhotoCapturedAt: string | null;
+  /** Validated JPEG data URL, carried to the post-insert storage write. Never persisted as text. */
+  evidencePhotoDataUrl: string | null;
   evidencePhotoName: string | null;
   evidenceStatus: MarketingEvidenceStatus;
   extractedAreaName: string | null;
@@ -1394,19 +1419,35 @@ function hasCapturedLocation(input: {
   return input.capturedLatitude !== null && input.capturedLongitude !== null && Boolean(input.capturedAt);
 }
 
-function evidenceStatusFromInput(input: {
+/**
+ * What `evidence_status` is allowed to claim.
+ *
+ * `complete` requires the IMAGE, not its filename. Until 2026-08-04 this function reached
+ * 'complete' on `evidencePhotoName` alone while the captured bytes were dropped in the browser —
+ * so three production records asserted photographic proof of a real shop front that nobody could
+ * ever retrieve, and `system_validated` (which is what puts a customer in the marketing request
+ * dropdown) was granted on the strength of it.
+ *
+ * `evidencePhotoDataUrl` is the only input here that cannot be fabricated by a payload edit without
+ * also producing a storable JPEG, and `createMarketingValidationRecord` aborts the whole submission
+ * if that JPEG then fails to reach the bucket. So 'complete' now means, and only means: the image
+ * is in `marketing-evidence` and a signed URL will resolve to it.
+ */
+export function evidenceStatusFromInput(input: {
   capturedAt: string | null;
   capturedLatitude: number | null;
   capturedLongitude: number | null;
   evidenceHasTimestamp: boolean;
   evidencePhotoCapturedAt: string | null;
+  evidencePhotoDataUrl: string | null;
   evidencePhotoName: string | null;
 }): MarketingEvidenceStatus {
   if (
     hasCapturedLocation(input) &&
     input.evidenceHasTimestamp &&
     Boolean(input.evidencePhotoCapturedAt) &&
-    Boolean(input.evidencePhotoName)
+    Boolean(input.evidencePhotoName) &&
+    Boolean(input.evidencePhotoDataUrl)
   ) {
     return "complete";
   }
@@ -1421,6 +1462,42 @@ function evidenceStatusFromInput(input: {
   }
 
   return "missing";
+}
+
+/**
+ * Refuse a photo NAME that arrives without the photo (owner decision, 2026-08-04).
+ *
+ * A record with no photo at all is still perfectly legal — that is the desk-mode and
+ * partial-capture path, and 155 of the 156 live customers look exactly like that. What is refused
+ * is the shape that created the original defect: a filename and a capture timestamp presented as
+ * evidence with no retrievable image behind them. Rejecting at normalize time means the caller
+ * finds out before anything is written, rather than discovering later that the proof is a string.
+ */
+function normalizeEvidencePhotoDataUrl(value: unknown, label: string, photoName: string | null) {
+  const raw = typeof value === "string" ? value.trim() : "";
+
+  if (!raw) {
+    if (photoName) {
+      throw validationError(
+        `${label} has a live capture photo name but no photo. Take the photo again so it can be stored as evidence.`,
+        "evidence_photo_missing",
+      );
+    }
+    return null;
+  }
+
+  try {
+    // Parsed (not just pattern-matched) so an oversized or empty capture fails here, before the
+    // record exists, instead of at upload time when a rollback is already in flight.
+    parseMarketingEvidencePhotoDataUrl(raw);
+  } catch (error) {
+    throw validationError(
+      `${label}: ${error instanceof Error ? error.message : "Live capture photo is not a valid image."}`,
+      "evidence_photo_invalid",
+    );
+  }
+
+  return raw;
 }
 
 function systemStatusFromEvidence(status: MarketingEvidenceStatus): MarketingValidationStatus {
@@ -1485,6 +1562,7 @@ function normalizeValidationPharmacy(
     throw validationError(`${label} needs at least one vendor code.`);
   }
 
+  const pharmacyPhotoName = cleanText(inputPharmacy.evidencePhotoName);
   const pharmacy = {
     capturedAccuracyMeters: nonNegativeNumber(inputPharmacy.capturedAccuracyMeters),
     capturedAddress: cleanText(inputPharmacy.capturedAddress),
@@ -1494,7 +1572,12 @@ function normalizeValidationPharmacy(
     displayName,
     evidenceHasTimestamp: inputPharmacy.evidenceHasTimestamp === true,
     evidencePhotoCapturedAt: nullableIsoTimestamp(inputPharmacy.evidencePhotoCapturedAt, `${label} photo capture time`),
-    evidencePhotoName: cleanText(inputPharmacy.evidencePhotoName),
+    evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(
+      inputPharmacy.evidencePhotoDataUrl,
+      label,
+      pharmacyPhotoName,
+    ),
+    evidencePhotoName: pharmacyPhotoName,
     extractedAreaName: cleanText(inputPharmacy.extractedAreaName),
     extractedGovernorateName: cleanText(inputPharmacy.extractedGovernorateName),
     normalizedName: normalizeLookupKey(displayName),
@@ -1541,6 +1624,7 @@ function normalizeValidationCustomer(
   const displayName = cleanText(inputCustomer?.displayName);
   if (!displayName) throw validationError(`${customerLabel} name is required.`);
 
+  const customerPhotoName = cleanText(inputCustomer?.evidencePhotoName);
   const customer = {
     capturedAccuracyMeters: nonNegativeNumber(inputCustomer?.capturedAccuracyMeters),
     capturedAddress: cleanText(inputCustomer?.capturedAddress),
@@ -1551,7 +1635,12 @@ function normalizeValidationCustomer(
     displayName,
     evidenceHasTimestamp: inputCustomer?.evidenceHasTimestamp === true,
     evidencePhotoCapturedAt: nullableIsoTimestamp(inputCustomer?.evidencePhotoCapturedAt, `${customerLabel} photo capture time`),
-    evidencePhotoName: cleanText(inputCustomer?.evidencePhotoName),
+    evidencePhotoDataUrl: normalizeEvidencePhotoDataUrl(
+      inputCustomer?.evidencePhotoDataUrl,
+      customerLabel,
+      customerPhotoName,
+    ),
+    evidencePhotoName: customerPhotoName,
     extractedAreaName: cleanText(inputCustomer?.extractedAreaName),
     extractedGovernorateName: cleanText(inputCustomer?.extractedGovernorateName),
     mobileNumber: cleanText(inputCustomer?.mobileNumber),
@@ -2852,6 +2941,15 @@ export async function getMarketingRequestDecisionSummary(
   const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
   const customerName = cleanText(customerRow?.display_name);
 
+  // The retained shop-front photo, signed for this sitting. Same never-break-the-screen rule as
+  // the overlap check below: an unreachable image degrades to "no photo retained", which is the
+  // honest reading anyway, rather than taking the approval window down.
+  const evidencePhoto = await loadMarketingEvidencePhoto({
+    entityId: request.customerId,
+    entityType: "customer",
+    supabase,
+  }).catch(() => null);
+
   // Double-count check. Never allowed to break the approval screen: an approver must always be
   // able to decide, so a failure here degrades to "no overlaps known" rather than a dead page.
   const contestedBy = await loadMarketingRequestOverlaps(supabase, request).catch(() => [] as MarketingDecisionOverlap[]);
@@ -2901,6 +2999,7 @@ export async function getMarketingRequestDecisionSummary(
     customerSpeciality: cleanText(customerRow?.other_type_description),
     customerType: cleanText(customerRow?.customer_type),
     evidencePhotoName: cleanText(customerRow?.evidence_photo_name),
+    evidencePhotoUrl: evidencePhoto?.signedUrl ?? null,
     notes: cleanText(request.notes),
     requestDate: request.requestDate ?? null,
     roiCoverageRatio: request.roiCoverageRatio ?? null,
@@ -4261,6 +4360,10 @@ export async function createMarketingValidationRecord(
   // owner's book with no pharmacies attached.
   const customerIds: string[] = [];
   const pharmacyIds: string[] = [];
+  // Storage objects written by THIS submission. Tracked alongside the row ids because a bucket
+  // object outlives a rolled-back insert unless it is explicitly removed, and an orphaned photo of
+  // a real shop front is exactly the kind of thing that must not linger unreferenced.
+  const evidencePhotoPaths: string[] = [];
   try {
     const rows: MarketingValidationReportRow[] = [];
     for (const normalizedCustomer of normalized.customers) {
@@ -4303,6 +4406,29 @@ export async function createMarketingValidationRecord(
     if (customerInsert.error) throw customerInsert.error;
     const customer = mapCustomer(customerInsert.data as MarketingCustomerDbRow);
     customerIds.push(customer.id);
+
+    // Retain the image itself. Runs AFTER the insert because `marketing_evidence_files.entity_id`
+    // points at the customer row that did not exist a moment ago. A failure here throws, which
+    // unwinds the whole submission — the record must never survive its own evidence, because
+    // `evidence_status` was already set to 'complete' on the promise that this write succeeds.
+    if (normalizedCustomer.evidencePhotoDataUrl) {
+      evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
+        imageDataUrl: normalizedCustomer.evidencePhotoDataUrl,
+        record: {
+          capturedAccuracyMeters: normalizedCustomer.capturedAccuracyMeters,
+          capturedAddress: normalizedCustomer.capturedAddress,
+          capturedAt: normalizedCustomer.evidencePhotoCapturedAt ?? normalizedCustomer.capturedAt,
+          capturedLatitude: normalizedCustomer.capturedLatitude,
+          capturedLongitude: normalizedCustomer.capturedLongitude,
+          entityId: customer.id,
+          entityType: "customer",
+          hasTimestamp: normalizedCustomer.evidenceHasTimestamp,
+          originalFileName: normalizedCustomer.evidencePhotoName,
+          uploadedByHrId: actorHrId,
+        },
+        supabase,
+      }));
+    }
 
     // Speciality lives on the contact row (marketing_customers has no such column), so the contact
     // is now written whenever EITHER a speciality or a phone was given — previously a customer with
@@ -4359,6 +4485,27 @@ export async function createMarketingValidationRecord(
       if (pharmacyInsert.error) throw pharmacyInsert.error;
       const pharmacy = mapMarketingPharmacy(pharmacyInsert.data as MarketingPharmacyDbRow);
       pharmacyIds.push(pharmacy.id);
+
+      // A pharmacy's shop front is photographed on the same rule as its customer's — two of the
+      // three production rows that claimed unretained proof were pharmacies, not customers.
+      if (normalizedPharmacy.evidencePhotoDataUrl) {
+        evidencePhotoPaths.push(await storeMarketingEvidencePhoto({
+          imageDataUrl: normalizedPharmacy.evidencePhotoDataUrl,
+          record: {
+            capturedAccuracyMeters: normalizedPharmacy.capturedAccuracyMeters,
+            capturedAddress: normalizedPharmacy.capturedAddress,
+            capturedAt: normalizedPharmacy.evidencePhotoCapturedAt ?? normalizedPharmacy.capturedAt,
+            capturedLatitude: normalizedPharmacy.capturedLatitude,
+            capturedLongitude: normalizedPharmacy.capturedLongitude,
+            entityId: pharmacy.id,
+            entityType: "pharmacy",
+            hasTimestamp: normalizedPharmacy.evidenceHasTimestamp,
+            originalFileName: normalizedPharmacy.evidencePhotoName,
+            uploadedByHrId: actorHrId,
+          },
+          supabase,
+        }));
+      }
 
       for (const vendorCode of normalizedPharmacy.vendorCodes) {
         const reference = await resolvePharmacyCodeReference({
@@ -4466,6 +4613,10 @@ export async function createMarketingValidationRecord(
     for (const rollbackCustomerId of customerIds) {
       await supabase.from("marketing_customers").delete().eq("id", rollbackCustomerId);
     }
+    // Last, and best-effort: the photos this submission uploaded. Their index rows FK to nothing
+    // that was just deleted, so they would otherwise survive as evidence of records that no longer
+    // exist. A failure to clean up must not replace the error the caller actually needs to see.
+    await deleteMarketingEvidencePhotos(evidencePhotoPaths, supabase).catch(() => undefined);
     throw error;
   }
 }

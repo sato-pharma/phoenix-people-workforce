@@ -313,6 +313,7 @@ import { runMarketingCoverageDistributorRollupTests } from "./marketing-coverage
 import { runMarketingCoverageUrlStateTests } from "./marketing-coverage-url-state.test.ts";
 import { runWeeklyExportTests } from "./weekly-export-workbook.test.ts";
 import { runMarketingValidationServiceTests } from "./marketing-validation-service.test.ts";
+import { runMarketingEvidencePhotoStorageTests } from "./marketing-evidence-photo-storage.test.ts";
 import { runSupportRequestsNotificationsTests } from "./support-requests-notifications.test.ts";
 import { runOrganogramEmptyDiagnosticTests } from "./organogram-empty-diagnostic.test.ts";
 import { runPositionVacancyStatusIntegrityTests } from "./position-vacancy-status-integrity.test.ts";
@@ -973,6 +974,10 @@ await runTest("marketing approver hr_id casing (FK fix)", runMarketingApproverHr
 await runTest("marketing premium notifications + review view", runMarketingPremiumNotificationTests);
 await runTest("marketing request access", runMarketingRequestAccessTests);
 await runTest("marketing validation service", runMarketingValidationServiceTests);
+await runTest(
+  "marketing evidence photo storage (the image is retained, not just its filename; a name with no image is refused)",
+  runMarketingEvidencePhotoStorageTests,
+);
 await runTest("support requests notifications", runSupportRequestsNotificationsTests);
 await runTest("organogram empty diagnostic", runOrganogramEmptyDiagnosticTests);
 await runTest("position vacancy status integrity", runPositionVacancyStatusIntegrityTests);

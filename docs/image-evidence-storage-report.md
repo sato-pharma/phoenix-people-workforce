@@ -3,6 +3,19 @@
 Generated on 2026-05-21 from code inspection and a live Supabase read using
 `scripts/audit-image-evidence-storage.ts`.
 
+> **Update 2026-08-04 — the marketing live-photo gap below is now closed in code.**
+> Recommendations 1–3 shipped on branch `codex/marketing-evidence-photo-storage`: the private
+> `marketing-evidence` bucket is created by migration, the captured JPEG is uploaded server-side,
+> and a `marketing_evidence_files` row is written per customer and pharmacy photo. `evidence_status`
+> can no longer reach `complete` on a filename alone, and the approver's decision screen renders the
+> image from a signed URL instead of printing its name.
+>
+> Three production rows created BEFORE that change still carry a photo name with no retained image
+> (customer `9d9edb77…`, pharmacies `64c608c6…` and `a603d2f9…`). The owner's decision on 2026-08-04
+> was to leave them as they are for now; they remain `evidence_status = 'complete'` and the approval
+> screen labels them explicitly as having no image retained. Recommendations 4–5 (the unified
+> evidence report and its admin page) are still open.
+
 ## Executive Summary
 
 The application does not have one unified image store yet. Evidence/image files
@@ -139,7 +152,7 @@ Designed but not wired:
   - location/timestamp fields
 - Default bucket: `marketing-evidence`
 
-Current status:
+Current status (as at 2026-05-21 — see the 2026-08-04 update at the top of this file):
 
 - `marketing_evidence_files` has no live rows.
 - The `marketing-evidence` bucket is not present in live storage.

@@ -220,9 +220,28 @@ export function MarketingRequestDecisionConfirmation({
               {summary.customerAddress}
             </p>
           ) : null}
-          {summary.evidencePhotoName ? (
-            <p className="mt-2 text-[11px] font-semibold text-emerald-700">
-              Live capture photo on file: {summary.evidencePhotoName}
+          {/* ── The photo, not its filename (2026-08-04) ──
+              This block used to print `evidencePhotoName` in green and call it "on file". The
+              bytes were never stored, so every approver who read that line was told proof existed
+              when nothing had been retained. The image is now shown when it genuinely exists, and
+              a name with no image says so plainly instead of passing for evidence. */}
+          {summary.evidencePhotoUrl ? (
+            <figure className="mt-2 border border-emerald-200 bg-white">
+              {/* Plain <img>: the src is a short-lived signed URL to a private bucket, which the
+                  Next image optimizer cannot fetch or cache on the approver's behalf. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                alt={`Live capture of ${summary.customerName ?? "the customer"} premises`}
+                className="h-64 w-full bg-slate-50 object-contain"
+                src={summary.evidencePhotoUrl}
+              />
+              <figcaption className="border-t border-emerald-200 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
+                Live capture photo on file{summary.evidencePhotoName ? ` · ${summary.evidencePhotoName}` : ""}
+              </figcaption>
+            </figure>
+          ) : summary.evidencePhotoName ? (
+            <p className="mt-2 text-[11px] font-semibold text-amber-700">
+              Live capture photo recorded as {summary.evidencePhotoName}, but no image was retained for this customer. Treat the premises as unverified.
             </p>
           ) : (
             <p className="mt-2 text-[11px] font-semibold text-amber-700">No live capture photo on file for this customer.</p>
