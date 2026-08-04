@@ -9,11 +9,11 @@
  *  - Browser notifications fire once per count increase (not once per instance).
  *  - SSR-safe: all browser globals are guarded before access.
  *
- * The four approval badge srcs are additionally BATCHED: they keep their own
+ * The approval badge srcs are additionally BATCHED: they keep their own
  * channels (per-src counts, listeners, and notification-on-increase behavior are
  * unchanged), but share ONE polling loop against /api/approvals/badge-counts —
- * one HTTP request per 30s cycle instead of four. Any other `src` keeps the
- * original per-src fetch path.
+ * one HTTP request per 30s cycle instead of one per badge. Any other `src` keeps
+ * the original per-src fetch path.
  */
 
 type Listener = (count: number | null, overdue: boolean) => void;
@@ -34,8 +34,10 @@ const channels = new Map<string, Channel>();
 
 export const BADGE_COUNTS_ENDPOINT = "/api/approvals/badge-counts";
 
+type BatchKey = "plan" | "vacation" | "excuse" | "hub" | "directOrders" | "marketing";
+
 /** Maps each legacy per-src badge URL to its key in the batched response. */
-const BATCH_KEY_BY_SRC: Record<string, "plan" | "vacation" | "excuse" | "hub" | "directOrders"> = {
+const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   "/api/approvals/plan/pending-count": "plan",
   "/api/approvals/vacation/pending-count": "vacation",
   "/api/approvals/excuse/pending-count": "excuse",
@@ -43,6 +45,9 @@ const BATCH_KEY_BY_SRC: Record<string, "plan" | "vacation" | "excuse" | "hub" | 
   // Without this entry the badge still works, but falls back to its own separate 30s poll
   // instead of riding the single batched request.
   "/api/approvals/direct-orders/pending-count": "directOrders",
+  // Marketing keeps its own dedicated approval inbox (it is deliberately excluded from the
+  // consolidated hub), so it needs its own slot — "hub" will never carry a marketing item.
+  "/api/marketing-requests/pending-count": "marketing",
 };
 
 /** Shared polling infrastructure for every batched channel (one poll serves all). */
@@ -100,7 +105,7 @@ function fetchAndBroadcastBatch(): void {
   batch.inFlight = globalThis
     .fetch(BADGE_COUNTS_ENDPOINT)
     .then((r) => r.json())
-    .then((d: Partial<Record<"plan" | "vacation" | "excuse" | "hub" | "directOrders", { count?: number; overdue?: boolean }>>) => {
+    .then((d: Partial<Record<BatchKey, { count?: number; overdue?: boolean }>>) => {
       for (const [src, key] of Object.entries(BATCH_KEY_BY_SRC)) {
         const slot = d?.[key];
         if (!slot || typeof slot.count !== "number") continue;

@@ -9,6 +9,9 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
+// Pure, JSX-free SLA tone helper (see src/lib/approvals-hub/service.ts, which imports it the same
+// way) so the marketing badge graduates to "overdue" on exactly the rule the other badges use.
+import { slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type { EmailTemplateContext } from "@/lib/email-templates/service";
 import { canonicalHrIdKey, hrIdLookupKeys, resolveStoredHrId } from "@/lib/hr-id";
 import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -5271,6 +5274,148 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   // Oldest first — a request that has been sitting longest is the one worth chasing.
   upcomingRows.sort((left, right) => right.ageDays - left.ageDays);
   return { advisoryRows, rows, upcomingRows };
+}
+
+// ── Sidebar pending-count badge ──────────────────────────────────────────────
+// Marketing is deliberately excluded from the consolidated approvals hub (see the comment in
+// src/lib/action-center/service.ts) — it keeps its own dedicated inbox — so "approvals-hub-pending"
+// can never count a marketing item. This is the marketing equivalent of getVacationAwaitingBadge /
+// getPlanAwaitingBadge in src/lib/approvals-hub/service.ts, feeding the same NavBadge pump.
+
+/** The subset of a gating approval step the badge needs — nothing that would identify a request. */
+export type MarketingApproverBadgeStep = {
+  createdAt: string | null;
+  requestId: string;
+  stepCode: string;
+  updatedAt: string | null;
+  workflowStepId: number | null;
+};
+
+export type MarketingApproverBadge = { count: number; overdue: boolean };
+
+/**
+ * Pure badge reducer, split out from the query so the counting rule is unit-testable without a
+ * database. Two things it must get right, both of which the inbox itself already enforces:
+ *
+ *  - ONLY gating steps count. CC/advisory steps are non-blocking comments and upcoming steps are
+ *    not yet this person's decision, so neither is "action required" — a badge that counted them
+ *    would pump orange at someone with nothing to do.
+ *  - A gating step whose request has left `pending_approval` does NOT count. getApproverPendingRequests
+ *    drops exactly these rows (its request lookup filters on that status), so counting them here
+ *    would show a number the inbox cannot explain.
+ *
+ * Overdue: each step's own `marketing_workflow_steps.default_sla_days`, measured from the step's
+ * last status change — the same "waiting since" clock the daily SLA scan uses (see
+ * classifyMarketingWaitingSla). A step whose SLA is null contributes NO overdue signal rather than
+ * being treated as 0 days, which would make every request instantly overdue.
+ */
+export function summarizeMarketingApproverBadge(input: {
+  gatingSteps: MarketingApproverBadgeStep[];
+  liveRequestIds: Iterable<string>;
+  now: string;
+  slaDaysByStepCode?: ReadonlyMap<string, number | null>;
+  slaDaysByWorkflowStepId?: ReadonlyMap<number, number | null>;
+}): MarketingApproverBadge {
+  const live = input.liveRequestIds instanceof Set ? input.liveRequestIds : new Set(input.liveRequestIds);
+  const counted = input.gatingSteps.filter((step) => live.has(step.requestId));
+  const overdue = counted.some((step) => {
+    const slaDays =
+      (step.workflowStepId === null ? undefined : input.slaDaysByWorkflowStepId?.get(step.workflowStepId)) ??
+      input.slaDaysByStepCode?.get(step.stepCode) ??
+      null;
+    if (slaDays === null || !Number.isFinite(slaDays) || slaDays <= 0) return false;
+    const daysWaiting = marketingDaysWaiting(step.updatedAt ?? step.createdAt, input.now);
+    if (daysWaiting === null) return false;
+    return slaTone(daysWaiting, slaDays) === "overdue";
+  });
+  return { count: counted.length, overdue };
+}
+
+/**
+ * Sidebar badge for the Marketing Approval Inbox: how many marketing requests are stopped at THIS
+ * person's own gating step. Scoped entirely by `assigned_hr_id`, so it needs no separate permission
+ * gate beyond a linked HR identity — an approver can only ever count their own rung.
+ *
+ * Deliberately does NOT call getApproverPendingRequests: that builds full display rows (employee
+ * directory, customers, request types, the whole upcoming chain) for a number that is polled every
+ * 30 seconds by every open tab.
+ */
+export async function getMarketingApproverBadge(access: AccessContext): Promise<MarketingApproverBadge> {
+  const actorHrId = requireMarketingDecisionActor(access);
+  const supabase = getSupabaseAdmin();
+  // Same HR_ID dialect expansion as the inbox — `assigned_hr_id` carries the employee master's real
+  // casing while the session id is lower-cased, so an exact match silently returns nothing.
+  const actorHrKeys = hrIdLookupKeys(actorHrId);
+
+  const gatingResult = await supabase
+    .from("marketing_request_approval_steps")
+    .select("request_id, step_code, workflow_step_id, created_at, updated_at")
+    .eq("status", "current")
+    .eq("is_cc", false)
+    .in("assigned_hr_id", actorHrKeys);
+  if (gatingResult.error) throw gatingResult.error;
+  const gatingSteps: MarketingApproverBadgeStep[] = (
+    (gatingResult.data ?? []) as Array<{
+      created_at?: string | null;
+      request_id: string;
+      step_code: string;
+      updated_at?: string | null;
+      workflow_step_id?: number | string | null;
+    }>
+  ).map((row) => ({
+    createdAt: row.created_at ?? null,
+    requestId: row.request_id,
+    stepCode: row.step_code,
+    updatedAt: row.updated_at ?? null,
+    workflowStepId:
+      row.workflow_step_id === null || row.workflow_step_id === undefined ? null : Number(row.workflow_step_id),
+  }));
+  if (gatingSteps.length === 0) return { count: 0, overdue: false };
+
+  const requestIds = Array.from(new Set(gatingSteps.map((step) => step.requestId)));
+  const liveRequestIds = new Set<string>();
+  for (const batch of chunk(requestIds)) {
+    const liveResult = await supabase
+      .from("marketing_requests")
+      .select("id")
+      .in("id", batch)
+      .eq("status", "pending_approval");
+    if (liveResult.error) throw liveResult.error;
+    for (const row of (liveResult.data ?? []) as Array<{ id: string }>) liveRequestIds.add(row.id);
+  }
+  if (liveRequestIds.size === 0) return { count: 0, overdue: false };
+
+  // Inactive steps are loaded too: a request already sitting on a step that was later deactivated
+  // still has an SLA. A failure here must never suppress the count — the number is the point of the
+  // badge, the colour is the refinement — so it degrades to "not overdue" and says so in the log.
+  const slaDaysByWorkflowStepId = new Map<number, number | null>();
+  const slaDaysByStepCode = new Map<string, number | null>();
+  const slaResult = await supabase.from("marketing_workflow_steps").select("id, step_code, default_sla_days");
+  if (slaResult.error) {
+    logWarning("Marketing approver badge could not load step SLAs — count kept, overdue state suppressed", {
+      context: { message: slaResult.error.message },
+      labels: { event: "marketing_approver_badge_sla_unavailable" },
+    });
+  } else {
+    for (const row of (slaResult.data ?? []) as Array<{
+      default_sla_days?: number | string | null;
+      id: number | string;
+      step_code: string;
+    }>) {
+      const slaDays =
+        row.default_sla_days === null || row.default_sla_days === undefined ? null : Number(row.default_sla_days);
+      slaDaysByWorkflowStepId.set(Number(row.id), slaDays);
+      slaDaysByStepCode.set(row.step_code, slaDays);
+    }
+  }
+
+  return summarizeMarketingApproverBadge({
+    gatingSteps,
+    liveRequestIds,
+    now: new Date().toISOString(),
+    slaDaysByStepCode,
+    slaDaysByWorkflowStepId,
+  });
 }
 
 export type MarketingOverviewMetrics = {

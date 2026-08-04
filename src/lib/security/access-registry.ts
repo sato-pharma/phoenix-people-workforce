@@ -619,8 +619,11 @@ export const accessRegistry = [
   // read from the session cookie when present, never trusted from the body.
   sessionApi({ methods: ["POST"], pattern: "/api/errors/client", permission: null, guard: "domain-helper", csrfExemptReason: "Fire-and-forget crash-report beacon, open to guests too. Identity comes only from the session cookie (or is absent for guests), never the request body; writes only a truncated error message/stack to app_error_events, so there is no state-changing or cross-site mutation surface." }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals-hub/pending-count", permission: { resource: "leave", action: "read" } }),
-  // Batched replacement for the four pending-count polls below (they stay registered
-  // and live for other consumers). Each sub-count enforces its own domain guard.
+  // Batched replacement for the pending-count polls below plus
+  // /api/marketing-requests/pending-count (covered by the /api/marketing-requests/** entry, whose
+  // domain-helper guard is the same model its sibling /inbox already uses — marketing has no
+  // permission resource, so the badge is scoped by the caller's own assigned_hr_id instead). They
+  // all stay registered and live for other consumers; each sub-count enforces its own domain guard.
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/badge-counts", permission: [{ resource: "leave", action: "read" }, { resource: "weekly_plans", action: "read" }, { resource: "direct_orders", action: "read" }] }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/vacation/pending-count", permission: { resource: "leave", action: "read" } }),
   sessionApi({ methods: ["GET"], pattern: "/api/approvals/excuse/pending-count", permission: { resource: "leave", action: "read" } }),
