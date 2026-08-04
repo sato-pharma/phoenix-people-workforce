@@ -326,7 +326,6 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     line: String(row.line ?? ""),
     productCode: String(row.product_code ?? ""),
     productName: String(row.product_name ?? ""),
-    factoryPriceSnapshot: Number(row.factory_price_snapshot ?? 0),
     pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
     qty: Number(row.qty ?? 0),
     bonus: Number(row.bonus ?? 0),
@@ -1319,11 +1318,6 @@ export async function submitDirectOrder(
       line: product.line,
       product_code: product.productCode,
       product_name: product.productName,
-      // NOT NULL column that nothing reads. A direct order is priced on the pharmacy price or
-      // the public price and never on the factory price, so writing the real one would only
-      // put a number on screen that must not influence anything. Dropping the column is a
-      // migration; until then it is explicitly zero, meaning "not applicable".
-      factory_price_snapshot: 0,
       qty,
       bonus,
       bonus_override_reason: overrideReason,
@@ -1770,8 +1764,6 @@ export async function reverseDirectOrder(
       line: original.line,
       product_code: original.productCode,
       product_name: original.productName,
-      // Same dead NOT NULL column as on submit — never read, so never propagated.
-      factory_price_snapshot: 0,
       // A reversal mirrors its original exactly, so it must carry the same pricing basis.
       // These three used to be omitted, and `deal_type` defaults to 'bonus' in the column
       // definition — so reversing a DISCOUNT order silently produced a 'bonus' row whose

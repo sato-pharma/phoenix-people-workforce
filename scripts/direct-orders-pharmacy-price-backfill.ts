@@ -61,7 +61,6 @@ type RequestRow = {
   bonus: number | string;
   sales_value: number | string;
   sales_month: string | null;
-  factory_price_snapshot: number | string;
   pharmacy_price_snapshot: number | string | null;
   sos_batch_id: string | null;
   reversal_of_request_id: string | null;
@@ -144,7 +143,7 @@ async function loadCandidates(supabase: SupabaseClient) {
   const { data: requestData, error: requestError } = await supabase
     .from("direct_order_requests")
     .select(
-      "id, product_code, product_name, status, qty, bonus, sales_value, sales_month, factory_price_snapshot, pharmacy_price_snapshot, sos_batch_id, reversal_of_request_id",
+      "id, product_code, product_name, status, qty, bonus, sales_value, sales_month, pharmacy_price_snapshot, sos_batch_id, reversal_of_request_id",
     )
     .eq("deal_type", "bonus")
     // See the header: reversal rows read deal_type 'bonus' regardless of what they reverse.
