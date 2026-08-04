@@ -17,6 +17,10 @@ import type {
 } from "@/lib/automated-payroll/types";
 import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-payroll/types";
 import type { PopulationDiff } from "@/lib/automated-payroll/population-diff";
+import {
+  PAYROLL_DATA_ISSUE_LABELS,
+  type PayrollDataQualityReport,
+} from "@/lib/automated-payroll/data-quality";
 import { cn } from "@/lib/utils";
 
 import { NonEmployeesPanel } from "./non-employees-panel";
@@ -52,6 +56,10 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const [notice, setNotice] = useState<string | null>(null);
   const [recon, setRecon] = useState<ReconciliationTotals | null>(null);
   const [overpaidPrompt, setOverpaidPrompt] = useState<{ runId: string; message: string } | null>(null);
+  const [dataIssuePrompt, setDataIssuePrompt] = useState<
+    { runId: string; part: "part1" | "part2"; message: string } | null
+  >(null);
+  const [dataQuality, setDataQuality] = useState<PayrollDataQualityReport | null>(null);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
 
   const confirmedSet = useMemo(
@@ -84,6 +92,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       setRecon(null);
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
+      setDataQuality(null);
 
       // Load the population diff eagerly rather than behind a button: the bug
       // it guards against (someone silently vanishing from payroll) is invisible
@@ -97,6 +106,18 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           })
           .catch(() => {
             /* diff is a safety net, never block the wizard on it */
+          });
+
+        // Same reasoning for missing pay-determining data: a null hire date or a
+        // null salary looks like nothing at all on screen, which is exactly how
+        // two August starters ended up on the July sheet at a full month's pay.
+        void fetch(`/api/automated-payroll/runs/${runId}/data-quality`)
+          .then((response) => response.json())
+          .then((qualityData) => {
+            if (qualityData?.success) setDataQuality(qualityData.report as PayrollDataQualityReport);
+          })
+          .catch(() => {
+            /* a safety net, never block the wizard on it */
           });
       }
     } catch (loadError) {
@@ -142,7 +163,11 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * becomes payable truth. A split mismatch is NOT acknowledgeable — it means a
    * calculation bug and always hard-blocks via the normal error path.
    */
-  const confirmPart2WithOverpaidGate = async (runId: string, acknowledgeOverpaid = false) => {
+  const confirmPart2WithOverpaidGate = async (
+    runId: string,
+    acknowledgeOverpaid = false,
+    acknowledgeDataIssues = false,
+  ) => {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -150,10 +175,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       const res = await fetch(`/api/automated-payroll/runs/${runId}/part2/confirm`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ acknowledgeOverpaid }),
+        body: JSON.stringify({ acknowledgeOverpaid, acknowledgeDataIssues }),
       });
       const data = await res.json();
       if (!res.ok) {
+        if (data.requiresDataQualityAcknowledgment) {
+          setDataIssuePrompt({ runId, part: "part2", message: String(data.error ?? "") });
+          return;
+        }
         if (data.requiresOverpaidAcknowledgment) {
           setOverpaidPrompt({ runId, message: String(data.error ?? "") });
           return;
@@ -161,7 +190,42 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         throw new Error(data.error ?? "Action failed.");
       }
       setOverpaidPrompt(null);
+      setDataIssuePrompt(null);
       setNotice("Part 2 confirmed. Finance roles notified.");
+      await loadRun(month, year);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "Action failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Part 1 confirm, with the missing-payroll-data gate (owner rule 2026-08-04).
+   * Confirming Part 1 freezes real money, so an employee whose hire date, salary
+   * or payment mode is missing gets named BEFORE the freeze — HR accepts on the
+   * record rather than discovering it on a bank file.
+   */
+  const confirmPart1WithDataGate = async (runId: string, acknowledgeDataIssues = false) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch(`/api/automated-payroll/runs/${runId}/part1/confirm`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ acknowledgeDataIssues }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.requiresDataQualityAcknowledgment) {
+          setDataIssuePrompt({ runId, part: "part1", message: String(data.error ?? "") });
+          return;
+        }
+        throw new Error(data.error ?? "Action failed.");
+      }
+      setDataIssuePrompt(null);
+      setNotice("Part 1 confirmed. Finance roles notified.");
       await loadRun(month, year);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "Action failed.");
@@ -413,6 +477,66 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       {/* Overpayment gate — real money already paid out that this month can't
           absorb. Deliberately NOT a browser confirm(): HR needs to read who and
           how much before accepting, and the acceptance is written to the audit log. */}
+      {/* Missing pay-determining data. Loud by design: a null hire date, salary
+          or payment mode looks like NOTHING on screen, and each one silently
+          becomes a default that pays money — that is how two August starters got
+          a full July month (owner-reported 2026-08-04). */}
+      {dataQuality && dataQuality.total > 0 ? (
+        <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <div className="font-black">
+            {dataQuality.total === 1
+              ? "1 employee is missing payroll data that decides their pay"
+              : `${dataQuality.total} employees are missing payroll data that decides their pay`}
+          </div>
+          <p className="mt-1 text-xs">
+            Each missing field silently falls back to a default — a full unprorated month, a 0.00 salary, or a
+            guessed First/Second Part split. Fix them on the employee record; confirming with these open needs your
+            acknowledgment.
+          </p>
+          <ul className="mt-2 flex flex-col gap-1 text-xs">
+            {dataQuality.rows.map((row) => (
+              <li key={row.hrId}>
+                <span className="font-semibold">{row.fullName}</span> ({row.hrId})
+                <ul className="ml-4 list-disc">
+                  {row.issues.map((issue) => (
+                    <li key={issue}>{PAYROLL_DATA_ISSUE_LABELS[issue]}</li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* The acknowledgement itself — a separate decision point from the banner,
+          and written to the audit log so a knowingly-confirmed gap is answerable. */}
+      {dataIssuePrompt ? (
+        <div className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-black">
+            Missing payroll data — your acknowledgment is required to confirm{" "}
+            {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
+          </div>
+          <p className="mt-1 text-xs">{dataIssuePrompt.message}</p>
+          <div className="mt-2 flex gap-2">
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                void (dataIssuePrompt.part === "part1"
+                  ? confirmPart1WithDataGate(dataIssuePrompt.runId, true)
+                  : confirmPart2WithOverpaidGate(dataIssuePrompt.runId, false, true))
+              }
+              className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+            >
+              Acknowledge &amp; confirm {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
+            </Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDataIssuePrompt(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {overpaidPrompt ? (
         <div className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-black">Part 1 overpayment — your acknowledgment is required</div>
@@ -451,7 +575,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 size="sm"
                 className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
                 disabled={busy || !part1AllConfirmed || run.phase !== "part1"}
-                onClick={() => void post(`/api/automated-payroll/runs/${run.id}/part1/confirm`, "Part 1 confirmed. Finance roles notified.")}
+                onClick={() => void confirmPart1WithDataGate(run.id)}
               >
                 Confirm Part 1
               </Button>

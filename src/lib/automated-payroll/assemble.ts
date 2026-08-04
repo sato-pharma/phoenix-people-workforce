@@ -156,6 +156,13 @@ export function assembleRows(input: {
    * need this month's own figures, e.g. the Part-1 freeze pass.
    */
   carryForwardByCompact?: Map<string, number>;
+  /**
+   * Whether this run's Part 1 has already been confirmed — i.e. the first
+   * installment is real, executed money. Changes what a MISSING frozen first
+   * part means; see the `firstPartFrozen` comment below. Defaults to false so
+   * an omitting caller keeps the pre-2026-08-04 preview behaviour.
+   */
+  part1Confirmed?: boolean;
 }): AssembledRow[] {
   const drafts = draftByCompact(input.draftRows);
   const results: AssembledRow[] = [];
@@ -176,19 +183,39 @@ export function assembleRows(input: {
     const specialToFirst = specialRoutedToFirst(draft);
     const medicalInsurance = roundCurrency(num(employee.medicalInsurance));
     // Use the frozen First Part after Part-1 confirm; before that, compute live.
+    //
+    // A MISSING frozen value means two different things, and conflating them was
+    // a real defect (audit, 2026-08-04 — 5 of 123 rows on the live July run):
+    //
+    //  - Part 1 still OPEN  -> nobody is frozen yet, so computing live IS the
+    //                          preview. Correct, unchanged.
+    //  - Part 1 CONFIRMED   -> this employee entered the population AFTER the
+    //                          freeze, so they were not in the first installment
+    //                          finance actually executed. Their first part is
+    //                          therefore 0 and the whole month pays in Part 2.
+    //
+    // Recomputing live in the second case silently changed a Part 1 total that
+    // had already been paid out — the one number this module promises never
+    // moves (see freezeFirstPart's "never recomputed" invariant). Using 0 keeps
+    // firstPart + secondPart === monthSalary, the invariant reconcile.ts
+    // asserts, and matches the money that actually left the bank. The employee
+    // is separately flagged as `joined_after_part1` by data-quality.ts, so this
+    // is visible rather than merely silent-and-correct.
     const firstPartFrozen =
       draft?.firstPartFrozen != null
         ? draft.firstPartFrozen
-        : freezeFirstPart({
-            effective,
-            fullBaseSalary,
-            paymentMode,
-            fingerprint,
-            otherPart1Deductions: roundCurrency(otherPart1Total + (specialToFirst ? specialDeduction : 0)),
-            otherPart1Additions: specialToFirst ? specialAddition : 0,
-            medicalInsurance,
-            leaverDeduction: leaverDeductionFor(member, draft),
-          });
+        : input.part1Confirmed === true
+          ? 0
+          : freezeFirstPart({
+              effective,
+              fullBaseSalary,
+              paymentMode,
+              fingerprint,
+              otherPart1Deductions: roundCurrency(otherPart1Total + (specialToFirst ? specialDeduction : 0)),
+              otherPart1Additions: specialToFirst ? specialAddition : 0,
+              medicalInsurance,
+              leaverDeduction: leaverDeductionFor(member, draft),
+            });
 
     const expenses = num(draft?.expenses);
     const incentive = num(draft?.incentive);
