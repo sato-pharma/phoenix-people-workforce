@@ -538,6 +538,7 @@ import { runSalesImsRatioTests } from "./sales-ims-ratio.test.ts";
 import { runHrIdCoreHelpersTests } from "./hrid-core-helpers.test.ts";
 import { runMarketingRoiCohortsTests } from "./marketing-roi-cohorts.test.ts";
 import { runGithubWorkflowValidityTests } from "./github-workflow-validity.test.ts";
+import { runCiGateParityTests } from "./ci-gate-parity.test.ts";
 import { runPasswordSetupEmailResolutionTests } from "./password-setup-email-resolution.test.ts";
 import { runSchemaShapeCheckTests } from "./schema-shape-check.test.ts";
 import { runSecretPinsCheckTests } from "./secret-pins-check.test.ts";
@@ -1184,6 +1185,7 @@ await runTest("sales IMS ratio integrity (non-OT areas + OT region total exactly
 await runTest("HR_ID core helpers (canonical alias, cross-format match, lookup keys)", runHrIdCoreHelpersTests);
 await runTest("marketing ROI cohorts (efficiency, coverage, forecast accuracy, multi-role fan-out)", runMarketingRoiCohortsTests);
 await runTest("GitHub workflow validity (no `secrets` context inside `if:` — it invalidates the whole file)", runGithubWorkflowValidityTests);
+await runTest("CI <-> package.json gate parity (a check:* in the gate must run in a workflow)", runCiGateParityTests);
 await runTest("password setup email resolution (work_email fallback, never the synthetic auth address)", runPasswordSetupEmailResolutionTests);
 await runTest("schema shape check (catches the 2026-07-31 grant wipe AND the skeleton-schema restore)", runSchemaShapeCheckTests);
 await runTest("secret pins check (catches the version pinning that 401'd every cron)", runSecretPinsCheckTests);

@@ -1,5 +1,12 @@
 # Phoenix Role Alignment Production Readiness
 
+> **Reconciled 2026-08-04 — historical record.** The validation summarized below ran against
+> sandbox ref `oaifhavixhdtwmseshff`, which **no longer exists** (`list_projects` returns only
+> production `ozucdzovmcqvepbozvqf` and staging `cifwmndunmlxjhyjugxa` — see AGENTS.md §3).
+> Treat the PASS results as a point-in-time record, not a live gate: any re-validation needs a
+> rebuilt sandbox target. Per this document itself, the role-alignment migration was **never
+> applied to production**.
+
 ## 1. Executive Summary
 
 Phoenix Workforce role-alignment validation is complete in the approved sandbox project only. The migration, helper functions, table grants, RLS policies, read-only authenticated assertions, mutation assertions, and cleanup checks all passed.

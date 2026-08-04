@@ -21,7 +21,7 @@ All commands run from the repo root.
 | Typecheck | `pnpm run typecheck` |
 | Unit/integration tests | `pnpm run test` |
 | Fast editing gate (typecheck only) | `pnpm run check:edit` |
-| Full hardening gate (lint + typecheck + test + build) | `pnpm run check:harden` |
+| Full hardening gate (5 domain/DB checks + lint + typegen + typecheck + test + build) | `pnpm run check:harden` |
 | CI gate (same as harden) | `pnpm run ci` |
 
 **Validate once per task, not once per step.** Finish the work first — no lint, typecheck, test, or
@@ -80,7 +80,5 @@ user-level settings on 2026-08-01, so **no approval prompt fires for them any mo
 the agent's own compliance stops an edit. Treat the absence of a prompt as silence, never as
 approval.
 
-A shared unlock passphrase used to live in this section. It was removed on 2026-07-31 because it sat
-in a committed file — anyone who could read the repo could read the phrase and "unlock" the file, so
-it authenticated nobody. **Do not reintroduce a passphrase here.** Approval belongs in the
-conversation, not in version control.
+**Do not reintroduce a passphrase here.** A shared one was removed 2026-07-31 (it sat in a committed
+file, so it authenticated nobody); approval belongs in the conversation, not in version control.

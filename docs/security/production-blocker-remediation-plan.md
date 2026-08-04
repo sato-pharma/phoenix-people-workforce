@@ -1,5 +1,12 @@
 # Phoenix Workforce Production Blocker Remediation Plan
 
+> **Reconciled 2026-08-04.** Sandbox ref `oaifhavixhdtwmseshff` — referenced below only as an
+> explicitly *rejected* target and inside "confirm the URL does not contain this ref" guards —
+> is now **dead** (it resolves to nothing; the only live projects are production
+> `ozucdzovmcqvepbozvqf` and staging `cifwmndunmlxjhyjugxa`, see AGENTS.md §3). Those
+> reject-guards still hold. The admin-HR identity remediation is already marked complete; the
+> `employee_probation` RLS item remains a reviewed tracked exception.
+
 This plan is documentation only. Do not apply the role-alignment migration or either remediation until the production change window, backup, and final preflight are approved.
 
 Production target:

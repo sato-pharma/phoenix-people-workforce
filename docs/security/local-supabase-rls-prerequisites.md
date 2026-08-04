@@ -9,7 +9,7 @@ It does not touch production, create Supabase cloud branches, create Supabase pr
 1. Install Docker Desktop for Windows.
 2. Open Docker Desktop and wait until it says the engine is running.
 3. Enable the WSL2 backend if Docker Desktop or Windows prompts for it.
-4. Use Node.js 20 or later.
+4. Use Node.js 24 or later (the repo's `engines.node` floor).
 5. Use the Supabase CLI through this repo:
 
 ```powershell
@@ -72,7 +72,8 @@ pnpm run db:rls:check-local-prereqs
 
 `pnpm run db:rls:check-local-prereqs` checks:
 
-- Node.js version, requiring Node 20 or later.
+- Node.js version. The preflight's own check only requires Node 20+, but the repo's
+  `engines.node` floor is Node 24 — install Node 24 or later.
 - npm availability.
 - Docker command availability.
 - Docker daemon status.
