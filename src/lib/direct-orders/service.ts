@@ -455,6 +455,28 @@ async function attachDistributorCodes(pharmacies: DirectOrderPharmacy[]): Promis
   for (const pharmacy of pharmacies) pharmacy.distributorCodes = byPharmacy.get(pharmacy.id) ?? [];
 }
 
+/**
+ * Separators someone reaches for when they want to put TWO codes in a box built for one.
+ *
+ * This is not hypothetical tidying. A live pharmacy was registered with `829575 \ 1533576` —
+ * two real-looking codes crammed into one field, which the form accepted. That single string is
+ * then matched against the distributor catalogue as a whole, so it can never equal either code:
+ * the pharmacy silently matches NOTHING and its retail sales never appear.
+ *
+ * A customer code is one opaque token. Anything with a separator inside is two answers to a
+ * question that has one, so it is refused rather than stored and quietly ignored.
+ */
+const CUSTOMER_CODE_SEPARATORS = /[\\/,;|\s]/;
+
+function assertSingleCustomerCode(customerCode: string): void {
+  if (CUSTOMER_CODE_SEPARATORS.test(customerCode)) {
+    badRequest(
+      `"${customerCode}" looks like more than one code. Enter ONE customer code per distributor — ` +
+        "no spaces, slashes, commas or semicolons. Add a second distributor row for another code.",
+    );
+  }
+}
+
 export async function createDirectOrderPharmacy(
   access: AccessContext,
   input: {
@@ -480,7 +502,17 @@ export async function createDirectOrderPharmacy(
   for (const pair of input.distributorCodes ?? []) {
     const distributorCode = String(pair.distributorCode ?? "").trim();
     const customerCode = String(pair.customerCode ?? "").trim();
-    if (distributorCode && customerCode) byDistributor.set(distributorCode, customerCode);
+    if (!distributorCode || !customerCode) continue;
+    assertSingleCustomerCode(customerCode);
+    if (byDistributor.has(distributorCode)) {
+      // UNIQUE (pharmacy_id, distributor_code) would reject this anyway, but as an opaque
+      // database error. Say plainly what is wrong instead.
+      badRequest(
+        `${distributorCode} appears twice. A pharmacy holds ONE customer code per distributor — ` +
+          "add the second code under the distributor it actually belongs to.",
+      );
+    }
+    byDistributor.set(distributorCode, customerCode);
   }
   if (byDistributor.size === 0) {
     badRequest("Add at least one distributor and its customer code for this pharmacy.");
@@ -1007,6 +1039,27 @@ export async function decideDirectOrder(
 
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
+
+  // An unverified pharmacy blocks the FINAL approval only (owner rule, 2026-08-04). This is the
+  // one deliberate block in the module, and it is narrow on purpose:
+  //
+  //   - SFE and the sales line still review and pass the request normally, so the order keeps
+  //     moving and the submitter is not stuck waiting on an admin before anything can happen.
+  //   - Only the last rung refuses, because that is the step that injects money into Source of
+  //     Sales against a distributor code nobody has confirmed exists.
+  //
+  // A pharmacy is 'pending_review' when a customer code was not found in that distributor's own
+  // catalogue — the state a hand-typed code lands in. Acknowledging it is Super-Admin only.
+  if (input.decision === "approve" && evaluation.isFinal) {
+    const pharmacyForGate = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    if (pharmacyForGate?.verificationStatus === "pending_review") {
+      badRequest(
+        `"${pharmacyForGate.pharmacyName}" (${pharmacyForGate.phoenixPharmacyCode}) has a distributor customer code ` +
+          "that is not in the distributor's own list, so it cannot be finalized yet. A System Admin must " +
+          "acknowledge the pharmacy first — every earlier approval on this request stands.",
+      );
+    }
+  }
 
   const action = directOrderDecisionAction({ decision: input.decision, isFinal: evaluation.isFinal });
   await assertDirectOrderWorkflowTransition({
@@ -1956,12 +2009,21 @@ export async function getDirectOrderApprovalDetail(
   // Geography names and the area's medical rep are resolved HERE, at the single choke point
   // every approval surface reads, rather than in the components — which is why both of them
   // used to print raw brick/area codes.
-  const [geoMaps, rep, pharmacyHistory, retail] = await Promise.all([
+  const [geoMaps, rep, pharmacyHistory, retail, productPrices] = await Promise.all([
     loadDirectOrderGeoNames(),
     resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
     loadPharmacyOrderHistory(pharmacy, request.id),
     loadPharmacyRetailHistory(pharmacy),
+    // The product's CURRENT prices, so the window can distinguish "never entered" from
+    // "entered, but not the basis for this deal" — a discount order otherwise reported a
+    // pharmacy price of "not set" for a product that had one.
+    getSupabaseAdmin()
+      .from("source_of_sales_products")
+      .select("pharmacy_price, public_price")
+      .eq("product_code", request.productCode)
+      .maybeSingle(),
   ]);
+  const priceRow = productPrices.data as { pharmacy_price?: number | null; public_price?: number | null } | null;
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
   const bonusOverCap = isRequestOverCap(request, caps);
@@ -1971,6 +2033,8 @@ export async function getDirectOrderApprovalDetail(
     pharmacy,
     geo: resolveDirectOrderGeo(pharmacy, geoMaps),
     medicalRep: toDirectOrderAreaRep(rep),
+    productPharmacyPrice: priceRow?.pharmacy_price == null ? null : Number(priceRow.pharmacy_price),
+    productPublicPrice: priceRow?.public_price == null ? null : Number(priceRow.public_price),
     distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
     distributors: toDistributorRows(pharmacy?.distributorCodes, geoMaps),
     pharmacyHistory,

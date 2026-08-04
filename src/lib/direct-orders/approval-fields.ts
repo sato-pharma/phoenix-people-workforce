@@ -137,11 +137,26 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
   const priceWithNote = (value: number | null | undefined, note: string): string =>
     value == null ? `${DASH} (not set — ${note})` : `${money(value)} (${note})`;
 
+  /**
+   * The basis that did NOT price this deal.
+   *
+   * A null snapshot here means "not applicable", NOT "no price exists" — and conflating those
+   * shipped a real bug: a discount order read "Pharmacy price — not set" for a product whose
+   * pharmacy price was 281.688, telling the owner the price he had just saved had vanished.
+   * Fall back to the product's CURRENT price so a saved price is always visible, and reserve
+   * "not set" for a product that genuinely has none.
+   */
+  const unusedPrice = (snapshot: number | null, current: number | null, why: string): string => {
+    const value = snapshot ?? current;
+    if (value == null) return `${DASH} (not set — ${why})`;
+    return `${money(value)} (on file, ${why})`;
+  };
+
   fields.push({
     label: "Pharmacy price",
     value:
       request.dealType !== "bonus"
-        ? priceWithNote(request.pharmacyPriceSnapshot, "not used — discount deal")
+        ? unusedPrice(request.pharmacyPriceSnapshot, detail.productPharmacyPrice, "not used — discount deal")
         : request.pharmacyPriceSnapshot == null
           ? `${DASH} (not set — valued at the factory price)`
           : `${money(request.pharmacyPriceSnapshot)} (used for this deal)`,
@@ -151,7 +166,7 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     value:
       request.dealType === "discount"
         ? priceWithNote(request.publicPriceSnapshot, "used for this deal")
-        : priceWithNote(request.publicPriceSnapshot, "not used — bonus deal"),
+        : unusedPrice(request.publicPriceSnapshot, detail.productPublicPrice, "not used — bonus deal"),
   });
   if (request.dealType === "discount") {
     fields.push({ label: "Discount %", value: `${(request.discountPct ?? 0).toLocaleString("en-US")}%` });
