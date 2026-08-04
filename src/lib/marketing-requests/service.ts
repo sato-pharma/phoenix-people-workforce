@@ -2712,7 +2712,10 @@ export async function getMarketingRequestDecisionSummary(
     request.customerId
       ? supabase
         .from("marketing_customers")
-        .select("display_name, customer_code, customer_type, speciality, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name")
+        // `speciality` does NOT exist on marketing_customers — naming it here threw
+        // "column does not exist" and took the whole approval window down to its safe state.
+        // The real column for the free-text qualifier is `other_type_description`.
+        .select("display_name, customer_code, customer_type, other_type_description, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name")
         .eq("id", request.customerId)
         .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -2757,7 +2760,7 @@ export async function getMarketingRequestDecisionSummary(
     evidence_photo_name?: string | null;
     extracted_area_name?: string | null;
     extracted_governorate_name?: string | null;
-    speciality?: string | null;
+    other_type_description?: string | null;
   } | null;
   const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
   const customerName = cleanText(customerRow?.display_name);
@@ -2808,7 +2811,7 @@ export async function getMarketingRequestDecisionSummary(
     customerContactMobile: cleanText(contactRow?.mobile_number),
     customerContactName: cleanText(contactRow?.contact_name),
     customerGovernorate: cleanText(customerRow?.extracted_governorate_name),
-    customerSpeciality: cleanText(customerRow?.speciality),
+    customerSpeciality: cleanText(customerRow?.other_type_description),
     customerType: cleanText(customerRow?.customer_type),
     evidencePhotoName: cleanText(customerRow?.evidence_photo_name),
     notes: cleanText(request.notes),
