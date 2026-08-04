@@ -561,6 +561,7 @@ import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
+import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1170,6 +1171,8 @@ await runTest(
   "payroll ⨯ deductions gate composition (payroll never pays what the module refuses to publish; dsm_no_record never auto-publishes into a sheet; holiday_bridge reaches the other bucket)",
   runPayrollDeductionGateComposesWithPublishRuleTests,
 );
+
+await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4,271 units; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

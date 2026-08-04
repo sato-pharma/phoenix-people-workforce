@@ -18,6 +18,7 @@ import {
   loadRegionBySubmitter,
 } from "@/lib/sales/closing-organogram-regions";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
+import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
@@ -3418,6 +3419,76 @@ export function buildMonthlyClosingMatrix(input: {
   };
 }
 
+/** Direct money for one month, already resolved down to (areaCode, productCode). */
+type JulyDirectByArea = {
+  /** `${areaCode}|${productCode}` → the area's own direct units and value, exactly as submitted. */
+  byAreaProduct: Map<string, { salesUnits: number; salesValue: number }>;
+  /** Direct that belongs to no area (the National Sales Manager's own orders), by product code. */
+  areaLessByProduct: Map<string, { salesUnits: number; salesValue: number }>;
+};
+
+/**
+ * Resolve July 2026's hand-mapped direct sales to (area, product), or null to leave the matrix
+ * exactly as it behaves today.
+ *
+ * Returns null — deliberately, and silently in the sense that the old layout simply persists —
+ * whenever it cannot prove the mapping describes the SAME money the direct RPC returned:
+ *   * the period is not July 2026 (every other month has no area mapping at all);
+ *   * the mapping totals and the RPC totals disagree by more than a piastre.
+ *
+ * That reconciliation is the whole safety property. The mapping and the RPC are two descriptions
+ * of one month at different grains; if they ever drift apart, merging one into the matrix while
+ * the other set the region rows would move the month's reported total. Falling back to the
+ * untouched region behaviour is always recoverable — a wrong total is not.
+ */
+function resolveJulyDirectByArea(
+  matrix: MonthlyClosingMatrix,
+  directCells: MonthlyClosingDirectCell[],
+): JulyDirectByArea | null {
+  if (matrix.period !== JULY_2026_DIRECT_PERIOD) return null;
+
+  const line = (matrix.line ?? "").trim().toLowerCase();
+  const mapped = line
+    ? JULY_2026_DIRECT_ROWS.filter((row) => row.line.trim().toLowerCase() === line)
+    : JULY_2026_DIRECT_ROWS;
+  if (mapped.length === 0) return null;
+
+  // Compare on the products this line's matrix actually shows: the RPC and the closing both drop
+  // LA003/LA004/SS001, so counting a mapped row for a product with no column would guarantee a
+  // false mismatch and permanently disable the merge.
+  const columnCodes = new Set(matrix.columns.map((column) => normalizeCode(column.productCode)));
+  const inScope = mapped.filter((row) => columnCodes.has(normalizeCode(row.productCode)));
+
+  const mappedValue = inScope.reduce((sum, row) => sum + row.value, 0);
+  const rpcValue = directCells
+    .filter((cell) => columnCodes.has(normalizeCode(cell.productCode)))
+    .reduce((sum, cell) => sum + cell.salesValue, 0);
+  if (Math.abs(mappedValue - rpcValue) > 0.01) return null;
+
+  const byAreaProduct = new Map<string, { salesUnits: number; salesValue: number }>();
+  const areaLessByProduct = new Map<string, { salesUnits: number; salesValue: number }>();
+  const add = (
+    target: Map<string, { salesUnits: number; salesValue: number }>,
+    key: string,
+    units: number,
+    value: number,
+  ) => {
+    const entry = target.get(key) ?? { salesUnits: 0, salesValue: 0 };
+    entry.salesUnits += units;
+    entry.salesValue += value;
+    target.set(key, entry);
+  };
+
+  inScope.forEach((row) => {
+    const productCode = normalizeCode(row.productCode);
+    const areaCode = normalizeCode(row.areaCode);
+    if (areaCode) add(byAreaProduct, `${areaCode}|${productCode}`, row.qty, row.value);
+    else add(areaLessByProduct, productCode, row.qty, row.value);
+  });
+
+  return { areaLessByProduct, byAreaProduct };
+}
+
 /**
  * Pure injector. Adds the Direct (company) channel on top of the distributor matrix:
  *  - direct sales in a REAL region become a synthetic "Direct" area row inside that region, so
@@ -3456,6 +3527,18 @@ export function injectDirectIntoMatrix(
     target.salesValue += cell.salesValue;
   });
 
+  // ── July 2026: direct merges INTO the real area rows ────────────────────────
+  // July is the one month whose direct orders were mapped to areas by hand (the Direct Order
+  // module went live in August, so July's rows reached Source of Sales with a region but a blank
+  // area). The owner ruled that this month's direct money belongs in the areas that earned it,
+  // not in a separate "Direct orders (company)" row.
+  //
+  // The mapping and the direct RPC describe the SAME money at different grains, so they must never
+  // both be added. When the mapping applies we use it INSTEAD of the region cells. That is only
+  // safe if the two agree, so we reconcile first and fall back to the untouched region behaviour
+  // if they do not — a mismatch would silently move the month's total, which is far worse than
+  // showing the old layout.
+  const julyByArea = resolveJulyDirectByArea(matrix, directCells);
   const regionNameByCode = new Map(matrix.regions.map((region) => [region.regionCode, region.regionName]));
   const makeDirectArea = (regionCode: string, cells: MonthlyClosingCell[]): MonthlyClosingAreaRow => ({
     areaCode: "DIRECT",
@@ -3476,22 +3559,55 @@ export function injectDirectIntoMatrix(
     return { cells, kind: "regionSubtotal", regionCode, regionName, rowTotal: sumClosingRowTotal(cells) };
   };
 
-  // Append the Direct area to each existing region that has direct sales.
   const present = new Set(matrix.regions.map((region) => region.regionCode));
-  const regions: MonthlyClosingRegionGroup[] = matrix.regions.map((region) => {
-    const direct = byRegion.get(region.regionCode);
-    if (!direct) return region;
-    const areas = [...region.areas, makeDirectArea(region.regionCode, direct)];
-    return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
-  });
+  let regions: MonthlyClosingRegionGroup[];
 
-  // Real direct regions absent from the distributor matrix (no distributor areas there).
-  byRegion.forEach((cells, regionCode) => {
-    if (regionCode === NATIONAL || present.has(regionCode)) return;
-    const regionName = regionNameByCode.get(regionCode) ?? regionCode;
-    const areas = [makeDirectArea(regionCode, cells)];
-    regions.push({ areas, regionCode, regionName, subtotal: subtotalOf(regionCode, regionName, areas) });
-  });
+  if (julyByArea) {
+    // July: fold each area's own direct money into that area's row and emit NO "Direct" row.
+    // `isDirect` is set on any area that absorbed direct, because the export writes such rows as
+    // static cached values — an area row containing direct must NOT be rendered as a SUMIFS over
+    // the Calc sheet, which holds distributor invoice lines only and would silently undercount it.
+    regions = matrix.regions.map((region) => {
+      let regionTouched = false;
+      const areas = region.areas.map((area) => {
+        // Per-AREA flag. A region-scoped flag would mark every later area in the same region as
+        // direct-bearing once any one of them absorbed direct, and the export would then render
+        // untouched areas as static values instead of live formulas.
+        let areaTouched = false;
+        const areaCode = normalizeCode(area.areaCode);
+        const cells = area.cells.map((cell, index) => {
+          const direct = julyByArea.byAreaProduct.get(`${areaCode}|${normalizeCode(columns[index].productCode)}`);
+          if (!direct) return cell;
+          areaTouched = true;
+          const merged = { ...cell };
+          merged.salesUnits += direct.salesUnits;
+          merged.salesValue += direct.salesValue;
+          return roundedClosingCell(merged);
+        });
+        if (!areaTouched) return area;
+        regionTouched = true;
+        return { ...area, cells, isDirect: true, rowTotal: sumClosingRowTotal(cells) };
+      });
+      if (!regionTouched) return region;
+      return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
+    });
+  } else {
+    // Every other month: unchanged. Direct has no area to merge into, so it stays its own row.
+    regions = matrix.regions.map((region) => {
+      const direct = byRegion.get(region.regionCode);
+      if (!direct) return region;
+      const areas = [...region.areas, makeDirectArea(region.regionCode, direct)];
+      return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
+    });
+
+    // Real direct regions absent from the distributor matrix (no distributor areas there).
+    byRegion.forEach((cells, regionCode) => {
+      if (regionCode === NATIONAL || present.has(regionCode)) return;
+      const regionName = regionNameByCode.get(regionCode) ?? regionCode;
+      const areas = [makeDirectArea(regionCode, cells)];
+      regions.push({ areas, regionCode, regionName, subtotal: subtotalOf(regionCode, regionName, areas) });
+    });
+  }
 
   // Grand total = sum of every region's areas (now including the regional Direct rows).
   const grandCells = columns.map((_column, index) => {
@@ -3506,7 +3622,22 @@ export function injectDirectIntoMatrix(
   };
 
   // Direct – National row (no region) + the final company total.
-  const nationalCells = byRegion.get(NATIONAL);
+  // In July that row carries the National Sales Manager's own direct orders: the owner ruled they
+  // are distributed to no area, so they print once, immediately above the total, and are counted
+  // only there. Every other month it is the RPC's "NATIONAL" bucket, unchanged.
+  const nationalCells = julyByArea
+    ? (julyByArea.areaLessByProduct.size > 0
+        ? columns.map((column) => {
+            const cell = emptyClosingCell();
+            const direct = julyByArea.areaLessByProduct.get(normalizeCode(column.productCode));
+            if (direct) {
+              cell.salesUnits += direct.salesUnits;
+              cell.salesValue += direct.salesValue;
+            }
+            return cell;
+          })
+        : undefined)
+    : byRegion.get(NATIONAL);
   let directNational: MonthlyClosingSubtotalRow | null = null;
   let companyTotal: MonthlyClosingGrandTotalRow | null = null;
   if (nationalCells) {

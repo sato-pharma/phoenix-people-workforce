@@ -4,6 +4,7 @@ import { systemIdentity } from "@/config/system-settings";
 import type { MonthlyClosingCell, MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
+import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -639,10 +640,15 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
 function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs, note?: string) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
-  const productCols = products.length * 5;
-  const totalCols = 2 + productCols + 3;
-  const productStart = (index: number) => 3 + index * 5;
+  // Each product block is Units, Value, Tgt Units, Tgt Value, Ach %, then this row's share of the
+  // LINE for that product — sales share and target share. 7 metrics per product.
+  const METRICS_PER_PRODUCT = 7;
+  const productCols = products.length * METRICS_PER_PRODUCT;
+  // +3 Grand Total metrics, then the same two share columns for the row as a whole.
+  const totalCols = 2 + productCols + 3 + 2;
+  const productStart = (index: number) => 3 + index * METRICS_PER_PRODUCT;
   const grandStart = 3 + productCols;
+  const contribStart = grandStart + 3;
 
   bandHeader(sheet, matrix.line, matrix.period, "Closing Matrix", totalCols);
 
@@ -659,16 +665,48 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   };
   sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Area");
   sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area Name");
-  const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %"];
+  const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales % of Line", "Tgt % of Line"];
   products.forEach((product, index) => {
     const start = productStart(index);
-    sheet.mergeCells(4, start, 4, start + 4);
+    sheet.mergeCells(4, start, 4, start + METRICS_PER_PRODUCT - 1);
     headerStyle(sheet.getCell(4, start), `${product.productName} (${product.productCode})`);
     metricLabels.forEach((label, metricIndex) => headerStyle(metricRow.getCell(start + metricIndex), label));
   });
   sheet.mergeCells(4, grandStart, 4, grandStart + 2);
   headerStyle(sheet.getCell(4, grandStart), "Grand Total");
   ["Value", "Tgt Value", "Ach %"].forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
+  sheet.mergeCells(4, contribStart, 4, contribStart + 1);
+  headerStyle(sheet.getCell(4, contribStart), "Contribution of Line");
+  ["Sales % of Line", "Tgt % of Line"].forEach((label, index) => headerStyle(metricRow.getCell(contribStart + index), label));
+
+  // ── Contribution denominators ────────────────────────────────────────────────
+  // Each row's share is measured against the LINE's own total, so the shares on this sheet add
+  // up to 100%. The denominator row must therefore be the last total written — "Grand Total
+  // (incl. Direct)" when Direct exists, otherwise "National Grand Total" — because that is the
+  // only row that contains every EGP on the sheet. Its index is computed BEFORE any row is
+  // written, since every contribution cell above it has to point at it.
+  //
+  // Both cells are live formulas dividing this row's own Grand Total cell by that row's, so
+  // editing any value keeps the percentage honest. Guarded twice: a blank numerator stays blank
+  // (an area with no target must never read "0.0%"), and IFERROR covers a zero denominator.
+  const areaAndSubtotalRows = matrix.regions.reduce((count, region) => count + region.areas.length + 1, 0);
+  const nationalGrandRow = 6 + areaAndSubtotalRows;
+  // Written order below is: National Grand Total, then Direct – National, then Grand Total (incl.
+  // Direct). Point at the company total when it exists (it is the last row and the only one that
+  // includes Direct); otherwise the national grand total IS the line total. Spelled out per
+  // combination rather than summing flags, so a future change that emits one without the other
+  // cannot silently aim the denominator at the Direct row.
+  const denominatorRow = matrix.companyTotal
+    ? nationalGrandRow + (matrix.directNational ? 1 : 0) + 1
+    : nationalGrandRow;
+  const GRAND_VALUE_COL = columnLetter(grandStart);
+  const GRAND_TARGET_COL = columnLetter(grandStart + 1);
+  const shareCell = (excelRow: number, col: string, numerator: number | null, denominator: number): CellValue =>
+    F(
+      `IFERROR(IF(${col}${excelRow}="","",${col}${excelRow}/$${col}$${denominatorRow}),"")`,
+      numerator !== null && denominator ? numerator / denominator : 0,
+    );
+  const denominatorTotals = matrix.companyTotal ?? matrix.grandTotal;
 
   let rowIndex = 6;
   let zebra = false;
@@ -723,6 +761,21 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
       num(row.getCell(start + 2), cell?.targetUnits ?? null, UNITS_FMT, tone);
       num(row.getCell(start + 3), cell?.targetValue ?? null, VALUE_FMT, tone);
       num(row.getCell(start + 4), cell?.achievement ?? null, PCT_FMT, tone, true);
+      // This row's share of the LINE for THIS product — sales and target, against the same
+      // denominator row every other share on the sheet uses, so the column adds to 100%.
+      const denomCell = denominatorTotals.cells[index];
+      num(
+        row.getCell(start + 5),
+        shareCell(rowIndex, columnLetter(start + 1), cell?.salesValue ?? null, denomCell?.salesValue ?? 0),
+        PCT_FMT,
+        tone,
+      );
+      num(
+        row.getCell(start + 6),
+        shareCell(rowIndex, columnLetter(start + 3), cell?.targetValue ?? null, denomCell?.targetValue ?? 0),
+        PCT_FMT,
+        tone,
+      );
     });
     const totalValue = isStatic
       ? rowTotal.salesValue
@@ -730,20 +783,58 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     num(row.getCell(grandStart), totalValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + 1), rowTotal.targetValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + 2), rowTotal.achievement, PCT_FMT, tone, true);
+    num(
+      row.getCell(contribStart),
+      shareCell(rowIndex, GRAND_VALUE_COL, rowTotal.salesValue, denominatorTotals.rowTotal.salesValue),
+      PCT_FMT,
+      tone,
+    );
+    num(
+      row.getCell(contribStart + 1),
+      shareCell(rowIndex, GRAND_TARGET_COL, rowTotal.targetValue, denominatorTotals.rowTotal.targetValue ?? 0),
+      PCT_FMT,
+      tone,
+    );
     rowAccent = null;
     rowIndex += 1;
   };
 
+  // Two DIFFERENT questions, deliberately not the same flag:
+  //   * is this the synthetic "Direct orders (company)" pseudo-area?  -> drives the LABEL and the
+  //     blue band. Identified by its areaCode, which the injector sets to "DIRECT".
+  //   * does this row contain direct money?  -> drives STATIC rendering. A real area that absorbed
+  //     July's direct sales is still "GZ1 / Giza - Giza Centers" and must keep its own name.
+  // Collapsing the two would rename every area that absorbed direct to "◆ Direct".
+  const isSyntheticDirect = (area: { areaCode: string }) => (area.areaCode ?? "").trim().toUpperCase() === "DIRECT";
+
+  // Every live formula on this sheet SUMIFS the hidden Calc sheet, which holds distributor invoice
+  // lines ONLY — direct sales have no block there. So once any row carries direct, the subtotal and
+  // grand-total formulas would recalculate to less than the value they were cached with. When
+  // direct has been merged into the areas we therefore write the whole sheet as cached values:
+  // a static number that is right beats a live formula that silently drops direct on first edit.
+  const hasMergedDirect = matrix.regions.some((region) =>
+    region.areas.some((area) => area.isDirect && !isSyntheticDirect(area)));
+
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
-      const isDirect = Boolean(area.isDirect);
-      writeRow("area", isDirect ? "◆ Direct" : area.areaCode, isDirect ? "Direct orders (company)" : area.areaName, area.cells, area.rowTotal, "area", isDirect, isDirect ? DIRECT_FILL : null);
+      const synthetic = isSyntheticDirect(area);
+      const carriesDirect = Boolean(area.isDirect);
+      writeRow(
+        "area",
+        synthetic ? "◆ Direct" : area.areaCode,
+        synthetic ? "Direct orders (company)" : area.areaName,
+        area.cells,
+        area.rowTotal,
+        "area",
+        carriesDirect,
+        synthetic ? DIRECT_FILL : null,
+      );
       zebra = !zebra;
     });
-    writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
+    writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", hasMergedDirect);
     zebra = false;
   });
-  writeRow("grand", "", "National Grand Total", matrix.grandTotal.cells, matrix.grandTotal.rowTotal, "grand");
+  writeRow("grand", "", "National Grand Total", matrix.grandTotal.cells, matrix.grandTotal.rowTotal, "grand", hasMergedDirect);
   if (matrix.directNational) {
     writeRow("subtotal", "◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", true, DIRECT_FILL);
   }
@@ -1077,6 +1168,88 @@ function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparis
   });
 }
 
+// ── July-2026 direct orders — a deliberate ONE-OFF ───────────────────────────
+/**
+ * July 2026 is the only month whose direct orders were mapped to areas by hand.
+ *
+ * The Direct Order module went live in AUGUST, so from 2026-08 approved orders arrive already
+ * carrying their own area. July predates that: its 46 sheet rows reached Source of Sales with a
+ * region but a blank area, which is why the closing has only ever shown them lumped per region.
+ * The owner had them mapped once, by hand, and asked for the result as its own tab.
+ *
+ * Deliberately a hard-coded snapshot rather than a lookup table:
+ *   * it describes ONE closed month whose numbers can no longer move, so there is nothing to keep
+ *     in sync — a table would invite edits to a month that is already reported;
+ *   * it is inert for every other period (see the period guard at the call site), so it cannot
+ *     alter August or anything after it;
+ *   * nothing else in the system reads it, so it cannot shift a number on any existing sheet.
+ *
+ * Units and value are written EXACTLY as submitted and are NEVER recomputed as qty × factory
+ * price. Direct deals carry negotiated bonus/discount pricing, so value deliberately does not
+ * equal qty × price — recomputing July at factory price would have inflated it by 31,837.35 EGP.
+ *
+ * The three rows with no area are the National Sales Manager's own direct orders; the owner ruled
+ * they are not distributed to any area, so they print as their own band immediately above the
+ * total and are counted only in that total.
+ */
+function writeJulyDirectSheet(workbook: ExcelJS.Workbook, line: string | null, period: string): void {
+  // A null line means the workbook is not scoped to one line, so every July direct row belongs in
+  // it. Filtering on a null line would silently produce an empty tab instead of the whole month.
+  const wanted = (line ?? "").trim().toLowerCase();
+  const rows = wanted
+    ? JULY_2026_DIRECT_ROWS.filter((row) => row.line.trim().toLowerCase() === wanted)
+    : JULY_2026_DIRECT_ROWS;
+  if (rows.length === 0) return;
+
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Orders (July)"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+  const columns: TableColumn[] = [
+    { label: "Region", width: 14 },
+    { label: "Area", width: 26 },
+    { label: "Medical Rep", width: 34 },
+    { label: "Pharmacy", width: 40 },
+    { label: "Product", width: 26 },
+    { label: "Units", numFmt: UNITS_FMT, right: true },
+    { dataBar: true, label: "Value (as submitted)", numFmt: VALUE_FMT, right: true, width: 20 },
+  ];
+  bandHeader(sheet, line, period, "Direct Orders — as submitted", columns.length);
+
+  // Areas first (sorted so a region's rows sit together), then the area-less rows last so they
+  // land immediately above the total exactly as the owner asked.
+  const withArea = rows.filter((row) => row.areaCode);
+  const withoutArea = rows.filter((row) => !row.areaCode);
+  const ordered = [
+    ...withArea.sort((a, b) =>
+      a.regionCode.localeCompare(b.regionCode) ||
+      a.areaCode.localeCompare(b.areaCode) ||
+      a.pharmacy.localeCompare(b.pharmacy)),
+    ...withoutArea,
+  ];
+
+  const body: CellValue[][] = ordered.map((row) => [
+    row.regionCode,
+    row.areaCode ? `${row.areaCode} — ${row.areaName}` : row.areaName,
+    row.repName || "—",
+    row.pharmacy,
+    row.product,
+    row.qty,
+    row.value,
+  ]);
+
+  const totalUnits = rows.reduce((sum, row) => sum + row.qty, 0);
+  const totalValue = Math.round(rows.reduce((sum, row) => sum + row.value, 0) * 100) / 100;
+  body.push(["", "TOTAL DIRECT", "", "", "", totalUnits, totalValue]);
+
+  writeTable(sheet, 4, {
+    columns,
+    note:
+      "July 2026 only. Units and value are exactly as submitted on the direct-order sheet — never recomputed as units × factory price, because direct deals carry their own negotiated bonus and discount. Rows showing no area are the National Sales Manager's own direct orders, counted in the total but not attributed to any area.",
+    rows: body,
+    title: "Direct orders mapped to areas",
+  });
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -1111,6 +1284,11 @@ export async function buildMonthlyClosingWorkbook(
   // Omitted for row-level filtered exports — see the option's own comment.
   if (options?.includeTargetSheet !== false) {
     writeTargetAchievementSheet(workbook, matrix);
+  }
+  // One-off: July 2026's hand-mapped direct orders. The period guard is what keeps this from
+  // ever appearing in another month — August onwards the module supplies the area itself.
+  if (matrix.period === JULY_2026_DIRECT_PERIOD) {
+    writeJulyDirectSheet(workbook, matrix.line, matrix.period);
   }
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
