@@ -80,6 +80,52 @@ for (const file of files) {
   }
 }
 
+// 4. Public SECURITY DEFINER functions must revoke EXECUTE from PUBLIC.
+// A function created in `public` inherits PostgreSQL's default EXECUTE grant to PUBLIC, and anon /
+// authenticated are members of PUBLIC — so a new SECURITY DEFINER function is callable with the
+// anonymous key unless the migration revokes it. Revoking only anon/authenticated is a no-op.
+//
+// tests/migrations-secdef-revoke-guard.test.ts enforces the same rule, but that test only runs
+// inside the full 578-file suite. Three migrations authored against `pnpm run check:migrations`
+// alone therefore looked clean here and failed later in CI (2026-08-04) — this duplicate lives in
+// the FAST check on purpose, so the defect surfaces in under a second instead of after a build.
+const SECDEF_CUTOFF = '20260719170000';
+for (const file of files) {
+  if (!/^\d{14}_/.test(file) || file.slice(0, 14) < SECDEF_CUTOFF) continue;
+
+  const raw = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+  // Strip line comments so prose mentioning "security definer", or a commented-out example,
+  // can neither raise a false alarm nor hide a real one.
+  const sql = raw
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('--');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n');
+  const lower = sql.toLowerCase();
+
+  const createsFunction = /\bcreate\s+(or\s+replace\s+)?function\s+(public\.)?[a-z_][a-z0-9_]*\s*\(/i.test(sql);
+  const isSecurityDefiner = /\bsecurity\s+definer\b/i.test(sql);
+  if (!createsFunction || !isSecurityDefiner) continue;
+
+  const hasRevokeExecute =
+    /\brevoke\s+execute\s+on\s+function\b/i.test(lower) ||
+    /\brevoke\s+execute\s+on\s+functions\b/i.test(lower) || // ALTER DEFAULT PRIVILEGES form
+    /execute\s+format\([^)]*revoke\s+execute/i.test(sql); // sweep via dynamic SQL
+  const revokesPublic = /\bfrom\s+[^;]*\bpublic\b/i.test(lower);
+
+  if (!(hasRevokeExecute && revokesPublic)) {
+    fail(
+      `"${file}" creates a public SECURITY DEFINER function but never REVOKEs EXECUTE on it FROM PUBLIC. ` +
+      'anon/authenticated inherit EXECUTE through PUBLIC membership, so revoking only those two is a no-op. ' +
+      'Add: revoke execute on function public.<fn>(<args>) from public, anon, authenticated; ' +
+      'then re-grant explicitly (revoking PUBLIC on a default ACL also strips service_role): ' +
+      'grant execute on function public.<fn>(<args>) to service_role;'
+    );
+  }
+}
+
 // Summary
 const total = files.length;
 if (errors === 0 && warnings === 0) {
