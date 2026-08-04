@@ -54,6 +54,53 @@ export function buildOutstationCarEvidenceImagePath(metadata: OutstationCarEvide
   return `car/${employeeHrId}/${draftOrRequestId}.jpg`;
 }
 
+/**
+ * The DEPARTURE photo's storage path. Kept under a sibling `departure/` prefix rather than
+ * overwriting the arrival photo's `car/<hr>/<draft>.jpg` — the two must coexist, and the arrival
+ * path is keyed on the draft id with `upsert: true`, so reusing it would silently replace the
+ * arrival photo with the departure one and leave the request with two gates satisfied by a single
+ * image. Keyed on the REQUEST id, because by the time a departure photo is taken the request
+ * exists and its draft id is no longer the thing that identifies it.
+ */
+export function buildOutstationDepartureEvidenceImagePath(input: {
+  employeeHrId: string;
+  requestId: string | number;
+}) {
+  const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
+  const requestId = sanitizeStorageSegment(String(input.requestId), "unknown-request");
+  return `departure/${employeeHrId}/${requestId}.jpg`;
+}
+
+export async function uploadOutstationDepartureEvidenceImage(params: {
+  employeeHrId: string;
+  imageDataUrl: string;
+  requestId: string | number;
+}) {
+  // Same JPEG-only, 2MB, live-capture parser as the arrival photo — a departure photo pasted
+  // from the gallery must fail on exactly the same rule.
+  const parsed = parseOutstationCarEvidenceImageDataUrl(params.imageDataUrl);
+  const path = buildOutstationDepartureEvidenceImagePath({
+    employeeHrId: params.employeeHrId,
+    requestId: params.requestId,
+  });
+
+  const { error } = await getSupabaseAdmin()
+    .storage.from(OUTSTATION_EVIDENCE_BUCKET)
+    .upload(path, parsed.bytes, {
+      cacheControl: "31536000",
+      contentType: parsed.contentType,
+      // false: a departure photo is captured once. Allowing an overwrite would let a later,
+      // more convenient photo quietly replace the one taken at the destination.
+      upsert: false,
+    });
+
+  if (error) {
+    throw new Error(`Unable to store the departure photo: ${error.message}`);
+  }
+
+  return path;
+}
+
 export function buildOutstationTicketAttachmentPath(input: {
   employeeHrId: string;
   fileName: string;

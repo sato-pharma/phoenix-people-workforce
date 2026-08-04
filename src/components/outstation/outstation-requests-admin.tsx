@@ -26,6 +26,7 @@ import { createPortal } from "react-dom";
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import { HeldRequestsPanel } from "@/components/outstation/held-requests-panel";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
 import { Button } from "@/components/ui/button";
@@ -954,6 +955,11 @@ export function OutstationRequestsAdmin({
             </>
           )}
         />
+
+        {/* Above the metrics on purpose: a held request is money an employee has not been paid,
+            and it is the only thing on this page that is actively waiting on someone. Renders
+            nothing at all when the queue is empty. */}
+        <HeldRequestsPanel />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <Metric label="Requests" value={String(filtered.length)} />

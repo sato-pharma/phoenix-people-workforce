@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 
 import type { OutstationCarEvidenceMetadata } from "../src/lib/outstation/types.ts";
-import { validateLiveCarEvidence } from "../src/lib/outstation/car-evidence.ts";
+import { validateLiveArrivalEvidence } from "../src/lib/outstation/car-evidence.ts";
 import {
   buildOutstationCarEvidenceImagePath,
   parseOutstationCarEvidenceImageDataUrl,
@@ -19,19 +19,19 @@ const validMetadata: OutstationCarEvidenceMetadata = {
 };
 
 export function runOutstationCarEvidenceValidationTests() {
-  const missingMetadata = validateLiveCarEvidence({
+  const missingMetadata = validateLiveArrivalEvidence({
     carEvidenceMetadata: null,
     transportationType: "car",
   });
   assert.equal(missingMetadata.isValid, false);
 
-  const valid = validateLiveCarEvidence({
+  const valid = validateLiveArrivalEvidence({
     carEvidenceMetadata: validMetadata,
     transportationType: "car",
   });
   assert.equal(valid.isValid, true);
 
-  const galleryEvidence = validateLiveCarEvidence({
+  const galleryEvidence = validateLiveArrivalEvidence({
     carEvidenceMetadata: {
       ...validMetadata,
       source: "gallery",
@@ -40,7 +40,7 @@ export function runOutstationCarEvidenceValidationTests() {
   });
   assert.equal(galleryEvidence.isValid, false);
 
-  const missingGps = validateLiveCarEvidence({
+  const missingGps = validateLiveArrivalEvidence({
     carEvidenceMetadata: {
       ...validMetadata,
       capturedLatitude: Number.NaN,
@@ -49,11 +49,35 @@ export function runOutstationCarEvidenceValidationTests() {
   });
   assert.equal(missingGps.isValid, false);
 
-  const trainDoesNotRequireCarEvidence = validateLiveCarEvidence({
-    carEvidenceMetadata: null,
-    transportationType: "train",
-  });
-  assert.equal(trainDoesNotRequireCarEvidence.isValid, true);
+  // ── Owner change (2026-08-04): the arrival photo is required for EVERY transport type ──
+  // This assertion is INVERTED from what it pinned before. A train/bus claim used to be exempt,
+  // which meant it could reach payroll carrying no photograph at all — 5 of the 12 requests in
+  // production on that date have no photo for exactly this reason. Every new request must now
+  // carry two photos, and this is the first of them.
+  for (const transportationType of ["train", "bus", "other"] as const) {
+    const missingArrivalPhoto = validateLiveArrivalEvidence({
+      carEvidenceMetadata: null,
+      transportationType,
+    });
+    assert.equal(
+      missingArrivalPhoto.isValid,
+      false,
+      `a ${transportationType} trip must NOT be exempt from the arrival photo`,
+    );
+    assert.match(
+      missingArrivalPhoto.message,
+      new RegExp(transportationType, "i"),
+      "the refusal must name the employee's actual transport, not tell a train passenger to photograph a car",
+    );
+
+    // …and the same non-car trip passes once the photo is there, so the requirement is about the
+    // photo's presence and never about the transport type.
+    assert.equal(
+      validateLiveArrivalEvidence({ carEvidenceMetadata: validMetadata, transportationType }).isValid,
+      true,
+      `a ${transportationType} trip with a live arrival photo is valid`,
+    );
+  }
 
   assert.equal(
     buildOutstationCarEvidenceImagePath(validMetadata),

@@ -38,6 +38,11 @@ import type {
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import type { ManagerAreaRepOption } from "@/lib/outstation/area-rep-options";
+import {
+  drawEvidenceWatermark,
+  getCompressedEvidenceCanvasSize,
+  resolveReadableLocation,
+} from "@/components/outstation/evidence-watermark";
 
 
 type MedicalTripOption = {
@@ -55,13 +60,6 @@ type CarEvidenceState = {
   requestId: string | null;
 };
 
-type CarEvidenceCaptureDetails = {
-  capturedAt: string;
-  capturedLatitude: number;
-  capturedLocationLabel: string;
-  capturedLongitude: number;
-};
-
 type PermissionPromptKind =
   | "destination-location"
   | "car-evidence-location"
@@ -73,7 +71,6 @@ type PermissionPromptState = {
 };
 
 const draftKey = outstationDraftStorageKey;
-const carEvidenceLogoSrc = "/brand/phoenix-camera-watermark.png";
 
 function buildDraftId() {
   return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function"
@@ -276,143 +273,6 @@ function getPermissionSettingsSteps(kind: PermissionPromptKind) {
     `Set ${permissionName} to Allow for this website.`,
     "Return to this page, reload it, then tap Accept & retry.",
   ];
-}
-
-function formatEvidenceDateTime(value: string) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "N/A" : date.toLocaleString();
-}
-
-async function resolveReadableLocation(latitude: number, longitude: number) {
-  try {
-    const response = await fetch("/api/outstation/reverse-geocode", {
-      body: JSON.stringify({ latitude, longitude }),
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    });
-    const payload = await response.json();
-    if (response.ok && typeof payload.label === "string" && payload.label.trim()) {
-      return payload.label.trim();
-    }
-  } catch {
-    // Human-readable location is best-effort; GPS metadata remains attached.
-  }
-
-  return "Location unavailable";
-}
-
-function loadWatermarkLogo() {
-  return new Promise<HTMLImageElement | null>((resolve) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
-    image.src = carEvidenceLogoSrc;
-  });
-}
-
-function drawWatermarkText(
-  context: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number,
-) {
-  const words = text.split(/\s+/g).filter(Boolean);
-  let line = "";
-  let currentY = y;
-
-  for (const word of words) {
-    const nextLine = line ? `${line} ${word}` : word;
-    if (context.measureText(nextLine).width > maxWidth && line) {
-      context.fillText(line, x, currentY);
-      line = word;
-      currentY += lineHeight;
-    } else {
-      line = nextLine;
-    }
-  }
-
-  if (line) {
-    context.fillText(line, x, currentY);
-  }
-
-  return currentY + lineHeight;
-}
-
-function getCompressedEvidenceCanvasSize(video: HTMLVideoElement) {
-  const sourceWidth = video.videoWidth || 1280;
-  const sourceHeight = video.videoHeight || 720;
-  const maxDimension = 1280;
-  const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
-
-  return {
-    height: Math.max(1, Math.round(sourceHeight * scale)),
-    width: Math.max(1, Math.round(sourceWidth * scale)),
-  };
-}
-
-async function drawCarEvidenceWatermark(
-  context: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  details: CarEvidenceCaptureDetails & { employeeHrId: string; requestDraftId: string },
-) {
-  const width = canvas.width;
-  const height = canvas.height;
-  const padding = Math.max(24, Math.round(width * 0.025));
-  const panelHeight = Math.max(150, Math.round(height * 0.22));
-  const logoSize = Math.max(112, Math.round(width * 0.13));
-  const titleFont = Math.max(18, Math.round(width * 0.018));
-  const bodyFont = Math.max(15, Math.round(width * 0.014));
-  const lineHeight = Math.round(bodyFont * 1.45);
-
-  const gradient = context.createLinearGradient(0, height - panelHeight, 0, height);
-  gradient.addColorStop(0, "rgba(0,0,0,0)");
-  gradient.addColorStop(0.35, "rgba(0,0,0,0.48)");
-  gradient.addColorStop(1, "rgba(0,0,0,0.72)");
-  context.fillStyle = gradient;
-  context.fillRect(0, height - panelHeight, width, panelHeight);
-
-  context.shadowColor = "rgba(0,0,0,0.65)";
-  context.shadowBlur = 8;
-  context.fillStyle = "#fff";
-  context.font = `800 ${titleFont}px sans-serif`;
-  context.fillText("Phoenix Workforce", padding, height - panelHeight + padding + titleFont);
-
-  context.font = `700 ${bodyFont}px sans-serif`;
-  context.shadowBlur = 6;
-  let y = height - panelHeight + padding + titleFont + lineHeight;
-  y = drawWatermarkText(
-    context,
-    `Time: ${formatEvidenceDateTime(details.capturedAt)}`,
-    padding,
-    y,
-    width - logoSize - padding * 3,
-    lineHeight,
-  );
-  y = drawWatermarkText(
-    context,
-    `Location: ${details.capturedLocationLabel}`,
-    padding,
-    y,
-    width - logoSize - padding * 3,
-    lineHeight,
-  );
-  drawWatermarkText(
-    context,
-    `HR ID: ${details.employeeHrId} | Draft: ${details.requestDraftId}`,
-    padding,
-    y,
-    width - logoSize - padding * 3,
-    lineHeight,
-  );
-
-  const logo = await loadWatermarkLogo();
-  if (logo) {
-    context.shadowBlur = 10;
-    context.drawImage(logo, width - padding - logoSize, height - padding - logoSize, logoSize, logoSize);
-  }
-  context.shadowBlur = 0;
 }
 
 export function MobileOutstationWizard({
@@ -1121,13 +981,16 @@ export function MobileOutstationWizard({
         position.coords.longitude,
       );
 
-      await drawCarEvidenceWatermark(context, canvas, {
+      await drawEvidenceWatermark(context, canvas, {
         capturedAt,
         capturedLatitude: position.coords.latitude,
         capturedLocationLabel,
         capturedLongitude: position.coords.longitude,
         employeeHrId,
-        requestDraftId: carEvidenceDraftId,
+        // Named in the burned-in panel so the arrival and departure photos are tellable apart
+        // from the image alone, without trusting the filename or the database row.
+        label: "Arrival photo",
+        reference: `Draft: ${carEvidenceDraftId}`,
       });
 
       const imageDataUrl = canvas.toDataURL("image/jpeg", 0.74);

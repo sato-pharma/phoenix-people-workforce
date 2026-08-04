@@ -42,6 +42,40 @@ export type OutstationTicketAttachmentMetadata = {
 };
 
 /**
+ * Two-photo gate (owner request 2026-08-04). `grandfathered` marks a request that pre-dates the
+ * rule: its trip is over and can never now be photographed, so it is EXEMPT rather than blocked.
+ * It is a separate state from `complete` on purpose — see expense-gate.ts.
+ */
+export type OutstationEvidenceGateStatus =
+  | "pending_arrival_photo"
+  | "pending_departure_photo"
+  | "complete"
+  | "grandfathered";
+
+/**
+ * What is stored alongside the departure photo. `review` is advisory only — the owner chose to
+ * FLAG a suspicious pair rather than refuse it, so nothing here blocks a submission.
+ */
+export type OutstationDepartureEvidenceMetadata = {
+  capturedAt: string;
+  capturedLatitude: number | null;
+  capturedLocationLabel: string | null;
+  capturedLongitude: number | null;
+  distanceFromArrivalKm: number | null;
+  flags: string[];
+  minutesAfterArrival: number | null;
+  source: "live_camera";
+  summary: string;
+};
+
+/** Workload gate. `manual` = a system admin entered it by hand after the CRM grab failed. */
+export type OutstationWorkloadGateStatus =
+  | "pending_workload"
+  | "complete"
+  | "manual"
+  | "grandfathered";
+
+/**
  * Readable geography for a captured GPS point — the replacement for showing a raw
  * coordinate pair. Lives here (rather than in captured-location.ts) so the request type can
  * reference it without a circular import back through the resolver.
@@ -229,9 +263,20 @@ export type OutstationExpenseRequest = {
   capturedAt: string;
   capturedLatitude: number;
   capturedLongitude: number;
+  /** The ARRIVAL photo — see the column comment in the 2026-08-04 migration for why it is still
+   * named car_*. Required for every transportation type since that date. */
   carEvidenceImagePath: string | null;
   carEvidenceImageUrl: string | null;
   carEvidenceMetadata: OutstationCarEvidenceMetadata | null;
+  departureCapturedAt: string | null;
+  departureEvidenceImagePath: string | null;
+  departureEvidenceMetadata: OutstationDepartureEvidenceMetadata | null;
+  evidenceGateStatus: OutstationEvidenceGateStatus;
+  /** How many times the CRM workload grab has been tried. Drives the admin repair screen. */
+  workloadCaptureAttempts: number;
+  workloadLastAttemptAt: string | null;
+  workloadLastAttemptError: string | null;
+  workloadGateStatus: OutstationWorkloadGateStatus;
   claimedTotalAmount: number;
   createdAt: string;
   distanceFromResidenceKm: number | null;

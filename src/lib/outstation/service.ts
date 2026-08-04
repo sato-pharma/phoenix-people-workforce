@@ -15,10 +15,11 @@ import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { mergeWorkloadEvidence } from "@/lib/outstation/workload-evidence";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/types";
-import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
+import { validateLiveArrivalEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
   createOutstationEvidenceSignedUrls,
+  uploadOutstationDepartureEvidenceImage,
   deleteOutstationCarEvidenceImage,
   deleteOutstationTicketAttachments,
   uploadOutstationCarEvidenceImage,
@@ -38,6 +39,16 @@ import {
   attachOutstationCapturedLocations,
   resolveOutstationCapturedLocation,
 } from "@/lib/outstation/captured-location";
+import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
+import {
+  reviewDepartureEvidence,
+  type DepartureEvidenceReview,
+} from "@/lib/outstation/departure-evidence";
+import {
+  nextEvidenceGateStatus,
+  resolveOutstationGateState,
+  validateManualWorkloadInput,
+} from "@/lib/outstation/expense-gate";
 import {
   resolveOutstationRecipientAddresses,
   resolveOutstationSubmitRouting,
@@ -72,6 +83,9 @@ import type {
   OutstationAllowanceBreakdown,
   OutstationApprovalRecommendation,
   OutstationCarEvidenceMetadata,
+  OutstationDepartureEvidenceMetadata,
+  OutstationEvidenceGateStatus,
+  OutstationWorkloadGateStatus,
   OutstationCalculationInput,
   OutstationCalculationResult,
   OutstationCaptureResult,
@@ -1335,7 +1349,7 @@ export async function submitOutstationRequest(
   options: { ticketAttachments?: OutstationTicketAttachmentUploadInput[] } = {},
 ) {
   const calculation = await calculateOutstationExpense(access, input);
-  const evidenceValidation = validateLiveCarEvidence({
+  const evidenceValidation = validateLiveArrivalEvidence({
     carEvidenceMetadata: input.carEvidenceMetadata,
     transportationType: input.transportationType,
   });
@@ -1499,6 +1513,14 @@ export async function submitOutstationRequest(
     captured_longitude: calculation.capturedLongitude,
     car_evidence_image_path: carEvidenceImagePath,
     car_evidence_metadata: storedCarEvidenceMetadata,
+    // Set explicitly, NOT left to the column default. The default is 'pending_arrival_photo',
+    // but a submitted request already HAS its arrival photo, so inheriting the default records a
+    // state the row's own evidence contradicts. The column default exists to make a row that
+    // skips this path fail CLOSED; it is not the value a real submission should carry.
+    evidence_gate_status: nextEvidenceGateStatus({
+      hasArrivalPhoto: Boolean(carEvidenceImagePath),
+      hasDeparturePhoto: false,
+    }),
     claimed_total_amount: input.claimedTotalAmount,
     distance_from_residence_km: calculation.distanceFromResidenceKm,
     distance_km: calculation.distanceFromResidenceKm,
@@ -1680,6 +1702,23 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
     capturedAt: isoString(row.captured_at),
     capturedLatitude: numberValue(row.captured_latitude),
     capturedLongitude: numberValue(row.captured_longitude),
+    departureCapturedAt: isoString(row.departure_captured_at) || null,
+    departureEvidenceImagePath: text(row.departure_evidence_image_path) || null,
+    departureEvidenceMetadata: safeJsonParse<OutstationDepartureEvidenceMetadata | null>(
+      row.departure_evidence_metadata,
+      null,
+    ),
+    // Fall back to the pre-gate states, not to the strict ones: a row read before the 2026-08-04
+    // migration has applied genuinely IS exempt, and defaulting it to "pending" would make the
+    // gate withhold payroll from every historical request the moment this code deploys ahead of
+    // the migration. The migration then stamps the real value.
+    evidenceGateStatus:
+      (text(row.evidence_gate_status) as OutstationEvidenceGateStatus) || "grandfathered",
+    workloadCaptureAttempts: Math.max(0, Math.trunc(numberValue(row.workload_capture_attempts))),
+    workloadLastAttemptAt: isoString(row.workload_last_attempt_at) || null,
+    workloadLastAttemptError: text(row.workload_last_attempt_error) || null,
+    workloadGateStatus:
+      (text(row.workload_gate_status) as OutstationWorkloadGateStatus) || "grandfathered",
     carEvidenceImagePath: text(row.car_evidence_image_path) || null,
     carEvidenceImageUrl: null,
     carEvidenceMetadata: safeJsonParse<OutstationCarEvidenceMetadata | null>(
@@ -2348,15 +2387,49 @@ export async function approveOutstationRequestForPayroll(
   }
 
   const request = mapOutstationRequestRow(data as Record<string, unknown>);
-  const payrollExpenseRows = await pushAcceptedOutstationExpenseToPayroll(request, access);
+
+  // ── The two-photo + workload gate (owner rule, 2026-08-04) ──────────────────
+  // Acceptance and PAYMENT are separated here. The request is still accepted and recorded
+  // above — what the gate withholds is the push into payroll, until both photos and the trip
+  // workload exist. Throwing instead would leave the employee unable to submit at all, which
+  // is not what was asked for.
+  //
+  // A request that pre-dates the rule reads 'grandfathered' and passes untouched. That is also
+  // what a row read BEFORE the migration applies returns (see mapOutstationRequestRow), so this
+  // code deploying ahead of the migration cannot strand a single payment.
+  //
+  // Requests held here are released by releaseOutstationRequestToPayrollIfReady, which runs as
+  // soon as the missing evidence lands.
+  const gate = resolveOutstationGateState({
+    evidenceGateStatus: request.evidenceGateStatus,
+    hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+    hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+    workloadGateStatus: request.workloadGateStatus,
+  });
+
+  const payrollExpenseRows = gate.isPayrollEligible
+    ? await pushAcceptedOutstationExpenseToPayroll(request, access)
+    : [];
+
+  if (!gate.isPayrollEligible) {
+    logError("Outstation request accepted but held out of payroll by the evidence gate", {
+      labels: {
+        blocker: gate.blocker ?? "unknown",
+        event: "outstation_request_held_by_gate",
+        requestId: String(request.id),
+      },
+    });
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
     entityId: String(request.id),
     entityType: "outstation_request",
-    newValues: { status: request.status },
+    newValues: { gateBlocker: gate.blocker, inPayroll: gate.isPayrollEligible, status: request.status },
     oldValues: { status: existing.status },
-    summary: `Outstation request ${request.id} accepted (${acceptedStatus}).`,
+    summary: gate.isPayrollEligible
+      ? `Outstation request ${request.id} accepted (${acceptedStatus}) and added to payroll.`
+      : `Outstation request ${request.id} accepted (${acceptedStatus}) but HELD out of payroll: ${gate.message}`,
   });
 
   if (!existing.status.startsWith("accepted")) {
@@ -2365,9 +2438,71 @@ export async function approveOutstationRequestForPayroll(
 
   return {
     expenseTripId: outstationPayrollTripId(request.id),
+    gate,
     payrollExpenseRows,
     request,
   };
+}
+
+/**
+ * Push a previously-held request into payroll once its evidence is complete.
+ *
+ * The counterpart to the gate in approveOutstationRequestForPayroll: that function withholds the
+ * payroll row, this one delivers it when the missing piece finally arrives. Without this, gating
+ * a request would strand it forever, which is strictly worse than not gating it at all.
+ *
+ * Safe to call repeatedly and from several triggers — it re-reads the request, re-resolves the
+ * gate, and refuses to act unless the request is accepted, eligible, and not already in payroll.
+ * Never throws: it runs as a follow-on to a photo or workload capture, and a payroll hiccup must
+ * not fail the capture the employee just made.
+ */
+export async function releaseOutstationRequestToPayrollIfReady(
+  requestId: number,
+  access: AccessContext,
+): Promise<{ released: boolean; reason: string }> {
+  try {
+    const request = await getOutstationRequestById(requestId);
+    if (!request) return { reason: "The request is no longer available.", released: false };
+
+    // Only an ACCEPTED request belongs in payroll. A rejected or still-pending one is not held
+    // by the evidence gate — it is held by a decision, and this must never override that.
+    if (!request.status.startsWith("accepted")) {
+      return { reason: `The request is ${request.status}, so it is not waiting on evidence.`, released: false };
+    }
+
+    const linked = await getLinkedOutstationPayrollExpense(request.id);
+    if (linked) {
+      return { reason: "The request is already in payroll.", released: false };
+    }
+
+    const gate = resolveOutstationGateState({
+      evidenceGateStatus: request.evidenceGateStatus,
+      hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+      hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+      workloadGateStatus: request.workloadGateStatus,
+    });
+    if (!gate.isPayrollEligible) return { reason: gate.message, released: false };
+
+    await pushAcceptedOutstationExpenseToPayroll(request, access);
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+      entityId: String(request.id),
+      entityType: "outstation_request",
+      newValues: { inPayroll: true },
+      oldValues: { inPayroll: false },
+      summary: `Outstation request ${request.id} released into payroll — evidence complete.`,
+    });
+    return { reason: gate.message, released: true };
+  } catch (error) {
+    logError("Outstation payroll release failed (non-blocking)", {
+      error,
+      labels: { event: "outstation_payroll_release_failed", requestId: String(requestId) },
+    });
+    return {
+      reason: error instanceof Error ? error.message : "The payroll release failed.",
+      released: false,
+    };
+  }
 }
 
 function uniqueValues(values: Array<string | null | undefined>) {
@@ -3218,4 +3353,393 @@ export async function runOutstationSlaDaily(): Promise<{ processed: number; erro
     }
   }
   return { processed, errors };
+}
+
+// ── Departure photo capture ───────────────────────────────────────────────────
+// The second of the two photos every request must carry (owner request 2026-08-04). Records the
+// photo, reviews it against the arrival capture, and advances the evidence gate.
+//
+// The review NEVER refuses the photo — the owner chose to flag a suspicious pair rather than
+// block it, so an employee with a poor GPS fix is never stranded. What it does is make the
+// distance, the gap and a late capture visible to whoever approves the request.
+export async function captureOutstationDeparturePhoto(
+  access: AccessContext,
+  input: { imageDataUrl: string; latitude?: number | null; locationLabel?: string | null; longitude?: number | null; requestId: number },
+): Promise<{ gateStatus: OutstationEvidenceGateStatus; review: DepartureEvidenceReview }> {
+  const request = await getOutstationRequestById(input.requestId);
+  if (!request) throw new Error("That outstation request is not available.");
+
+  // Own request only, unless the caller is an outstation admin. Checked here rather than in the
+  // route because this is the security boundary — a second caller must not be able to skip it.
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  const ownsRequest =
+    Boolean(callerHrId) && callerHrId === normalizeHrIdForAccess(request.employeeHrId);
+  if (!ownsRequest) {
+    await assertOutstationAdminAccess(access, "approve");
+  }
+
+  if (request.departureEvidenceImagePath) {
+    // Not an overwrite: the departure photo is the evidence that he was still there when he said
+    // he was, so a later replacement would defeat the point.
+    throw new Error("A departure photo has already been captured for this request.");
+  }
+  if (!request.carEvidenceImagePath) {
+    throw new Error(
+      "The arrival photo is missing, so a departure photo cannot be accepted yet — capture the arrival photo first.",
+    );
+  }
+
+  const capturedAt = new Date().toISOString();
+  const review = reviewDepartureEvidence({
+    arrivalCapturedAt: request.carEvidenceMetadata?.capturedAt ?? request.capturedAt,
+    arrivalLatitude: request.carEvidenceMetadata?.capturedLatitude ?? request.capturedLatitude,
+    arrivalLongitude: request.carEvidenceMetadata?.capturedLongitude ?? request.capturedLongitude,
+    departureCapturedAt: capturedAt,
+    departureLatitude: input.latitude ?? null,
+    departureLongitude: input.longitude ?? null,
+    tripEndDate: request.tripEndDate,
+  });
+
+  const path = await uploadOutstationDepartureEvidenceImage({
+    employeeHrId: request.employeeHrId,
+    imageDataUrl: input.imageDataUrl,
+    requestId: request.id,
+  });
+
+  const metadata: OutstationDepartureEvidenceMetadata = {
+    capturedAt,
+    capturedLatitude: typeof input.latitude === "number" ? input.latitude : null,
+    capturedLocationLabel: text(input.locationLabel) || null,
+    capturedLongitude: typeof input.longitude === "number" ? input.longitude : null,
+    distanceFromArrivalKm: review.distanceFromArrivalKm,
+    flags: review.flags,
+    minutesAfterArrival: review.minutesAfterArrival,
+    source: "live_camera",
+    summary: review.summary,
+  };
+
+  const gateStatus = nextEvidenceGateStatus({
+    hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+    hasDeparturePhoto: true,
+  });
+
+  const { error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({
+      departure_captured_at: capturedAt,
+      departure_evidence_image_path: path,
+      departure_evidence_metadata: metadata,
+      evidence_gate_status: gateStatus,
+      updated_at: capturedAt,
+    })
+    .eq("id", request.id);
+
+  if (error) {
+    // The photo is already in storage. Leave it: an orphaned object is cheap, whereas deleting it
+    // here would discard the employee's only capture if the retry then succeeds against a row
+    // that did save. The upload is keyed on the request id, so a retry overwrites nothing.
+    throw new Error(`The departure photo was uploaded but the request could not be updated: ${error.message}`);
+  }
+
+  // With both photos in hand the trip is over, so this is the natural moment to grab the
+  // workload — and then to release the request into payroll if that succeeded. Both steps are
+  // best-effort follow-ons: the photo is already saved, and neither a dead CRM nor a payroll
+  // hiccup may turn the employee's successful capture into an error he has to retry.
+  await captureWorkloadAndReleaseIfReady(request, access);
+
+  return { gateStatus, review };
+}
+
+/**
+ * Attempt the CRM workload grab for a request whose photos are complete, then release it into
+ * payroll if that closed the last gate.
+ *
+ * A FAILED grab is recorded, not swallowed: workload_capture_attempts, the timestamp and the
+ * error text are what the Super Admin repair screen reads to decide between retrying and typing
+ * the numbers in. Deliberately never writes zeros on failure — a zero workload reads as "he did
+ * no work", which is a reason to reject a claim, not a missing measurement.
+ */
+async function captureWorkloadAndReleaseIfReady(
+  request: OutstationExpenseRequest,
+  access: AccessContext,
+) {
+  try {
+    if (request.workloadGateStatus !== "pending_workload") {
+      await releaseOutstationRequestToPayrollIfReady(request.id, access);
+      return;
+    }
+
+    const capture = await captureOutstationTripWorkload({
+      employeeHrId: request.employeeHrId,
+      employeeRole: request.employeeRole,
+      tripEndDate: request.tripEndDate,
+      tripStartDate: request.tripStartDate,
+    });
+
+    const now = new Date().toISOString();
+    if (!capture.captured) {
+      await getSupabaseAdmin()
+        .from("outstation_expense_requests")
+        .update({
+          workload_capture_attempts: (request.workloadCaptureAttempts ?? 0) + 1,
+          workload_last_attempt_at: now,
+          workload_last_attempt_error: capture.reason,
+        })
+        .eq("id", request.id);
+      return;
+    }
+
+    await getSupabaseAdmin()
+      .from("outstation_expense_requests")
+      .update({
+        am_workload: capture.amWorkload,
+        pm_workload: capture.pmWorkload,
+        workload_capture_attempts: (request.workloadCaptureAttempts ?? 0) + 1,
+        workload_gate_status: "complete",
+        workload_last_attempt_at: now,
+        workload_last_attempt_error: null,
+        workload_matched_at: now,
+        workload_source: "ireports360",
+        // The per-day breakdown and who was counted, so an approver can see WHY the number is
+        // what it is — a rolled-up manager figure is otherwise unexplainable.
+        workload_evidence_snapshot: {
+          contributingHrIds: capture.contributingHrIds,
+          days: capture.days,
+          hops: capture.hops,
+          sourceLabel: capture.sourceLabel,
+        },
+      })
+      .eq("id", request.id);
+
+    await releaseOutstationRequestToPayrollIfReady(request.id, access);
+  } catch (error) {
+    logError("Outstation workload capture failed after the departure photo (non-blocking)", {
+      error,
+      labels: { event: "outstation_workload_capture_failed", requestId: String(request.id) },
+    });
+  }
+}
+
+/** One of the caller's own requests still owing its departure photo. */
+export type OutstationDeparturePhotoDue = {
+  destination: string;
+  id: number;
+  tripEndDate: string;
+  tripStartDate: string;
+};
+
+/**
+ * The caller's own requests waiting on a departure photo — what the portal card offers to
+ * capture. Scoped to the caller by HR ID, never by a client-supplied id.
+ *
+ * Membership is decided by resolveOutstationGateState — the SAME resolver the payroll gate uses —
+ * rather than by matching evidence_gate_status to a string. Two reasons, both learned the hard
+ * way:
+ *   - the resolver deliberately does not trust that column (a row can claim a state its photos
+ *     contradict), so a status-equality query would disagree with the thing that actually
+ *     withholds the money;
+ *   - a status-equality query silently returns nothing when a row carries an unexpected value.
+ *     An earlier version selected `= 'pending_departure_photo'` while nothing set that on insert,
+ *     which would have held every new request out of payroll while never showing its owner the
+ *     card to fix it.
+ * A pre-rule ('grandfathered') request resolves to no blocker, so it can never be dragged back
+ * and asked to photograph a trip that finished weeks ago.
+ */
+export async function getOwnOutstationRequestsAwaitingDeparturePhoto(
+  access: AccessContext,
+): Promise<OutstationDeparturePhotoDue[]> {
+  const callerHrId = normalizeHrIdForAccess(access.hrId);
+  if (!callerHrId) return [];
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("*")
+    .neq("evidence_gate_status", "grandfathered")
+    .order("created_at", { ascending: false });
+
+  // Best-effort: the portal must still render its other cards if this read fails, and before the
+  // gate migration has applied the column does not exist at all.
+  if (error || !data) return [];
+
+  return (data as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((row) => normalizeHrIdForAccess(row.employeeHrId) === callerHrId)
+    .filter(
+      (row) =>
+        resolveOutstationGateState({
+          evidenceGateStatus: row.evidenceGateStatus,
+          hasArrivalPhoto: Boolean(row.carEvidenceImagePath),
+          hasDeparturePhoto: Boolean(row.departureEvidenceImagePath),
+          workloadGateStatus: row.workloadGateStatus,
+        }).blocker === "departure_photo",
+    )
+    .map((row) => ({
+      destination: text(row.toLabel) || text(row.toCity) || text(row.toArea) || "—",
+      id: row.id,
+      tripEndDate: row.tripEndDate,
+      tripStartDate: row.tripStartDate,
+    }));
+}
+
+// ── Held-request repair (Phase 5) ─────────────────────────────────────────────
+// A request held by the evidence gate is invisible without this: the employee sees only that
+// his money has not arrived, and nobody is told the CRM grab failed. These three functions are
+// the Super Admin's view of, and way out of, that state.
+
+/** One request held by the gate, with everything needed to decide what to do about it. */
+export type HeldOutstationRequest = {
+  blocker: string;
+  destination: string;
+  employeeHrId: string;
+  employeeName: string;
+  employeeRole: string;
+  id: number;
+  lastAttemptAt: string | null;
+  lastAttemptError: string | null;
+  message: string;
+  tripEndDate: string;
+  tripStartDate: string;
+  workloadCaptureAttempts: number;
+};
+
+/**
+ * Every request currently held out of payroll by the evidence/workload gate.
+ *
+ * Read access deliberately, so the execution-only finance roles can SEE what is stuck without
+ * being able to change it. The two repair actions below require approve (Super Admin).
+ *
+ * Grandfathered requests can never appear here — resolveOutstationGateState clears them — so
+ * this queue is only ever the genuinely-stuck, never the historical.
+ */
+export async function listHeldOutstationRequests(
+  access: AccessContext,
+): Promise<HeldOutstationRequest[]> {
+  await assertOutstationAdminAccess(access, "read");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error || !data) return [];
+
+  return (data as Array<Record<string, unknown>>)
+    .map(mapOutstationRequestRow)
+    .filter((request) => request.status.startsWith("accepted"))
+    .map((request) => ({
+      request,
+      gate: resolveOutstationGateState({
+        evidenceGateStatus: request.evidenceGateStatus,
+        hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+        hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+        workloadGateStatus: request.workloadGateStatus,
+      }),
+    }))
+    .filter((row) => !row.gate.isPayrollEligible)
+    .map(({ gate, request }) => ({
+      blocker: gate.blocker ?? "unknown",
+      destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",
+      employeeHrId: request.employeeHrId,
+      employeeName: request.employeeName,
+      employeeRole: request.employeeRole,
+      id: request.id,
+      lastAttemptAt: request.workloadLastAttemptAt,
+      lastAttemptError: request.workloadLastAttemptError,
+      message: gate.message,
+      tripEndDate: request.tripEndDate,
+      tripStartDate: request.tripStartDate,
+      workloadCaptureAttempts: request.workloadCaptureAttempts,
+    }));
+}
+
+/**
+ * Re-run the CRM workload grab for a held request — the "refresh" the owner asked for, and the
+ * thing to try before typing numbers in by hand. Releases the request into payroll if it works.
+ */
+export async function retryOutstationWorkloadCapture(
+  requestId: number,
+  access: AccessContext,
+): Promise<{ message: string; released: boolean }> {
+  await assertOutstationAdminAccess(access, "approve");
+
+  const request = await getOutstationRequestById(requestId);
+  if (!request) throw new Error("That outstation request is not available.");
+  if (request.workloadGateStatus !== "pending_workload") {
+    throw new Error("This request is not waiting on its workload.");
+  }
+
+  await captureWorkloadAndReleaseIfReady(request, access);
+
+  // Re-read rather than infer: captureWorkloadAndReleaseIfReady is best-effort and swallows its
+  // own failures, so the only honest answer about what happened is the row itself.
+  const after = await getOutstationRequestById(requestId);
+  const released = Boolean(after && after.workloadGateStatus !== "pending_workload");
+  return {
+    message: released
+      ? "Workload captured from the CRM and the request was released into payroll."
+      : after?.workloadLastAttemptError ||
+        "The CRM still has no workload for these dates. Enter it by hand if the trip is genuine.",
+    released,
+  };
+}
+
+/**
+ * Last resort: a Super Admin types the AM/PM workload in.
+ *
+ * Stored as `manual`/`override`, never as if it came from the CRM. That distinction is the whole
+ * point — an approver looking at this request later must be able to tell a measured number from
+ * a typed one, and the payroll figure is derived from it either way.
+ *
+ * A reason is REQUIRED. This is a hand-entered number that releases money; an unexplained one is
+ * indistinguishable from a mistake six months later.
+ */
+export async function setOutstationWorkloadManually(
+  requestId: number,
+  access: AccessContext,
+  input: { amWorkload: number; pmWorkload: number; reason: string },
+): Promise<{ message: string; released: boolean }> {
+  await assertOutstationAdminAccess(access, "approve");
+
+  // Validated through the pure checker so the rules are assertable without a database — and so
+  // a bad value is REFUSED rather than coerced. The previous inline version clamped-and-truncated
+  // instead, which silently turned a negative into a measured-looking zero, and let NaN slip past
+  // its own finiteness check. See validateManualWorkloadInput for the full reasoning.
+  const validated = validateManualWorkloadInput(input);
+  if (!validated.ok) throw new Error(validated.message);
+  const { amWorkload, pmWorkload, reason } = validated;
+
+  const request = await getOutstationRequestById(requestId);
+  if (!request) throw new Error("That outstation request is not available.");
+
+  const now = new Date().toISOString();
+  const { error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .update({
+      am_workload: amWorkload,
+      pm_workload: pmWorkload,
+      updated_at: now,
+      workload_gate_status: "manual",
+      workload_match_status: "manual_override",
+      workload_matched_at: now,
+      workload_override_reason: reason,
+      workload_source: "override",
+    })
+    .eq("id", requestId);
+  if (error) throw new Error(error.message);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? resolveEmployeeIdentityId(access) ?? "system",
+    entityId: String(requestId),
+    entityType: "outstation_request",
+    newValues: { amWorkload, pmWorkload, reason, workloadSource: "override" },
+    oldValues: { amWorkload: request.amWorkload, pmWorkload: request.pmWorkload, workloadSource: request.workloadSource },
+    summary: `Outstation request ${requestId} workload entered by hand (AM ${amWorkload} / PM ${pmWorkload}): ${reason}`,
+  });
+
+  const release = await releaseOutstationRequestToPayrollIfReady(requestId, access);
+  return {
+    message: release.released
+      ? "Workload saved and the request was released into payroll."
+      : `Workload saved. The request is still held: ${release.reason}`,
+    released: release.released,
+  };
 }
