@@ -76,7 +76,7 @@ export function __resetSeatAreaScopeCacheForTests(): void {
 
 /**
  * Pure core: given the org tree, the line→area seat map and the area→fact-region map, resolve the
- * seat area scope for one viewer. Returns null when the viewer occupies no DM/RSM seat, which the
+ * seat area scope for one viewer. Returns null when the viewer occupies no DM/ACTING_DM/RSM seat, which the
  * caller must treat as "no seat scope available" (fall back to the legacy region-name bound) rather
  * than as "sees nothing" — an unseated manager is a data gap, not a permission decision.
  *
@@ -92,7 +92,9 @@ export function computeSeatAreaScope(input: {
   if (!viewer) return null;
 
   const ownSeats = input.seats.filter(
-    (seat) => hrKey(seat.occupantHrId) === viewer && (seat.seatTier === "DM" || seat.seatTier === "RSM"),
+    (seat) =>
+      hrKey(seat.occupantHrId) === viewer &&
+      (seat.seatTier === "DM" || seat.seatTier === "ACTING_DM" || seat.seatTier === "RSM"),
   );
   if (ownSeats.length === 0) return null;
 
@@ -101,14 +103,18 @@ export function computeSeatAreaScope(input: {
   const ownSeatIds = new Set(ownSeats.map((seat) => seat.seatId));
   const dmSeatIds = new Set<string>();
   const lineCodes = new Set<string>();
+  // ACTING_DM is a first-class district seat here: the line-area map's dm_seat_id points at
+  // the ACTING_DM seat itself for its areas (verified live: anti_infective UE1/UE2 →
+  // SEAT-AIF-ADM-UE-1), so excluding the tier silently dropped the acting manager to the
+  // line-blind region-label fallback.
   for (const seat of ownSeats) {
-    if (seat.seatTier === "DM") {
+    if (seat.seatTier === "DM" || seat.seatTier === "ACTING_DM") {
       dmSeatIds.add(seat.seatId);
       if (seat.lineCode) lineCodes.add(seat.lineCode);
     }
   }
   for (const seat of input.seats) {
-    if (seat.seatTier !== "DM") continue;
+    if (seat.seatTier !== "DM" && seat.seatTier !== "ACTING_DM") continue;
     if (!seat.path.some((ancestor) => ownSeatIds.has(ancestor))) continue;
     dmSeatIds.add(seat.seatId);
     if (seat.lineCode) lineCodes.add(seat.lineCode);
@@ -158,7 +164,9 @@ export async function resolveSeatAreaScope(ctx: AccessContext): Promise<SeatArea
     const supabase = getSupabaseAdmin();
     const [seatRows, areaRows, canonicalRows] = await Promise.all([
       supabase.from("au_v_org_tree").select("seat_id,seat_tier,line_code,path,occupant_hr_id"),
-      supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id"),
+      // Current rows only: superseded (line, area, dm_seat) mappings must not widen or
+      // contaminate a manager's area set after a re-map. Matches region-resolver.ts's policy.
+      supabase.from("au_v_line_area_map").select("line_code,area_code,dm_seat_id").is("effective_to", null),
       supabase.from("au_v_canonical_areas").select("area_code,code_region_code"),
     ]);
     if (seatRows.error) throw seatRows.error;

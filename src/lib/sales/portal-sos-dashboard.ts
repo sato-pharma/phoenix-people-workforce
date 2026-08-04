@@ -232,6 +232,96 @@ export async function resolveRegionalManagerRegionCodes(
 }
 
 /**
+ * Line-aware fallback bound for a Regional Manager whose organogram seat did NOT resolve: the
+ * areas their subtree actually works, derived per subordinate from their assigned area — never
+ * from region labels. Labels flatten the per-line map (the same area answers to different
+ * managers per line), so a label either hands a whole shared region's areas to the wrong
+ * manager or silently drops an out-of-label area. Returns empty sets when nothing resolves;
+ * the caller then keeps the legacy region-code fallback.
+ */
+export async function resolveRegionalManagerSubtreeAreaScope(
+  ctx: AccessContext,
+  salesScope: SalesAccessScope,
+  references: ReferenceData,
+): Promise<{ areaCodes: Set<string>; factRegionCodes: Set<string> }> {
+  const empty = { areaCodes: new Set<string>(), factRegionCodes: new Set<string>() };
+  const viewerKey = canonicalHrIdKey(resolveEmployeeIdentityId(ctx) ?? "");
+  if (!viewerKey) return empty;
+
+  const directory = await getEmployeeDirectory();
+  const byCanonicalHrId = new Map<string, SeatContinuitySubject>();
+  for (const employee of directory.employees) {
+    const key = canonicalHrIdKey(employee.hrId);
+    if (!key) continue;
+    byCanonicalHrId.set(key, {
+      managerHrId: employee.managerHrId,
+      pendingManagerReplacementForHrId: employee.pendingManagerReplacementForHrId,
+    });
+  }
+
+  const allowedLineKeys = salesScope.allowedLineNames
+    ? new Set([...salesScope.allowedLineNames].map(normalizeLineKey))
+    : null;
+
+  const areaIds = new Set<number>();
+  // The manager's OWN area first: isWithinManagerHierarchy walks subordinates and excludes the
+  // viewer, so a manager who personally holds an area (PD-0001 holds Alex East / AB1, which none
+  // of his reports cover) would otherwise lose his own territory. Mirrors the region resolver's
+  // "include the RM's own region" step.
+  const self = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === viewerKey);
+  if (self?.areaId != null) areaIds.add(self.areaId);
+  // The manager's OWN area first: isWithinManagerHierarchy walks subordinates and excludes the
+  // viewer, so a manager who personally holds an area (PD-0001 holds Alex East / AB1, which none
+  // of his reports cover) would otherwise lose his own territory. Mirrors the region resolver's
+  // "include the RM's own region" step.
+
+  for (const employee of directory.employees) {
+    if (employee.areaId == null) continue;
+    const inHierarchy = isWithinManagerHierarchy({
+      employee: {
+        managerHrId: employee.managerHrId,
+        pendingManagerReplacementForHrId: employee.pendingManagerReplacementForHrId,
+      },
+      byCanonicalHrId,
+      viewerCanonicalHrId: viewerKey,
+      canonicalize: (value) => canonicalHrIdKey(value) || null,
+    });
+    if (!inHierarchy) continue;
+    if (allowedLineKeys) {
+      const officialKey = normalizeLineKey(bridgeEmployeeLineToOfficial(employee.lineName) ?? employee.lineName ?? "");
+      if (!allowedLineKeys.has(officialKey)) continue;
+    }
+    areaIds.add(employee.areaId);
+  }
+  if (areaIds.size === 0) return empty;
+
+  // areaId → SoS area code via the areas master (the unified rows carry the SoS code directly).
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("areas").select("id, code").in("id", [...areaIds]);
+  if (error) return empty;
+  const candidateCodes = new Set<string>();
+  for (const row of (data ?? []) as Array<{ id: number | null; code: string | null }>) {
+    const code = String(row.code ?? "").trim().toUpperCase();
+    if (code) candidateCodes.add(code);
+  }
+
+  // Keep only codes the sales master knows (mirrors the Drilldown's confirmation step), and pair
+  // each with its fact region so the engine's fetch reaches out-of-label areas' rows.
+  const factRegionByArea = new Map(
+    (references.areas ?? []).map((area) => [area.areaCode.toUpperCase(), area.regionCode.toUpperCase()]),
+  );
+  const areaCodes = new Set<string>();
+  const factRegionCodes = new Set<string>();
+  for (const code of candidateCodes) {
+    const region = factRegionByArea.get(code);
+    if (!region) continue;
+    areaCodes.add(code);
+    factRegionCodes.add(region);
+  }
+  return { areaCodes, factRegionCodes };
+}
+
+/**
  * Distributor codes with any sales within the given line/region scope, all-time — used to trim
  * the distributor dropdown to the viewer's authorized universe without it shrinking/shifting as
  * the viewer changes the period filter (unlike a period-scoped byDistributor breakdown would).
@@ -323,8 +413,17 @@ export async function resolvePortalSosScope(ctx: AccessContext): Promise<PortalS
     regionOverride = new Set(salesScope.allowedAreaFactRegionCodes ?? []);
     regionCodes = regionOverride;
   } else if (isRegionalManager) {
-    regionOverride = await resolveRegionalManagerRegionCodes(ctx, salesScope, references);
-    regionCodes = regionOverride;
+    // Prefer the line-aware subtree AREA bound; region labels flatten the per-line area→manager
+    // map, so they stay a last resort only.
+    const subtree = await resolveRegionalManagerSubtreeAreaScope(ctx, salesScope, references);
+    if (subtree.areaCodes.size > 0) {
+      areaCodes = subtree.areaCodes;
+      regionOverride = subtree.factRegionCodes;
+      regionCodes = regionOverride;
+    } else {
+      regionOverride = await resolveRegionalManagerRegionCodes(ctx, salesScope, references);
+      regionCodes = regionOverride;
+    }
   } else if (isDistrictManager) {
     // Seat map couldn't answer — fall back to the legacy single-own-region lock (unchanged
     // behaviour). No override is needed; the base engine scope already applies it.

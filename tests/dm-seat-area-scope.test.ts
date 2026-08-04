@@ -60,6 +60,15 @@ const SEATS = [
   },
   // A seated DM with no rows in the line→area map at all (master-data gap).
   { seatId: "SEAT-AIF-DM-XX", seatTier: "DM", lineCode: "anti_infective", path: ["SEAT-ROOT-CEO", "SEAT-AIF-DM-XX"], occupantHrId: "B-999" },
+  // An ACTING_DM district seat — the line-area map's dm_seat_id points at the ACTING_DM
+  // seat itself (production shape: anti_infective UE1/UE2 → SEAT-AIF-ADM-UE-1).
+  {
+    seatId: "SEAT-AIF-ADM-UE-1",
+    seatTier: "ACTING_DM",
+    lineCode: "anti_infective",
+    path: ["SEAT-ROOT-CEO", "SEAT-AIF-NSM", "SEAT-AIF-ADM-UE-1"],
+    occupantHrId: "B-1",
+  },
 ];
 
 const LINE_AREAS = [
@@ -76,6 +85,8 @@ const LINE_AREAS = [
   { lineCode: "cns", areaCode: "D17", dmSeatId: "SEAT-CNS-OTHERS" },
   { lineCode: "pedia", areaCode: "AB1", dmSeatId: "SEAT-PED-DM-AB" },
   { lineCode: "pedia", areaCode: "D24", dmSeatId: "SEAT-PED-DM-D2" },
+  { lineCode: "anti_infective", areaCode: "UE1", dmSeatId: "SEAT-AIF-ADM-UE-1" },
+  { lineCode: "anti_infective", areaCode: "UE2", dmSeatId: "SEAT-AIF-ADM-UE-1" },
 ];
 
 const FACT_REGION_BY_AREA = new Map([
@@ -88,6 +99,8 @@ const FACT_REGION_BY_AREA = new Map([
   ["D16", "D1"],
   ["D17", "D1"],
   ["D24", "D2"],
+  ["UE1", "UE"],
+  ["UE2", "UE"],
 ]);
 
 function seatScopeFor(hrId: string) {
@@ -169,6 +182,15 @@ export function runDmSeatAreaScopeTests() {
   const rsm = seatScopeFor("PD-0001");
   assert.deepEqual([...(rsm?.areaCodes ?? [])].sort(), ["AB1", "D24"], "RSM gets every DM seat in his subtree");
   assert.deepEqual([...(rsm?.factRegionCodes ?? [])].sort(), ["AB", "D2"], "RSM fact regions follow his areas");
+
+  // An ACTING_DM seat is a first-class district seat: its occupant gets their own areas
+  // instead of silently falling back to the line-blind region label.
+  const acting = seatScopeFor("B-1");
+  assert.deepEqual(
+    [...(acting?.areaCodes ?? [])].sort(),
+    ["UE1", "UE2"],
+    "an ACTING_DM resolves their seat's own areas (previously dropped to the region-label fallback)",
+  );
 
   // An NSM occupies no DM/RSM seat here → null (line scope keeps applying upstream).
   assert.equal(seatScopeFor("B-122"), null, "an NSM gets no seat area bound");

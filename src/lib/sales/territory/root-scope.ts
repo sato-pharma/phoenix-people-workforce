@@ -76,6 +76,23 @@ async function resolveDistrictManagerRegionScope(
   officialLine: string,
 ): Promise<TerritoryRootScope> {
   const salesScope = await resolveSalesAccessScope(ctx);
+
+  // A DM's real geography is his organogram seat's areas, which can legitimately sit outside
+  // his region label (CNS "Kafr El-Sheikh 1" / D16 belongs to the Alex-BHR DM while its rows
+  // carry D1). The region-label path below both LOSES those areas and DRAGS IN the sibling
+  // DM's areas that share the label's region — so when the seat answered, scope by area.
+  const seatAreaCodes = [...(salesScope.allowedAreaCodes ?? [])]
+    .map((code) => code.trim().toUpperCase())
+    .filter(Boolean);
+  if (seatAreaCodes.length > 0) {
+    const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+    const knownAreaCodes = new Set((references.areas ?? []).map((area) => area.areaCode.toUpperCase()));
+    const confirmedAreaCodes = seatAreaCodes.filter((code) => knownAreaCodes.has(code));
+    if (confirmedAreaCodes.length > 0) {
+      return { level: "area", sosAreaCodes: confirmedAreaCodes, officialLine };
+    }
+  }
+
   const regionName = salesScope.allowedRegionNames && salesScope.allowedRegionNames.size === 1
     ? [...salesScope.allowedRegionNames][0]
     : null;
