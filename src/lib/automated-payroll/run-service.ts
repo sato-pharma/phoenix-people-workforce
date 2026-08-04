@@ -22,6 +22,11 @@ import {
 } from "./carry-forward.ts";
 import { getNonEmployeePayrollRows } from "./non-employees.ts";
 import {
+  auditPayrollDataQuality,
+  describePayrollDataQuality,
+  type PayrollDataQualityReport,
+} from "./data-quality.ts";
+import {
   diffPopulation,
   type PopulationDiff,
   type PreviousRosterEntry,
@@ -507,7 +512,11 @@ function assertAllStepsConfirmed(states: StepState[], keys: readonly StepKey[]):
 }
 
 /** Confirm Part 1: freeze the First Part per employee, notify the finance roles. */
-export async function confirmPart1(access: AccessContext, runId: string): Promise<MonthlySalaryRun> {
+export async function confirmPart1(
+  access: AccessContext,
+  runId: string,
+  options: { acknowledgeDataIssues?: boolean } = {},
+): Promise<MonthlySalaryRun> {
   assertAutomatedPayrollHrActor(access);
   const run = await requireRun(runId);
   assertActiveRun(run);
@@ -520,6 +529,20 @@ export async function confirmPart1(access: AccessContext, runId: string): Promis
 
   const period: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period, runId);
+
+  // Confirming Part 1 FREEZES real money. An employee with no hire date, no
+  // salary or no payment mode is about to have a default decide their first
+  // installment, permanently — so HR sees exactly who, and accepts it on the
+  // record, before the freeze rather than after.
+  await assertPayrollDataAcknowledged({
+    access,
+    run,
+    members,
+    sources,
+    draftRows,
+    acknowledged: options.acknowledgeDataIssues === true,
+  });
+
   const frozen = computeFrozenFirstParts({ members, sources, draftRows, period });
 
   const patches: DraftRowPatch[] = members.map((member) => ({
@@ -588,7 +611,7 @@ export async function unconfirmPart1(access: AccessContext, runId: string): Prom
 export async function confirmPart2(
   access: AccessContext,
   runId: string,
-  options: { acknowledgeOverpaid?: boolean } = {},
+  options: { acknowledgeOverpaid?: boolean; acknowledgeDataIssues?: boolean } = {},
 ): Promise<MonthlySalaryRun> {
   const acknowledgeOverpaid = options.acknowledgeOverpaid === true;
   assertAutomatedPayrollHrActor(access);
@@ -600,6 +623,22 @@ export async function confirmPart2(
 
   const states = await listStepStates(runId);
   assertAllStepsConfirmed(states, PART2_STEP_KEYS);
+
+  // Same gate as Part 1, checked again here: the population can change between
+  // the two confirms (someone hired, someone's record edited), so an employee
+  // with missing data can appear after Part 1 was already accepted.
+  {
+    const period: PayrollPeriod = { month: run.month, year: run.year };
+    const context = await loadRunContext(period, runId);
+    await assertPayrollDataAcknowledged({
+      access,
+      run,
+      members: context.members,
+      sources: context.sources,
+      draftRows: context.draftRows,
+      acknowledged: options.acknowledgeDataIssues === true,
+    });
+  }
 
   const { rows, carryForwardByCompact } = await assembleForRun(run);
   const { preflightValidate } = await import("./validate.ts");
@@ -694,7 +733,17 @@ async function assembleForRun(run: MonthlySalaryRun): Promise<{
     // figure on the sheet, and the figure that gets published are the same one.
     outstandingCarryForwardFor(run.id),
   ]);
-  const rows = assembleRows({ members, sources, draftRows, period, carryForwardByCompact });
+  const rows = assembleRows({
+    members,
+    sources,
+    draftRows,
+    period,
+    carryForwardByCompact,
+    // Once Part 1 is executed money, an employee with no frozen first part
+    // joined the run after the freeze — they must not have one recomputed for
+    // them, because that silently moves a total finance already paid.
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
   return { rows, members, carryForwardByCompact };
 }
 
@@ -770,6 +819,28 @@ export async function getPopulationDiff(access: AccessContext, runId: string): P
     previousMonthRoster(period),
   ]);
   return diffPopulation({ current: members, previous });
+}
+
+/**
+ * Employees whose pay-determining data is missing or ambiguous on this run
+ * (owner-reported 2026-08-04 — see data-quality.ts for the four defects and the
+ * live evidence behind each). Read-only; the acknowledgement gate lives on the
+ * two confirm paths.
+ */
+export async function getPayrollDataQuality(
+  access: AccessContext,
+  runId: string,
+): Promise<PayrollDataQualityReport> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  const period: PayrollPeriod = { month: run.month, year: run.year };
+  const { members, sources, draftRows } = await loadRunContext(period, runId);
+  return auditPayrollDataQuality({
+    members,
+    sources,
+    draftRows,
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
 }
 
 // ---- Publish (separate, Super-Admin-only) -----------------------------------
@@ -877,6 +948,46 @@ function previousPeriod(period: PayrollPeriod): PayrollPeriod {
  * fragile matching on the human-readable sentence around it.
  */
 export const OVERPAID_ACK_REQUIRED = "[overpaid-acknowledgment-required]";
+
+/**
+ * Marker for the missing-payroll-data gate (owner rule 2026-08-04: flag loudly,
+ * let HR acknowledge and proceed — do not block the run). Same contract as
+ * OVERPAID_ACK_REQUIRED: the route turns it into a 409 the client can prompt on,
+ * rather than a red dead-end.
+ */
+export const DATA_QUALITY_ACK_REQUIRED = "[data-quality-acknowledgment-required]";
+
+/**
+ * Shared by both confirms. Throws the acknowledgeable conflict when the run
+ * carries employees with missing pay-determining data and HR has not yet
+ * accepted it; records the acceptance in the audit log when they have, so a
+ * knowingly-confirmed gap is answerable later.
+ */
+async function assertPayrollDataAcknowledged(input: {
+  access: AccessContext;
+  run: MonthlySalaryRun;
+  members: PopulationMember[];
+  sources: Map<string, PayrollSalarySource>;
+  draftRows: DraftRow[];
+  acknowledged: boolean;
+}): Promise<void> {
+  const report = auditPayrollDataQuality({
+    members: input.members,
+    sources: input.sources,
+    draftRows: input.draftRows,
+    part1Confirmed: input.run.part1ConfirmedAt != null,
+  });
+  if (report.total === 0) return;
+  if (!input.acknowledged) {
+    throw new Error(`Conflict: ${DATA_QUALITY_ACK_REQUIRED} ${describePayrollDataQuality(report)}`);
+  }
+  await writeAutomatedPayrollAudit({
+    runId: input.run.id,
+    actorHrId: actorId(input.access),
+    action: "payroll_data_issues_acknowledged",
+    detail: { employees: report.total, rows: report.rows },
+  });
+}
 
 export const AUTOMATED_PAYROLL_LAUNCH_PERIOD: PayrollPeriod = { month: 7, year: 2026 };
 
@@ -1024,7 +1135,13 @@ export async function buildFinanceSheet(
 
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({ members, sources, draftRows, period: period2 });
+  const rows = assembleRows({
+    members,
+    sources,
+    draftRows,
+    period: period2,
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
   const buffer = await buildFinanceSheetWorkbook({
     run,
     rows,
@@ -1096,7 +1213,13 @@ export async function buildFabSheet(
 
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({ members, sources, draftRows, period: period2 });
+  const rows = assembleRows({
+    members,
+    sources,
+    draftRows,
+    period: period2,
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
   // Non-Employees Payroll (people paid a monthly salary with no HR_ID record)
   // is a separate data source from AssembledRow — fabRowsForScope never sees
   // them, so they'd silently be missing from the real bank file without this
@@ -1141,7 +1264,13 @@ export async function buildCibSheet(
 
   const period2: PayrollPeriod = { month: run.month, year: run.year };
   const { members, sources, draftRows } = await loadRunContext(period2, run.id);
-  const rows = assembleRows({ members, sources, draftRows, period: period2 });
+  const rows = assembleRows({
+    members,
+    sources,
+    draftRows,
+    period: period2,
+    part1Confirmed: run.part1ConfirmedAt != null,
+  });
   // See buildFabSheet's own comment: Non-Employees Payroll is a separate data
   // source that cibRowsForScope never sees on its own.
   const cibRows = [

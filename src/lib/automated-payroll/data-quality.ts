@@ -1,0 +1,133 @@
+import { lookupSource } from "@/lib/payroll/copilot/assemble.ts";
+import type { PayrollSalarySource } from "@/lib/payroll/salary-source-model.ts";
+
+import type { PopulationMember } from "./recommend.ts";
+import type { DraftRow } from "./types.ts";
+
+/**
+ * Pay-determining data that is missing or ambiguous, per employee, for one run.
+ *
+ * WHY THIS EXISTS (owner-reported 2026-08-04, found by a deep audit of the live
+ * July run). The owner opened the July sheet and found employees hired in AUGUST
+ * being paid a full July month. PR #1710 fixed the dated case — hire_date after
+ * the period ends — but two more August starters kept appearing, because their
+ * hire_date is NULL and a null cannot be compared against anything.
+ *
+ * Pulling that thread found one root cause behind four separate defects:
+ * PAYROLL TRUSTS EMPLOYEE-MASTER FIELDS THAT NOBODY VALIDATED. Each missing
+ * field silently becomes a default, and every one of those defaults pays money:
+ *
+ *   - no hire date     -> isInPeriod() is false, so they are not a joiner, so
+ *                         they are "regular" -> a FULL UNPRORATED MONTH.
+ *   - no salary        -> renders 0.00, indistinguishable from a real zero.
+ *   - no payment mode  -> normalizePayrollPaymentMode defaults to two_parts, so
+ *                         a default decides the first/second installment split.
+ *   - joined the run after Part 1 was frozen -> no frozen first part, which
+ *                         assemble.ts used to fill in by recomputing LIVE,
+ *                         silently changing a Part 1 total finance had executed.
+ *
+ * None of these throw, none log, and none look wrong on screen — which is
+ * exactly why they survived. This module makes them visible.
+ *
+ * Modelled deliberately on population-diff.ts: pure, I/O-free, unit-tested, and
+ * surfaced as a loud banner. That module exists for the same class of bug (a
+ * payroll defect with no error and no empty state to notice it by) and this one
+ * should behave and read the same way.
+ *
+ * Owner decision, same day: FLAG, DO NOT BLOCK. HR acknowledges and proceeds,
+ * and the acknowledgement is written to the audit log — the same contract the
+ * Part 1 overpayment gate already uses. Nobody is dropped from a sheet over a
+ * missing field, because a genuine long-serving employee (B-165 Gannatallah
+ * Amer, 17,500 net, no hire date since May) must never silently lose a month's
+ * pay to a data-entry gap.
+ */
+
+export type PayrollDataIssue =
+  | "missing_hire_date"
+  | "missing_salary"
+  | "missing_payment_mode"
+  | "joined_after_part1";
+
+export type PayrollDataQualityRow = {
+  hrId: string;
+  fullName: string;
+  issues: PayrollDataIssue[];
+};
+
+export type PayrollDataQualityReport = {
+  rows: PayrollDataQualityRow[];
+  /** Employees carrying at least one issue. Zero means the run is clean. */
+  total: number;
+};
+
+/** Plain-English label per issue — shared by the wizard banner and the audit log. */
+export const PAYROLL_DATA_ISSUE_LABELS: Record<PayrollDataIssue, string> = {
+  missing_hire_date:
+    "No hire date — cannot prove they worked this month, so they are being paid a full unprorated month",
+  missing_salary: "No salary on record — they would be paid 0.00",
+  missing_payment_mode: "No payment mode — the First/Second Part split is being decided by a default",
+  joined_after_part1: "Added to the run after Part 1 was confirmed — no frozen first installment",
+};
+
+function hasSalary(source: PayrollSalarySource | undefined): boolean {
+  // Base is the figure every downstream formula derives from (policy.ts), so a
+  // missing base is the honest test. A zero base is treated as missing too: it
+  // produces a zero salary, which is the "renders as 0" failure this catches.
+  return Boolean(source && Number.isFinite(source.baseSalary ?? NaN) && (source.baseSalary ?? 0) > 0);
+}
+
+/**
+ * Audits one run's population. Pure — the caller supplies everything, so the
+ * rules are unit-tested without a database.
+ *
+ * `part1Confirmed` matters: before Part 1 is confirmed NOBODY has a frozen first
+ * part yet, so flagging a missing one would fire on the entire company. It is
+ * only meaningful once the freeze has happened.
+ */
+export function auditPayrollDataQuality(input: {
+  members: PopulationMember[];
+  sources: Map<string, PayrollSalarySource>;
+  draftRows: DraftRow[];
+  part1Confirmed: boolean;
+}): PayrollDataQualityReport {
+  const draftByCompact = new Map(input.draftRows.map((row) => [row.employeeHrIdCompact, row]));
+  const rows: PayrollDataQualityRow[] = [];
+
+  for (const member of input.members) {
+    const issues: PayrollDataIssue[] = [];
+    const source = lookupSource(input.sources, member.employee.hrId);
+
+    if (!String(member.employee.hireDate ?? "").trim()) issues.push("missing_hire_date");
+    if (!hasSalary(source)) issues.push("missing_salary");
+    // Read the RAW field, not the normalized one: normalizePayrollPaymentMode's
+    // whole job is to turn a null into "two_parts", so asking it would always
+    // answer "fine" and hide the very gap being looked for.
+    if (!String(source?.paymentMode ?? "").trim()) issues.push("missing_payment_mode");
+
+    if (input.part1Confirmed && draftByCompact.get(member.compact)?.firstPartFrozen == null) {
+      issues.push("joined_after_part1");
+    }
+
+    if (issues.length > 0) {
+      rows.push({ hrId: member.employee.hrId, fullName: member.employee.fullName, issues });
+    }
+  }
+
+  // Most-broken first, then by name, so the worst records are read first and the
+  // order is stable between loads.
+  rows.sort(
+    (left, right) => right.issues.length - left.issues.length || left.fullName.localeCompare(right.fullName),
+  );
+
+  return { rows, total: rows.length };
+}
+
+/** One-line summary for the confirm-gate error message and the audit log. */
+export function describePayrollDataQuality(report: PayrollDataQualityReport): string {
+  if (report.total === 0) return "No missing payroll data.";
+  const sample = report.rows
+    .slice(0, 5)
+    .map((row) => `${row.fullName} (${row.hrId}): ${row.issues.map((issue) => PAYROLL_DATA_ISSUE_LABELS[issue]).join("; ")}`);
+  const more = report.total > 5 ? ` …and ${report.total - 5} more.` : "";
+  return `${report.total} employee(s) have missing payroll data. ${sample.join(" | ")}${more}`;
+}
