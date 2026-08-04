@@ -480,6 +480,45 @@ export function rollupByDm(rows: AchievementRow[], prior: AchievementRow[] | nul
   });
 }
 
+/**
+ * Per product, across whatever scope the caller already filtered to.
+ *
+ * The first build had no product dimension at all, which left the page with a one-bar
+ * "trend" occupying a third of the screen and nothing to actually analyse. Product mix is
+ * the densest real analysis available from rows we have already loaded — no extra query.
+ */
+export function rollupByProduct(
+  rows: AchievementRow[],
+  prior: AchievementRow[] | null,
+  productName: (code: string) => string,
+) {
+  return rollupLevel(rows, prior, {
+    level: "team",
+    keyOf: (row) => (row.productCode ? row.productCode : null),
+    nameOf: productName,
+  });
+}
+
+/**
+ * The N best and N worst nodes by achievement.
+ *
+ * Nodes with no target are excluded from BOTH ends rather than sorted as zero: an area
+ * nobody set a target for is not the worst performer in the company, and putting it at the
+ * bottom of a leaderboard is exactly the libel the coverage split exists to prevent.
+ */
+export function rankByAchievement(nodes: VsTargetNode[], count: number): { top: VsTargetNode[]; bottom: VsTargetNode[] } {
+  const measurable = nodes.filter((node) => node.current.achievementValue != null);
+  const sorted = [...measurable].sort(
+    (left, right) => (right.current.achievementValue ?? 0) - (left.current.achievementValue ?? 0),
+  );
+  const top = sorted.slice(0, count);
+  // Take from the end, then reverse so the worst reads first.
+  const bottom = sorted.slice(Math.max(0, sorted.length - count)).reverse();
+  // With fewer nodes than 2*count the two lists would overlap and show the same row twice.
+  const topKeys = new Set(top.map((node) => node.key));
+  return { top, bottom: bottom.filter((node) => !topKeys.has(node.key)) };
+}
+
 // ── Brick roll-up ────────────────────────────────────────────────────────────
 
 export type BrickNode = {
