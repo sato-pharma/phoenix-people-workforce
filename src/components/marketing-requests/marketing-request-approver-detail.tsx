@@ -1,0 +1,333 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { AlertTriangle, Camera, MapPin, Phone, Store } from "lucide-react";
+
+import { LoadingSpinner } from "@/components/ui/loading-state";
+import type { MarketingApproverRequestDetail } from "@/lib/marketing-requests/approver-detail";
+import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
+
+/* ------------------------------------------------------------------------------------------- */
+/* Formatters                                                                                    */
+/* ------------------------------------------------------------------------------------------- */
+
+function egp(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return null;
+  return new Intl.NumberFormat("en-US", {
+    currency: "EGP",
+    maximumFractionDigits: 0,
+    style: "currency",
+  }).format(value);
+}
+
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: PHOENIX_BUSINESS_TIME_ZONE,
+    year: "numeric",
+  });
+}
+
+function Section({ children, title }: { children: React.ReactNode; title: string }) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * A labelled value that states absence explicitly.
+ *
+ * `emptyLabel` is required rather than defaulted: a missing address and an address of "-" look
+ * identical to a reader, and this module exists so the approver is never guessing.
+ */
+function Field({
+  emptyLabel,
+  label,
+  value,
+}: {
+  emptyLabel: string;
+  label: string;
+  value: string | null | undefined;
+}) {
+  const clean = typeof value === "string" ? value.trim() : "";
+  return (
+    <div className="flex flex-col">
+      <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</span>
+      {clean ? (
+        <span className="text-[12px] font-bold text-slate-900">{clean}</span>
+      ) : (
+        <span className="text-[12px] font-medium italic text-slate-400">{emptyLabel}</span>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------- */
+/* Panel                                                                                         */
+/* ------------------------------------------------------------------------------------------- */
+
+/**
+ * Everything about the request, on the approver's row.
+ *
+ * The approval inbox used to show a customer NAME, a cost and a pay date; every other thing the
+ * requester submitted lived behind a decision button, so the only way to read the detail was to
+ * start committing to an answer. This renders it in place.
+ */
+export function MarketingRequestApproverDetail({ requestId }: { requestId: string }) {
+  const [detail, setDetail] = useState<MarketingApproverRequestDetail | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Same shape as MarketingRequestedProductHistory, the sibling per-row fetcher: an inline async
+  // IIFE guarded by `cancelled`, never a useCallback the effect then invokes — that trips
+  // react-hooks/set-state-in-effect, because the lint rule sees setState reachable directly from
+  // the effect body.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`/api/marketing-requests/${encodeURIComponent(requestId)}/approver-detail`, {
+          cache: "no-store",
+        });
+        const payload = await response.json();
+        if (cancelled) return;
+        if (!response.ok) {
+          setError(typeof payload?.message === "string" ? payload.message : "Could not load the request detail.");
+        } else {
+          setDetail(payload as MarketingApproverRequestDetail);
+          setError(null);
+        }
+      } catch {
+        if (!cancelled) setError("Could not load the request detail.");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestId]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-2 text-[11px] font-medium text-slate-500">
+        <LoadingSpinner /> Loading the full request…
+      </div>
+    );
+  }
+
+  // Never render an empty panel that reads as "there is nothing to see".
+  if (error || !detail) {
+    return (
+      <p className="rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] font-bold text-amber-900">
+        {error ?? "Could not load the request detail."} The figures above are still accurate — this panel is not.
+      </p>
+    );
+  }
+
+  const history = detail.customerHistory;
+
+  return (
+    <div className="space-y-3.5">
+      {/* ── Double-count warning first: it changes whether the rest even matters ───────────── */}
+      {detail.contestedBy.length > 0 ? (
+        <div className="rounded-sm border border-rose-300 bg-rose-50 px-2.5 py-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-black text-rose-900">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            {detail.contestedBy.length === 1
+              ? "Another live request would be credited the same sales"
+              : `${detail.contestedBy.length} other live requests would be credited the same sales`}
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {detail.contestedBy.map((overlap) => (
+              <li className="text-[11px] font-medium text-rose-900" key={overlap.requestCode}>
+                {overlap.requestCode} ({overlap.status}) — {overlap.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* ── Products ──────────────────────────────────────────────────────────────────────── */}
+      <Section title="Products promoted">
+        {detail.products.length === 0 ? (
+          <p className="text-[11px] font-medium italic text-slate-400">No products were listed on this request.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="pb-1 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Product</th>
+                  <th className="pb-1 text-right text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Qty</th>
+                  <th className="pb-1 text-right text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.products.map((product) => (
+                  <tr className="border-b border-slate-100 last:border-0" key={product.name}>
+                    <td className="py-1 text-[12px] font-bold text-slate-900">{product.name}</td>
+                    <td className="py-1 text-right text-[12px] font-medium text-slate-700">{product.quantity}</td>
+                    <td className="py-1 text-right text-[12px] font-bold text-slate-900">{egp(product.value) ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      {/* ── Money and ROI ─────────────────────────────────────────────────────────────────── */}
+      <Section title="Cost and expected return">
+        <div className="grid gap-2 sm:grid-cols-4">
+          <Field emptyLabel="Not set" label="Estimated cost" value={egp(detail.estimatedCost)} />
+          <Field emptyLabel="Not set" label="Expected return" value={egp(detail.expectedRoiValue)} />
+          <Field emptyLabel="Not set" label="Required return" value={egp(detail.requiredRoiValue)} />
+          <Field
+            emptyLabel="Not measured yet"
+            label="ROI window"
+            value={detail.roiWindow ?? (detail.roiDurationMonths ? `${detail.roiDurationMonths} months` : null)}
+          />
+        </div>
+      </Section>
+
+      {/* ── Customer ──────────────────────────────────────────────────────────────────────── */}
+      <Section title="Customer">
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Field emptyLabel="No code" label="Code" value={detail.customerCode} />
+          <Field emptyLabel="Not recorded" label="Type" value={detail.customerType} />
+          <Field emptyLabel="Not recorded" label="Speciality" value={detail.customerSpeciality} />
+          <Field emptyLabel="Not recorded" label="Line" value={detail.lineName} />
+          <Field emptyLabel="Not recorded" label="Area" value={detail.customerArea ?? detail.areaName} />
+          <Field emptyLabel="Not recorded" label="Governorate" value={detail.customerGovernorate} />
+        </div>
+        <div className="mt-1.5 space-y-1">
+          {detail.customerAddress ? (
+            <p className="flex items-start gap-1.5 text-[11px] font-medium text-slate-700">
+              <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-slate-400" />
+              {detail.customerAddress}
+            </p>
+          ) : (
+            <p className="text-[11px] font-medium italic text-slate-400">No captured address on file.</p>
+          )}
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
+            <Phone className="h-3 w-3 shrink-0 text-slate-400" />
+            {detail.customerContactName ? (
+              <>
+                {detail.customerContactName}
+                {detail.customerContactMobile ? ` · ${detail.customerContactMobile}` : " · no mobile on file"}
+              </>
+            ) : (
+              <span className="italic text-slate-400">No contact person recorded.</span>
+            )}
+          </p>
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700">
+            <Camera className="h-3 w-3 shrink-0 text-slate-400" />
+            {detail.evidencePhotoName ? (
+              // The IMAGE itself is not stored anywhere (marketing_evidence_files is empty and no
+              // bucket holds these captures), so claiming to show "the photo" would be a lie. The
+              // filename is genuinely all that exists — say exactly that.
+              <>
+                Live capture recorded: {detail.evidencePhotoName}
+                <span className="italic text-slate-400"> — filename only, the image is not stored</span>
+              </>
+            ) : (
+              <span className="italic text-slate-400">No live capture recorded for this customer.</span>
+            )}
+          </p>
+        </div>
+      </Section>
+
+      {/* ── Target pharmacies ─────────────────────────────────────────────────────────────── */}
+      <Section title={`Target pharmacies (${detail.targetPharmacies.length})`}>
+        {detail.targetPharmacies.length === 0 ? (
+          <p className="text-[11px] font-medium italic text-slate-400">
+            No target pharmacies were attached to this request.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {detail.targetPharmacies.map((pharmacy) => (
+              <li
+                className="flex flex-wrap items-baseline gap-x-2 rounded-sm border border-slate-200 px-2 py-1"
+                key={`${pharmacy.pharmacyCode}-${pharmacy.distributorPharmacyCode}`}
+              >
+                <Store className="h-3 w-3 shrink-0 text-slate-400" />
+                <span className="text-[12px] font-bold text-slate-900">{pharmacy.pharmacyName}</span>
+                <span className="text-[10px] font-medium text-slate-500">
+                  {pharmacy.distributorName} · {pharmacy.distributorPharmacyCode || "no distributor code"}
+                </span>
+                {pharmacy.referenceStatus !== "matched" ? (
+                  <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-amber-900">
+                    {pharmacy.referenceStatus}
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {/* ── What this customer has already cost, and returned ─────────────────────────────── */}
+      <Section title="This customer's earlier marketing">
+        {!history.available ? (
+          <p className="text-[11px] font-bold text-amber-800">
+            The earlier-spend history could not be loaded — treat this as unknown, not as zero.
+          </p>
+        ) : history.isFirstRequest ? (
+          <p className="text-[11px] font-bold text-slate-700">
+            First marketing request ever raised for this customer.
+          </p>
+        ) : (
+          <>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <Field emptyLabel="Unknown" label="Earlier requests" value={String(history.entries.length)} />
+              <Field emptyLabel="Unknown" label="Spent before" value={egp(history.priorSpend)} />
+              <Field
+                emptyLabel="Never measured"
+                label="Sales returned"
+                value={egp(history.priorRealisedSales)}
+              />
+            </div>
+            <ul className="mt-1.5 space-y-1">
+              {history.entries.map((entry) => (
+                <li
+                  className="flex flex-wrap items-baseline gap-x-2 rounded-sm border border-slate-200 px-2 py-1"
+                  key={entry.requestCode}
+                >
+                  <span className="text-[11px] font-black text-slate-900">{entry.requestCode}</span>
+                  <span className="text-[11px] font-medium text-slate-600">{entry.status}</span>
+                  {formatDate(entry.payDate) ? (
+                    <span className="text-[10px] font-medium text-slate-500">{formatDate(entry.payDate)}</span>
+                  ) : null}
+                  <span className="text-[11px] font-bold text-slate-900">{egp(entry.estimatedCost) ?? "-"}</span>
+                  <span className="text-[11px] font-medium text-slate-600">
+                    {entry.actualSalesValue === null ? (
+                      <span className="italic text-slate-400">return not measured</span>
+                    ) : (
+                      <>returned {egp(entry.actualSalesValue)}</>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Section>
+
+      {/* ── The requester's own words ─────────────────────────────────────────────────────── */}
+      <Section title="Requester's notes">
+        {detail.notes ? (
+          <p className="text-[11px] font-medium leading-snug text-slate-800">{detail.notes}</p>
+        ) : (
+          <p className="text-[11px] font-medium italic text-slate-400">The requester left no notes.</p>
+        )}
+      </Section>
+    </div>
+  );
+}
