@@ -26,9 +26,15 @@ import { createPortal } from "react-dom";
 import { AdminManagerExpenseModal } from "@/components/outstation/admin-manager-expense-modal";
 
 import { AdminCallout, AdminInsightChip, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
+import {
+  CostBreakdownFact,
+  Fact,
+  RouteFact,
+} from "@/components/outstation/approval-detail-primitives";
 import { HeldRequestsPanel } from "@/components/outstation/held-requests-panel";
 import { OutstationReviewMap } from "@/components/outstation/outstation-review-map";
 import { TerritoryValidationPanel } from "@/components/outstation/territory-validation-panel";
+import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
@@ -304,47 +310,56 @@ function RequestDetailsModal({
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/65 p-3 backdrop-blur-sm sm:p-6">
       <div className="w-full max-w-4xl overflow-hidden rounded-lg border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.3)]">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-[#E2E8F0] bg-white/98 px-5 py-4 backdrop-blur">
+        {/* Owner request (2026-08-04): a held request must read EXACTLY as the Expense Approval
+            detail. This is that screen's header — dark bar, eyebrow, name, HR ID / id, status
+            badge — and the fact grid below it is its fact grid. The shared pieces come from
+            approval-detail-primitives so the two cannot drift apart. */}
+        <div className="sticky top-0 z-10 flex flex-wrap items-start justify-between gap-3 bg-slate-900 px-5 py-4">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
-                {formatStatus(request.status)}
-              </span>
-              <span className="rounded-full border border-[#FED7AA] bg-[#FFF7ED] px-3 py-1 text-xs font-black text-[#C2410C]">
-                Request #{request.id}
-              </span>
-            </div>
-            <h2 className="mt-2 text-2xl font-black text-[#0F172A]">
-              {formatEmployeeDisplayName(request.employeeName)}
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
+            <h2 className="mt-1 text-lg font-black tracking-tight text-white">
+              {formatEmployeeDisplayName(request.employeeName) || "Unassigned"}
             </h2>
-            <p className="mt-1 text-sm font-semibold text-[#64748B]">
-              {request.employeeHrId} - {request.employeeRole} - {request.employeeLine ?? "No line"}
+            <p className="mt-0.5 font-mono text-xs text-slate-400">
+              {request.employeeHrId || "HR ID not mapped"} · OUTSTATION-{request.id} · {request.employeeRole}
             </p>
           </div>
-          <button
-            className="shrink-0 rounded-xl border border-[#E2E8F0] bg-white px-4 py-2 text-xs font-black text-[#64748B] hover:bg-[#F8FAFC]"
-            onClick={onClose}
-            type="button"
-          >
-            Close
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1 ${requestStatusTone(request.status)}`}>
+              {formatStatus(request.status)}
+            </span>
+            <button
+              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-black text-slate-200 hover:bg-slate-700"
+              onClick={onClose}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="space-y-5 p-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <Info label="Trip date" value={`${formatDate(request.tripStartDate)} to ${formatDate(request.tripEndDate)}`} />
-            <Info label="Submitted" value={formatDateTime(request.submittedAt ?? request.createdAt)} />
-            <Info label="Captured time" value={formatDateTime(request.capturedAt)} />
-            <Info label="GPS accuracy" value={`${request.capturedAccuracyMeters.toFixed(0)} meters`} />
-            <Info label="Destination" value={request.toLabel ?? request.toCity ?? request.toArea ?? "N/A"} />
-            <Info label="Residence" value={[request.residenceAddress, request.residenceArea, request.residenceCity].filter(Boolean).join(", ") || "Not saved"} />
-            {/* Owner request (2026-08-04): show the place, not the coordinate pair. Brick and
-                area/region are derived from the same captured point (see captured-location.ts);
-                the match confidence rides along because a nearest-brick match is an
-                approximation and must never read as an exact one. */}
-            <Info label="Captured location" value={request.capturedLocation?.label ?? "Not resolved"} />
-            <Info label="Captured brick" value={request.capturedLocation?.brickLabel ?? "Not resolved"} />
-            <Info
+          {/* The Expense Approval's fact grid, same columns and same components. The
+              request-only facts (captured geography, GPS accuracy, workload provenance) live in
+              it too — that screen puts facts here, and these are facts. */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+            <Fact label="Expense type" value={formatStatus(request.expenseType)} />
+            <Fact label="Trip" value={request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)`} />
+            <Fact label="Start" value={formatDate(request.tripStartDate)} />
+            <Fact label="End" value={formatDate(request.tripEndDate)} />
+            <Fact label="Transport" value={formatStatus(request.transportationType)} />
+            <Fact label="Distance" value={formatKm(request.distanceFromResidenceKm)} />
+            <Fact label="Submitted" value={formatDateTime(request.submittedAt ?? request.createdAt)} />
+            <Fact label="Captured time" value={formatDateTime(request.capturedAt)} />
+            <Fact label="GPS accuracy" value={`${request.capturedAccuracyMeters.toFixed(0)} m`} />
+            <Fact label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
+            {/* Owner request (2026-08-04): the place, not the coordinate pair. Brick and
+                area/region derive from the same captured point (captured-location.ts); the match
+                confidence rides along because a nearest-brick match is an approximation and must
+                never read as an exact one. */}
+            <Fact label="Captured location" value={request.capturedLocation?.label ?? "Not resolved"} />
+            <Fact label="Captured brick" value={request.capturedLocation?.brickLabel ?? "Not resolved"} />
+            <Fact
               label="Captured area / region"
               value={
                 request.capturedLocation
@@ -352,38 +367,36 @@ function RequestDetailsModal({
                   : "Not resolved"
               }
             />
-            <Info label="Location match" value={request.capturedLocation?.confidence ?? "Not matched"} />
-            {/* Kept as-is: the owner's "raw data" complaint was about the CAPTURED point. The
-                residence pair stays for map/debug work alongside the readable address above. */}
-            <Info label="Residence coordinates" value={request.residenceLatitude != null && request.residenceLongitude != null ? `${request.residenceLatitude.toFixed(5)}, ${request.residenceLongitude.toFixed(5)}` : "N/A"} />
-            {/* A null distance/duration is a FAILED route lookup, not a zero-length trip, and
-                must not read as a bland "N/A" next to real numbers. Fuel is only priced from
-                distance on car trips, so on a train/bus trip a missing figure costs nothing —
-                but it is still a gap, and it says so. */}
-            <Info label="Distance" value={formatKm(request.distanceFromResidenceKm)} />
-            <Info
-              label="Duration"
-              value={
-                request.durationMinutes != null
-                  ? `${request.durationMinutes.toFixed(0)} mins`
-                  : "Route lookup failed"
-              }
+            <Fact label="Location match" value={request.capturedLocation?.confidence ?? "Not matched"} />
+            <Fact label="AM visits" value={String(request.amWorkload ?? 0)} />
+            <Fact label="PM visits" value={String(request.pmWorkload ?? 0)} />
+            <Fact label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
+            <Fact label="Workload match" value={formatStatus(request.workloadMatchStatus ?? "manual")} />
+            <RouteFact
+              from={[request.residenceAddress, request.residenceArea, request.residenceCity].filter(Boolean).join(", ") || "Residence"}
+              to={request.toLabel ?? request.toCity ?? request.toArea ?? "—"}
             />
-            <Info label="Claimed amount" value={formatCurrency(request.claimedTotalAmount)} />
-            <Info label="Transportation" value={formatStatus(request.transportationType)} />
-            <Info label="Expense type" value={formatStatus(request.expenseType)} />
-            <Info label="Offline capture" value={request.offlineCaptured ? "Yes" : "No"} />
-            <Info label="AM visits" value={String(request.amWorkload ?? 0)} />
-            <Info label="PM visits" value={String(request.pmWorkload ?? 0)} />
-            <Info label="Workload source" value={formatStatus(request.workloadSource ?? "manual")} />
-            <Info label="Workload match" value={formatStatus(request.workloadMatchStatus ?? "manual")} />
-            {request.expenseType === "meeting" ? (
-              <Info label="Meeting amount" value={formatCurrency(request.meetingAmount ?? 0)} />
-            ) : null}
-            {request.expenseType === "other" ? (
-              <Info label="Other amount" value={formatCurrency(request.otherAmount ?? 0)} />
-            ) : null}
+            <CostBreakdownFact
+              allowance={request.allowanceAmount}
+              formatCurrency={formatCurrency}
+              meeting={request.meetingAmount ?? 0}
+              other={request.otherAmount ?? 0}
+              total={request.claimedTotalAmount || request.expectedTotalAmount}
+              travel={request.reportTravelCost ?? request.fuelAmount + request.ticketAmount}
+            />
           </div>
+
+          {/* First in the body, exactly as on the Expense Approval: the verified CRM workload
+              with its per-day breakdown. The flat "AM visits / PM visits" numbers in the grid
+              above are the DECLARED figures; this is the evidence behind them, and it is what
+              the approver actually decides on. */}
+          <TripWorkloadEvidencePanel
+            declaredAm={request.amWorkload ?? 0}
+            declaredPm={request.pmWorkload ?? 0}
+            hrId={request.employeeHrId ?? null}
+            tripEndDate={request.tripEndDate}
+            tripStartDate={request.tripStartDate}
+          />
 
           <Card className={`${panelClassName} p-5`}>
             <div className="mb-4 flex items-start gap-3">

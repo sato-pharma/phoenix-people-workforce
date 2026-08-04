@@ -31,6 +31,7 @@ import {
 } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Fact, PanelSection } from "@/components/outstation/approval-detail-primitives";
 import { TripAttachments } from "@/components/outstation/trip-attachments";
 import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
@@ -143,19 +144,6 @@ const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
   none: "text-slate-700",
   warn: "bg-amber-100 font-bold text-amber-800",
 };
-
-/** Dark block header with the orange accent bar — the module's premium section divider. */
-function PanelSection({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <div className="border border-slate-200">
-      <div className="flex items-center gap-2 bg-slate-900 px-4 py-2.5">
-        <span aria-hidden className="h-4 w-1 bg-orange-500" />
-        <span className="text-[11px] font-black uppercase tracking-wide text-white">{title}</span>
-      </div>
-      <div className="p-4">{children}</div>
-    </div>
-  );
-}
 
 export function ExpenseApprovalsWorkspace() {
   const [records, setRecords] = useState<LoadedRecord[]>([]);
@@ -1303,15 +1291,6 @@ function EmployeeSummaryPanel({
           );
         })}
       </div>
-    </div>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">{label}</p>
-      <p className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">{value || "—"}</p>
     </div>
   );
 }
