@@ -16,7 +16,6 @@ import { collectFingerprintCandidates } from "./connectors/fingerprint.ts";
 import { collectDsmNoRecordCandidates } from "./connectors/dsm-no-record.ts";
 import { collectHolidayBridgeCandidates } from "./connectors/holiday-bridge.ts";
 import { collectCrmCandidates } from "./connectors/crm.ts";
-import { collectNoRecordsActivityCandidates } from "./connectors/no-records-activity.ts";
 import {
   collectInsufficientBalanceVacationCandidates,
   collectUnpaidVacationCandidates,
