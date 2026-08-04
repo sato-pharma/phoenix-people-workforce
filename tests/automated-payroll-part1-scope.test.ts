@@ -334,6 +334,51 @@ export function runAutomatedPayrollPart1ScopeTests() {
   // No date at all (still actively employed, no resignation on file) — never "after."
   assert.equal(isAfterPeriod(null, july), false);
 
+  // ---- THE SAME PREDICATE, NOW GUARDING THE HIRE DATE (owner-reported real bug,
+  // 2026-08-04): two employees hired 2026-08-02 were on the JULY sheet.
+  //
+  // The failure was not "an extra row". `isJoiner` is isInPeriod(hireDate,
+  // period), which is FALSE for a future hire — an August hire's month is not
+  // July — so they fell straight through to lifecycle "regular" and were paid a
+  // FULL, UNPRORATED July salary for a month they had not worked. A genuine
+  // joiner at least gets prorated; this population got everything.
+  //
+  // Nothing else could have caught it: a future hire is perfectly "active" and
+  // payroll-eligible today, so isPayrollIneligibleEmployee passes them happily.
+  // resolvePayrollPopulationAndSources must therefore drop them BEFORE that
+  // check, on the hire date alone.
+  assert.equal(
+    isAfterPeriod("2026-08-02", july),
+    true,
+    "Mahmoud Eldaly and Adel Srour (both hired 2026-08-02) must be excluded from the July run — they were paid a full month they never worked",
+  );
+  // The boundary that must NOT be excluded: hired on the last day of the period
+  // is a real joiner and is owed that day's prorated pay.
+  assert.equal(isAfterPeriod("2026-07-31", july), false, "a last-day hire is a joiner, not a future hire");
+  assert.equal(isAfterPeriod("2026-07-01", july), false, "a first-day hire is plainly in the period");
+  // A future hire relative to an EARLIER run stays excluded there too, and a
+  // year boundary must not read as "before".
+  assert.equal(isAfterPeriod("2027-01-05", { month: 12, year: 2026 }), true);
+
+  // The assertions above only prove the PREDICATE works — it always did. The bug
+  // was that the population filter never called it on the hire date. This checks
+  // the wiring, which is the thing that actually broke, and it is a source guard
+  // because resolvePayrollPopulationAndSources reads the employee directory and
+  // cannot be exercised without a database.
+  const populationSource = readFileSync(
+    new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
+    "utf8",
+  ).slice(
+    readFileSync(new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url), "utf8").indexOf(
+      "export async function resolvePayrollPopulationAndSources",
+    ),
+  );
+  assert.match(
+    populationSource.slice(0, 3000),
+    /isAfterPeriod\(employee\.hireDate, period\)\)\s*continue/,
+    "the payroll population must drop anyone hired after the period ends — without this they are paid a full unprorated month they never worked",
+  );
+
   // ---- notice-period employees are VISIBLE but never SETTLED (owner request
   // 2026-07-25, after B-157's resignation was completed by mistake and he looked
   // like an ordinary employee with no resignation shown anywhere).

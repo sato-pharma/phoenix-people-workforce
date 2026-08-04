@@ -226,6 +226,21 @@ export async function resolvePayrollPopulationAndSources(period: PayrollPeriod):
     // with no error or empty-state to notice it by.
     const stillActiveThroughFutureExit = isAfterPeriod(employee.lastWorkingDate, period);
 
+    // HIRED AFTER THIS PERIOD ENDED — not employed in this month at all, so they
+    // cannot be on its sheet (owner-reported 2026-08-04: two people hired 2 Aug
+    // were on the JULY sheet).
+    //
+    // The damage was worse than merely appearing. `isJoiner` is
+    // isInPeriod(hireDate, period), which is FALSE for a future hire — an August
+    // hire's month is not July — so they fell through to lifecycle "regular" and
+    // were paid a FULL, UNPRORATED month they had not worked. A joiner at least
+    // gets prorated; this population got the whole salary.
+    //
+    // Deliberately placed BEFORE the eligibility check: a future hire is
+    // perfectly "active" and payroll-eligible today, so no eligibility rule
+    // would ever have caught them.
+    if (isAfterPeriod(employee.hireDate, period)) continue;
+
     // Include: active/eligible employees, a leaver this month (even if terminal now),
     // or someone serving notice into a future month (still owed this month's pay).
     if (isPayrollIneligibleEmployee(employee) && !isLeaver && !stillActiveThroughFutureExit) continue;
