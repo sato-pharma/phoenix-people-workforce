@@ -230,6 +230,16 @@ function runMarketingOnBehalfValidationTests() {
   );
 }
 
+/**
+ * A stand-in for the stamped JPEG the camera modal produces.
+ *
+ * Added 2026-08-04: this fixture previously carried `evidencePhotoName` with NO image, and asserted
+ * that it normalized to evidence_status 'complete' — it was pinning the defect. The captured bytes
+ * were being dropped in the browser, so 'complete' was being granted on a filename. A name without
+ * an image is now refused outright; see marketing-evidence-photo-storage.test.ts for that case.
+ */
+const jpegDataUrl = `data:image/jpeg;base64,${Buffer.from("stamped-jpeg").toString("base64")}`;
+
 const completeInput: MarketingValidationInput = {
   customer: {
     capturedAccuracyMeters: 12,
@@ -241,6 +251,7 @@ const completeInput: MarketingValidationInput = {
     displayName: "Test Customer Clinic",
     evidenceHasTimestamp: true,
     evidencePhotoCapturedAt: timestamp,
+    evidencePhotoDataUrl: jpegDataUrl,
     evidencePhotoName: "customer-sign.jpg",
     extractedAreaName: "Glim",
     extractedGovernorateName: "Alexandria",
@@ -257,6 +268,7 @@ const completeInput: MarketingValidationInput = {
       displayName: "Test Pharmacy",
       evidenceHasTimestamp: true,
       evidencePhotoCapturedAt: timestamp,
+      evidencePhotoDataUrl: jpegDataUrl,
       evidencePhotoName: "pharmacy-sign.jpg",
       extractedAreaName: "Glim",
       extractedGovernorateName: "Alexandria",

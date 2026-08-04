@@ -338,6 +338,15 @@ export type MarketingValidationCustomerInput = {
   displayName: string;
   evidenceHasTimestamp?: boolean;
   evidencePhotoCapturedAt?: string | null;
+  /**
+   * The captured JPEG itself, as `data:image/jpeg;base64,…`.
+   *
+   * Until 2026-08-04 the browser sent only `evidencePhotoName` and dropped the bytes, so
+   * `evidence_status` could reach 'complete' on a filename alone. The image is now carried to the
+   * server, written to the `marketing-evidence` bucket, and indexed in `marketing_evidence_files` —
+   * a name arriving WITHOUT this field is refused rather than saved as proof.
+   */
+  evidencePhotoDataUrl?: string | null;
   evidencePhotoName?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
@@ -383,6 +392,8 @@ export type MarketingValidationPharmacyInput = {
   displayName: string;
   evidenceHasTimestamp?: boolean;
   evidencePhotoCapturedAt?: string | null;
+  /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
+  evidencePhotoDataUrl?: string | null;
   evidencePhotoName?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;
@@ -402,6 +413,8 @@ export type MarketingValidationLegacyPharmacyInput = {
     displayName: string;
     evidenceHasTimestamp?: boolean;
   evidencePhotoCapturedAt?: string | null;
+  /** See `MarketingValidationCustomerInput.evidencePhotoDataUrl`. */
+  evidencePhotoDataUrl?: string | null;
   evidencePhotoName?: string | null;
   extractedAreaName?: string | null;
   extractedGovernorateName?: string | null;

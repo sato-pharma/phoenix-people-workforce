@@ -1495,6 +1495,11 @@ export function MarketingValidationWorkspace() {
       capturedLongitude: capture.longitude,
       evidenceHasTimestamp: Boolean(capture.photoName && capture.photoCapturedAt),
       evidencePhotoCapturedAt: capture.photoCapturedAt,
+      // The IMAGE, not just its name. This line is the fix: the stamped JPEG used to live only in
+      // `photoDataUrl` for the on-screen preview and was dropped the moment the form was submitted,
+      // so the server stored a filename and called it proof. The server now writes these bytes to
+      // the private `marketing-evidence` bucket and REFUSES a name that arrives without them.
+      evidencePhotoDataUrl: capture.photoDataUrl,
       evidencePhotoName: capture.photoName || null,
     };
   }
