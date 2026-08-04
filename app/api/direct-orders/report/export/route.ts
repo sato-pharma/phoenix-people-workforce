@@ -4,6 +4,11 @@ import { NextResponse } from "next/server";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import {
+  describeDirectOrderReportFilters,
+  filterDirectOrderReportRows,
+  parseDirectOrderReportFilters,
+} from "@/lib/direct-orders/report-filters";
 import { buildDirectOrdersReportWorkbook } from "@/lib/direct-orders/report-workbook";
 import { getDirectOrderReport, resolveDirectOrderReportScope } from "@/lib/direct-orders/service";
 import { toApiError } from "@/lib/http/api-errors";
@@ -26,7 +31,15 @@ export async function POST(request: Request) {
     await assertExportRateLimit({ actor: access.hrId, request, scope: "direct-orders-report" });
 
     // Re-load server-side (never trust the client) and scope by the viewer's role.
-    const rows = await getDirectOrderReport(access);
+    const visibleRows = await getDirectOrderReport(access);
+    // The body carries the reader's status chips and search box — their SLICE, never their data
+    // and never their permissions (the role scope above already decided what may be loaded).
+    // Applying it here is what keeps the workbook's row count and money totals equal to the
+    // Rows / Pending / Total value / Approved value cards they were looking at; the same
+    // filterDirectOrderReportRows runs on both screens.
+    const filters = parseDirectOrderReportFilters(await request.json().catch(() => ({})));
+    const rows = filterDirectOrderReportRows(visibleRows, filters);
+    const filterNote = describeDirectOrderReportFilters(filters);
     const scope = resolveDirectOrderReportScope(access);
     const exportId = randomUUID();
     const generatedAtCairo = new Intl.DateTimeFormat("en-GB", {
@@ -35,10 +48,15 @@ export async function POST(request: Request) {
       timeStyle: "short",
     }).format(new Date());
 
+    const scopeLabel = SCOPE_LABEL[scope] ?? scope;
+
     const buffer = await buildDirectOrdersReportWorkbook(rows, {
       generatedByName: access.hrId ?? "unknown",
       generatedByHrId: access.hrId ?? "unknown",
-      scopeLabel: SCOPE_LABEL[scope] ?? scope,
+      // The cover's scope line is where the file explains itself, so the filter stamp belongs
+      // beside the visibility scope: a workbook that quietly holds a slice is indistinguishable
+      // from a company-wide one once it has been forwarded on.
+      scopeLabel: filterNote ? `${scopeLabel}. ${filterNote}` : scopeLabel,
       generatedAtCairo,
       exportId,
     });
@@ -47,8 +65,16 @@ export async function POST(request: Request) {
       actorLoginId: access.loginId ?? access.hrId,
       entityType: "direct_order_request",
       entityId: exportId,
-      newValues: { exportedRows: rows.length, scope },
-      summary: `Direct orders report exported (${rows.length} rows, scope ${scope}) by ${access.hrId ?? "unknown"}.`,
+      // Both counts are logged: a support question about a forwarded file is answerable only if
+      // the trail says how much the reader could see as well as how much they took.
+      newValues: {
+        exportedRows: rows.length,
+        filterSearch: filters.search,
+        filterStatuses: filters.statuses,
+        scope,
+        visibleRows: visibleRows.length,
+      },
+      summary: `Direct orders report exported (${rows.length} of ${visibleRows.length} rows, scope ${scope}) by ${access.hrId ?? "unknown"}.`,
     });
 
     return new NextResponse(new Uint8Array(buffer), {

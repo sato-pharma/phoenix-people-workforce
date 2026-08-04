@@ -55,10 +55,75 @@ type Aggregate = { bounced: boolean; clicked: boolean; delivered: boolean; lastA
 // array so the request stays well under that ceiling.
 const IN_FILTER_CHUNK_SIZE = 100;
 
+// PostgREST caps a single response, so the window is read page by page. The chips are printed under
+// the window heading ("Last 30 days"), so they have to count the whole window: a 30-day window
+// holding 910 sent / 448 opened / 151 clicked / 86 not-sent read as 178 / 139 / 64 / 22 while they
+// were computed from the first display page (production, 2026-08-04).
+const OUTBOX_PAGE_SIZE = 500;
+
+// Ceiling on that scan. Production runs ~1,000 sends per 30-day window (the widest the page offers),
+// so this is headroom rather than a live limit — and it throws instead of returning a short count,
+// because nothing downstream can tell a truncated chip from a true one.
+const MAX_WINDOW_OUTBOX_ROWS = 5000;
+
 function chunk<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
   return chunks;
+}
+
+async function loadWindowOutbox(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  sinceIso: string,
+  untilIso: string,
+): Promise<OutboxRow[]> {
+  const rows: OutboxRow[] = [];
+  for (let offset = 0; ; offset += OUTBOX_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("notification_outbox")
+      .select("id,status,provider_message_id,sent_at,last_error,payload,created_at")
+      .gte("created_at", sinceIso)
+      // Freeze the top of the window at one instant. The scan is OFFSET-paged and sorted newest
+      // first, so a send that lands between two pages would shift every later row down by one and
+      // be counted twice — the drain writes to this table continuously.
+      .lt("created_at", untilIso)
+      .order("created_at", { ascending: false })
+      // Tie-break the sort: rows sharing a created_at would otherwise drift between pages and be
+      // counted twice or skipped entirely.
+      .order("id", { ascending: false })
+      .range(offset, offset + OUTBOX_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data ?? []) as OutboxRow[];
+    rows.push(...page);
+    if (page.length < OUTBOX_PAGE_SIZE) return rows;
+    if (rows.length >= MAX_WINDOW_OUTBOX_ROWS) {
+      throw new Error(`Email Activity window holds ${MAX_WINDOW_OUTBOX_ROWS}+ sends — refusing to show a partial count.`);
+    }
+  }
+}
+
+export function summarizeEmailActivity(rows: readonly EmailActivityRow[]): EmailActivityData["summary"] {
+  return {
+    bounced: rows.filter((row) => row.bounced || row.sendStatus === "failed").length,
+    clicked: rows.filter((row) => row.clicked).length,
+    delivered: rows.filter((row) => row.delivered).length,
+    notSent: rows.filter((row) => row.sendStatus !== "sent").length,
+    opened: rows.filter((row) => row.opened).length,
+    sent: rows.filter((row) => row.sendStatus === "sent").length,
+    total: rows.length,
+  };
+}
+
+/**
+ * Splits the matched window into what the table shows and what the chips count. They are produced
+ * together, from the same list, so the chips can never quietly become a description of one page:
+ * `matched` is the whole window, `rows` is only the slice that renders.
+ */
+export function buildEmailActivityPage(
+  matched: readonly EmailActivityRow[],
+  limit: number,
+): { rows: EmailActivityRow[]; summary: EmailActivityData["summary"] } {
+  return { rows: matched.slice(0, limit), summary: summarizeEmailActivity(matched) };
 }
 
 export function providerFor(messageId: string | null): "brevo" | "resend" | "unknown" {
@@ -78,15 +143,14 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
   const days = options.days && options.days > 0 ? options.days : 7;
   const search = (options.search ?? "").trim().toLowerCase();
 
-  // Spine: what Phoenix tried to send, most recent first.
-  const { data: outboxData, error: outboxError } = await supabase
-    .from("notification_outbox")
-    .select("id,status,provider_message_id,sent_at,last_error,payload,created_at")
-    .gte("created_at", new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString())
-    .order("created_at", { ascending: false })
-    .limit(500);
-  if (outboxError) throw outboxError;
-  const outbox = (outboxData ?? []) as OutboxRow[];
+  // Spine: what Phoenix tried to send across the WHOLE window, most recent first. Both ends of the
+  // window are pinned to the same instant so every page of the scan sees the same table.
+  const windowEndMs = Date.now();
+  const outbox = await loadWindowOutbox(
+    supabase,
+    new Date(windowEndMs - days * 24 * 60 * 60 * 1000).toISOString(),
+    new Date(windowEndMs).toISOString(),
+  );
 
   // Engagement events for those sends, keyed on provider_message_id.
   const messageIds = Array.from(new Set(outbox.map((row) => row.provider_message_id).filter((id): id is string => Boolean(id))));
@@ -121,7 +185,7 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
     }
   }
 
-  const rows: EmailActivityRow[] = [];
+  const matched: EmailActivityRow[] = [];
   for (const row of outbox) {
     const recipientEmail = firstRecipient(row.payload);
     const recipientName = nameByEmail.get(recipientEmail.toLowerCase()) ?? null;
@@ -137,7 +201,7 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
     if (options.activity === "bounced" && !agg.bounced && sendStatus !== "failed") continue;
     if (options.activity === "not_sent" && sendStatus === "sent") continue;
 
-    rows.push({
+    matched.push({
       bounced: agg.bounced,
       clicked: agg.clicked,
       delivered: agg.delivered,
@@ -152,20 +216,10 @@ export async function getEmailActivity(options: EmailActivityOptions = {}): Prom
       sentAt: row.sent_at,
       subject,
     });
-    if (rows.length >= limit) break;
   }
 
   return {
     generatedAt: new Date().toISOString(),
-    rows,
-    summary: {
-      bounced: rows.filter((row) => row.bounced || row.sendStatus === "failed").length,
-      clicked: rows.filter((row) => row.clicked).length,
-      delivered: rows.filter((row) => row.delivered).length,
-      notSent: rows.filter((row) => row.sendStatus !== "sent").length,
-      opened: rows.filter((row) => row.opened).length,
-      sent: rows.filter((row) => row.sendStatus === "sent").length,
-      total: rows.length,
-    },
+    ...buildEmailActivityPage(matched, limit),
   };
 }

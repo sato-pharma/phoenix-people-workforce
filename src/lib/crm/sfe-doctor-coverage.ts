@@ -28,12 +28,16 @@ import { cairoTodayIso } from "@/lib/crm/dates";
 
 /** Editable coverage norms: required type-0 visits per month, by grade tier. A+ folds into A. */
 export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = { A: 2, B: 1, C: 1 };
-/** Selected month plus this many prior months are scanned — lapse detection needs the prior 2;
- * the trend line wants 4 points. */
+/** Selected month plus this many prior months form the board and its trend line — 4 points. */
 export const DOCTOR_COVERAGE_MONTHS_BACK = 3;
 /** A doctor with zero visits in the selected month counts as lapsed only if seen within this many
  * prior months; older than that they are inactive and leave the panel. */
 export const DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS = 2;
+/** How far back the READ actually goes: every trend month — the oldest included — needs its own
+ * prior-two-months lapse history, and history that was never scanned reads as "never visited".
+ * Scanning only the trend window dropped every lapsed doctor out of the oldest month's denominator,
+ * and since a lapsed doctor is never green, that month's bar was the only one biased upward. */
+export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS;
 /** Specialty mix lists this many named specialties before folding the rest into "Other". */
 const SPECIALTY_MIX_TOP_N = 8;
 
@@ -194,7 +198,8 @@ type ContactAccumulator = {
   latestName: { date: string; name: string; visitId: number } | null;
   latestSpeciality: { date: string; speciality: string; visitId: number } | null;
   lastVisitDate: string | null;
-  /** Visit count per month key, selected window only. */
+  /** Visit count per month key. Spans the trend window PLUS the lapse history before it, so the
+   * oldest trend month can be tested for lapse the same way every later month is. */
   visitsByMonth: Map<string, number>;
   /** Type-0 visit count per repKey in the whole window — drives the primary-rep assignment. */
   visitsByRep: Map<string, { count: number; latestDate: string; latestVisitId: number; repName: string }>;
@@ -225,6 +230,7 @@ export function buildDoctorCoverageBoard(
       addMonthsToMonthKey(selectedMonth, -(index + 1)),
     ),
   );
+  const lapseHistoryFrom = addMonthsToMonthKey(selectedMonth, -DOCTOR_COVERAGE_SCAN_MONTHS_BACK);
   const windowFrom = `${windowMonths[0]}-01`;
   const windowTo = lastDayOfMonthKeyIso(selectedMonth);
   const currentCairoMonth = monthKeyOfVisitDate(cairoTodayIso());
@@ -238,7 +244,7 @@ export function buildDoctorCoverageBoard(
     const visitDate = visit.visit_date ?? "";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) continue;
     const monthKey = monthKeyOfVisitDate(visitDate);
-    if (monthKey < windowMonths[0] || monthKey > selectedMonth) continue;
+    if (monthKey < lapseHistoryFrom || monthKey > selectedMonth) continue;
 
     let contact = contacts.get(visit.contact_crm_id);
     if (!contact) {
@@ -253,6 +259,8 @@ export function buildDoctorCoverageBoard(
       };
       contacts.set(visit.contact_crm_id, contact);
     }
+
+    contact.visitsByMonth.set(monthKey, (contact.visitsByMonth.get(monthKey) ?? 0) + 1);
 
     const visitId = visit.crm_visit_id ?? 0;
     if (visit.contact_name?.trim()) {
@@ -270,7 +278,23 @@ export function buildDoctorCoverageBoard(
       });
     }
     if (!contact.lastVisitDate || visitDate > contact.lastVisitDate) contact.lastVisitDate = visitDate;
-    contact.visitsByMonth.set(monthKey, (contact.visitsByMonth.get(monthKey) ?? 0) + 1);
+
+    // Months before the trend window exist to answer "was this doctor seen before the chart
+    // starts". The latest-wins trackers above are safe to feed from them: trackLatest orders
+    // strictly by date then crm_visit_id, so a pre-window visit can never outrank an in-window one
+    // — it can only FILL a value the window itself never supplied. That fill is load-bearing. A
+    // doctor last seen in the two months BEFORE the chart has no in-window visit at all, so
+    // leaving him ungraded meant `if (!tier) continue` below threw him straight back out of the
+    // oldest month's panel — exactly the lapsed doctors the widened scan was added to recover.
+    // Measured in production for selected month 2026-08: 1,317 of the 1,848 missing lapsed doctors
+    // (71%) were still being dropped that way, and every one of them carries a grade on the
+    // pre-window visit already in the scan. He cannot leak onto the selected-month board either:
+    // reaching doctors.push needs a visit this month or in the prior two, all inside the window.
+    //
+    // The primary-rep tally below is the one thing that must NOT see them — it is a COUNT, so a
+    // pre-window visit could flip which rep owns a doctor on the strength of a visit the board
+    // never displays.
+    if (monthKey < windowMonths[0]) continue;
 
     const repKey = repKeyOf(visit);
     const repEntry = contact.visitsByRep.get(repKey);
@@ -307,14 +331,15 @@ export function buildDoctorCoverageBoard(
     const target = DOCTOR_COVERAGE_TARGETS[tier];
 
     // Trend: every window month gets the same green-vs-target math (panel = visited that month
-    // OR lapsed relative to that month's own prior-2 window, bounded to months we scanned).
+    // OR lapsed relative to that month's own prior-2 window, which the widened scan supplies even
+    // for the oldest point).
     for (const month of windowMonths) {
       const monthVisits = contact.visitsByMonth.get(month) ?? 0;
       let inPanel = monthVisits > 0;
       if (!inPanel) {
         for (let back = 1; back <= DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS; back += 1) {
           const prior = addMonthsToMonthKey(month, -back);
-          if (prior < windowMonths[0]) break;
+          if (prior < lapseHistoryFrom) break;
           if ((contact.visitsByMonth.get(prior) ?? 0) > 0) {
             inPanel = true;
             break;
@@ -472,7 +497,7 @@ export function buildDoctorCoverageBoard(
 /** IO wrapper: single-source-door read + duplicate collapse, then the pure core. */
 export async function getSfeDoctorCoverage(input?: { month?: string }): Promise<SfeDoctorCoverageBoard> {
   const month = resolveCoverageMonth(input?.month);
-  const dateFrom = `${addMonthsToMonthKey(month, -DOCTOR_COVERAGE_MONTHS_BACK)}-01`;
+  const dateFrom = `${addMonthsToMonthKey(month, -DOCTOR_COVERAGE_SCAN_MONTHS_BACK)}-01`;
   const dateTo = lastDayOfMonthKeyIso(month);
   const rows = await scanVisitsForRange<DoctorCoverageVisitInput>({ columns: VISIT_COLUMNS, dateFrom, dateTo });
   const collapsed = collapseDuplicateVisitSubmissions(rows);

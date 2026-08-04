@@ -123,10 +123,21 @@ export async function fetchMyCheckins(hrId: string, window: MyCrmWindow): Promis
 
 /** Visits the caller personally logged as the primary agent, with the same GPS/Logged
  * visit-time resolution the admin CRM master table uses (resolveVisitTime + the shared
- * checkin-match correlator — see src/lib/crm/checkin-match.ts). */
+ * checkin-match correlator — see src/lib/crm/checkin-match.ts), and the same duplicate
+ * collapse as every other consumer of the CRM door. */
 export async function fetchMyVisits(hrId: string, window: MyCrmWindow): Promise<MyCrmVisitRow[]> {
   const [visits, checkins] = await Promise.all([
-    queryVisits<RawVisit>({ agentHrIds: [hrId], columns: VISIT_COLUMNS, dateFrom: window.dateFrom, dateTo: window.dateTo }),
+    // collapseDoubleVisits routes through collapseDuplicateVisitSubmissions, the one place that
+    // decides what a re-save is. Reading the raw mirror instead made "My Visits (N)" disagree with
+    // the "Double Visits" tab beside it and with the portal Team Calendar, which both collapse —
+    // one employee, one module, two different totals for the same day's work.
+    queryVisits<RawVisit>({
+      agentHrIds: [hrId],
+      collapseDoubleVisits: true,
+      columns: VISIT_COLUMNS,
+      dateFrom: window.dateFrom,
+      dateTo: window.dateTo,
+    }),
     queryCheckins<RawCheckin>({ agentHrIds: [hrId], columns: CHECKIN_COLUMNS, dateFrom: window.dateFrom, dateTo: window.dateTo }),
   ]);
   const index = indexCheckinsByAgentContactDay(checkins);

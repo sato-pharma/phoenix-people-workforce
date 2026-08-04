@@ -285,6 +285,21 @@ export type MarketingRoiKpiBand = {
   restrictedExcludedCount: number;
 };
 
+/** One invoice line as claimed by ONE request — the detail behind that request's actuals.
+ *
+ * Lives here rather than in roi-report-service.ts (which re-exports it) so that
+ * {@link MarketingRoiReport} can carry the ledger without the types module importing the service
+ * module that already imports it. */
+export type RoiAttributionLine = {
+  customerCode: string;
+  distributorCode: string;
+  invoicePeriod: string;
+  productCode: string;
+  qty: number;
+  requestId: string;
+  value: number;
+};
+
 export type MarketingRoiReport = {
   rows: MarketingRoiReportRow[];
   kpi: MarketingRoiKpiBand;
@@ -293,6 +308,12 @@ export type MarketingRoiReport = {
   autoAppliedByDimension: Partial<Record<RoiFilterKey, string[]>>;
   includedRestricted: boolean;
   generatedAtIso: string;
+  /** The claimed invoice lines behind `rows`. Carried on the result so any caller that REBUILDS
+   * the KPI band over a narrowed row set (the ROI Tracker's per-origin split, the Coverage Report)
+   * can pass it to buildKpiBand and count a sale claimed by several campaigns exactly once.
+   * Without it those pages re-sum the per-request figures and read ~52% high — the defect this
+   * ledger exists to close, on the very screens it is read from. */
+  attributionLines: RoiAttributionLine[];
 };
 
 /** A per-user saved Filter-Engine view. */

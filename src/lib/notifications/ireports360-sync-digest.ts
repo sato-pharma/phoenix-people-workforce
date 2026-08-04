@@ -1,7 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import type { UnmappedAgentAlert, UnmappedAgentAlertKind } from "@/lib/crm/unmapped-alert";
 
 // Notifies Super Admins over Telegram/in-app every time a CRM (iReports360) pull finishes —
@@ -59,32 +58,10 @@ export type IReports360SyncNotifyInput =
 
 type SyncNotifyRecipient = { hrId: string; userId: string | null };
 
-function cleanText(value: unknown) {
-  return String(value ?? "").trim();
-}
-
+// Delegates to the shared person-level resolver: two of the Super Admin accounts are one human, and
+// enumerating auth accounts sent him every sync digest twice. Do not re-query app_auth_users here.
 async function resolveSyncNotifyRecipients(): Promise<{ recipients: SyncNotifyRecipient[]; warnings: string[] }> {
-  const warnings: string[] = [];
-  const recipients: SyncNotifyRecipient[] = [];
-  try {
-    const roles = await resolveNotificationRoleRecipients("ireports360_sync_notify");
-    const { data, error } = await getSupabaseAdmin()
-      .from("app_auth_users")
-      .select("login_id,hr_id,is_active")
-      .in("role", roles)
-      .eq("is_active", true);
-    if (error) throw error;
-    for (const row of (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>) {
-      const hrId = cleanText(row.hr_id).toUpperCase();
-      if (!hrId) continue;
-      recipients.push({ hrId, userId: cleanText(row.login_id) || null });
-    }
-  } catch (error) {
-    warnings.push(
-      `Sync-notify recipients unavailable: ${error instanceof Error ? error.message : "unknown error"}`.slice(0, 160),
-    );
-  }
-  return { recipients, warnings };
+  return resolveNotificationPersonRecipients("ireports360_sync_notify", "Sync-notify recipients");
 }
 
 export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): string {

@@ -566,6 +566,19 @@ import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.t
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
 
+import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-summary-outage.test.ts";
+
+import { runPayrollBatchMembershipTests } from "./payroll-batch-membership.test.ts";
+import { runDeductionsEmployeeSummaryPublishEligibilityTests } from "./deductions-employee-summary-publish-eligibility.test.ts";
+import { runDeductionsVacationDayDoubleChargeTests } from "./deductions-vacation-day-double-charge.test.ts";
+import { runMarketingRoiSharedAttributionTests } from "./marketing-roi-shared-attribution.test.ts";
+import { runCeoLandingSeatAndProbationCountsTests } from "./ceo-landing-seat-and-probation-counts.test.ts";
+import { runSosTopCustomersAggregationTests } from "./sos-top-customers-aggregation.test.ts";
+import { runCrmPortalCoveragePopulationsTests } from "./crm-portal-coverage-populations.test.ts";
+import { runExportFollowsScreenFiltersTests } from "./export-follows-screen-filters.test.ts";
+import { runNotificationDeliveryIntegrityTests } from "./notification-delivery-integrity.test.ts";
+import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expense-approval-state-metrics.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1174,6 +1187,27 @@ await runTest("brevo failover keepalive (GET /v3/account only — never a send; 
 
 await runTest("root redirect (\"/\" resolves from the signed cookie alone so proxy.ts can answer a real 307, never a JS-only redirect)", runRootRedirectHttp307Tests);
 
+await runTest("attendance monthly summary (a device-ingestion outage is reported as missing data, never as employee absence)", runAttendanceMonthlySummaryOutageTests);
+
+await runTest("payroll batch membership is historical (a resignation after payday cannot remove someone from the month they were paid for, incl. the bank file)", runPayrollBatchMembershipTests);
+
+await runTest("deductions By Employee total counts only what publish will actually take (pending shown separately, agrees with Overview)", runDeductionsEmployeeSummaryPublishEligibilityTests);
+
+await runTest("one employee-day of unpaid vacation is chargeable once regardless of which source found it (re-run supersedes, collisions seen within a category)", runDeductionsVacationDayDoubleChargeTests);
+
+await runTest("marketing ROI company totals count each invoice line once even when several campaigns claim it", runMarketingRoiSharedAttributionTests);
+
+await runTest("CEO landing counts (vacancies dedup by seat + occupancy like the organogram; probation counts match what the destination can show)", runCeoLandingSeatAndProbationCountsTests);
+
+await runTest("SoS Top Customers aggregates by distributor+client across selected months instead of duplicating a customer per month", runSosTopCustomersAggregationTests);
+
+await runTest("CRM-fed portal ratios divide comparable populations (no >100% coverage) and multi-day calendar items span their full range", runCrmPortalCoveragePopulationsTests);
+
+await runTest("exports answer the same question as the screen that launched them (direct orders + company vacation report)", runExportFollowsScreenFiltersTests);
+
+await runTest("one human receives one notification (person-level recipient dedup), in_app is only claimed for categories the bell renders", runNotificationDeliveryIntegrityTests);
+
+await runTest("outstation metrics use the canonical 3-state approval detector (rejected is never pending; Approved means the payable everywhere)", runOutstationExpenseApprovalStateMetricsTests);
 await runTest("CRM unmapped-agent alerts (invisible-work tripwire: new/reused/drifted identities alert, historical stay silent, weekly idempotency key)", runCrmUnmappedAgentAlertTests);
 
 await runTest(

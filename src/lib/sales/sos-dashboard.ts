@@ -221,10 +221,46 @@ type ExecRow = {
   period: string;
 };
 type BrickRow = { distributorCode: string; regionCode: string; areaCode: string; brickId: string; units: number; value: number };
-type CustomerRow = { clientCode: string; clientName: string; distributorCode: string; regionCode: string; areaCode: string; units: number; value: number };
+export type CustomerRow = { clientCode: string; clientName: string; distributorCode: string; regionCode: string; areaCode: string; units: number; value: number };
 
 const norm = (value: string | null | undefined) => String(value ?? "").trim();
 const isDirect = (distributorCode: string) => norm(distributorCode).toLowerCase() === "direct";
+
+/** A client_code is only unique WITHIN a distributor — two distributors reuse the same code for two
+ *  different pharmacies, so the identity of a customer is always the composite pair. */
+const customerKey = (row: { clientCode: string; distributorCode: string }) =>
+  `${row.distributorCode}::${row.clientCode}`;
+
+/**
+ * Collapse the per-period customer rows into one row per customer.
+ *
+ * phx_exec_customers is called once per selected month and the results are flattened, so a customer
+ * that bought in N of the selected months arrives as N rows. Ranking that list directly splits one
+ * customer's revenue across several rows: on 2026-06 + 2026-07 the true #3 (184,140.00) showed as
+ * 132,570.00 at rank 5 plus 51,570.00 off the bottom, and two genuine top-15 customers were pushed
+ * off the panel entirely. Aggregate BEFORE ranking, exactly as brickAccum does for bricks.
+ *
+ * `rows` arrive newest-month-first (selectedPeriods is sorted descending), so the first non-empty
+ * name/region/area wins — a customer who stopped buying keeps the newest label the RPC resolved for
+ * them, and a month with a blank field cannot blank out a label another month supplied.
+ */
+export function aggregateCustomerRows(rows: CustomerRow[]): CustomerRow[] {
+  const accum = new Map<string, CustomerRow>();
+  for (const row of rows) {
+    const key = customerKey(row);
+    const current = accum.get(key);
+    if (!current) {
+      accum.set(key, { ...row });
+      continue;
+    }
+    current.units += row.units;
+    current.value += row.value;
+    if (!current.clientName) current.clientName = row.clientName;
+    if (!current.regionCode) current.regionCode = row.regionCode;
+    if (!current.areaCode) current.areaCode = row.areaCode;
+  }
+  return [...accum.values()];
+}
 
 function toFilterSet(values: string[] | undefined): Set<string> | null {
   if (!values || values.length === 0) return null;
@@ -939,8 +975,9 @@ export async function getSosDashboard(
       if (areaSet && !areaSet.has(row.areaCode.toUpperCase())) return false;
       return true;
     });
+  const aggregatedCustomers = aggregateCustomerRows(customerRows);
   const customerTotalValue = customerRows.reduce((sum, row) => sum + row.value, 0);
-  const sortedCustomers = [...customerRows].sort((a, b) => b.value - a.value);
+  const sortedCustomers = [...aggregatedCustomers].sort((a, b) => b.value - a.value);
   const topCustomers: SosCustomerRow[] = sortedCustomers.slice(0, 15).map((row) => ({
     code: row.clientCode,
     name: row.clientName || row.clientCode,
@@ -970,7 +1007,7 @@ export async function getSosDashboard(
     avgPricePerUnit: totalUnits > 0 ? totalValue / totalUnits : 0,
     distributorCount: distAccum.size,
     productCount: new Set(detail.map((row) => row.productCode).filter(Boolean)).size,
-    customerCount: new Set(customerRows.map((row) => `${row.distributorCode}::${row.clientCode}`)).size,
+    customerCount: aggregatedCustomers.length,
     directValue,
     distributorValue,
     directShare: share(directValue, totalValue),

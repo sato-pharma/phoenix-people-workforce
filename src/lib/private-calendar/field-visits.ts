@@ -13,16 +13,27 @@
 //
 // Read-only. Never mutates CRM, attendance or deduction data.
 
-import { scanVisitsForRange } from "@/lib/crm/reads.ts";
+import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads.ts";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import type { PrivateCalendarItem } from "@/lib/private-calendar/logic";
 
+// `contact_name`, never `customer_name`: the mirror leaves customer_name empty on 100% of rows
+// (0 of 75,682 populated over the last 120 days in production), which is what made every chip read
+// "Unnamed customers". contact_name is populated on 55,610 of the 55,630 regular visits (type 0) and
+// is blank by construction on every other type, where the contact id is a shared vendor sentinel and
+// the real identity only exists in free-text `comment` — parsing that would repeat the mistake the
+// duplicate-collapse comment rule already cost us (see crm/reads.ts), so unnamed days show a count.
 type FieldVisitRow = {
-  agent_crm_id: number | string | null;
+  agent_crm_id: number | null;
   agent_hr_id: string | null;
   agent_name: string | null;
-  customer_name: string | null;
+  contact_crm_id: number | null;
+  contact_name: string | null;
+  crm_save_date: string | null;
+  crm_visit_id: number | null;
+  double_crm_id: number | null;
   visit_date: string | null;
+  visit_type: number | null;
 };
 
 function normalizedKey(value: string | null | undefined): string | null {
@@ -53,17 +64,24 @@ export async function loadFieldVisitPrivateCalendarItems(
     );
     if (selected.size === 0) return { items: [], ready: true };
 
-    const rows = await scanVisitsForRange<FieldVisitRow>({
-      dateFrom: start,
-      dateTo: end,
-      columns: "visit_date,agent_hr_id,agent_name,agent_crm_id,customer_name",
-    });
+    // scanVisitsForRange does not collapse on its own, so the chip's count runs through the same
+    // canonical read-time collapse DV Analytics and FWC use — otherwise a rep re-saving one stop
+    // reads as an extra visit here while every other surface counts it once. The extra columns are
+    // the collapse's fingerprint; the aggregation below ignores them.
+    const rows = collapseDuplicateVisitSubmissions(
+      await scanVisitsForRange<FieldVisitRow>({
+        dateFrom: start,
+        dateTo: end,
+        columns:
+          "visit_date,agent_hr_id,agent_name,agent_crm_id,contact_name,contact_crm_id,crm_visit_id,crm_save_date,double_crm_id,visit_type",
+      }),
+    );
 
     // Group by (employee, day). Keyed on the rep's own hr_id — a visit where this
     // employee is the *visited* party (a double visit received) is the other
     // person's field work, not theirs, and is already handled by the double-visit
     // feed.
-    const byKey = new Map<string, { hrId: string; name: string | null; date: string; customers: Set<string> }>();
+    const byKey = new Map<string, { hrId: string; name: string | null; date: string; customers: Set<string>; visits: number }>();
     for (const row of rows) {
       const hrKey = normalizedKey(row.agent_hr_id);
       if (!hrKey || !selected.has(hrKey)) continue;
@@ -75,9 +93,11 @@ export async function loadFieldVisitPrivateCalendarItems(
         name: row.agent_name ?? null,
         date,
         customers: new Set<string>(),
+        visits: 0,
       };
-      const customer = String(row.customer_name ?? "").trim();
+      const customer = String(row.contact_name ?? "").trim();
       if (customer) existing.customers.add(customer);
+      existing.visits += 1;
       byKey.set(key, existing);
     }
 
@@ -86,13 +106,18 @@ export async function loadFieldVisitPrivateCalendarItems(
       const customerList = [...group.customers];
       const shown = customerList.slice(0, 3).join(", ");
       const more = customerList.length > 3 ? ` +${customerList.length - 3} more` : "";
-      const label = customerList.length > 0 ? `${shown}${more}` : "Unnamed customers";
+      // Null, never a placeholder word: an unnamed day is a day whose visits the CRM does not name,
+      // and the count alone is the honest chip. Counting VISITS (not distinct names) also matters —
+      // reading the number off the name set showed "? field visits" on every day once customer_name
+      // turned out to be empty everywhere.
+      const label = customerList.length > 0 ? `${shown}${more}` : null;
+      const visitCountLine = `${group.visits} field visit${group.visits === 1 ? "" : "s"}`;
       items.push({
         approvalImpact:
           "CRM field-visit evidence is read-only activity context. It does not mutate attendance, leave, deductions, payroll, or compliance decisions.",
-        chipLines: [`${customerList.length || "?"} field visit${customerList.length === 1 ? "" : "s"}`, label],
+        chipLines: label ? [visitCountLine, label] : [visitCountLine],
         description: `Logged CRM field visits from the live iReports360 visit mirror.`,
-        detailLines: [`Customers: ${label}`],
+        detailLines: label ? [visitCountLine, `Customers: ${label}`] : [visitCountLine],
         employeeDepartmentName: null,
         employeeHrId: group.hrId,
         employeeJobTitle: null,
@@ -111,7 +136,7 @@ export async function loadFieldVisitPrivateCalendarItems(
         startDate: group.date,
         status: "performed",
         time: "Full day",
-        title: `Field visits: ${label}`,
+        title: label ? `Field visits: ${label}` : `Field visits (${group.visits})`,
       });
     }
     return { items, ready: true };

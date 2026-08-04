@@ -10,6 +10,7 @@ import {
   resolveMarketingCoverageScope,
 } from "@/lib/marketing-requests/coverage-report-scope";
 import { entryMatchesCoverageFilters } from "@/lib/marketing-requests/coverage-report-facets";
+import type { RoiAttributionLine } from "@/lib/marketing-requests/roi-report-types";
 import {
   chunk,
   isRestrictedMarketingProduct,
@@ -23,6 +24,7 @@ import {
   resolveOwnedProductScope,
   resolveRoiResultStatus,
   buildKpiBand,
+  loadAttributionLines,
   getMarketingRequestViewSales,
   roiWindowLabel,
   toNum,
@@ -800,7 +802,30 @@ export async function getMarketingCoverageReport(
     (count, row) => (restrictedRequestIds.has(row.requestId) ? count + 1 : count),
     0,
   );
-  const baseKpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount);
+  // The ledger of claimed invoice lines behind these rows. Several campaigns can legitimately
+  // claim the SAME sale (same distributor + pharmacy + product + month), and each per-request
+  // figure is correct on its own — so summing them counts that sale once per claimant. Production:
+  // 729,884.77 summed against 480,155.92 real, +52%. buildKpiBand deducts the proven overlap, but
+  // only when it is given the ledger; without this argument the "Actual sales (EGP)" and
+  // "Coverage" cards on this page read ~50% high. Withheld rows contribute 0 to the totals, so
+  // their lines must not enter the ledger either or the band would deduct value no row added.
+  const ledgerRequestIds = finalRows
+    .map((row) => row.requestId)
+    .filter((requestId) => !degradedRequestIdSet.has(requestId));
+  let coverageAttributionLines: RoiAttributionLine[];
+  try {
+    coverageAttributionLines = await loadAttributionLines(supabase, ledgerRequestIds, excludeCodes);
+  } catch (error) {
+    // Rethrown, never swallowed: a band silently rebuilt without the ledger reads ~50% high, and
+    // an inflated headline is worse than an error state.
+    logRoiServiceFailure("getMarketingCoverageReport:loadAttributionLines", error, {
+      role: access.role,
+      requestCount: ledgerRequestIds.length,
+      masking: excludeCodes.length > 0,
+    });
+    throw error;
+  }
+  const baseKpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount, coverageAttributionLines);
   const { distinctPharmacyCount, distinctCustomerCount } = countDistinctCoverage(finalRows);
   const degradedInFinalRows = finalRows
     .map((row) => row.requestId)

@@ -14,16 +14,11 @@ import {
   PortalResponsiveDataList,
   portalInputClassName,
 } from "@/components/employee-portal/portal-primitives";
+import {
+  DIRECT_ORDER_REPORT_STATUS_OPTIONS,
+  filterDirectOrderReportRows,
+} from "@/lib/direct-orders/report-filters";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
-
-const STATUS_OPTIONS: Array<{ key: DirectOrderReportRow["status"]; label: string }> = [
-  { key: "pending_approval", label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "returned", label: "Returned" },
-  { key: "rejected", label: "Rejected" },
-  { key: "reversed", label: "Reversed" },
-  { key: "draft", label: "Draft" },
-];
 
 const STATUS_TONE: Record<string, string> = {
   approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -140,16 +135,12 @@ export function DirectOrderPortalReport({
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // The same object the Export button posts, so the file and the metric cards below can only
+  // ever describe one population.
+  const filters = useMemo(() => ({ search, statuses: [...statusFilter] }), [search, statusFilter]);
+
   const filtered = useMemo(() => {
-    let out = rows;
-    if (statusFilter.size) out = out.filter((r) => statusFilter.has(r.status));
-    const q = search.trim().toLowerCase();
-    if (q) {
-      out = out.filter((r) =>
-        [r.requesterName, r.requesterHrId, r.productName, r.productCode, r.pharmacyName, r.pharmacyCode, r.areaCode, r.regionCode, r.brickId, r.doctorName]
-          .some((v) => (v || "").toLowerCase().includes(q)),
-      );
-    }
+    const out = filterDirectOrderReportRows(rows, filters);
     return [...out].sort((a, b) => {
       const av = a[sortKey];
       const bv = b[sortKey];
@@ -158,7 +149,7 @@ export function DirectOrderPortalReport({
         ? String(av ?? "").localeCompare(String(bv ?? ""))
         : String(bv ?? "").localeCompare(String(av ?? ""));
     });
-  }, [rows, statusFilter, search, sortKey, sortDir]);
+  }, [rows, filters, sortKey, sortDir]);
 
   const kpis = useMemo(() => {
     const totalValue = filtered.reduce((s, r) => s + (r.salesValue || 0), 0);
@@ -200,7 +191,9 @@ export function DirectOrderPortalReport({
       const res = await fetch("/api/direct-orders/report/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        // The route re-loads its own rows, so the filter has to travel with the request —
+        // without it the file answers a different question than the cards above it.
+        body: JSON.stringify(filters),
         cache: "no-store",
       });
       if (!res.ok) {
@@ -255,7 +248,7 @@ export function DirectOrderPortalReport({
             </button>
           </div>
           <div className="flex flex-wrap gap-2">
-            {STATUS_OPTIONS.map((option) => (
+            {DIRECT_ORDER_REPORT_STATUS_OPTIONS.map((option) => (
               <button
                 key={option.key}
                 type="button"

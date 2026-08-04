@@ -31,6 +31,11 @@ export const PERSONAL_BELL_CATEGORIES = [
   "internal_message",
   "excuse",
   "recruitment",
+  // Emitted by notifyDirectOrder (src/lib/direct-orders/service.ts). Its in_app deliveries are
+  // recorded "sent", so leaving it off this list produced the one failure mode monitoring cannot
+  // catch: the approver never sees the request and the delivery audit reports success. Any new
+  // category added to a createSystemNotification call must land here too, or it goes nowhere.
+  "direct_order_request",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);

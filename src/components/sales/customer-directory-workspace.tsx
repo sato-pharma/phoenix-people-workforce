@@ -156,7 +156,15 @@ export function CustomerDirectoryWorkspace({ initialError, initialResult, option
       <AdminPageHero
         badges={(
           <>
-            <AdminInsightChip>Customers: {formatNumber(customers.length)}</AdminInsightChip>
+            {/* `customers` is the server's page, cut off at DIRECTORY_RESULT_LIMIT rows. Printing its
+                length as a bare count made the chip read "Customers: 2,000" for every filter wide
+                enough to hit the cap — a display limit presented as a business figure. When the
+                result is truncated the true total is not known here, so say "+" and name the cap. */}
+            <AdminInsightChip>
+              {result?.truncated
+                ? `Customers: ${formatNumber(customers.length)}+ (list capped)`
+                : `Customers: ${formatNumber(customers.length)}`}
+            </AdminInsightChip>
             <AdminInsightChip tone="orange">Each row = one customer per distributor</AdminInsightChip>
             <AdminInsightChip tone="slate">Value = Qty × factory price × (1 − discount)</AdminInsightChip>
           </>

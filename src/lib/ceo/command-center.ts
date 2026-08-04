@@ -9,8 +9,11 @@ import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { getSfeDoctorCoverage, type SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
+import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-command";
 import { getPlatformMetrics, type PlatformMetrics } from "@/lib/platform/metrics";
+import { getProbationRows, isProbationDecisionOutstanding } from "@/lib/probation/service";
 import { getResignationsDashboardData } from "@/lib/resignations/service";
 import { loadSourceOfSalesDashboard } from "@/lib/sales/monthly-distributor-import";
 import {
@@ -149,25 +152,45 @@ function healthScore(health: CeoAdminSignals["health"]) {
   return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100);
 }
 
-async function getCeoProbationCounts(_access: AccessContext): Promise<{ overdue: number; dueSoon: number }> {
-  const { data, error } = await getSupabaseAdmin()
-    .from("probation_evaluations")
-    .select("decision, probation_end_date");
-  if (error) throw error;
+/**
+ * Probation decisions still open, counted from the rows /probation renders.
+ *
+ * An attention item is a LINK, so its number has to describe the page it opens.
+ * This used to scan probation_evaluations directly for records whose
+ * probation_end_date had passed and label them "overdue" — but getProbationRows,
+ * the service behind the tracker this links to, ends with `days_remaining > 0`,
+ * so that figure counted exactly the people the destination table cannot contain:
+ * the CEO clicked 22 and landed on a list holding none of them. The raw scan also
+ * never applied the tracker's medical-representative rule, so head-office roles
+ * were billed as outstanding decisions. Sourcing the count from the tracker's own
+ * service removes that at once and keeps the viewer's scope, which the
+ * admin-client scan bypassed.
+ *
+ * The employment-status rule is still applied HERE and not inherited, because
+ * getProbationRows deliberately does not apply one: it is built from the employee
+ * directory's hire+90 window, the tracker's own status filter defaults to "all",
+ * and the page is meant to keep showing a probationer who resigned mid-window so
+ * HR can close the record. An executive "decisions due" tile is a different
+ * question — a person who has left needs no decision — and in production a
+ * resigned Medical Representative (PD-0003, 10 days remaining) was counted here
+ * until this filter existed. The tile is therefore a subset of the page it links
+ * to, never a disjoint set, which is the property the old count violated.
+ *
+ * There is deliberately no "overdue" count any more: no surface in the product
+ * lists a probationer past their 90-day window, so any such number would be
+ * another dead link. Re-adding one needs an overdue view on /probation first.
+ */
+async function getCeoProbationCounts(access: AccessContext): Promise<{ dueSoon: number }> {
+  const rows = await getProbationRows(access);
 
-  const now = Date.now();
-  const msPerDay = 86_400_000;
-  let overdue = 0;
-  let dueSoon = 0;
-  for (const row of data ?? []) {
-    const decision = row.decision ?? null;
-    if (decision === "pass" || decision === "terminate") continue;
-    if (!row.probation_end_date) continue;
-    const daysRemaining = Math.floor((new Date(row.probation_end_date).getTime() - now) / msPerDay);
-    if (daysRemaining < 0) overdue++;
-    else if (daysRemaining <= 30) dueSoon++;
-  }
-  return { overdue, dueSoon };
+  return {
+    dueSoon: rows.filter(
+      (row) =>
+        isActiveLifecycleStatus(row.employment_status) &&
+        isProbationDecisionOutstanding(row) &&
+        row.days_remaining <= lifecycleRiskWindows.probationCriticalDays,
+    ).length,
+  };
 }
 
 async function getCeoRecentHiresCount(): Promise<number> {
@@ -404,7 +427,7 @@ async function getCeoAdminSignals(
         }).length
       : resolvedPlatformMetrics.lifecycleRisk.expiringContracts;
   const probationCounts =
-    probationCountsR.status === "fulfilled" ? probationCountsR.value : { overdue: 0, dueSoon: 0 };
+    probationCountsR.status === "fulfilled" ? probationCountsR.value : { dueSoon: 0 };
   const coachingRedZone =
     coachingR.status === "fulfilled"
       ? (coachingR.value.zoneCounts.critical_red ?? 0) + (coachingR.value.zoneCounts.red_zone ?? 0)
@@ -416,9 +439,6 @@ async function getCeoAdminSignals(
   const signalAttention: CeoAttentionItem[] = [];
   if (expiringContracts > 0) {
     signalAttention.push({ key: "contracts", label: "Contracts expiring soon", count: expiringContracts, href: "/contracts", tone: "blue" });
-  }
-  if (probationCounts.overdue > 0) {
-    signalAttention.push({ key: "probationOverdue", label: "Probation decisions overdue", count: probationCounts.overdue, href: "/probation", tone: "rose" });
   }
   if (probationCounts.dueSoon > 0) {
     signalAttention.push({ key: "probationDue", label: "Probation decisions due (30d)", count: probationCounts.dueSoon, href: "/probation", tone: "amber" });

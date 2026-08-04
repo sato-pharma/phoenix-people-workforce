@@ -929,26 +929,27 @@ export function buildManagerSummariesDetailed(
       .filter((entry): entry is [string, EmployeeDirectoryRow] => Boolean(entry[0])),
   );
 
-  // Team-MR denominator lives in the descendantHrIds normalization domain
-  // (normalizeHrIdForAccess), which is DISTINCT from canonicalHrIdKey. We only ever
-  // COUNT across the two domains — never intersect sets — so mixing is safe here.
+  // The team MRs live in the descendantHrIds normalization domain (normalizeHrIdForAccess), which
+  // is DISTINCT from canonicalHrIdKey. Coverage intersects this set with the MRs a manager visited,
+  // so that side is re-derived from the raw row in THIS domain below (visitedTeamKeys) rather than
+  // converted from the canonical tally — a key from the other domain would silently never match.
   const activeMrKeys = new Set(
     employees
       .filter((employee) => isActiveEmployee(employee) && isMedicalRep(employee))
       .map((employee) => normalizedHrKey(employee.hrId))
       .filter((key): key is string => Boolean(key)),
   );
-  const teamMrCountMemo = new Map<string, number>();
-  const teamMrCountFor = (managerNormKey: string) => {
-    if (!managerNormKey) return 0;
-    const cached = teamMrCountMemo.get(managerNormKey);
-    if (cached != null) return cached;
-    let count = 0;
+  const teamMrKeysMemo = new Map<string, Set<string>>();
+  const teamMrKeysFor = (managerNormKey: string) => {
+    if (!managerNormKey) return new Set<string>();
+    const cached = teamMrKeysMemo.get(managerNormKey);
+    if (cached) return cached;
+    const keys = new Set<string>();
     for (const key of descendantHrIds(managerNormKey, employees)) {
-      if (key !== managerNormKey && activeMrKeys.has(key)) count += 1;
+      if (key !== managerNormKey && activeMrKeys.has(key)) keys.add(key);
     }
-    teamMrCountMemo.set(managerNormKey, count);
-    return count;
+    teamMrKeysMemo.set(managerNormKey, keys);
+    return keys;
   };
 
   const rowsByVisitor = new Map<string, DoubleVisitDbRow[]>();
@@ -971,7 +972,10 @@ export function buildManagerSummariesDetailed(
     const pmVisits = visitorRows.filter((row) => row.period === "PM").reduce((sum, row) => sum + asNumber(row.visit_count), 0);
 
     const visitedTally = new Map<string, number>();
+    const visitedTeamKeys = new Set<string>();
     for (const row of visitorRows) {
+      const mrTeamKey = normalizedHrKey(row.visited_employee_hr_id);
+      if (mrTeamKey) visitedTeamKeys.add(mrTeamKey);
       const mrKey = canonicalHrIdKey(row.visited_employee_hr_id);
       if (!mrKey) continue;
       visitedTally.set(mrKey, (visitedTally.get(mrKey) ?? 0) + asNumber(row.visit_count));
@@ -986,11 +990,17 @@ export function buildManagerSummariesDetailed(
     const concentrationPct = totalDvs > 0 ? round((top4 / totalDvs) * 100, 1) : null;
     const overFocusedMrCount = tallyValues.filter((value) => avgPerMr > 0 && value >= Math.max(5, avgPerMr * 2)).length;
 
-    const teamMrCount = dv && HIERARCHY_ROLE_CODES.has(dv.roleCode) && employee
-      ? teamMrCountFor(normalizedHrKey(employee.hrId) ?? "")
+    const teamMrKeys = dv && HIERARCHY_ROLE_CODES.has(dv.roleCode) && employee
+      ? teamMrKeysFor(normalizedHrKey(employee.hrId) ?? "")
       : null;
-    const coveragePct = teamMrCount && teamMrCount > 0 ? round((distinctMrs / teamMrCount) * 100, 1) : null;
-    const neglectedMrCount = teamMrCount && teamMrCount > 0 ? Math.max(0, teamMrCount - distinctMrs) : null;
+    const teamMrCount = teamMrKeys?.size ?? null;
+    // Coverage counts only the MRs from the manager's OWN team, because that is the population the
+    // denominator describes. Counting every MR they rode along with — another district's rep, or one
+    // who has since left — put 11 of the 19 live hierarchy managers above 100% (one at 225%), and a
+    // ratio at or above 100% also forces Neglected MRs to 0 while real reps go unvisited.
+    const teamMrsVisited = teamMrKeys ? Array.from(teamMrKeys).filter((key) => visitedTeamKeys.has(key)).length : 0;
+    const coveragePct = teamMrCount && teamMrCount > 0 ? round((teamMrsVisited / teamMrCount) * 100, 1) : null;
+    const neglectedMrCount = teamMrCount && teamMrCount > 0 ? teamMrCount - teamMrsVisited : null;
 
     const sortedDates = visitorRows.map((row) => row.activity_date).filter(Boolean).sort();
     const firstDvDate = sortedDates.at(0) ?? null;
@@ -1036,6 +1046,15 @@ export function buildManagerSummaries(rows: DoubleVisitDbRow[], employees: Emplo
   return buildManagerSummariesDetailed(rows, employees, asOfDate).summaries;
 }
 
+/** The coverage numerator, recovered exactly from the pair the summary already carries — see
+ * buildManagerSummariesDetailed, where neglected is teamMrCount minus the team MRs actually
+ * visited. Insight sentences must quote THIS, not distinctMrs, or the count in the sentence
+ * disagrees with the percentage beside it for any manager who rode along outside their team. */
+function teamMrsVisitedOf(summary: DoubleVisitManagerSummary): number | null {
+  if (summary.teamMrCount == null || summary.neglectedMrCount == null) return null;
+  return summary.teamMrCount - summary.neglectedMrCount;
+}
+
 function buildDoubleVisitInsights(
   summaries: DoubleVisitManagerSummary[],
   mrScores: DoubleVisitMrScore[],
@@ -1076,13 +1095,13 @@ function buildDoubleVisitInsights(
   }
 
   const mostOverFocused = summaries
-    .filter((summary) => summary.teamMrCount != null && summary.teamMrCount > 0 && summary.distinctMrs < summary.teamMrCount && summary.concentrationPct != null)
+    .filter((summary) => summary.teamMrCount != null && summary.teamMrCount > 0 && (summary.neglectedMrCount ?? 0) > 0 && summary.concentrationPct != null)
     .slice()
     .sort((a, b) => (b.concentrationPct ?? 0) - (a.concentrationPct ?? 0))[0];
   if (mostOverFocused) {
     raw.push({
       category: "concentration",
-      detail: `${mostOverFocused.managerName} put ${mostOverFocused.concentrationPct}% of double visits on ${mostOverFocused.distinctMrs} of ${mostOverFocused.teamMrCount} team MRs — rotation gap.`,
+      detail: `${mostOverFocused.managerName} put ${mostOverFocused.concentrationPct}% of double visits on ${teamMrsVisitedOf(mostOverFocused)} of ${mostOverFocused.teamMrCount} team MRs — rotation gap.`,
       id: "most-over-focused",
       managerHrId: mostOverFocused.managerHrId,
       mrHrId: null,
@@ -1098,7 +1117,7 @@ function buildDoubleVisitInsights(
   if (lowestCoverage && (lowestCoverage.coveragePct ?? 100) < 70) {
     raw.push({
       category: "coverage",
-      detail: `${lowestCoverage.managerName} double-visited only ${lowestCoverage.distinctMrs} of ${lowestCoverage.teamMrCount} team MRs (${lowestCoverage.coveragePct}%).`,
+      detail: `${lowestCoverage.managerName} double-visited only ${teamMrsVisitedOf(lowestCoverage)} of ${lowestCoverage.teamMrCount} team MRs (${lowestCoverage.coveragePct}%).`,
       id: "lowest-coverage",
       managerHrId: lowestCoverage.managerHrId,
       mrHrId: null,

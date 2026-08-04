@@ -304,6 +304,19 @@ function isFinalWorkflow(row: ProbationWorkflowRecord | null | undefined) {
   return Boolean(row?.decision === "pass" || row?.decision === "terminate");
 }
 
+/**
+ * True while a probation review still needs a human decision — including a row
+ * that has no evaluation record yet, because nobody has decided that one either.
+ *
+ * Exported so the executive tiles that link to this module count the rows this
+ * module returns. A second, local copy of "pass or terminate means done" is what
+ * let the CEO's probation count drift into describing people the tracker page
+ * cannot display.
+ */
+export function isProbationDecisionOutstanding(row: Pick<ProbationRow, "workflow">) {
+  return !isFinalWorkflow(row.workflow);
+}
+
 function cleanText(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text : null;
@@ -927,7 +940,7 @@ export async function processDueProbationReminderEvents(limit = 25) {
 
     if (
       !employee || !row ||
-      row.workflow?.decision === "pass" || row.workflow?.decision === "terminate" ||
+      !isProbationDecisionOutstanding(row) ||
       (employeeHrId && decidedByNewModule.has(employeeHrId))
     ) {
       await markProbationReminderEvent(event.id, "failed", {

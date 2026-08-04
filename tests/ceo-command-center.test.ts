@@ -160,7 +160,18 @@ export function runCeoCommandCenterTests() {
     /getCeoProbationCounts\(access\)/,
     "CEO probation risk must use the dedicated open-evaluation aggregate",
   );
-  assert.match(ceoCommandCenterSource, /from\("probation_evaluations"\)/);
+  // Inverted deliberately. This assertion used to REQUIRE the raw `from("probation_evaluations")`
+  // scan, which is the defect itself: that scan counts rows whose probation window has already
+  // closed, joins no employment status and applies no medical-representative rule, while
+  // getProbationRows — the service behind /probation, the page this tile links to — filters all of
+  // them out. The two sets were disjoint by construction, so the CEO clicked "22 overdue" and
+  // landed on a table containing none of them. The count now comes from that same service; see
+  // ceo-landing-seat-and-probation-counts.test.ts for the positive form.
+  assert.doesNotMatch(
+    ceoCommandCenterSource,
+    /from\("probation_evaluations"\)/,
+    "the CEO probation tile must not re-scan probation_evaluations — it must reuse the /probation service, or the number and its destination describe different people",
+  );
   assert.doesNotMatch(
     ceoCommandCenterSource,
     /\.not\("decision"/,
