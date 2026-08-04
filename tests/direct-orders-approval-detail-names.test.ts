@@ -1116,6 +1116,59 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     }
   }
 
+  // ── A pharmacy with NO distributor code must say so, not render a dash ──────
+  //
+  // Found live: محمد ميجا (DOP-000005, 38,016 EGP) and Ibrahim pharmacy (DOP-000004) both reached
+  // approval with zero distributor codes, and the window printed "Distributors: —". The owner read
+  // that as the screen failing to show the distributor. It was not — there was nothing on file.
+  //
+  // Those two states demand opposite reactions from an approver, so the empty case has to name
+  // itself. This is the repo's most-repeated defect class: missing data must never render as
+  // absence. Codes became optional on 2026-08-04, which turned this from a rare edge into the
+  // normal state for any pharmacy registered without one.
+  {
+    for (const [label, path] of [
+      ["the admin approval window", "../src/components/approvals-hub/direct-order-request-detail.tsx"],
+      ["the portal approval window", "../src/components/employee-portal/direct-order-portal-detail.tsx"],
+    ] as const) {
+      const source = readFileSync(new URL(path, import.meta.url), "utf8");
+      const idx = source.indexOf("distributors.length === 0");
+      assert.ok(idx > -1, `${label} must handle a pharmacy with no distributor codes`);
+      const emptyBranch = source.slice(idx, idx + 1500);
+      assert.match(
+        emptyBranch,
+        /No distributor customer code on file/,
+        `${label} must say WHAT is missing when a pharmacy has no code`,
+      );
+      assert.match(
+        emptyBranch,
+        /cannot be linked/,
+        `${label} must say what the missing code COSTS, not just that it is absent`,
+      );
+      // The exact regression: a lone dash as the entire empty state.
+      assert.doesNotMatch(
+        emptyBranch.slice(0, 220),
+        /className="mt-0\.5 text-sm font-semibold text-slate-\d00">[—-]</,
+        `${label} must not render a bare dash for "no distributor codes"`,
+      );
+    }
+
+    // The notification carries the same fact to an approver who never opens the window.
+    const fieldsSource = readFileSync(new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url), "utf8");
+    const metricsIdx = fieldsSource.indexOf("export function buildDirectOrderNotificationMetrics(");
+    const metricsBody = fieldsSource.slice(metricsIdx, metricsIdx + 1800);
+    assert.match(
+      metricsBody,
+      /none on file — distributor sales cannot be linked to this pharmacy/,
+      "the notification must name an absent distributor code rather than dashing it",
+    );
+    assert.doesNotMatch(
+      metricsBody,
+      /\{ label: "Distributor codes", value: text\(/,
+      "the notification's distributor field must not fall back to the generic dash helper",
+    );
+  }
+
   // ── Pharmacy registry: set a pharmacy up BEFORE an order needs it ───────────
   // Owner request, 2026-08-04. Registering here counts as confirmation, because the person doing
   // it IS the authority the approval chain would otherwise wait for.

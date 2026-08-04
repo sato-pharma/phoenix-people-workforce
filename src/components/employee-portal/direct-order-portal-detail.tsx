@@ -310,7 +310,18 @@ export function DirectOrderPortalDetail({
           <div className="mt-3 border-t border-slate-100 pt-3">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Distributors</p>
             {distributors.length === 0 ? (
-              <p className="mt-0.5 text-sm font-semibold text-slate-800">-</p>
+              // Same reasoning as the admin window: an empty list is a normal state since codes
+              // became optional, and a bare dash reads as a broken screen rather than as a fact.
+              <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-[12px] font-bold text-amber-900">
+                  No distributor customer code on file for this pharmacy.
+                </p>
+                <p className="mt-0.5 text-[12px] text-amber-800">
+                  None was entered — nothing failed to load. Phoenix matches a pharmacy&apos;s
+                  distributor sales on that code, so until one is added those sales cannot be linked
+                  to it. The direct order itself is unaffected.
+                </p>
+              </div>
             ) : (
               <div className="mt-1.5 space-y-2 rounded border border-slate-100 bg-slate-50 p-3">
                 {distributors.map((row) => (

@@ -292,7 +292,10 @@ export function buildDirectOrderNotificationMetrics(
     { label: "Area", value: codeNameLabel(ctx.geo.area?.name, ctx.geo.area?.code) },
     { label: "Region", value: codeNameLabel(ctx.geo.region?.name, ctx.geo.region?.code) },
     { label: "Medical rep", value: repLabel(ctx.medicalRep) },
-    { label: "Distributor codes", value: text(ctx.distributorCodesText) },
+    // Not `text(...)`: a bare dash here reads as "the email failed to include the distributor".
+    // Since codes became optional (2026-08-04) an empty list is a normal state, and the approver
+    // reading this on a phone has nothing else to tell them which of the two it is.
+    { label: "Distributor codes", value: ctx.distributorCodesText.trim() || "none on file — distributor sales cannot be linked to this pharmacy" },
     { label: "Collection date", value: dateOnly(request.collectionDate) },
   ];
 }
