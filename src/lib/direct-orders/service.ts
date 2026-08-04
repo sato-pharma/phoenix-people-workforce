@@ -398,6 +398,10 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     pharmacyAddress: row.pharmacy_address ? String(row.pharmacy_address) : null,
     distributorCodes: [],
     geoVarianceResolved: row.geo_variance_resolved === true,
+    verificationStatus: String(row.verification_status ?? "verified") === "pending_review" ? "pending_review" : "verified",
+    entrySource: String(row.entry_source ?? "catalogue") === "manual" ? "manual" : "catalogue",
+    verifiedByHrId: row.verified_by_hr_id ? String(row.verified_by_hr_id) : null,
+    verifiedAt: row.verified_at ? String(row.verified_at) : null,
     createdByHrId: String(row.created_by_hr_id),
     active: row.active !== false,
   };
@@ -530,9 +534,87 @@ export async function createDirectOrderPharmacy(
   const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert(childRows);
   if (childError) throw childError;
 
-  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
+  // Verification is DERIVED from whether every code exists in the distributor's own catalogue,
+  // not taken from a client flag. The client could simply lie — or, far likelier, get it wrong —
+  // and the catalogue is the only thing that actually knows whether a code is real.
+  //
+  // The owner's rule holds: an unrecognised code never BLOCKS the submission. It marks the
+  // pharmacy for SFE review and a Super-Admin acknowledgment instead, so a genuinely new
+  // pharmacy can still be ordered for today and reconciled afterwards.
+  const unresolved = Array.from(byDistributor.entries()).filter(
+    ([distributorCode, customerCode]) => !mapByKey.has(`${distributorCode}::${customerCode}`),
+  );
+  let finalRow = pharmacyRow as Record<string, unknown>;
+  if (unresolved.length > 0) {
+    const { data: flagged, error: flagError } = await supabase
+      .from("direct_order_pharmacies")
+      .update({
+        verification_status: "pending_review",
+        entry_source: "manual",
+      })
+      .eq("id", pharmacyId)
+      .select("*")
+      .single();
+    if (flagError) throw flagError;
+    finalRow = flagged as Record<string, unknown>;
+
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityType: "direct_order_request",
+      entityId: `pharmacy:${pharmacyId}`,
+      newValues: {
+        verificationStatus: "pending_review",
+        unrecognisedPairs: unresolved.map(([distributorCode, customerCode]) => `${distributorCode}:${customerCode}`),
+      },
+      summary: `Direct-order pharmacy "${name}" registered with ${unresolved.length} code(s) not in the distributor catalogue — pending review.`,
+    });
+  }
+
+  const pharmacy = mapPharmacyRow(finalRow);
   await attachDistributorCodes([pharmacy]);
   return pharmacy;
+}
+
+/**
+ * Acknowledge a hand-entered pharmacy: a Super Admin confirms its distributor codes are real.
+ *
+ * This is the release valve on the "never block" rule. The order flows the whole time; this just
+ * records that somebody with authority has checked the codes actually belong to this pharmacy,
+ * which is what stops a mistyped code quietly mis-attributing retail sales forever.
+ */
+export async function acknowledgeDirectOrderPharmacy(
+  access: AccessContext,
+  input: { pharmacyId: string },
+): Promise<void> {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: only a System Admin can acknowledge a pharmacy.");
+  }
+  const supabase = getSupabaseAdmin();
+  const { data: before } = await supabase
+    .from("direct_order_pharmacies")
+    .select("pharmacy_name, verification_status")
+    .eq("id", input.pharmacyId)
+    .maybeSingle();
+  if (!before) badRequest("Pharmacy not found.");
+
+  const { error } = await supabase
+    .from("direct_order_pharmacies")
+    .update({
+      verification_status: "verified",
+      verified_by_hr_id: access.hrId ?? null,
+      verified_at: new Date().toISOString(),
+    })
+    .eq("id", input.pharmacyId);
+  if (error) throw error;
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    oldValues: { verificationStatus: (before as { verification_status?: string }).verification_status ?? null },
+    newValues: { verificationStatus: "verified" },
+    summary: `Direct-order pharmacy acknowledged by ${access.hrId ?? "unknown"}.`,
+  });
 }
 
 /** List distributors for the pharmacy form (by name). */
@@ -548,6 +630,104 @@ export async function createDirectOrderPharmacy(
  * and still display them on the approval window — removing an option must never rewrite history.
  */
 const DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES = new Set(["direct", "directreq"]);
+
+export type DirectOrderCustomerOption = {
+  customerCode: string;
+  customerName: string;
+  address: string | null;
+  /** Geography as NAMES — the owner's rule applies to the picker too, not just the read views. */
+  brickId: string | null;
+  brickName: string;
+  areaCode: string | null;
+  areaName: string;
+  regionCode: string | null;
+  regionName: string;
+};
+
+/**
+ * The distributor's OWN customers, searched by name, bounded to the submitter's territory.
+ *
+ * This exists because a submitter had to type the distributor's customer code from memory.
+ * Nobody knows those codes, and a wrong one is not a harmless typo: retail sales match on
+ * (distributor_code, customer_code), so a mistyped code attributes a different pharmacy's sales
+ * to this one on the screen where money gets approved.
+ *
+ * SCOPE IS A SECURITY BOUNDARY, not a convenience filter. `resolveSalesAccessScope` already
+ * decides which areas a caller may see everywhere else in Sales; reusing it means a District
+ * Manager cannot enumerate another region's customer list by crafting a request. An unscoped
+ * role (Super Admin / CEO / SFE) searches everything, exactly as they can elsewhere.
+ *
+ * `areaCode` narrows within that scope — the owner wants region by default with an area filter
+ * on top — but it can only ever narrow, never widen: an area outside the caller's scope returns
+ * nothing rather than being honoured.
+ */
+export async function searchDistributorCustomers(
+  access: AccessContext,
+  input: { distributorCode: string; regionCode?: string | null; areaCode?: string | null; query?: string | null; limit?: number },
+): Promise<DirectOrderCustomerOption[]> {
+  await assertPermission(access, "direct_orders", "read");
+  const distributorCode = String(input.distributorCode ?? "").trim();
+  if (!distributorCode) return [];
+  if (DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES.has(distributorCode.toLowerCase())) return [];
+
+  // The areas this caller may see at all. null = unrestricted (company-tier role).
+  const { areas } = await listDirectOrderAreaAndBrickOptions(access);
+  const allowedAreaCodes = new Set(areas.map((area) => area.areaCode.toUpperCase()));
+  const unrestricted = resolveDirectOrderReportScope(access) === "all";
+  if (!unrestricted && allowedAreaCodes.size === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("source_of_sales_customer_map")
+    .select("customer_code, customer_name, address, brick_id, area_code, region_code")
+    .eq("active", true)
+    .eq("distributor_code", distributorCode);
+
+  const wantedArea = String(input.areaCode ?? "").trim();
+  const wantedRegion = String(input.regionCode ?? "").trim();
+  if (wantedArea) {
+    // Narrowing only: an area the caller may not see yields nothing rather than being honoured.
+    if (!unrestricted && !allowedAreaCodes.has(wantedArea.toUpperCase())) return [];
+    query = query.eq("area_code", wantedArea);
+  } else if (wantedRegion) {
+    query = query.eq("region_code", wantedRegion);
+  }
+
+  const search = String(input.query ?? "").trim();
+  if (search) {
+    // Escape PostgREST's pattern metacharacters so a stray % cannot widen the match.
+    const escaped = search.replace(/[%_,()]/g, " ").trim();
+    if (escaped) query = query.ilike("customer_name", `%${escaped}%`);
+  }
+
+  const { data, error } = await query.order("customer_name", { ascending: true }).limit(Math.min(input.limit ?? 50, 200));
+  if (error) throw error;
+
+  const geoMaps = await loadDirectOrderGeoNames();
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => {
+      const areaCode = row.area_code ? String(row.area_code) : null;
+      const regionCode = row.region_code ? String(row.region_code) : null;
+      const brickId = row.brick_id ? String(row.brick_id) : null;
+      return {
+        customerCode: String(row.customer_code ?? ""),
+        customerName: String(row.customer_name ?? "").trim(),
+        address: row.address ? String(row.address) : null,
+        brickId,
+        brickName: brickId ? geoMaps.brickNameById.get(brickId) ?? "" : "",
+        areaCode,
+        areaName: areaCode ? geoMaps.areaNameByCode.get(areaCode) ?? "" : "",
+        regionCode,
+        regionName: regionCode ? geoMaps.regionNameByCode.get(regionCode) ?? "" : "",
+      };
+    })
+    // A customer with no name cannot be picked by name — ~12% of the catalogue is unnamed, and
+    // offering a blank row would just be a code the submitter still cannot identify.
+    .filter((option) => option.customerName.length > 0)
+    // Belt and braces: the query is already scoped, but never return a row outside the caller's
+    // areas even if the catalogue holds an area the scope resolver does not know about.
+    .filter((option) => unrestricted || !option.areaCode || allowedAreaCodes.has(option.areaCode.toUpperCase()));
+}
 
 export async function listDirectOrderDistributorOptions(): Promise<Array<{ distributorCode: string; distributorName: string }>> {
   const supabase = getSupabaseAdmin();

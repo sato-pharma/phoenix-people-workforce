@@ -96,6 +96,17 @@ export type DirectOrderPharmacy = {
   distributorCodes: DirectOrderPharmacyDistributorCode[];
   /** Whether an admin has resolved a submitter-brick vs mapped-brick variance. */
   geoVarianceResolved: boolean;
+  /**
+   * 'pending_review' when at least one distributor customer code was NOT found in that
+   * distributor's own catalogue — i.e. it was typed by hand rather than picked from the list.
+   * Never blocks the order; it flags the pharmacy for SFE review and Super-Admin acknowledgment,
+   * because an unrecognised code is how a different pharmacy's retail sales get mis-attributed.
+   */
+  verificationStatus: "verified" | "pending_review";
+  /** 'manual' when any code was hand-entered; 'catalogue' when all came from the distributor list. */
+  entrySource: "catalogue" | "manual";
+  verifiedByHrId: string | null;
+  verifiedAt: string | null;
   createdByHrId: string;
   active: boolean;
 };

@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Send } from "lucide-react";
 
+import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
+
 import {
   PortalDesktopTable,
   PortalEmptyState,
@@ -396,20 +398,19 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                 <div className="rounded border border-slate-100 bg-slate-50 p-3">
                   <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes *</p>
                   {distRows.map((row, index) => (
-                    <div key={index} className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-                      <select className={portalInputClassName} value={row.distributorCode} onChange={(e) => updateDistRow(index, { distributorCode: e.target.value })}>
-                        <option value="">Distributor...</option>
-                        {distributors.map((d) => (
-                          <option key={d.distributorCode} value={d.distributorCode}>{d.distributorName}</option>
-                        ))}
-                      </select>
-                      <input className={portalInputClassName} value={row.customerCode} onChange={(e) => updateDistRow(index, { customerCode: e.target.value })} placeholder="Customer code" />
-                      {distRows.length > 1 ? (
-                        <button type="button" className="h-10 rounded px-2 text-slate-400 hover:text-rose-600" onClick={() => setDistRows((prev) => prev.filter((_, i) => i !== index))}>
-                          Remove
-                        </button>
-                      ) : <span />}
-                    </div>
+                    <DistributorCustomerPicker
+                      key={index}
+                      row={row}
+                      distributors={distributors}
+                      areas={areas}
+                      inputClassName={portalInputClassName}
+                      onChange={(patch) => updateDistRow(index, patch)}
+                      onRemove={
+                        distRows.length > 1
+                          ? () => setDistRows((prev) => prev.filter((_, i) => i !== index))
+                          : undefined
+                      }
+                    />
                   ))}
                   <button type="button" className="text-[12px] font-bold text-orange-600 hover:text-orange-700" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
                     + Add distributor

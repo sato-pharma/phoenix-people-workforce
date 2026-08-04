@@ -335,6 +335,14 @@ export const accessRegistry = [
   // role action — the CEO holds direct_orders:approve but must NOT be able to move a month.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/sales-month", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacies", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Type-ahead over the distributor's customer catalogue for the new-pharmacy picker. Read-only,
+  // so no CSRF; the territory bound lives in searchDistributorCustomers, which clamps every
+  // result to the caller's own areas rather than trusting the query string.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/customers", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // Acknowledging a hand-entered pharmacy. Registry permission is only `read` because the real
+  // gate is a Super-Admin identity check inside acknowledgeDirectOrderPharmacy — an approver
+  // holds direct_orders:approve but must NOT be able to self-clear an unverified pharmacy.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/:id/acknowledge", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/direct-orders/report/export", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfExemptReason: "read-only report export; request body carries no mutation" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/caps", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/variances", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
