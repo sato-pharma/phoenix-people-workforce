@@ -14,8 +14,11 @@ Phoenix Workforce is a private enterprise HR/workforce platform. This repository
 1. Clone the repo and run `pnpm install`.
 2. Copy `.env.example` to `.env.local` and fill in the required environment variables.
 3. Start the dev server with `pnpm run dev` (Turbopack on macOS/Linux; webpack on Windows for stability).
-4. Use `pnpm run check:edit` (typecheck only) as the fast inner loop while editing.
-5. Run `pnpm run check:harden` (lint + typecheck + test + build) before every commit, push, or PR.
+4. Edit freely — do not run checks between edits. `pnpm run check:edit` (typecheck only) is
+   available mid-task if you want a fast sanity read, but it is optional.
+5. When the task is finished, run `pnpm run check:harden` (lint + typecheck + test + build) **once,
+   before you push**. Intermediate commits on a feature branch do not each need it — CI re-runs the
+   same gate on the PR and blocks a red merge.
 6. Never push a broken build.
 
 ## Commit Messages
@@ -76,10 +79,15 @@ Automated tooling may be used during development. All changes -- whether manuall
 
 ## What NOT to Do
 
-- Do not push directly to `main`. It is production-only.
-- Do not apply migrations to production without approval.
+- Do not push directly to `main`. It is production-only, and **a merge to `main` ships to
+  production immediately at full traffic** — see [docs/deployment.md](docs/deployment.md).
+- Do not apply migrations to production without approval. The deploy applies none, so a migration
+  must land **before** the merge or the new code will select a column that does not exist.
 - Do not hardcode secrets or credentials. Use environment variables.
 - Do not bypass RLS with the service-role client for user-scoped data access.
-- Do not add Vercel crons without approval. Four are already in use; see [docs/deployment.md](docs/deployment.md).
-- Do not skip `pnpm run check:harden` before pushing or opening a PR.
+- Do not add or reschedule a cron without approval. Vercel crons no longer exist, and neither does
+  Cloud Scheduler — the live scheduler is a third-party cron-job.org account outside this repo, so
+  a schedule change cannot be made or reviewed in a PR. See [docs/deployment.md](docs/deployment.md).
+- Do not skip `pnpm run check:harden` before pushing or opening a PR. (Once, at that point — not
+  once per commit.)
 - Do not re-implement domain business logic inside components or pages.

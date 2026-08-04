@@ -1,20 +1,40 @@
 # Observability
 
-_Phoenix Workforce runs on GCP Cloud Run. Sentry was retired 2026-07-31 — observability is now a
-single self-hosted pipeline: the `app_error_events` table (server errors via `instrumentation.ts`'s
-`onRequestError` → `/api/errors/client`; client errors via `reportClientError` → the same endpoint),
-structured JSON logging to Cloud Logging (`src/lib/observability/log.ts`), an external dead-man's-
-switch on all 8 Cloud Scheduler-triggered cron routes (Healthchecks.io — see below), and the GCP
-alert policy **"Phoenix HR production ERROR log alert"** (log-match on `severity>=ERROR` for the
-`phoenix-hr` Cloud Run service, throttled to at most one owner email every 30 minutes) — this
-replaces Sentry's "new issue → email" rule._
+_Phoenix Workforce runs on **Railway** (moved off GCP Cloud Run 2026-08-01). Sentry was retired
+2026-07-31. What still works today: the `app_error_events` table (server errors via
+`instrumentation.ts`'s `onRequestError` → `/api/errors/client`; client errors via
+`reportClientError` → the same endpoint), structured JSON logging (`src/lib/observability/log.ts`,
+readable with `railway logs`), the health probes, and the Healthchecks.io dead-man's-switch on the
+cron routes._
+
+## ⚠️ The alerting layer died with GCP and has not been replaced
+
+Read this before concluding "nothing is wrong because nothing alerted."
+
+GCP billing account `01BDEA-A20B4C-CC568F` was closed 2026-08-01; every API in project
+`phoenix-workforce-498619` returns `BILLING_DISABLED`. Everything that was hosted **inside** that
+project is therefore gone, including the pieces that used to page the owner:
+
+| What | Status |
+|---|---|
+| Cloud Monitoring alert policies (5xx rate, p95 latency, uptime, scheduler failure, auth-failure spike, config drift) | **Dead** — see "Metrics & alerting" below |
+| "Phoenix HR production ERROR log alert" (the Sentry replacement) | **Dead** — nothing emails the owner on a production ERROR any more |
+| Cloud Logging retention, log-based metrics, and the log query language | **Dead** — use `railway logs` |
+| The `/admin/system-issues` "live infra logs" half | **Dead** — shows its "not connected" banner |
+| Healthchecks.io dead-man's-switch | **Alive** — third-party, outside GCP, `HEALTHCHECKS_PING_KEY` is set on the Railway service |
+| `app_error_events` table + `/admin/system-issues` app-error half | **Alive** — it is in Supabase, not GCP |
+
+**Net effect: errors are still recorded, but nothing pages anyone.** Discovering a production
+problem currently depends on someone looking at `/admin/system-issues`, `railway logs`, or a
+Healthchecks notification for a cron that stopped pinging. Replacing the alerting layer is open
+work, not a solved problem.
 
 ## Error capture
 
 - **Server errors:** `instrumentation.ts`'s `onRequestError` forwards to `/api/errors/client`
   (edge-safe, HTTP), which calls `logAppError()` → the **`app_error_events`** table
   (`src/lib/error-monitor/service.ts`). Fields include route, module, hr_id, message, stack,
-  `release` (`COMMIT_SHA` → Cloud Run `K_REVISION` → `unknown`), environment.
+  `release` (`COMMIT_SHA` → the platform's revision env var → `unknown`), environment.
 - **Client errors:** `src/lib/error-monitor/report-client-error.ts` (`keepalive` POST) → the same
   endpoint, called from `app/global-error.tsx` (React root error boundary) and
   `src/components/layout/global-error-reporter.tsx` (`window.onerror` / `unhandledrejection`).
@@ -22,9 +42,9 @@ replaces Sentry's "new issue → email" rule._
 - **Access:** the table is service-role only (RLS-enabled, no policies); the admin error dashboard reads it via the admin client with an application permission check.
 - **Local dev never writes here (since 2026-07-30).** `shouldPersistErrorEvents()`
   (`src/lib/error-monitor/derived-status.ts`) makes `logAppError()` skip the insert and log to
-  the console instead whenever `NODE_ENV !== "production"` — i.e. under `next dev` only. Both
-  Cloud Run services build with `NODE_ENV=production`, so **staging keeps its own error events**
-  (they land in the staging Supabase project). Override with
+  the console instead whenever `NODE_ENV !== "production"` — i.e. under `next dev` only. The
+  Railway service builds with `NODE_ENV=production`. (There is no staging app any more, so every
+  non-dev row is production.) Override with
   `PHOENIX_PERSIST_DEV_ERROR_EVENTS=true` when deliberately debugging ingestion.
   - *Why:* `.env.local` on the maintainer machines points at the **production** Supabase project
     (a deliberate, documented setup), so local iterate-and-reload churn was inserting straight
@@ -60,45 +80,72 @@ workflow exists to prevent.
 
 ## Structured logging
 
-`src/lib/observability/log.ts` emits single-line JSON that Cloud Logging parses into a structured entry: top-level `severity` + `logging.googleapis.com/labels` (searchable labels). Use it for anything that should drive a log-based metric/alert. Current stable labels:
+`src/lib/observability/log.ts` emits single-line JSON with a top-level `severity` plus a
+`logging.googleapis.com/labels` object. The label key is a GCP convention left in place so the
+format is unchanged if GCP ever returns — on Railway it is simply part of the JSON line. Current
+stable labels:
 
 - `event=cron_unauthorized` — a cron/worker endpoint hit without a valid `CRON_SECRET`.
 - `event=webhook_signature_invalid` / `webhook_misconfigured` — Resend webhook rejections.
 - `event=cron_failed` / `background_job_failed` — job execution failures.
 - `event=config_drift` — a notification-critical env var (`EMAIL_NOTIFICATIONS_ENABLED`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `NOTIFICATION_WEBHOOK_SECRET`) is unset in production, emitted by `/api/readyz` (`src/lib/observability/config-drift.ts`). Non-fatal — readiness stays 200 — but alerted, see below.
 
-Query in Cloud Logging: `resource.type="cloud_run_revision" resource.labels.service_name="phoenix-hr" labels.event="cron_unauthorized"`.
+Read them with the Railway CLI (there is no log query language and no log-based metrics any more —
+grep the stream):
+
+```bash
+railway logs --service phoenix-people-workforce | grep cron_unauthorized
+```
+
+`railway logs --http --json` gives the HTTP access log, which is how the real cron caller was
+identified (read `clientUa` + `httpStatus` per `/api/cron/*` request).
 
 ## Health probes
 
-- **`/api/healthz`** — liveness: static 200, no dependencies. Used by the deploy smoke test and the uptime check.
+- **`/api/healthz`** — liveness: returns 200 plus `revision`, the running commit SHA. **This is the
+  authoritative answer to "what is actually live?"** — not the workflow list, not a merged PR. There
+  is no longer a deploy smoke test or an uptime check calling it; you call it.
 - **`/api/readyz`** — readiness: cheap Supabase head-ping + required-env presence; returns 503 when not ready. Returns only booleans / missing-env **names**, never values. Also surfaces non-fatal notification-config drift (see `event=config_drift` above) in a `warnings[]` field — drift never fails readiness, but it is logged and alerted (see below) since it means email/Telegram may be silently broken while everything else is healthy.
 
-## Metrics & alerting (GCP Monitoring)
+## Metrics & alerting — DEAD (nothing pages the owner)
 
-Managed in Cloud Monitoring (created via the Monitoring/Logging API). Notification channel = owner email.
+All of the below lived in GCP Cloud Monitoring inside project `phoenix-workforce-498619`. That
+project's billing closed 2026-08-01, so **every one of these alerts is dead** and none has been
+rebuilt on Railway. Kept as the specification to rebuild against, not as a description of what runs:
 
-| Alert | Source |
+| Alert (dead) | Was sourced from |
 |---|---|
 | Cloud Run 5xx rate | `run.googleapis.com/request_count` (response_code_class=5xx) |
-| Cloud Run p95 latency | log-based metric `phoenix_hr_production_request_latencies` (see below) |
+| Cloud Run p95 latency | log-based metric `phoenix_hr_production_request_latencies` |
 | Uptime failure | uptime check on `/api/healthz` |
 | Cloud Scheduler job failure | log-based metric `phoenix_scheduler_failures` |
 | App auth/cron/webhook failure spike | log-based metric `phoenix_app_auth_failures` |
-| Notification-config drift | log-based metric `phoenix_config_drift` — fires on any occurrence in a 5-minute window (`labels.event="config_drift"`, see Structured logging above) |
-| Production error log | **"Phoenix HR production ERROR log alert"** — log-match on `severity>=ERROR` for the `phoenix-hr` Cloud Run service, throttled to at most one owner email every 30 minutes. Replaces Sentry's "new issue → email" rule; catches anything `logError`/structured logging writes at ERROR/CRITICAL, not just `app_error_events` rows. |
+| Notification-config drift | log-based metric `phoenix_config_drift` (`labels.event="config_drift"`) |
+| Production error log ("Phoenix HR production ERROR log alert") | log-match on `severity>=ERROR`; this was the Sentry replacement |
 
-**Recommended additions** (same pattern, add when needed): container instance restarts, memory-utilization, max-instance saturation, Resend send-failure rate (outbox `failed` count).
+The one alerting path that **does** still work is Healthchecks.io (next section) — it is
+third-party, was never inside GCP, and answers exactly one question: did a cron job run at all.
+It says nothing about 5xx rates, latency, or application errors.
+
+Rebuilding this is open work. Whatever replaces it must live **outside** the hosting platform, for
+the same reason the dead-man's-switch does: a monitor that runs inside the thing it monitors cannot
+report that the thing is down.
 
 ## External dead-man's-switch (Healthchecks.io)
 
-`src/lib/observability/dead-mans-switch.ts`, wired into all 8 Cloud Scheduler-triggered routes.
-**Deliberately separate from GCP Monitoring above** — that's hosted by/runs inside this same GCP
-project, so it structurally cannot alert on the case where the app or its Cloud Run service itself
-is what's paused or broken. That exact gap is what let 3 scheduler jobs (including the notification
-outbox drain) sit silently **PAUSED for ~2 days** after a 2026-07-23 emergency stop — Cloud
-Scheduler showed a state, not an alert, and nothing external was watching for the absence of an
-expected ping.
+`src/lib/observability/dead-mans-switch.ts`, wired into the cron routes. **This is now the only
+working alert in the system**, and the reason it survived the GCP shutdown is exactly why it was
+built: it is hosted outside the platform it watches, so it can still fire when that platform is the
+thing that is broken. The GCP monitoring that sat inside the same project it monitored is gone; this
+is not.
+
+The original gap it was built for: 3 scheduler jobs (including the notification outbox drain) sat
+silently **PAUSED for ~2 days** after a 2026-07-23 emergency stop — the scheduler showed a state,
+not an alert, and nothing external was watching for the absence of an expected ping.
+
+The routes are now triggered by **cron-job.org**, not Cloud Scheduler (see
+[deployment.md](deployment.md) § Cron Jobs). The dead-man's-switch is indifferent to who calls the
+route — it pings on completion either way — so it kept working across the cutover.
 
 **How it works:** each route calls `pingDeadMansSwitch(jobSlug, "success" | "fail", detail?)` (via
 the `withDeadMansSwitch` wrapper, or directly for `notifications/daily`'s partial-sub-job-failure
@@ -117,15 +164,12 @@ policy):
 
 1. Create a free account at [healthchecks.io](https://healthchecks.io/) (or use an existing one).
 2. Open the default project (or create one) → **Settings** → copy the **Ping Key**.
-3. Set `HEALTHCHECKS_PING_KEY` on the `phoenix-hr` Cloud Run service ONLY (production env var
-   change — needs its own approval per repo policy). **Never set this key on
-   `phoenix-hr-staging`** — Healthchecks slugs are not environment-namespaced (the same 8 slugs
-   below apply everywhere), so a staging ping would reset the exact same check production relies
-   on, masking a real production outage behind a healthy-looking staging heartbeat. Staging is
-   additionally covered by `APP_ENV=staging`, which makes `isProductionRuntime()` false there —
-   `withDeadMansSwitch`/`pingDeadMansSwitch` already no-op outside production (see
-   `tests/dead-mans-switch.test.ts`), so leaving the key unset on staging is also the
-   functionally-correct state, not just the safer one.
+3. Set `HEALTHCHECKS_PING_KEY` on the Railway service `phoenix-people-workforce` (production env
+   var change — needs its own approval per repo policy). **Already done** — the switch is armed.
+   Healthchecks slugs are not environment-namespaced, so if a second environment ever exists again,
+   never set this key there: its ping would reset the exact check production relies on, masking a
+   real outage behind a healthy-looking heartbeat. `withDeadMansSwitch`/`pingDeadMansSwitch`
+   no-op outside production anyway (see `tests/dead-mans-switch.test.ts`).
 4. Configure notification channels for the project (email is on by default; add Slack/Telegram/
    SMS/etc. under **Integrations** if wanted) — this is what actually pages you.
 5. Deploy. Each job's check auto-appears in the dashboard the first time it pings after step 3 —
@@ -135,7 +179,7 @@ policy):
    paste the matching row below, set **Time Zone** to `Africa/Cairo` (Healthchecks defaults to
    UTC), and set the grace period:
 
-   | Check slug (= Cloud Scheduler job name) | Cron expression | Suggested grace |
+   | Check slug | Cron expression | Suggested grace |
    |---|---|---|
    | `phoenix-notify-daily` | `36 6 * * *` | 1h |
    | `phoenix-process-notifications` | `*/5 * * * *` | 10m |
@@ -146,8 +190,17 @@ policy):
    | `phoenix-ireports360-live-sync` | `1,16,31,46 8-12 * * *` | 15m |
    | `phoenix-recruitment-email-intake` | `4-59/10 * * * *` | 10m |
 
-   These are the exact same cron expressions already live in `scripts/setup-gcp-cron.sh` — keep
-   both in sync if a schedule ever changes.
+   ⚠️ These expressions were copied from `scripts/setup-gcp-cron.sh`, which is **no longer the
+   schedule source of truth** — the live schedules are in the cron-job.org account and have already
+   drifted from this table (the weekly reconcile moved to Sunday 07:25, and the 15-minute live-sync
+   job is redundant now that the in-process CRM poller exists). Read the real schedule out of
+   cron-job.org before tuning a grace period, or the switch will alert on a job that is running
+   fine — see [deployment.md](deployment.md) § Cron Jobs.
+
+   Note also that cron-job.org caps request timeout at 30 s, so a slow route logs `Failed
+   (timeout)` there while the server finishes the work and pings Healthchecks successfully. The
+   two systems will disagree, and Healthchecks is the one telling the truth about whether the work
+   completed.
 
 **What it does NOT replace:** the Confidence Gate (holds a suspicious send before it goes out),
 the held-notification alert (tells you when the gate held something), or fix #3's truthful
@@ -155,42 +208,34 @@ the held-notification alert (tells you when the gate held something), or fix #3'
 answers one question — "did the job run at all?" — for the case none of those can cover: total
 silence.
 
-### p95 latency: scoped to production traffic
+### p95 latency: obsolete
 
-`deploy-cloud-run.yml` deploys every revision with **no traffic** and a
-`sha-<8hex>` tag, then smoke-tests it directly via its tag URL
-(`https://sha-xxxxxxxx---phoenix-hr-<hash>-<region>.a.run.app`) before ever
-routing production traffic to it. That tag URL is a real, separately
-routable Cloud Run endpoint — a cold-starting smoke-test hit against it is
-indistinguishable, in the raw `run.googleapis.com/request_latencies` metric,
-from a slow request against live production traffic; both only carry a
-`revision_name` label, with nothing indicating whether the request reached
-the promoted default/custom-domain URL or an unpromoted 0%-traffic tag URL.
+There used to be a log-based metric (`phoenix_hr_production_request_latencies`, applied via
+`scripts/scope-p95-latency-alert-to-production-revision.py`) that excluded deploy-time smoke-test
+traffic from the p95 that paged the owner. It existed because `deploy-cloud-run.yml` smoke-tested
+each new revision through a no-traffic `sha-<8hex>` tag URL, and those cold-start hits polluted the
+raw Cloud Run latency metric.
 
-`phoenix_hr_production_request_latencies` (log-based, DISTRIBUTION, seconds)
-filters Cloud Run's automatic per-request log entries down to
-`httpRequest.requestUrl NOT LIKE '%://sha-%'` — i.e. it excludes every
-request that came in through a tag URL, leaving only traffic against the
-custom domain / default promoted URL. The "Cloud Run p95 latency (phoenix-hr)"
-alert policy's condition is scoped to this metric instead of the raw
-built-in one, so deploy-time smoke tests and any other tag-URL traffic can
-no longer contribute to the p95 that pages the owner.
-
-Defined and applied via
-`scripts/scope-p95-latency-alert-to-production-revision.py` (idempotent,
-`--dry-run` by default — pass `--apply` to actually create the metric /
-update the policy). It reads whatever threshold/duration/notification
-channels are live on the policy at apply time rather than hardcoding them,
-so re-tuning the policy afterward (Console or API) doesn't get clobbered by
-re-running the script.
+**Both halves of that are gone**: there is no no-traffic tag deploy on Railway, and the alert it
+protected is dead with GCP Monitoring. The script is left in the repo but cannot run.
 
 ## Synthetic journeys
 
-`src/lib/synthetic-journeys/` is a Playwright smoke suite (`npm run synthetic:test`) that walks key routes and records pass/fail to `synthetic_journey_runs`. It is **not yet scheduled** — to use it as active monitoring it needs (a) a scheduled runner (Cloud Scheduler → ingest, or a GH Actions cron) and (b) safe test credentials. Environment classification treats `phoenix-hr.satopharma.com` and the `*.run.app` host as production.
+`src/lib/synthetic-journeys/` is a Playwright smoke suite (`pnpm run synthetic:test`) that walks key
+routes and records pass/fail to `synthetic_journey_runs`. It is **not yet scheduled** — to use it as
+active monitoring it needs (a) a scheduled runner (a GitHub Actions cron is now the obvious host,
+since Cloud Scheduler is dead) and (b) safe test credentials. Environment classification treats
+`phoenix-hr.satopharma.com` as production.
 
-## Cloud Run runtime signals
+Given that the alert layer is dead, scheduling this suite is the cheapest route back to an
+automated "is production actually working?" signal — it runs on GitHub's infrastructure, outside
+Railway, which satisfies the outside-the-platform requirement.
 
-Built-in Cloud Run metrics (no code needed): request count/latency by response code, instance count, CPU/memory utilization, billable instance time. `min-instances=1` keeps one instance warm (no cold starts).
+## Railway runtime signals
+
+`railway logs` (add `--http --json` for the access log) and the Railway dashboard's built-in
+service metrics — CPU, memory, network, restarts. There are no log-based metrics and no alert
+policies; these are things you look at, not things that page you.
 
 ## System Issues dashboard (`/admin/system-issues`, Super Admin + CEO)
 
@@ -198,13 +243,14 @@ Two tabs, gated by direct role check (not the `admin` permission resource, which
 hard-locked to Super Admin — see `isRolePermissionWithinHardBoundary` in
 `src/lib/auth/permissions.ts`):
 
-- **Issues & Errors** — merges `app_error_events` (self-hosted, app-level) with live
-  Cloud Logging entries (`src/lib/observability/gcp-logs.ts`, severity ≥ WARNING for
-  the Cloud Run service, last 24h) so infra-level failures that never reach application
-  code (container crash, OOM kill, cold-start failure) are also visible. Requires env
-  `GCP_PROJECT_ID` (and optionally `GCP_CLOUD_RUN_SERVICE`, defaults to `phoenix-hr`) and
-  `roles/logging.viewer` granted to the Cloud Run runtime service account — without it,
-  the tab shows an explicit "not connected" banner rather than a misleading empty list.
+- **Issues & Errors** — shows `app_error_events` (self-hosted, app-level). It was built to *merge*
+  those with live Cloud Logging entries (`src/lib/observability/gcp-logs.ts`, severity ≥ WARNING,
+  last 24h) so infra-level failures that never reach application code (container crash, OOM kill,
+  cold-start failure) were visible too. 🔴 **That half is dead** — the GCP project's billing is
+  closed, so the tab shows its explicit "not connected" banner. The banner is correct behaviour
+  (better than a misleading empty list), but it means **container-level failures are currently
+  invisible in the UI** — use `railway logs` for those. Re-pointing this at the Railway log API is
+  open work.
 - **Per-User Attempts** — aggregates `app_error_events` + failed `auth_login_attempts`
   grouped by HR ID + module/route, computed in application code (`getUserAttemptSummary`
   in `src/lib/error-monitor/service.ts`), not a DB view/RPC — no migration required.

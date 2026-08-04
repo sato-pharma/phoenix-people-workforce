@@ -67,8 +67,13 @@ If the union of matched rows reaches "shared runtime" or higher, just run
 + `check:no-stale-domains` + `lint` + `next typegen` + `typecheck` + `test` +
 `build`) and already covers every narrower row's scripts. Only reach for
 `pnpm run check:edit` (typecheck-only) when the whole diff is confined to the two
-lowest rows and the user is mid-edit rather than about to commit/push/open a
+lowest rows and the user is mid-task rather than about to push/open a
 PR/migrate/deploy.
+
+Run this skill **once per task, at the end** — not after each edit and not before
+each intermediate commit. AGENTS.md section 7 is explicit: a commit on a feature
+branch ships nowhere, and CI re-runs the same gate on the PR head commit and
+blocks a red merge, so per-commit hardening only burns a `next build`.
 
 `pnpm exec playwright test` (e2e) is available but isn't part of `check:harden` —
 call it out as optional/manual for UI-workflow changes rather than running it

@@ -80,13 +80,14 @@ Fast inner loop (typecheck only):
 pnpm run check:edit
 ```
 
-Full pre-commit validation (lint + typecheck + test + build):
+Full pre-push validation (lint + typecheck + test + build):
 
 ```bash
 pnpm run check:harden
 ```
 
-Always run `check:harden` before committing, pushing, or creating PRs.
+Run `check:harden` **once per task, before you push or open a PR** — not before every commit. A
+branch commit ships nowhere, and CI re-runs the same gate on the PR before a merge is allowed.
 
 ## Running Tests
 

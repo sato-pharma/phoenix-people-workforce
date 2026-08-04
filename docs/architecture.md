@@ -96,12 +96,17 @@ both distinctions are documented in
 
 ## Notifications and cron
 
-Notifications use an outbox model with idempotency and retries. The project runs on **GCP Cloud
-Run**; Google Cloud Scheduler drives **8 cron jobs** against the public domain (Bearer
-`$CRON_SECRET`, Africa/Cairo time) — daily notifications, outbox processing (every 5 min),
-background exports (Fri), inbound intake, recruitment email intake, and three iReports360
-visit-sync jobs. `scripts/setup-gcp-cron.sh` is the schedule source of truth;
-[deployment.md](deployment.md) and [observability.md](observability.md) describe the jobs.
+Notifications use an outbox model with idempotency and retries. The project runs on **Railway**;
+the cron routes are driven by **cron-job.org**, a free-tier third-party account **outside this
+repo** (Bearer `$CRON_SECRET`, Africa/Cairo time) — daily notifications, outbox processing (every
+5 min), background exports (Fri), inbound intake, recruitment email intake, and the iReports360
+visit-sync jobs.
+
+🔴 **`scripts/setup-gcp-cron.sh` is NOT the schedule source of truth any more.** The live schedule
+exists only in the cron-job.org account — nothing in git can show or change it. The 8 Google Cloud
+Scheduler jobs still fire but **401 on every route**, so their existence is not evidence anything is
+running. [deployment.md](deployment.md) has the current job inventory and the 30-second-timeout
+trap; [observability.md](observability.md) covers the dead-man's-switch.
 
 Every cron sets `maxDuration = 300` and carries a named Healthchecks.io dead-man's-switch heartbeat
 (`withDeadMansSwitch`). Notification outbox and probation reminder processing are shared through
@@ -116,19 +121,27 @@ environment, so it can never run from a dev machine. Heartbeats to the
 `phoenix-ireports360-live-poll` Healthchecks slug; the scheduled rolling sync and weekly wide
 reconcile remain the correctness backstop for edits/deletions older than its 2-day horizon.
 
-The in-app `/admin/cron-control` dashboard can view/pause/resume/run/reschedule these live, but
-does **not** update `setup-gcp-cron.sh` — if you reschedule a job there, update that script's
-`--schedule`/`--time-zone` flags by hand or a future re-run will silently revert it.
+The in-app `/admin/cron-control` dashboard is a UI over the **dead** GCP Cloud Scheduler
+(`src/lib/cron-control/*`) and is inert — pausing or rescheduling a job there changes nothing that
+actually runs. Use the cron-job.org account instead.
 
 ## Deployment model
 
-**Nothing deploys on merge.** Both environments are cron-driven: production every 2h, staging once
-daily, and each ships as a no-traffic Cloud Run revision, smoke-tested, then promoted. `main` is
-production-only — never edit it directly. Production public domain:
-`https://phoenix-hr.satopharma.com` (Cloud Run service `phoenix-hr`, `europe-west3`); staging is a
-separate service (`phoenix-hr-staging`, `us-central1`) that redeploys the image production already
-built. There is no per-branch preview deployment. The exact public production domain must be
-verified after every production deploy — workspace aliases can diverge from the public alias.
+🔴 **A merge to `main` ships to production immediately.** Railway is GitHub-connected and deploys on
+push, at **full traffic**, within minutes — no staged rollout, no no-traffic revision, no smoke
+test, no cron wait. Branch protection gates the *merge* (5 required status checks must be green),
+but once merged it is live. Never merge anything you are not willing to have serving employees
+within minutes.
+
+This reversed on 2026-08-01 and is the single most important fact to relearn: the old Cloud Run
+pipeline deployed a no-traffic revision, smoke-tested it, then promoted — and ran on a schedule
+rather than on merge. All of that is gone.
+
+`main` is production-only — never edit it directly. Production public domain:
+`https://phoenix-hr.satopharma.com` (Railway service `phoenix-people-workforce`, region `sfo`).
+**There is no staging app.** There is no per-branch preview deployment. To confirm what is actually
+live, request `/api/healthz` and read `revision` — the running commit SHA — rather than trusting a
+workflow list or a merged PR.
 
 Full triggers, timing caveats, and verification commands live in
 [AGENTS.md](../AGENTS.md) (§ Stable Environment Facts, § Hard-Learned Rules) and

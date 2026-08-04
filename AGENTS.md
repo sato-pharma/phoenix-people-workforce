@@ -210,9 +210,16 @@ automatically; the local branch and worktree survive and still need approval to 
 
 ## 7. Validation
 
-Match validation to blast radius. **While iterating on UI/pages, run typecheck+lint once after the
-batch of edits — not after each one; run build and tests when the change reaches the tiers below or
-when asked.** `pnpm run check:harden` before any commit, push, PR, migration, or deploy.
+Match validation to blast radius, and **validate once per task, not once per step.** Make all the
+edits first with no checks in between; when the task's code is finished, run the matching tier below
+**once**.
+
+`pnpm run check:harden` runs **once before you push** — not before every local commit. A commit on a
+feature branch ships nowhere, and CI re-runs the identical content (`validate` + `lint` +
+`typecheck` jobs, all required status checks) on the PR head commit and blocks the merge if it is
+red. Hardening each intermediate commit therefore buys nothing and costs a full `next build` every
+time. Migrations and production deploys still get their own run immediately before the action,
+because those are not covered by a PR's CI.
 
 | Change type | Minimum validation |
 | --- | --- |
