@@ -138,6 +138,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       positionTitle: TITLE_BY_TIER[s.seat_tier],
       regionName: s.region_name,
       replacementForHrId: null,
+      seatId: s.seat_id,
       sourceRowNumber: null,
       status: occupied ? "active" : "open",
       teamId: null,

@@ -606,6 +606,8 @@ import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chai
 
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
+import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
+import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1303,6 +1305,16 @@ await runTest(
 await runTest(
   "closing source coverage (missing vs new vs present on rows not value; confidential skipped; direct region drop-out surfaces)",
   runSourceCoverageTests,
+);
+
+await runTest(
+  "organogram dual-seat visibility (a person on two au seats renders two boxes, never a silent drop)",
+  runOrganogramDualSeatVisibilityTests,
+);
+
+await runTest(
+  "seat transfer service (Super Admin gate, trimmed RPC args, SQL guard messages surface)",
+  runSeatTransferServiceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
