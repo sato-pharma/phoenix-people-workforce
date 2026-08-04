@@ -33,17 +33,25 @@ export function isDirectOrderRequesterRole(role: PhoenixRole | string | null | u
   return DIRECT_ORDER_REQUESTER_ROLES.includes(String(role ?? "").trim() as PhoenixRole);
 }
 
-/** Request lifecycle. `pending_approval` covers every in-chain rung; the active step tells you which. */
+/**
+ * Request lifecycle. `pending_approval` covers every in-chain rung; the active step tells you
+ * which. `held` stands OUTSIDE the chain entirely — an order whose pharmacy is not in the master
+ * database: submitted and visible, but in no approver's queue, and it can only leave `held` by
+ * the pharmacy passing validation (→ `pending_approval` from step 1) or by the 14-day clock
+ * (→ `expired`, a terminal dead end that is logged and counted per requester).
+ */
 export type DirectOrderStatus =
   | "draft"
   | "pending_approval"
   | "approved"
   | "rejected"
   | "returned"
-  | "reversed";
+  | "reversed"
+  | "held"
+  | "expired";
 
 export function isTerminalDirectOrderStatus(status: DirectOrderStatus): boolean {
-  return status === "approved" || status === "rejected" || status === "reversed";
+  return status === "approved" || status === "rejected" || status === "reversed" || status === "expired";
 }
 
 /** The three actions an approver can take at their rung. */
