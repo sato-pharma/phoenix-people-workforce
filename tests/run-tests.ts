@@ -561,6 +561,7 @@ import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
+import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1169,6 +1170,11 @@ await runTest("root redirect (\"/\" resolves from the signed cookie alone so pro
 await runTest(
   "payroll ⨯ deductions gate composition (payroll never pays what the module refuses to publish; dsm_no_record never auto-publishes into a sheet; holiday_bridge reaches the other bucket)",
   runPayrollDeductionGateComposesWithPublishRuleTests,
+);
+
+await runTest(
+  "SoS customer channel (six Arabic keywords ⇒ store; ة/ه fold; channel totals cover the whole side)",
+  runSalesCustomerChannelTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

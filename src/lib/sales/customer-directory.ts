@@ -1,5 +1,10 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
+import {
+  classifyCustomerChannel,
+  matchedStoreKeywords,
+  type CustomerChannel,
+} from "@/lib/sales/customer-channel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   listMonthlyClosingPeriods,
@@ -22,6 +27,8 @@ function excludeCodesFor(role: PhoenixRole): string[] {
 export type CustomerDirectoryFilters = {
   areaCodes?: string[];
   brickCodes?: string[];
+  /** Restrict to one side of the Customers tab. Omitted / null = both channels. */
+  channel?: CustomerChannel | null;
   distributorCodes?: string[];
   fromPeriod?: string | null;
   regionCodes?: string[];
@@ -49,11 +56,15 @@ export type CustomerDirectoryRow = {
   areaName: string;
   brickId: string;
   brickName: string;
+  /** "store" when the name carries one of the owner's six words, else "pharmacy". */
+  channel: CustomerChannel;
   clientAddress: string;
   clientCode: string;
   clientName: string;
   distributorCode: string;
   distributorName: string;
+  /** Which words made this a store — empty for a pharmacy. Shown so a false positive is visible. */
+  matchedKeywords: string[];
   regionCode: string;
   regionName: string;
   totalUnits: number;
@@ -63,6 +74,22 @@ export type CustomerDirectoryRow = {
 export type CustomerDirectoryListResult = {
   customers: CustomerDirectoryRow[];
   truncated: boolean;
+};
+
+// One side of the Customers tab. `customers` is capped for display, but every total is computed
+// over the WHOLE filtered set — a channel's sales figure must never silently mean "the first
+// 2000 rows of it".
+export type CustomerChannelGroup = {
+  customers: CustomerDirectoryRow[];
+  totalCustomers: number;
+  totalUnits: number;
+  totalValue: number;
+  truncated: boolean;
+};
+
+export type CustomerDirectoryChannelResult = {
+  pharmacies: CustomerChannelGroup;
+  stores: CustomerChannelGroup;
 };
 
 export type CustomerSalesLine = {
@@ -133,15 +160,20 @@ export function mapDirectoryRowsToNames(rows: DirectoryRpcRow[], maps: NameMaps)
     const areaCode = String(row.area_code ?? "");
     const regionCode = String(row.region_code ?? "");
     const distributorCode = String(row.distributor_code ?? "");
+    const clientName = String(row.client_name ?? "");
     return {
       areaCode,
       areaName: maps.areaName.get(normalizeCode(areaCode)) ?? areaCode,
       brickId,
       brickName: maps.brickName.get(normalizeCode(brickId)) ?? brickId,
+      // Derived from the name on every read, so a newly uploaded sheet is classified the moment
+      // it lands — no backfill, no stored column to drift.
+      channel: classifyCustomerChannel(clientName),
       clientAddress: String(row.client_address ?? ""),
       clientCode: String(row.client_code ?? ""),
-      clientName: String(row.client_name ?? ""),
+      clientName,
       distributorCode,
+      matchedKeywords: matchedStoreKeywords(clientName),
       distributorName: maps.distributorName.get(normalizeCode(distributorCode)) ?? distributorCode,
       regionCode,
       regionName: maps.regionName.get(normalizeCode(regionCode)) ?? regionCode,
@@ -307,7 +339,9 @@ async function queryDirectoryRows(
   const rows = (data ?? []) as DirectoryRpcRow[];
 
   const mapped = mapDirectoryRowsToNames(rows, maps);
-  const searched = applyDirectorySearch(mapped, filters.search);
+  const searched = applyDirectorySearch(mapped, filters.search).filter(
+    (row) => !filters.channel || row.channel === filters.channel,
+  );
   searched.sort(
     (left, right) =>
       right.totalValue - left.totalValue ||
@@ -354,6 +388,38 @@ export async function loadCustomerDirectoryInitialData(
       truncated: rows.length > DIRECTORY_RESULT_LIMIT,
     },
   };
+}
+
+// Pure: split already-loaded directory rows into the two channels and total each side.
+// Totals are summed BEFORE the display cap is applied, so "Stores: 125,440,939 EGP" means all
+// stores — not the first page of them. Exported for direct testing.
+export function splitDirectoryByChannel(rows: CustomerDirectoryRow[]): CustomerDirectoryChannelResult {
+  const build = (channel: CustomerChannel): CustomerChannelGroup => {
+    const all = rows.filter((row) => row.channel === channel);
+    let totalUnits = 0;
+    let totalValue = 0;
+    for (const row of all) {
+      totalUnits += Number.isFinite(row.totalUnits) ? row.totalUnits : 0;
+      totalValue += Number.isFinite(row.totalValue) ? row.totalValue : 0;
+    }
+    return {
+      customers: all.slice(0, DIRECTORY_RESULT_LIMIT),
+      totalCustomers: all.length,
+      totalUnits: Number(totalUnits.toFixed(6)),
+      totalValue: Number(totalValue.toFixed(6)),
+      truncated: all.length > DIRECTORY_RESULT_LIMIT,
+    };
+  };
+  return { pharmacies: build("pharmacy"), stores: build("store") };
+}
+
+// The Customers tab: the same filtered directory, cut into Pharmacies and Stores.
+export async function loadCustomerDirectoryByChannel(
+  filters: CustomerDirectoryFilters,
+  role: PhoenixRole,
+): Promise<CustomerDirectoryChannelResult> {
+  const rows = await loadCustomerDirectoryRows(filters, role);
+  return splitDirectoryByChannel(rows);
 }
 
 export async function loadCustomerSales(
