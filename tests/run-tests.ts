@@ -586,6 +586,7 @@ import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts"
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1230,6 +1231,7 @@ await runTest("incentive semester window (a declared H1/H2 window, never the las
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest("direct orders registry grants every chain rung (SFE can return/reject/advance, never finalize or submit)", runDirectOrdersRegistryChainGrantsTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);
