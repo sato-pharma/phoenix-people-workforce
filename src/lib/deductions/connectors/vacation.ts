@@ -107,6 +107,99 @@ export function clipLeaveToMonth(input: {
   return { datesInMonth, daysInMonth, totalSpanDays, spansMonthBoundary };
 }
 
+export type VacationDaysAfterLedgerCheck = {
+  datesInMonth: string[];
+  daysInMonth: number;
+  /** In-month days handed back because a live candidate already charges them. */
+  droppedDates: string[];
+};
+
+/**
+ * THE REVERSE HALF OF THE CRM PATH'S `if (covered) continue`.
+ *
+ * This connector emits from two sources that key their candidates differently —
+ * `crm-vacation:{HR_ID}:{DATE}:{category}` and `vacation:{requestUuid}:{category}`.
+ * Same employee, same day, same category, DIFFERENT key, so neither the partial
+ * unique index on (category, candidate_key) nor `insertCandidateDrafts`' key
+ * probe can see the collision.
+ *
+ * The CRM path already defers to an HR request. The request path had no matching
+ * check, so re-running a month that already held CRM-signal candidates charged
+ * those days a second time: on 2026-08-03, 23 rows created where 7 were due and
+ * 13 duplicate employee-days in July 2026 (119 live → 135). Withdrawn, nothing
+ * published.
+ *
+ * And the publish gate would NOT have named it. `findDayCollisions` only reports
+ * a day whose claiming categories number more than one; two `unpaid_vacation`
+ * rows on one day are invisible to it. The only backstop left is
+ * `deductions_publication_lines_guard_day_overlap`, which raises a raw
+ * unique_violation mid-publish. So this is the check that has to hold.
+ *
+ * OVERLAP CAN BE PARTIAL. A multi-day request may have some days claimed and
+ * some free, so the claimed ones are dropped and the day count is re-derived
+ * from the survivors rather than the whole draft being skipped. The unpaid total
+ * is apportioned pro-rata for the same reason `clipLeaveToMonth` does it:
+ * v2_vacation_requests records only a total, never which days were unpaid.
+ * Dropping nothing leaves the ratio at exactly 1, so an unaffected request keeps
+ * the value it has today.
+ */
+export function excludeAlreadyClaimedVacationDays(input: {
+  clipped: MonthClippedLeave;
+  /** Employee-days already claimed by any live candidate, as `${compactHrId}:${date}`. */
+  alreadyDeducted: ReadonlySet<string>;
+  employeeHrIdCompact: string | null;
+}): VacationDaysAfterLedgerCheck {
+  const { clipped } = input;
+  const compact = input.employeeHrIdCompact ?? "";
+  // No usable compact id means no key that can match the ledger. Matching on an
+  // empty prefix would collide with every other unidentified row, so nothing is
+  // dropped and the draft goes on to be priced as it is today.
+  if (!compact || clipped.datesInMonth.length === 0) {
+    return { datesInMonth: [...clipped.datesInMonth], daysInMonth: clipped.daysInMonth, droppedDates: [] };
+  }
+
+  const kept: string[] = [];
+  const droppedDates: string[] = [];
+  for (const date of clipped.datesInMonth) {
+    if (input.alreadyDeducted.has(`${compact}:${date}`)) droppedDates.push(date);
+    else kept.push(date);
+  }
+  if (droppedDates.length === 0) {
+    return { datesInMonth: kept, daysInMonth: clipped.daysInMonth, droppedDates };
+  }
+  if (kept.length === 0) return { datesInMonth: [], daysInMonth: 0, droppedDates };
+
+  const daysInMonth = Math.round(clipped.daysInMonth * (kept.length / clipped.datesInMonth.length) * 100) / 100;
+  return { datesInMonth: kept, daysInMonth, droppedDates };
+}
+
+/**
+ * Every employee-day the live ledger already charges for this month, as
+ * `${compactHrId}:${date}`. Superseded candidates do not count — they were
+ * withdrawn, so the day is free again. Same read the holiday-bridge and DSM
+ * no-record connectors make.
+ */
+async function loadAlreadyDeductedDays(monthKey: string): Promise<Set<string>> {
+  const claimed = new Set<string>();
+  const { data, error } = await getSupabaseAdmin()
+    .from("deductions_candidates")
+    .select("employee_hr_id_compact, dates")
+    .eq("month_key", monthKey)
+    .is("superseded_at", null);
+  // Fail closed. An unreadable ledger is not an empty one, and continuing would
+  // recreate exactly the duplicates this guard exists to stop.
+  if (error) throw new Error(`Vacation connector: failed to load already-deducted days: ${error.message}`);
+  for (const row of (data ?? []) as Array<{ employee_hr_id_compact: string; dates: unknown }>) {
+    const compact = String(row.employee_hr_id_compact ?? "");
+    if (!compact) continue;
+    if (!Array.isArray(row.dates)) continue;
+    for (const date of row.dates as unknown[]) {
+      if (typeof date === "string" && date.trim()) claimed.add(`${compact}:${date.trim()}`);
+    }
+  }
+  return claimed;
+}
+
 async function collectVacationCandidatesByReason(input: {
   month: number;
   year: number;
@@ -135,7 +228,12 @@ async function collectVacationCandidatesByReason(input: {
   // month containing one. A single 0.5-day request therefore blocked the WHOLE
   // month's publish with no in-app way to resolve it (July 2026: Hany Saad Mohamed
   // Omar). Compute the money here, exactly as the CRM and No-Records connectors do.
-  const baseSalaryByCompact = await getBaseSalaryMap();
+  const [baseSalaryByCompact, alreadyDeducted] = await Promise.all([
+    getBaseSalaryMap(),
+    // The CRM source can already have claimed some of these days on an earlier
+    // collection run — see excludeAlreadyClaimedVacationDays.
+    loadAlreadyDeductedDays(monthKey),
+  ]);
   // Fail closed: an empty map is a feeder outage, not "nobody has a salary".
   assertBaseSalaryMapLoaded("Vacation connector", baseSalaryByCompact);
 
@@ -155,10 +253,22 @@ async function collectVacationCandidatesByReason(input: {
     // canonical one — using the wrong key silently misses every lookup, a bug the
     // CRM connector already hit once.
     const compactKey = compactDeductionsHrId(row.employee_hr_id);
+
+    // Drop any day a live candidate already charges — most often a
+    // `crm_vacation_signal` row this connector itself created on an earlier run
+    // for a day that had no HR request yet. Done BEFORE the money is computed,
+    // so the amount follows the days that actually survive.
+    const afterLedger = excludeAlreadyClaimedVacationDays({
+      clipped,
+      alreadyDeducted,
+      employeeHrIdCompact: compactKey,
+    });
+    if (afterLedger.daysInMonth <= 0 || afterLedger.datesInMonth.length === 0) continue;
+
     const baseSalary = compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null;
     const estimatedAmount = calculateDeductionAmountFromBaseSalary({
       baseSalary,
-      deductionDays: clipped.daysInMonth,
+      deductionDays: afterLedger.daysInMonth,
       month: input.month,
       year: input.year,
     });
@@ -173,13 +283,21 @@ async function collectVacationCandidatesByReason(input: {
       month: input.month,
       year: input.year,
       unit: "days",
-      rawValue: clipped.daysInMonth,
+      rawValue: afterLedger.daysInMonth,
       estimatedAmount,
       calculationStatus: estimatedAmount != null ? "calculated" : "requires_review",
       severity: "Medium",
-      reason: clipped.spansMonthBoundary
-        ? `${input.reasonLabel} — ${clipped.daysInMonth} of ${totalUnpaidDays} unpaid day(s) fall in this month (request runs ${startDate} to ${endDate})`
-        : input.reasonLabel,
+      reason: [
+        input.reasonLabel,
+        clipped.spansMonthBoundary
+          ? `${clipped.daysInMonth} of ${totalUnpaidDays} unpaid day(s) fall in this month (request runs ${startDate} to ${endDate})`
+          : null,
+        afterLedger.droppedDates.length > 0
+          ? `${afterLedger.droppedDates.length} day(s) are already deducted under another candidate and were left out (${afterLedger.droppedDates.join(", ")})`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" — "),
       evidence: {
         requestId: row.id,
         paymentStatus: row.payment_status,
@@ -198,10 +316,15 @@ async function collectVacationCandidatesByReason(input: {
         // A data-quality flag, not a business outcome — lets a future report
         // surface "N unpaid-vacation rows exist only because hire_date is missing".
         dataQualityFlag: row.unpaid_reason === "missing_hire_date" ? "missing_hire_date" : null,
+        // Which days another live candidate already charges, and what the row
+        // would have been without that check — so a reviewer can see why this
+        // request is priced below its own unpaid total.
+        daysAlreadyClaimedByAnotherCandidate: afterLedger.droppedDates,
+        daysInMonthBeforeLedgerCheck: afterLedger.droppedDates.length > 0 ? clipped.daysInMonth : null,
       },
       // Every real in-month calendar day, not just [start, end]. The old two-date
       // form made days 2..n-1 invisible to same-day overlap detection.
-      dates: clipped.datesInMonth,
+      dates: afterLedger.datesInMonth,
       hierarchySnapshot: {
         managerHrId: row.manager_hr_id,
         managerOfManagerHrId: row.manager_of_manager_hr_id,
