@@ -609,6 +609,7 @@ import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
+import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
@@ -1328,6 +1329,11 @@ await runTest(
 await runTest(
   "closing corrections grouping (pair names both distorted months; late return names its origin or admits none; worst first)",
   runClosingCorrectionsTests,
+);
+
+await runTest(
+  "territory scope UE-split bridge (coarse UE matches UE-1/UE-2; no widening for unsplit or already-split codes)",
+  runTerritoryScopeLineAwareTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

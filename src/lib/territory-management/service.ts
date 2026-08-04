@@ -178,7 +178,37 @@ export type TerritoryScope = {
   lineCodes: Set<string> | null;
   /** null = every region within the allowed lines is visible. */
   regionCodes: Set<string> | null;
+  /**
+   * Seat-derived area bound (organogram truth). When set it REPLACES the region narrowing:
+   * a DM's areas can legitimately sit outside his region label (CNS D16 under the Alex DM),
+   * and the label's region would both lose those and leak the sibling DM's areas.
+   */
+  areaCodes: Set<string> | null;
 };
+
+/**
+ * UE-split bridge for the label-derived fallback only: the scope's region codes come from the
+ * SoS vocabulary, where Upper Egypt can be the coarse "UE", but `operational_region_code` uses
+ * the split children ("UE-1"/"UE-2") for the lines that divide it. A coarse code must match its
+ * split children or the whole Upper Egypt team disappears from a UE-scoped manager.
+ */
+export function expandRegionCodesForOperationalMatch(
+  codes: Set<string>,
+  knownRegionCodes: Iterable<string>,
+): Set<string> {
+  // Expand from a FIXED base rather than the set being written to. With a plain prefix rule the
+  // two agree (anything under "UE-1-" is also under "UE-"), but a Set visits elements added
+  // mid-iteration, so reading off the growing set would start cascading the moment the matching
+  // rule stops being a simple prefix.
+  const base = [...codes].map((code) => String(code ?? "").trim().toUpperCase()).filter(Boolean);
+  const expanded = new Set(base);
+  for (const known of knownRegionCodes) {
+    const upper = String(known ?? "").trim().toUpperCase();
+    if (!upper) continue;
+    if (base.some((code) => upper.startsWith(`${code}-`))) expanded.add(upper);
+  }
+  return expanded;
+}
 
 /**
  * Which lines and regions the caller may see, reusing the same scope machinery already proven out
@@ -190,7 +220,7 @@ export type TerritoryScope = {
  */
 export async function resolveTerritoryScope(access: AccessContext): Promise<TerritoryScope> {
   const salesScope = await resolveSalesAccessScope(access);
-  if (salesScope.canViewAllSales) return { lineCodes: null, regionCodes: null };
+  if (salesScope.canViewAllSales) return { lineCodes: null, regionCodes: null, areaCodes: null };
 
   const lineCodes = salesScope.allowedLineNames
     ? new Set(
@@ -203,19 +233,35 @@ export async function resolveTerritoryScope(access: AccessContext): Promise<Terr
       )
     : null;
 
+  // The seat model answered: bound by the manager's own areas and skip region narrowing
+  // entirely — the area set is strictly more precise, and comparing label-derived SoS region
+  // codes against `operational_region_code` is exactly the vocabulary mismatch that dropped
+  // out-of-label areas before.
+  const seatAreaCodes = new Set(
+    [...(salesScope.allowedAreaCodes ?? [])].map((code) => code.trim().toUpperCase()).filter(Boolean),
+  );
+  if (seatAreaCodes.size > 0) {
+    return { lineCodes, regionCodes: null, areaCodes: seatAreaCodes };
+  }
+
   // National Sales Manager: LINE scope, allowedRegionNames is null — every region within the line.
   if (access.role !== "Regional Manager" && !salesScope.allowedRegionNames) {
-    return { lineCodes, regionCodes: null };
+    return { lineCodes, regionCodes: null, areaCodes: null };
   }
 
   const references = await loadSalesReferenceData({ includeCustomerBricks: false });
+  const knownRegionCodes = references.regions.map((region) => region.regionCode);
 
   // Regional Manager's real coverage (their own region plus any they stand in for) is richer than
   // the single canonical name computeSalesAccessScope derives, so use the dedicated resolver —
   // the same one root-scope.ts relies on for the Drilldown module.
   if (access.role === "Regional Manager") {
     const regionCodes = await resolveRegionalManagerRegionCodes(access, salesScope, references);
-    return { lineCodes, regionCodes: new Set([...regionCodes].map((code) => code.toUpperCase())) };
+    return {
+      lineCodes,
+      regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
+      areaCodes: null,
+    };
   }
 
   const codeByCanonicalName = new Map(
@@ -226,11 +272,17 @@ export async function resolveTerritoryScope(access: AccessContext): Promise<Terr
       .map((name) => codeByCanonicalName.get(canonicalizeRegionName(name)))
       .filter((code): code is string => Boolean(code)),
   );
-  return { lineCodes, regionCodes };
+  return {
+    lineCodes,
+    regionCodes: expandRegionCodesForOperationalMatch(regionCodes, knownRegionCodes),
+    areaCodes: null,
+  };
 }
 
 export async function loadTerritoryFilters(lineCode: string | null, access?: AccessContext): Promise<TerritoryFilters> {
-  const scope = access ? await resolveTerritoryScope(access) : { lineCodes: null, regionCodes: null };
+  const scope = access
+    ? await resolveTerritoryScope(access)
+    : { lineCodes: null, regionCodes: null, areaCodes: null };
 
   const lines = Object.entries(LINE_LABELS)
     .filter(([code]) => !scope.lineCodes || scope.lineCodes.has(code))
@@ -253,6 +305,7 @@ export async function loadTerritoryFilters(lineCode: string | null, access?: Acc
     if (!areaCode || seen.has(areaCode)) continue;
     const regionCode = str(row.operational_region_code);
     if (regionCode === EXCLUDED_REGION_CODE) continue;
+    if (scope.areaCodes && !scope.areaCodes.has(areaCode.toUpperCase())) continue;
     if (scope.regionCodes && !scope.regionCodes.has(regionCode.toUpperCase())) continue;
     seen.add(areaCode);
     areas.push({
@@ -577,7 +630,9 @@ export async function loadTerritoryMap(params: {
   };
   if (!LINE_LABELS[lineCode] || areaCodes.length === 0) return empty;
 
-  const scope = access ? await resolveTerritoryScope(access) : { lineCodes: null, regionCodes: null };
+  const scope = access
+    ? await resolveTerritoryScope(access)
+    : { lineCodes: null, regionCodes: null, areaCodes: null };
   if (scope.lineCodes && !scope.lineCodes.has(lineCode)) return empty;
 
   // Only areas this line actually carries — an area code from the client is never trusted. A
@@ -588,6 +643,7 @@ export async function loadTerritoryMap(params: {
   for (const row of allowed) {
     const areaCode = str(row.area_code);
     const regionCode = str(row.operational_region_code).toUpperCase();
+    if (scope.areaCodes && !scope.areaCodes.has(areaCode.toUpperCase())) continue;
     if (scope.regionCodes && !scope.regionCodes.has(regionCode)) continue;
     areaNames.set(areaCode, str(row.area_name) || areaCode);
   }

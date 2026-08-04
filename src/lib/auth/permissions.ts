@@ -1,5 +1,6 @@
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdsMatch, normalizeHrIdForAccess } from "@/lib/hr-id";
+import { isWithinManagerHierarchy, type SeatContinuitySubject } from "@/lib/workforce/hierarchy-resolver";
 import { isMissingRequiredManager } from "@/lib/employees/hierarchy-governance";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1302,8 +1303,16 @@ export async function canReadEmployeeDirectory(context: AccessContext) {
   );
 }
 
-export function isDirectReport(managerHrId: string | null, employee: Pick<EmployeeDirectoryRow, "managerHrId">) {
-  return hrIdsMatch(managerHrId, employee.managerHrId);
+export function isDirectReport(
+  managerHrId: string | null,
+  employee: Pick<EmployeeDirectoryRow, "managerHrId"> & { pendingManagerReplacementForHrId?: string | null },
+) {
+  return (
+    hrIdsMatch(managerHrId, employee.managerHrId) ||
+    // Seat continuity: a report whose manager seat is mid-replacement carries the marker; the
+    // stand-in must keep seeing them (mirrors reportsToManagerSeat in the hierarchy resolver).
+    hrIdsMatch(managerHrId, employee.pendingManagerReplacementForHrId ?? null)
+  );
 }
 
 function canSeeDirectReportsByRole(role: PhoenixRole) {
@@ -1315,7 +1324,11 @@ function canSeeDirectReportsByRole(role: PhoenixRole) {
   );
 }
 
-export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId">) {
+export function canSeeEmployee(
+  context: AccessContext,
+  employee: Pick<EmployeeDirectoryRow, "hrId" | "managerHrId"> & { pendingManagerReplacementForHrId?: string | null },
+  options?: { byCanonicalHrId?: Map<string, SeatContinuitySubject> },
+) {
   if (context.source === "guest" || context.scope === "none") return false;
   if (context.scope === "system" || context.role === "Super Admin") return true;
 
@@ -1337,6 +1350,26 @@ export function canSeeEmployee(context: AccessContext, employee: Pick<EmployeeDi
 
   if (hrIdsMatch(currentHrId, employeeHrId)) {
     return true;
+  }
+
+  // Regional Manager / NSM manage through intermediate managers, so a single manager hop showed
+  // them almost nobody. When the caller can supply the full directory index (list surfaces do),
+  // they see their whole reporting subtree via the canonical walker. Single-row callers without
+  // an index keep the conservative direct-report behaviour; Medical Rep / Employee are unaffected
+  // either way (canSeeDirectReportsByRole stays false for them).
+  if (
+    options?.byCanonicalHrId &&
+    (context.role === "Regional Manager" || context.role === "National Sales Manager")
+  ) {
+    return isWithinManagerHierarchy({
+      employee: {
+        managerHrId: employee.managerHrId,
+        pendingManagerReplacementForHrId: employee.pendingManagerReplacementForHrId ?? null,
+      },
+      byCanonicalHrId: options.byCanonicalHrId,
+      viewerCanonicalHrId: canonicalHrIdKey(currentHrId) || "",
+      canonicalize: (value) => canonicalHrIdKey(value) || null,
+    });
   }
 
   return canSeeDirectReportsByRole(context.role) && isDirectReport(currentHrId, employee);
@@ -1369,7 +1402,18 @@ export function filterEmployeesForAccess<T extends Pick<EmployeeDirectoryRow, "h
   rows: T[],
   context: AccessContext,
 ) {
-  return rows.filter((row) => canSeeEmployee(context, row));
+  // Build the manager index once so RM/NSM resolve their whole subtree, not one hop.
+  const byCanonicalHrId = new Map<string, SeatContinuitySubject>();
+  for (const row of rows) {
+    const key = canonicalHrIdKey(row.hrId);
+    if (!key) continue;
+    byCanonicalHrId.set(key, {
+      managerHrId: row.managerHrId,
+      pendingManagerReplacementForHrId:
+        (row as { pendingManagerReplacementForHrId?: string | null }).pendingManagerReplacementForHrId ?? null,
+    });
+  }
+  return rows.filter((row) => canSeeEmployee(context, row, { byCanonicalHrId }));
 }
 
 // Owner-requested (2026-07-25): Talent Acquisition can browse the whole employee

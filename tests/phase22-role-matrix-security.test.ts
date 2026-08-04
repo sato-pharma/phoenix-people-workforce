@@ -19,6 +19,7 @@ import {
   type PhoenixRole,
 } from "../src/lib/auth/permissions.ts";
 import type { EmployeeDirectoryData, EmployeeDirectoryRow } from "../src/lib/employees/employee-directory.ts";
+import { canonicalHrIdKey } from "../src/lib/hr-id.ts";
 
 export async function runPhase22RoleMatrixSecurityTests() {
   const phase22Smoke = readFileSync("scripts/phase22-role-matrix-security-smoke.ts", "utf8");
@@ -59,6 +60,53 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(canSeeEmployee(employee, { hrId: "E-2", managerHrId: "E-1" }), false);
   assert.equal(canSeeEmployee(medicalRep, { hrId: "MR-2", managerHrId: "MR-1" }), false);
   assert.equal(canSeeEmployee(districtManager, { hrId: "MR-2", managerHrId: "DSM-1" }), true);
+
+  // Regional Manager / NSM subtree visibility (2026-08-05): with the directory index supplied
+  // (list surfaces build it), they see through intermediate managers. Without it, the
+  // conservative single-hop behaviour is preserved, and non-manager roles gain nothing.
+  const regionalManager = createAccessContext({ hrId: "RSM-1", role: "Regional Manager" });
+  const nationalSalesManager = createAccessContext({ hrId: "NSM-1", role: "National Sales Manager" });
+  const indexKey = (hrId: string) => canonicalHrIdKey(hrId) ?? "";
+  const subtreeIndex = new Map([
+    [indexKey("DSM-1"), { managerHrId: "RSM-1", pendingManagerReplacementForHrId: null }],
+    [indexKey("RSM-1"), { managerHrId: "NSM-1", pendingManagerReplacementForHrId: null }],
+    [indexKey("MR-2"), { managerHrId: "DSM-1", pendingManagerReplacementForHrId: null }],
+    [indexKey("E-9"), { managerHrId: "OTHER-BOSS", pendingManagerReplacementForHrId: null }],
+  ]);
+  assert.equal(
+    canSeeEmployee(regionalManager, { hrId: "MR-2", managerHrId: "DSM-1" }, { byCanonicalHrId: subtreeIndex }),
+    true,
+    "an RM sees a rep two hops down once the directory index is supplied",
+  );
+  assert.equal(
+    canSeeEmployee(regionalManager, { hrId: "MR-2", managerHrId: "DSM-1" }),
+    false,
+    "without an index the RM keeps the conservative single-hop behaviour",
+  );
+  assert.equal(
+    canSeeEmployee(nationalSalesManager, { hrId: "MR-2", managerHrId: "DSM-1" }, { byCanonicalHrId: subtreeIndex }),
+    true,
+    "an NSM sees the whole chain through DM and RSM",
+  );
+  assert.equal(
+    canSeeEmployee(regionalManager, { hrId: "E-9", managerHrId: "OTHER-BOSS" }, { byCanonicalHrId: subtreeIndex }),
+    false,
+    "someone outside the subtree stays invisible even with the index",
+  );
+  assert.equal(
+    canSeeEmployee(employee, { hrId: "E-2", managerHrId: "E-1" }, { byCanonicalHrId: subtreeIndex }),
+    false,
+    "an Employee gains nothing from the index — the subtree walk is manager-roles only",
+  );
+  assert.equal(
+    canSeeEmployee(districtManager, {
+      hrId: "MR-3",
+      managerHrId: "DEPARTED-DM",
+      pendingManagerReplacementForHrId: "DSM-1",
+    }),
+    true,
+    "the seat-continuity marker keeps a mid-replacement report visible to the stand-in DM",
+  );
   assert.equal(talentAcquisition.scope, "self");
   // Owner-requested 2026-07-24: Talent Acquisition moved from the admin shell to the
   // employee portal (portalNavigationRoles in permissions.ts). Scope stays "self" —
