@@ -21,9 +21,11 @@ overrides:
   # inside 5.x. The selector must be `@5`, NOT `@4`: this graph had already resolved to 5.0.8, so
   # an `@4` selector matches nothing and silently leaves the vulnerable version in place — the
   # lockfile is the only way to tell, since the override is accepted either way.
-  # Reached via shadcn > ts-morph > minimatch. NOTE: `shadcn` is a scaffolding CLI sitting in
-  # `dependencies` rather than `devDependencies`, which is why a build-time tool appears under
-  # `pnpm audit --prod` at all. Worth moving, but not inside an unrelated fix.
+  # Reached via shadcn > ts-morph > minimatch. `shadcn` moved to `devDependencies` on 2026-08-04
+  # (it is a scaffolding CLI; its only consumer is the build-time `@import "shadcn/tailwind.css"`
+  # in app/globals.css), so this override is now DEV-ONLY — `pnpm why brace-expansion --prod`
+  # returns just the 1.1.18/2.1.4 exceljs paths above, never a 5.x. Kept because the dev
+  # toolchain still resolves it and the floor costs nothing.
   "brace-expansion@5": ^5.0.9
   body-parser: ^2.3.0
   # Bumped 2026-08-03 for GHSA-7p8r-x3mc-p8w7 (host confusion via a backslash authority
@@ -32,12 +34,22 @@ overrides:
   # brace-expansion note above, and the reason every PR and `main` itself went red from
   # 2026-08-03 20:08 UTC. Reached only transitively, four ways, via
   # shadcn > @dotenvx/dotenvx > conf > ajv and shadcn > @modelcontextprotocol/sdk > ajv.
+  # DEV-ONLY since 2026-08-04: shadcn moved to `devDependencies`, and it was fast-uri's only
+  # route into the graph — `pnpm why fast-uri --prod` now returns nothing, so this can no
+  # longer turn the CI audit (`pnpm audit --audit-level=high --prod`) red either way.
+  # Deliberately KEPT rather than removed: the single fast-uri instance still resolves in the
+  # dev graph via shadcn > ajv, and shadcn is a CLI that fetches remote registry URLs — exactly
+  # the host-confusion exposure this advisory describes. A floor that protects the local
+  # toolchain and cannot affect the production bundle is worth more than the lockfile churn of
+  # dropping it.
   fast-uri: ^3.1.5
   # Added 2026-08-03 for GHSA-mwp4-54f8-5fhr: Address4 decodes leading-zero octets as decimal
   # while resolvers decode them as octal, so a host like 0177.0.0.1 can pass a check and then
   # resolve somewhere else — SSRF and trust-boundary bypass. Patched at 10.3.1. Reached via
   # imapflow > socks, i.e. the SOCKS proxy path of the mail ingestion client, which unlike
-  # shadcn is genuinely a runtime dependency.
+  # shadcn is genuinely a runtime dependency. DO NOT remove this one alongside the dev-only
+  # floors above: `pnpm why ip-address --prod` still resolves, so dropping it would put a live
+  # SSRF bypass back into the production graph.
   ip-address: ^10.3.1
   "@hono/node-server": ^2.0.5
   hono: ^4.12.31
