@@ -608,6 +608,7 @@ import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-c
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
+import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
@@ -1322,6 +1323,11 @@ await runTest(
 await runTest(
   "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero and the share belonging to excluded areas is named)",
   runMonthlyClosingExportStoreSplitFilteredTests,
+);
+
+await runTest(
+  "closing corrections grouping (pair names both distorted months; late return names its origin or admits none; worst first)",
+  runClosingCorrectionsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

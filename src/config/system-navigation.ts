@@ -52,6 +52,7 @@ import {
   Target,
   TriangleAlert,
   Trash2,
+  Undo2,
   UserCog,
   UsersRound,
   Waypoints,
@@ -1086,6 +1087,13 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartColumnBig,
     label: "Monthly Closing",
     description: "Enter and manage monthly closing sales data.",
+    permissions: [{ action: "import", resource: "sales" }],
+  },
+  {
+    href: "/sales/closing-corrections",
+    icon: Undo2,
+    label: "Closing Corrections",
+    description: "Reversals, oversized returns, and late returns that make a month read wrong.",
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
