@@ -36,7 +36,8 @@ Key topics covered:
 ## Workflow Summary
 
 - Use the working branch (never push directly to `main`)
-- Run `check:edit` for fast iteration, `check:harden` before commits
+- Validate once per task: `check:harden` before you push, not before every commit (`check:edit` is
+  an optional fast typecheck mid-task)
 - Explain changes before executing them
 - Ask for approval before destructive operations
 - Follow the domain-first architecture rule (business logic in `src/lib/<domain>/`)

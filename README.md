@@ -201,10 +201,12 @@ All variables are documented in [`.env.example`](.env.example) with comments. Se
 | Command | Purpose |
 |---|---|
 | `pnpm run check:edit` | Fast inner loop — TypeScript only |
-| `pnpm run check:harden` | Full pre-commit gate: lint + typecheck + test + build |
+| `pnpm run check:harden` | Full pre-push gate: lint + typecheck + test + build |
 | `pnpm run ci` | Same as `check:harden` (CI pipeline) |
 
-Run `check:edit` during active development and `check:harden` before every commit, push, or deploy.
+Validate once per task, not once per step: make all your edits, then run `check:harden` once before
+you push (and again before a migration or deploy). `check:edit` is an optional fast typecheck
+mid-task; local commits on a feature branch do not each need the full gate.
 
 ## Documentation
 

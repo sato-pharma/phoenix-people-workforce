@@ -24,8 +24,11 @@ All commands run from the repo root.
 | Full hardening gate (lint + typecheck + test + build) | `pnpm run check:harden` |
 | CI gate (same as harden) | `pnpm run ci` |
 
-Use `check:edit` for the tight inner loop while reshaping UI/config; run `check:harden` before any
-commit, push, PR, migration, or deploy.
+**Validate once per task, not once per step.** Finish the work first — no lint, typecheck, test, or
+build between edits. Then run `check:harden` once, immediately before you push (and again before a
+migration or a production deploy). Local commits on a feature branch do not each need it: CI re-runs
+the same gate on the PR and blocks a red merge. `check:edit` is an optional fast typecheck mid-task,
+not a per-edit ritual.
 
 ## The two rules that apply to every change
 
