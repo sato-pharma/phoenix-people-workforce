@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  ArrowLeftRight,
   Building2,
   Check,
   CircleAlert,
@@ -55,6 +56,7 @@ import {
   hasMissingEmployeeRecordData,
   missingEmployeeRecordSummary,
 } from "@/lib/employees/employee-record-health";
+import type { SeatTransferOptions } from "@/lib/employees/seat-transfer";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
@@ -721,6 +723,13 @@ export function EmployeeManagement({
   const [pendingImportPreview, setPendingImportPreview] = React.useState<EmployeeImportPreview | null>(null);
   const [resignationError, setResignationError] = React.useState<string | null>(null);
   const [resigningEmployee, setResigningEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [transferEmployee, setTransferEmployee] = React.useState<EmployeeDirectoryRow | null>(null);
+  const [isTransferOpen, setIsTransferOpen] = React.useState(false);
+  const [transferOptions, setTransferOptions] = React.useState<SeatTransferOptions | null>(null);
+  const [isLoadingTransferOptions, setIsLoadingTransferOptions] = React.useState(false);
+  const [transferForm, setTransferForm] = React.useState({ effectiveDate: "", fromSeatId: "", reason: "", toSeatId: "" });
+  const [isTransferring, setIsTransferring] = React.useState(false);
+  const [transferError, setTransferError] = React.useState<string | null>(null);
   const [resignationForm, setResignationForm] = React.useState<ResignationFormState>(emptyResignationForm);
   const templateInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -1118,6 +1127,95 @@ export function EmployeeManagement({
 
   function updateResignationForm(key: keyof ResignationFormState, value: string) {
     setResignationForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function startSeatTransfer(employee: EmployeeDirectoryRow) {
+    setTransferEmployee(employee);
+    setTransferOptions(null);
+    setTransferForm({
+      effectiveDate: new Date().toISOString().slice(0, 10),
+      fromSeatId: "",
+      reason: "",
+      toSeatId: "",
+    });
+    setNotice(null);
+    setError(null);
+    setTransferError(null);
+    setIsTransferOpen(true);
+    setIsLoadingTransferOptions(true);
+
+    void (async () => {
+      try {
+        const response = await fetch(`/api/employees/${encodeURIComponent(employee.hrId)}/seat-transfer`, {
+          cache: "no-store",
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          setTransferError(payload.message ?? payload.error ?? "seat_transfer_options_failed");
+          return;
+        }
+        setTransferOptions(payload.data as SeatTransferOptions);
+      } catch {
+        setTransferError("Unable to load seat options.");
+      } finally {
+        setIsLoadingTransferOptions(false);
+      }
+    })();
+  }
+
+  function closeSeatTransfer() {
+    setIsTransferOpen(false);
+    setTransferEmployee(null);
+    setTransferOptions(null);
+    setTransferError(null);
+  }
+
+  async function submitSeatTransfer() {
+    if (!transferEmployee) return;
+    if (!transferForm.toSeatId) {
+      setTransferError("Choose the destination seat first.");
+      return;
+    }
+    setIsTransferring(true);
+    setError(null);
+    setNotice(null);
+    setTransferError(null);
+
+    try {
+      const response = await fetch(`/api/employees/${encodeURIComponent(transferEmployee.hrId)}/seat-transfer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transfer: {
+            toSeatId: transferForm.toSeatId,
+            effectiveDate: transferForm.effectiveDate || null,
+            fromSeatId: transferForm.fromSeatId || null,
+            reason: transferForm.reason || null,
+          },
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        setTransferError(payload.message ?? payload.error ?? "seat_transfer_failed");
+        return;
+      }
+
+      const targetLabel =
+        transferOptions?.vacantSeats.find((seat) => seat.seatId === transferForm.toSeatId)?.label ??
+        transferForm.toSeatId;
+      setNotice(
+        payload.data?.mode === "seated"
+          ? `${transferEmployee.displayName} is now seated on ${targetLabel}.`
+          : `${transferEmployee.displayName} moved to ${targetLabel}. Area, region and manager follow the new seat.`,
+      );
+      closeSeatTransfer();
+      await loadEmployees();
+    } catch {
+      setTransferError("Unable to process the seat transfer.");
+    } finally {
+      setIsTransferring(false);
+    }
   }
 
   async function saveEmployee() {
@@ -1695,6 +1793,14 @@ export function EmployeeManagement({
                             Edit
                           </Button>
                           <Button
+                            className="h-9 flex-1 gap-1.5 rounded-xl border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F1F5F9] hover:text-[#0F172A]"
+                            onClick={() => startSeatTransfer(employee)}
+                            variant="outline"
+                          >
+                            <ArrowLeftRight className="h-3.5 w-3.5" />
+                            Seat
+                          </Button>
+                          <Button
                             className="h-9 flex-1 gap-1.5 rounded-xl border-rose-200 bg-rose-50 text-xs font-bold text-rose-700 hover:bg-rose-100"
                             onClick={() => startResignation(employee)}
                             variant="outline"
@@ -1929,6 +2035,14 @@ export function EmployeeManagement({
                             variant="ghost"
                           >
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
+                            onClick={() => startSeatTransfer(employee)}
+                            title="Transfer Seat"
+                            variant="ghost"
+                          >
+                            <ArrowLeftRight className="h-4 w-4" />
                           </Button>
                           <Button
                             className="h-8 w-8 rounded-xl p-0 text-[#64748B] hover:bg-rose-50 hover:text-rose-600 hover:scale-110 transition-all focus-visible:outline-2 focus-visible:outline-[#F97316] focus-visible:outline-offset-1"
@@ -2814,6 +2928,112 @@ export function EmployeeManagement({
               >
                 {isResigning ? <LoadingSpinner /> : <UserX className="h-4 w-4" />}
                 Confirm Resignation
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {isTransferOpen && transferEmployee ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0F172A]/60 px-4 py-6 backdrop-blur-md"
+          onClick={closeSeatTransfer}
+        >
+          <Card
+            className={`${panelClassName} w-full max-w-3xl overflow-hidden`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AdminSectionHeader
+              action={
+                <Button
+                  className="h-9 rounded-xl px-3 text-xs"
+                  onClick={closeSeatTransfer}
+                  variant="secondary"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              }
+              description="Move the employee onto a vacant organogram seat. Area, region and manager follow the seat, and the move is recorded in the audit log."
+              title="Transfer Seat"
+            />
+
+            <div className="grid gap-4 p-5 md:grid-cols-2">
+              {transferError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 md:col-span-2">
+                  <div className="flex gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 text-danger" />
+                    <div>
+                      <h3 className="text-sm font-semibold text-text">Unable to transfer the seat</h3>
+                      <p className="mt-1 text-sm text-text-secondary">{transferError}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                <p className="font-semibold text-slate-900">{transferEmployee.displayName}</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {transferEmployee.hrId} · {emptyText(transferOptions?.employee.lineName ?? transferEmployee.lineName)} · currently{" "}
+                  {isLoadingTransferOptions
+                    ? "loading seat…"
+                    : transferOptions && transferOptions.currentSeats.length > 0
+                      ? transferOptions.currentSeats.map((seat) => seat.label).join(", ")
+                      : "not seated (will be seated directly)"}
+                </p>
+              </div>
+
+              {!isLoadingTransferOptions && transferOptions && transferOptions.vacantSeats.length === 0 ? (
+                <div className="md:col-span-2">
+                  <AdminCallout tone="warning">
+                    No vacant seats exist on this line right now, so there is nowhere to move this employee.
+                  </AdminCallout>
+                </div>
+              ) : null}
+
+              <SelectField
+                disabled={isLoadingTransferOptions || !transferOptions || transferOptions.vacantSeats.length === 0}
+                label="destination_seat"
+                onChange={(value) => setTransferForm((current) => ({ ...current, toSeatId: value }))}
+                options={(transferOptions?.vacantSeats ?? []).map((seat) => ({
+                  label: `${seat.label}${seat.areaName ? ` · ${seat.areaName}` : ""}${seat.regionName ? ` · ${seat.regionName}` : ""}`,
+                  value: seat.seatId,
+                }))}
+                placeholder={isLoadingTransferOptions ? "Loading vacant seats…" : "Choose the vacant seat"}
+                value={transferForm.toSeatId}
+              />
+              <TextField
+                label="effective_date"
+                onChange={(value) => setTransferForm((current) => ({ ...current, effectiveDate: value }))}
+                type="date"
+                value={transferForm.effectiveDate}
+              />
+              {transferOptions && transferOptions.currentSeats.length > 1 ? (
+                <SelectField
+                  label="seat_to_vacate"
+                  onChange={(value) => setTransferForm((current) => ({ ...current, fromSeatId: value }))}
+                  options={transferOptions.currentSeats.map((seat) => ({ label: seat.label, value: seat.seatId }))}
+                  placeholder="They hold more than one seat - choose which one to vacate"
+                  value={transferForm.fromSeatId}
+                />
+              ) : null}
+              <TextField
+                label="reason"
+                onChange={(value) => setTransferForm((current) => ({ ...current, reason: value }))}
+                placeholder="Why this move (kept in the audit log)"
+                value={transferForm.reason}
+              />
+            </div>
+
+            <div className="flex justify-end gap-3 p-5">
+              <Button onClick={closeSeatTransfer} variant="secondary">
+                Cancel
+              </Button>
+              <Button
+                className="gap-2 rounded-2xl"
+                disabled={isTransferring || isLoadingTransferOptions || !transferForm.toSeatId}
+                onClick={() => void submitSeatTransfer()}
+              >
+                {isTransferring ? <LoadingSpinner /> : <ArrowLeftRight className="h-4 w-4" />}
+                Confirm Transfer
               </Button>
             </div>
           </Card>

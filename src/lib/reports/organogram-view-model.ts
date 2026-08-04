@@ -131,7 +131,10 @@ export function rowMatchesOrganogramSearch(row: OrganogramRow, query: string) {
 }
 
 export function rowKey(row: OrganogramRow) {
-  return `${row.type}-${row.hrId}-${row.sourceRowNumber ?? ""}`;
+  // seatId keeps two seats held by one person distinct: without it, a dual-seated
+  // occupant produced two identical keys and every lane sink silently dropped the
+  // second box - the seat looked deleted from the organogram.
+  return `${row.type}-${row.hrId}-${row.sourceRowNumber ?? ""}-${row.seatId ?? ""}`;
 }
 
 // The four sales-structure predicates delegate to the single canonical classifier

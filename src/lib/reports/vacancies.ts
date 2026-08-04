@@ -90,6 +90,10 @@ export type OrganogramReportRow = {
   positionTitle: string | null;
   regionName: string | null;
   replacementForHrId?: string | null;
+  // au seat identity when the row comes from the seat model. Part of rowKey so two
+  // seats held by one person render as two visible boxes instead of one silently
+  // deduplicated away (the 2026-08-01 AI-0005 "seat vanished" incident).
+  seatId?: string | null;
   sourceRowNumber: number | null;
   status: string;
   teamId: number | null;
