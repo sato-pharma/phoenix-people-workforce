@@ -27,6 +27,18 @@ export function RouteMapPreview({
         carEvidenceImagePath: request.carEvidenceImagePath ?? null,
         carEvidenceImageUrl: null,
         carEvidenceMetadata: request.carEvidenceMetadata ?? null,
+        // This shim is a CALCULATION rendered on a map, not a saved request — it has no row and
+        // therefore no gate state. The strict pending values are used rather than
+        // "grandfathered": nothing reads the gate off a preview today, and if something ever
+        // does, it must not conclude that an unsaved calculation is cleared for payroll.
+        departureCapturedAt: null,
+        departureEvidenceImagePath: null,
+        departureEvidenceMetadata: null,
+        evidenceGateStatus: "pending_arrival_photo",
+        workloadCaptureAttempts: 0,
+        workloadGateStatus: "pending_workload",
+        workloadLastAttemptAt: null,
+        workloadLastAttemptError: null,
         claimedTotalAmount: request.claimedTotalAmount,
         createdAt: request.submittedAt,
         distanceFromResidenceKm: request.distanceFromResidenceKm,

@@ -583,6 +583,11 @@ import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.tes
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
 import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
+import { runOutstationExpenseGateTests } from "./outstation-expense-gate.test.ts";
+import { runOutstationDepartureEvidenceTests } from "./outstation-departure-evidence.test.ts";
+import { runOutstationWorkloadRollupTests } from "./outstation-workload-rollup.test.ts";
+import { runOutstationWorkloadRepairTests } from "./outstation-workload-repair.test.ts";
+import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retarget-guard.test.ts";
 
 
 
@@ -1231,6 +1236,11 @@ await runTest("incentive semester window (a declared H1/H2 window, never the las
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
+await runTest("outstation two-photo + workload payroll gate (both photos AND a captured workload before payroll; a 'complete' status with no photo behind it never pays; pre-rule requests are exempt, not blocked)", runOutstationExpenseGateTests);
+await runTest("outstation departure photo review (distance is flagged not blocked; both photos at once is flagged; the window closes at the end of the trip's last CAIRO day, DST included)", runOutstationDepartureEvidenceTests);
+await runTest("workflow registry retarget guard (a migration must never point an action at a status no code expects — the mismatch that wedged every outstation submit on 2026-08-04)", runWorkflowRegistryRetargetGuardTests);
+await runTest("outstation workload repair (a hand-entered figure is refused not coerced; a blank box is never a measured zero; both repairs are Super Admin only, the list is read-only)", runOutstationWorkloadRepairTests);
+await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
 await runTest(
