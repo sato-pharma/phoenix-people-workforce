@@ -24,7 +24,7 @@ All environment variables are listed in `.env.example` at the repository root. C
 | Variable | Description | Notes |
 |---|---|---|
 | EMAIL_NOTIFICATIONS_ENABLED | Enable email sending | Set to "true" in production |
-| PHOENIX_EMAIL_DELIVERY_MODE | "live" or "log" | "log" for dev (prints to console) |
+| PHOENIX_EMAIL_DELIVERY_MODE | Set to "testing" to redirect ALL mail to the test recipients (case-insensitive); any other value, including unset, is a no-op | Not the on/off switch (that is EMAIL_NOTIFICATIONS_ENABLED). Redirect targets PHOENIX_EMAIL_TEST_RECIPIENTS, else a fallback list |
 | PHOENIX_EMAIL_TEST_RECIPIENTS | Comma-separated test emails | Redirects all emails in test mode |
 | RESEND_API_KEY | Resend.com API key | Required for live email |
 | NOTIFICATION_EMAIL_FROM | Sender address | e.g. Phoenix HR <noreply@domain.com> |
