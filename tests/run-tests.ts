@@ -582,6 +582,7 @@ import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expe
 import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.test.ts";
 
 import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
+import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-routing.test.ts";
 
 
 
@@ -1228,6 +1229,7 @@ await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4
 await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
+await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
 

@@ -33,6 +33,7 @@ import { Card } from "@/components/ui/card";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { Input } from "@/components/ui/input";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
+import { formatDateTimeValue, formatDateValue } from "@/lib/i18n/format";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -57,27 +58,29 @@ function formatCurrency(value: number) {
   }).format(Number.isFinite(value) ? value : 0);
 }
 
+// All three used to call toLocaleDateString()/toLocaleString() with NO timeZone, so they
+// rendered in whatever zone the viewer's machine happened to be in — Cairo only by accident,
+// and UTC on any server-rendered pass. Phoenix reports every time in Africa/Cairo; the shared
+// formatters below pin it. The compact shape ("17 Oct 2026") is kept deliberately: the long
+// "Tuesday, 17 October 2026" form the owner asked for is for EMAILS, and would wrap inside
+// these dense grid cells, which the no-wrap rule forbids.
 function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "N/A";
-  return date.toLocaleDateString();
+  return formatDateValue(value) || "N/A";
 }
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "N/A";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "N/A";
-  return date.toLocaleString();
+  return formatDateTimeValue(value) || "N/A";
 }
 
 function formatEvidenceDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "N/A";
-  return date.toLocaleString();
+  return formatDateTimeValue(value) || "N/A";
 }
 
 function formatKm(value: number | null | undefined) {
-  if (value == null || !Number.isFinite(value)) return "N/A";
+  // Never "N/A" and never 0: a missing distance means the Google route lookup failed, and
+  // that is a different fact from a measured zero-kilometre trip.
+  if (value == null || !Number.isFinite(value)) return "Route lookup failed";
   return `${value.toFixed(2)} KM`;
 }
 
@@ -281,6 +284,13 @@ function RequestDetailsModal({
   onReject: (request: OutstationExpenseRequest) => void;
   request: OutstationExpenseRequest;
 }) {
+  // Car-only evidence fields must read as "does not apply here" on a train/bus/other trip,
+  // never as an empty or missing value — see the evidence panel below.
+  const isCarTrip = request.transportationType === "car";
+  const notApplicableForNonCar = isCarTrip
+    ? "Not captured"
+    : `Not applicable — ${formatStatus(request.transportationType)} trip`;
+
   // Render through a portal to document.body so the dialog escapes the admin
   // shell's stacking context and is never painted under the sticky topbar.
   const [mounted, setMounted] = useState(false);
@@ -327,10 +337,37 @@ function RequestDetailsModal({
             <Info label="GPS accuracy" value={`${request.capturedAccuracyMeters.toFixed(0)} meters`} />
             <Info label="Destination" value={request.toLabel ?? request.toCity ?? request.toArea ?? "N/A"} />
             <Info label="Residence" value={[request.residenceAddress, request.residenceArea, request.residenceCity].filter(Boolean).join(", ") || "Not saved"} />
-            <Info label="Captured coordinates" value={`${request.capturedLatitude.toFixed(5)}, ${request.capturedLongitude.toFixed(5)}`} />
+            {/* Owner request (2026-08-04): show the place, not the coordinate pair. Brick and
+                area/region are derived from the same captured point (see captured-location.ts);
+                the match confidence rides along because a nearest-brick match is an
+                approximation and must never read as an exact one. */}
+            <Info label="Captured location" value={request.capturedLocation?.label ?? "Not resolved"} />
+            <Info label="Captured brick" value={request.capturedLocation?.brickLabel ?? "Not resolved"} />
+            <Info
+              label="Captured area / region"
+              value={
+                request.capturedLocation
+                  ? `${request.capturedLocation.areaLabel} · ${request.capturedLocation.regionLabel}`
+                  : "Not resolved"
+              }
+            />
+            <Info label="Location match" value={request.capturedLocation?.confidence ?? "Not matched"} />
+            {/* Kept as-is: the owner's "raw data" complaint was about the CAPTURED point. The
+                residence pair stays for map/debug work alongside the readable address above. */}
             <Info label="Residence coordinates" value={request.residenceLatitude != null && request.residenceLongitude != null ? `${request.residenceLatitude.toFixed(5)}, ${request.residenceLongitude.toFixed(5)}` : "N/A"} />
+            {/* A null distance/duration is a FAILED route lookup, not a zero-length trip, and
+                must not read as a bland "N/A" next to real numbers. Fuel is only priced from
+                distance on car trips, so on a train/bus trip a missing figure costs nothing —
+                but it is still a gap, and it says so. */}
             <Info label="Distance" value={formatKm(request.distanceFromResidenceKm)} />
-            <Info label="Duration" value={request.durationMinutes != null ? `${request.durationMinutes.toFixed(0)} mins` : "N/A"} />
+            <Info
+              label="Duration"
+              value={
+                request.durationMinutes != null
+                  ? `${request.durationMinutes.toFixed(0)} mins`
+                  : "Route lookup failed"
+              }
+            />
             <Info label="Claimed amount" value={formatCurrency(request.claimedTotalAmount)} />
             <Info label="Transportation" value={formatStatus(request.transportationType)} />
             <Info label="Expense type" value={formatStatus(request.expenseType)} />
@@ -413,18 +450,27 @@ function RequestDetailsModal({
                 </div>
               ) : (
                 <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-[#F8FAFC] p-5 text-sm font-semibold text-[#64748B]">
-                  No signed evidence photo is available for this request.
+                  {/* A car photo is only ever required for a CAR trip. On a train/bus/other trip
+                      its absence is correct, not missing evidence — saying "not available" there
+                      reads as a fault and was part of the "I see nulls on non-car trips" report. */}
+                  {isCarTrip
+                    ? "No signed evidence photo is available for this request."
+                    : `Not applicable — the live car photo is only required for car trips (this is a ${formatStatus(request.transportationType)} trip).`}
                 </div>
               )}
 
               <div className="mt-4 grid gap-3">
                 <Info
                   label="Evidence capture"
-                  value={request.carEvidenceMetadata?.capturedAt ? formatEvidenceDateTime(request.carEvidenceMetadata.capturedAt) : "N/A"}
+                  value={
+                    request.carEvidenceMetadata?.capturedAt
+                      ? formatEvidenceDateTime(request.carEvidenceMetadata.capturedAt)
+                      : notApplicableForNonCar
+                  }
                 />
                 <Info
                   label="Evidence location"
-                  value={request.carEvidenceMetadata?.capturedLocationLabel ?? "N/A"}
+                  value={request.carEvidenceMetadata?.capturedLocationLabel ?? notApplicableForNonCar}
                 />
                 {request.carEvidenceImageUrl ? (
                   <a
@@ -443,15 +489,47 @@ function RequestDetailsModal({
                 <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#64748B]">Ticket attachments</p>
                 {request.ticketAttachmentMetadata.length > 0 ? (
                   <div className="mt-3 space-y-2">
-                    {request.ticketAttachmentMetadata.map((attachment) => (
-                      <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm" key={attachment.path}>
-                        <div className="min-w-0">
-                          <p className="truncate font-bold text-[#0F172A]">{attachment.name}</p>
-                          <p className="text-xs text-[#64748B]">{attachment.contentType} - {(attachment.size / 1024).toFixed(1)} KB</p>
+                    {request.ticketAttachmentMetadata.map((attachment, index) => {
+                      // Each row is now a real link. It used to be a bare <div> styled like a
+                      // card with a file icon — it read as clickable and did nothing, which is
+                      // the "ticket attachment doesn't open" report. A row whose URL could not
+                      // be signed says so instead of silently staying dead.
+                      const url = request.ticketAttachmentUrls?.[index] ?? null;
+                      const body = (
+                        <>
+                          <div className="min-w-0">
+                            <p className="truncate font-bold text-[#0F172A]">{attachment.name}</p>
+                            <p className="text-xs text-[#64748B]">{attachment.contentType} - {(attachment.size / 1024).toFixed(1)} KB</p>
+                          </div>
+                          {url ? (
+                            <ExternalLink className="h-4 w-4 shrink-0 text-[#EA580C]" />
+                          ) : (
+                            <FileText className="h-4 w-4 shrink-0 text-[#94A3B8]" />
+                          )}
+                        </>
+                      );
+
+                      return url ? (
+                        <a
+                          className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm transition-colors hover:bg-[#FFF7ED]"
+                          href={url}
+                          key={attachment.path}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title={`${attachment.name} — open in a new tab`}
+                        >
+                          {body}
+                        </a>
+                      ) : (
+                        <div
+                          className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-sm"
+                          key={attachment.path}
+                          title="This attachment could not be signed for viewing."
+                        >
+                          {body}
                         </div>
-                        <FileText className="h-4 w-4 shrink-0 text-[#EA580C]" />
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="mt-2 text-sm font-semibold text-[#64748B]">No ticket attachments were uploaded.</p>
