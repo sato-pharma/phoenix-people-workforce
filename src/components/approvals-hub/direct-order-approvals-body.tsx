@@ -14,6 +14,9 @@ function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] 
     returned: "bg-slate-200 text-slate-700",
     reversed: "bg-slate-200 text-slate-700",
     draft: "bg-slate-100 text-slate-600",
+    // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
+    held: "bg-orange-100 text-orange-800",
+    expired: "bg-slate-300 text-slate-600",
   };
   return (
     <span className={`inline-block px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone[status] ?? "bg-slate-100 text-slate-600"}`}>

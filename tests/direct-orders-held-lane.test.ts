@@ -1,0 +1,144 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { isTerminalDirectOrderStatus } from "../src/lib/direct-orders/types.ts";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The HELD lane (spec B6/C3 — docs/specs/direct-orders-v2.md, owner design 2026-08-04).
+//
+// The rule under guard: an order whose pharmacy is not in the master database SUBMITS but stands
+// OUTSIDE the approval flow — no steps, no approver queues, no sales path — and leaves `held`
+// through exactly two doors: pharmacy validation (→ chain at step 1) or the 14-day clock
+// (→ expired, terminal). The submit fork, the revival hook, the expiry sweep, and the Held Desk's
+// notice recipients are each asserted against the source, because the live path is Supabase-bound.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function runDirectOrdersHeldLaneTests() {
+  const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+  const migrationSource = readFileSync(
+    new URL("../supabase/migrations/20260804210000_direct_orders_held_lane.sql", import.meta.url),
+    "utf8",
+  );
+
+  // ── THE HEADLINE: the submit fork exists and is decided by the PHARMACY ROW ─────────────
+  // If someone re-unifies submit into a single always-pending_approval path, this is the
+  // assertion that must fire first.
+  assert.match(
+    serviceSource,
+    /const submitAsHeld = pharmacy\.verificationStatus === "pending_review";/,
+    "HELD LANE GONE: submit must fork on the pharmacy row's verification status — an unknown pharmacy submits HELD, never into the chain",
+  );
+
+  // The fork must reach all three write surfaces: registry action, request status, and the clock.
+  assert.match(
+    serviceSource,
+    /actionKey: submitAsHeld \? "submit_held" : "submit",\s*\n\s*expectedNextStatus: submitAsHeld \? "held" : "pending_approval",/,
+    "the registry gate must be told the truth about the destination status on both branches",
+  );
+  assert.match(
+    serviceSource,
+    /status: submitAsHeld \? "held" : "pending_approval",\s*\n\s*held_at: submitAsHeld \? new Date\(\)\.toISOString\(\) : null,/,
+    "a held submit must stamp held_at (the 14-day clock) and a normal one must not",
+  );
+
+  // No approval chain on a held submit — seeded at REVIVAL so it names today's managers.
+  assert.match(
+    serviceSource,
+    /const chain = submitAsHeld\s*\n\s*\? \[\]/,
+    "a held submit must seed NO approval steps — the chain is built at revival, not submission",
+  );
+  assert.match(
+    serviceSource,
+    /if \(chain\.length > 0\) \{\s*\n\s*const \{ error: stepsError \}/,
+    "the step insert must be guarded — PostgREST rejects an empty insert",
+  );
+
+  // ── Door 1 out of held: validation revives, automatically ───────────────────────────────
+  assert.match(
+    serviceSource,
+    /await reviveHeldDirectOrdersForPharmacy\(access, input\.pharmacyId\);/,
+    "confirming a pharmacy must revive its held orders — validation is the one door out, with no separate button to forget",
+  );
+  assert.match(
+    serviceSource,
+    /actionKey: "revive_held",\s*\n\s*expectedNextStatus: "pending_approval",/,
+    "revival must pass the registry gate with the exact destination status",
+  );
+  // Fresh chain at revival, defensively replacing any stale steps.
+  const reviveIdx = serviceSource.indexOf("async function reviveHeldDirectOrdersForPharmacy(");
+  assert.ok(reviveIdx > 0, "the revival function must exist");
+  const reviveBody = serviceSource.slice(reviveIdx, reviveIdx + 4200);
+  assert.match(reviveBody, /await buildApprovalChain\(\{/, "revival must build the chain fresh (today's managers)");
+  assert.match(reviveBody, /\.delete\(\)\s*\n\s*\.eq\("request_id", request\.id\)/, "revival must wipe stale steps before seeding");
+  assert.match(
+    reviveBody,
+    /\.update\(\{ status: "pending_approval", held_at: null \}\)\s*\n\s*\.eq\("id", request\.id\)\s*\n\s*\.eq\("status", "held"\)/,
+    "revival must move held → pending_approval guarded on the CURRENT status, and clear the clock",
+  );
+
+  // ── Door 2 out of held: the 14-day clock ────────────────────────────────────────────────
+  assert.match(
+    serviceSource,
+    /actionKey: "expire_held",\s*\n\s*expectedNextStatus: "expired",/,
+    "expiry must pass the registry gate with the exact destination status",
+  );
+  assert.match(
+    serviceSource,
+    /const holdDays = input\?\.holdDays \?\? 14;/,
+    "the clock defaults to 14 days (owner spec B6)",
+  );
+  assert.ok(isTerminalDirectOrderStatus("expired"), "expired is terminal — a dead end, not a pause");
+  assert.ok(!isTerminalDirectOrderStatus("held"), "held is NOT terminal — it has two live doors out");
+
+  // The sweep is a guarded cron route, not an open endpoint.
+  const cronSource = readFileSync(
+    new URL("../app/api/cron/direct-orders-expire-held/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(cronSource, /process\.env\.CRON_SECRET/, "the expiry sweep must be CRON_SECRET-guarded");
+  assert.match(cronSource, /expireStaleHeldDirectOrders\(systemAccessContext\)/, "the sweep runs as the system context");
+
+  // ── The Held Desk notice (spec C3): To the requester BY NAME, CC SFE + manager + CEO ────
+  assert.match(
+    serviceSource,
+    /recipients: \[request\.requesterHrId, \.\.\.sfeHolders, managerHrId, \.\.\.ceoHolders\],/,
+    "the held notice must lead with the requester (the email's To) and CC SFE, direct manager, CEO",
+  );
+  assert.match(
+    serviceSource,
+    /`\$\{requesterName\}, your direct order/,
+    "the notice must address the requester by NAME, never by code (owner rule)",
+  );
+  const noticeIdx = serviceSource.indexOf("export async function sendHeldDirectOrderNotices(");
+  assert.match(
+    serviceSource.slice(noticeIdx, noticeIdx + 3000),
+    /if \(request\.status !== "held"\) \{/,
+    "a request that is no longer held must be SKIPPED — never email a stale demand",
+  );
+
+  // ── One email per event, not N copies (spec C4) ─────────────────────────────────────────
+  assert.match(
+    serviceSource,
+    /await createSystemNotificationForRecipients\(/,
+    "notifyDirectOrder must use the consolidated To/Cc envelope helper",
+  );
+  assert.ok(
+    !/recipientHrIds\.map\(\(recipientHrId\) =>\s*\n?\s*createSystemNotification\(/.test(serviceSource),
+    "the per-recipient createSystemNotification loop must never return — it is the duplicate-copies bug (2026-07-22)",
+  );
+
+  // ── The migration: additive, idempotent, and silent about `version` ─────────────────────
+  assert.match(migrationSource, /'held'::text,\s*\n\s*'expired'::text/, "the status constraint must gain held and expired");
+  assert.match(migrationSource, /add column if not exists held_at timestamptz/, "the clock column must exist");
+  assert.match(
+    migrationSource,
+    /and not \(actions @> '\[\{"key": "submit_held"\}\]'::jsonb\)/,
+    "the registry update must be guarded so a re-run is a no-op, not a duplicate action set",
+  );
+  assert.ok(
+    !/set\s+version/i.test(migrationSource),
+    "workflow_registry_modules.version is TRIGGER-owned — a migration must never mention it",
+  );
+  const updateStatements = migrationSource.match(/update public\.workflow_registry_modules/g) ?? [];
+  assert.equal(updateStatements.length, 1, "exactly ONE registry update — N updates = N version bumps");
+}

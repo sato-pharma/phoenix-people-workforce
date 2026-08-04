@@ -27,6 +27,9 @@ const STATUS_TONE: Record<string, string> = {
   rejected: "bg-rose-50 text-rose-700 ring-rose-200",
   reversed: "bg-slate-100 text-slate-600 ring-slate-200",
   draft: "bg-slate-50 text-slate-500 ring-slate-200",
+  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
+  held: "bg-orange-50 text-orange-700 ring-orange-200",
+  expired: "bg-slate-200 text-slate-500 ring-slate-300",
 };
 
 const SCOPE_LABEL: Record<DirectOrderReportScope, string> = {

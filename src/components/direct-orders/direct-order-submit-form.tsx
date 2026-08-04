@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
+import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
 
 import {
   computeDirectOrderSalesValue,
@@ -61,6 +62,9 @@ const STATUS_TONE: Record<string, string> = {
   returned: "bg-slate-200 text-slate-700",
   reversed: "bg-slate-200 text-slate-700",
   draft: "bg-slate-100 text-slate-600",
+  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
+  held: "bg-orange-100 text-orange-800",
+  expired: "bg-slate-300 text-slate-600",
 };
 
 function labelClass() {
@@ -70,9 +74,8 @@ function inputClass() {
   return "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
 }
 
-export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, initialPharmacies, myRequests }: Props) {
+export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, myRequests }: Props) {
   const router = useRouter();
-  const [pharmacies, setPharmacies] = useState<DirectOrderPharmacy[]>(initialPharmacies);
 
   const [productCode, setProductCode] = useState("");
   const [dealType, setDealType] = useState<DirectOrderDealType>("bonus");
@@ -82,8 +85,10 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [overrideReason, setOverrideReason] = useState("");
   const [collectionDate, setCollectionDate] = useState("");
 
-  const [pharmacyMode, setPharmacyMode] = useState<"existing" | "new">(initialPharmacies.length ? "existing" : "new");
-  const [pharmacyId, setPharmacyId] = useState(initialPharmacies[0]?.id ?? "");
+  // "picked" = chosen from the combo box (the normal path — spec B1); "new" = the explicit
+  // "not in the database" fallback, which will wait for pharmacy validation.
+  const [pharmacyMode, setPharmacyMode] = useState<"picked" | "new">("picked");
+  const [pickedHit, setPickedHit] = useState<PharmacySearchHit | null>(null);
   const [newName, setNewName] = useState("");
   const [newAreaCode, setNewAreaCode] = useState("");
   const [newBrickId, setNewBrickId] = useState("");
@@ -154,9 +159,22 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   }
 
   async function createPharmacyIfNeeded(): Promise<string> {
-    if (pharmacyMode === "existing") {
-      if (!pharmacyId) throw new Error("Choose a pharmacy or add a new one.");
-      return pharmacyId;
+    if (pharmacyMode === "picked") {
+      if (!pickedHit) throw new Error("Search for the pharmacy and pick it from the list.");
+      // The body carries only POINTERS at the trusted row — the server copies every stored
+      // field from the catalogue, nothing from this form (spec A1/B3).
+      const res = await fetch("/api/direct-orders/pharmacies/from-directory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phoenixPharmacyCode: pickedHit.phoenixPharmacyCode,
+          distributorCode: pickedHit.distributorCode,
+          customerCode: pickedHit.customerCode,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; pharmacy?: DirectOrderPharmacy };
+      if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not resolve the selected pharmacy.");
+      return data.pharmacy.id;
     }
     if (!newName.trim()) throw new Error("New pharmacy name is required.");
     if (!newDoctor.trim()) throw new Error("Doctor name is required.");
@@ -187,7 +205,6 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     });
     const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; pharmacy?: DirectOrderPharmacy };
     if (!res.ok || !data.success || !data.pharmacy) throw new Error(data.message || "Could not create the pharmacy.");
-    setPharmacies((prev) => [...prev, data.pharmacy!]);
     return data.pharmacy.id;
   }
 
@@ -362,30 +379,67 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             <p className="mt-1 text-[11px] text-slate-400">When you expect this direct order to be collected / paid (تاريخ التحصيل).</p>
           </div>
 
-          {/* Pharmacy */}
+          {/* Pharmacy — combo box over the master database (spec B1/B2/B3) */}
           <div className="border-t border-[#eef1f3] pt-3">
-            <div className="mb-2 flex gap-4">
-              <label className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
-                <input type="radio" checked={pharmacyMode === "existing"} onChange={() => setPharmacyMode("existing")} disabled={pharmacies.length === 0} />
-                My pharmacies
-              </label>
-              <label className="flex items-center gap-1.5 text-sm font-bold text-slate-700">
-                <input type="radio" checked={pharmacyMode === "new"} onChange={() => setPharmacyMode("new")} />
-                Add a new pharmacy
-              </label>
-            </div>
+            <label className={labelClass()}>Pharmacy *</label>
 
-            {pharmacyMode === "existing" ? (
-              <select className={inputClass()} value={pharmacyId} onChange={(e) => setPharmacyId(e.target.value)}>
-                <option value="">Select a pharmacy…</option>
-                {pharmacies.map((ph) => (
-                  <option key={ph.id} value={ph.id}>
-                    {ph.pharmacyName} ({ph.phoenixPharmacyCode})
-                  </option>
-                ))}
-              </select>
+            {pharmacyMode === "picked" ? (
+              pickedHit ? (
+                <div className="mt-1 border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-[13px] font-black text-slate-900" dir="auto">
+                        {pickedHit.customerName ?? `${pickedHit.customerCode} — (no name on file)`}
+                      </p>
+                      <p className="mt-0.5 text-[11px] font-semibold text-slate-600">
+                        {pickedHit.phoenixPharmacyCode ? `${pickedHit.phoenixPharmacyCode} · ` : ""}
+                        {pickedHit.distributorCode ? `${pickedHit.distributorCode} · ${pickedHit.customerCode}` : ""}
+                      </p>
+                      {pickedHit.address ? (
+                        <p className="mt-0.5 text-[11px] text-slate-500" dir="auto">{pickedHit.address}</p>
+                      ) : null}
+                      {/* Geography comes WITH the customer and cannot be edited (spec B3). */}
+                      <p className="mt-1 text-[11px] font-bold text-emerald-700">
+                        Area: {pickedHit.areaName || pickedHit.areaCode || "—"} · Region: {pickedHit.regionName || pickedHit.regionCode || "—"}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 text-[12px] font-bold text-orange-600 hover:text-orange-700"
+                      onClick={() => setPickedHit(null)}
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1 space-y-1.5">
+                  <PharmacyComboBox inputClassName={inputClass()} onSelect={(hit) => setPickedHit(hit)} />
+                  <button
+                    type="button"
+                    className="text-[12px] font-semibold text-slate-500 underline hover:text-slate-700"
+                    onClick={() => setPharmacyMode("new")}
+                  >
+                    My pharmacy is not in the database…
+                  </button>
+                </div>
+              )
             ) : (
-              <div className="space-y-2">
+              <div className="mt-1 space-y-2">
+                <div className="border border-amber-300 bg-amber-50 px-3 py-2">
+                  <p className="text-[12px] font-bold text-amber-800">
+                    This pharmacy is not in the master database, so the request will NOT enter the
+                    approval flow until the pharmacy is validated. Search first — most pharmacies
+                    are already there under a slightly different spelling.
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-1 text-[12px] font-bold text-orange-600 hover:text-orange-700"
+                    onClick={() => setPharmacyMode("picked")}
+                  >
+                    ← Back to search
+                  </button>
+                </div>
                 <input className={inputClass()} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Pharmacy name *" />
                 <select
                   className={inputClass()}
@@ -427,8 +481,8 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <div className="border border-[#eef1f3] p-2">
                   <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
                   <p className="mb-1 text-[11px] font-semibold text-slate-500">
-                    Optional. Leave it empty if you do not know them — the order still goes through, it just
-                    waits for a System Admin to confirm the pharmacy after SFE.
+                    Optional. Leave it empty if you do not know them — but the order cannot be
+                    finalized until the pharmacy passes validation.
                   </p>
                   {distRows.map((row, index) => (
                     <DistributorCustomerPicker

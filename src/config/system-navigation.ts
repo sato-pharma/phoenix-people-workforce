@@ -32,6 +32,7 @@ import {
   MailCheck,
   MousePointerClick,
   MapPinned,
+  PauseCircle,
   Megaphone,
   MessageSquareText,
   Network,
@@ -2196,6 +2197,16 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     // Not CEO: the registry is a setup surface, and the read itself refuses anyone outside
     // Super Admin / SFE Manager, so offering the link to CEO would only lead to a 403.
     roles: ["Super Admin", "SFE Manager"],
+  },
+  {
+    href: "/admin/direct-orders/held",
+    icon: PauseCircle,
+    label: "Held Desk",
+    description: "Requests parked on a pharmacy the master database does not know — notify, track, expire.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // System Admin only: the desk's one action is the bulk held-notice email, and the service
+    // refuses anyone else — offering the link wider would only lead to a 403.
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/direct-orders/pharmacy-variances",

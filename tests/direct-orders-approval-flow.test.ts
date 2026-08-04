@@ -8,7 +8,8 @@ import {
   directOrderExpectedStepCount,
   directOrderManagementLadder,
   evaluateStepAction,
-  isSystemAdminAckStep,
+  isLegacySystemAdminAckStep,
+  isPharmacyConfirmingStep,
   maxBonusUnits,
   resolveActionAvailability,
   resolveActiveStep,
@@ -129,6 +130,13 @@ export function runDirectOrdersApprovalFlowTests() {
       const chain = directOrderExpectedRoleChain(role);
       assert.equal(chain[0], "SFE Manager", `${role}'s chain must OPEN with SFE validation`);
       assert.equal(chain[chain.length - 1], "CEO", `${role}'s chain must still END at the CEO`);
+      // Checked HERE, before the deep-equals below, so that re-adding the rung fails on this
+      // named assertion rather than on a positional diff that says nothing about why it matters
+      // (owner rule, 2026-08-04: "remove the super admin from the approval workflow").
+      assert.ok(
+        !chain.includes("Super Admin"),
+        `${role}: Super Admin must never appear in a direct-order approval chain`,
+      );
     }
     // The sales line still sits between SFE and the CEO, in order.
     assert.deepEqual(directOrderExpectedRoleChain("District Manager"), [
@@ -145,46 +153,53 @@ export function runDirectOrdersApprovalFlowTests() {
     assert.equal(directOrderExpectedStepCount("Product Manager"), 2);
     assert.equal(directOrderExpectedStepCount("Group Product Manager"), 2);
 
-    // ── A pharmacy Phoenix does not recognise adds ONE rung, behind SFE ──────
-    // (owner rule, 2026-08-04: "blocked, needs SFE validation and system admin ack, then the
-    // normal workflow"). The admin sits AFTER SFE and BEFORE the sales line — SFE decides
-    // whether the request should exist, the admin then confirms the pharmacy is real.
-    assert.deepEqual(
-      directOrderExpectedRoleChain("District Manager", { pharmacyUnverified: true }),
-      ["SFE Manager", "Super Admin", "Regional Manager", "National Sales Manager", "CEO"],
-      "the System Admin rung must sit immediately after SFE, ahead of the whole sales line",
-    );
-    assert.deepEqual(
-      directOrderExpectedRoleChain("Product Manager", { pharmacyUnverified: true }),
-      ["SFE Manager", "Super Admin", "CEO"],
-      "a straight-to-CEO requester gets the rung too",
-    );
-    // …and the ordinary chain is untouched. This is the assertion that would catch the rung
-    // being added to EVERY request, which would put a Super Admin in the middle of every
-    // direct order in the company.
-    for (const role of ["District Manager", "Regional Manager", "Product Manager"] as const) {
-      assert.deepEqual(
-        directOrderExpectedRoleChain(role, { pharmacyUnverified: false }),
-        directOrderExpectedRoleChain(role),
-        `${role}: a recognised pharmacy must keep the plain chain`,
-      );
+    // ── Super Admin is NOT in the approval chain, ever ───────────────────────
+    // (owner rule, 2026-08-04: "remove the super admin from the approval workflow of the direct
+    // orders", superseding the System Admin ack rung added earlier the same day.)
+    //
+    // The pharmacy no longer changes the SHAPE of the chain at all — an unrecognised pharmacy
+    // gets the identical rungs, because confirming it rides on the mandatory SFE rung instead of
+    // a rung of its own. This is the assertion that fails if anyone re-inserts the rung.
+    for (const role of [
+      "District Manager",
+      "Regional Manager",
+      "National Sales Manager",
+      "Product Manager",
+      "Group Product Manager",
+    ] as const) {
       assert.ok(
         !directOrderExpectedRoleChain(role).includes("Super Admin"),
-        `${role}: the default chain must never contain the acknowledgment rung`,
-      );
-      assert.equal(
-        directOrderExpectedStepCount(role, { pharmacyUnverified: true }),
-        directOrderExpectedStepCount(role) + 1,
-        `${role}: an unrecognised pharmacy must add exactly one rung, not two`,
+        `${role}: Super Admin must never appear in a direct-order approval chain`,
       );
     }
+    assert.deepEqual(
+      directOrderExpectedRoleChain("District Manager"),
+      ["SFE Manager", "Regional Manager", "National Sales Manager", "CEO"],
+      "the chain is SFE → sales line → CEO, with no acknowledgment rung wedged into it",
+    );
 
-    // The rung is identified by KIND as well as role. A person rung whose occupant happens to
-    // be a Super Admin is an ordinary manager and must not silently verify the pharmacy.
-    assert.ok(isSystemAdminAckStep({ kind: "role", role: "Super Admin" }));
-    assert.ok(!isSystemAdminAckStep({ kind: "person", role: "Super Admin" }), "a person rung is not the ack rung");
-    assert.ok(!isSystemAdminAckStep({ kind: "role", role: "SFE Manager" }));
-    assert.ok(!isSystemAdminAckStep({ kind: "role", role: "CEO" }));
+    // The LEGACY rung is still RECOGNISED — in-flight requests chained before the rule change
+    // still carry one, and approving it must still confirm the pharmacy rather than strand it.
+    // Identified by KIND as well as role: a person rung whose occupant happens to be a Super
+    // Admin is an ordinary manager and must not silently verify the pharmacy.
+    assert.ok(isLegacySystemAdminAckStep({ kind: "role", role: "Super Admin" }));
+    assert.ok(
+      !isLegacySystemAdminAckStep({ kind: "person", role: "Super Admin" }),
+      "a person rung is not the ack rung",
+    );
+    assert.ok(!isLegacySystemAdminAckStep({ kind: "role", role: "CEO" }));
+
+    // Both the current confirming rung (SFE) and the legacy one confirm the pharmacy.
+    assert.ok(isPharmacyConfirmingStep({ kind: "role", role: "SFE Manager" }), "SFE confirms today");
+    assert.ok(isPharmacyConfirmingStep({ kind: "role", role: "Super Admin" }), "legacy rung still confirms");
+    assert.ok(
+      !isPharmacyConfirmingStep({ kind: "role", role: "CEO" }),
+      "the CEO rung must not be the thing that confirms a pharmacy — that was the failure mode",
+    );
+    assert.ok(
+      !isPharmacyConfirmingStep({ kind: "person", role: null }),
+      "an ordinary manager rung must never confirm a pharmacy",
+    );
 
     // A role rung must be actionable BY ROLE. The service used to special-case the CEO only,
     // which would have left the new SFE rung actionable by nobody at all.

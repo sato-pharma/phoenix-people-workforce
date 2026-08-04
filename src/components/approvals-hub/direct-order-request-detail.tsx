@@ -11,6 +11,18 @@ import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 
+const cairoStamp = (iso: string | null | undefined) =>
+  iso
+    ? new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Africa/Cairo",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(iso))
+    : null;
+
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
@@ -86,14 +98,43 @@ export function DirectOrderRequestDetail({
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </header>
 
-        {pharmacy?.verificationStatus === "pending_review" ? (
+        {request.status === "held" ? (
+          <div className="border-b border-[#eef1f3] bg-orange-50 px-4 py-2.5">
+            <p className="text-[12px] font-bold text-orange-900">
+              HELD — this request stands outside the approval flow. Its pharmacy is not in the
+              master database, so no approver has it as work and nothing can be approved here. It
+              moves only when the pharmacy passes validation, and an untouched held request
+              expires after 14 days.
+            </p>
+          </div>
+        ) : request.status === "expired" ? (
+          <div className="border-b border-[#eef1f3] bg-slate-100 px-4 py-2.5">
+            <p className="text-[12px] font-bold text-slate-700">
+              EXPIRED — this request stayed held for 14 days without its pharmacy passing
+              validation, and closed automatically. Resubmit with a pharmacy from the master
+              database.
+            </p>
+          </div>
+        ) : pharmacy?.verificationStatus === "pending_review" ? (
           <div className="border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
             <p className="text-[12px] font-bold text-rose-900">
-              New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of being
-              picked from the list, so nobody has checked that its distributor code is real. That code is
-              what Phoenix uses to find this pharmacy&apos;s sales at the distributor, and a wrong one
-              would pull another pharmacy&apos;s sales in here. This order waits for SFE, then a System
-              Admin, before it can be finalized.
+              New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of
+              being picked from the list, so nobody has checked that its distributor code is real.
+              That code is what Phoenix uses to find this pharmacy&apos;s sales at the distributor,
+              and a wrong one would pull another pharmacy&apos;s sales in here. The SFE Manager
+              confirms the pharmacy at their own rung; until then this order cannot be finalized.
+            </p>
+          </div>
+        ) : null}
+
+        {/* The golden rule, stated where the money is judged (spec C2): CEO approval is a
+            commercial decision, not an accounting event. Until Finance books a month, this
+            order sits in NO month's numbers — and that absence must be readable, not implied. */}
+        {request.status === "approved" && !request.salesMonth ? (
+          <div className="border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
+            <p className="text-[12px] font-bold text-amber-900">
+              Approved — awaiting Finance month. The sales are NOT in any month&apos;s numbers yet:
+              they inject only when the Finance Manager books this order into a month.
             </p>
           </div>
         ) : null}
@@ -256,6 +297,24 @@ export function DirectOrderRequestDetail({
                   </tr>
                 ))}
               </tbody>
+              {/* The judgement line: what this pharmacy is actually worth across all months on
+                  record, so the approver weighs THIS order against THAT total at a glance. */}
+              <tfoot>
+                <tr className="bg-slate-50">
+                  <td colSpan={4} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    Total — {retailHistory.length.toLocaleString("en-US")} row{retailHistory.length === 1 ? "" : "s"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                    {retailHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
+                    {retailHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                    {money(retailHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -322,6 +381,25 @@ export function DirectOrderRequestDetail({
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="bg-slate-50">
+                  <td colSpan={3} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    Total
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
+                    {pharmacyHistory.reduce((sum, row) => sum + row.orders, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                    {pharmacyHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
+                    {pharmacyHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
+                    {money(pharmacyHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -331,19 +409,45 @@ export function DirectOrderRequestDetail({
         <header className="border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">Approval chain</h3>
         </header>
-        <ol className="divide-y divide-[#eef1f3]">
-          {steps.map((step) => (
-            <li key={step.order} className="flex items-center gap-3 px-4 py-2.5">
-              <span className={`h-2.5 w-2.5 rounded-full ${STEP_TONE[step.status] ?? "bg-slate-300"}`} />
-              <span className="w-6 text-xs font-bold text-slate-400">{step.order}</span>
-              <span className="flex-1 text-sm font-semibold text-slate-800">
-                {step.approverName ?? step.label}
-                <span className="ml-2 text-[11px] font-normal text-slate-400">{step.label}</span>
-              </span>
-              <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">{step.status}</span>
-            </li>
-          ))}
-        </ol>
+        {steps.length === 0 ? (
+          <p className="px-4 py-4 text-sm text-slate-500">
+            {request.status === "held" || request.status === "expired"
+              ? "No approval chain — a held request enters the chain only after its pharmacy passes validation."
+              : "No approval steps recorded for this request."}
+          </p>
+        ) : (
+          <ol className="divide-y divide-[#eef1f3]">
+            {steps.map((step) => (
+              <li key={step.order} className="px-4 py-2.5">
+                <div className="flex items-center gap-3">
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STEP_TONE[step.status] ?? "bg-slate-300"}`} />
+                  <span className="w-6 shrink-0 text-xs font-bold text-slate-400">{step.order}</span>
+                  <span className="flex-1 text-sm font-semibold text-slate-800">
+                    {step.approverName ?? step.label}
+                    <span className="ml-2 text-[11px] font-normal text-slate-400">{step.label}</span>
+                  </span>
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">{step.status}</span>
+                </div>
+                {/* The decision record (spec D1): who, when — Cairo — and what they wrote. A rung
+                    decided by someone other than its named approver (a role rung, or an override)
+                    credits the actual decider, never the label. */}
+                {step.decidedAt || step.decidedByName || step.decisionComment ? (
+                  <div className="mt-1 pl-[42px]">
+                    <p className="text-[11px] text-slate-500">
+                      {step.decidedByName ? <span className="font-bold text-slate-600">{step.decidedByName}</span> : null}
+                      {step.decidedAt ? <span>{step.decidedByName ? " · " : ""}{cairoStamp(step.decidedAt)}</span> : null}
+                    </p>
+                    {step.decisionComment ? (
+                      <p className="mt-0.5 border-l-2 border-slate-200 pl-2 text-[12px] italic text-slate-600" dir="auto">
+                        “{step.decisionComment}”
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       <DecisionActions

@@ -3,7 +3,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   directOrderExpectedRoleChain,
   SFE_VALIDATION_ROLE,
-  SYSTEM_ADMIN_ACK_ROLE,
 } from "@/lib/direct-orders/approval-flow";
 import { rebuildDirectOrderApprovalChain } from "@/lib/direct-orders/service";
 import { systemAccessContext } from "@/lib/auth/permissions";
@@ -108,17 +107,17 @@ async function main() {
     const id = String(row.id);
     const steps = (stepsByRequest.get(id) ?? []).sort((a, b) => a.step_order - b.step_order);
     const currentLabels = steps.map((step) => String(step.label ?? ""));
-    const pharmacyUnverified = awaitingReview.has(String(row.pharmacy_id));
 
     // A chain is stale when a rung today's ladder requires is absent. Person rungs are matched by
-    // job title and vary per requester, so only the two ROLE rungs are checked here — those are
-    // the ones the ladder itself added, and a person rung cannot go missing without the manager
-    // chain itself having changed (which returning and resubmitting is the right answer for).
+    // job title and vary per requester, so only the SFE ROLE rung is checked here — it is the one
+    // the ladder itself adds, and a person rung cannot go missing without the manager chain itself
+    // having changed (which returning and resubmitting is the right answer for).
+    //
+    // A legacy Super Admin rung is NOT reported as missing and NOT added: that rung is retired
+    // (owner rule, 2026-08-04). Existing ones are left in place rather than stripped — approving
+    // one still confirms the pharmacy, so removing it mid-flight would be the destructive option.
     const missing: string[] = [];
     if (!currentLabels.some((label) => label === SFE_VALIDATION_ROLE)) missing.push(SFE_VALIDATION_ROLE);
-    if (pharmacyUnverified && !currentLabels.some((label) => label.startsWith(SYSTEM_ADMIN_ACK_ROLE))) {
-      missing.push(SYSTEM_ADMIN_ACK_ROLE);
-    }
     if (missing.length === 0) continue;
 
     const decided = steps.filter((step) => (step.status ?? "pending") !== "pending" || step.decided_by_hr_id || step.decided_at);
@@ -128,7 +127,7 @@ async function main() {
       current: currentLabels,
       missing,
       // Role-level preview only: the SERVICE resolves person rungs to actual managers.
-      expected: directOrderExpectedRoleChain(String(row.requester_role) as never, { pharmacyUnverified }),
+      expected: directOrderExpectedRoleChain(String(row.requester_role) as never),
       blocked: decided.length > 0 ? `${decided.length} step(s) already decided` : null,
     });
   }
