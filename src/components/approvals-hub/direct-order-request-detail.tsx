@@ -146,7 +146,21 @@ export function DirectOrderRequestDetail({
         <div className="border-t border-[#eef1f3] px-4 py-3">
           <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Distributors</p>
           {distributors.length === 0 ? (
-            <p className="mt-0.5 text-sm font-semibold text-slate-900">—</p>
+            // A bare dash here read as "the screen failed to load the distributor", not as "there
+            // is nothing on file" — and the two demand opposite reactions from an approver. Codes
+            // became optional on 2026-08-04, so an empty list is now a NORMAL state that has to
+            // say what it costs, because nothing else on this page reveals it.
+            <div className="mt-1 border border-amber-200 bg-amber-50 px-3 py-2">
+              <p className="text-[12px] font-bold text-amber-900">
+                No distributor customer code on file for this pharmacy.
+              </p>
+              <p className="mt-0.5 text-[12px] text-amber-800">
+                Nothing is missing from this screen — none was entered. Phoenix matches a
+                pharmacy&apos;s distributor sales on that code, so until one is added this
+                pharmacy&apos;s distributor sales cannot be linked to it. The direct order itself is
+                unaffected. Add the code in Direct Orders → Pharmacy Registry.
+              </p>
+            </div>
           ) : (
             <div className="mt-1.5 overflow-x-auto">
               <table className="w-full border-collapse text-sm">
