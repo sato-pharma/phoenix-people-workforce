@@ -856,10 +856,20 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   const hasMergedDirect = matrix.regions.some((region) =>
     region.areas.some((area) => area.isDirect && !isSyntheticDirect(area)));
 
+  // The store split is the SAME problem at row grain. applyStoreSplitToMatrix moves store
+  // (wholesaler) sales between a city's areas, but the Calc sheet still holds the unsplit rows —
+  // so a split-touched row's formula would recalculate straight back to its pre-split value while
+  // the Store Split tab keeps telling the post-split story. Touched rows arrive flagged
+  // (`storeSplitAdjusted`) and are written static ONE ROW AT A TIME: unlike merged direct this is
+  // per-row, not sheet-wide, because the flag is set only where a row's own net delta is non-zero
+  // — every untouched row (and, on a whole-month export, the subtotals and the grand total, whose
+  // deltas cancel to zero) keeps its live formulas.
+
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
       const synthetic = isSyntheticDirect(area);
       const carriesDirect = Boolean(area.isDirect);
+      const splitTouched = area.storeSplitAdjusted === true;
       writeRow(
         "area",
         synthetic ? "◆ Direct" : area.areaCode,
@@ -867,12 +877,12 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
         area.cells,
         area.rowTotal,
         "area",
-        carriesDirect,
+        carriesDirect || splitTouched,
         synthetic ? DIRECT_FILL : null,
       );
       zebra = !zebra;
     });
-    writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", hasMergedDirect);
+    writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", hasMergedDirect || region.subtotal.storeSplitAdjusted === true);
     zebra = false;
   });
   // When the reader has filtered down to a single region, calling the bottom line "National Grand
@@ -887,7 +897,7 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     matrix.grandTotal.cells,
     matrix.grandTotal.rowTotal,
     "grand",
-    hasMergedDirect,
+    hasMergedDirect || matrix.grandTotal.storeSplitAdjusted === true,
     soleRegion ? REGION_TOTAL_FILL : null,
     WHITE,
   );

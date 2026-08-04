@@ -3158,6 +3158,11 @@ export type MonthlyClosingAreaRow = {
   // a split line would match no region for them and fail OPEN to the whole company.
   sourceRegionCode?: string;
   sourceRegionName?: string;
+  // Set only by applyStoreSplitToMatrix: this row's cached numbers include store (wholesaler)
+  // sales moved in or out by the city split, which no distributor invoice line carries. The
+  // export must render such a row as static values — a live SUMIFS over the raw rows would
+  // recalculate straight back to the pre-split figure.
+  storeSplitAdjusted?: boolean;
 };
 
 export type MonthlyClosingSubtotalRow = {
@@ -3166,6 +3171,9 @@ export type MonthlyClosingSubtotalRow = {
   regionCode: string;
   regionName: string;
   rowTotal: MonthlyClosingCell;
+  // Same contract as MonthlyClosingAreaRow.storeSplitAdjusted — set when the split's net across
+  // this region's areas is non-zero (a city crossing regions, or a filtered matrix).
+  storeSplitAdjusted?: boolean;
 };
 
 export type MonthlyClosingRegionGroup = {
@@ -3179,6 +3187,9 @@ export type MonthlyClosingGrandTotalRow = {
   cells: MonthlyClosingCell[];
   kind: "grandTotal";
   rowTotal: MonthlyClosingCell;
+  // Same contract as MonthlyClosingAreaRow.storeSplitAdjusted — only a filtered matrix can leave
+  // a non-zero net at this level; a whole-month split always cancels to zero here.
+  storeSplitAdjusted?: boolean;
 };
 
 export type MonthlyClosingMatrix = {

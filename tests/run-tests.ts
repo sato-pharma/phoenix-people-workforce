@@ -598,6 +598,7 @@ import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
+import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
@@ -1278,6 +1279,11 @@ await runTest(
 await runTest(
   "store split applied to the closing matrix (sales move between areas, TARGETS are never touched, achievement re-derives, grand total holds)",
   runStoreSplitMatrixTests,
+);
+
+await runTest(
+  "monthly closing export split-static rows (split-touched rows are written static so Excel recalculation cannot revert them; every surviving live formula recalculates to exactly its cached value; untouched rows keep live formulas)",
+  runMonthlyClosingExportSplitStaticTests,
 );
 
 await runTest(
