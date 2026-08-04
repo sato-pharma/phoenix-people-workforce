@@ -601,6 +601,8 @@ import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inb
 
 import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
 
+import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1277,6 +1279,11 @@ await runTest(
 await runTest(
   "marketing approval history on the inbox row (ordered, CC excluded, credits the decider, silent approvals named)",
   runMarketingApproverChainHistoryTests,
+);
+
+await runTest(
+  "marketing approver customer history (clean slate vs unmeasured vs failed lookup are three different answers; a measured zero survives)",
+  runMarketingApproverCustomerHistoryTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

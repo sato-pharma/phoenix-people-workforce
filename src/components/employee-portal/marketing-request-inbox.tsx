@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
+import { MarketingRequestApproverDetail } from "@/components/marketing-requests/marketing-request-approver-detail";
 import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -185,6 +186,13 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
           have no history here is the one worth stopping before opening anything. */}
       <div className="border-b border-slate-100 px-4 py-3">
         <MarketingRequestedProductHistory requestId={row.id} />
+      </div>
+
+      {/* Everything the requester actually submitted, in place. Before this the row showed a
+          customer name, a cost and a pay date, and every other detail sat behind a decision
+          button — so reading the request meant first clicking an answer. */}
+      <div className="border-b border-slate-100 px-4 py-3">
+        <MarketingRequestApproverDetail requestId={row.id} />
       </div>
 
       <ApprovalHistory rungs={row.approvalHistory} />
