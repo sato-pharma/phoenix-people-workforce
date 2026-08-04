@@ -16,7 +16,7 @@ name (`select conname, pg_get_constraintdef(oid) from pg_constraint where conrel
 'public.notification_outbox'::regclass and contype='c';`) → `apply_migration` to **staging**
 → verify → **production** on explicit approval → `get_advisors` clean.
 
-## 2. Production environment variables (Cloud Run)
+## 2. Production environment variables (Railway)
 
 | Var | Set to | Why |
 |---|---|---|

@@ -8,11 +8,10 @@
 > **AGENTS.md §3**. The retired Cloud Run `:latest` rule and `gcloud` sequence are kept as history at
 > the bottom.
 
-> **TODO(verify):** `pnpm run check:secret-pins` (`scripts/check-secret-pins.ts`) still exists in
-> `package.json`, but it enforced the Cloud Run `:latest` rule and ran in the Cloud Run deploy before
-> traffic promotion. Railway has no version pins and no traffic-promotion gate, so it is almost
-> certainly a no-op or obsolete now — confirm, then retire or repurpose the script rather than
-> trusting it as a live gate.
+> **Note:** `pnpm run check:secret-pins` (`scripts/check-secret-pins.ts`) enforced the Cloud Run
+> `:latest` rule and ran in the (now dead) Cloud Run deploy. It is **not** in the `ci` / `check:harden`
+> gate (verified 2026-08-04) and Railway has no version pins — so it is a dead no-op. Actually
+> retiring the script is a separate chore, not a rotation step.
 
 ## Both halves rotate together
 
@@ -39,7 +38,7 @@ Railway-topology facts in AGENTS.md §3):
 # 1. Write the new value WITHOUT printing it. printf, not echo — a trailing newline silently breaks
 #    token matches. --skip-deploys so setting the var does not itself trigger a deploy.
 printf '%s' "$NEW_VALUE" | railway variables set CRON_SECRET --stdin \
-  -p <project> -e <env> -s phoenix-people-workforce --skip-deploys
+  -p Phoenix-HR-Workforce -e production -s phoenix-people-workforce --skip-deploys
 
 # 2. Update the OTHER half immediately (each cron-job.org job's Bearer header; or the
 #    webhook/agent config for a non-cron secret).
@@ -47,7 +46,7 @@ printf '%s' "$NEW_VALUE" | railway variables set CRON_SECRET --stdin \
 # 3. Roll the value out to the running app. WARNING: `railway redeploy` REBUILDS FROM main HEAD and
 #    ships whatever has merged since — treat it as a production code deploy needing its own approval,
 #    and record /api/healthz `revision` before and after so an unintended ship is visible.
-railway redeploy -y -p <project> -e <env> -s phoenix-people-workforce
+railway redeploy -y -p Phoenix-HR-Workforce -e production -s phoenix-people-workforce
 
 # 4. Verify by HASH, never by printing the value, and confirm the cron routes now return 200 with the
 #    new secret (an authorized call to a cron route, or check the outbox / *_runs tables — NOT the
@@ -58,10 +57,12 @@ There is **no "disable the old version" step** on Railway — setting the variab
 outright, so the only window where old and new disagree is the gap between step 1 and step 2. Keep it
 short: do step 2 immediately after step 1.
 
-> **TODO(verify):** the exact Railway `<project>`/`<env>` IDs (resolve live, don't paste from a doc —
-> AGENTS.md §3 has them), and whether `railway variables set` *without* `--skip-deploys` is preferable
-> (it may redeploy the current deployment as a config change rather than rebuilding from `main`).
-> Confirm with `railway variables -s phoenix-people-workforce` and `railway status`.
+> **Resolved 2026-08-04 (verified via `railway status`):** project `Phoenix-HR-Workforce`
+> (`dc218ad3-99b7-4aff-be38-953a57524a71`), env `production` (`cd5600e6-99dd-4b1c-80b2-16af8770abef`),
+> service `phoenix-people-workforce` — the CLI accepts the names used above. `--skip-deploys` is
+> deliberate: it stops the *variable set* from triggering its own deploy, so the explicit
+> `railway redeploy` in step 3 is the single controlled rollout (and it rebuilds from `main` HEAD —
+> see the warning above).
 
 ## Never print a secret
 
