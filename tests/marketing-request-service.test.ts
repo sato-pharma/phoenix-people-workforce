@@ -1055,6 +1055,56 @@ export async function runMarketingRequestServiceTests() {
     /No marketing requests involve you right now/,
     "the empty state must reflect that the inbox now covers more than the actor's own turn",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* Requested-product history must be judged separately (owner 2026-08-04). */
+  /* ---------------------------------------------------------------------- */
+
+  // The whole-customer total flatters a request. On MKT-REQ-20260802-DCF31EC4 the customer had
+  // traded EGP 2,774 over six months while only ONE of five promoted products had ever sold there.
+  // The customer buys Tebofortine 40mg (TE003); the request promotes Forte 80 (TE002) and 120
+  // (TE005) — same family, different SKUs.
+  assert.match(
+    evidenceSource,
+    /requestedByCode\.has\(String\(row\.product_code/,
+    "requested-product sales must match on product CODE, never on name",
+  );
+  // A name match would quietly credit "Tebofortine 40 mg" to "Tebofortine Forte 80".
+  assert.doesNotMatch(
+    evidenceSource,
+    /requestedByName/,
+    "requested-product matching must not fall back to a name index",
+  );
+  assert.match(
+    evidenceSource,
+    /const neverSold = requestedProductNames\.filter/,
+    "products with no history at this customer must be named, not merely omitted",
+  );
+  // Snapshot names keep a product removed from the master since submission in the never-sold list
+  // rather than letting it vanish from the count.
+  assert.match(
+    evidenceSource,
+    /product_name_snapshot/,
+    "requested products must fall back to the submission snapshot name",
+  );
+
+  const requestedHistorySource = source("src/components/marketing-requests/marketing-requested-product-history.tsx");
+  assert.match(
+    requestedHistorySource,
+    /ever\s*\n?\s*sold at this customer/,
+    "a request whose promoted products have never sold here must say so outright",
+  );
+  // The strip must fail quiet: a broken lookup cannot cost the approver the inbox row itself.
+  assert.match(
+    requestedHistorySource,
+    /Sales history for the requested products is unavailable right now/,
+    "a failed lookup must degrade to a message, never blank or crash the row",
+  );
+  assert.match(
+    inboxSource,
+    /<MarketingRequestedProductHistory requestId=\{row\.id\} \/>/,
+    "the inbox row itself must carry requested-product history, not hide it one click away",
+  );
   assert.match(
     decisionConfirmationSource,
     /MarketingSalesEvidencePanel[\s\S]{0,700}What&apos;s being requested/,

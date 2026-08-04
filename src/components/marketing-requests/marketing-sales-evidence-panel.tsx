@@ -158,6 +158,45 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
         )}
       </p>
 
+      {/* ── The requested products, judged on their own ──────────────────────────────────────
+          The whole-customer total flatters a request. On the live request the customer had traded
+          EGP 2,774 over six months, but only ONE of five promoted products had ever sold there —
+          once, for EGP 79. It buys Tebofortine 40mg; the request promotes Forte 80 and 120. Same
+          family, different SKUs, matched on CODE so a name never credits one to the other. This
+          sits above the customer-wide figures because it is the number that decides the request. */}
+      <div className="rounded-[6px] border border-[#E2E8F0] bg-white p-3">
+        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]">
+          The {data.requested.productCount} product{data.requested.productCount === 1 ? "" : "s"} this request promotes
+        </p>
+        {data.requested.sold.length > 0 ? (
+          <>
+            <p className="mt-1 text-[13px] font-bold leading-6 text-[#334155]">
+              <strong className="text-[#0F172A]">{data.requested.sold.length}</strong> of{" "}
+              <strong className="text-[#0F172A]">{data.requested.productCount}</strong> have sold at this customer,
+              totalling <strong className="text-[#0F172A]">{egp(data.requested.totalValue)}</strong>.
+            </p>
+            <ul className="mt-2 space-y-1">
+              {data.requested.sold.map((row) => (
+                <li className="flex items-center justify-between gap-3 text-[12px]" key={row.label}>
+                  <span className="font-bold text-[#0F172A]">{row.label}</span>
+                  <span className="shrink-0 font-black text-[#166534]">{egp(row.value)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <p className="mt-1 text-[13px] font-bold leading-6 text-[#B91C1C]">
+            None of these products has ever sold at this customer. The forecast rests entirely on
+            products it has never bought.
+          </p>
+        )}
+        {data.requested.neverSold.length > 0 ? (
+          <p className="mt-2 rounded-[6px] border border-[#FED7AA] bg-[#FFF7ED] px-3 py-2 text-[12px] font-bold leading-5 text-[#9A3412]">
+            Never sold here: {data.requested.neverSold.join(", ")}
+          </p>
+        ) : null}
+      </div>
+
       {/* The ask, next to what the history projects. */}
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="rounded-[6px] border border-[#E2E8F0] bg-white px-3 py-2">
