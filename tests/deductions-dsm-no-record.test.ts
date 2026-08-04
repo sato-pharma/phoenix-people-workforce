@@ -62,7 +62,7 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
     );
   }
 
-  // ── The four guards that keep a gap from becoming a wrong deduction ──────
+  // ── The five guards that keep a gap from becoming a wrong deduction ──────
   {
     assert.match(
       source,
@@ -83,6 +83,87 @@ export async function runDeductionsDsmNoRecordTests(): Promise<void> {
       source,
       /if \(claimed\.has\(`\$\{compact\}:\$\{day\}`\)\) return false;/,
       "a day another category already charges must never be charged again",
+    );
+  }
+
+  // ── The coverage guard ───────────────────────────────────────────────────
+  // The whole rule rests on "a DSM's double visits are logged when the rep
+  // submits". That is only true while every rep the manager could ride along
+  // with is actually known to CRM. Momen Abdelhady had 1 of 3 active reps with
+  // no CRM identity at all and was charged 12 days / 8,709.68 EGP for July 2026
+  // — 38.7% of base, against a next-worst of 5 days in the whole role. Without
+  // this guard the rule bills a manager for their own team's incomplete setup.
+  {
+    assert.match(
+      code,
+      /manager_hr_id/,
+      "the roster query must load manager_hr_id — without it the connector cannot tell which reps a manager could have doubled with",
+    );
+    assert.match(
+      code,
+      /getMappedAgentHrIds/,
+      "rep CRM-mapping must be resolved from the FEED (getMappedAgentHrIds), never from employees.crm_id — that column is stale on reused CRM logins and points at resigned people",
+    );
+    assert.match(
+      code,
+      /if \(reps\.length === 0 \|\| !everyRepIsMapped\) continue;/,
+      "a DSM whose team is not fully mapped into CRM must be SKIPPED — their no-record days measure the onboarding gap, not absence",
+    );
+
+    // The mapping question must be asked AS OF THE MONTH, never "ever". Candidates
+    // are re-collected repeatedly (July 2026 already has ten superseded
+    // generations), so an unbounded check lets a later onboarding rewrite an
+    // earlier month: the day Mahmoud Abdelreheem is coded onto CRM, a re-run of
+    // July would find Momen's team complete and bill him the 12 days this guard
+    // exists to prevent.
+    assert.match(
+      code,
+      /notAfterDate: monthEnd/,
+      "rep CRM-mapping must be evaluated as of the collected month's end — an unbounded check lets a LATER onboarding retroactively make an EARLIER month chargeable",
+    );
+    assert.match(
+      code,
+      /const monthEnd = allMonthDays\[allMonthDays\.length - 1\]!/,
+      "the bound must be the last CALENDAR day, not the last working day — reps do log Friday/holiday visits",
+    );
+  }
+
+  // ── An approved absence must never be charged as an absence ──────────────
+  // `claimed` only skips days another DEDUCTION already bills, and an approved
+  // PAID leave day is not a deduction, so it never lands there. In July 2026
+  // five DSMs held 12 approved paid leave days and none was charged — but only
+  // because each of those days happened to carry CRM activity anyway.
+  {
+    assert.match(
+      code,
+      /\.eq\("status", "approved"\)/,
+      "leave must be read from APPROVED requests only — a pending or rejected request is not permission to be away",
+    );
+    assert.match(
+      code,
+      /if \(leaveDays\.has\(`\$\{compact\}:\$\{day\}`\)\) return false;/,
+      "a day the company approved the manager to be away must never be charged as a no-record day",
+    );
+    // Deliberately unfiltered by type/payment status: the question is whether the
+    // company agreed the person was away, not whether it paid for it.
+    assert.doesNotMatch(
+      code,
+      /payment_status/,
+      "approved leave must count regardless of payment status — an approved UNPAID day is already charged by the vacation connector, and billing it twice is what the never-the-same-day-twice rule forbids",
+    );
+  }
+
+  // ── employees.crm_id must never become the mapping source ────────────────
+  // Verified in production 2026-08-04: on 3 reused CRM logins that column names
+  // a RESIGNED person while the feed resolves the current holder correctly
+  // (1391 Soad Atef vs Tayseer Khaled, 1399 Mohamed Yasser vs Nada Elsharkawy,
+  // 1536 Essam Youssef vs Mayar Tarek). Joining on it silently attributes a
+  // working rep's activity to a leaver.
+  {
+    assert.doesNotMatch(
+      code,
+      /crm_id/,
+      "this connector must resolve people through the feed's own agent_hr_id/double_hr_id, never by joining employees.crm_id",
     );
   }
 

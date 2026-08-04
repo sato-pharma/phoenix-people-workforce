@@ -1169,8 +1169,19 @@ export async function scanVisitsForRangeIncludingDeparted<T = CrmVisitRow>(optio
  * be mislabeled a data gap. Full keyset scan (no silent 1000-row cap): a rep with any visit is
  * mapped, so wider coverage only ever removes false "unmapped" flags, never adds them. Returns `[]`
  * if the schema is missing.
+ *
+ * `notAfterDate` (YYYY-MM-DD, inclusive) bounds the question to "did CRM know this person BY then".
+ * Omit it for the live "is this person mapped today" reading, which is what a badge wants. A caller
+ * deciding something about a CLOSED period must pass the end of that period, otherwise onboarding
+ * somebody months later silently rewrites the past: the DSM no-record connector skips a manager
+ * whose team is not fully mapped, so an unbounded check would make an old month become chargeable
+ * the moment the missing rep is finally coded onto CRM — retroactively billing the manager for
+ * exactly the gap that had protected them.
  */
-export async function getMappedAgentHrIds(hrIds: readonly string[]): Promise<string[]> {
+export async function getMappedAgentHrIds(
+  hrIds: readonly string[],
+  options: { notAfterDate?: string } = {},
+): Promise<string[]> {
   if (hrIds.length === 0) return [];
   const supabase = getSupabaseAdmin();
   const present = new Set<string>();
@@ -1182,6 +1193,7 @@ export async function getMappedAgentHrIds(hrIds: readonly string[]): Promise<str
       .in("agent_hr_id", expandHrIdFilterValues(hrIds))
       .order("id", { ascending: true })
       .limit(DEFAULT_PAGE_SIZE);
+    if (options.notAfterDate) query = query.lte("visit_date", options.notAfterDate);
     if (cursor) query = query.gt("id", cursor);
     const { data, error } = await query;
     if (error) {
