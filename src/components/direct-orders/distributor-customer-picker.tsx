@@ -98,6 +98,10 @@ export function DistributorCustomerPicker({
   }, [query, areaCode, row.distributorCode, searchable]);
 
   const picked = Boolean(row.customerCode && row.customerName);
+  // A distributor chosen with no customer behind it. The server refuses this now rather than
+  // dropping the row in silence — the silent drop is how two pharmacies reached approval recorded
+  // as "no code given" by a submitter who had visibly started filling the row in.
+  const halfFilled = Boolean(row.distributorCode) && !row.customerCode.trim();
   // Same separator set the server refuses — see assertSingleCustomerCode. Derived, not stored,
   // so it cannot drift out of sync with what was typed.
   const multiCodeAttempt = manual && /[\\/,;|\s]/.test(row.customerCode.trim());
@@ -222,6 +226,15 @@ export function DistributorCustomerPicker({
             Not listed? Enter the code manually
           </button>
         </>
+      ) : null}
+
+      {/* Stated here, while they are still on the row, rather than as a rejection after they have
+          filled the rest of the form. Both escape hatches are named so the row is never a dead end. */}
+      {halfFilled ? (
+        <p className="text-[11px] font-bold text-amber-700">
+          You picked a distributor but no customer yet. Pick one from the search, enter the code
+          manually, or remove this row with ✕ — a half-filled row cannot be saved.
+        </p>
       ) : null}
 
       {row.distributorCode && manual ? (

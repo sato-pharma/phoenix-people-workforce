@@ -1169,6 +1169,79 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     );
   }
 
+  // ── A half-filled distributor row is refused, never dropped in silence ──────
+  //
+  // Found by investigating "where are the codes they submitted by their hands?". The codes were
+  // never submitted — but the reason the question was fair is that the server used to discard a
+  // row with only one half filled, exactly like a row with neither. A submitter who picked a
+  // distributor, searched, found nothing and moved on had visibly started filling that row; the
+  // pharmacy was then recorded as "no distributor or customer code was given". Both were right.
+  //
+  // The blank row must STILL be skipped: the form always renders one, and leaving it alone is the
+  // legitimate "I do not know the code" answer that made codes optional in the first place.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const idx = serviceSource.indexOf("function normalizeDistributorCodePairs(");
+    assert.ok(idx > -1, "the shared code normalizer must exist");
+    const body = serviceSource.slice(idx, serviceSource.indexOf("\n}", serviceSource.indexOf("return byDistributor;", idx)));
+
+    // Untouched row → skipped. Note the AND: an `||` here is the original bug.
+    assert.match(
+      body,
+      /if \(!distributorCode && !customerCode\) continue;/,
+      "a row with BOTH halves blank must still be skipped — that is the legitimate empty answer",
+    );
+    assert.doesNotMatch(
+      body,
+      /if \(!distributorCode \|\| !customerCode\) continue;/,
+      "skipping on EITHER half blank is the silent drop this fixes",
+    );
+
+    // Half-filled → refused, in both directions.
+    assert.match(
+      body,
+      /if \(distributorCode && !customerCode\) \{[\s\S]{0,400}badRequest\(/,
+      "a distributor with no customer must be refused, not dropped",
+    );
+    assert.match(
+      body,
+      /if \(!distributorCode && customerCode\) \{[\s\S]{0,400}badRequest\(/,
+      "a customer code with no distributor must be refused — the API is reachable directly",
+    );
+    // The refusal has to be actionable: it names both escape hatches and the remove control.
+    assert.match(body, /Not listed\? Enter the code manually/, "the refusal must name the manual-entry escape hatch");
+    assert.match(body, /remove the row/, "the refusal must say a row can simply be removed");
+
+    // Names, never raw codes — the owner's standing rule, and the whole point of the resolver.
+    assert.match(body, /nameOf\(distributorCode\)/, "the refusal must name the distributor, not print its code");
+    const callSites = serviceSource.match(/normalizeDistributorCodePairs\([^)]*\)/g) ?? [];
+    const invocations = callSites.filter((call) => call.includes("input.distributorCodes"));
+    assert.equal(invocations.length, 3, "the order form, the registry and the code replacement all normalize");
+    for (const [i, call] of invocations.entries()) {
+      assert.match(
+        call,
+        /await distributorNameResolver\(\)/,
+        `normalizeDistributorCodePairs call ${i + 1} must pass the name resolver`,
+      );
+    }
+
+    // …and the submitter sees it on the row, not as a rejection after filling the whole form.
+    const picker = readFileSync(
+      new URL("../src/components/direct-orders/distributor-customer-picker.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      picker,
+      /const halfFilled = Boolean\(row\.distributorCode\) && !row\.customerCode\.trim\(\);/,
+      "the picker must derive the half-filled state",
+    );
+    assert.match(
+      picker,
+      /You picked a distributor but no customer yet/,
+      "the picker must say so inline while the submitter is still on the row",
+    );
+  }
+
   // ── Pharmacy registry: set a pharmacy up BEFORE an order needs it ───────────
   // Owner request, 2026-08-04. Registering here counts as confirmation, because the person doing
   // it IS the authority the approval chain would otherwise wait for.
