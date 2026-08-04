@@ -39,7 +39,28 @@
 //   node scripts/repo-doctor.mjs             # inventory + verdict, changes nothing
 //   node scripts/repo-doctor.mjs --deep      # also time a full walk of the scanned root
 //   node scripts/repo-doctor.mjs --fix       # delete proven husks (empty dir skeletons)
+//   node scripts/repo-doctor.mjs --strip-idle        # drop node_modules/.next from idle worktrees
+//   node scripts/repo-doctor.mjs --strip-idle=480    # ...only if idle 8h+ (default 120 minutes)
 //   node scripts/repo-doctor.mjs --fix --force   # skip the concurrent-session guard
+//
+// WHY --strip-idle EXISTS. The 2026-08-04 cleanup was an hour of manual analysis that reclaimed
+// 727,861 paths, and every path of it was `node_modules` and `.next` — regenerable by
+// `pnpm install`, never a line of anyone's work. It has to be one command, because the growth is
+// relentless: while that cleanup was running, parallel sessions rebuilt ~500,000 paths back. A
+// worktree costs ~85,000 paths the moment someone runs `pnpm install` in it, and 12 live worktrees
+// is the normal state here. Deleting worktrees is the wrong lever — they hold in-flight branches.
+// Deleting their build caches costs nothing but a later `pnpm install`.
+//
+// THE THREE CONDITIONS, all required, all re-proven immediately before deletion:
+//   1. Zero uncommitted files. Something uncommitted exists only on this disk.
+//   2. Zero commits absent from every origin ref. If it is not on GitHub, it is not backed up.
+//      Checked with `rev-list HEAD --not --remotes=origin`, which is squash-merge-safe — unlike
+//      comparing against origin/main, where a squashed branch always looks unmerged.
+//   3. Idle longer than the threshold, measured from the newest SOURCE write (node_modules,
+//      .next and .git excluded — those churn constantly and would mask a dormant worktree).
+// Condition 3 is the one that matters most: on 2026-08-04 a worktree that had been clean an hour
+// earlier had, by the time it was about to be deleted, a new untracked 211-line migration that
+// existed in no other copy anywhere. Idle time is the only signal that a session is not mid-edit.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -48,6 +69,28 @@ const args = process.argv.slice(2);
 const deep = args.includes("--deep");
 const fix = args.includes("--fix");
 const force = args.includes("--force");
+const stripArg = args.find((a) => a === "--strip-idle" || a.startsWith("--strip-idle="));
+const stripIdle = stripArg !== undefined;
+// Default 120 minutes. Two hours is long enough that a session pausing to think does not lose its
+// node_modules mid-task, and short enough to still catch yesterday's abandoned worktrees.
+//
+// ZERO IS REFUSED, not clamped. The idle test is `idle < threshold`, and computed idle time is
+// never negative, so a threshold of 0 means the test can never fire — the guard silently disables
+// itself and the tool strips worktrees someone is actively typing in. Two spellings reach it:
+// `--strip-idle=0`, and `--strip-idle=` where a trailing-equals typo makes Number("") === 0. The
+// empty string is therefore checked before the numeric range, because Number("") is a finite 0 and
+// would otherwise sail through. Same failure shape as the concurrent-session guard fixed on #1727:
+// the dangerous state is not a wrong value, it is a check that stops being a check.
+// (Caught in review on PR #1733.)
+const rawThreshold = stripArg?.includes("=") ? stripArg.split("=")[1] : null;
+const idleThresholdMin = rawThreshold === null ? 120 : Number(rawThreshold);
+if (stripIdle && (rawThreshold === "" || !Number.isFinite(idleThresholdMin) || idleThresholdMin < 1)) {
+  console.error(
+    `repo-doctor aborted — --strip-idle needs a threshold of at least 1 minute, got ${JSON.stringify(rawThreshold)}. ` +
+      "A threshold of 0 would disable the idle check entirely and strip worktrees that are being edited right now.",
+  );
+  process.exit(1);
+}
 
 function git(gitArgs, opts = {}) {
   try {
@@ -118,6 +161,64 @@ function walk(dir) {
     }
   }
   return { files, dirs, links, unreadable };
+}
+
+/** Path entries held by a worktree's regenerable build caches. */
+function cacheEntries(dir) {
+  let n = 0;
+  for (const name of ["node_modules", ".next"]) {
+    const p = path.join(dir, name);
+    if (!fs.existsSync(p)) continue;
+    const w = walk(p);
+    n += w.files + w.dirs + w.links;
+  }
+  return n;
+}
+
+/**
+ * Minutes since the newest SOURCE write. node_modules/.next/.git are excluded deliberately:
+ * they churn on every build and every git command, so including them makes a worktree that
+ * nobody has touched in days look active.
+ */
+function idleMinutes(dir) {
+  let newest = 0;
+  const skip = new Set(["node_modules", ".next", ".git"]);
+  const visit = (d) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) {
+        if (!skip.has(e.name)) visit(p);
+      } else if (e.isFile()) {
+        try {
+          const m = fs.statSync(p).mtimeMs;
+          if (m > newest) newest = m;
+        } catch {
+          /* a file that vanished mid-walk cannot be the newest one that matters */
+        }
+      }
+    }
+  };
+  visit(dir);
+  if (newest === 0) return null; // nothing readable — treat as unknown, never as idle
+  return Math.floor((Date.now() - newest) / 60000);
+}
+
+/**
+ * Commits reachable from HEAD but from no origin ref. Squash-merge-safe: comparing against
+ * origin/main would report every squashed branch as unpushed, because a squash merge never
+ * makes the branch an ancestor of main (AGENTS.md section 2).
+ */
+function unpushedCount(dir) {
+  const out = git(["-C", dir, "rev-list", "HEAD", "--not", "--remotes=origin"]);
+  if (out === null) return null; // could not determine — caller must refuse
+  return out === "" ? 0 : out.split("\n").length;
 }
 
 // ── Collect every worktree-shaped folder, wherever this repo puts them ──────────────
@@ -239,12 +340,19 @@ if (merged.length) {
   console.log("");
 }
 
-// ── --fix: husks only ──────────────────────────────────────────────────────────────
-if (!fix) {
+// ── mutating modes: --fix (husks) and --strip-idle (build caches) ──────────────────
+if (!fix && !stripIdle) {
   if (husks.length) {
     console.log(`Run with --fix to delete ${husks.length} husk(s) (${num(huskEntries)} empty path entries).`);
   } else {
     console.log("No husks to clear.");
+  }
+  const reclaimable = live.reduce((a, r) => a + cacheEntries(r.dir), 0);
+  if (reclaimable > 0) {
+    console.log(
+      `Run with --strip-idle to drop ${num(reclaimable)} path entries of node_modules/.next from ` +
+        "worktrees that are clean, fully pushed, and idle (pnpm install restores them).",
+    );
   }
   process.exit(0);
 }
@@ -298,28 +406,122 @@ if (!force) {
   }
 }
 
-let removed = 0;
-for (const r of husks) {
-  // Re-prove emptiness immediately before deleting: the inventory above may be seconds
-  // old, and a parallel session could have started reusing this path.
-  const recheck = walk(r.dir);
-  if (recheck.files !== 0 || recheck.unreadable) {
-    console.log(`  SKIPPED ${rel(r.dir)} — it now holds ${num(recheck.files)} file(s).`);
-    continue;
+if (fix) {
+  let removed = 0;
+  for (const r of husks) {
+    // Re-prove emptiness immediately before deleting: the inventory above may be seconds
+    // old, and a parallel session could have started reusing this path.
+    const recheck = walk(r.dir);
+    if (recheck.files !== 0 || recheck.unreadable) {
+      console.log(`  SKIPPED ${rel(r.dir)} — it now holds ${num(recheck.files)} file(s).`);
+      continue;
+    }
+    if (fs.existsSync(path.join(r.dir, ".git")) || registered.has(canon(r.dir))) {
+      console.log(`  SKIPPED ${rel(r.dir)} — it became a live worktree.`);
+      continue;
+    }
+    try {
+      fs.rmSync(r.dir, { recursive: true, force: true });
+      console.log(`  removed ${rel(r.dir)} (${num(r.dirs + r.links)} empty path entries)`);
+      removed++;
+    } catch (err) {
+      console.log(`  FAILED  ${rel(r.dir)} — ${err.message}`);
+    }
   }
-  if (fs.existsSync(path.join(r.dir, ".git")) || registered.has(canon(r.dir))) {
-    console.log(`  SKIPPED ${rel(r.dir)} — it became a live worktree.`);
-    continue;
-  }
-  try {
-    fs.rmSync(r.dir, { recursive: true, force: true });
-    console.log(`  removed ${rel(r.dir)} (${num(r.dirs + r.links)} empty path entries)`);
-    removed++;
-  } catch (err) {
-    console.log(`  FAILED  ${rel(r.dir)} — ${err.message}`);
-  }
+  console.log("");
+  console.log(`Removed ${removed} husk(s). Registered worktrees and anything holding files were left alone.`);
+  git(["worktree", "prune"]);
+  console.log("Ran `git worktree prune` to clear any stale registry entries.");
 }
-console.log("");
-console.log(`Removed ${removed} husk(s). Registered worktrees and anything holding files were left alone.`);
-git(["worktree", "prune"]);
-console.log("Ran `git worktree prune` to clear any stale registry entries.");
+
+// ── --strip-idle: regenerable build caches from provably dormant worktrees ─────────
+if (stripIdle) {
+  console.log(`--strip-idle: worktrees idle ${idleThresholdMin}+ min, clean, and fully pushed`);
+  console.log("");
+  let stripped = 0;
+  let reclaimed = 0;
+  let unverified = 0;
+  for (const r of live) {
+    const label = rel(r.dir);
+    const cached = cacheEntries(r.dir);
+    if (cached === 0) {
+      continue; // already stripped, or never installed
+    }
+    // Every check is re-run here rather than reused from the inventory above: that data is
+    // seconds to minutes old, and this is the moment where being wrong deletes something.
+    const dirty = (git(["-C", r.dir, "status", "--porcelain"]) ?? null);
+    if (dirty === null) {
+      console.log(`  SKIP  ${label.padEnd(52)} cannot read git status`);
+      continue;
+    }
+    const dirtyCount = dirty === "" ? 0 : dirty.split("\n").length;
+    if (dirtyCount > 0) {
+      console.log(`  SKIP  ${label.padEnd(52)} ${dirtyCount} uncommitted file(s) — exists only on this disk`);
+      continue;
+    }
+    const unpushed = unpushedCount(r.dir);
+    if (unpushed === null) {
+      console.log(`  SKIP  ${label.padEnd(52)} cannot determine what is pushed`);
+      continue;
+    }
+    if (unpushed > 0) {
+      console.log(`  SKIP  ${label.padEnd(52)} ${unpushed} commit(s) not on any origin ref — not backed up`);
+      continue;
+    }
+    const idle = idleMinutes(r.dir);
+    if (idle === null) {
+      console.log(`  SKIP  ${label.padEnd(52)} cannot read its files to judge idleness`);
+      continue;
+    }
+    if (idle < idleThresholdMin) {
+      console.log(`  SKIP  ${label.padEnd(52)} touched ${idle} min ago — a session may be mid-edit`);
+      continue;
+    }
+    try {
+      for (const name of ["node_modules", ".next"]) {
+        const p = path.join(r.dir, name);
+        if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+      }
+      // Prove the source survived. A cache strip that changed the working tree is a bug.
+      //
+      // `?? null`, never `?? ""`. git() returns null when the command fails, and "" when the
+      // tree is clean — collapsing those with `?? ""` makes a FAILED verification print as a
+      // verified-clean one, which is the "confidently wrong" outcome AGENTS.md rule 1 exists to
+      // stop. A git failure here is plausible rather than theoretical: on Windows, with parallel
+      // sessions and antivirus, a status right after deleting ~85,000 files can lose a
+      // file-locking race. Third instance of this shape in this file (see the concurrent-session
+      // guard and the --strip-idle=0 threshold) — a check that silently stops being a check.
+      //
+      // The counters below stay unconditional ON PURPOSE, which is a deliberate divergence from
+      // the review suggestion to only count verified-clean strips. By the time control reaches
+      // here the directories are already deleted — the paths ARE reclaimed, and not counting them
+      // would under-report real work and make the totals wrong in the opposite direction. What
+      // was missing is not a smaller number, it is the warning surviving into the summary: a
+      // reader who only sees the last line must not be told everything was fine. So a suspect
+      // strip is counted AND tallied separately, and the summary says so.
+      const after = git(["-C", r.dir, "status", "--porcelain"]);
+      let verdict;
+      if (after === null) {
+        verdict = "  !! could NOT verify the tree afterwards — check this worktree by hand";
+        unverified++;
+      } else {
+        const afterCount = after === "" ? 0 : after.split("\n").length;
+        verdict = afterCount === 0 ? "" : `  !! tree now shows ${afterCount} changed file(s)`;
+        if (afterCount !== 0) unverified++;
+      }
+      console.log(`  strip ${label.padEnd(52)} -${num(cached)} paths (idle ${idle} min)${verdict}`);
+      stripped++;
+      reclaimed += cached;
+    } catch (err) {
+      console.log(`  FAILED ${label} — ${err.message}`);
+    }
+  }
+  console.log("");
+  console.log(
+    `Stripped ${stripped} worktree(s), ${num(reclaimed)} path entries reclaimed.` +
+      (unverified > 0
+        ? ` ${unverified} could NOT be verified clean afterwards — check those by hand, they are flagged !! above.`
+        : "") +
+      " Run `pnpm install` in any of them before working there again.",
+  );
+}
