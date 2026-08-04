@@ -6,6 +6,7 @@ import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/mo
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
 import { summariseStoreSplitByArea, type StoreSplitAreaSummary } from "@/lib/sales/store-sales-city-split";
+import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -1393,6 +1394,114 @@ function writeStoreSplitSheet(
   });
 }
 
+// ── Source Coverage — is this month complete? ────────────────────────────────
+
+function formatCairoTimestamp(iso: string | null): string | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return null;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    day: "numeric", hour: "2-digit", hour12: false, minute: "2-digit", month: "short",
+    timeZone: "Africa/Cairo", year: "numeric",
+  }).format(date)} Cairo time`;
+}
+
+/**
+ * The completeness sheet. July 2026 was reported on 4 of June's ~18 source files and nothing in
+ * the workbook said so — every tab showed composition, none showed coverage. This sheet is the
+ * fix: what is still absent (with its last-month size), the Direct channel per region (a month
+ * can carry the Direct file yet miss half its regions), then every source side by side.
+ *
+ * It always describes the WHOLE month for the line, whatever filter the other sheets carry, so a
+ * filtered export still says whether the month itself is complete. Static cached values on
+ * purpose: coverage has no Calc block to SUMIFS from, and a static number that is right beats a
+ * live formula pointing at data that is not there.
+ */
+function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlySourceCoverage) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Source Coverage"));
+  bandHeader(sheet, coverage.line, coverage.period, "Source Coverage — is this month complete?", 6);
+  let row = 4;
+
+  if (!coverage.hasPrevData) {
+    writeTable(sheet, row, {
+      columns: [{ label: "Note", width: 96 }],
+      rows: [[
+        `${coverage.prevPeriod} has no validated data, so there is nothing to compare ${coverage.period} against. ` +
+        "This sheet starts working from the second month with data.",
+      ]],
+      title: "First month with data",
+    });
+    return;
+  }
+
+  const statusLabel = (entry: SourceCoverageEntry) =>
+    entry.status === "missing"
+      ? `MISSING in ${coverage.period}`
+      : entry.status === "new"
+        ? `New in ${coverage.period}`
+        : "Present in both";
+
+  const missing = coverage.missingSources;
+  row = writeTable(sheet, row, {
+    columns: [
+      { label: "Source", width: 26 },
+      { label: `${coverage.prevPeriod} Units`, numFmt: UNITS_FMT, right: true, width: 15 },
+      { dataBar: true, label: `${coverage.prevPeriod} Value (EGP)`, numFmt: VALUE_FMT, right: true, width: 19 },
+    ],
+    note: missing.length === 0
+      ? `Every source that fed ${coverage.prevPeriod} has also fed ${coverage.period}.`
+      : `These fed ${coverage.prevPeriod} and have contributed nothing to ${coverage.period} yet. Until each ` +
+        "arrives — or is confirmed as having no business this month — every total in this workbook is understated.",
+    rows: missing.length === 0
+      ? [["None — all of last month's sources are present", null, null]]
+      : missing.map((entry) => [entry.name, entry.prevUnits, entry.prevValue]),
+    title: `Missing in ${coverage.period} — fed ${coverage.prevPeriod}, nothing yet this month`,
+    totals: missing.length === 0 ? undefined : [
+      "TOTAL last month",
+      missing.reduce((sum, entry) => sum + entry.prevUnits, 0),
+      coverage.missingPrevValue,
+    ],
+  });
+
+  if (coverage.directRegions.length > 0) {
+    row = writeTable(sheet, row, {
+      columns: [
+        { label: "Direct — Region", width: 26 },
+        { label: `${coverage.prevPeriod} Units`, numFmt: UNITS_FMT, right: true, width: 15 },
+        { label: `${coverage.prevPeriod} Value`, numFmt: VALUE_FMT, right: true, width: 17 },
+        { label: `${coverage.period} Units`, numFmt: UNITS_FMT, right: true, width: 15 },
+        { label: `${coverage.period} Value`, numFmt: VALUE_FMT, right: true, width: 17 },
+        { label: "Status", width: 22 },
+      ],
+      note: "The Direct channel arrives as one sheet covering many regions, so a month can carry the file yet miss half its regions — July 2026 carried 3 of 8 for Anti Infective. Rows here are the Direct channel only.",
+      rows: coverage.directRegions.map((entry) => [
+        entry.name, entry.prevUnits, entry.prevValue, entry.curUnits, entry.curValue, statusLabel(entry),
+      ]),
+      title: "Direct channel by region",
+    });
+  }
+
+  const asOf = formatCairoTimestamp(coverage.latestUploadAt);
+  writeTable(sheet, row, {
+    columns: [
+      { label: "Source", width: 26 },
+      { label: `${coverage.prevPeriod} Units`, numFmt: UNITS_FMT, right: true, width: 15 },
+      { label: `${coverage.prevPeriod} Value`, numFmt: VALUE_FMT, right: true, width: 17 },
+      { label: `${coverage.period} Units`, numFmt: UNITS_FMT, right: true, width: 15 },
+      { label: `${coverage.period} Value`, numFmt: VALUE_FMT, right: true, width: 17 },
+      { label: "Status", width: 22 },
+    ],
+    note:
+      `${asOf ? `Last upload for ${coverage.period}: ${asOf}. ` : ""}` +
+      "Presence is decided on rows, not value — a source with only credit notes still counts as present. " +
+      "Values follow the closing's own basis (Direct at submitted value, distributor rows at effective units × factory price, confidential products excluded), so these columns tie to the Closing Matrix.",
+    rows: coverage.sources.map((entry) => [
+      entry.name, entry.prevUnits, entry.prevValue, entry.curUnits, entry.curValue, statusLabel(entry),
+    ]),
+    title: `Every source — ${coverage.period} vs ${coverage.prevPeriod}`,
+  });
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -1412,6 +1521,12 @@ export async function buildMonthlyClosingWorkbook(
      * was never set for it. Omitting the sheet is honest; showing a fake % is not.
      */
     includeTargetSheet?: boolean;
+    /**
+     * The month's completeness picture (which of last month's sources are absent). Written as
+     * the sheet right after the matrix; omitted when unavailable rather than ever blocking the
+     * export.
+     */
+    coverage?: MonthlySourceCoverage | null;
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -1422,6 +1537,11 @@ export async function buildMonthlyClosingWorkbook(
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
   writeMatrixSheet(workbook, matrix, ref, options?.filterNote);
+  // Second sheet, on purpose: whether the month is COMPLETE comes before how it performed —
+  // July 2026 was reported on 4 of ~18 source files and nothing in the file said so.
+  if (options?.coverage) {
+    writeSourceCoverageSheet(workbook, options.coverage);
+  }
   // Directly after the matrix: the same numbers judged against their targets. It sits here rather
   // than at the end because "did we hit the number" is the second question a reader asks.
   // Omitted for row-level filtered exports — see the option's own comment.

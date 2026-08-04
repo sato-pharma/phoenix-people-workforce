@@ -604,6 +604,7 @@ import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inb
 import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
 
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
+import { runSourceCoverageTests } from "./source-coverage.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1291,6 +1292,11 @@ await runTest(
 await runTest(
   "marketing approver customer history (clean slate vs unmeasured vs failed lookup are three different answers; a measured zero survives)",
   runMarketingApproverCustomerHistoryTests,
+);
+
+await runTest(
+  "closing source coverage (missing vs new vs present on rows not value; confidential skipped; direct region drop-out surfaces)",
+  runSourceCoverageTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -22,23 +22,27 @@ import {
   filterMonthlyClosingMatrix,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import type { MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 
 type Props = {
   canPublish?: boolean;
+  initialCoverage?: MonthlySourceCoverage | null;
   initialError: string | null;
   initialMatrix: MonthlyClosingMatrix | null;
 };
 
 type ClosingResponse = {
+  coverage?: MonthlySourceCoverage | null;
   data?: MonthlyClosingMatrix;
   error?: string;
   success: boolean;
 };
 
-export function MonthlyClosingWorkspace({ canPublish = false, initialError, initialMatrix }: Props) {
+export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = null, initialError, initialMatrix }: Props) {
   const [matrix, setMatrix] = useState<MonthlyClosingMatrix | null>(initialMatrix);
+  const [coverage, setCoverage] = useState<MonthlySourceCoverage | null>(initialCoverage);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
@@ -56,6 +60,35 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
     () => (matrix ? filterMonthlyClosingMatrix(matrix, filter) : null),
     [matrix, filter],
   );
+
+  // One plain-language sentence about completeness, or null to show nothing. Missing sources are
+  // named (human names, standing rule) with their last-month scale, so "the number looks low"
+  // answers itself before anyone re-checks the arithmetic.
+  const coverageWarning = useMemo(() => {
+    if (!coverage || !coverage.hasPrevData) return null;
+    const missing = coverage.missingSources;
+    const missingRegions = coverage.missingDirectRegions;
+    if (missing.length === 0 && missingRegions.length === 0) return null;
+    const parts: string[] = [];
+    if (missing.length > 0) {
+      const names = missing.slice(0, 3).map((entry) => entry.name);
+      const more = missing.length - names.length;
+      const scale = coverage.missingPrevValue.toLocaleString("en-US", {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 2,
+      });
+      parts.push(
+        `${coverage.period} is missing ${missing.length} of the ${coverage.prevSourceCount} sources that fed ` +
+        `${coverage.prevPeriod} — ${names.join(", ")}${more > 0 ? ` and ${more} more` : ""} ` +
+        `(${scale} EGP in ${coverage.prevPeriod}).`,
+      );
+    }
+    if (missingRegions.length > 0) {
+      parts.push(`The Direct sheet has nothing yet from ${missingRegions.map((entry) => entry.name).join(", ")}.`);
+    }
+    parts.push("Totals are understated until these arrive.");
+    return parts.join(" ");
+  }, [coverage]);
 
   const filterOptions = useMemo(() => {
     if (!matrix) return { areas: [], products: [], regions: [] };
@@ -125,6 +158,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
       const payload: ClosingResponse = text ? JSON.parse(text) : { success: response.ok };
       if (payload.success && payload.data) {
         setMatrix(payload.data);
+        setCoverage(payload.coverage ?? null);
         setFilter(emptyMonthlyClosingFilter);
       } else {
         setError(payload.error ?? "Failed to load Monthly Closing.");
@@ -302,6 +336,12 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialError, init
               <div className="flex items-center gap-2 border-b border-emerald-100 bg-emerald-50/60 px-4 py-2.5 text-xs font-semibold text-emerald-700 md:px-5">
                 <CheckCircle2 className="h-4 w-4" />
                 This month is published — sales managers and product managers can see it in their portal (scoped to their line / products).
+              </div>
+            ) : null}
+            {coverageWarning ? (
+              <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs font-semibold text-amber-800 md:px-5">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{coverageWarning}</p>
               </div>
             ) : null}
             {/* Matrix = the published headline. Details = the invoice lines underneath it,
