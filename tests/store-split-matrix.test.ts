@@ -64,14 +64,17 @@ export function runStoreSplitMatrixTests() {
   const before = buildMatrix();
 
   // Nothing to move: the matrix comes back as the very same object, untouched.
-  assert.equal(applyStoreSplitToMatrix(before, new Map()), before, "an empty split returns the identical matrix");
+  const empty = applyStoreSplitToMatrix(before, new Map());
+  assert.equal(empty.matrix, before, "an empty split returns the identical matrix");
+  assert.deepEqual(empty.applied, { qty: 0, value: 0 }, "and reports that it moved nothing");
 
   // Menoufia 1 sends 9,000 to Menoufia 2 — the shape of a real even split between two areas.
   const net = new Map([
     [areaProductKey("D12", "LA001"), { qty: -30, value: -9_000 }],
     [areaProductKey("D13", "LA001"), { qty: 30, value: 9_000 }],
   ]);
-  const after = applyStoreSplitToMatrix(before, net);
+  const { applied, matrix: after } = applyStoreSplitToMatrix(before, net);
+  assert.deepEqual(applied, { qty: 0, value: 0 }, "both ends of the move are in the matrix, so nothing crossed its edge");
   const areaOf = (matrix: MonthlyClosingMatrix, code: string) =>
     matrix.regions[0]?.areas.find((area) => area.areaCode === code);
 
@@ -123,13 +126,35 @@ export function runStoreSplitMatrixTests() {
   assert.equal(after.regions[0]?.subtotal.cells[0]?.salesValue, 47_000, "both areas are in one region, so its subtotal holds");
 
   // A one-sided net (a city spanning two regions) must still land on the right region subtotal.
-  const oneSided = applyStoreSplitToMatrix(before, new Map([[areaProductKey("D13", "LA001"), { qty: 5, value: 1_000 }]]));
+  const oneSidedResult = applyStoreSplitToMatrix(before, new Map([[areaProductKey("D13", "LA001"), { qty: 5, value: 1_000 }]]));
+  const oneSided = oneSidedResult.matrix;
   assert.equal(areaOf(oneSided, "D13")?.cells[0]?.salesValue, 13_000);
   assert.equal(oneSided.regions[0]?.subtotal.cells[0]?.salesValue, 48_000, "the region subtotal absorbs a one-sided move");
   assert.equal(oneSided.grandTotal.cells[0]?.salesValue, 48_000, "and so does the grand total");
   assert.equal(oneSided.regions[0]?.subtotal.cells[0]?.targetValue, 60_000, "targets still untouched on a one-sided move");
+  assert.deepEqual(
+    oneSidedResult.applied,
+    { qty: 5, value: 1_000 },
+    "a one-sided move is reported, so the workbook can say where the other end of it went",
+  );
 
   // An area the split never touches is returned as the identical object, not a copy.
-  const untouched = applyStoreSplitToMatrix(before, new Map([[areaProductKey("D13", "LA001"), { qty: 1, value: 1 }]]));
+  const untouched = applyStoreSplitToMatrix(before, new Map([[areaProductKey("D13", "LA001"), { qty: 1, value: 1 }]])).matrix;
   assert.equal(areaOf(untouched, "D12"), before.regions[0]?.areas[0], "an untouched area is passed through unchanged");
+
+  // A delta for an area that is NOT in this matrix (the filtered-export case) has nowhere to land.
+  // It must be REPORTED, not silently dropped — that report is what keeps the Total sheet tying.
+  const offMatrix = applyStoreSplitToMatrix(
+    before,
+    new Map([
+      [areaProductKey("D12", "LA001"), { qty: -20, value: -6_000 }],
+      [areaProductKey("D14", "LA001"), { qty: 20, value: 6_000 }], // Gharbia — not in this matrix
+    ]),
+  );
+  assert.equal(matrixSalesValue(offMatrix.matrix), matrixSalesValue(before) - 6_000, "only the origin's side lands");
+  assert.deepEqual(
+    offMatrix.applied,
+    { qty: -20, value: -6_000 },
+    "the amount that left the matrix is reported exactly, so nothing goes missing unexplained",
+  );
 }

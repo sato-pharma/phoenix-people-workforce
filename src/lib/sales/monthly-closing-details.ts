@@ -534,6 +534,49 @@ export async function loadMonthlyClosingDetails(
   };
 }
 
+/**
+ * Narrow an already-loaded result to a set of AREAS, re-deriving every total from the survivors.
+ *
+ * WHY THIS EXISTS. The Monthly Closing export applies the store split (a wholesaler's sell-in is
+ * shared across the areas of its city — see store-sales-city-split.ts), and that allocation is a
+ * property of the MONTH, not of whatever the reader filtered the screen to. A store in Alex East
+ * selling 750 boxes is 250 / 250 / 250 across Alex East, Alex West and Alex Center whether or not
+ * the export shows all three. So the export loads the rows WITHOUT place narrowing, computes the
+ * split over the whole city, and only then narrows to the areas on show with this function. An
+ * area's number is therefore identical in a filtered and an unfiltered export.
+ *
+ * Narrowing at load time instead loses money in both directions: an in-scope store's share to
+ * out-of-scope areas is dropped, and an in-scope area never receives its share from an out-of-scope
+ * store in the same city.
+ *
+ * `options` is deliberately carried through untouched — it is built pre-filter on purpose, so that
+ * choosing one area never removes the other areas from the dropdown.
+ *
+ * An empty `areaCodes` means "every area", matching applyDetailFilters' own convention.
+ */
+export function narrowClosingDetailsToAreas(
+  details: ClosingDetailsResult,
+  areaCodes: readonly string[],
+): ClosingDetailsResult {
+  if (areaCodes.length === 0) return details;
+  const rows = applyDetailFilters(details.rows, { areaCodes: [...areaCodes] });
+  if (rows.length === details.rows.length) return details;
+  return {
+    ...details,
+    filteredRowCount: rows.length,
+    reconciliation: {
+      areaMismatches: summarize(rows, (row) => row.areaMismatch),
+      excludedConfidential: summarize(rows, (row) => row.isConfidential),
+      excludedDirect: summarize(rows, (row) => row.isDirect),
+      includedInClosing: summarize(rows, (row) => row.includedInClosing),
+      missingClientCode: summarize(rows, (row) => row.missingClientCode),
+      unmappedBricks: summarize(rows, (row) => row.brickUnmapped),
+    },
+    rows,
+    totals: summarize(rows, () => true),
+  };
+}
+
 /** Distinct filter choices present in the viewer's scoped rows, each sorted for a stable UI. */
 export function buildFilterOptions(rows: ClosingDetailRow[]): ClosingDetailsResult["options"] {
   const regions = new Map<string, string>();

@@ -609,6 +609,8 @@ import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 
+import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1315,6 +1317,11 @@ await runTest(
 await runTest(
   "seat transfer service (Super Admin gate, trimmed RPC args, SQL guard messages surface)",
   runSeatTransferServiceTests,
+);
+
+await runTest(
+  "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero and the share belonging to excluded areas is named)",
+  runMonthlyClosingExportStoreSplitFilteredTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

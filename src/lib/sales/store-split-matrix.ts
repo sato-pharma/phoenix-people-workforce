@@ -39,6 +39,23 @@ import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 
 type NetMap = ReadonlyMap<string, { qty: number; value: number }>;
 
+export type StoreSplitApplication = {
+  matrix: MonthlyClosingMatrix;
+  /**
+   * What the split actually moved INTO this matrix — the exact amount its grand total shifted by.
+   *
+   * On a whole-month export this is zero: every share of a store's sale lands on an area that is
+   * present, so the ins and outs cancel. On a FILTERED export it is not, and the sign is the
+   * reader's answer: negative means store sales in these areas belong to city areas the filter
+   * excluded; positive means these areas received a share from a store the filter excluded.
+   *
+   * It is reported rather than recomputed because this function is the only thing that knows which
+   * deltas found a home: a delta for an area row or product column that is not in this matrix is
+   * skipped here, and a second implementation of that rule would be free to drift from it.
+   */
+  applied: { qty: number; value: number };
+};
+
 /** Add a delta to one cell, leaving both target columns exactly as they were. */
 function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: number }): MonthlyClosingCell {
   return roundedClosingCell({
@@ -55,9 +72,15 @@ function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: numbe
 /**
  * Redistribute the matrix's non-direct area cells by the store split. Returns the matrix
  * unchanged when there is nothing to move, so a month with no store customers is untouched.
+ *
+ * `net` is computed over the WHOLE month's rows, never over the filtered ones — see
+ * narrowClosingDetailsToAreas. So on a filtered export this deliberately receives deltas for areas
+ * that are not in `matrix`; they have nowhere to land and are skipped, and the amount skipped is
+ * exactly what `applied` lets the caller state out loud instead of losing.
  */
-export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): MonthlyClosingMatrix {
-  if (net.size === 0) return matrix;
+export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): StoreSplitApplication {
+  const nothingApplied = { qty: 0, value: 0 };
+  if (net.size === 0) return { applied: nothingApplied, matrix };
 
   // Per product column, the total delta applied across every area — used to move the grand total
   // by exactly the same amount the areas moved (which is zero, but derived rather than assumed).
@@ -106,22 +129,35 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
     };
   });
 
-  if (!anyChange) return matrix;
+  if (!anyChange) return { applied: nothingApplied, matrix };
 
   // A non-zero net at grand level only happens on a filtered matrix — a one-sided move whose
   // counterpart areas were filtered out. A whole-month split cancels to zero here, and an
   // unflagged grand total keeps its live formula in the export.
   const grandChanged = columnDelta.some((delta) => delta.qty !== 0 || delta.value !== 0);
   const grandCells = matrix.grandTotal.cells.map((cell, index) => adjustCell(cell, columnDelta[index]));
+  // Summed across every product column, this IS the shift in the grand total — the same deltas
+  // were added to the areas, their region subtotals and the grand total, so one sum covers all three.
+  const applied = columnDelta.reduce(
+    (total, delta) => ({ qty: total.qty + delta.qty, value: total.value + delta.value }),
+    { qty: 0, value: 0 },
+  );
   return {
-    ...matrix,
-    grandTotal: {
-      ...matrix.grandTotal,
-      cells: grandCells,
-      rowTotal: sumClosingRowTotal(grandCells),
-      ...(grandChanged ? { storeSplitAdjusted: true } : {}),
+    // Rounded because the per-cell nets accumulate in floating point: summing the same money in a
+    // different ORDER is not bit-identical, so a whole-month split can leave a ~1e-9 EGP residue
+    // here. Without this a filtered-export disclosure line would appear on an unfiltered workbook
+    // reading 0.000000, which in a reconciliation reads as a defect rather than as reassurance.
+    applied: { qty: Number(applied.qty.toFixed(6)), value: Number(applied.value.toFixed(6)) },
+    matrix: {
+      ...matrix,
+      grandTotal: {
+        ...matrix.grandTotal,
+        cells: grandCells,
+        rowTotal: sumClosingRowTotal(grandCells),
+        ...(grandChanged ? { storeSplitAdjusted: true } : {}),
+      },
+      regions,
     },
-    regions,
   };
 }
 
