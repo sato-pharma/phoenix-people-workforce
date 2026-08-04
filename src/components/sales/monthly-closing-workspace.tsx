@@ -390,6 +390,11 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                     Export XLSX
                   </button>
                 </div>
+                {/* Owner decision: the split lives in the workbook (with its own Store Split
+                    audit tab), while this screen keeps showing the raw distributor numbers. */}
+                <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 md:px-5">
+                  The exported workbook applies the store split; this matrix shows sales before the split.
+                </div>
                 <ClosingMatrixTable matrix={filteredMatrix} />
               </>
             ) : (
