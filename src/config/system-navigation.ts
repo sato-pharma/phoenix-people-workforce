@@ -599,6 +599,19 @@ const adminNavigationSectionSeeds = [
   // Sales / CRM. permissions:[{resource:"direct_orders",action:"read"}] is the
   // least-restrictive of the 5 cards' own gates (every role with direct_orders
   // access holds at least read).
+  // Sales vs Target — its OWN standalone sidebar button rather than a child of the Targets
+  // group. It reads the same au.f_monthly_achievement engine as Targets, so grouping it there
+  // was defensible on data lineage, but the owner expects this to be the most-opened dashboard
+  // in the system and a collapsed group made it a two-click destination (decision 2026-08-04).
+  // Admin-shell roles only; DM/RM/NSM/Medical Rep land in the employee-portal shell and the page
+  // redirects them to /employee-portals/sales-vs-target rather than denying them.
+  {
+    id: "sales-vs-target-module",
+    items: [
+      { href: "/sales/vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+    ],
+    label: "Sales vs Target",
+  },
   {
     id: "sales-direct-orders",
     items: [
@@ -630,11 +643,6 @@ const adminNavigationSectionSeeds = [
       // sales:read and lands in the ADMIN shell, hence cannot use the portal twin — had no way to
       // see target achievement at all.
       { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
-      // Sales vs Target — reads the same au.f_monthly_achievement engine as Targets above, so the
-      // two surfaces cannot disagree. Admin-shell roles only; DM/RM/NSM/Medical Rep land in the
-      // employee-portal shell and use /employee-portals/sales-vs-target, which the page redirects
-      // them to rather than denying them.
-      { href: "/sales/vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Targets",
   },

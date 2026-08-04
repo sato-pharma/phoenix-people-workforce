@@ -17,6 +17,7 @@ import {
   SALES_LINES,
   loadAllCanonicalAreaNames,
   loadEmployeeNameMap,
+  loadProductNameMap,
   regionName as regionNameOf,
 } from "@/lib/sales/monthly-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
@@ -32,8 +33,10 @@ import {
   loadVsTargetRange,
   periodHasActuals,
   priorPeriodOf,
+  rankByAchievement,
   rollupByArea,
   rollupByDm,
+  rollupByProduct,
   rollupByRegion,
   rollupByRep,
   rollupByTeam,
@@ -87,7 +90,13 @@ export type VsTargetDashboardData = {
   areas: VsTargetNode[];
   reps: VsTargetNode[];
   managers: VsTargetNode[];
+  /** Product mix — real analysis for a scope that has only one month loaded. */
+  products: VsTargetNode[];
+  /** Best and worst measurable performers at the most useful level for this viewer. */
+  leaders: { top: VsTargetNode[]; bottom: VsTargetNode[]; level: string };
   trend: TrendPoint[];
+  /** True once there are at least two loaded months — gates the trend chart entirely. */
+  trendIsMeaningful: boolean;
   /** Where the money came from. Both are inside `totals`. */
   channels: { direct: number; indirect: number } | null;
   /** Untargeted pockets that SHOULD have a target, largest first. Drives the honesty banner. */
@@ -150,7 +159,10 @@ export async function buildVsTargetDashboard(
       areas: [],
       reps: [],
       managers: [],
+      products: [],
+      leaders: { top: [], bottom: [], level: "Area" },
       trend: [],
+      trendIsMeaningful: false,
       channels: null,
       uncovered: [],
       byDesignUntargetedValue: 0,
@@ -169,10 +181,11 @@ export async function buildVsTargetDashboard(
       ? windowStartCandidate
       : SALES_VS_TARGET_FLOOR;
 
-  const [rangeRows, areaNames, employeeNames, targetBearing] = await Promise.all([
+  const [rangeRows, areaNames, employeeNames, productNames, targetBearing] = await Promise.all([
     loadVsTargetRange(windowStart, current),
     loadAllCanonicalAreaNames(),
     loadEmployeeNameMap(),
+    loadProductNameMap(),
     loadTargetBearingPairs().catch(() => new Set<string>()),
   ]);
 
@@ -207,6 +220,17 @@ export async function buildVsTargetDashboard(
   const trendPeriods = periods.filter((entry) => entry >= windowStart && entry <= period);
   const allUncovered = buildUncovered(rows, names, targetBearing);
 
+  // A "trend" over a single loaded month is one bar in an empty grid — it reads as a broken
+  // chart, not as data. Gate the chart on there actually being something to trend.
+  const loadedPeriodCount = new Set(scopedAll.filter((entry) => entry.hasActual).map((entry) => entry.period)).size;
+
+  const areaNodes = levels.area ? rollupByArea(rows, priorRows, names) : [];
+  const repNodes = levels.rep ? rollupByRep(rows, priorRows, names) : [];
+  // Rank at the finest level this viewer actually has more than one of, so a leaderboard is
+  // never a list of one.
+  const leaderNodes = repNodes.length > 1 ? repNodes : areaNodes;
+  const leaderLevel = repNodes.length > 1 ? "Medical Rep" : "Area";
+
   return {
     period,
     priorPeriod,
@@ -219,10 +243,13 @@ export async function buildVsTargetDashboard(
     coverage: coverageRatio(totals),
     teams: levels.team ? rollupByTeam(rows, priorRows, names) : [],
     regions: levels.region ? rollupByRegion(rows, priorRows, names) : [],
-    areas: levels.area ? rollupByArea(rows, priorRows, names) : [],
-    reps: levels.rep ? rollupByRep(rows, priorRows, names) : [],
+    areas: areaNodes,
+    reps: repNodes,
     managers: levels.rep ? rollupByDm(rows, priorRows, names) : [],
+    products: rollupByProduct(rows, priorRows, (code) => productNames.get(code.toUpperCase()) ?? code),
+    leaders: { ...rankByAchievement(leaderNodes, 5), level: leaderLevel },
     trend: buildTrend(scopedAll, trendPeriods),
+    trendIsMeaningful: loadedPeriodCount > 1,
     channels: buildChannelSplit(attribution, bound),
     uncovered: allUncovered.filter((entry) => entry.expectsTarget),
     byDesignUntargetedValue: allUncovered
