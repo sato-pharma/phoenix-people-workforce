@@ -130,7 +130,16 @@ export async function POST(request: Request) {
       // under row-level filters, the source every other sheet is rebuilt from. Unpaged — the
       // workbook needs every row. Scope and the confidential gate are enforced inside the
       // service against this caller, so the export can never widen what they may see.
-      const details = await loadMonthlyClosingDetails({
+      // These two reads dominate the export — measured on July 2026 Pedia, 7.4s and 7.8s of a
+      // 17.3s total, against 1.3s to actually build the workbook. They were issued one after the
+      // other, so the caller waited for their SUM.
+      //
+      // Only the from-rows comparison needs `details.rows`; the aggregate one reads its own
+      // leaves and shares nothing but the line/period/area scope. So when the from-rows variant
+      // is not in play, both are STARTED before either is awaited and the wait becomes the slower
+      // of the two rather than the total. Same queries, same results, same order of arguments —
+      // purely a matter of not blocking on the first before asking for the second.
+      const detailsPromise = loadMonthlyClosingDetails({
         access,
         line: matrix.line,
         period: matrix.period,
@@ -142,17 +151,28 @@ export async function POST(request: Request) {
         includeConfidential: body.includeConfidential === true,
         unpaged: true,
       });
+      // Started here, awaited below. Null when the comparison must be rebuilt from the detail
+      // rows, which cannot begin until those rows exist.
+      const aggregateComparisonPromise = comparisonFromRows
+        ? null
+        : loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes });
+      // An in-flight promise whose rejection is never awaited is an UNHANDLED rejection, which can
+      // take the process down. If the details read below throws first we leave this scope without
+      // ever awaiting this one, so park a no-op handler now. The real `await` still surfaces the
+      // error normally — attaching a catch does not swallow it for the awaiting caller.
+      aggregateComparisonPromise?.catch(() => {});
 
-      const comparison = comparisonFromRows
-        ? await loadMonthlyClosingComparisonFromRows(
+      const details = await detailsPromise;
+      const comparison = aggregateComparisonPromise
+        ? await aggregateComparisonPromise
+        : await loadMonthlyClosingComparisonFromRows(
           matrix.line,
           matrix.period,
           details.rows,
           // Masters still narrow to the filtered place so white-space denominators stay honest;
           // the leaves are already exactly the filtered rows.
           { areaCodes: scopedAreaCodes },
-        )
-        : await loadMonthlyClosingComparison(matrix.line, matrix.period, { areaCodes: scopedAreaCodes });
+        );
 
       // Under a row-level filter the aggregate matrix cannot express the slice — rebuild its
       // cells from the same rows, so sheet 1 and the audit pair describe one population.
