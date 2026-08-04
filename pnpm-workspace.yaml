@@ -52,9 +52,28 @@ overrides:
   # SSRF bypass back into the production graph.
   ip-address: ^10.3.1
   "@hono/node-server": ^2.0.5
+  # DELIBERATELY NOT BUMPED YET. GHSA-8j4g-w8fx-2239 (ReDoS in the CORS middleware via a crafted
+  # Access-Control-Request-Headers) covers `<4.12.34`, and this floor resolves 4.12.32 — so the
+  # advisory is open. The fix is NOT applied because 4.12.34 was published 2026-08-03 02:36 UTC,
+  # inside pnpm 11's release-age cooling-off window, and installing it makes pnpm write a
+  # `minimumReleaseAgeExclude: [hono@4.12.34]` entry — punching a hole in the supply-chain guard
+  # for a day-old package. Not worth it here: hono is DEV-ONLY since shadcn moved to
+  # devDependencies in #1681 (`pnpm why hono --prod` returns nothing), it is reached only via
+  # shadcn > @modelcontextprotocol/sdk, and this repo never invokes that CORS middleware.
+  # ACTION: bump to ^4.12.34 on or after ~2026-08-10, once the cooling-off has elapsed and no
+  # exclusion entry is needed. Owner decision, 2026-08-04.
   hono: ^4.12.31
   js-yaml: ^4.3.0
-  postcss: ^8.5.18
+  # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
+  # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
+  # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
+  # the lockfile had resolved 8.5.22 — the same allow-but-resolve-below shape as the
+  # brace-expansion and fast-uri notes above, now the third time this trap has hidden a live
+  # advisory. Unlike those two dev-only floors this one was REAL PRODUCTION EXPOSURE:
+  # `pnpm why postcss --prod` resolves through BOTH next and sanitize-html, each a direct
+  # `dependencies` entry. Moderate severity, so CI's `--audit-level=high` gate would never have
+  # caught it — only Dependabot did.
+  postcss: ^8.5.23
   qs: 6.15.2
   sharp: ^0.35.3
   tar: ^7.5.21
