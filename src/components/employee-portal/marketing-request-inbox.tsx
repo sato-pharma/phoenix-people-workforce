@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { MarketingAdvisoryCommentBox } from "@/components/employee-portal/marketing-advisory-comment-box";
+import { MarketingRequestedProductHistory } from "@/components/marketing-requests/marketing-requested-product-history";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { LoadingSpinner } from "@/components/ui/loading-state";
@@ -91,6 +92,14 @@ function InboxRowCard({ decisionBasePath, row }: { decisionBasePath: string; row
           </p>
         </div>
         <Badge variant="warning">{row.currentStepName}</Badge>
+      </div>
+
+      {/* Sales history for the products THIS request promotes — owner instruction, 2026-08-04.
+          Lives on the row itself, not one click away: the approver's first question is whether
+          this customer has ever bought what is being pushed, and a request whose promoted products
+          have no history here is the one worth stopping before opening anything. */}
+      <div className="border-b border-slate-100 px-4 py-3">
+        <MarketingRequestedProductHistory requestId={row.id} />
       </div>
 
       <div className="grid gap-3 px-4 py-3 sm:grid-cols-3">

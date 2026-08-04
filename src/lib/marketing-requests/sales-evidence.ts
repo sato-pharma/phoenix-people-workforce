@@ -46,6 +46,24 @@ export type MarketingSalesEvidence = {
   /** The distributor pharmacy codes this evidence was gathered from — shown so a null result is auditable. */
   matchedPharmacyCodes: string[];
   /**
+   * The same history narrowed to the products THIS request is promoting.
+   *
+   * The whole-customer figure flatters a request badly. On MKT-REQ-20260802-DCF31EC4 the customer
+   * had traded EGP 2,774 over six months — but of the five promoted products only ONE had ever
+   * sold there, once, for EGP 79. The customer buys Tebofortine 40mg (TE003); the request promotes
+   * Tebofortine Forte 80 (TE002) and Tebofortin 120 (TE005). Same family, different SKUs — and an
+   * approver reading only the customer total would never see that.
+   */
+  requested: {
+    /** Requested products with no recorded sale at this customer — the headline risk. */
+    neverSold: string[];
+    productCount: number;
+    /** Requested products that HAVE sold here, biggest first. */
+    sold: SalesEvidenceBreakdown[];
+    totalQty: number;
+    totalValue: number;
+  };
+  /**
    * The judgement the panel leads with. `projectedOverWindow` extrapolates the observed monthly
    * run-rate across the request's own ROI window, so "is this reachable?" is answerable at a
    * glance instead of being arithmetic the approver has to do in their head.
@@ -98,6 +116,10 @@ function toNumber(value: unknown): number {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function cleanProductName(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\s+/g, " ").trim() || "Unnamed product";
 }
 
 /** Sum into a label-keyed bucket, then return it sorted by value, biggest first. */
@@ -195,6 +217,7 @@ export async function getMarketingSalesEvidence(
       byProduct: [],
       customerName,
       matchedPharmacyCodes,
+      requested: emptyRequested(),
       verdict: emptyVerdict(),
     };
   }
@@ -215,6 +238,7 @@ export async function getMarketingSalesEvidence(
       byProduct: [],
       customerName,
       matchedPharmacyCodes,
+      requested: emptyRequested(),
       verdict: emptyVerdict(),
     };
   }
@@ -222,6 +246,7 @@ export async function getMarketingSalesEvidence(
   type SalesRow = {
     distributor_code: string | null;
     invoice_period: string | null;
+    product_code: string | null;
     product_name: string | null;
     qty: unknown;
     value: unknown;
@@ -233,7 +258,7 @@ export async function getMarketingSalesEvidence(
     for (const batchIdBatch of chunk(batchIds as string[])) {
       const rowsResult = await supabase
         .from("source_of_sales_import_rows")
-        .select("invoice_period, distributor_code, product_name, qty, value")
+        .select("invoice_period, distributor_code, product_code, product_name, qty, value")
         .eq("validation_state", "valid")
         .in("batch_id", batchIdBatch)
         .in("client_code", codeBatch);
@@ -241,6 +266,56 @@ export async function getMarketingSalesEvidence(
       salesRows.push(...((rowsResult.data ?? []) as SalesRow[]));
     }
   }
+
+  // ── The request's own products, matched to this customer's history by product CODE ──
+  // Code, not name: "Tebofortine Forte 80" and "Tebofortine 40 mg" read as the same family to a
+  // human but are different SKUs, and a name match would quietly credit one to the other.
+  const requestProductsResult = await supabase
+    .from("marketing_request_products")
+    .select("product_id, product_name_snapshot")
+    .eq("request_id", requestId);
+  if (requestProductsResult.error) throw requestProductsResult.error;
+  const requestProductRows = (requestProductsResult.data ?? []) as Array<{
+    product_id: number | string | null;
+    product_name_snapshot: string | null;
+  }>;
+
+  const requestedProductIds = requestProductRows
+    .map((row) => row.product_id)
+    .filter((id): id is number | string => id !== null && id !== undefined);
+  const requestedByCode = new Map<string, string>();
+  for (const batch of chunk(requestedProductIds)) {
+    const productsResult = await supabase
+      .from("marketing_products")
+      .select("id, product_code, product_name")
+      .in("id", batch);
+    if (productsResult.error) throw productsResult.error;
+    for (const row of (productsResult.data ?? []) as Array<{
+      product_code: string | null;
+      product_name: string | null;
+    }>) {
+      const code = String(row.product_code ?? "").trim().toUpperCase();
+      if (code) requestedByCode.set(code, cleanProductName(row.product_name));
+    }
+  }
+  // Fall back to the snapshot names so a product removed from the master since submission is still
+  // named in the "never sold" list rather than vanishing from the count.
+  const requestedProductNames = requestedByCode.size > 0
+    ? [...requestedByCode.values()]
+    : requestProductRows.map((row) => cleanProductName(row.product_name_snapshot));
+
+  const requestedSalesRows = salesRows.filter((row) =>
+    requestedByCode.has(String(row.product_code ?? "").trim().toUpperCase()),
+  );
+  const requestedSold = foldBreakdown(
+    requestedSalesRows.map((row) => ({
+      label: cleanProductName(row.product_name),
+      qty: toNumber(row.qty),
+      value: toNumber(row.value),
+    })),
+  );
+  const soldNames = new Set(requestedSold.map((row) => row.label.toLowerCase()));
+  const neverSold = requestedProductNames.filter((name) => !soldNames.has(name.toLowerCase()));
 
   const monthTotals = new Map<string, { qty: number; value: number }>();
   for (const row of salesRows) {
@@ -287,6 +362,13 @@ export async function getMarketingSalesEvidence(
     byProduct,
     customerName,
     matchedPharmacyCodes,
+    requested: {
+      neverSold,
+      productCount: requestedProductNames.length,
+      sold: requestedSold,
+      totalQty: round2(requestedSold.reduce((sum, row) => sum + row.qty, 0)),
+      totalValue: round2(requestedSold.reduce((sum, row) => sum + row.value, 0)),
+    },
     verdict: {
       activeMonths,
       distributorCount: byDistributor.length,
@@ -299,6 +381,10 @@ export async function getMarketingSalesEvidence(
       totalValue,
     },
   };
+}
+
+function emptyRequested(): MarketingSalesEvidence["requested"] {
+  return { neverSold: [], productCount: 0, sold: [], totalQty: 0, totalValue: 0 };
 }
 
 function emptyVerdict(): MarketingSalesEvidence["verdict"] {
