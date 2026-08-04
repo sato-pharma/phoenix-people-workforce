@@ -252,10 +252,15 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
           </p>
         ) : (
           <ul className="space-y-1">
-            {detail.targetPharmacies.map((pharmacy) => (
+            {detail.targetPharmacies.map((pharmacy, index) => (
               <li
                 className="flex flex-wrap items-baseline gap-x-2 rounded-sm border border-slate-200 px-2 py-1"
-                key={`${pharmacy.pharmacyCode}-${pharmacy.distributorPharmacyCode}`}
+                // Index is part of the key on purpose. buildTargetPharmacies defaults BOTH
+                // pharmacyCode and distributorPharmacyCode to "-" when the lookup fails
+                // (service.ts), so two unresolved pharmacies on one request would otherwise share
+                // the key "---" and React would reconcile them as the same row. The list is
+                // server-ordered and never reordered client-side, so the index is stable.
+                key={`${pharmacy.pharmacyCode}-${pharmacy.distributorPharmacyCode}-${index}`}
               >
                 <Store className="h-3 w-3 shrink-0 text-slate-400" />
                 <span className="text-[12px] font-bold text-slate-900">{pharmacy.pharmacyName}</span>
