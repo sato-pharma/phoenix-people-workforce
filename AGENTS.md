@@ -50,8 +50,8 @@ These exist because 1.4 fixes per feature is what happens without them.
 
 ## 2. Hard-Learned Rules (each cost a real incident — do not relearn them)
 
-- **Never use `gh pr merge --auto`.** `main` IS branch-protected (`enforce_admins: true`, force-pushes and deletions blocked) — but it has **zero required status checks**, so CI never gates a merge and `--auto` would land the PR the moment it is set, green or not. The repo also sets `allow_auto_merge: false`, so the flag is rejected outright. Merge only with an explicit plain `gh pr merge` after separate owner approval. (Verified 2026-08-01.)
-- **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY.** This reversed on 2026-08-01 and is the single most important thing to relearn. Railway is GitHub-connected and deploys on push, at full traffic, with no cron wait, no staged rollout, no smoke test, and — because branch protection requires **zero** status checks — no requirement that CI was ever green. The old Cloud Run pipeline did all four of those things and is gone; `deploy-cloud-run.yml` and `deploy-cloud-run-staging.yml` are trigger-disabled, so a `deploy: skipped` there is now expected rather than informative. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is actually live, request `/api/healthz` and read `revision` — not the workflow list. (Until section 3's Phase 2 fix ships, that field may still read `null`.)
+- **Never use `gh pr merge --auto`.** `main` IS branch-protected: `enforce_admins: true`, force-pushes and deletions blocked, required conversation resolution, "require branches to be up to date", and **5 required status checks** (`validate`, `lint`, `typecheck`, `secret-scan`, `sast-scan`) that **DO gate every merge** — a PR cannot land until those are green on its head commit. Required approving reviews is **0** (dropped 2026-08-04: a solo owner cannot approve his own PR, so the previous `required_approving_review_count: 1` deadlocked every self-authored PR; CI is the gate instead). `allow_auto_merge: false`, so `--auto` is rejected outright anyway. Merge only with an explicit plain `gh pr merge` after separate owner approval. (Verified live 2026-08-04.)
+- **A merge to `main` SHIPS TO PRODUCTION IMMEDIATELY.** This reversed on 2026-08-01 and is the single most important thing to relearn. Railway is GitHub-connected and deploys on push, at full traffic, with no cron wait, no staged rollout, and no smoke test. Branch protection does require the 5 status checks above to be green before a merge can land, so a merged commit has passed CI — but it then ships to production instantly. The old Cloud Run pipeline did all four of those things and is gone; `deploy-cloud-run.yml` and `deploy-cloud-run-staging.yml` are trigger-disabled, so a `deploy: skipped` there is now expected rather than informative. **Never merge anything to `main` you are not willing to have serving employees within minutes.** To confirm what is actually live, request `/api/healthz` and read `revision` — not the workflow list. (Verified live 2026-08-04: `revision` returns the running commit SHA, e.g. `6ae2528c`, not `null`.)
 - **There is no staging application.** It died with Cloud Run; only the staging *database* survives. Any rule elsewhere in this file requiring staging verification currently has nothing to run against — say so plainly rather than pretending the gate exists.
 - **Full validation gates must not trust warm TypeScript caches.** `pnpm run check:harden` / CI are authoritative; a bare warm `tsc` can report a false green. For manual full checks use `tsc --incremental false`.
 - **Never foreground-watch a long pipeline** (CI run, deploy, big script). Launch it in the background and check at batched checkpoints.
@@ -63,21 +63,14 @@ These exist because 1.4 fixes per feature is what happens without them.
 
 ## 3. Stable Environment Facts
 
-- Production application: `https://phoenix-hr.satopharma.com` — **served by Railway since 2026-08-01, no longer Cloud Run.** Railway project `creative-serenity`, service `phoenix-people-workforce`, region `sfo`, deployed from this repo on push (GitHub-connected, so a merge to the default branch ships automatically — there is no deploy workflow and no cron wait any more). Public URL also reachable at `https://phoenix-people-workforce-production.up.railway.app`. Cloudflare holds `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied; the pre-cutover value was `A 8.232.10.208` (Cloud Run) if a rollback is ever needed.
+- Production application: `https://phoenix-hr.satopharma.com` — **served by Railway since 2026-08-01, no longer Cloud Run.** Railway project `Phoenix-HR-Workforce` (id `dc218ad3-99b7-4aff-be38-953a57524a71`, env `production` `cd5600e6-99dd-4b1c-80b2-16af8770abef`), service `phoenix-people-workforce`, region `sfo` (US West), deployed from this repo on push (GitHub-connected, so a merge to the default branch ships automatically — there is no deploy workflow and no cron wait any more). Verified live 2026-08-04 via `railway status`; the earlier project name `creative-serenity` was wrong. Public URL also reachable at `https://phoenix-people-workforce-production.up.railway.app`. Cloudflare holds `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied; the pre-cutover value was `A 8.232.10.208` (Cloud Run) if a rollback is ever needed.
 - **GCP is DEAD, not standby.** Billing account `01BDEA-A20B4C-CC568F` closed 2026-08-01 ~21:00 Cairo over an unpaid balance the owner has decided not to settle; every API in project `phoenix-workforce-498619` returns `BILLING_DISABLED` and the site served 503 for ~2h15m until the Railway cutover. Do not "verify production" against Cloud Run, and expect GCP to delete the project's resources roughly 30 days after closure. `deploy-cloud-run.yml` / `deploy-cloud-run-staging.yml` are trigger-disabled but otherwise intact for that reason.
-- **The 8 Cloud Scheduler cron jobs are NOT running.** They died with GCP and Railway has no replacement yet. Nothing is being lost — the notification outbox is durable in Postgres and attendance ingestion is inbound (the on-prem agent POSTs to `/api/attendance/raw-punches`) — but daily notifications, the outbox drain, iReports sync/reconcile and the recruitment/inbound intakes are all stalled until a scheduler is rebuilt. `src/lib/cron-control/*` is a dashboard over GCP Cloud Scheduler and is therefore also dead.
-- Staging application: `https://phoenix-hr-staging-897559113412.us-central1.run.app` (Cloud Run
-  service `phoenix-hr-staging`, project `phoenix-workforce-498619`, region `us-central1`; deployed
-  2026-07-12, points at the staging Supabase project below, isolated from production — no shared
-  third-party secrets. Deploys on a **daily cron only** (`cron: "40 3 * * *"`, 03:40 UTC) via
-  `.github/workflows/deploy-cloud-run-staging.yml` — NOT on merge, and there is no `push` or
-  `workflow_run` trigger. It redeploys the image production already built ("build once, deploy
-  twice"), so if prod has not shipped the commit you care about, staging falls back to the newest
-  prod image and will not contain your change. Same no-traffic/smoke-test/promote gate as
-  production, reusing the env vars already configured on the Cloud Run service itself rather than
-  any GitHub secret. A manual `gcloud run deploy` (or `workflow_dispatch`) still works if needed.
-  Observed caution: across 2026-07-28..31 the scheduled runs actually fired ~11:30 UTC, ~8h after
-  the configured 03:40 — treat the cron as "once a day, time not guaranteed", not a clock.)
+- **The production scheduler is the third-party `cron-job.org`** (verified live 2026-08-02 from Railway HTTP logs — its `/api/cron/*` requests return 200). Automation is **running, not stalled**: daily notifications, the outbox drain, and iReports sync/reconcile all fire from that account. The 8 GCP Cloud Scheduler jobs still fire but **401 on every route** (secret mismatch) — a red herring, not proof anything is down — and the Railway `phoenix-cron` service never reached the app and was disabled. **Do not tell the owner notifications/outbox/iReports are stalled without checking `cron-job.org` first.** Caveats: it is free-tier, undocumented, and outside the repo — its schedule lives only in that account, a single point of failure no runbook mentions — and it caps request timeout at 30s, so a long route logs a false `Failed (timeout)` while the server still finishes the work. iReports freshness also has an in-process poller (`PHOENIX_LIVE_CRM_POLL=true`) independent of any cron. `src/lib/cron-control/*` is a dashboard over the dead GCP Cloud Scheduler and remains inert. Detail: memory `cron-job-org-is-the-real-production-scheduler`.
+- Staging application: **GONE.** The Cloud Run staging service (`phoenix-hr-staging`, project
+  `phoenix-workforce-498619`) died with GCP on 2026-08-01; there is no Railway replacement. Only the
+  staging *database* survives (Supabase ref below). Section 2 says the same — do not "verify against
+  staging", there is no staging app to serve it. `.github/workflows/deploy-cloud-run-staging.yml` is
+  left in the repo but is dead on GCP billing.
 - Vercel: fully legacy/decommissioned (old project `phoenix-workforce`) — never deploy to or verify against it.
 - Staging Supabase project ref: `cifwmndunmlxjhyjugxa` (`Phoenix-HR-Staging`, Pro org, eu-central-1,
   created 2026-07-11 as a 1:1 clone of production; the prior free-tier staging project,
@@ -237,12 +230,14 @@ Coaching: Super Admin, CEO, SFE Manager, Training Manager, and Medical Rep when 
 affected. HR: Super Admin, CEO, HR Specialist, and Employee when portal behavior is affected. Do not
 claim role safety from code inspection alone when real role testing is possible.
 
-**Deploy verification.** `gh run list --workflow=deploy-cloud-run.yml --limit 3` (production) or
-`--workflow=deploy-cloud-run-staging.yml` (staging); `gcloud run revisions list --service phoenix-hr
---region europe-west3` for what actually serves traffic. A PR is merge-ready only when required CI
-passes, staging is healthy, changed workflows pass smoke testing, and required staging migrations
-are verified. After a runtime-impacting production deploy, verify the public domain, smoke-test the
-changed workflow, and inspect production logs. When a page fails, capture the visible error, browser
+**Deploy verification.** Production is Railway auto-deploy on push to `main` — there is no Cloud Run
+workflow to watch and no `gcloud`/`gh run` deploy job that means anything (both are dead on GCP
+billing). Confirm a deploy through the GitHub deployments API
+(`gh api repos/Gawish-1997/phoenix-people-workforce/deployments` — rows read
+`Phoenix-HR-Workforce / production … "Deployed to Railway"`) or `railway status`, and confirm what
+actually serves traffic by requesting `/api/healthz` and reading `revision` (the running commit
+SHA). There is no staging app to check. After a runtime-impacting production deploy, verify the
+public domain, smoke-test the changed workflow, and inspect production logs (`railway logs`). When a page fails, capture the visible error, browser
 console, network/API response, deployment logs, and database/RLS evidence before proposing a fix.
 
 ## 8. Supabase and data safety
