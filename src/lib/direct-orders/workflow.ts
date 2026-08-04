@@ -11,6 +11,9 @@ export const directOrderWorkflowRegistryModuleKey = "direct_orders";
 
 export type DirectOrderWorkflowActionKey =
   | "submit"
+  | "submit_held"
+  | "revive_held"
+  | "expire_held"
   | "approve_intermediate"
   | "approve_final"
   | "reject"

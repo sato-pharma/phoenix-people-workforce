@@ -143,6 +143,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/background-jobs", reason: "Durable background-job worker drain guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/brevo-keepalive", reason: "Resets Brevo's 90-day inactivity expiry on the email failover key and reports a revoked key; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/reconciliation-check", reason: "Read-only reconciliation harness comparing each domain service against an independent derivation; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/health/email", reason: "Unauthenticated health check; reports env-var presence only, no secrets or PII." }),
@@ -346,6 +347,16 @@ export const accessRegistry = [
   // so no CSRF; the territory bound lives in searchDistributorCustomers, which clamps every
   // result to the caller's own areas rather than trusting the query string.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/customers", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // The submit form's pharmacy combo box (spec B1/B2): read-only type-ahead over the UNION of the
+  // distributor customer directory and Phoenix pharmacies; area scope enforced in the service.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-search", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // Materialize/reuse a pharmacy from a combo selection (spec B1/B3). Body carries pointers only;
+  // every stored field is copied server-side from the trusted catalogue row.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/from-directory", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // The Held Desk (spec C3). Registry permission is only `read` because the real gate is the
+  // Super-Admin identity check inside the service (same idiom as the acknowledge route above).
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/held", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/held/notify", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Acknowledging a hand-entered pharmacy. Registry permission is only `read` because the real
   // gate is a Super-Admin identity check inside acknowledgeDirectOrderPharmacy — an approver
   // holds direct_orders:approve but must NOT be able to self-clear an unverified pharmacy.

@@ -9,7 +9,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { validationError } from "@/lib/http/api-errors";
-import { createSystemNotification, type SystemNotificationChannel } from "@/lib/notifications/system";
+import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
@@ -21,8 +21,7 @@ import {
   computeDiscountSalesValue,
   evaluateStepAction,
   SFE_VALIDATION_ROLE,
-  SYSTEM_ADMIN_ACK_ROLE,
-  isSystemAdminAckStep,
+  isPharmacyConfirmingStep,
   maxBonusUnits,
   resolveActiveStep,
   validateBonus,
@@ -180,8 +179,22 @@ async function notifyDirectOrder(input: {
    * picture rides here instead of being crammed into the body.
    */
   metrics?: Array<{ label: string; value: string }>;
+  /**
+   * Extra qualifier on the idempotency key, for events that legitimately REPEAT.
+   *
+   * The key is otherwise `requestId + eventType`, which is right for once-per-request events
+   * (submitted, approved) — a retry must not double-send. But a held notice is a reminder the
+   * System Admin may fire again next week, and with the bare key that second send would be
+   * silently swallowed as a duplicate: the desk would report "sent" and the rep would receive
+   * nothing. Callers that repeat pass a qualifier (the date) so each round is its own event.
+   */
+  idempotencySuffix?: string;
 }): Promise<void> {
   const href = input.href ?? `/admin/approvals/direct-orders/${encodeURIComponent(input.requestId)}`;
+  // Order matters: the FIRST recipient is the concerned person and becomes the email's To;
+  // everyone after is Cc (owner rule, 2026-08-04: one email per event, never N copies). Call
+  // sites already lead with the requester / the acting approver. In-app and Telegram remain
+  // per-person — those are each recipient's own inbox items, not duplicate copies.
   const recipientHrIds = Array.from(
     new Map(
       input.recipients
@@ -190,27 +203,29 @@ async function notifyDirectOrder(input: {
         .map((hrId) => [canonicalHrIdKey(hrId) ?? hrId, hrId] as const),
     ).values(),
   );
-  await Promise.allSettled(
-    recipientHrIds.map((recipientHrId) =>
-      createSystemNotification({
-        channels: NOTIFY_CHANNELS,
-        actionUrl: href,
-        category: "direct_order_request",
-        email: input.metrics?.length ? { metrics: input.metrics } : undefined,
-        eventType: input.eventType,
-        message: input.message,
-        metadata: {
-          employeeHrId: input.subjectHrId,
-          directOrderId: input.requestId,
-          idempotencyKey: `direct_orders:${input.requestId}:${input.eventType}:${recipientHrId}`,
-        },
-        module: "direct_orders",
-        priority: "high",
-        recipientHrId,
-        subjectHrId: input.subjectHrId,
-        title: input.title,
-      }),
-    ),
+  if (recipientHrIds.length === 0) return;
+  // createSystemNotificationForRecipients consolidates email into ONE To/Cc envelope and
+  // suffixes the idempotency key per recipient itself — looping createSystemNotification here
+  // is exactly the per-recipient-copies bug it was built to close (2026-07-22).
+  await createSystemNotificationForRecipients(
+    {
+      channels: NOTIFY_CHANNELS,
+      actionUrl: href,
+      category: "direct_order_request",
+      email: input.metrics?.length ? { metrics: input.metrics } : undefined,
+      eventType: input.eventType,
+      message: input.message,
+      metadata: {
+        employeeHrId: input.subjectHrId,
+        directOrderId: input.requestId,
+        idempotencyKey: `direct_orders:${input.requestId}:${input.eventType}${input.idempotencySuffix ? `:${input.idempotencySuffix}` : ""}`,
+      },
+      module: "direct_orders",
+      priority: "high",
+      subjectHrId: input.subjectHrId,
+      title: input.title,
+    },
+    recipientHrIds,
   );
 }
 
@@ -229,23 +244,6 @@ function directoryLookup(directory: EmployeeDirectoryData) {
 }
 
 /**
- * Is this pharmacy still waiting for a System Admin to acknowledge it?
- *
- * Read straight from the row rather than from a caller-supplied flag: the chain shape depends on
- * it, and a stale flag would build a chain with a rung that should not be there (or, worse,
- * without the one that should).
- */
-async function isPharmacyAwaitingReview(pharmacyId: string): Promise<boolean> {
-  const supabase = getSupabaseAdmin();
-  const { data } = await supabase
-    .from("direct_order_pharmacies")
-    .select("verification_status")
-    .eq("id", pharmacyId)
-    .maybeSingle();
-  return String((data as { verification_status?: string } | null)?.verification_status ?? "verified") === "pending_review";
-}
-
-/**
  * Build the ordered approval chain. Sales roles climb their ACTUAL manager chain
  * (managerHrId) up to — but not including — the CEO; Product/Group-Product Managers
  * go straight to the CEO. The final rung is always the CEO resolved by role.
@@ -253,12 +251,6 @@ async function isPharmacyAwaitingReview(pharmacyId: string): Promise<boolean> {
 async function buildApprovalChain(input: {
   requesterHrId: string;
   requesterRole: PhoenixRole;
-  /**
-   * True when Phoenix does not recognise the request's pharmacy, which inserts the System Admin
-   * acknowledgment rung directly after SFE. Defaults to false so a caller that forgets it gets
-   * the ordinary chain rather than a phantom rung.
-   */
-  pharmacyUnverified?: boolean;
 }): Promise<Array<Omit<DirectOrderStepState, "status">>> {
   const directory = await getEmployeeDirectory();
   const lookup = directoryLookup(directory);
@@ -274,18 +266,10 @@ async function buildApprovalChain(input: {
   // post-holder without touching any in-flight request.
   rungs.push({ kind: "role", role: SFE_VALIDATION_ROLE, approverHrId: null, label: "SFE Manager" });
 
-  // A pharmacy Phoenix does not recognise adds ONE rung, right behind SFE (owner rule,
-  // 2026-08-04). Behind SFE and not in front of it because SFE is the one who can say whether
-  // this pharmacy should exist at all; the System Admin then confirms its codes. Asking the
-  // admin first would make them adjudicate a request the sales side may reject anyway.
-  if (input.pharmacyUnverified) {
-    rungs.push({
-      kind: "role",
-      role: SYSTEM_ADMIN_ACK_ROLE,
-      approverHrId: null,
-      label: "System Admin (new pharmacy)",
-    });
-  }
+  // An unrecognised pharmacy adds NO rung (owner rule, 2026-08-04: "remove the super admin from
+  // the approval workflow of the direct orders"). SFE was always the one who could say whether the
+  // pharmacy should exist at all, so confirming its codes rides on the rung above rather than
+  // waiting for a second person — see `isPharmacyConfirmingStep` in approval-flow.ts.
 
   const straightToCeo =
     input.requesterRole === "Product Manager" || input.requesterRole === "Group Product Manager";
@@ -337,6 +321,7 @@ function mapRequestRow(row: Record<string, unknown>): DirectOrderRequest {
     pharmacyId: String(row.pharmacy_id),
     salesMonth: row.sales_month ? String(row.sales_month) : null,
     collectionDate: row.collection_date ? String(row.collection_date) : null,
+    heldAt: row.held_at ? String(row.held_at) : null,
     marketingRequestId: row.marketing_request_id ? String(row.marketing_request_id) : null,
     paymentDate: row.payment_date ? String(row.payment_date) : null,
     paidAmount: row.paid_amount == null ? null : Number(row.paid_amount),
@@ -359,6 +344,9 @@ function mapStepRow(row: Record<string, unknown>): DirectOrderStepState {
     status: (["pending", "approved", "rejected"].includes(String(row.status))
       ? String(row.status)
       : "pending") as DirectOrderStepState["status"],
+    decidedByHrId: row.decided_by_hr_id ? String(row.decided_by_hr_id) : null,
+    decidedAt: row.decided_at ? String(row.decided_at) : null,
+    decisionComment: row.decision_comment ? String(row.decision_comment) : null,
   };
 }
 
@@ -730,6 +718,24 @@ export async function acknowledgeDirectOrderPharmacy(
   if (!(access.scope === "system" || access.role === "Super Admin")) {
     throw new Error("Forbidden: only a System Admin can acknowledge a pharmacy.");
   }
+  await markDirectOrderPharmacyVerified(access, input);
+}
+
+/**
+ * The pharmacy write itself, with NO role check of its own.
+ *
+ * Two callers, authorized two different ways, which is exactly why the check cannot live in here:
+ * {@link acknowledgeDirectOrderPharmacy} (the standalone registry action) gates on holding Super
+ * Admin, while the approval flow gates on *being the assigned approver of the confirming rung* —
+ * a District Manager can never reach it, but the SFE Manager whose rung this is must.
+ *
+ * Not exported: keeping it module-private is what stops a future caller from acquiring an
+ * unauthenticated pharmacy write by importing the convenient-looking function.
+ */
+async function markDirectOrderPharmacyVerified(
+  access: AccessContext,
+  input: { pharmacyId: string },
+): Promise<void> {
   const supabase = getSupabaseAdmin();
   const { data: before } = await supabase
     .from("direct_order_pharmacies")
@@ -756,6 +762,386 @@ export async function acknowledgeDirectOrderPharmacy(
     newValues: { verificationStatus: "verified" },
     summary: `Direct-order pharmacy acknowledged by ${access.hrId ?? "unknown"}.`,
   });
+
+  // Validation is the ONE door out of `held` (spec B6). Every order parked on this pharmacy
+  // revives the moment somebody with authority confirms the identity — no separate button,
+  // no second decision to forget.
+  await reviveHeldDirectOrdersForPharmacy(access, input.pharmacyId);
+}
+
+/**
+ * Revive every held order of a just-validated pharmacy: seed its chain FRESH (built at revival,
+ * so it names today's managers, not the managers of the day it was parked) and move it to
+ * `pending_approval` at step 1.
+ *
+ * Registry-gated per order with `revive_held` — if the registry says the actor's role cannot
+ * revive, the order stays held and says so, rather than sliding into the chain unchecked.
+ */
+async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacyId: string): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { data: heldRows, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("pharmacy_id", pharmacyId)
+    .eq("status", "held");
+  if (error) throw error;
+  const requests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  if (requests.length === 0) return;
+
+  const pharmacy = (await loadPharmaciesByIds([pharmacyId])).get(pharmacyId) ?? null;
+  const resolveName = await nameLookup();
+
+  // Each request is revived independently and the loop is RE-RUNNABLE, which is what makes a
+  // single wrapping transaction unnecessary here (raised by the automated review on PR #1738).
+  //
+  // The unit of consistency is one request, not the batch: its steps are seeded before its status
+  // moves, and the status update is guarded on `.eq("status", "held")`. So a failure part-way
+  // through leaves earlier requests correctly revived and later ones still held — never a
+  // half-revived request. Re-running (the pharmacy is confirmed again, or the Held Desk retries)
+  // picks up exactly the ones still held and finishes the job.
+  //
+  // The deliberate trade-off: one failing request must not strand its siblings, so a per-request
+  // failure is recorded and the loop continues rather than aborting the whole batch.
+  const failures: Array<{ requestId: string; error: unknown }> = [];
+  for (const request of requests) {
+    try {
+    await assertDirectOrderWorkflowTransition({
+      access,
+      actionKey: "revive_held",
+      expectedNextStatus: "pending_approval",
+      status: "held",
+    });
+
+    const chain = await buildApprovalChain({
+      requesterHrId: request.requesterHrId,
+      requesterRole: request.requesterRole,
+    });
+
+    // Replace any stale steps defensively — a held order should have none, but a partial revival
+    // that died between writes must not leave two chains behind.
+    const { error: wipeError } = await supabase
+      .from("direct_order_approval_steps")
+      .delete()
+      .eq("request_id", request.id);
+    if (wipeError) throw wipeError;
+    const { error: seedError } = await supabase.from("direct_order_approval_steps").insert(
+      chain.map((step) => ({
+        request_id: request.id,
+        step_order: step.order,
+        approver_kind: step.kind,
+        approver_role: step.role,
+        approver_hr_id: step.approverHrId,
+        label: step.label,
+        status: "pending",
+      })),
+    );
+    if (seedError) throw seedError;
+
+    const { error: updateError } = await supabase
+      .from("direct_order_requests")
+      .update({ status: "pending_approval", held_at: null })
+      .eq("id", request.id)
+      .eq("status", "held");
+    if (updateError) throw updateError;
+
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityType: "direct_order_request",
+      entityId: request.id,
+      oldValues: { status: "held" },
+      newValues: { status: "pending_approval" },
+      summary: `Direct order revived after pharmacy validation by ${access.hrId ?? "unknown"} — entering the chain at step 1.`,
+    });
+    await insertEvent({
+      requestId: request.id,
+      actorHrId: access.hrId,
+      eventType: "revived",
+      message: "Pharmacy validated — request entered the approval chain at step 1.",
+    });
+
+    const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
+    const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+    const firstStep = chain[0];
+    const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+    await notifyDirectOrder({
+      recipients: [request.requesterHrId, ...firstApprovers],
+      title: "Direct order released — pharmacy validated",
+      message: `${buildDirectOrderNotificationLine(notifyContext)} The pharmacy passed validation; the request is now with its first approver.`,
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "revived",
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+    });
+    } catch (reviveError) {
+      failures.push({ requestId: request.id, error: reviveError });
+      logError("Reviving a held direct order failed; its siblings were unaffected", {
+        labels: { event: "direct_order_revive_failed", requestId: request.id },
+        error: reviveError,
+      });
+    }
+  }
+
+  // Surfaced, never swallowed: the caller (pharmacy validation) must learn that some orders are
+  // still held, or a rep would be told their pharmacy is confirmed while their order sits frozen.
+  if (failures.length > 0) {
+    throw new Error(
+      `${failures.length} of ${requests.length} held order(s) could not be revived and remain held: ` +
+        failures.map((f) => f.requestId).join(", "),
+    );
+  }
+}
+
+/**
+ * The 14-day clock (spec B6): expire every held order whose `held_at` is past the deadline.
+ * Called by the cron sweep with the system context; each expiry is logged, evented, counted —
+ * a held order never just disappears, it dies with a record and a name.
+ */
+export async function expireStaleHeldDirectOrders(
+  access: AccessContext,
+  input?: { now?: Date; holdDays?: number },
+): Promise<{ expired: number }> {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: only the system or a Super Admin can expire held orders.");
+  }
+  const holdDays = input?.holdDays ?? 14;
+  const now = input?.now ?? new Date();
+  const deadline = new Date(now.getTime() - holdDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const supabase = getSupabaseAdmin();
+  const { data: stale, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("status", "held")
+    .not("held_at", "is", null)
+    .lte("held_at", deadline);
+  if (error) throw error;
+  const requests = ((stale ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+
+  const resolveName = await nameLookup();
+  let expired = 0;
+  for (const request of requests) {
+    await assertDirectOrderWorkflowTransition({
+      access,
+      actionKey: "expire_held",
+      expectedNextStatus: "expired",
+      status: "held",
+    });
+    const { error: updateError } = await supabase
+      .from("direct_order_requests")
+      .update({ status: "expired" })
+      .eq("id", request.id)
+      .eq("status", "held");
+    if (updateError) throw updateError;
+    expired += 1;
+
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityType: "direct_order_request",
+      entityId: request.id,
+      oldValues: { status: "held" },
+      newValues: { status: "expired" },
+      summary: `Direct order expired — held ${holdDays} days without a valid pharmacy (requester ${request.requesterHrId}).`,
+    });
+    await insertEvent({
+      requestId: request.id,
+      actorHrId: null,
+      eventType: "expired",
+      message: `Held ${holdDays} days without pharmacy validation — expired automatically.`,
+    });
+
+    const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
+    const pharmacy = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+    await notifyDirectOrder({
+      recipients: [request.requesterHrId, ...(await ccRecipients())],
+      title: "Direct order expired — no valid pharmacy code was provided",
+      message:
+        `${buildDirectOrderNotificationLine(notifyContext)} ` +
+        `This request stayed held for ${holdDays} days without the pharmacy passing validation, so it expired. ` +
+        "Submit it again with a pharmacy from the master database.",
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "expired",
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+    });
+  }
+  return { expired };
+}
+
+// ── The Held Desk (spec C3) ───────────────────────────────────────────────────
+
+const HELD_ORDER_LIFETIME_DAYS = 14;
+
+export type HeldDirectOrderRow = {
+  id: string;
+  requesterHrId: string;
+  requesterName: string;
+  requesterRole: PhoenixRole;
+  productName: string;
+  qty: number;
+  salesValue: number;
+  pharmacyId: string;
+  pharmacyName: string;
+  phoenixPharmacyCode: string;
+  heldAt: string | null;
+  /** Whole days until the 14-day expiry sweep takes it (0 = expiring today). */
+  daysRemaining: number;
+  /** When the last held-notice email went out for this request, if ever. */
+  lastNoticeAt: string | null;
+};
+
+function assertHeldDeskAccess(access: AccessContext): void {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: the Held Desk is System Admin only.");
+  }
+}
+
+/** Every held order, oldest first — the System Admin's queue (spec C3). */
+export async function listHeldDirectOrders(access: AccessContext): Promise<HeldDirectOrderRow[]> {
+  assertHeldDeskAccess(access);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("status", "held")
+    .order("held_at", { ascending: true });
+  if (error) throw error;
+  const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  if (requests.length === 0) return [];
+
+  const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
+  const resolveName = await nameLookup();
+
+  // Latest notice per request, so the admin can see "already told, twice" vs "never told".
+  const { data: noticeRows } = await supabase
+    .from("direct_order_events")
+    .select("request_id, created_at")
+    .eq("event_type", "held_notice_sent")
+    .in("request_id", requests.map((request) => request.id))
+    .order("created_at", { ascending: false });
+  const lastNoticeByRequest = new Map<string, string>();
+  for (const row of (noticeRows ?? []) as Array<{ request_id: string; created_at: string }>) {
+    if (!lastNoticeByRequest.has(row.request_id)) lastNoticeByRequest.set(row.request_id, row.created_at);
+  }
+
+  const now = Date.now();
+  return requests.map((request) => {
+    const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+    const heldAtMs = request.heldAt ? Date.parse(request.heldAt) : now;
+    const elapsedDays = Math.floor((now - heldAtMs) / (24 * 60 * 60 * 1000));
+    return {
+      id: request.id,
+      requesterHrId: request.requesterHrId,
+      requesterName: resolveName(request.requesterHrId) ?? request.requesterHrId,
+      requesterRole: request.requesterRole,
+      productName: request.productName,
+      qty: request.qty,
+      salesValue: request.salesValue,
+      pharmacyId: request.pharmacyId,
+      pharmacyName: pharmacy?.pharmacyName ?? "(pharmacy missing)",
+      phoenixPharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+      heldAt: request.heldAt ?? null,
+      daysRemaining: Math.max(0, HELD_ORDER_LIFETIME_DAYS - elapsedDays),
+      lastNoticeAt: lastNoticeByRequest.get(request.id) ?? null,
+    };
+  });
+}
+
+/**
+ * The bulk notice button (spec C3, owner's words): the System Admin selects requests and one
+ * email per request goes out — To the requester BY NAME (never a code), CC the SFE Manager,
+ * the requester's direct manager, and the CEO: held until you bring a valid pharmacy code,
+ * because your pharmacy is not in the master database.
+ *
+ * One email per REQUEST (not per person): notifyDirectOrder consolidates to a single To/Cc
+ * envelope, so four people see one message — the owner's one-email rule (spec C4).
+ */
+export async function sendHeldDirectOrderNotices(
+  access: AccessContext,
+  input: { requestIds: string[] },
+): Promise<{ sent: number; skipped: Array<{ requestId: string; reason: string }> }> {
+  assertHeldDeskAccess(access);
+  const ids = Array.from(new Set((input.requestIds ?? []).map((id) => String(id).trim()).filter(Boolean)));
+  if (ids.length === 0) badRequest("Select at least one held request.");
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("direct_order_requests").select("*").in("id", ids);
+  if (error) throw error;
+  const byId = new Map(((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const request = mapRequestRow(row);
+    return [request.id, request] as const;
+  }));
+
+  const directory = await getEmployeeDirectory();
+  const lookup = directoryLookup(directory);
+  const resolveName = await nameLookup();
+  const sfeHolders = await hrIdsForRole(SFE_VALIDATION_ROLE);
+  const ceoHolders = await ceoHrIds();
+
+  let sent = 0;
+  const skipped: Array<{ requestId: string; reason: string }> = [];
+  for (const requestId of ids) {
+    const request = byId.get(requestId);
+    if (!request) {
+      skipped.push({ requestId, reason: "not found" });
+      continue;
+    }
+    // Only a held request gets a held notice — a revived or expired one telling its requester
+    // to "bring a code" would be a lie about the system's own state.
+    if (request.status !== "held") {
+      skipped.push({ requestId, reason: `is ${request.status}, not held` });
+      continue;
+    }
+
+    const requesterName = resolveName(request.requesterHrId) ?? request.requesterHrId;
+    const managerHrId = lookup(request.requesterHrId)?.managerHrId ?? null;
+    // A requester with no manager on file is a REAL state (a top-of-line role, or a broken
+    // reporting link), and the CC list quietly drops the null either way. Silence is the problem:
+    // the owner asked for the direct manager to be copied, so when that cannot happen it is
+    // recorded rather than assumed. The notice still goes out — telling the requester nothing
+    // because their manager link is missing would punish them for a data gap.
+    if (!managerHrId) {
+      logError("Held notice sent without a direct-manager CC — no manager on file for the requester", {
+        labels: { event: "direct_order_held_notice_no_manager", requestId: request.id },
+        error: new Error(`No manager_hr_id for requester ${request.requesterHrId}`),
+      });
+    }
+    const pharmacy = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
+    const notifyContext = await buildNotifyContext(request, requesterName, pharmacy);
+
+    await notifyDirectOrder({
+      // To the requester; CC SFE + direct manager + CEO (the envelope keeps this ONE email).
+      recipients: [request.requesterHrId, ...sfeHolders, managerHrId, ...ceoHolders],
+      title: "Direct order held — a valid pharmacy code is required",
+      message:
+        `${requesterName}, your direct order — ${request.productName} × ${request.qty} — is held ` +
+        "and has not entered the approval flow, because your pharmacy is not in the master " +
+        "database of the system. It will move only when you provide a valid pharmacy code " +
+        `(or the pharmacy passes validation). A held request expires after ${HELD_ORDER_LIFETIME_DAYS} days.`,
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "held_notice_sent",
+      requestId: request.id,
+      subjectHrId: request.requesterHrId,
+      // A reminder is meant to be repeatable: one notice per request PER DAY. Without this the
+      // second reminder is deduped away and the desk reports a send that never happened.
+      idempotencySuffix: new Date().toISOString().slice(0, 10),
+    });
+    await insertEvent({
+      requestId: request.id,
+      actorHrId: access.hrId,
+      eventType: "held_notice_sent",
+      message: `Held notice sent to ${requesterName} (CC: SFE Manager, direct manager, CEO).`,
+    });
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityType: "direct_order_request",
+      entityId: request.id,
+      newValues: { notice: "held_notice_sent", requester: request.requesterHrId },
+      summary: `Held notice sent by ${access.hrId ?? "system"} to ${requesterName}.`,
+    });
+    sent += 1;
+  }
+  return { sent, skipped };
 }
 
 // ── Pharmacy registry — set a pharmacy up BEFORE an order arrives ─────────────
@@ -844,6 +1230,153 @@ export async function listDirectOrderPharmacyRegistry(access: AccessContext): Pr
     canManage: canManagePharmacyRegistry(access),
     canClearReview: access.scope === "system" || access.role === "Super Admin",
   };
+}
+
+/**
+ * Ensure a pharmacy exists for a directory selection from the submit form's combo box
+ * (spec B1/B3 — docs/specs/direct-orders-v2.md).
+ *
+ * The rep never types an identity here — they POINT at one. Either at a pharmacy Phoenix already
+ * holds (`phoenixPharmacyCode`), or at a distributor-directory customer
+ * (`distributorCode` + `customerCode`), in which case every field of the created pharmacy is
+ * copied from the CATALOGUE row — name, address, brick, area, region — and nothing from the
+ * caller. That is why it may be born `verified`/`catalogue` even though a rep triggered it: the
+ * distributor sheets are the confirming authority, not the rep (owner rule: only distributor
+ * sales sheets create trusted customers).
+ *
+ * Reuse before create, keyed on (distributor_code, customer_code): the same directory customer
+ * picked twice must resolve to ONE pharmacy, or every reorder would mint a duplicate — the
+ * failure the hand-typed era demonstrated within ten records.
+ */
+export async function ensureDirectOrderPharmacyFromDirectory(
+  access: AccessContext,
+  input: { phoenixPharmacyCode?: string | null; distributorCode?: string | null; customerCode?: string | null },
+): Promise<DirectOrderPharmacy> {
+  await assertPermission(access, "direct_orders", "create");
+  const supabase = getSupabaseAdmin();
+
+  const phoenixCode = String(input.phoenixPharmacyCode ?? "").trim();
+  if (phoenixCode) {
+    const { data: existing, error } = await supabase
+      .from("direct_order_pharmacies")
+      .select("*")
+      .eq("phoenix_pharmacy_code", phoenixCode)
+      .eq("active", true)
+      .maybeSingle();
+    if (error) throw error;
+    if (!existing) badRequest("That pharmacy is no longer active in Phoenix — search again.");
+    return mapPharmacyRow(existing as Record<string, unknown>);
+  }
+
+  const distributorCode = String(input.distributorCode ?? "").trim();
+  const customerCode = String(input.customerCode ?? "").trim();
+  if (!distributorCode || !customerCode) {
+    badRequest("Pick a pharmacy from the list — by its Phoenix code, or a distributor customer.");
+  }
+
+  // The map row is the source of truth for every field. Fail closed if it is not there: the UI
+  // only offers rows the search returned, so a miss here means a stale or forged request.
+  const { data: mapRow, error: mapError } = await supabase
+    .from("source_of_sales_customer_map")
+    .select("distributor_code, customer_code, customer_name, address, brick_id, area_code, region_code")
+    .eq("active", true)
+    .eq("distributor_code", distributorCode)
+    .eq("customer_code", customerCode)
+    .maybeSingle();
+  if (mapError) throw mapError;
+  if (!mapRow) badRequest("That customer is not in the master database. Search again and pick from the list.");
+
+  // Reuse: this directory customer may already be a Phoenix pharmacy.
+  const { data: link, error: linkError } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .select("pharmacy_id")
+    .eq("distributor_code", distributorCode)
+    .eq("customer_code", customerCode)
+    .limit(1)
+    .maybeSingle();
+  if (linkError) throw linkError;
+  if (link?.pharmacy_id) {
+    const { data: existing } = await supabase
+      .from("direct_order_pharmacies")
+      .select("*")
+      .eq("id", String(link.pharmacy_id))
+      .eq("active", true)
+      .maybeSingle();
+    if (existing) return mapPharmacyRow(existing as Record<string, unknown>);
+  }
+
+  const row = mapRow as Record<string, unknown>;
+  const catalogueName = String(row.customer_name ?? "").trim();
+  const now = new Date().toISOString();
+  const { data: pharmacyRow, error: insertError } = await supabase
+    .from("direct_order_pharmacies")
+    .insert({
+      // A nameless directory customer keeps its code as its display name — absence stays visible.
+      pharmacy_name: catalogueName || customerCode,
+      brick_id: row.brick_id ? String(row.brick_id) : null,
+      area_code: row.area_code ? String(row.area_code) : null,
+      region_code: row.region_code ? String(row.region_code) : null,
+      doctor_name: null,
+      pharmacy_address: row.address ? String(row.address) : null,
+      created_by_hr_id: access.hrId,
+      verification_status: "verified",
+      entry_source: "catalogue",
+      verified_by_hr_id: access.hrId ?? null,
+      verified_at: now,
+    })
+    .select("*")
+    .single();
+  if (insertError) throw insertError;
+  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
+
+  const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({
+    pharmacy_id: pharmacy.id,
+    distributor_code: distributorCode,
+    customer_code: customerCode,
+    mapped_brick_id: row.brick_id ? String(row.brick_id) : null,
+    mapped_area_code: row.area_code ? String(row.area_code) : null,
+    mapped_region_code: row.region_code ? String(row.region_code) : null,
+  });
+  if (childError) {
+    // LOST THE RACE (23505 on direct_order_pharmacy_distributor_codes_code_unique).
+    //
+    // The reuse lookup above and this insert are two statements on two connections, so two reps
+    // submitting the same directory customer at the same moment can both pass the lookup. The
+    // unique index is what actually decides; whoever loses lands here, deletes the pharmacy shell
+    // it just created, and returns the WINNER's row — so the pair still resolves to one pharmacy,
+    // which is the whole point of picking from the master database.
+    //
+    // Anything that is not a uniqueness violation is a real failure and still throws.
+    if (String((childError as { code?: string }).code ?? "") !== "23505") throw childError;
+    await supabase.from("direct_order_pharmacies").delete().eq("id", pharmacy.id);
+    const { data: winnerLink } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .select("pharmacy_id")
+      .eq("distributor_code", distributorCode)
+      .eq("customer_code", customerCode)
+      .limit(1)
+      .maybeSingle();
+    const winnerId = winnerLink?.pharmacy_id ? String(winnerLink.pharmacy_id) : "";
+    if (!winnerId) throw childError;
+    const { data: winner } = await supabase
+      .from("direct_order_pharmacies")
+      .select("*")
+      .eq("id", winnerId)
+      .maybeSingle();
+    if (!winner) throw childError;
+    return mapPharmacyRow(winner as Record<string, unknown>);
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${pharmacy.id}`,
+    oldValues: null,
+    newValues: { distributorCode, customerCode, source: "directory_combo" },
+    summary: `Direct-order pharmacy materialized from the distributor directory (${distributorCode}/${customerCode}) by ${access.hrId ?? "unknown"}.`,
+  });
+
+  return pharmacy;
 }
 
 /**
@@ -1153,6 +1686,88 @@ export async function searchDistributorCustomers(
     .filter((option) => unrestricted || !option.areaCode || allowedAreaCodes.has(option.areaCode.toUpperCase()));
 }
 
+/** One hit from the pharmacy combo box (spec B1/B2 — docs/specs/direct-orders-v2.md). */
+export type DirectOrderPharmacySearchHit = {
+  /** 'directory' = distributor customer map row; 'phoenix' = validated Phoenix pharmacy. */
+  source: "directory" | "phoenix";
+  distributorCode: string | null;
+  customerCode: string | null;
+  /** null = the distributor lists no name for this code — render "(no name on file)", never blank. */
+  customerName: string | null;
+  address: string | null;
+  brickId: string | null;
+  areaCode: string | null;
+  areaName: string;
+  regionCode: string | null;
+  regionName: string;
+  phoenixPharmacyCode: string | null;
+  verificationStatus: string | null;
+};
+
+/**
+ * The combo-box search behind the submit form (spec B1/B2/B3).
+ *
+ * All matching happens in SQL (`phx_search_direct_order_customers`): customer CODE (prefix, then
+ * contains) OR Arabic-normalized NAME, across the live union of the distributor customer
+ * directory and Phoenix-validated pharmacies — so a pharmacy admitted by any route is findable
+ * the moment it exists, with no cached list to go stale.
+ *
+ * Unnamed customers (6,089 of 51,192) ARE returned — hiding them was one of the two defects that
+ * made staff hand-type pharmacies on launch day. The UI labels them by code.
+ *
+ * Same scope boundary as `searchDistributorCustomers` above: results are filtered to the
+ * caller's visible areas, and an area-less row is only shown to unrestricted (company-tier)
+ * viewers. Scope can only narrow what SQL returned, never widen it.
+ */
+export async function searchDirectOrderPharmacyDirectory(
+  access: AccessContext,
+  input: { query: string; distributorCode?: string | null; limit?: number },
+): Promise<DirectOrderPharmacySearchHit[]> {
+  await assertPermission(access, "direct_orders", "read");
+  const query = String(input.query ?? "").trim();
+  // One character would scan half the catalogue and help nobody; the UI debounces to 2+ anyway.
+  if (query.length < 2) return [];
+
+  const distributorCode = String(input.distributorCode ?? "").trim() || null;
+  if (distributorCode && DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES.has(distributorCode.toLowerCase())) return [];
+
+  const { areas } = await listDirectOrderAreaAndBrickOptions(access);
+  const allowedAreaCodes = new Set(areas.map((area) => area.areaCode.toUpperCase()));
+  const unrestricted = resolveDirectOrderReportScope(access) === "all";
+  if (!unrestricted && allowedAreaCodes.size === 0) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.rpc("phx_search_direct_order_customers", {
+    p_query: query,
+    p_distributor_code: distributorCode,
+    p_limit: Math.min(Math.max(input.limit ?? 30, 1), 100),
+  });
+  if (error) throw error;
+
+  const geoMaps = await loadDirectOrderGeoNames();
+  return ((data ?? []) as Array<Record<string, unknown>>)
+    .map((row): DirectOrderPharmacySearchHit => {
+      const areaCode = row.area_code ? String(row.area_code) : null;
+      const regionCode = row.region_code ? String(row.region_code) : null;
+      const name = String(row.customer_name ?? "").trim();
+      return {
+        source: row.source === "phoenix" ? "phoenix" : "directory",
+        distributorCode: row.distributor_code ? String(row.distributor_code) : null,
+        customerCode: row.customer_code ? String(row.customer_code) : null,
+        customerName: name.length > 0 ? name : null,
+        address: row.address ? String(row.address) : null,
+        brickId: row.brick_id ? String(row.brick_id) : null,
+        areaCode,
+        areaName: areaCode ? geoMaps.areaNameByCode.get(areaCode) ?? "" : "",
+        regionCode,
+        regionName: regionCode ? geoMaps.regionNameByCode.get(regionCode) ?? "" : "",
+        phoenixPharmacyCode: row.phoenix_pharmacy_code ? String(row.phoenix_pharmacy_code) : null,
+        verificationStatus: row.verification_status ? String(row.verification_status) : null,
+      };
+    })
+    .filter((hit) => (hit.areaCode ? unrestricted || allowedAreaCodes.has(hit.areaCode.toUpperCase()) : unrestricted));
+}
+
 export async function listDirectOrderDistributorOptions(): Promise<Array<{ distributorCode: string; distributorName: string }>> {
   const supabase = getSupabaseAdmin();
   const { data } = await supabase
@@ -1295,26 +1910,35 @@ export async function submitDirectOrder(
   const pharmacy = pharmacies.get(input.pharmacyId) ?? null;
   if (!pharmacy) badRequest("Pharmacy not found — pick an existing one or add a new pharmacy first.");
 
-  // Governance: the registry validates that this role may submit from draft.
+  // The HELD fork (spec B6). A pharmacy the master database does not vouch for parks the order
+  // OUTSIDE the approval flow: status 'held', no steps seeded, no approver ever sees it as work.
+  // It re-enters through exactly one door — the pharmacy passing validation — or dies on the
+  // 14-day clock. Decided by the pharmacy row, never by anything the requester typed.
+  const submitAsHeld = pharmacy.verificationStatus === "pending_review";
+
+  // Governance: the registry validates that this role may submit from draft, and that the
+  // destination status is the one this code expects.
   await assertDirectOrderWorkflowTransition({
     access,
-    actionKey: "submit",
-    expectedNextStatus: "pending_approval",
+    actionKey: submitAsHeld ? "submit_held" : "submit",
+    expectedNextStatus: submitAsHeld ? "held" : "pending_approval",
     status: "draft",
   });
 
-  const chain = await buildApprovalChain({
-    requesterHrId: actorHrId,
-    requesterRole: access.role,
-    pharmacyUnverified: pharmacy.verificationStatus === "pending_review",
-  });
+  const chain = submitAsHeld
+    ? [] // seeded at revival instead — a chain built today could name yesterday's managers
+    : await buildApprovalChain({
+        requesterHrId: actorHrId,
+        requesterRole: access.role,
+      });
 
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
     .insert({
       requester_hr_id: access.hrId,
       requester_role: access.role,
-      status: "pending_approval",
+      status: submitAsHeld ? "held" : "pending_approval",
+      held_at: submitAsHeld ? new Date().toISOString() : null,
       line: product.line,
       product_code: product.productCode,
       product_name: product.productName,
@@ -1336,26 +1960,30 @@ export async function submitDirectOrder(
   if (insertError) throw insertError;
   const request = mapRequestRow(inserted as Record<string, unknown>);
 
-  // Seed the approval steps.
-  const { error: stepsError } = await supabase.from("direct_order_approval_steps").insert(
-    chain.map((step) => ({
-      request_id: request.id,
-      step_order: step.order,
-      approver_kind: step.kind,
-      approver_role: step.role,
-      approver_hr_id: step.approverHrId,
-      label: step.label,
-      status: "pending",
-    })),
-  );
-  if (stepsError) throw stepsError;
+  // Seed the approval steps — never for a held order, whose chain is built at revival.
+  if (chain.length > 0) {
+    const { error: stepsError } = await supabase.from("direct_order_approval_steps").insert(
+      chain.map((step) => ({
+        request_id: request.id,
+        step_order: step.order,
+        approver_kind: step.kind,
+        approver_role: step.role,
+        approver_hr_id: step.approverHrId,
+        label: step.label,
+        status: "pending",
+      })),
+    );
+    if (stepsError) throw stepsError;
+  }
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
     entityId: request.id,
-    newValues: { status: "pending_approval", product: product.productCode, qty, salesValue },
-    summary: `Direct order submitted by ${access.hrId} (${product.productName}, ${qty} units).`,
+    newValues: { status: request.status, product: product.productCode, qty, salesValue },
+    summary: submitAsHeld
+      ? `Direct order submitted HELD by ${access.hrId} (${product.productName}, ${qty} units) — pharmacy awaiting validation.`
+      : `Direct order submitted by ${access.hrId} (${product.productName}, ${qty} units).`,
   });
   await insertEvent({
     requestId: request.id,
@@ -1375,6 +2003,25 @@ export async function submitDirectOrder(
 
   const requesterDisplayName = (await nameLookup())(actorHrId) ?? actorHrId;
   const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
+
+  if (submitAsHeld) {
+    // Nobody is asked to approve a held order — that is the point. The requester learns the
+    // state and the way out; the Held Desk (and its bulk notice button) is the pressure valve.
+    await notifyDirectOrder({
+      recipients: [actorHrId],
+      title: "Direct order held — pharmacy not in the master database",
+      message:
+        `${buildDirectOrderNotificationLine(notifyContext)} ` +
+        "This request is HELD and has not entered the approval flow. It will move only after the " +
+        "pharmacy passes validation; an untouched held request expires after 14 days.",
+      metrics: buildDirectOrderNotificationMetrics(notifyContext),
+      eventType: "submitted",
+      requestId: request.id,
+      subjectHrId: actorHrId,
+    });
+    return request;
+  }
+
   const firstStep = chain[0];
   const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
   // Tags compose — an over-cap order on a product with no pharmacy price must show BOTH.
@@ -1446,19 +2093,18 @@ export async function decideDirectOrder(
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
 
-  // Backstop for chains built BEFORE the System Admin rung existed (owner rule, 2026-08-04).
+  // Backstop: nothing reaches `approved` against a pharmacy nobody confirmed.
   //
-  // New requests on an unrecognised pharmacy carry the rung, so the admin has already decided long
-  // before the CEO sees it and this never fires. Requests submitted earlier have no such rung, and
-  // for those the last approval is the moment money enters Source of Sales against a distributor
-  // code nobody confirmed — so it still refuses there. Rebuilding the chain (or acknowledging the
-  // pharmacy directly) clears it.
+  // On a current chain the SFE rung has already confirmed the pharmacy long before the CEO sees
+  // it, so this never fires. It still refuses for a chain that somehow carries no confirming rung
+  // at all, because the last approval is the moment money enters Source of Sales against a
+  // distributor code nobody checked. Confirming the pharmacy in the registry clears it.
   if (input.decision === "approve" && evaluation.isFinal) {
     const pharmacyForGate = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
     if (pharmacyForGate?.verificationStatus === "pending_review") {
       badRequest(
         `${pharmacyForGate.pharmacyName} (${pharmacyForGate.phoenixPharmacyCode}) is a new pharmacy that Phoenix ` +
-          "has not confirmed yet, so this order cannot be finalized. A System Admin has to check it first. " +
+          "has not confirmed yet, so this order cannot be finalized. The SFE Manager has to check it first. " +
           "Every approval already given on this request stands.",
       );
     }
@@ -1512,16 +2158,41 @@ export async function decideDirectOrder(
     message: comment ?? `${input.decision} at step ${activeStep.order}.`,
   });
 
-  // Approving the System Admin rung IS the acknowledgment — there is no second button to press.
+  // Approving the confirming rung IS the acknowledgment — there is no second button to press.
   //
-  // Keeping them separate is what made the old design fail: the admin could approve the request
-  // and still leave the pharmacy unverified, so the CEO hit the block anyway and nobody could tell
-  // which of the two actions was outstanding. One rung, one decision, one state change.
+  // Keeping them separate is what made the original design fail: the approver could approve the
+  // request and still leave the pharmacy unverified, so the CEO hit the block anyway and nobody
+  // could tell which of the two actions was outstanding. One rung, one decision, one state change.
+  //
+  // That rung is SFE on every current chain, and a legacy Super Admin rung on requests chained
+  // before it was retired — `isPharmacyConfirmingStep` covers both, so an in-flight old request
+  // still clears its pharmacy instead of stranding it.
   //
   // Only on approve: rejecting or returning must leave the pharmacy unconfirmed, because the
   // reason for the rejection may well BE that the pharmacy is wrong.
-  if (input.decision === "approve" && isSystemAdminAckStep(activeStep)) {
-    await acknowledgeDirectOrderPharmacy(access, { pharmacyId: request.pharmacyId });
+  // POST-COMMIT SIDE EFFECT — must never fail the decision that already committed.
+  //
+  // The decision itself is applied by the RPC above and is durable by the time we get here. If
+  // confirming the pharmacy (or reviving its held orders) throws, the approver would receive an
+  // error for an approval that actually succeeded, and would reasonably click again. So failures
+  // are recorded — event + log — and the caller still gets its result. The Held Desk keeps
+  // showing anything that stayed held, so nothing is lost silently.
+  if (input.decision === "approve" && isPharmacyConfirmingStep(activeStep)) {
+    try {
+      await markDirectOrderPharmacyVerified(access, { pharmacyId: request.pharmacyId });
+    } catch (confirmError) {
+      logError("Pharmacy confirmation after an approved decision failed; the approval stands", {
+        labels: { event: "direct_order_pharmacy_confirm_failed", requestId: request.id },
+        error: confirmError,
+      });
+      await insertEvent({
+        requestId: request.id,
+        actorHrId: access.hrId,
+        eventType: "pharmacy_confirm_failed",
+        message:
+          "The approval was recorded, but confirming the pharmacy failed. Its held orders stay on the Held Desk until a System Admin confirms it.",
+      });
+    }
   }
 
   // An over-cap order that reaches final approval is recorded explicitly. This is what
@@ -1664,7 +2335,6 @@ export async function rebuildDirectOrderApprovalChain(
   const chain = await buildApprovalChain({
     requesterHrId: request.requesterHrId,
     requesterRole: request.requesterRole,
-    pharmacyUnverified: await isPharmacyAwaitingReview(request.pharmacyId),
   });
   const nextLabels = chain.map((step) => step.label);
 
@@ -1752,7 +2422,6 @@ export async function reverseDirectOrder(
   const chain = await buildApprovalChain({
     requesterHrId: actorHrId,
     requesterRole: access.role,
-    pharmacyUnverified: await isPharmacyAwaitingReview(original.pharmacyId),
   });
 
   const { data: inserted, error: insertError } = await supabase
@@ -2483,7 +3152,13 @@ export async function getDirectOrderApprovalDetail(
     pharmacyHistory,
     retailHistory: retail.rows,
     retailUnmatchable: retail.unmatchable,
-    steps: steps.map((step) => ({ ...step, approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role })),
+    steps: steps.map((step) => ({
+      ...step,
+      approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role,
+      // WHO actually decided, by name — on a role rung this is how the window answers "which of
+      // the two Super Admins approved it", which the rung's own label never can.
+      decidedByName: step.decidedByHrId ? nameOf(step.decidedByHrId) ?? step.decidedByHrId : null,
+    })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),

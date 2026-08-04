@@ -33,17 +33,25 @@ export function isDirectOrderRequesterRole(role: PhoenixRole | string | null | u
   return DIRECT_ORDER_REQUESTER_ROLES.includes(String(role ?? "").trim() as PhoenixRole);
 }
 
-/** Request lifecycle. `pending_approval` covers every in-chain rung; the active step tells you which. */
+/**
+ * Request lifecycle. `pending_approval` covers every in-chain rung; the active step tells you
+ * which. `held` stands OUTSIDE the chain entirely — an order whose pharmacy is not in the master
+ * database: submitted and visible, but in no approver's queue, and it can only leave `held` by
+ * the pharmacy passing validation (→ `pending_approval` from step 1) or by the 14-day clock
+ * (→ `expired`, a terminal dead end that is logged and counted per requester).
+ */
 export type DirectOrderStatus =
   | "draft"
   | "pending_approval"
   | "approved"
   | "rejected"
   | "returned"
-  | "reversed";
+  | "reversed"
+  | "held"
+  | "expired";
 
 export function isTerminalDirectOrderStatus(status: DirectOrderStatus): boolean {
-  return status === "approved" || status === "rejected" || status === "reversed";
+  return status === "approved" || status === "rejected" || status === "reversed" || status === "expired";
 }
 
 /** The three actions an approver can take at their rung. */
@@ -65,6 +73,14 @@ export type DirectOrderStepState = {
   /** Job-title / role label for the UI timeline (never hardcode DSM/RM/NSM in components). */
   label: string;
   status: DirectOrderStepStatus;
+  /**
+   * Decision record — optional because a rung under construction has none. The approval window
+   * shows WHO decided, WHEN (Cairo) and WHAT THEY WROTE on every settled rung (spec D1), so
+   * these ride the step rather than being re-fetched from events.
+   */
+  decidedByHrId?: string | null;
+  decidedAt?: string | null;
+  decisionComment?: string | null;
 };
 
 /** Bonus deal (qty × pharmacy price) or Discount deal (qty × public × (1−disc%)). */
@@ -149,6 +165,8 @@ export type DirectOrderRequest = {
   salesMonth: string | null;
   /** Expected money-collection date (YYYY-MM-DD), entered by the requester at submit. */
   collectionDate: string | null;
+  /** When this request entered `held` (null otherwise). Drives the 14-day expiry clock. */
+  heldAt: string | null;
   marketingRequestId: string | null;
   /** Post-approval, Finance-editable collections fields (outside the approval gate). */
   paymentDate: string | null;
@@ -391,7 +409,7 @@ export type DirectOrderApprovalDetail = {
   retailHistory: DirectOrderRetailHistoryRow[];
   /** True when the pharmacy has no distributor pair that can be matched to retail sales at all. */
   retailUnmatchable: boolean;
-  steps: Array<DirectOrderStepState & { approverName: string | null }>;
+  steps: Array<DirectOrderStepState & { approverName: string | null; decidedByName: string | null }>;
   availableActions: DirectOrderAvailableActions;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
