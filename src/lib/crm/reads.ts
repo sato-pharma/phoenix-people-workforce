@@ -58,8 +58,8 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
   1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
-  1395, 1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
-  1512, 1514, 1515, 1516, 1518, 1519, 1521, 1522, 1523, 1524, 1528,
+  1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
+  1512, 1514, 1515, 1516, 1518, 1519, 1522, 1523, 1524, 1528,
   // Owner-excluded 2026-07-17 (not necessarily resigned): Ahmed Amer 667, Adel.Sayed 1436,
   // CEO 1474, George.Rafaat (Sharkia 1/C) 1500. (Mahmoud.Gamal 1272 already listed above.)
   667, 1436, 1474, 1500,
@@ -70,6 +70,12 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // Gannatallah Amer (B-165, Imbaba); keeping it here hid a working rep's visits since April.
   // Same failure class as 1477. NOTE: she stays hidden by the LIVE departed-agent union until her
   // roster row leaves employment_status "historical_payroll_record".
+  // 2026-08-04: crm_id 1395 (Mohamed.Raafat, Helwan-Maadi) and 1521 (Adel.Srour, Down-town)
+  // REMOVED — both are reused slots now carrying a working rep the owner confirmed is real. This
+  // list is a HARD FLOOR: it outranks employment status, so leaving an id here keeps that person's
+  // fieldwork invisible no matter what the roster says. Removing them is what lets the roster row
+  // the owner is about to add actually take effect; until it exists their visits show as unmapped,
+  // which is the honest state and what the unmapped-agent alert reports.
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
