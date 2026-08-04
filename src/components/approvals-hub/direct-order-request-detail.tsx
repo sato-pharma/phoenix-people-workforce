@@ -90,9 +90,11 @@ export function DirectOrderRequestDetail({
         {pharmacy?.verificationStatus === "pending_review" ? (
           <div className="border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
             <p className="text-[12px] font-bold text-rose-900">
-              Pharmacy not in the distributor catalogue — its customer code was entered by hand and has
-              not been confirmed. Retail sales match on that code, so an incorrect one would attribute a
-              different pharmacy&apos;s sales here. Needs SFE review and a System Admin acknowledgment.
+              New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of being
+              picked from the list, so nobody has checked that its distributor code is real. That code is
+              what Phoenix uses to find this pharmacy&apos;s sales at the distributor, and a wrong one
+              would pull another pharmacy&apos;s sales in here. This order waits for SFE, then a System
+              Admin, before it can be finalized.
             </p>
           </div>
         ) : null}

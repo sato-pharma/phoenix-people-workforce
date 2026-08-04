@@ -162,7 +162,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
     const pairs = distRows
       .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
       .filter((row) => row.distributorCode && row.customerCode);
-    if (pairs.length === 0) throw new Error("Add at least one distributor and its customer code.");
+    // No refusal on an empty list (owner rule, 2026-08-04) — see the admin form for why.
     const res = await fetch("/api/direct-orders/pharmacies", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -396,7 +396,11 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                 <input className={portalInputClassName} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
 
                 <div className="rounded border border-slate-100 bg-slate-50 p-3">
-                  <p className="mb-2 text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes *</p>
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
+                  <p className="mb-2 text-[11px] font-semibold text-slate-500">
+                    Optional. Leave it empty if you do not know them — the order still goes through, it just
+                    waits for a System Admin to confirm the pharmacy after SFE.
+                  </p>
                   {distRows.map((row, index) => (
                     <DistributorCustomerPicker
                       key={index}

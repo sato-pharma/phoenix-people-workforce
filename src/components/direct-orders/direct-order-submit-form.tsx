@@ -143,7 +143,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     const pairs = distRows
       .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
       .filter((row) => row.distributorCode && row.customerCode);
-    if (pairs.length === 0) throw new Error("Add at least one distributor and its customer code.");
+    // No refusal on an empty list (owner rule, 2026-08-04). Not knowing the code is a real
+    // situation; blocking on it only ever produced an invented code. The cost is the extra
+    // System Admin rung, which the note beside the field states before they submit.
     const res = await fetch("/api/direct-orders/pharmacies", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -372,9 +374,13 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <input className={inputClass()} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
                 <input className={inputClass()} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
 
-                {/* Mandatory ≥1 distributor + customer code */}
+                {/* Optional since 2026-08-04 — the note explains what leaving it empty costs. */}
                 <div className="border border-[#eef1f3] p-2">
-                  <p className="mb-1 text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes *</p>
+                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes</p>
+                  <p className="mb-1 text-[11px] font-semibold text-slate-500">
+                    Optional. Leave it empty if you do not know them — the order still goes through, it just
+                    waits for a System Admin to confirm the pharmacy after SFE.
+                  </p>
                   {distRows.map((row, index) => (
                     <DistributorCustomerPicker
                       key={index}

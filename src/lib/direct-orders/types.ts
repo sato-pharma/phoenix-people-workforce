@@ -92,18 +92,26 @@ export type DirectOrderPharmacy = {
   regionCode: string | null;
   doctorName: string | null;
   pharmacyAddress: string | null;
-  /** Mandatory ≥1 distributor customer-code pairs (Ahmed = ####### @ Ibn Sina, @@@@@@@ @ Overseas). */
+  /**
+   * Distributor customer-code pairs, at most one per distributor. OPTIONAL since 2026-08-04 —
+   * a submitter who does not know the distributor or the code registers the pharmacy without
+   * them, and the request picks up the System Admin rung instead of being refused.
+   */
   distributorCodes: DirectOrderPharmacyDistributorCode[];
   /** Whether an admin has resolved a submitter-brick vs mapped-brick variance. */
   geoVarianceResolved: boolean;
   /**
-   * 'pending_review' when at least one distributor customer code was NOT found in that
-   * distributor's own catalogue — i.e. it was typed by hand rather than picked from the list.
-   * Never blocks the order; it flags the pharmacy for SFE review and Super-Admin acknowledgment,
-   * because an unrecognised code is how a different pharmacy's retail sales get mis-attributed.
+   * 'pending_review' on every pharmacy registered by hand, until a System Admin approves the
+   * acknowledgment rung. It covers all three ways Phoenix ends up not recognising a pharmacy:
+   * it is brand new, its customer code is not in the distributor's own list, or no distributor
+   * or code was given at all.
+   *
+   * It never blocks submission — it adds one rung to the chain (SFE → System Admin → the usual
+   * line → CEO), because an unconfirmed code is how a different pharmacy's retail sales end up
+   * attributed here.
    */
   verificationStatus: "verified" | "pending_review";
-  /** 'manual' when any code was hand-entered; 'catalogue' when all came from the distributor list. */
+  /** 'manual' when the pharmacy was registered by hand; 'catalogue' when it came from the list. */
   entrySource: "catalogue" | "manual";
   verifiedByHrId: string | null;
   verifiedAt: string | null;
