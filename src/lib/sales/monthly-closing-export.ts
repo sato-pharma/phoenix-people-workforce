@@ -4,7 +4,7 @@ import { systemIdentity } from "@/config/system-settings";
 import type { MonthlyClosingCell, MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
-import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
+import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
 // EVERY number in the report sheets is a live Excel formula (SUMIFS / COUNTIFS / division)
@@ -39,9 +39,26 @@ const UNITS_FMT = "#,##0";
 const VALUE_FMT = "#,##0.00";
 const PCT_FMT = "0.0%";
 
+const REGION_TOTAL_FILL = "FF7C2D12"; // deep clay — the region total, distinct from the black grand total
+const BLOCK_TINT = "FFFDFAF6";        // barely-there warm wash on alternate product blocks
+
 function gridBorder(): ExcelJS.Borders {
   const side = { style: "thin" as const, color: { argb: ORANGE_LINE } };
   return { top: side, left: side, bottom: side, right: side } as ExcelJS.Borders;
+}
+
+/**
+ * Same grid, but with a heavy rule down the LEFT edge — the divider that opens a product block.
+ *
+ * Each product occupies seven columns, so on a wide line the eye has no way to tell where one
+ * product ends and the next begins; the numbers run together into a single band. A medium rule in
+ * the header orange at each block's first column gives the reader a vertical gutter to track,
+ * without adding a spacer column that would break every SUMIFS range and column reference.
+ */
+function blockStartBorder(): ExcelJS.Borders {
+  const side = { style: "thin" as const, color: { argb: ORANGE_LINE } };
+  const edge = { style: "medium" as const, color: { argb: ORANGE } };
+  return { top: side, left: edge, bottom: side, right: side } as ExcelJS.Borders;
 }
 
 function sanitizeSheetName(name: string) {
@@ -656,12 +673,20 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   const metricRow = sheet.getRow(5);
   bandRow.height = 20;
   metricRow.height = 18;
+  // The first column of every product block (and of the Grand Total block) opens with a heavy
+  // rule, so a line with many products reads as a row of distinct panels rather than one wall of
+  // numbers. Kept as a border rather than a spacer column: an inserted column would shift every
+  // SUMIFS range and column letter on the sheet.
+  const isBlockStart = (col: number) =>
+    col === grandStart || (col >= 3 && col < grandStart && (col - 3) % METRICS_PER_PRODUCT === 0);
+  const borderFor = (col: number) => (isBlockStart(col) ? blockStartBorder() : gridBorder());
+
   const headerStyle = (cell: ExcelJS.Cell, label: string) => {
     cell.value = label;
     cell.font = { bold: true, color: { argb: WHITE }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = { fgColor: { argb: BLACK }, pattern: "solid", type: "pattern" };
-    cell.border = gridBorder();
+    cell.border = borderFor(Number(cell.col));
   };
   sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Area");
   sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area Name");
@@ -712,22 +737,31 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   let zebra = false;
   // Set while writing a Direct (company) row so its whole band reads blue + bold.
   let rowAccent: string | null = null;
-  const num = (cell: ExcelJS.Cell, value: CellValue, fmt: string, tone: Tone, ach = false) => {
-    const textColor = rowAccent ? DIRECT_TEXT : tone === "grand" ? WHITE : SLATE;
+  // An accent band carries its OWN text colour. The Direct band is pale blue and wants dark blue
+  // ink; the region-total band is deep clay and would render that ink illegibly, so the colour
+  // travels with the accent rather than being assumed from it.
+  let rowAccentText: string = DIRECT_TEXT;
+  const num = (cell: ExcelJS.Cell, value: CellValue, fmt: string, tone: Tone, ach = false, blockIndex = -1) => {
+    const textColor = rowAccent ? rowAccentText : tone === "grand" ? WHITE : SLATE;
     cell.font = { bold: tone !== "area" || Boolean(rowAccent), color: { argb: textColor }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "right", vertical: "middle" };
-    cell.border = gridBorder();
+    cell.border = borderFor(Number(cell.col));
     // Achievement % columns get a darker-orange tint (kept on the dark national row).
-    const fill = rowAccent ?? (ach && tone !== "grand" ? ACH_ORANGE : fillFor(tone, zebra));
+    // Otherwise, alternate product blocks carry a whisper-light warm wash so the eye can follow a
+    // single product straight down the sheet. It is applied ONLY where there is no stronger fill
+    // to state — an accent, a total band or the achievement tint always wins.
+    const base = fillFor(tone, zebra);
+    const blockWash = tone === "area" && !base && blockIndex >= 0 && blockIndex % 2 === 1 ? BLOCK_TINT : null;
+    const fill = rowAccent ?? (ach && tone !== "grand" ? ACH_ORANGE : base ?? blockWash);
     if (fill) cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
     setCell(cell, value, fmt);
   };
   const label = (cell: ExcelJS.Cell, text: string, tone: Tone) => {
-    const textColor = rowAccent ? DIRECT_TEXT : tone === "grand" ? WHITE : tone === "subtotal" ? BLACK : SLATE;
+    const textColor = rowAccent ? rowAccentText : tone === "grand" ? WHITE : tone === "subtotal" ? BLACK : SLATE;
     cell.value = text;
     cell.font = { bold: tone !== "area" || Boolean(rowAccent), color: { argb: textColor }, name: "Calibri", size: 10.5 };
     cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
-    cell.border = gridBorder();
+    cell.border = borderFor(Number(cell.col));
     const fill = rowAccent ?? fillFor(tone, zebra);
     if (fill) cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
   };
@@ -741,8 +775,9 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
 
   // `isStatic` rows (Direct channel) are written as plain cached values, not Data-sheet
   // formulas, because Direct value is taken straight from the sheet (it has no Data block).
-  const writeRow = (level: Tone, key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, isStatic = false, accent: string | null = null) => {
+  const writeRow = (level: Tone, key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, isStatic = false, accent: string | null = null, accentText: string = DIRECT_TEXT) => {
     rowAccent = accent;
+    rowAccentText = accentText;
     const row = sheet.getRow(rowIndex);
     label(row.getCell(1), key, tone);
     label(row.getCell(2), name, tone);
@@ -751,16 +786,16 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
       const cell = cells[index];
       const units = isStatic ? (cell?.salesUnits ?? 0) : F(sumifs(ref.dpUnits, valueCrit(level, key, product.productCode)), cell?.salesUnits ?? 0);
       const value = isStatic ? (cell?.salesValue ?? 0) : F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0);
-      num(row.getCell(start), units, UNITS_FMT, tone);
-      num(row.getCell(start + 1), value, VALUE_FMT, tone);
+      num(row.getCell(start), units, UNITS_FMT, tone, false, index);
+      num(row.getCell(start + 1), value, VALUE_FMT, tone, false, index);
       // Targets and achievement come off the matrix cell, which sourced them from
       // au.monthly_targets — the same engine the Targets workspace reads, so the two can never
       // disagree. They are plain cached values rather than Data-sheet formulas: the Calc sheet
       // holds distributor invoice lines only, so there is nothing there to SUMIFS a target out
       // of. A null stays blank, so an area with no target reads "—" and never a fabricated 0.
-      num(row.getCell(start + 2), cell?.targetUnits ?? null, UNITS_FMT, tone);
-      num(row.getCell(start + 3), cell?.targetValue ?? null, VALUE_FMT, tone);
-      num(row.getCell(start + 4), cell?.achievement ?? null, PCT_FMT, tone, true);
+      num(row.getCell(start + 2), cell?.targetUnits ?? null, UNITS_FMT, tone, false, index);
+      num(row.getCell(start + 3), cell?.targetValue ?? null, VALUE_FMT, tone, false, index);
+      num(row.getCell(start + 4), cell?.achievement ?? null, PCT_FMT, tone, true, index);
       // This row's share of the LINE for THIS product — sales and target, against the same
       // denominator row every other share on the sheet uses, so the column adds to 100%.
       const denomCell = denominatorTotals.cells[index];
@@ -769,12 +804,16 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
         shareCell(rowIndex, columnLetter(start + 1), cell?.salesValue ?? null, denomCell?.salesValue ?? 0),
         PCT_FMT,
         tone,
+        false,
+        index,
       );
       num(
         row.getCell(start + 6),
         shareCell(rowIndex, columnLetter(start + 3), cell?.targetValue ?? null, denomCell?.targetValue ?? 0),
         PCT_FMT,
         tone,
+        false,
+        index,
       );
     });
     const totalValue = isStatic
@@ -834,7 +873,22 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", hasMergedDirect);
     zebra = false;
   });
-  writeRow("grand", "", "National Grand Total", matrix.grandTotal.cells, matrix.grandTotal.rowTotal, "grand", hasMergedDirect);
+  // When the reader has filtered down to a single region, calling the bottom line "National Grand
+  // Total" is simply false — it is that region's total and nothing else. Name it for what it is,
+  // and give it its own deep-clay band so it cannot be mistaken either for an area row above it or
+  // for the black national total a full export ends with.
+  const soleRegion = matrix.regions.length === 1 ? matrix.regions[0] : null;
+  writeRow(
+    "grand",
+    "",
+    soleRegion ? `${soleRegion.regionName} — Region Total` : "National Grand Total",
+    matrix.grandTotal.cells,
+    matrix.grandTotal.rowTotal,
+    "grand",
+    hasMergedDirect,
+    soleRegion ? REGION_TOTAL_FILL : null,
+    WHITE,
+  );
   if (matrix.directNational) {
     writeRow("subtotal", "◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", true, DIRECT_FILL);
   }
@@ -1192,14 +1246,41 @@ function writeSummarySheet(workbook: ExcelJS.Workbook, c: MonthlyClosingComparis
  * they are not distributed to any area, so they print as their own band immediately above the
  * total and are counted only in that total.
  */
-function writeJulyDirectSheet(workbook: ExcelJS.Workbook, line: string | null, period: string): void {
+export function selectJulyDirectRowsForScope(
+  matrix: Pick<MonthlyClosingMatrix, "line" | "regions">,
+): readonly JulyDirectRow[] {
   // A null line means the workbook is not scoped to one line, so every July direct row belongs in
   // it. Filtering on a null line would silently produce an empty tab instead of the whole month.
-  const wanted = (line ?? "").trim().toLowerCase();
-  const rows = wanted
+  const wanted = (matrix.line ?? "").trim().toLowerCase();
+  const forLine = wanted
     ? JULY_2026_DIRECT_ROWS.filter((row) => row.line.trim().toLowerCase() === wanted)
     : JULY_2026_DIRECT_ROWS;
+
+  // FOLLOW THE FILTER. The matrix reaching the builder has already been narrowed by the reader's
+  // on-screen region/area/search filter, so its surviving areas ARE the slice this workbook
+  // covers. Scoping to them — rather than re-applying the raw filter here — is what guarantees
+  // this tab can never list an area the Closing Matrix dropped. (It previously scoped by line
+  // only, so a Giza-filtered export still listed Mahalla, Qena, Dakahlia and Sohag.)
+  const keptAreas = new Set(
+    matrix.regions.flatMap((region) => region.areas.map((area) => (area.areaCode ?? "").trim().toUpperCase())),
+  );
+  const keptRegions = new Set(matrix.regions.map((region) => (region.regionCode ?? "").trim().toUpperCase()));
+
+  return forLine.filter((row) => {
+    const areaCode = (row.areaCode ?? "").trim().toUpperCase();
+    // The National Sales Manager's own orders carry no AREA, but they DO belong to a region —
+    // Others — by the owner's ruling. So they are scoped by REGION: they appear under an Others
+    // filter and under no filter, and never under a Giza or Delta one.
+    if (!areaCode) return keptRegions.has((row.regionCode ?? "").trim().toUpperCase());
+    return keptAreas.has(areaCode);
+  });
+}
+
+function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix): void {
+  const period = matrix.period;
+  const rows = selectJulyDirectRowsForScope(matrix);
   if (rows.length === 0) return;
+  const line = matrix.line;
 
   const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Orders (July)"), {
     views: [{ state: "frozen", ySplit: 5 }],
@@ -1288,7 +1369,7 @@ export async function buildMonthlyClosingWorkbook(
   // One-off: July 2026's hand-mapped direct orders. The period guard is what keeps this from
   // ever appearing in another month — August onwards the module supplies the area itself.
   if (matrix.period === JULY_2026_DIRECT_PERIOD) {
-    writeJulyDirectSheet(workbook, matrix.line, matrix.period);
+    writeJulyDirectSheet(workbook, matrix);
   }
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);

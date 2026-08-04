@@ -4,6 +4,7 @@ import {
   JULY_2026_DIRECT_PERIOD,
   JULY_2026_DIRECT_ROWS,
 } from "../src/lib/sales/july-2026-direct-orders.ts";
+import { selectJulyDirectRowsForScope } from "../src/lib/sales/monthly-closing-export.ts";
 
 // July 2026 is the ONE month whose direct orders were mapped to areas by hand: the Direct Order
 // module went live in August, so July's rows reached Source of Sales with a region but a blank
@@ -130,4 +131,66 @@ export function runJuly2026DirectOrdersTabTests() {
       );
     }
   }
+
+  runJulyDirectScopeTests();
+}
+
+// ── the tab must FOLLOW the on-screen filter ─────────────────────────────────
+// This shipped wrong once: the tab scoped by LINE only, so an export filtered to Giza still
+// listed Mahalla, Qena, Dakahlia and Sohag. The owner found it in a real export. What makes the
+// fix hold is that the tab reads its scope from the ALREADY-FILTERED matrix it is handed, so it
+// cannot list an area the Closing Matrix dropped.
+function fakeMatrix(regions: { regionCode: string; areaCodes: string[] }[], line: string | null) {
+  return {
+    line,
+    regions: regions.map((region) => ({
+      areas: region.areaCodes.map((areaCode) => ({ areaCode })),
+      regionCode: region.regionCode,
+    })),
+  } as unknown as Parameters<typeof selectJulyDirectRowsForScope>[0];
+}
+
+function runJulyDirectScopeTests() {
+  const total = (rows: readonly { value: number }[]) =>
+    Math.round(rows.reduce((sum, row) => sum + row.value, 0) * 100) / 100;
+
+  // Giza only — the exact slice the owner exported when he found the bug.
+  const giza = selectJulyDirectRowsForScope(
+    fakeMatrix([{ areaCodes: ["GZ1", "GZ2", "GZ3", "GZ4", "GZ5", "GZ6", "GZ7", "UE9"], regionCode: "GZ" }], "Pedia"),
+  );
+  assert.equal(total(giza), 203913.75, "a Giza-filtered export must show exactly Giza's direct sales");
+  assert.ok(
+    giza.every((row) => row.regionCode === "GZ"),
+    "a Giza-filtered export must not list a single row from another region — this is the bug that shipped",
+  );
+  assert.ok(
+    giza.every((row) => row.areaCode !== ""),
+    "the National Sales Manager's area-less rows belong to Others and must NOT appear under a Giza filter",
+  );
+
+  // Others only — where the National Sales Manager's own orders DO belong.
+  const others = selectJulyDirectRowsForScope(
+    fakeMatrix([{ areaCodes: [], regionCode: "OT" }], "Pedia"),
+  );
+  assert.equal(total(others), 13732, "an Others-filtered export must show exactly the 13,732.00 booked to Others");
+  assert.ok(
+    others.every((row) => row.areaCode === ""),
+    "Others carries only the unattributed rows — no area-bearing row belongs there",
+  );
+
+  // Unfiltered — every region present, so the whole month must survive.
+  const all = selectJulyDirectRowsForScope(
+    fakeMatrix(
+      [
+        { areaCodes: ["CA3", "CA4", "CA6"], regionCode: "CA" },
+        { areaCodes: ["GZ1", "GZ2", "GZ3", "GZ4", "GZ5", "GZ6", "GZ7", "UE9"], regionCode: "GZ" },
+        { areaCodes: ["D11", "D12", "D13", "D14", "D15", "D16", "D17"], regionCode: "D1" },
+        { areaCodes: ["D21", "D22", "D23", "D24", "D25", "D26"], regionCode: "D2" },
+        { areaCodes: ["UE1", "UE2", "UE3", "UE4", "UE5", "UE6", "UE7", "UE8"], regionCode: "UE" },
+        { areaCodes: [], regionCode: "OT" },
+      ],
+      null,
+    ),
+  );
+  assert.equal(total(all), 628267.65, "an unfiltered export must still carry the whole month, both lines");
 }
