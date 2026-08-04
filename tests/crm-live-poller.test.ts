@@ -5,7 +5,12 @@ import {
   DAY_TICK_SECONDS,
   FAST_TICK_SECONDS,
   NIGHT_TICK_SECONDS,
+  RECONCILE_FAILURE_RETRY_GAP_MS,
+  RECONCILE_MIN_GAP_MS,
+  resolveDueScheduledWork,
   resolvePollPlan,
+  ROLLING_SYNC_FAILURE_RETRY_GAP_MS,
+  ROLLING_SYNC_MIN_GAP_MS,
   stableStringify,
   startLiveCrmPoller,
   WIDE_PROBE_EVERY_N_TICKS,
@@ -65,6 +70,12 @@ export function runCrmLivePollerTests() {
   assert.equal(stableStringify({ a: [{ z: 1, y: null }] }), stableStringify({ a: [{ y: null, z: 1 }] }));
   assert.notEqual(stableStringify([1, 2]), stableStringify([2, 1])); // array ORDER is content
   assert.equal(stableStringify(null), "null");
+
+  // ── Cadence VALUES are the latency promise (owner requirement 2026-08-04: a CRM submission is
+  // visible in Phoenix essentially live, all day). A regression back to slow ticks must fail here.
+  assert.equal(FAST_TICK_SECONDS, 20, "compliance-window latency promise: ≤ ~20s");
+  assert.equal(DAY_TICK_SECONDS, 30, "all-day latency promise: ≤ ~30s from 06:00 to midnight Cairo");
+  assert.equal(NIGHT_TICK_SECONDS, 120, "overnight latency promise: ≤ ~2min");
 
   // ── resolvePollPlan: cadence tiers by Cairo wall-clock ───────────────────────────────────────
   assert.equal(resolvePollPlan(8 * 60, 1).intervalSeconds, FAST_TICK_SECONDS); // 08:00
@@ -161,6 +172,70 @@ export function runCrmLivePollerTests() {
     windowTo: day,
   });
   assert.equal(pruned.nextVisitMemo.has(800), false);
+
+  // ── resolveDueScheduledWork: the in-process rolling sync + weekly reconcile schedule ─────────
+  const HOUR = 60 * 60 * 1000;
+  const monday10amCairo = { cairoDayOfWeek: 1, minutesSinceMidnight: 10 * 60, nowMs: 100 * HOUR };
+  const noHistory = {
+    lastReconcileFailureMs: null,
+    lastReconcileSuccessMs: null,
+    lastRollingFailureMs: null,
+    lastRollingSuccessMs: null,
+  };
+  // No history at all → the rolling sync fires on the first working-day tick (post-deploy catch-up).
+  assert.equal(resolveDueScheduledWork({ ...monday10amCairo, ...noHistory }), "rolling-sync");
+  // A recent rolling run parks it until the 3h gap has passed; the boundary itself fires.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS + 1 }),
+    null,
+    "inside the min gap → nothing due (a deploy restart must not immediately re-pull 10 days)",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingSuccessMs: 100 * HOUR - ROLLING_SYNC_MIN_GAP_MS }),
+    "rolling-sync",
+  );
+  // Overnight (before 06:00 Cairo) the deep pull never runs — the 2-day probe owns the night.
+  assert.equal(
+    resolveDueScheduledWork({ ...noHistory, cairoDayOfWeek: 1, minutesSinceMidnight: 5 * 60 + 59, nowMs: 100 * HOUR }),
+    null,
+  );
+  // A recent FAILURE backs off instead of hammering a sick vendor every 20s tick.
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS + 1 }),
+    null,
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...monday10amCairo, ...noHistory, lastRollingFailureMs: 100 * HOUR - ROLLING_SYNC_FAILURE_RETRY_GAP_MS }),
+    "rolling-sync",
+  );
+  // Sunday from 04:00 Cairo → the weekly reconcile, and it OUTRANKS a due rolling sync.
+  const sunday5amCairo = { cairoDayOfWeek: 0, minutesSinceMidnight: 5 * 60, nowMs: 1000 * HOUR };
+  assert.equal(resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory }), "wide-reconcile");
+  assert.equal(
+    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, lastReconcileSuccessMs: 1000 * HOUR - RECONCILE_MIN_GAP_MS + 1 }),
+    null,
+    "reconcile already ran this week and 05:00 is before the rolling window opens → nothing due",
+  );
+  assert.equal(
+    resolveDueScheduledWork({
+      ...sunday5amCairo,
+      minutesSinceMidnight: 7 * 60,
+      ...noHistory,
+      lastReconcileSuccessMs: 1000 * HOUR - RECONCILE_MIN_GAP_MS + 1,
+    }),
+    "rolling-sync",
+    "reconcile already ran this week → from 06:00 the slot falls back to a due rolling sync",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...sunday5amCairo, cairoDayOfWeek: 0, minutesSinceMidnight: 3 * 60 + 59, ...noHistory }),
+    null,
+    "Sunday before 04:00 Cairo is night — neither deep job runs",
+  );
+  assert.equal(
+    resolveDueScheduledWork({ ...sunday5amCairo, ...noHistory, lastReconcileFailureMs: 1000 * HOUR - RECONCILE_FAILURE_RETRY_GAP_MS + 1, lastRollingSuccessMs: 1000 * HOUR }),
+    null,
+    "a failed reconcile backs off a full hour and must not fall through to rolling within its gap",
+  );
 
   // ── filterRowsToUpsert (the engine seam's safety helper) ─────────────────────────────────────
   const rows = [{ crm_visit_id: 1 }, { crm_visit_id: 2 }, { crm_visit_id: 3 }];

@@ -10,8 +10,13 @@
  * minute therefore costs zero database writes and exactly one vendor fetch pair, while a new
  * visit lands in the mirror — and so on every Phoenix surface that reads it — within one tick.
  *
- * The scheduled crons (3x/day rolling 10-day sync + weekly wide reconcile) stay as the
- * correctness backstop for edits/deletions older than this poller's 2-day horizon.
+ * The rolling 10-day sync and the weekly wide reconcile — the correctness backstop for
+ * edits/deletions older than this poller's 2-day horizon — ALSO run from this loop now (see
+ * resolveDueScheduledWork below): the external scheduler (cron-job.org, a free third-party
+ * account outside the repo, capped at 30s per request and able to silently auto-disable a job)
+ * is no longer load-bearing for CRM freshness or correctness. Its jobs remain harmless,
+ * idempotent backstops; the engine's capturedAt/synced_at guard already makes overlapping runs
+ * safe.
  *
  * Deliberately NO success notifications (the 15-min morning live-sync set that precedent — at
  * this cadence they would be pure noise); failures notify Super Admins once per sustained outage
@@ -28,25 +33,35 @@ import {
   type IReports360Visit,
 } from "@/lib/crm/client";
 import { getIReports360Config, isIReports360Configured, type IReports360Config } from "@/lib/crm/config";
-import { addDaysIso, cairoHourMinute, cairoTodayIso } from "@/lib/crm/dates";
-import { syncIReports360Visits } from "@/lib/crm/sync";
+import { addDaysIso, cairoDayOfWeek, cairoHourMinute, cairoTodayIso } from "@/lib/crm/dates";
+import {
+  resolveWideReconciliationSlice,
+  runScheduledIReports360Sync,
+  runWideIReports360Reconciliation,
+  reapStaleIReports360SyncRuns,
+  syncIReports360Visits,
+} from "@/lib/crm/sync";
+import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { logError } from "@/lib/observability/log";
+import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── Cadence (Africa/Cairo wall-clock) ────────────────────────────────────────────────────────────
-// 08:00–12:30 is the morning compliance window (CRM First Visit / Early Birds) — poll fastest
-// there. Daytime otherwise polls at half that rate; overnight drops to a slow keep-fresh tick
-// (reps do log visits after midnight — the saveDate histogram shows real 00:00–03:00 activity —
-// it just doesn't need minute-level latency). Exported for the unit tests.
-export const FAST_TICK_SECONDS = 60;
-export const DAY_TICK_SECONDS = 120;
-export const NIGHT_TICK_SECONDS = 300;
+// The owner's requirement (2026-08-04) is that a CRM submission is visible in Phoenix essentially
+// as it happens, ALL day — not just in the morning compliance window. 08:00–12:30 (CRM First
+// Visit / Early Birds) polls fastest; the rest of the day runs nearly as fast because the sync-run
+// history shows reps submit heavily through the evening; overnight (00:00–06:00) drops to a
+// keep-fresh tick (real 00:00–03:00 saveDate activity exists, it just doesn't need 20s latency).
+// Exported for the unit tests, which pin the VALUES too — these numbers are the latency promise.
+export const FAST_TICK_SECONDS = 20;
+export const DAY_TICK_SECONDS = 30;
+export const NIGHT_TICK_SECONDS = 120;
 // Most day ticks probe TODAY only (small payload, kind to the vendor's shared hosting). Every
-// Nth tick widens to yesterday+today so a back-dated save still appears within ~10 minutes.
+// Nth tick widens to yesterday+today so a back-dated save still appears within ~3 minutes.
 // Night ticks always probe the 2-day window: after the midnight flip "yesterday" is where the
 // evening's visits live.
-export const WIDE_PROBE_EVERY_N_TICKS = 8;
+export const WIDE_PROBE_EVERY_N_TICKS = 6;
 
 // A sustained-failure notification fires once when the streak reaches this count (≈5+ minutes of
 // consecutive vendor/db errors), then once every NOTIFY_AGAIN_EVERY failures while it persists —
@@ -180,17 +195,80 @@ export function computeCrmDelta(input: {
   };
 }
 
+// ── In-process scheduled work (rolling sync + weekly reconcile) ──────────────────────────────────
+// These used to live only on external schedulers (GCP Cloud Scheduler, then cron-job.org). The
+// external account is a single point of failure nobody can see from this repo — its 30s request
+// cap already logs the 25s rolling sync as "Failed (timeout)" and it can auto-disable a job
+// silently. Running them from this loop makes the CRM pipeline self-sufficient; the engine's
+// idempotent upsert + capturedAt deletion guard keep any still-configured external firings safe.
+
+/** Rolling 10-day sync: every 3h through the Cairo working day (the poller's own 2-day probe
+ * makes an overnight deep pull pointless). */
+export const ROLLING_SYNC_MIN_GAP_MS = 3 * 60 * 60 * 1000;
+export const ROLLING_SYNC_EARLIEST_CAIRO_MINUTES = 6 * 60;
+/** Weekly wide reconcile: Sundays from 04:00 Cairo (matches the historical cron slot). The gap
+ * guard (5.5 days) is what makes "Sunday after 04:00" fire exactly once per week. */
+export const RECONCILE_CAIRO_DAY_OF_WEEK = 0;
+export const RECONCILE_EARLIEST_CAIRO_MINUTES = 4 * 60;
+export const RECONCILE_MIN_GAP_MS = 5.5 * 24 * 60 * 60 * 1000;
+/** After a scheduled run FAILS, don't retry it on the very next 20s tick — the vendor is likely
+ * unwell; these gaps bound the retry pressure while still recovering unattended. */
+export const ROLLING_SYNC_FAILURE_RETRY_GAP_MS = 15 * 60 * 1000;
+export const RECONCILE_FAILURE_RETRY_GAP_MS = 60 * 60 * 1000;
+
+export type ScheduledCrmWork = "rolling-sync" | "wide-reconcile" | null;
+
+/** Which (if any) scheduled deep run is due at this tick — pure, so week/day/hour edges are
+ * testable without a clock. Reconcile outranks rolling: it is rarer and includes a 30-day slice
+ * the rolling window can't reach. At most ONE deep run per tick; the probe resumes next tick. */
+export function resolveDueScheduledWork(input: {
+  cairoDayOfWeek: number;
+  minutesSinceMidnight: number;
+  nowMs: number;
+  lastReconcileFailureMs: number | null;
+  lastReconcileSuccessMs: number | null;
+  lastRollingFailureMs: number | null;
+  lastRollingSuccessMs: number | null;
+}): ScheduledCrmWork {
+  const reconcileDue =
+    input.cairoDayOfWeek === RECONCILE_CAIRO_DAY_OF_WEEK &&
+    input.minutesSinceMidnight >= RECONCILE_EARLIEST_CAIRO_MINUTES &&
+    (input.lastReconcileSuccessMs === null || input.nowMs - input.lastReconcileSuccessMs >= RECONCILE_MIN_GAP_MS) &&
+    (input.lastReconcileFailureMs === null || input.nowMs - input.lastReconcileFailureMs >= RECONCILE_FAILURE_RETRY_GAP_MS);
+  if (reconcileDue) return "wide-reconcile";
+
+  const rollingDue =
+    input.minutesSinceMidnight >= ROLLING_SYNC_EARLIEST_CAIRO_MINUTES &&
+    (input.lastRollingSuccessMs === null || input.nowMs - input.lastRollingSuccessMs >= ROLLING_SYNC_MIN_GAP_MS) &&
+    (input.lastRollingFailureMs === null || input.nowMs - input.lastRollingFailureMs >= ROLLING_SYNC_FAILURE_RETRY_GAP_MS);
+  return rollingDue ? "rolling-sync" : null;
+}
+
 // ── Poller runtime (module-singleton) ────────────────────────────────────────────────────────────
 
 type PollerState = {
   consecutiveFailures: number;
+  lastReconcileFailureMs: number | null;
+  lastReconcileSuccessMs: number | null;
+  lastRollingFailureMs: number | null;
+  lastRollingSuccessMs: number | null;
   running: boolean;
   stopped: boolean;
   tickIndex: number;
   timer: ReturnType<typeof setTimeout> | null;
 };
 
-const state: PollerState = { consecutiveFailures: 0, running: false, stopped: false, tickIndex: 0, timer: null };
+const state: PollerState = {
+  consecutiveFailures: 0,
+  lastReconcileFailureMs: null,
+  lastReconcileSuccessMs: null,
+  lastRollingFailureMs: null,
+  lastRollingSuccessMs: null,
+  running: false,
+  stopped: false,
+  tickIndex: 0,
+  timer: null,
+};
 let visitMemo: SnapshotMemo = new Map();
 let checkinMemo: SnapshotMemo = new Map();
 let cachedToken: { fetchedAtMs: number; token: string } | null = null;
@@ -228,6 +306,98 @@ async function probeWindow(
   }
 }
 
+/**
+ * Seeds the scheduled-work markers from the most recent successful deep runs in
+ * ireports360_visits_sync_runs, so a deploy restart (which happens on every merge to main)
+ * doesn't immediately re-run a 10-day sync it just ran. Window WIDTH tells the runs apart —
+ * rolling pulls span ~10 days, reconcile slices span ~30 — because both record trigger "cron"
+ * (the trigger column's CHECK constraint predates in-process scheduling). Best-effort: on any
+ * failure the markers stay null and the first due tick simply runs the work — idempotent, ~15s.
+ */
+async function seedScheduledWorkMarkers(): Promise<void> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from(CRM_SYNC_RUNS_TABLE)
+      .select("date_from, date_to, started_at, status")
+      .eq("status", "success")
+      .order("started_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    for (const row of (data ?? []) as Array<{ date_from: string; date_to: string; started_at: string; status: string }>) {
+      const spanDays = Math.round(
+        (new Date(`${row.date_to}T00:00:00Z`).getTime() - new Date(`${row.date_from}T00:00:00Z`).getTime()) / 86_400_000,
+      );
+      const startedMs = new Date(row.started_at).getTime();
+      if (!Number.isFinite(startedMs)) continue;
+      if (spanDays >= 25 && state.lastReconcileSuccessMs === null) state.lastReconcileSuccessMs = startedMs;
+      else if (spanDays >= 9 && spanDays < 25 && state.lastRollingSuccessMs === null) state.lastRollingSuccessMs = startedMs;
+      if (state.lastReconcileSuccessMs !== null && state.lastRollingSuccessMs !== null) break;
+    }
+  } catch (error) {
+    logError("CRM live poller could not seed scheduled-work markers; deep runs will fire on the first due tick", {
+      error,
+      labels: { event: "crm_live_poll_seed_markers_failed", job: "crm-live-poll" },
+    });
+  }
+}
+
+/** Runs one due deep job (rolling sync or wide reconcile) in place of this tick's probe, with the
+ * same dead-man's-switch slugs and digest behavior the external cron routes use — so monitoring
+ * continuity holds no matter which scheduler fired last. Reconcile always notifies (weekly
+ * cadence); rolling notifies only when degraded or failed, because at ~6 runs/day an
+ * unconditional success ping would be noise the owner never asked for. */
+async function runScheduledWork(work: Exclude<ScheduledCrmWork, null>): Promise<void> {
+  const isReconcile = work === "wide-reconcile";
+  const slug = isReconcile ? "phoenix-reconcile-visits" : "phoenix-ireports360-sync";
+  const jobName = isReconcile ? "ireports360-visits-reconcile" : "ireports360-visits-sync";
+  const today = cairoTodayIso();
+  // Resolved BEFORE the run so the digest reports the exact window the run used, even if the
+  // run itself straddles an ISO-week boundary.
+  const scheduledAt = new Date();
+  try {
+    await reapStaleIReports360SyncRuns();
+    const result = isReconcile ? await runWideIReports360Reconciliation(scheduledAt) : await runScheduledIReports360Sync();
+    if (isReconcile) state.lastReconcileSuccessMs = Date.now();
+    else state.lastRollingSuccessMs = Date.now();
+    console.log(
+      `[crm:live-poll] in-process ${work} — fetched ${result.rowsFetched}, upserted ${result.rowsUpserted}, ` +
+        `deleted ${result.rowsDeleted}${result.rowsSkippedReconcile > 0 ? `, RECONCILE SKIPPED ${result.rowsSkippedReconcile}` : ""} (run ${result.runId})`,
+    );
+    await pingDeadMansSwitch(slug, "success");
+    const degraded =
+      result.rowsSkippedReconcile > 0 ||
+      result.checkinsFailed ||
+      result.rowsFetched === 0 ||
+      result.blockedPostExitAttributions > 0;
+    if (isReconcile || degraded) {
+      const window = isReconcile ? resolveWideReconciliationSlice(scheduledAt) : { dateFrom: addDaysIso(today, -10), dateTo: today };
+      await notifyIReports360SyncResult({
+        dateFrom: window.dateFrom,
+        dateTo: window.dateTo,
+        jobName,
+        result,
+        runId: result.runId,
+        status: "success",
+      }).catch(() => undefined);
+    }
+  } catch (error) {
+    if (isReconcile) state.lastReconcileFailureMs = Date.now();
+    else state.lastRollingFailureMs = Date.now();
+    logError(`CRM in-process ${work} failed`, {
+      error,
+      labels: { event: "crm_live_poll_scheduled_work_failed", job: jobName },
+    });
+    await pingDeadMansSwitch(slug, "fail", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    await notifyIReports360SyncResult({
+      dateFrom: today,
+      dateTo: today,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      jobName,
+      status: "failed",
+    }).catch(() => undefined);
+  }
+}
+
 async function notifySustainedFailure(dateFrom: string, dateTo: string, error: unknown): Promise<void> {
   const streak = state.consecutiveFailures;
   const shouldNotify =
@@ -256,6 +426,23 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 async function tick(): Promise<void> {
   const today = cairoTodayIso();
   const { hour, minute } = cairoHourMinute();
+
+  // A due deep run takes this tick's slot instead of the probe — one vendor-facing job at a time,
+  // serialized through this single loop, so the app never runs two engine pulls concurrently.
+  const dueWork = resolveDueScheduledWork({
+    cairoDayOfWeek: cairoDayOfWeek(),
+    lastReconcileFailureMs: state.lastReconcileFailureMs,
+    lastReconcileSuccessMs: state.lastReconcileSuccessMs,
+    lastRollingFailureMs: state.lastRollingFailureMs,
+    lastRollingSuccessMs: state.lastRollingSuccessMs,
+    minutesSinceMidnight: hour * 60 + minute,
+    nowMs: Date.now(),
+  });
+  if (dueWork) {
+    await runScheduledWork(dueWork);
+    return;
+  }
+
   const plan = resolvePollPlan(hour * 60 + minute, state.tickIndex);
   const dateFrom = plan.includeYesterday ? addDaysIso(today, -1) : today;
   const dateTo = today;
@@ -356,13 +543,18 @@ export function startLiveCrmPoller(): LivePollerStartResult {
   state.running = true;
   state.stopped = false;
   state.timer = setTimeout(() => {
-    void tick().finally(scheduleNext);
+    // Marker seeding must finish before the first tick, or a fresh deploy would immediately
+    // re-run a 10-day sync the previous process ran minutes earlier.
+    void seedScheduledWorkMarkers()
+      .then(() => tick())
+      .finally(scheduleNext);
   }, STARTUP_DELAY_MS);
   unrefTimer(state.timer);
   console.log(
     `[crm:live-poll] started — ${FAST_TICK_SECONDS}s in the 08:00–12:30 Cairo compliance window, ` +
       `${DAY_TICK_SECONDS}s daytime, ${NIGHT_TICK_SECONDS}s overnight; wide (2-day) probe every ` +
-      `${WIDE_PROBE_EVERY_N_TICKS} ticks and all night ticks`,
+      `${WIDE_PROBE_EVERY_N_TICKS} ticks and all night ticks; rolling 10-day sync every ` +
+      `${ROLLING_SYNC_MIN_GAP_MS / 3_600_000}h and the weekly wide reconcile now run in-process`,
   );
   return { started: true };
 }

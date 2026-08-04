@@ -2,6 +2,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import type { UnmappedAgentAlert, UnmappedAgentAlertKind } from "@/lib/crm/unmapped-alert";
 
 // Notifies Super Admins over Telegram/in-app every time a CRM (iReports360) pull finishes —
 // success or failure — so someone always knows the visits mirror is fresh without having to
@@ -145,6 +146,115 @@ export function buildIReports360SyncMessage(input: IReports360SyncNotifyInput): 
 }
 
 export type IReports360SyncNotifyResult = { delivered: number; reason?: string; skipped: boolean };
+
+// ── Unmapped-agent activity alerts ───────────────────────────────────────────────────────────────
+
+/** ISO week key ("2026-W32", UTC) — the idempotency window for unmapped-agent alerts: one alert
+ * per agent per kind per week, durable across restarts because createSystemNotification dedupes
+ * on the stored event key. First discovery alerts immediately; while the agent stays unmapped the
+ * weekly key keeps a reminder flowing instead of one alert scrolling away forever. */
+export function isoWeekKeyOf(date: Date): string {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNumber = (target.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+  target.setUTCDate(target.getUTCDate() - dayNumber + 3); // nearest Thursday defines the ISO year
+  const isoYear = target.getUTCFullYear();
+  // Jan 4 always falls inside ISO week 1; stepping back to its Monday anchors the week count.
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const firstWeekMonday = new Date(jan4);
+  firstWeekMonday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const week = 1 + Math.round((target.getTime() - firstWeekMonday.getTime()) / 604_800_000);
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}
+
+const UNMAPPED_ALERT_TITLES: Record<UnmappedAgentAlertKind, string> = {
+  mapped_label_drift: "CRM Account Changed Hands — Mapping No Longer Applies",
+  new_unmapped: "New CRM Agent With No Phoenix Mapping — Work Is Invisible",
+  pending_reminder: "CRM Agent Still Unmapped — Weekly Reminder",
+  reused_resigned_slot: "Resigned CRM Account Reused — A Rep's Work Is Hidden",
+};
+
+function buildUnmappedAgentMessage(alert: UnmappedAgentAlert): string {
+  const who = alert.agentName?.trim() || "(no name on the CRM record)";
+  const span = alert.firstDay === alert.lastDay ? `on ${alert.lastDay}` : `${alert.firstDay} → ${alert.lastDay}`;
+  const lines: string[] = [];
+  if (alert.kind === "new_unmapped") {
+    lines.push(`🔴 ${who} is logging CRM visits but maps to NO Phoenix employee.`);
+  } else if (alert.kind === "pending_reminder") {
+    lines.push(`⏳ ${who} is still unmapped (decision pending) and keeps logging visits.`);
+  } else if (alert.kind === "reused_resigned_slot") {
+    lines.push(`🔴 A CRM account marked "resigned" is logging NEW visits under a different name: ${who}.`);
+    lines.push("This is the reused-account pattern — a replacement is working invisibly under a leaver's login.");
+  } else {
+    lines.push(`⚠️ A mapped CRM account now logs visits under a DIFFERENT name: ${who}.`);
+    lines.push("The stored mapping no longer applies to these rows — the account likely changed hands again.");
+  }
+  lines.push("");
+  lines.push(`Unmapped visits this window: ${alert.visitCount} (${span}, CRM account #${alert.agentCrmId}).`);
+  lines.push("Until it is mapped, this person's fieldwork is missing from every board, compliance report,");
+  lines.push("and deduction check — an absence deduction can fire against real work.");
+  lines.push("");
+  lines.push("Fix → /admin/crm → Unmapped Agents");
+  return lines.join("\n");
+}
+
+/** Alerts per run are capped — a first run after a long outage could surface dozens of historical
+ * identities at once, and the point is a punch-list ping, not a flood. */
+const UNMAPPED_ALERTS_PER_RUN_CAP = 10;
+
+/**
+ * Pushes one high-priority notification per unmapped-agent alert to the same recipients as the
+ * sync digests, deduped per agent+kind+ISO-week via the notification event key. Best-effort —
+ * never throws; the sync run this rides on has already succeeded.
+ */
+export async function notifyUnmappedCrmAgentActivity(input: {
+  alerts: readonly UnmappedAgentAlert[];
+  dateFrom: string;
+  dateTo: string;
+  runId: string;
+}): Promise<IReports360SyncNotifyResult> {
+  try {
+    if (input.alerts.length === 0) return { delivered: 0, reason: "no alerts", skipped: true };
+    const { recipients } = await resolveSyncNotifyRecipients();
+    if (recipients.length === 0) return { delivered: 0, reason: "no recipients", skipped: true };
+
+    const weekKey = isoWeekKeyOf(new Date());
+    const capped = input.alerts.slice(0, UNMAPPED_ALERTS_PER_RUN_CAP);
+    let delivered = 0;
+    for (const alert of capped) {
+      const message = buildUnmappedAgentMessage(alert);
+      await Promise.all(
+        recipients.map(async (recipient) => {
+          await createSystemNotification({
+            actionUrl: "/admin/crm",
+            actorId: "ireports360-sync-cron",
+            channels: ["in_app", "telegram", "push"],
+            eventType: "ireports360_unmapped_agent",
+            message,
+            metadata: {
+              agentCrmId: alert.agentCrmId,
+              agentName: alert.agentName,
+              dateFrom: input.dateFrom,
+              dateTo: input.dateTo,
+              idempotencyKey: `crm-unmapped-agent:${alert.kind}:${alert.agentCrmId}:${weekKey}:${recipient.hrId}`,
+              kind: alert.kind,
+              runId: input.runId,
+              visitCount: alert.visitCount,
+            },
+            module: "system",
+            priority: "high",
+            recipientHrId: recipient.hrId,
+            recipientUserId: recipient.userId,
+            title: UNMAPPED_ALERT_TITLES[alert.kind],
+          });
+          delivered += 1;
+        }),
+      );
+    }
+    return { delivered, skipped: false };
+  } catch (error) {
+    return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+  }
+}
 
 /**
  * Best-effort — never throws. Called by both the daily sync and weekly wide-reconciliation

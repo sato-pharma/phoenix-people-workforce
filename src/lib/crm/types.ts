@@ -11,15 +11,26 @@ export type CrmResolutionAction = "mapped" | "pending" | "resigned";
 /** One stored admin identity-resolution decision. */
 export type CrmResolutionRow = {
   crmId: number;
+  /** The CRM display label ("First.Last ( Area / Line )") this decision was made AGAINST, as
+   * stored on the resolution row. Optional so older constructors still type-check; when present
+   * on a "mapped" row it scopes the override to records carrying that label — a CRM slot handed
+   * to a NEW person after the mapping must not inherit it (slots 1102/1395/1399 all carry two
+   * different people's names in their production history). */
+  crmName?: string | null;
   mappedHrId: string | null;
   status: CrmResolutionAction;
 };
+
+/** One manual-override entry: the admin-mapped hr id plus the normalized CRM label the mapping
+ * was recorded against (null on legacy rows saved before labels were stored — those apply
+ * unconditionally, the pre-label behavior). */
+export type CrmManualOverride = { hrId: string; label: string | null };
 
 /** The crm_id/crm_username/manual-override lookup maps used by the identity waterfall. */
 export type CrmIdentityMaps = {
   hrIdByCrmId: Map<string, string>;
   hrIdByCrmUsername: Map<string, string>;
-  hrIdByManualOverride: Map<string, string>;
+  hrIdByManualOverride: Map<string, CrmManualOverride>;
   /** `hr_id` -> `last_working_date` (YYYY-MM-DD) for everyone who has one. Feeds the post-exit
    * attribution guard: work dated after someone left cannot be theirs. Only employees WITH a last
    * working date appear, so an active employee is simply absent. */

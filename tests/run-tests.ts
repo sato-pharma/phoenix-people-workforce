@@ -560,6 +560,8 @@ import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
 import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
+import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.ts";
+
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
 
@@ -1166,6 +1168,8 @@ await runTest("visit contact kind (pharmacy/institution/doctor split is display-
 await runTest("brevo failover keepalive (GET /v3/account only — never a send; a rejected key fails loudly)", runBrevoKeepaliveTests);
 
 await runTest("root redirect (\"/\" resolves from the signed cookie alone so proxy.ts can answer a real 307, never a JS-only redirect)", runRootRedirectHttp307Tests);
+
+await runTest("CRM unmapped-agent alerts (invisible-work tripwire: new/reused/drifted identities alert, historical stay silent, weekly idempotency key)", runCrmUnmappedAgentAlertTests);
 
 await runTest(
   "payroll ⨯ deductions gate composition (payroll never pays what the module refuses to publish; dsm_no_record never auto-publishes into a sheet; holiday_bridge reaches the other bucket)",

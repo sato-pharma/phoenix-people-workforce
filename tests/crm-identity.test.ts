@@ -34,10 +34,35 @@ export function runCrmIdentityTests() {
   // Ambiguous username excluded; unique ones kept.
   assert.equal(maps.hrIdByCrmUsername.has("dup name"), false, "ambiguous username dropped, never guessed");
   assert.equal(maps.hrIdByCrmUsername.get("sara ali / f"), "B-2");
-  assert.equal(maps.hrIdByManualOverride.get("100"), "B-99");
+  assert.equal(maps.hrIdByManualOverride.get("100")?.hrId, "B-99");
+  assert.equal(maps.hrIdByManualOverride.get("100")?.label, null, "no stored label → legacy unconditional override");
 
   // Tier 1 — manual override wins over everything, even a valid crm_id match.
   assert.equal(resolveEmployeeHrId(100, "Alex East / P", maps), "B-99", "manual override wins");
+
+  // Tier 1 label scoping — a mapped slot handed to ANOTHER person must not inherit the mapping.
+  // Production slots 1102/1395/1399 each carry two people's names across their history, so an
+  // unconditional override would let a wide reconcile re-stamp the old occupant's rows with the
+  // new occupant's hr id.
+  const labeledResolutions: CrmResolutionRow[] = [
+    { crmId: 100, crmName: "Alex  East / P ", mappedHrId: "B-99", status: "mapped" },
+  ];
+  const labeledMaps = buildCrmIdentityMaps(employees, labeledResolutions);
+  assert.equal(
+    resolveEmployeeHrId(100, "Alex East / P", labeledMaps),
+    "B-99",
+    "matching label (whitespace-insensitively) applies the override",
+  );
+  assert.equal(
+    resolveEmployeeHrId(100, null, labeledMaps),
+    "B-99",
+    "a check-in carries no label — the override still applies, or every mapped slot loses its GPS overlay",
+  );
+  assert.equal(
+    resolveEmployeeHrId(100, "Someone.New ( Alex East / P )", labeledMaps),
+    "B-1",
+    "a DIFFERENT label falls through the override to tier 2 (employees.crm_id), never inherits the mapping",
+  );
 
   // Tier 2 — crm_id match (no override). Works with NO name (the check-in path).
   assert.equal(resolveEmployeeHrId(200, "Sara Ali / F", maps), "B-2", "crm_id match");
