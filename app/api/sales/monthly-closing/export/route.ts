@@ -17,6 +17,7 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { netStoreSplitByAreaProduct, splitStoreSalesAcrossCityAreas } from "@/lib/sales/store-sales-city-split";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
@@ -163,6 +164,9 @@ export async function POST(request: Request) {
       // ever awaiting this one, so park a no-op handler now. The real `await` still surfaces the
       // error normally — attaching a catch does not swallow it for the awaiting caller.
       aggregateComparisonPromise?.catch(() => {});
+      // Completeness sheet data, started alongside the heavy reads. Degrades to null (the sheet
+      // is omitted) rather than ever costing the workbook.
+      const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null);
 
       const details = await detailsPromise;
       const comparison = aggregateComparisonPromise
@@ -222,6 +226,7 @@ export async function POST(request: Request) {
         : undefined;
 
       const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, details, {
+        coverage: await coveragePromise,
         filterNote,
         includeTargetSheet: !rowLevelActive,
       });

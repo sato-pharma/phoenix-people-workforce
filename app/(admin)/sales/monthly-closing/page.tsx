@@ -8,6 +8,7 @@ import {
   loadMonthlyClosing,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const dynamic = "force-dynamic";
 
@@ -25,14 +26,24 @@ export default async function MonthlyClosingPage() {
   }
 
   let initialMatrix: MonthlyClosingMatrix | null = null;
+  let initialCoverage: MonthlySourceCoverage | null = null;
   let initialError: string | null = null;
 
   try {
     await assertPermission(access, "sales", "import");
     initialMatrix = await loadMonthlyClosing();
+    // Completeness ride-along; a coverage failure hides the banner, never the closing.
+    initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period).catch(() => null);
   } catch (error) {
     initialError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
 
-  return <MonthlyClosingWorkspace canPublish initialError={initialError} initialMatrix={initialMatrix} />;
+  return (
+    <MonthlyClosingWorkspace
+      canPublish
+      initialCoverage={initialCoverage}
+      initialError={initialError}
+      initialMatrix={initialMatrix}
+    />
+  );
 }
