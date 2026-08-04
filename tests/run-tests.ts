@@ -599,6 +599,8 @@ import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
+import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chain-history.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1271,6 +1273,10 @@ await runTest(
 await runTest(
   "marketing approval inbox nav badge (gating rows only — not CC, not upcoming, not a request that already left pending_approval; overdue on the step's own default_sla_days, never on a null one)",
   runMarketingApprovalInboxNavBadgeTests,
+);
+await runTest(
+  "marketing approval history on the inbox row (ordered, CC excluded, credits the decider, silent approvals named)",
+  runMarketingApproverChainHistoryTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

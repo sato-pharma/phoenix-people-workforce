@@ -523,9 +523,70 @@ export type MarketingRequestDraftWorkspace = {
   stepProgressByRequestId: Record<string, MarketingRequestStepProgress>;
 };
 
+/**
+ * One rung of the chain as it stands right now, for display on the inbox row.
+ *
+ * `decision_note` and `decision_at` have always been written by every approver and were never
+ * surfaced anywhere: the decision screen's chain is a bare breadcrumb of step names. An approver
+ * at the end of the chain could see THAT the three rungs below him said yes, but never WHEN or
+ * WHY. The CEO signs last, so he is exactly the person that costs.
+ *
+ * Free of extra cost: getApproverPendingRequests already loads every non-CC step for every request
+ * in one batched query to place the row in its chain, and mapApprovalStep already carries both
+ * fields. This only stops throwing them away.
+ */
+export type MarketingApproverChainRung = {
+  approverName: string;
+  /** ISO; render in Africa/Cairo. Null while the rung is still pending or current. */
+  decisionAt: string | null;
+  /** What the approver actually wrote. Null when they approved without comment. */
+  decisionNote: string | null;
+  isCurrent: boolean;
+  /** True for the viewer's own rung, so the row can say "this one is yours". */
+  isMine: boolean;
+  sequence: number;
+  status: MarketingRequestApprovalStep["status"];
+  stepName: string;
+};
+
+/**
+ * The chain as it stands, ordered, with each approver's note and decision time.
+ *
+ * Exported and pure so the ordering / naming / note rules are testable without a request context;
+ * `getApproverPendingRequests` has already batched these steps into memory, so calling this adds
+ * no query.
+ *
+ * `myStepId` marks the viewer's own rung. CC rows are dropped: an advisory comment is not a rung
+ * of the decision chain and must never read as one more approval.
+ */
+export function buildMarketingApproverChain(
+  steps: readonly MarketingRequestApprovalStep[],
+  employeeRows: EmployeeDirectoryRow[],
+  myStepId: string | null,
+): MarketingApproverChainRung[] {
+  return [...steps]
+    .filter((step) => !step.isCc)
+    .sort((left, right) => left.sequence - right.sequence)
+    .map((step) => ({
+      // Whoever actually DECIDED, falling back to the assignee for rungs not yet reached. Using
+      // the assignee throughout would credit the current holder for a predecessor's approval on
+      // any re-assigned step.
+      approverName: employeeNameByHrId(employeeRows, step.decisionByHrId ?? step.assignedHrId),
+      decisionAt: step.decisionAt,
+      decisionNote: cleanText(step.decisionNote),
+      isCurrent: step.status === "current",
+      isMine: Boolean(myStepId) && step.id === myStepId,
+      sequence: step.sequence,
+      status: step.status,
+      stepName: step.stepName,
+    }));
+}
+
 export type MarketingApproverInboxRow = {
   allowReject: boolean;
   allowReturn: boolean;
+  /** Every rung, in order, with each approver's note and decision time. */
+  approvalHistory: MarketingApproverChainRung[];
   currentStepName: string;
   customerName: string;
   decisionLabels: MarketingDecisionLabels;
@@ -5218,6 +5279,11 @@ export async function getApproverPendingRequests(access: AccessContext): Promise
   const buildRow = (step: MarketingRequestApprovalStep, request: MarketingRequest): MarketingApproverInboxRow => ({
     allowReject: step.allowReject,
     allowReturn: step.allowReturn,
+    approvalHistory: buildMarketingApproverChain(
+      allStepsByRequest.get(request.id) ?? [],
+      employeeRows,
+      step.id,
+    ),
     currentStepName: step.stepName,
     customerName: customerNameById.get(request.customerId) ?? request.customerId,
     decisionLabels: step.decisionLabels ?? normalizeMarketingDecisionLabels(null),
