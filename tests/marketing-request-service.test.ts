@@ -928,6 +928,64 @@ export async function runMarketingRequestServiceTests() {
     /<MarketingSalesEvidencePanel requestId=\{summary\.requestId\} \/>/,
     "the decision surface must show sales evidence inline",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* The approval window must carry EVERY submitted detail (owner 08-04).    */
+  /* ---------------------------------------------------------------------- */
+
+  // The screen used to show a customer NAME and a pharmacy COUNT, and asked the approver to commit
+  // real money on that. Each field below was captured at submission and never carried through.
+  for (const field of [
+    "customerCode",
+    "customerType",
+    "customerSpeciality",
+    "customerContactName",
+    "customerContactMobile",
+    "customerArea",
+    "customerGovernorate",
+    "customerAddress",
+    "evidencePhotoName",
+    "targetPharmacies",
+    "requestDate",
+    "roiCoverageRatio",
+    "notes",
+  ]) {
+    assert.match(
+      serviceSource,
+      new RegExp(`${field}:`),
+      `the decision summary must carry ${field} through to the approval window`,
+    );
+    assert.match(
+      decisionConfirmationSource,
+      new RegExp(`summary\\.${field}`),
+      `the approval window must render ${field}`,
+    );
+  }
+
+  // A pharmacy COUNT cannot tell an intended campaign from a mis-picked one. The approver needs the
+  // names, the distributor and whether each vendor code was ever matched.
+  assert.match(
+    decisionConfirmationSource,
+    /summary\.targetPharmacies\.map/,
+    "target pharmacies must be listed individually, never collapsed to a count",
+  );
+  assert.match(
+    decisionConfirmationSource,
+    /pharmacy\.referenceStatus/,
+    "each target pharmacy must show whether its vendor code was matched",
+  );
+  // Absent data must never render blank — a blank cell reads as "this is nothing", which is a
+  // different claim from "this was never recorded". Same rule as the products label in this module.
+  assert.match(
+    decisionConfirmationSource,
+    /value \|\| "Not captured"/,
+    "a field with no value must say so rather than rendering an empty cell",
+  );
+  assert.match(
+    decisionConfirmationSource,
+    /No target pharmacies were attached to this request/,
+    "a request with no target pharmacies must say so — nothing can be attributed to it",
+  );
   assert.match(
     decisionConfirmationSource,
     /MarketingSalesEvidencePanel[\s\S]{0,700}What&apos;s being requested/,

@@ -8,6 +8,21 @@ import type {
   MarketingRequestDecisionSummary,
 } from "@/lib/marketing-requests/service";
 
+/**
+ * One labelled field. An absent value renders "Not captured" rather than an empty cell — a blank
+ * reads as "this is nothing", which is a different claim from "this was never recorded".
+ */
+function DetailField({ label, value }: { label: string; value: string | null | undefined }) {
+  return (
+    <div className="bg-slate-50 px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">{label}</p>
+      <p className={`text-[13px] font-medium ${value ? "text-slate-950" : "text-slate-400"}`}>
+        {value || "Not captured"}
+      </p>
+    </div>
+  );
+}
+
 function fallbackLabel(decision: MarketingRequestDecision) {
   if (decision === "approve") return "Approve";
   if (decision === "reject") return "Reject";
@@ -183,6 +198,97 @@ export function MarketingRequestDecisionConfirmation({
               <p className="text-[13px] font-medium text-slate-950">{summary.payDate}</p>
             </div>
           </div>
+
+          {/* ── Everything the requester actually submitted (owner instruction, 2026-08-04) ──
+              This screen previously showed a customer NAME and a pharmacy COUNT, and asked the
+              approver to commit real money on that. Every field below was captured at submission
+              and simply never carried through. A field with no value says "Not captured" rather
+              than rendering blank, so absent data never reads as a value of nothing. */}
+          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Customer detail</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <DetailField label="Customer code" value={summary.customerCode} />
+            <DetailField label="Customer name" value={summary.customerName} />
+            <DetailField label="Type" value={summary.customerType} />
+            <DetailField label="Speciality" value={summary.customerSpeciality} />
+            <DetailField label="Contact" value={summary.customerContactName} />
+            <DetailField label="Contact mobile" value={summary.customerContactMobile} />
+            <DetailField label="Area" value={summary.customerArea} />
+            <DetailField label="Governorate" value={summary.customerGovernorate} />
+          </div>
+          {summary.customerAddress ? (
+            <p className="mt-2 border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium leading-5 text-slate-600">
+              {summary.customerAddress}
+            </p>
+          ) : null}
+          {summary.evidencePhotoName ? (
+            <p className="mt-2 text-[11px] font-semibold text-emerald-700">
+              Live capture photo on file: {summary.evidencePhotoName}
+            </p>
+          ) : (
+            <p className="mt-2 text-[11px] font-semibold text-amber-700">No live capture photo on file for this customer.</p>
+          )}
+
+          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Target pharmacies{summary.targetPharmacies.length ? ` · ${summary.targetPharmacies.length}` : ""}
+          </p>
+          {summary.targetPharmacies.length > 0 ? (
+            <div className="mt-2 space-y-2">
+              {summary.targetPharmacies.map((pharmacy, index) => (
+                <div className="border border-slate-200 bg-white px-3 py-2.5" key={`${pharmacy.pharmacyCode}-${index}`}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[13px] font-medium text-slate-950">{pharmacy.pharmacyName}</p>
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                        pharmacy.referenceStatus === "matched"
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {pharmacy.referenceStatus}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                    {pharmacy.distributorName} · vendor code {pharmacy.distributorPharmacyCode} · pharmacy {pharmacy.pharmacyCode}
+                  </p>
+                  {pharmacy.notes ? (
+                    <p className="mt-1 text-[11px] font-medium text-slate-600">{pharmacy.notes}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-500">
+              No target pharmacies were attached to this request — nothing can be attributed to it.
+            </p>
+          )}
+
+          <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Request detail</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <DetailField label="Request code" value={summary.requestCode} />
+            <DetailField label="Request type" value={summary.requestType} />
+            <DetailField label="Request date" value={summary.requestDate} />
+            <DetailField label="Requester" value={summary.requesterName} />
+            <DetailField label="Line" value={summary.lineName} />
+            <DetailField label="Area" value={summary.areaName} />
+            <DetailField label="Expected ROI" value={egp(summary.expectedRoiValue)} />
+            <DetailField
+              label="ROI coverage"
+              value={
+                summary.roiCoverageRatio === null
+                  ? null
+                  : `${Math.round(summary.roiCoverageRatio * 100)}%${summary.roiStatus ? ` · ${summary.roiStatus.replace(/_/g, " ")}` : ""}`
+              }
+            />
+            <DetailField label="Direct sales tracked" value={summary.trackDirectSales ? "Yes" : "No"} />
+          </div>
+          {summary.notes ? (
+            <>
+              <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Requester notes</p>
+              <p className="mt-1 border border-slate-200 bg-white px-3 py-2 text-[12px] font-medium leading-5 text-slate-700">
+                {summary.notes}
+              </p>
+            </>
+          ) : null}
 
           {summary.chain.length > 0 ? (
             <>

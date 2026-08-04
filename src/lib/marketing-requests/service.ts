@@ -162,6 +162,17 @@ export type MarketingDecisionProductLine = {
   value: number;
 };
 
+/** One target pharmacy exactly as the requester submitted it — never collapsed to a count. */
+export type MarketingDecisionPharmacy = {
+  distributorName: string;
+  distributorPharmacyCode: string;
+  notes: string | null;
+  pharmacyCode: string;
+  pharmacyName: string;
+  /** "matched" | "unverified" | ... — an unverified code is the approver's business. */
+  referenceStatus: string;
+};
+
 export type MarketingRequestDecisionSummary = {
   allowReject: boolean;
   assignedApproverHrId: string;
@@ -187,6 +198,31 @@ export type MarketingRequestDecisionSummary = {
   requiredRoiValue: number;
   roiDurationMonths: number;
   roiWindow: string | null;
+  /**
+   * ── Everything else the requester actually submitted (owner instruction, 2026-08-04) ──
+   *
+   * The approval window previously showed a customer NAME and a pharmacy COUNT. An approver was
+   * being asked to commit real money without seeing the customer's code, its address, who the
+   * contact is, or which pharmacies the campaign even targets. All of it was captured at
+   * submission and simply never carried through to the decision.
+   */
+  areaName: string | null;
+  customerAddress: string | null;
+  customerArea: string | null;
+  customerCode: string | null;
+  customerContactMobile: string | null;
+  customerContactName: string | null;
+  customerGovernorate: string | null;
+  customerSpeciality: string | null;
+  customerType: string | null;
+  /** Live capture proof from validation — the approver can see the shop front was photographed. */
+  evidencePhotoName: string | null;
+  notes: string | null;
+  requestDate: string | null;
+  roiCoverageRatio: number | null;
+  roiStatus: string | null;
+  targetPharmacies: MarketingDecisionPharmacy[];
+  trackDirectSales: boolean;
   /**
    * Other live requests that would be credited the SAME invoice lines as this one.
    *
@@ -2667,11 +2703,25 @@ export async function getMarketingRequestDecisionSummary(
   }
 
   // Rich request context so the approver can decide in place (products, financials, the chain).
-  const [productsResult, pharmaciesResult, customerResult, requestTypeName] = await Promise.all([
+  const [productsResult, pharmaciesResult, customerResult, contactResult, requestTypeName] = await Promise.all([
     supabase.from("marketing_request_products").select("*").eq("request_id", cleanRequestId),
-    supabase.from("marketing_request_pharmacies").select("id").eq("request_id", cleanRequestId),
+    supabase
+      .from("marketing_request_pharmacies")
+      .select("id, pharmacy_id, distributor_code_id, notes")
+      .eq("request_id", cleanRequestId),
     request.customerId
-      ? supabase.from("marketing_customers").select("display_name").eq("id", request.customerId).maybeSingle()
+      ? supabase
+        .from("marketing_customers")
+        .select("display_name, customer_code, customer_type, speciality, captured_address, extracted_area_name, extracted_governorate_name, evidence_photo_name")
+        .eq("id", request.customerId)
+        .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    request.customerContactId
+      ? supabase
+        .from("marketing_customer_contacts")
+        .select("contact_name, mobile_number")
+        .eq("id", request.customerContactId)
+        .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     loadMarketingRequestTypeName(supabase, request.requestTypeId),
   ]);
@@ -2685,8 +2735,32 @@ export async function getMarketingRequestDecisionSummary(
       quantity: product.forecastQuantity,
       value: product.expectedValue,
     }));
-  const pharmacyCount = ((pharmaciesResult.data ?? []) as Array<{ id: string }>).length;
-  const customerName = cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name);
+  type RequestPharmacyRow = {
+    distributor_code_id: string | null;
+    id: string;
+    notes: string | null;
+    pharmacy_id: string | null;
+  };
+  const requestPharmacyRows = (pharmaciesResult.data ?? []) as RequestPharmacyRow[];
+  const pharmacyCount = requestPharmacyRows.length;
+
+  // Resolve each target pharmacy to display names + codes. An approver reading "3 pharmacies"
+  // cannot tell an intended campaign from a mis-picked one — they need the actual names, the
+  // distributor, and whether each vendor code was ever matched.
+  const targetPharmacies = await loadMarketingDecisionPharmacies(supabase, requestPharmacyRows);
+
+  const customerRow = customerResult.data as {
+    captured_address?: string | null;
+    customer_code?: string | null;
+    customer_type?: string | null;
+    display_name?: string | null;
+    evidence_photo_name?: string | null;
+    extracted_area_name?: string | null;
+    extracted_governorate_name?: string | null;
+    speciality?: string | null;
+  } | null;
+  const contactRow = contactResult.data as { contact_name?: string | null; mobile_number?: string | null } | null;
+  const customerName = cleanText(customerRow?.display_name);
 
   // Double-count check. Never allowed to break the approval screen: an approver must always be
   // able to decide, so a failure here degrades to "no overlaps known" rather than a dead page.
@@ -2727,7 +2801,86 @@ export async function getMarketingRequestDecisionSummary(
     roiDurationMonths: request.roiDurationMonths,
     roiWindow: buildRoiWindowLabel(request.payDate, request.roiDurationMonths),
     contestedBy,
+    areaName: requester?.areaName ?? null,
+    customerAddress: cleanText(customerRow?.captured_address),
+    customerArea: cleanText(customerRow?.extracted_area_name),
+    customerCode: cleanText(customerRow?.customer_code),
+    customerContactMobile: cleanText(contactRow?.mobile_number),
+    customerContactName: cleanText(contactRow?.contact_name),
+    customerGovernorate: cleanText(customerRow?.extracted_governorate_name),
+    customerSpeciality: cleanText(customerRow?.speciality),
+    customerType: cleanText(customerRow?.customer_type),
+    evidencePhotoName: cleanText(customerRow?.evidence_photo_name),
+    notes: cleanText(request.notes),
+    requestDate: request.requestDate ?? null,
+    roiCoverageRatio: request.roiCoverageRatio ?? null,
+    roiStatus: request.roiStatus ?? null,
+    targetPharmacies,
+    // Not carried on the mapped domain object; read defensively rather than widen MarketingRequest
+    // for one read-only field on one screen.
+    trackDirectSales: (request as { trackDirectSales?: boolean }).trackDirectSales === true,
   };
+}
+
+/**
+ * Resolve request→pharmacy links into display rows.
+ *
+ * Best-effort by design: a decision screen must never fail to open because a reference lookup
+ * missed. A link that cannot be resolved still returns a row carrying whatever is known, so the
+ * approver sees "N pharmacies, one unresolved" rather than silently seeing N-1.
+ */
+async function loadMarketingDecisionPharmacies(
+  supabase: SupabaseClient,
+  rows: Array<{ distributor_code_id: string | null; notes: string | null; pharmacy_id: string | null }>,
+): Promise<MarketingDecisionPharmacy[]> {
+  if (rows.length === 0) return [];
+
+  const pharmacyIds = [...new Set(rows.map((row) => row.pharmacy_id).filter((id): id is string => Boolean(id)))];
+  const codeIds = [...new Set(rows.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)))];
+
+  const [pharmacyRows, codeRows] = await Promise.all([
+    fetchRowsByIds<{ display_name: string | null; id: string; pharmacy_code: string | null }>(
+      supabase,
+      "marketing_pharmacies",
+      pharmacyIds,
+    ).catch(() => []),
+    fetchRowsByIds<{
+      distributor_id: number | string | null;
+      distributor_pharmacy_code: string | null;
+      id: string;
+      reference_status: string | null;
+    }>(supabase, "marketing_pharmacy_distributor_codes", codeIds).catch(() => []),
+  ]);
+
+  const distributorIds = [...new Set(codeRows.map((row) => row.distributor_id).filter((id) => id !== null && id !== undefined))];
+  const distributorRows = distributorIds.length > 0
+    ? await fetchRowsByIds<{ display_name: string | null; id: number | string }>(
+      supabase,
+      "marketing_distributors",
+      distributorIds as Array<string | number>,
+    ).catch(() => [])
+    : [];
+
+  const pharmacyById = new Map(pharmacyRows.map((row) => [String(row.id), row]));
+  const codeById = new Map(codeRows.map((row) => [String(row.id), row]));
+  const distributorById = new Map(distributorRows.map((row) => [String(row.id), row]));
+
+  return rows.map((row) => {
+    const pharmacy = row.pharmacy_id ? pharmacyById.get(String(row.pharmacy_id)) : undefined;
+    const code = row.distributor_code_id ? codeById.get(String(row.distributor_code_id)) : undefined;
+    const distributor = code?.distributor_id !== null && code?.distributor_id !== undefined
+      ? distributorById.get(String(code.distributor_id))
+      : undefined;
+
+    return {
+      distributorName: cleanText(distributor?.display_name) ?? "Unknown distributor",
+      distributorPharmacyCode: cleanText(code?.distributor_pharmacy_code) ?? "-",
+      notes: cleanText(row.notes),
+      pharmacyCode: cleanText(pharmacy?.pharmacy_code) ?? "-",
+      pharmacyName: cleanText(pharmacy?.display_name) ?? "Unresolved pharmacy",
+      referenceStatus: cleanText(code?.reference_status) ?? "pending",
+    };
+  });
 }
 
 /**
