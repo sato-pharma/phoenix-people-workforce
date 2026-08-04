@@ -2,6 +2,8 @@ import { cache } from "react";
 
 import { canonicalHrIdForDisplay, hrIdsMatch } from "@/lib/hr-id";
 import { fetchAllRows } from "@/lib/supabase/paginated";
+import { currentCairoDateParts } from "@/lib/i18n/format";
+import { describeIncompleteWindow, resolveIncentiveWindow } from "@/lib/incentives/semester";
 import {
   canSeeEmployee,
   resolveEmployeeIdentityId,
@@ -2277,6 +2279,11 @@ export type MedicalRepPortalData = {
     currentMonthLabel: string;
     currentMonthSales: number;
     currentMonthTarget: number;
+    /** The semester the incentive figures are computed over, e.g. "H1 2026". */
+    incentiveSemesterLabel: string | null;
+    /** Non-null when that semester is not fully loaded — names the months, so a rep can never read
+     * a partial figure as their settled payout. See describeIncompleteWindow. */
+    incentiveWindowNotice: string | null;
     overviewAchievementPercent: number;
     overviewSales: number;
     overviewTarget: number;
@@ -2644,6 +2651,10 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       currentMonthLabel: "No period",
       currentMonthSales: 0,
       currentMonthTarget: 0,
+      // No sales data at all: there is no semester to name and nothing to call provisional. The
+      // surrounding empty state already tells the rep their data is not linked yet.
+      incentiveSemesterLabel: null,
+      incentiveWindowNotice: null,
       overviewAchievementPercent: 0,
       overviewSales: 0,
       overviewTarget: 0,
@@ -3695,7 +3706,20 @@ export async function getMedicalRepPortalData(
         .filter((item) => item.period)
     : [];
 
-  const salesTrend = allTimeTrend.slice(-6);
+  // The payout window is a DECLARED semester, not "the last six rows that happen to exist".
+  // `slice(-6)` gave different-length semesters to different reps (June 2026 was half-loaded: 26
+  // reps had five periods and one had four while 56 colleagues had six) and would silently straddle
+  // the H1/H2 boundary the moment a July sheet landed, quietly changing everyone's payout. See
+  // src/lib/incentives/semester.ts. The 2026 payout curve itself is untouched.
+  const cairoNow = currentCairoDateParts();
+  const todayPeriod = `${cairoNow.year}-${String(cairoNow.month).padStart(2, "0")}`;
+  const incentiveWindow = resolveIncentiveWindow({
+    periods: allTimeTrend.map((point) => point.period),
+    todayPeriod,
+  });
+  const salesTrend = incentiveWindow
+    ? allTimeTrend.filter((point) => incentiveWindow.present.includes(point.period))
+    : [];
 
   const latestTrend = salesTrend[salesTrend.length - 1] ?? null;
   const previousTrend = salesTrend[salesTrend.length - 2] ?? null;
@@ -3706,8 +3730,10 @@ export async function getMedicalRepPortalData(
   const overviewTarget = salesDashboard?.summary?.totalApprovedTarget ??
     allTimeTrend.reduce((sum, point) => sum + Number((point as Record<string, unknown>).target ?? 0), 0);
 
-  // Semester achievement: computed from the last 6 periods (salesTrend), NOT all-time totals,
-  // so the incentive tab matches the old sales queue achievement % for the relevant periods.
+  // Semester achievement: computed over the declared semester window (salesTrend), NOT all-time
+  // totals, so the incentive tab reflects the semester a rep is actually paid on. When that window
+  // is incomplete the figure is still shown, but `incentiveWindowNotice` forces it to be read as
+  // provisional rather than settled — see describeIncompleteWindow.
   const semesterSales = salesTrend.reduce((sum, p) => sum + p.sales, 0);
   const semesterTarget = salesTrend.reduce((sum, p) => sum + p.target, 0);
   const overviewAchievementPercent =
@@ -4063,6 +4089,8 @@ export async function getMedicalRepPortalData(
       currentMonthLabel: latestTrend ? toPeriodLabel(latestTrend.period) : "No period",
       currentMonthSales,
       currentMonthTarget,
+      incentiveSemesterLabel: incentiveWindow?.semesterLabel ?? null,
+      incentiveWindowNotice: describeIncompleteWindow(incentiveWindow),
       overviewAchievementPercent: Number.isFinite(overviewAchievementPercent) ? overviewAchievementPercent : 0,
       overviewSales,
       overviewTarget,
