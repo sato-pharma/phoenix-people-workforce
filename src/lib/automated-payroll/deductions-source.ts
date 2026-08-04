@@ -70,11 +70,22 @@ export function isConfirmedForPayroll(candidate: {
 
 /** Payroll-facing buckets. Mirrors the module's own category → salary-column mapping. */
 export type DeductionBuckets = {
-  /** → Part 1 fingerprint step (`fingerprintValue`). */
+  /** → Part 1 fingerprint step (`fingerprintValue`), for every employee. */
   fingerprint: number;
-  /** → the CRM step for this employee's part (`crm` / `p1odCrmValue`). */
+  /**
+   * → the Part 2 CRM step (`crm`) — CONTINUING TWO-PART EMPLOYEES ONLY.
+   *
+   * 🔴 Known coverage gap, not a claim of completeness: `p1_crm` and
+   * `p1_resignation_crm` never receive this map (see recommendStep's dispatch),
+   * and `recommendCrm` skips `isSettledInPart1` employees. So a confirmed CRM
+   * candidate belonging to a one-part or leaving employee reaches no step —
+   * the same shape of hole this file closed for loan/other. Leavers do get a
+   * CRM figure, but from payroll's own `computeLeaverCrmDates`, not from here.
+   * Nobody is affected as of 2026-08-04 (every approved July row is two_parts);
+   * closing it changes what employees are charged, so it needs the owner first.
+   */
   crm: number;
-  /** unpaid_vacation + insufficient_balance_vacation → the vacation step. */
+  /** unpaid_vacation + insufficient_balance_vacation → the Part 2 vacation step. Same one-part/leaver gap as `crm`. */
   unpaidVacation: number;
   /** → Part 1 Other Deductions, Loan column. */
   loan: number;
