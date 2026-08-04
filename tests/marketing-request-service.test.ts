@@ -986,6 +986,24 @@ export async function runMarketingRequestServiceTests() {
     /No target pharmacies were attached to this request/,
     "a request with no target pharmacies must say so — nothing can be attributed to it",
   );
+
+  // `marketing_customers` has NO `speciality` column. Naming it in the decision-summary select threw
+  // "column does not exist" and took the entire approval window down to its safe state in
+  // production. The real free-text qualifier is `other_type_description`.
+  //
+  // Narrow by construction, and worth saying plainly: a source assertion cannot verify that a
+  // column exists — only a query against a real schema can. This pins the one name that broke,
+  // it does not make the whole select safe.
+  assert.doesNotMatch(
+    serviceSource,
+    /customer_type, speciality/,
+    "the decision summary must not select a speciality column — marketing_customers has none",
+  );
+  assert.match(
+    serviceSource,
+    /customer_type, other_type_description/,
+    "the decision summary must read the customer's free-text qualifier from other_type_description",
+  );
   assert.match(
     decisionConfirmationSource,
     /MarketingSalesEvidencePanel[\s\S]{0,700}What&apos;s being requested/,

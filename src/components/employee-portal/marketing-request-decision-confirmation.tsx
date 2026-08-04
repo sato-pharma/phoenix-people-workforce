@@ -209,7 +209,7 @@ export function MarketingRequestDecisionConfirmation({
             <DetailField label="Customer code" value={summary.customerCode} />
             <DetailField label="Customer name" value={summary.customerName} />
             <DetailField label="Type" value={summary.customerType} />
-            <DetailField label="Speciality" value={summary.customerSpeciality} />
+            <DetailField label="Type detail" value={summary.customerSpeciality} />
             <DetailField label="Contact" value={summary.customerContactName} />
             <DetailField label="Contact mobile" value={summary.customerContactMobile} />
             <DetailField label="Area" value={summary.customerArea} />
