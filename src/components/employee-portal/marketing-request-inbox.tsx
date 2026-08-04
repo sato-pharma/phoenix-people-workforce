@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   CalendarDays,
   CheckCircle2,
+  Clock3,
   Inbox,
   MessageSquareText,
   RefreshCcw,
@@ -20,6 +21,7 @@ import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary
 import type {
   MarketingApproverInboxRow,
   MarketingApproverInboxWorkspace,
+  MarketingApproverUpcomingRow,
 } from "@/lib/marketing-requests/service";
 import { PHOENIX_BUSINESS_TIME_ZONE } from "@/lib/i18n/format";
 
@@ -174,6 +176,7 @@ function AdvisoryRowCard({ onPosted, row }: { onPosted: () => void; row: Marketi
 function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: string }) {
   const [rows, setRows] = useState<MarketingApproverInboxRow[]>([]);
   const [advisoryRows, setAdvisoryRows] = useState<MarketingApproverInboxRow[]>([]);
+  const [upcomingRows, setUpcomingRows] = useState<MarketingApproverUpcomingRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,10 +200,12 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
 
       setRows((payload as MarketingApproverInboxWorkspace).rows ?? []);
       setAdvisoryRows((payload as MarketingApproverInboxWorkspace).advisoryRows ?? []);
+      setUpcomingRows((payload as MarketingApproverInboxWorkspace).upcomingRows ?? []);
       setError(null);
     } catch {
       setRows([]);
       setAdvisoryRows([]);
+      setUpcomingRows([]);
       setError("Unable to load your approval inbox.");
     } finally {
       setIsLoading(false);
@@ -261,25 +266,74 @@ function MarketingRequestInboxInner({ decisionBasePath }: { decisionBasePath: st
           <RowSkeleton />
           <RowSkeleton />
         </div>
-      ) : rows.length === 0 && advisoryRows.length === 0 ? (
+      ) : rows.length === 0 && advisoryRows.length === 0 && upcomingRows.length === 0 ? (
         <Card className="flex flex-col items-center justify-center gap-2 rounded-sm border border-slate-200 bg-white px-4 py-10 text-center shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
           <div className="flex h-10 w-10 items-center justify-center rounded-sm bg-slate-50 text-slate-400 ring-1 ring-slate-100">
             <Inbox className="h-4 w-4" />
           </div>
           <p className="text-[14px] font-black text-slate-800">
-            No requests awaiting your decision
+            No marketing requests involve you right now
           </p>
           <p className="max-w-sm text-[12px] font-medium text-slate-500">
-            When a marketing request reaches your approval step, it will appear here for review.
+            Requests appear here from the moment they are submitted — both the ones waiting on you and
+            the ones still moving toward your step.
           </p>
         </Card>
-      ) : (
+      ) : rows.length === 0 ? null : (
         <div className="space-y-3">
           {rows.map((row) => (
           <InboxRowCard decisionBasePath={decisionBasePath} key={row.id} row={row} />
           ))}
         </div>
       )}
+
+      {/* ------ Coming to you: you hold a LATER step, so this is read-only tracking ------------------
+          Owner instruction, 2026-08-04. The inbox previously queried status='current' only, so an
+          approver above rung 1 saw nothing until the request was already theirs. The CEO sits at
+          step 4 of 4 and could be on the hook for a request that had been stalled for days without
+          any way to see it. No decision buttons here — it is not their turn — but the request, where
+          it is stopped, who holds it, and how long it has been in the system are all visible. */}
+      {!isLoading && upcomingRows.length > 0 ? (
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-amber-50 text-amber-600 ring-1 ring-amber-100">
+              <Clock3 className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-black tracking-tight text-slate-950">Coming to you</h2>
+              <p className="text-[11px] font-medium text-slate-400">
+                Requests where you approve later in the chain — not yet your turn
+              </p>
+            </div>
+          </div>
+          {upcomingRows.map((row) => (
+            <Card
+              className="rounded-sm border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_24px_rgba(15,23,42,0.05)]"
+              key={row.id}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[14px] font-black text-slate-950">{row.customerName}</p>
+                  <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+                    {row.requestCode} · {row.requesterName} · {egp(row.estimatedCost)}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-sm bg-amber-50 px-2.5 py-1 text-[11px] font-black text-amber-800">
+                  {row.ageDays === 0 ? "Submitted today" : `${row.ageDays} ${row.ageDays === 1 ? "day" : "days"} in system`}
+                </span>
+              </div>
+              <p className="mt-2 text-[12px] font-bold text-slate-700">
+                {row.awaitingStepName
+                  ? `Now with ${row.awaitingApproverName || "an unassigned approver"} — ${row.awaitingStepName}`
+                  : "No open approval step on this request."}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-400">
+                Your step is {row.myStepSequence} of {row.totalGatingSteps}
+              </p>
+            </Card>
+          ))}
+        </div>
+      ) : null}
 
       {/* ------ Advisory: requests awaiting your comment (non-blocking) ------------------------------- */}
       {!isLoading && advisoryRows.length > 0 ? (

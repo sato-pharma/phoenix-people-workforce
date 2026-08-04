@@ -1004,6 +1004,57 @@ export async function runMarketingRequestServiceTests() {
     /customer_type, other_type_description/,
     "the decision summary must read the customer's free-text qualifier from other_type_description",
   );
+
+  /* ---------------------------------------------------------------------- */
+  /* The inbox must track from SUBMISSION, not from your turn (owner 08-04). */
+  /* ---------------------------------------------------------------------- */
+
+  // The inbox queried status='current' only, so an approver above rung 1 saw nothing until the
+  // request was already theirs. The CEO sits at step 4 of 4 and could be accountable for a request
+  // stalled for days with an empty inbox. Upcoming rows close that blind spot.
+  assert.match(
+    serviceSource,
+    /\.eq\("status", "pending"\)[\s\S]{0,80}\.eq\("is_cc", false\)[\s\S]{0,80}\.in\("assigned_hr_id", actorHrKeys\)/,
+    "the inbox must also load steps assigned to the actor that have not opened yet",
+  );
+  assert.match(serviceSource, /upcomingRows/, "the inbox workspace must expose upcoming rows");
+  // Each upcoming row must answer where it is stopped and for how long — a bare list of request
+  // codes would not tell the approver anything they could act on.
+  for (const field of ["awaitingStepName", "awaitingApproverName", "ageDays", "totalGatingSteps"]) {
+    assert.match(serviceSource, new RegExp(field), `an upcoming row must carry ${field}`);
+  }
+  // Age is measured from SUBMISSION, not from when it reached the current holder: the question a
+  // downstream approver asks is "how long has this been in the system?".
+  assert.match(
+    serviceSource,
+    /request\.submittedAt \? Date\.parse\(request\.submittedAt\) : Number\.NaN/,
+    "upcoming age must be measured from submission",
+  );
+  assert.match(
+    serviceSource,
+    /upcomingRows\.sort\(\(left, right\) => right\.ageDays - left\.ageDays\)/,
+    "the oldest waiting request must surface first — that is the one worth chasing",
+  );
+
+  const inboxSource = source("src/components/employee-portal/marketing-request-inbox.tsx");
+  assert.match(inboxSource, /Coming to you/, "the inbox must show requests heading toward the approver");
+  assert.match(
+    inboxSource,
+    /Now with \$\{row\.awaitingApproverName/,
+    "an upcoming row must name who is holding the request right now",
+  );
+  // No decision controls on an upcoming row — it is not the actor's turn, and offering a button
+  // that the server would refuse is worse than offering none.
+  assert.match(
+    inboxSource,
+    /Your step is \{row\.myStepSequence\} of \{row\.totalGatingSteps\}/,
+    "an upcoming row must state where the actor's own rung sits in the chain",
+  );
+  assert.match(
+    inboxSource,
+    /No marketing requests involve you right now/,
+    "the empty state must reflect that the inbox now covers more than the actor's own turn",
+  );
   assert.match(
     decisionConfirmationSource,
     /MarketingSalesEvidencePanel[\s\S]{0,700}What&apos;s being requested/,
