@@ -298,6 +298,11 @@ function writeTotalSheet(
   // matrix total (which still ties, because every sheet was built from the same rows), so a
   // reader never mistakes it for the whole-month published number.
   filtered = false,
+  // Net store split that landed on the matrix in THIS workbook. Zero on a whole-month export.
+  // On a filtered one it is the bridge between the Data sheet and the headline: the Data rows are
+  // raw sell-in, the matrix has them re-allocated across each store's city, and part of that
+  // allocation belongs to areas the filter excluded. Stating it is what keeps Difference at zero.
+  storeSplitApplied: { qty: number; value: number } = { qty: 0, value: 0 },
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
     views: [{ state: "frozen", ySplit: 5 }],
@@ -399,17 +404,42 @@ function writeTotalSheet(
   const totalValueRef: CellValue = rows.length > 0
     ? F(`${columnLetter(10)}${row - 3}`, recon.includedInClosing.salesValue)
     : recon.includedInClosing.salesValue;
+
+  // The Data rows are raw sell-in; the matrix has store sales re-allocated across each store's
+  // city. Both terms therefore belong on the left of the comparison, or the difference measures
+  // the re-allocation rather than an error. `applied` is zero on a whole-month export, so this
+  // reduces to exactly the arithmetic that was here before.
+  const applied = storeSplitApplied.value;
+  const appliedUnits = storeSplitApplied.qty;
+  const dataPlusSplit = recon.includedInClosing.salesValue + applied;
+  const signed = (value: number) => `${value < 0 ? "-" : "+"}${Math.abs(value)}`;
   const differenceRef: CellValue = !headline
     ? null
     : rows.length > 0
       ? F(
-        `${columnLetter(10)}${row - 3}-${headline.salesValue}`,
-        recon.includedInClosing.salesValue - headline.salesValue,
+        `${columnLetter(10)}${row - 3}${signed(applied)}-${headline.salesValue}`,
+        dataPlusSplit - headline.salesValue,
       )
-      : recon.includedInClosing.salesValue - headline.salesValue;
+      : dataPlusSplit - headline.salesValue;
+
+  // Only shown when it is not zero — a whole-month export has nothing to explain, and a row of
+  // zeroes in a reconciliation reads as a defect rather than as reassurance.
+  const storeSplitRows: CellValue[][] = headline && applied !== 0
+    ? [[
+      applied < 0
+        ? "Store split — share of these areas' store sales that belongs to city areas outside this filter"
+        : "Store split — share these areas received from stores in city areas outside this filter",
+      appliedUnits,
+      applied,
+      "A wholesaler supplies its whole city, so its sell-in is shared evenly across every area of "
+        + "that city. The share is the same here as in the unfiltered export; this line is the part "
+        + "of it that sits outside the filter.",
+    ]]
+    : [];
 
   const headlineRows: CellValue[][] = headline
     ? [
+      ...storeSplitRows,
       [
         filtered ? "Closing Matrix grand total (filtered)" : "Closing Matrix grand total",
         headline.salesUnits,
@@ -420,9 +450,11 @@ function writeTotalSheet(
       ],
       [
         "Difference",
-        recon.includedInClosing.units - headline.salesUnits,
+        recon.includedInClosing.units + appliedUnits - headline.salesUnits,
         differenceRef,
-        "Zero means the audit sheet reproduces the headline exactly.",
+        applied === 0
+          ? "Zero means the audit sheet reproduces the headline exactly."
+          : "Zero means the audit sheet reproduces the headline exactly, once the store split above is counted.",
       ],
     ]
     : [];
@@ -1363,36 +1395,68 @@ function writeStoreSplitSheet(
   line: string | null,
   period: string | null,
   summary: StoreSplitAreaSummary[],
+  // The areas this workbook actually covers. Empty means the whole month is on show. When a place
+  // filter IS active the summary deliberately still lists every area of every affected city — that
+  // is the only way a reader who filtered to one area can see where the rest of its city's share
+  // went — so each row is marked with whether it is inside the export.
+  scopeAreaCodes: readonly string[] = [],
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Store Split"), { views: [{ state: "frozen", ySplit: 5 }] });
-  bandHeader(sheet, line, period, "Store Split — wholesaler sales shared across each city's areas", 11);
 
   const totalOut = summary.reduce((sum, entry) => sum + entry.movedOutValue, 0);
   const cities = new Set(summary.map((entry) => entry.city)).size;
+  const scoped = scopeAreaCodes.length > 0
+    ? new Set(scopeAreaCodes.map((code) => code.trim().toUpperCase()))
+    : null;
+  const inExport = (entry: StoreSplitAreaSummary) => !scoped || scoped.has(entry.areaCode.trim().toUpperCase());
+  // What crosses the filter's edge, from the areas' own point of view. Matches the Total sheet's
+  // store-split reconciliation line, which is derived independently from the matrix.
+  const crossing = summary.reduce((sum, entry) => (inExport(entry) ? sum + entry.netValue : sum), 0);
+  const egp = (value: number) => Math.abs(value).toLocaleString("en-US", { maximumFractionDigits: 0 });
+
+  const scopeNote = !scoped
+    ? ""
+    : crossing === 0
+      ? " This export is filtered, and no store sales cross its edge."
+      : crossing < 0
+        ? ` This export is filtered: ${egp(crossing)} EGP of its areas' store sales belongs to city areas`
+          + " outside the filter, and is listed below as a row marked \"No\"."
+        : ` This export is filtered: its areas received ${egp(crossing)} EGP from stores in city areas`
+          + " outside the filter, listed below as rows marked \"No\".";
+
+  // Built before the band header so the header spans EXACTLY the table's width. The count is not a
+  // constant any more — the "In this export" column only exists on a filtered export — and the
+  // hardcoded 11 it replaces was already one wider than the 10 columns of an unfiltered sheet,
+  // which painted the black title band a column past the data.
+  const columns: TableColumn[] = [
+    { label: "Area", width: 24 },
+    { label: "Code", width: 10 },
+    { label: "City", width: 20 },
+    { label: "Line", width: 16 },
+    ...(scoped ? [{ label: "In this export", width: 14 } satisfies TableColumn] : []),
+    { label: "Sales now", numFmt: VALUE_FMT, right: true },
+    { label: "Store sales sent out", numFmt: VALUE_FMT, right: true },
+    { label: "City share received", numFmt: VALUE_FMT, right: true },
+    { label: "Net store split", numFmt: VALUE_FMT, right: true },
+    { label: "Sales after split", numFmt: VALUE_FMT, right: true },
+    { label: "Units net", numFmt: UNITS_FMT, right: true },
+  ];
+  bandHeader(sheet, line, period, "Store Split — wholesaler sales shared across each city's areas", columns.length);
 
   writeTable(sheet, 4, {
-    columns: [
-      { label: "Area", width: 24 },
-      { label: "Code", width: 10 },
-      { label: "City", width: 20 },
-      { label: "Line", width: 16 },
-      { label: "Sales now", numFmt: VALUE_FMT, right: true },
-      { label: "Store sales sent out", numFmt: VALUE_FMT, right: true },
-      { label: "City share received", numFmt: VALUE_FMT, right: true },
-      { label: "Net store split", numFmt: VALUE_FMT, right: true },
-      { label: "Sales after split", numFmt: VALUE_FMT, right: true },
-      { label: "Units net", numFmt: UNITS_FMT, right: true },
-    ],
+    columns,
     note: summary.length === 0
       ? "No store customers in this period — nothing to redistribute."
       : `${totalOut.toLocaleString("en-US", { maximumFractionDigits: 0 })} EGP of store sales redistributed across ${cities} cities. `
         + "Net sums to zero within every city: the split moves money between areas, never creates it. "
-        + "Head Office line and pharmacy customers are not touched.",
+        + "Head Office line and pharmacy customers are not touched."
+        + scopeNote,
     rows: summary.map((entry) => [
       entry.areaName,
       entry.areaCode,
       entry.city,
       entry.line,
+      ...(scoped ? [inExport(entry) ? "Yes" : "No"] : []),
       entry.beforeValue,
       entry.movedOutValue,
       entry.receivedValue,
@@ -1537,6 +1601,20 @@ export async function buildMonthlyClosingWorkbook(
      * export.
      */
     coverage?: MonthlySourceCoverage | null;
+    /**
+     * Net store split that landed on `matrix` (from applyStoreSplitToMatrix). Zero for a
+     * whole-month export. On a filtered one it is the part of the city allocation that belongs to
+     * areas the filter excluded — named on the Total sheet so the Difference row still reads zero.
+     */
+    storeSplitApplied?: { qty: number; value: number };
+    /**
+     * The WHOLE month's detail rows, before place narrowing. The Store Split sheet is built from
+     * these rather than from `details.rows` so a reader who filtered to one area can still see the
+     * rest of that area's city. Falls back to `details.rows` when absent.
+     */
+    storeSplitRows?: ClosingDetailRow[];
+    /** The areas this workbook covers, for marking Store Split rows as inside or outside it. */
+    storeSplitScopeAreaCodes?: readonly string[];
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -1566,7 +1644,13 @@ export async function buildMonthlyClosingWorkbook(
   // Right after the matrix and its targets: why a rep's number differs from the raw area total.
   // Built from the SAME detail rows the Data sheet shows, so the two can never disagree.
   if (details) {
-    writeStoreSplitSheet(workbook, matrix.line, matrix.period, summariseStoreSplitByArea(details.rows));
+    writeStoreSplitSheet(
+      workbook,
+      matrix.line,
+      matrix.period,
+      summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows),
+      options?.storeSplitScopeAreaCodes ?? [],
+    );
   }
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
@@ -1593,7 +1677,14 @@ export async function buildMonthlyClosingWorkbook(
       salesUnits: matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
       salesValue: matrix.grandTotal.rowTotal.salesValue,
     };
-    writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data", Boolean(options?.filterNote));
+    writeTotalSheet(
+      workbook,
+      headline,
+      { ...details, rows: visible },
+      "Data",
+      Boolean(options?.filterNote),
+      options?.storeSplitApplied,
+    );
     if (confidential.length > 0) {
       writeRawDataSheet(
         workbook,

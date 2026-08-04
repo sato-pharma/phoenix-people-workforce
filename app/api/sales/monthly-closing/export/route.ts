@@ -17,8 +17,8 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
-import { netStoreSplitByAreaProduct, splitStoreSalesAcrossCityAreas } from "@/lib/sales/store-sales-city-split";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
 export const runtime = "nodejs";
@@ -142,15 +142,22 @@ export async function POST(request: Request) {
       // is not in play, both are STARTED before either is awaited and the wait becomes the slower
       // of the two rather than the total. Same queries, same results, same order of arguments —
       // purely a matter of not blocking on the first before asking for the second.
+      //
+      // PLACE NARROWING HAPPENS AFTER THIS LOAD, NOT INSIDE IT. The store split shares a
+      // wholesaler's sell-in across the areas of its city, and that allocation belongs to the
+      // MONTH — a store in Alex East selling 750 boxes is 250 / 250 / 250 across Alex East, Alex
+      // West and Alex Center whether or not the export shows all three. Narrowing here instead
+      // would lose money in both directions: an in-scope store's share to excluded areas is
+      // dropped, and an in-scope area never receives its share from an excluded store in the same
+      // city. Row-level filters (distributor, Included/Excluded, search) DO belong here — they
+      // define the population being allocated, not where it lands.
       const detailsPromise = loadMonthlyClosingDetails({
         access,
         line: matrix.line,
         period: matrix.period,
         availableLines: matrix.availableLines,
         availablePeriods: matrix.availablePeriods,
-        // Region is subsumed by the resolved area list, so it is cleared to keep one source of
-        // place narrowing rather than two that could disagree.
-        filters: { ...detailFilters, areaCodes: scopedAreaCodes, regionCodes: [] },
+        filters: { ...detailFilters, areaCodes: [], regionCodes: [] },
         includeConfidential: body.includeConfidential === true,
         unpaged: true,
       });
@@ -168,7 +175,12 @@ export async function POST(request: Request) {
       // is omitted) rather than ever costing the workbook.
       const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null);
 
-      const details = await detailsPromise;
+      // Every row of the month in the caller's scope, place filter NOT yet applied — the input the
+      // store split has to see to allocate a city correctly.
+      const monthRows = await detailsPromise;
+      // Allocate over the whole month, THEN narrow to the areas on show. That order is the fix and
+      // it lives in the domain module, not here — see closing-store-split-export.ts.
+      const { details, net: storeSplitNet } = prepareClosingStoreSplit(monthRows, scopedAreaCodes);
       const comparison = aggregateComparisonPromise
         ? await aggregateComparisonPromise
         : await loadMonthlyClosingComparisonFromRows(
@@ -187,12 +199,17 @@ export async function POST(request: Request) {
       // The store split. A wholesaler supplies its whole city rather than only the area it stands
       // in, so its sell-in on Pedia / Anti Infective / CNS is shared evenly across that city's
       // areas and each area's share reaches whoever holds its line seat. SALES move; TARGETS are
-      // never touched, so achievement re-derives as the new sales over the same target. The grand
-      // total cannot change — a store's sale is redistributed inside one city and one product —
-      // which is what keeps the Total sheet's tie to the headline intact.
-      const workbookMatrix = applyStoreSplitToMatrix(
+      // never touched, so achievement re-derives as the new sales over the same target.
+      //
+      // Computed from `monthRows` — the whole month — so an area's number is the same in this
+      // workbook as in the unfiltered one. On a whole-month export the grand total cannot move
+      // (a store's sale is redistributed inside one city and one product). On a FILTERED export it
+      // does move, because part of the allocation belongs to areas that are not on show, and
+      // `storeSplitApplied` is exactly that amount — stated on the Total sheet as its own
+      // reconciliation line rather than quietly disappearing from the headline.
+      const { applied: storeSplitApplied, matrix: workbookMatrix } = applyStoreSplitToMatrix(
         rebuiltMatrix,
-        netStoreSplitByAreaProduct(splitStoreSalesAcrossCityAreas(details.rows).movements),
+        storeSplitNet,
       );
 
       // The filter stamp, in human names (standing rule: names, never raw codes). Options lists
@@ -229,6 +246,12 @@ export async function POST(request: Request) {
         coverage: await coveragePromise,
         filterNote,
         includeTargetSheet: !rowLevelActive,
+        // The whole month's rows drive the Store Split sheet, so a reader who filtered to one area
+        // can still see WHERE the rest of that city's share went; `storeSplitScopeAreaCodes` marks
+        // which of those areas this workbook actually covers.
+        storeSplitApplied,
+        storeSplitRows: monthRows.rows,
+        storeSplitScopeAreaCodes: scopedAreaCodes,
       });
       return fileResponse(buffer, `phoenix-monthly-closing-${slug(matrix.line)}-${slug(matrix.period)}.xlsx`);
     }

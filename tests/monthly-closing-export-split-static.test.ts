@@ -267,7 +267,9 @@ const isCalcFormula = (cellRef: ExcelJS.Cell) =>
 export async function runMonthlyClosingExportSplitStaticTests() {
   // ── Scenario A: the classic split — one city, two areas, net zero for the region ────────────
   const base = buildMatrix();
-  const split = applyStoreSplitToMatrix(
+  // applyStoreSplitToMatrix also reports what crossed the matrix's edge (see
+  // monthly-closing-export-store-split-filtered.test.ts); only the matrix matters here.
+  const { matrix: split } = applyStoreSplitToMatrix(
     base,
     new Map([
       [areaProductKey("D12", "LA001"), { qty: -30, value: -9_000 }],
@@ -307,7 +309,7 @@ export async function runMonthlyClosingExportSplitStaticTests() {
 
   // ── Scenario B: a one-sided move — the counterpart areas fell outside the matrix (filtered
   // export, or a city crossing regions), so the region and grand nets do NOT cancel ─────────────
-  const oneSided = applyStoreSplitToMatrix(
+  const { matrix: oneSided } = applyStoreSplitToMatrix(
     buildMatrix(),
     new Map([[areaProductKey("D13", "LA001"), { qty: 5, value: 1_000 }]]),
   );
