@@ -253,6 +253,10 @@ export const employeePortalDevPreviewData = {
     currentMonthLabel: "May 2026",
     currentMonthSales: 1260000,
     currentMonthTarget: 1180000,
+    // A complete semester, so the preview shows the settled presentation rather than the
+    // provisional banner — flip incentiveWindowNotice to a string to preview that state.
+    incentiveSemesterLabel: "H1 2026",
+    incentiveWindowNotice: null,
     familyContribution: [
       { name: "Cardio", sales: 2380000, salesPercentage: 37, units: 11840, unitsPercentage: 35 },
       { name: "Metabolic", sales: 1960000, salesPercentage: 31, units: 10220, unitsPercentage: 30 },

@@ -1,0 +1,359 @@
+import assert from "node:assert/strict";
+
+import {
+  classifyReconciliationOutcome,
+  diffSets,
+  formatCount,
+  formatList,
+  formatMoney,
+  formatRowsAndMoney,
+  moneyMatches,
+  MONEY_TOLERANCE_EGP,
+  shouldAlert,
+  summarizeReconciliationResults,
+} from "../src/lib/reconciliation/compare.ts";
+import { findDuplicateEmployeeDays } from "../src/lib/reconciliation/duplicate-days.ts";
+import { retryOnceIfBreached } from "../src/lib/reconciliation/retry.ts";
+import { buildReconciliationAlertMessage, runReconciliationCheckList } from "../src/lib/reconciliation/runner.ts";
+import type {
+  ReconciliationCheck,
+  ReconciliationCheckResult,
+  ReconciliationOutcome,
+} from "../src/lib/reconciliation/types.ts";
+
+/**
+ * The reconciliation harness exists because 24 defects were silent for months: payroll
+ * under-reported every batch, a rep's CRM work was unattributed from April, a device outage was
+ * reported as company-wide absence. Nothing announced any of it.
+ *
+ * These tests cover the parts that decide whether the harness itself stays trustworthy — the
+ * verdict logic, the report shaping, and the guarantee that one broken check cannot blind the
+ * rest. Nothing here touches a database: the domain checks are exercised against live production
+ * by design, and a test that mocked Supabase would only be asserting the mock.
+ */
+
+function outcome(holds: boolean, detail = "detail"): ReconciliationOutcome {
+  return {
+    left: { source: "service", value: "left" },
+    right: { source: "derivation", value: "right" },
+    holds,
+    detail,
+  };
+}
+
+function check(overrides: Partial<ReconciliationCheck> & Pick<ReconciliationCheck, "id" | "run">): ReconciliationCheck {
+  return {
+    id: overrides.id,
+    run: overrides.run,
+    title: overrides.title ?? overrides.id,
+    domain: overrides.domain ?? "payroll",
+    severity: overrides.severity ?? "critical",
+    expectation: overrides.expectation ?? "holds",
+    openDefect: overrides.openDefect,
+  };
+}
+
+function result(overrides: Partial<ReconciliationCheckResult>): ReconciliationCheckResult {
+  return {
+    id: "id",
+    title: "title",
+    domain: "payroll",
+    severity: "critical",
+    expectation: "holds",
+    status: "holds",
+    holds: true,
+    left: null,
+    right: null,
+    detail: "",
+    durationMs: 0,
+    error: null,
+    ...overrides,
+  };
+}
+
+export async function runReconciliationHarnessTests() {
+  // ── Money comparison: a tolerance wide enough for float noise, narrow enough to matter ───────
+  assert.equal(moneyMatches(2_667_500, 2_667_500.004), true, "half a piastre of float noise must not be reported as a payroll defect");
+  assert.equal(
+    moneyMatches(2_267_000, 2_667_500),
+    false,
+    "the real Jun-2026 gap of 400,500 EGP between the card and the dashboard must never round away",
+  );
+  assert.equal(moneyMatches(100, 100.02), false, `two piastres is outside the ${MONEY_TOLERANCE_EGP} EGP tolerance and must be reported`);
+  assert.equal(
+    moneyMatches(100, 100.02, 0.05),
+    true,
+    "a caller-widened tolerance must apply — the per-employee/per-category paths round in a different order",
+  );
+  assert.equal(
+    moneyMatches(Number.NaN, 0),
+    false,
+    "a NaN side means the read failed; treating it as a match would report a broken read as a healthy one",
+  );
+
+  // ── Money is never rendered as a bare, contextless number ────────────────────────────────────
+  assert.equal(formatMoney(2667500), "2,667,500.00 EGP", "a payroll total without separators or a currency is how EGP gets read as piastres");
+  assert.equal(formatMoney(0), "0.00 EGP", "a real zero must still render as money, so it can be told apart from a failed read");
+  assert.match(formatMoney(Number.NaN), /unavailable/, "an unreadable figure must say so rather than silently render as 0");
+  assert.equal(formatCount(1, "person", "people"), "1 person");
+  assert.equal(formatCount(123, "person", "people"), "123 people");
+  assert.equal(
+    formatRowsAndMoney(123, 2667500),
+    "123 rows / 2,667,500.00 EGP",
+    "membership and money always travel together — a row count alone hides a wrong total, and vice versa",
+  );
+
+  // ── Lists state their cap instead of trailing off ────────────────────────────────────────────
+  assert.equal(formatList([]), "none");
+  assert.equal(formatList(["a", "b"]), "a; b");
+  const capped = formatList(Array.from({ length: 46 }, (_value, index) => `row-${index}`), 10);
+  assert.match(capped, /first 10 of 46/, "the reader must be told how much is behind the cap");
+  assert.equal(capped.includes("…"), false, "user-facing text is never truncated with an ellipsis");
+
+  // ── Sets, not tallies: the payroll defect swapped membership, not just totals ────────────────
+  const sets = diffSets(["A-1", "B-2"], ["B-2", "C-3"]);
+  assert.deepEqual(sets.onlyInLeft, ["A-1"]);
+  assert.deepEqual(sets.onlyInRight, ["C-3"]);
+  assert.equal(sets.identical, false);
+  assert.equal(
+    diffSets(["A-1", "B-2"], ["B-2", "A-1"]).identical,
+    true,
+    "the same people in a different order are the same people",
+  );
+  assert.equal(
+    diffSets(["A-1", "X-9"], ["A-1", "Y-9"]).identical,
+    false,
+    "two sides of equal SIZE can still be paying different people — that is exactly the defect this catches",
+  );
+
+  // ── Verdicts: a known-open defect reads as a finding, never as a broken check ────────────────
+  assert.equal(classifyReconciliationOutcome("holds", true), "holds");
+  assert.equal(classifyReconciliationOutcome("holds", false), "breached");
+  assert.equal(
+    classifyReconciliationOutcome("known-open", false),
+    "known-open",
+    "a documented, still-unfixed defect must not page anyone nightly — that is how a whole harness gets ignored",
+  );
+  assert.equal(
+    classifyReconciliationOutcome("known-open", true),
+    "holds",
+    "the day a known-open defect starts agreeing, it must report as holding rather than stay labelled open",
+  );
+
+  // ── What raises an alarm ─────────────────────────────────────────────────────────────────────
+  const counts = summarizeReconciliationResults([
+    result({ status: "holds" }),
+    result({ status: "known-open", holds: false, expectation: "known-open" }),
+    result({ status: "breached", holds: false }),
+    result({ status: "errored", holds: null, error: "boom" }),
+  ]);
+  assert.deepEqual(counts, { total: 4, holding: 1, breached: 1, knownOpen: 1, errored: 1 });
+  assert.equal(shouldAlert(counts), true);
+  assert.equal(
+    shouldAlert({ total: 3, holding: 2, breached: 0, knownOpen: 1, errored: 0 }),
+    false,
+    "known-open findings alone must stay quiet, or the alert becomes noise everyone filters out",
+  );
+  assert.equal(
+    shouldAlert({ total: 1, holding: 0, breached: 0, knownOpen: 0, errored: 1 }),
+    true,
+    '"we could not tell" is an alert — mistaking it for "everything is fine" is the exact failure this harness ends',
+  );
+
+  // ── One broken check must not blind the rest ─────────────────────────────────────────────────
+  const report = await runReconciliationCheckList(
+    [
+      check({ id: "healthy", run: async () => outcome(true, "agrees") }),
+      check({
+        id: "explodes",
+        run: async () => {
+          throw new Error("Supabase statement timeout");
+        },
+      }),
+      check({ id: "disagrees", run: async () => outcome(false, "123 rows vs 103 rows") }),
+      check({
+        id: "documented",
+        expectation: "known-open",
+        openDefect: "Verified on production: 165 rows short.",
+        run: async () => outcome(false, "still short"),
+      }),
+    ],
+    { concurrency: 2 },
+  );
+
+  assert.equal(report.results.length, 4, "a throwing check must produce a result, not remove itself from the report");
+  assert.deepEqual(
+    report.results.map((entry) => entry.id),
+    ["healthy", "explodes", "disagrees", "documented"],
+    "report order must follow the registry however the workers interleave, or nobody can diff two nights",
+  );
+  assert.equal(report.results[1].status, "errored");
+  assert.equal(report.results[1].holds, null, "a check that could not run must never report a boolean verdict");
+  assert.match(report.results[1].detail, /Supabase statement timeout/, "the reader needs the real cause, not a generic failure");
+  assert.equal(report.results[2].status, "breached");
+  assert.equal(report.results[3].status, "known-open");
+  assert.match(
+    report.results[3].detail,
+    /165 rows short/,
+    "a known-open finding must carry its evidence, so it reads as a documented defect rather than a flaky check",
+  );
+  assert.deepEqual(report.counts, { total: 4, holding: 1, breached: 1, knownOpen: 1, errored: 1 });
+  assert.equal(report.alerting, true);
+  assert.match(report.generatedAt, /\d{4}/, "the report is stamped in Cairo local time, never raw UTC");
+
+  // ── A hung check is abandoned rather than taking the cron with it ────────────────────────────
+  const timedOut = await runReconciliationCheckList(
+    [
+      check({ id: "hangs", run: () => new Promise<ReconciliationOutcome>(() => {}) }),
+      check({ id: "fine", run: async () => outcome(true) }),
+    ],
+    { timeoutMs: 1_000 },
+  );
+  assert.equal(timedOut.results[0].status, "errored", "a check that never settles must be recorded as unanswerable");
+  assert.equal(timedOut.results[1].status, "holds", "and the checks behind it must still run");
+
+  // ── The run has a budget of its own, below the route's maxDuration ───────────────────────────
+  const overBudget = await runReconciliationCheckList(
+    [
+      check({ id: "eats-the-budget", run: () => new Promise<ReconciliationOutcome>(() => {}) }),
+      check({ id: "never-reached", run: async () => outcome(true) }),
+    ],
+    { concurrency: 1, timeoutMs: 60_000, runBudgetMs: 1_000 },
+  );
+  assert.equal(overBudget.results[0].status, "errored", "the check that consumed the budget is still recorded");
+  assert.equal(
+    overBudget.results[1].status,
+    "errored",
+    "a check the run never reached must be reported as unanswered — without a run budget the request dies at maxDuration and the night produces no report at all",
+  );
+  assert.equal(overBudget.results[1].holds, null, "a check that never ran must never report a boolean verdict");
+  assert.equal(overBudget.alerting, true, "running out of time is an alert, never a silent pass");
+  assert.ok(
+    overBudget.durationMs < 30_000,
+    "the run must stop at its own budget rather than at the far larger per-check ceiling",
+  );
+
+  // ── Every check runs even when several fail ──────────────────────────────────────────────────
+  let executed = 0;
+  const allRan = await runReconciliationCheckList(
+    Array.from({ length: 5 }, (_value, index) =>
+      check({
+        id: `check-${index}`,
+        run: async () => {
+          executed += 1;
+          if (index % 2 === 0) throw new Error(`fail-${index}`);
+          return outcome(true);
+        },
+      }),
+    ),
+    { concurrency: 1 },
+  );
+  assert.equal(executed, 5, "every registered check must be attempted regardless of how many earlier ones threw");
+  assert.equal(allRan.counts.errored, 3);
+  assert.equal(allRan.counts.holding, 2);
+
+  // ── The alert names the numbers, not just the count ──────────────────────────────────────────
+  const message = buildReconciliationAlertMessage({
+    generatedAt: "4 Aug 2026, 03:47",
+    durationMs: 1234,
+    counts: { total: 4, holding: 1, breached: 1, knownOpen: 1, errored: 1 },
+    alerting: true,
+    results: [
+      result({
+        id: "payroll-dashboard-matches-its-own-salary-records",
+        title: "Payroll dashboard vs its own rows",
+        status: "breached",
+        holds: false,
+        left: { source: "getPayrollDashboard", value: "103 people / 2,267,000.00 EGP" },
+        right: { source: "salary_records", value: "123 rows / 2,667,500.00 EGP" },
+        detail: "Jun-2026: 20 people and 400,500.00 EGP missing from the screen",
+      }),
+      result({ id: "quiet", status: "holds" }),
+      result({ id: "documented", title: "A documented finding", status: "known-open", holds: false, expectation: "known-open" }),
+    ],
+  });
+  assert.match(message, /2,267,000\.00 EGP/, "the alert must carry the figure the screen shows");
+  assert.match(message, /2,667,500\.00 EGP/, "and the figure underneath it, so the reader can act without opening the database");
+  assert.match(message, /4 Aug 2026, 03:47 Cairo/, "the timestamp is Cairo local time");
+  assert.match(
+    message,
+    /Already known and unchanged: A documented finding/,
+    "known-open findings are listed separately so a persistent defect never reads as a new emergency",
+  );
+  assert.equal(message.includes("quiet"), false, "a holding check must not add noise to a breach alert");
+
+  // ── Retry absorbs a read race without weakening the check ────────────────────────────────────
+  let attempts = 0;
+  const flaky = retryOnceIfBreached(async () => {
+    attempts += 1;
+    return outcome(attempts > 1);
+  });
+  const settled = await flaky();
+  assert.equal(attempts, 2, "a disagreement is re-read once, because an upload landing mid-check looks exactly like a defect");
+  assert.equal(settled.holds, true, "a disagreement that does not survive a fresh read was a race, not a defect");
+
+  attempts = 0;
+  const stable = retryOnceIfBreached(async () => {
+    attempts += 1;
+    return outcome(true);
+  });
+  await stable();
+  assert.equal(attempts, 1, "the healthy path must not pay for a retry it never needs");
+
+  attempts = 0;
+  const persistent = retryOnceIfBreached(async () => {
+    attempts += 1;
+    return outcome(false, "still wrong");
+  });
+  const stillBroken = await persistent();
+  assert.equal(stillBroken.holds, false, "a disagreement that survives a re-read is a real defect and must still be reported");
+  assert.equal(attempts, 2, "and it must be re-read exactly once, not retried in a loop");
+
+  // ── The duplicate-day derivation must NOT inherit the publish gate's cross-category rule ─────
+  const sameCategoryTwoFeeders = findDuplicateEmployeeDays([
+    {
+      employeeHrIdCompact: "b185",
+      employeeHrId: "B-185",
+      employeeName: "Ahmed El Maraghy",
+      category: "unpaid_vacation",
+      sourceSystem: "vacation_balance",
+      dates: ["2026-07-07"],
+    },
+    {
+      employeeHrIdCompact: "b185",
+      employeeHrId: "B-185",
+      employeeName: "Ahmed El Maraghy",
+      category: "unpaid_vacation",
+      sourceSystem: "crm_vacation_signal",
+      dates: ["2026-07-07"],
+    },
+  ]);
+  assert.equal(
+    sameCategoryTwoFeeders.length,
+    1,
+    "two feeders inside ONE category can each claim the same day — the publish gate's categories>1 rule cannot see it, which is why this derivation must be independent",
+  );
+  assert.deepEqual(sameCategoryTwoFeeders[0].claims, [
+    "unpaid_vacation/vacation_balance",
+    "unpaid_vacation/crm_vacation_signal",
+  ], "the alert must name BOTH claiming sources, or nobody can tell which feeder to correct");
+  assert.equal(sameCategoryTwoFeeders[0].employeeName, "Ahmed El Maraghy", "HR acts on a person; a bare HR code makes them go and look it up");
+
+  assert.deepEqual(
+    findDuplicateEmployeeDays([
+      { employeeHrIdCompact: "a12", employeeHrId: "A-12", employeeName: null, category: "crm", sourceSystem: "crm_visits_mirror", dates: ["2026-07-01", "2026-07-02"] },
+      { employeeHrIdCompact: "ai0001", employeeHrId: "AI-0001", employeeName: null, category: "fingerprint", sourceSystem: "attendance", dates: ["2026-07-01"] },
+    ]),
+    [],
+    "two different employees on the same day are not a duplicate — grouping on the name (both null in production) once produced exactly this false positive",
+  );
+
+  assert.deepEqual(
+    findDuplicateEmployeeDays([
+      { employeeHrIdCompact: "a12", employeeHrId: "A-12", employeeName: null, category: "crm", sourceSystem: "crm_visits_mirror", dates: ["2026-07-01"] },
+      { employeeHrIdCompact: "a12", employeeHrId: "A-12", employeeName: null, category: "crm", sourceSystem: "crm_visits_mirror", dates: [] },
+    ]),
+    [],
+    "a candidate whose days a reviewer cleared to none claims nothing, and must not collide with anything",
+  );
+}
