@@ -1,16 +1,29 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { directOrderExpectedRoleChain, SFE_VALIDATION_ROLE } from "@/lib/direct-orders/approval-flow";
+import {
+  directOrderExpectedRoleChain,
+  SFE_VALIDATION_ROLE,
+  SYSTEM_ADMIN_ACK_ROLE,
+} from "@/lib/direct-orders/approval-flow";
 import { rebuildDirectOrderApprovalChain } from "@/lib/direct-orders/service";
 import { systemAccessContext } from "@/lib/auth/permissions";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Re-seed approval chains for orders submitted BEFORE the SFE validation rung existed.
+// Re-seed approval chains for orders submitted BEFORE a rung existed.
 //
 // Owner instruction 2026-08-04: "you must backfill and start the normal workflow".
 //
 // Approval steps are written once at submission and never rebuilt, so every order in flight when
-// the ladder changed still routes straight past SFE. This puts them on today's ladder.
+// the ladder changed still routes on the OLD ladder. This puts them on today's.
+//
+// It covers both rungs added so far, and the test is "does the live chain match what submitting
+// this order today would produce" rather than a hardcoded list — so the next rung needs no edit
+// here:
+//
+//   1. SFE Manager, which every chain must open with.
+//   2. System Admin, which only orders on a pharmacy Phoenix does not recognise carry. Without
+//      this, such an order looks like it is sailing through and then refuses at the CEO, with
+//      nobody having been asked to check the pharmacy.
 //
 // SAFETY — the service refuses any chain where a step has already been DECIDED, because deleting
 // a decided step erases a real person's approval. This script therefore cannot silently discard
@@ -49,11 +62,27 @@ async function main() {
   const supabase = client();
   const { data: pendingData, error: pendingError } = await supabase
     .from("direct_order_requests")
-    .select("id, product_name, requester_hr_id, requester_role, status, sales_value")
+    .select("id, product_name, requester_hr_id, requester_role, status, sales_value, pharmacy_id")
     .eq("status", "pending_approval")
     .order("created_at", { ascending: true });
   if (pendingError) throw new Error(pendingError.message);
   const pending = (pendingData ?? []) as Array<Record<string, unknown>>;
+
+  // Whether each order's pharmacy is still awaiting review decides whether its chain should carry
+  // the System Admin rung. Read from the pharmacy row, never inferred from the chain itself —
+  // the chain is the thing being checked for correctness.
+  const pharmacyIds = Array.from(new Set(pending.map((row) => String(row.pharmacy_id)).filter(Boolean)));
+  const awaitingReview = new Set<string>();
+  if (pharmacyIds.length > 0) {
+    const { data: pharmacyData, error: pharmacyError } = await supabase
+      .from("direct_order_pharmacies")
+      .select("id, verification_status")
+      .in("id", pharmacyIds);
+    if (pharmacyError) throw new Error(pharmacyError.message);
+    for (const row of (pharmacyData ?? []) as Array<{ id: string; verification_status: string | null }>) {
+      if (String(row.verification_status ?? "verified") === "pending_review") awaitingReview.add(String(row.id));
+    }
+  }
 
   const { data: stepData, error: stepError } = await supabase
     .from("direct_order_approval_steps")
@@ -67,36 +96,55 @@ async function main() {
     stepsByRequest.set(row.request_id, bucket);
   }
 
-  const needsRebuild: Array<{ id: string; label: string; current: string[]; expected: string[]; blocked: string | null }> = [];
+  const needsRebuild: Array<{
+    id: string;
+    label: string;
+    current: string[];
+    expected: string[];
+    missing: string[];
+    blocked: string | null;
+  }> = [];
   for (const row of pending) {
     const id = String(row.id);
     const steps = (stepsByRequest.get(id) ?? []).sort((a, b) => a.step_order - b.step_order);
     const currentLabels = steps.map((step) => String(step.label ?? ""));
-    const hasSfe = steps.some((step) => String(step.label ?? "") === SFE_VALIDATION_ROLE);
-    if (hasSfe) continue;
+    const pharmacyUnverified = awaitingReview.has(String(row.pharmacy_id));
+
+    // A chain is stale when a rung today's ladder requires is absent. Person rungs are matched by
+    // job title and vary per requester, so only the two ROLE rungs are checked here — those are
+    // the ones the ladder itself added, and a person rung cannot go missing without the manager
+    // chain itself having changed (which returning and resubmitting is the right answer for).
+    const missing: string[] = [];
+    if (!currentLabels.some((label) => label === SFE_VALIDATION_ROLE)) missing.push(SFE_VALIDATION_ROLE);
+    if (pharmacyUnverified && !currentLabels.some((label) => label.startsWith(SYSTEM_ADMIN_ACK_ROLE))) {
+      missing.push(SYSTEM_ADMIN_ACK_ROLE);
+    }
+    if (missing.length === 0) continue;
 
     const decided = steps.filter((step) => (step.status ?? "pending") !== "pending" || step.decided_by_hr_id || step.decided_at);
     needsRebuild.push({
       id,
       label: `${row.product_name} (${row.requester_role})`,
       current: currentLabels,
+      missing,
       // Role-level preview only: the SERVICE resolves person rungs to actual managers.
-      expected: directOrderExpectedRoleChain(String(row.requester_role) as never),
+      expected: directOrderExpectedRoleChain(String(row.requester_role) as never, { pharmacyUnverified }),
       blocked: decided.length > 0 ? `${decided.length} step(s) already decided` : null,
     });
   }
 
   console.log(`Pending orders: ${pending.length}`);
-  console.log(`Missing the SFE rung: ${needsRebuild.length}\n`);
+  console.log(`Chains missing a rung: ${needsRebuild.length}\n`);
   for (const item of needsRebuild) {
     console.log(`  ${item.id}  ${item.label}`);
+    console.log(`    missing:  ${item.missing.join(", ")}`);
     console.log(`    now:      ${item.current.join(" → ") || "(none)"}`);
     console.log(`    expected: ${item.expected.join(" → ")}  (role shape; person rungs resolve live)`);
     if (item.blocked) console.log(`    BLOCKED:  ${item.blocked} — return and resubmit instead`);
   }
 
   if (needsRebuild.length === 0) {
-    console.log("Nothing to rebuild — every pending order already opens with SFE.");
+    console.log("Nothing to rebuild — every pending order is already on today's ladder.");
     return;
   }
   if (command === "preview") {
