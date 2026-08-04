@@ -2,20 +2,25 @@ import { redirect } from "next/navigation";
 
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import {
+  canAccessMarketingAdminPage,
+  type MarketingAdminPageOptions,
+} from "@/lib/marketing-requests/admin-page-access";
 import { canViewMarketingCoverageReportInAdminShell } from "@/lib/marketing-requests/coverage-report-access";
 
-export async function assertMarketingAdminPageAccess(options?: {
-  customerDatabase?: boolean;
-  systemAdministratorOnly?: boolean;
-  /**
-   * Read-only ROI surfaces (ROI Tracking + its View Sales drill-down) additionally admit the
-   * company-wide oversight roles — most importantly the CEO, the executive audience the ROI
-   * report is built for. These roles are already treated as company-wide by the ROI service
-   * (companyMarketingRoles), so this only aligns the page guard with the data layer; it does
-   * NOT widen access to the marketing workflow pages (validation / requests / inbox).
-   */
-  allowCompanyOversight?: boolean;
-}) {
+/**
+ * Page guard for the marketing admin-shell surfaces.
+ *
+ * The role matrix itself lives in @/lib/marketing-requests/admin-page-access (documented there,
+ * pinned by tests/ceo-marketing-approval-inbox.test.ts) — this wrapper only resolves the request's
+ * access context and turns a denial into a redirect.
+ *
+ * Note the redirect target: an admin-shell-only role sent to /employee-portals/marketing-requests
+ * is bounced straight back out to /overview by assertEmployeePortalMarketingPageAccess. So a role
+ * missing from the matrix does not get a degraded page — it gets no page. Add the role rather than
+ * assuming the fallback catches it.
+ */
+export async function assertMarketingAdminPageAccess(options?: MarketingAdminPageOptions) {
   const access = await resolveAccessContextFromPage();
 
   if (options?.customerDatabase || options?.systemAdministratorOnly) {
@@ -23,19 +28,7 @@ export async function assertMarketingAdminPageAccess(options?: {
     return access;
   }
 
-  const allowed = new Set<string>([
-    "SFE Manager",
-    "Super Admin",
-    "Marketing Manager",
-    "Product Manager",
-    "Group Product Manager",
-  ]);
-  if (options?.allowCompanyOversight) {
-    allowed.add("CEO");
-    allowed.add("Finance Manager");
-    allowed.add("Financial Advisor");
-  }
-  if (!allowed.has(access.role)) {
+  if (!canAccessMarketingAdminPage(access.role, options)) {
     redirect("/employee-portals/marketing-requests");
   }
 
