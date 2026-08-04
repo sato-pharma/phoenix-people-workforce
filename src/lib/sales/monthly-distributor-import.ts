@@ -3978,10 +3978,35 @@ async function listLineProductsForClosing(line: string): Promise<SalesProductRef
   });
 }
 
+/**
+ * The closing's two channels, and the combination the sheet has always shown.
+ *
+ * The Closing Matrix is retail + direct in one grid, which is the right headline but makes the two
+ * businesses impossible to read apart — the owner asked (2026-08-05) for each on its own tab beside
+ * the master. `combined` is exactly what `loadMonthlyClosing` returns; `retail` is the same matrix
+ * BEFORE direct is injected (distributor invoice rows only); `directCells` is the direct money
+ * already allocated to this line's operational regions.
+ *
+ * By construction retail + direct = combined: `injectDirectIntoMatrix` only ever ADDS the direct
+ * cells onto the retail matrix, never re-values it.
+ */
+export type MonthlyClosingParts = {
+  combined: MonthlyClosingMatrix;
+  retail: MonthlyClosingMatrix;
+  directCells: MonthlyClosingDirectCell[];
+};
+
 export async function loadMonthlyClosing(input?: {
   line?: string | null;
   period?: string | null;
 }): Promise<MonthlyClosingMatrix> {
+  return (await loadMonthlyClosingParts(input)).combined;
+}
+
+export async function loadMonthlyClosingParts(input?: {
+  line?: string | null;
+  period?: string | null;
+}): Promise<MonthlyClosingParts> {
   const [availableLines, availablePeriods] = await Promise.all([
     listMonthlyClosingLines(),
     listMonthlyClosingPeriods(),
@@ -4002,7 +4027,7 @@ export async function loadMonthlyClosing(input?: {
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
       loadLineOperationalRegions(resolveTargetLineCode(selectedLine)),
     ]);
-    return buildMonthlyClosingMatrix({
+    const skeleton = buildMonthlyClosingMatrix({
       // Even the empty skeleton groups by the organogram, so the region filter offers the same
       // regions before and after a month is picked.
       areas: applyOperationalRegions(areas, operationalRegions),
@@ -4013,6 +4038,7 @@ export async function loadMonthlyClosing(input?: {
       period: selectedPeriod,
       products,
     });
+    return { combined: skeleton, retail: skeleton, directCells: [] };
   }
 
   const supabase = getSupabaseAdmin();
@@ -4085,5 +4111,12 @@ export async function loadMonthlyClosing(input?: {
     targets,
   });
 
-  return injectDirectIntoMatrix(matrix, allocatedDirect);
+  return {
+    combined: injectDirectIntoMatrix(matrix, allocatedDirect),
+    // `matrix` is the retail-only grid: buildMonthlyClosingMatrix was fed the non-direct cells
+    // (phx_monthly_closing_matrix filters `not is_direct`) and injectDirectIntoMatrix returns a
+    // NEW matrix rather than mutating this one.
+    retail: matrix,
+    directCells: allocatedDirect,
+  };
 }

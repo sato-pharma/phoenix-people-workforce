@@ -1,7 +1,15 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
-import type { MonthlyClosingCell, MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { normalizeCode } from "@/lib/sales/master-data/definitions";
+import {
+  emptyClosingCell,
+  roundedClosingCell,
+  type MonthlyClosingCell,
+  type MonthlyClosingColumn,
+  type MonthlyClosingDirectCell,
+  type MonthlyClosingMatrix,
+} from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
@@ -724,7 +732,10 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   };
   sheet.mergeCells(4, 1, 5, 1); headerStyle(sheet.getCell(4, 1), "Area");
   sheet.mergeCells(4, 2, 5, 2); headerStyle(sheet.getCell(4, 2), "Area Name");
-  const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales % of Line", "Tgt % of Line"];
+  // The last two are CONTRIBUTION percentages — this row's share of the line, not an achievement
+  // against a target. The header says "Contr%" outright (owner, 2026-08-05): read as a bare "%"
+  // beside "Ach %" they were taken for a second achievement figure.
+  const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"];
   products.forEach((product, index) => {
     const start = productStart(index);
     sheet.mergeCells(4, start, 4, start + METRICS_PER_PRODUCT - 1);
@@ -735,8 +746,8 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   headerStyle(sheet.getCell(4, grandStart), "Grand Total");
   ["Value", "Tgt Value", "Ach %"].forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
   sheet.mergeCells(4, contribStart, 4, contribStart + 1);
-  headerStyle(sheet.getCell(4, contribStart), "Contribution of Line");
-  ["Sales % of Line", "Tgt % of Line"].forEach((label, index) => headerStyle(metricRow.getCell(contribStart + index), label));
+  headerStyle(sheet.getCell(4, contribStart), "Contribution of Line (Contr%)");
+  ["Sales Contr% of Line", "Tgt Contr% of Line"].forEach((label, index) => headerStyle(metricRow.getCell(contribStart + index), label));
 
   // ── Contribution denominators ────────────────────────────────────────────────
   // Each row's share is measured against the LINE's own total, so the shares on this sheet add
@@ -1576,6 +1587,379 @@ function writeSourceCoverageSheet(workbook: ExcelJS.Workbook, coverage: MonthlyS
   });
 }
 
+// ── Channel tabs — retail on its own, direct on its own ──────────────────────
+/**
+ * The Closing Matrix is the MASTER: retail + direct in one grid. That is the right headline and it
+ * also makes the two businesses impossible to read apart — a rep's area row mixes distributor
+ * sell-out with negotiated direct deals. The owner asked (2026-08-05) for each channel on its own
+ * tab beside the master.
+ *
+ * Both sheets are STATIC values, deliberately. The hidden Calc sheet holds distributor invoice
+ * lines with no channel dimension and no store-split write-back, so a live SUMIFS would quietly
+ * disagree with the master the first time Excel recalculated — the exact failure the store-split
+ * fix had to undo.
+ *
+ * Neither sheet carries targets or achievement. A target is set per area and product for the whole
+ * business, not per channel, so dividing retail-only sales by a whole-business target would
+ * manufacture a shortfall that does not exist. Achievement lives on the master and on Target vs
+ * Achievement, where the denominator is honest. Same rule the filtered export already follows.
+ */
+function channelTotals(cells: MonthlyClosingCell[]): { units: number; value: number } {
+  return {
+    units: cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+    value: cells.reduce((sum, cell) => sum + cell.salesValue, 0),
+  };
+}
+
+/** Header + per-product Units/Value columns shared by both channel sheets. */
+function channelColumns(products: MonthlyClosingColumn[], firstLabel: string, secondLabel: string): TableColumn[] {
+  return [
+    { label: firstLabel, width: 12 },
+    { label: secondLabel, width: 26 },
+    ...products.flatMap((product): TableColumn[] => [
+      { label: `${product.productName} — Units`, numFmt: UNITS_FMT, right: true, width: 14 },
+      { label: `${product.productName} — Value`, numFmt: VALUE_FMT, right: true, width: 16 },
+    ]),
+    { label: "Total Units", numFmt: UNITS_FMT, right: true, width: 13 },
+    { dataBar: true, label: "Total Value", numFmt: VALUE_FMT, right: true, width: 17 },
+    { label: "Target Value", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "Ach % of Target", numFmt: PCT_FMT, right: true, width: 15 },
+    { label: "Contr% of Channel", numFmt: PCT_FMT, right: true, width: 15 },
+  ];
+}
+
+/**
+ * One data row: per-product pairs, the row total, then the achievement pair and the contribution.
+ *
+ * ACHIEVEMENT ON A CHANNEL TAB IS DELIBERATE AND IT ADDS UP (owner, 2026-08-05). A target is set
+ * per area and product for the whole business, so BOTH channel tabs divide by that SAME target.
+ * The consequence is the useful one: retail Ach% + direct Ach% = the master's Ach%, exactly as
+ * their values add to the master's value. Read a channel's Ach% as "how much of the month's target
+ * this channel delivered on its own", never as that channel missing a target of its own — it has
+ * none. A row with no target stays blank rather than printing a fabricated 0%.
+ */
+function channelRow(
+  firstCell: string,
+  secondCell: string,
+  cells: MonthlyClosingCell[],
+  channelValue: number,
+  targetValue: number | null,
+): CellValue[] {
+  const totals = channelTotals(cells);
+  return [
+    firstCell,
+    secondCell,
+    ...cells.flatMap((cell): CellValue[] => [cell.salesUnits, cell.salesValue]),
+    totals.units,
+    totals.value,
+    targetValue,
+    targetValue === null || targetValue === 0 ? null : totals.value / targetValue,
+    channelValue === 0 ? null : totals.value / channelValue,
+  ];
+}
+
+/**
+ * Premium finish on the Achievement column — the same amber the master uses for Ach %, plus a
+ * red→amber→green scale so a reader sees the shape of the month before reading a single number.
+ * Applied after writeTable, which owns the grid; the colour scale is best-effort like the data
+ * bars, because a decoration must never be able to fail an export.
+ */
+function styleAchievementColumn(
+  sheet: ExcelJS.Worksheet,
+  columnIndex: number,
+  firstDataRow: number,
+  /**
+   * INCLUSIVE, and callers pass the TOTALS row on purpose — the channel's own achievement is the
+   * number a reader looks for first, so it carries the same amber and the same colour scale as the
+   * rows above it rather than being the one cell left unstyled. writeTable has already written that
+   * row; this deliberately restyles its achievement cell only.
+   */
+  lastRow: number,
+) {
+  if (lastRow < firstDataRow) return;
+  const letter = columnLetter(columnIndex);
+  for (let row = firstDataRow; row <= lastRow; row += 1) {
+    const cell = sheet.getCell(row, columnIndex);
+    cell.fill = { fgColor: { argb: ACH_ORANGE }, pattern: "solid", type: "pattern" };
+    cell.font = { bold: true, color: { argb: BLACK }, name: "Calibri", size: 10.5 };
+    cell.alignment = { horizontal: "right", vertical: "middle" };
+    cell.numFmt = PCT_FMT;
+  }
+  try {
+    sheet.addConditionalFormatting({
+      ref: `${letter}${firstDataRow}:${letter}${lastRow}`,
+      rules: [{
+        cfvo: [{ type: "num", value: 0 }, { type: "num", value: 0.5 }, { type: "num", value: 1 }],
+        color: [{ argb: "FFF8B4B4" }, { argb: "FFFDE7C7" }, { argb: "FFB7E4C7" }],
+        priority: 2,
+        type: "colorScale",
+      }],
+    });
+  } catch {
+    // A colour scale is presentation only — never fail an export over it.
+  }
+}
+
+/** The tie every channel sheet states in its own words: retail + direct = the master. */
+function channelReconciliation(
+  sheet: ExcelJS.Worksheet,
+  row: number,
+  thisLabel: string,
+  thisValue: number,
+  otherLabel: string,
+  otherValue: number,
+  masterValue: number,
+) {
+  writeTable(sheet, row, {
+    columns: [
+      { label: "Reconciliation", width: 44 },
+      { label: "Value (EGP)", numFmt: VALUE_FMT, right: true, width: 18 },
+      { label: "Note", width: 60 },
+    ],
+    note:
+      "The two channel tabs add up to the Closing Matrix exactly — the master is not a third number, " +
+      "it is these two together.",
+    rows: [
+      [thisLabel, thisValue, "This sheet."],
+      [otherLabel, otherValue, "The other channel tab."],
+      [
+        "Closing Matrix (master, total sales)",
+        masterValue,
+        "Retail + Direct. A difference of zero below proves the split loses nothing.",
+      ],
+      [
+        "Difference",
+        thisValue + otherValue - masterValue,
+        "Zero means every EGP on the master is on exactly one of the two channel tabs.",
+      ],
+    ],
+    title: "Does this tie to the master?",
+  });
+}
+
+function writeRetailChannelSheet(
+  workbook: ExcelJS.Workbook,
+  retail: MonthlyClosingMatrix,
+  directValue: number,
+  masterValue: number,
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Retail Sales (no direct)"), {
+    views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
+  });
+  const products = retail.columns;
+  const columns = channelColumns(products, "Area Code", "Area");
+  bandHeader(sheet, retail.line, retail.period, "Retail Sales only — distributor sell-out, direct orders excluded", columns.length);
+
+  const channel = channelTotals(retail.grandTotal.cells);
+  const rows: CellValue[][] = [];
+  retail.regions.forEach((region) => {
+    region.areas
+      // A synthetic "Direct" row cannot exist on the retail matrix (it is pre-injection), but the
+      // guard keeps this sheet honest if the caller ever passes an already-injected matrix.
+      .filter((area) => !area.isDirect)
+      .forEach((area) => {
+        rows.push(channelRow(area.areaCode, area.areaName, area.cells, channel.value, area.rowTotal.targetValue));
+      });
+    rows.push(channelRow(
+      region.regionCode,
+      `${region.regionName} — REGION TOTAL`,
+      region.subtotal.cells,
+      channel.value,
+      region.subtotal.rowTotal.targetValue,
+    ));
+  });
+
+  const firstDataRow = 6; // title on 4, header on 5
+  const row = writeTable(sheet, 4, {
+    columns,
+    note:
+      "Distributor invoice rows only — every direct order is on the \"Direct Sales\" tab instead. " +
+      "The city store split is applied here exactly as on the master, so an area's retail number matches. " +
+      "Target Value is the area's WHOLE-month target (it covers both channels — there is no retail-only " +
+      "target), so Ach % reads as the share of the target this channel delivered on its own: retail Ach % " +
+      "plus direct Ach % equals the master's. A blank target means none was uploaded, never a target of zero.",
+    rows,
+    title: "Retail sales by area and product",
+    totals: channelRow("", "RETAIL TOTAL", retail.grandTotal.cells, channel.value, retail.grandTotal.rowTotal.targetValue),
+  });
+  // Achievement is the column a reader looks for first — give it the master's amber and a scale.
+  styleAchievementColumn(sheet, columns.length - 1, firstDataRow, firstDataRow + rows.length);
+
+  channelReconciliation(sheet, row, "Retail sales (this sheet)", channel.value, "Direct sales", directValue, masterValue);
+}
+
+/** One direct order as the customer sees it — the identity the region grid cannot show. */
+type DirectCustomerRow = {
+  clientCode: string;
+  customer: string;
+  details: string;
+  regionName: string;
+  areaName: string;
+  repName: string;
+  productName: string;
+  units: number;
+  value: number;
+};
+
+/**
+ * Who each direct order was actually sold to.
+ *
+ * Two sources, because the channel has two eras. From 2026-08 the Direct Orders module writes its
+ * own Source-of-Sales batch carrying the pharmacy's Phoenix code, name and address, so the invoice
+ * rows themselves identify the customer. July 2026 predates that: its uploaded sheet carries NO
+ * customer identity at all (client code, name and address are blank on every row — checked against
+ * production), and the only identification that exists is the owner-approved hand mapping, which
+ * also names the medical rep. Using it here is what lets July show customers at all.
+ */
+function directCustomerRows(
+  matrix: MonthlyClosingMatrix,
+  detailRows: readonly ClosingDetailRow[],
+): DirectCustomerRow[] {
+  const fromInvoices: DirectCustomerRow[] = detailRows
+    .filter((row) => row.isDirect && (row.clientCode.trim() !== "" || row.clientName.trim() !== ""))
+    .map((row) => ({
+      clientCode: row.clientCode.trim() || "—",
+      customer: row.clientName.trim() || "(no customer name on the sheet)",
+      details: row.clientAddress.trim() || "—",
+      regionName: row.regionName || row.regionCode,
+      areaName: row.areaName || row.areaCode || "—",
+      repName: "—",
+      productName: row.productName || row.productCode,
+      units: row.qty,
+      value: row.salesValue,
+    }));
+  if (fromInvoices.length > 0) return fromInvoices;
+
+  if (matrix.period !== JULY_2026_DIRECT_PERIOD) return [];
+  return selectJulyDirectRowsForScope(matrix).map((row) => ({
+    clientCode: "—",
+    customer: row.pharmacy,
+    details: row.note || "—",
+    regionName: row.regionCode,
+    areaName: row.areaCode ? `${row.areaName} (${row.areaCode})` : row.areaName,
+    repName: row.repName || "—",
+    productName: row.product,
+    units: row.qty,
+    value: row.value,
+  }));
+}
+
+function writeDirectChannelSheet(
+  workbook: ExcelJS.Workbook,
+  matrix: MonthlyClosingMatrix,
+  directCells: MonthlyClosingDirectCell[],
+  retailValue: number,
+  masterValue: number,
+  detailRows: readonly ClosingDetailRow[],
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Sales (no retail)"), {
+    views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
+  });
+  const products = matrix.columns;
+  const columns = channelColumns(products, "Region Code", "Region");
+  bandHeader(sheet, matrix.line, matrix.period, "Direct Sales only — company direct orders, distributor sales excluded", columns.length);
+
+  // Direct money is tagged with a region and a product, never an area — that is why it cannot
+  // simply live in the area grid. Values are the submitted deal values, never a factory-price
+  // recompute, because a direct deal carries its own negotiated discount or bonus.
+  const columnIndex = new Map(products.map((product, index) => [normalizeCode(product.productCode), index]));
+  const regionNameByCode = new Map(matrix.regions.map((region) => [region.regionCode, region.regionName]));
+  const byRegion = new Map<string, MonthlyClosingCell[]>();
+  directCells.forEach((cell) => {
+    const index = columnIndex.get(normalizeCode(cell.productCode));
+    if (index === undefined) return; // product outside this workbook's columns
+    const regionCode = normalizeCode(cell.regionCode) || "NATIONAL";
+    let cells = byRegion.get(regionCode);
+    if (!cells) {
+      cells = products.map(() => emptyClosingCell());
+      byRegion.set(regionCode, cells);
+    }
+    cells[index].salesUnits += cell.salesUnits;
+    cells[index].salesValue += cell.salesValue;
+  });
+
+  const totalCells = products.map(() => emptyClosingCell());
+  byRegion.forEach((cells) => {
+    cells.forEach((cell, index) => {
+      totalCells[index].salesUnits += cell.salesUnits;
+      totalCells[index].salesValue += cell.salesValue;
+    });
+  });
+  const channel = channelTotals(totalCells);
+
+  // A region's target is the whole-month target of every area it contains — the same denominator
+  // the retail tab divides by, which is what makes the two achievement columns add up.
+  const targetByRegion = new Map(
+    matrix.regions.map((region) => [region.regionCode, region.subtotal.rowTotal.targetValue]),
+  );
+
+  const ordered = [...byRegion.entries()].sort(
+    (left, right) => channelTotals(right[1]).value - channelTotals(left[1]).value,
+  );
+  const rows: CellValue[][] = ordered.map(([regionCode, cells]) =>
+    channelRow(
+      regionCode,
+      regionCode === "NATIONAL" ? "Direct – National (no region)" : regionNameByCode.get(regionCode) ?? regionCode,
+      cells.map(roundedClosingCell),
+      channel.value,
+      targetByRegion.get(regionCode) ?? null,
+    ));
+
+  const firstDataRow = 6; // title on 4, header on 5
+  let row = writeTable(sheet, 4, {
+    columns,
+    note: rows.length === 0
+      ? "No direct orders reached this line and month."
+      : "Direct orders only — no distributor row is on this sheet. Value is exactly as submitted " +
+        "(a direct deal carries its own negotiated discount or bonus and is never re-valued at the " +
+        "factory price). Direct is booked to a region and a product, never to an area, which is why " +
+        "it is listed by region here. Target Value is the region's whole-month target, so Ach % is the " +
+        "share of it this channel delivered on its own — add it to the retail tab's and you get the master's.",
+    rows,
+    title: "Direct sales by region and product",
+    totals: rows.length === 0
+      ? undefined
+      : channelRow("", "DIRECT TOTAL", totalCells.map(roundedClosingCell), channel.value, matrix.grandTotal.rowTotal.targetValue),
+  });
+  if (rows.length > 0) styleAchievementColumn(sheet, columns.length - 1, firstDataRow, firstDataRow + rows.length);
+
+  // Who each order was sold to. The region grid answers "how much"; this answers "to whom", which
+  // is the question a direct order actually raises.
+  const customers = directCustomerRows(matrix, detailRows);
+  const customerColumns: TableColumn[] = [
+    { label: "Customer Code", width: 15 },
+    { label: "Customer", width: 40 },
+    { label: "Details", width: 38 },
+    { label: "Region", width: 14 },
+    { label: "Area", width: 26 },
+    { label: "Medical Rep", width: 32 },
+    { label: "Product", width: 24 },
+    { label: "Units", numFmt: UNITS_FMT, right: true },
+    { dataBar: true, label: "Value (as submitted)", numFmt: VALUE_FMT, right: true, width: 20 },
+  ];
+  const customerTotalUnits = customers.reduce((sum, entry) => sum + entry.units, 0);
+  const customerTotalValue = Math.round(customers.reduce((sum, entry) => sum + entry.value, 0) * 100) / 100;
+  row = writeTable(sheet, row, {
+    columns: customerColumns,
+    note: customers.length === 0
+      ? "This month's direct sheet carries no customer identity — it arrived with the client code, name " +
+        "and address blank on every row, so there is nothing to name here. Orders raised through the " +
+        "Direct Orders module carry their pharmacy, so this section fills itself from the month that module went live."
+      : "Every direct order of this line and month, by customer. The total below equals the DIRECT TOTAL " +
+        "above — the same money, once by region and once by customer.",
+    rows: customers.map((entry) => [
+      entry.clientCode, entry.customer, entry.details, entry.regionName,
+      entry.areaName, entry.repName, entry.productName, entry.units, entry.value,
+    ]),
+    title: "Direct orders — customer by customer",
+    totals: customers.length === 0
+      ? undefined
+      : ["", "TOTAL — all customers", "", "", "", "", "", customerTotalUnits, customerTotalValue],
+  });
+
+  channelReconciliation(sheet, row, "Direct sales (this sheet)", channel.value, "Retail sales", retailValue, masterValue);
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -1615,6 +1999,13 @@ export async function buildMonthlyClosingWorkbook(
     storeSplitRows?: ClosingDetailRow[];
     /** The areas this workbook covers, for marking Store Split rows as inside or outside it. */
     storeSplitScopeAreaCodes?: readonly string[];
+    /**
+     * The two halves of `matrix`, for the channel tabs: `retail` is the same grid before direct is
+     * injected (with the identical store split applied), `directCells` the direct money by region
+     * and product. Omitted under a row-level filter, where the matrix is rebuilt from invoice rows
+     * and the direct channel has no equivalent slice.
+     */
+    channels?: { retail: MonthlyClosingMatrix; directCells: MonthlyClosingDirectCell[] } | null;
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -1625,8 +2016,28 @@ export async function buildMonthlyClosingWorkbook(
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
   writeMatrixSheet(workbook, matrix, ref, options?.filterNote);
-  // Second sheet, on purpose: whether the month is COMPLETE comes before how it performed —
-  // July 2026 was reported on 4 of ~18 source files and nothing in the file said so.
+  // The master's two halves, immediately beside it: the same money split by channel so the retail
+  // business and the direct business can each be read on their own. Both tie back to the master.
+  if (options?.channels) {
+    const masterValue = (options.channels.directCells.length > 0 && matrix.companyTotal
+      ? matrix.companyTotal
+      : matrix.grandTotal).rowTotal.salesValue;
+    const retailValue = options.channels.retail.grandTotal.rowTotal.salesValue;
+    const directValue = options.channels.directCells.reduce((sum, cell) => sum + cell.salesValue, 0);
+    writeRetailChannelSheet(workbook, options.channels.retail, directValue, masterValue);
+    writeDirectChannelSheet(
+      workbook,
+      matrix,
+      options.channels.directCells,
+      retailValue,
+      masterValue,
+      // The whole month's rows when the caller has them — a direct order's customer must not
+      // disappear because the reader filtered the screen to one area.
+      options.storeSplitRows ?? details?.rows ?? [],
+    );
+  }
+  // Then: whether the month is COMPLETE, before how it performed — July 2026 was reported on 4 of
+  // ~18 source files and nothing in the file said so.
   if (options?.coverage) {
     writeSourceCoverageSheet(workbook, options.coverage);
   }

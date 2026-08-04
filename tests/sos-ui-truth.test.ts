@@ -70,9 +70,13 @@ export function runSosUiTruthTests() {
     }
 
     const route = code(read("app/api/sales/monthly-closing/export/route.ts"));
+    // The invariant is that the loaded matrix is narrowed by the caller's own `matrixFilter`
+    // through the same pure function the table uses — NOT what the loaded matrix is called. The
+    // identifier was pinned literally once and broke when the loader started returning the
+    // channel parts (`parts.combined`) rather than a bare `fullMatrix`, which changed no behaviour.
     assert.match(
       route,
-      /filterMonthlyClosingMatrix\(fullMatrix, matrixFilter\)/,
+      /filterMonthlyClosingMatrix\([A-Za-z0-9_.]+, matrixFilter\)/,
       "the route must apply the SAME pure filter the table uses, so the two cannot diverge",
     );
     // Narrowing only — the filter must never be able to widen what a caller may see.
