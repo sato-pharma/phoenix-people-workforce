@@ -515,6 +515,86 @@ function assertSingleCustomerCode(customerCode: string): void {
   }
 }
 
+/**
+ * Fold submitted (distributor, customer code) pairs into one validated map.
+ *
+ * Shared by the order form and the pharmacy registry deliberately. These two paths write the same
+ * child table, and a rule enforced in one but not the other is a rule that does not exist — the
+ * registry would happily store the second code the order form refuses.
+ *
+ * Blank pairs are dropped rather than refused: an empty row in the UI means "I did not fill this
+ * in", not "I meant to submit nothing". Codes are OPTIONAL overall (owner rule, 2026-08-04); what
+ * an unknown code costs is an extra approval rung, not a refusal.
+ */
+function normalizeDistributorCodePairs(
+  pairs: Array<{ distributorCode: string; customerCode: string }> | undefined,
+): Map<string, string> {
+  const byDistributor = new Map<string, string>();
+  for (const pair of pairs ?? []) {
+    const distributorCode = String(pair.distributorCode ?? "").trim();
+    const customerCode = String(pair.customerCode ?? "").trim();
+    if (!distributorCode || !customerCode) continue;
+    assertSingleCustomerCode(customerCode);
+    if (byDistributor.has(distributorCode)) {
+      // UNIQUE (pharmacy_id, distributor_code) would reject this anyway, but as an opaque
+      // database error. Say plainly what is wrong instead.
+      badRequest(
+        `${distributorCode} appears twice. A pharmacy holds ONE customer code per distributor — ` +
+          "add the second code under the distributor it actually belongs to.",
+      );
+    }
+    byDistributor.set(distributorCode, customerCode);
+  }
+  return byDistributor;
+}
+
+/**
+ * Look each (distributor, customer code) up in the customer map to recover its geography.
+ *
+ * Skipped entirely when there are no codes: `.in(col, [])` is not a harmless no-op in PostgREST,
+ * and there is nothing to resolve anyway. A miss is normal and never an error — it simply means
+ * the code is not one the distributor has reported sales against yet.
+ */
+async function resolveCustomerCodeGeography(
+  byDistributor: Map<string, string>,
+): Promise<Map<string, { brick: string | null; area: string | null; region: string | null }>> {
+  const mapByKey = new Map<string, { brick: string | null; area: string | null; region: string | null }>();
+  if (byDistributor.size === 0) return mapByKey;
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("source_of_sales_customer_map")
+    .select("distributor_code, customer_code, brick_id, area_code, region_code")
+    .in("distributor_code", Array.from(byDistributor.keys()))
+    .in("customer_code", Array.from(byDistributor.values()));
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
+      brick: row.brick_id ? String(row.brick_id) : null,
+      area: row.area_code ? String(row.area_code) : null,
+      region: row.region_code ? String(row.region_code) : null,
+    });
+  }
+  return mapByKey;
+}
+
+/** Child rows for a pharmacy's codes, each carrying whatever geography the customer map knew. */
+function buildDistributorCodeRows(
+  pharmacyId: string,
+  byDistributor: Map<string, string>,
+  mapByKey: Map<string, { brick: string | null; area: string | null; region: string | null }>,
+): Array<Record<string, unknown>> {
+  return Array.from(byDistributor.entries()).map(([distributorCode, customerCode]) => {
+    const mapped = mapByKey.get(`${distributorCode}::${customerCode}`);
+    return {
+      pharmacy_id: pharmacyId,
+      distributor_code: distributorCode,
+      customer_code: customerCode,
+      mapped_brick_id: mapped?.brick ?? null,
+      mapped_area_code: mapped?.area ?? null,
+      mapped_region_code: mapped?.region ?? null,
+    };
+  });
+}
+
 export async function createDirectOrderPharmacy(
   access: AccessContext,
   input: {
@@ -545,22 +625,7 @@ export async function createDirectOrderPharmacy(
   // with nothing valid to put in it.
   //
   // When codes ARE supplied they are still validated: one per distributor, one code per field.
-  const byDistributor = new Map<string, string>();
-  for (const pair of input.distributorCodes ?? []) {
-    const distributorCode = String(pair.distributorCode ?? "").trim();
-    const customerCode = String(pair.customerCode ?? "").trim();
-    if (!distributorCode || !customerCode) continue;
-    assertSingleCustomerCode(customerCode);
-    if (byDistributor.has(distributorCode)) {
-      // UNIQUE (pharmacy_id, distributor_code) would reject this anyway, but as an opaque
-      // database error. Say plainly what is wrong instead.
-      badRequest(
-        `${distributorCode} appears twice. A pharmacy holds ONE customer code per distributor — ` +
-          "add the second code under the distributor it actually belongs to.",
-      );
-    }
-    byDistributor.set(distributorCode, customerCode);
-  }
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
 
   const supabase = getSupabaseAdmin();
   // Every hand-registered pharmacy starts UNRECOGNISED, and the row says so from the first insert
@@ -595,35 +660,11 @@ export async function createDirectOrderPharmacy(
   const pharmacyId = String((pharmacyRow as Record<string, unknown>).id);
 
   // Resolve each (distributor, customer code) → brick via the customer map (best-effort).
-  // Skipped entirely when no codes were given: `.in(col, [])` is not a harmless no-op in
-  // PostgREST, and there is nothing to resolve anyway.
-  const mapByKey = new Map<string, { brick: string | null; area: string | null; region: string | null }>();
+  const mapByKey = await resolveCustomerCodeGeography(byDistributor);
   if (byDistributor.size > 0) {
-    const { data: mapRows } = await supabase
-      .from("source_of_sales_customer_map")
-      .select("distributor_code, customer_code, brick_id, area_code, region_code")
-      .in("distributor_code", Array.from(byDistributor.keys()))
-      .in("customer_code", Array.from(byDistributor.values()));
-    for (const row of (mapRows ?? []) as Array<Record<string, unknown>>) {
-      mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
-        brick: row.brick_id ? String(row.brick_id) : null,
-        area: row.area_code ? String(row.area_code) : null,
-        region: row.region_code ? String(row.region_code) : null,
-      });
-    }
-
-    const childRows = Array.from(byDistributor.entries()).map(([distributorCode, customerCode]) => {
-      const mapped = mapByKey.get(`${distributorCode}::${customerCode}`);
-      return {
-        pharmacy_id: pharmacyId,
-        distributor_code: distributorCode,
-        customer_code: customerCode,
-        mapped_brick_id: mapped?.brick ?? null,
-        mapped_area_code: mapped?.area ?? null,
-        mapped_region_code: mapped?.region ?? null,
-      };
-    });
-    const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert(childRows);
+    const { error: childError } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .insert(buildDistributorCodeRows(pharmacyId, byDistributor, mapByKey));
     if (childError) throw childError;
   }
 
@@ -697,6 +738,289 @@ export async function acknowledgeDirectOrderPharmacy(
     oldValues: { verificationStatus: (before as { verification_status?: string }).verification_status ?? null },
     newValues: { verificationStatus: "verified" },
     summary: `Direct-order pharmacy acknowledged by ${access.hrId ?? "unknown"}.`,
+  });
+}
+
+// ── Pharmacy registry — set a pharmacy up BEFORE an order arrives ─────────────
+//
+// Owner request, 2026-08-04: "I want to set up this pharmacy in case a direct order is submitted
+// and has its code, the system recognizes it."
+//
+// Until now a pharmacy could only be born inside an order form, which meant the FIRST order for
+// any pharmacy always paid the review cost — even one the company has traded with for years and
+// whose distributor code is sitting in the customer map. The registry lets that setup happen in
+// advance, so the order that arrives later is recognised and takes the ordinary chain.
+
+/** Who may open the registry and register pharmacies (owner's choice, 2026-08-04). */
+const PHARMACY_REGISTRY_ROLES = new Set<PhoenixRole>(["Super Admin", "SFE Manager"]);
+
+function canManagePharmacyRegistry(access: AccessContext): boolean {
+  return access.scope === "system" || PHARMACY_REGISTRY_ROLES.has(access.role);
+}
+
+function assertPharmacyRegistryAccess(access: AccessContext): void {
+  if (!canManagePharmacyRegistry(access)) {
+    throw new Error("Forbidden: only a System Admin or the SFE Manager can manage the pharmacy registry.");
+  }
+}
+
+export type DirectOrderRegistryPharmacy = DirectOrderPharmacy & {
+  brickName: string | null;
+  areaName: string | null;
+  regionName: string | null;
+  /** Orders already placed against this pharmacy — what is riding on an edit. */
+  orderCount: number;
+  /** Orders still climbing their chain. Editing a code under one of these moves live money. */
+  pendingOrderCount: number;
+};
+
+/**
+ * Every active pharmacy, with names rather than codes and with what is riding on each one.
+ *
+ * `canClearReview` is deliberately NARROWER than `canManage`. The SFE Manager may register and
+ * edit pharmacies, but clearing one that is already holding an order is the System Admin rung the
+ * owner asked for — and SFE sits on the rung immediately before it. Letting SFE clear it would let
+ * the first approver dissolve the second approver's step on a request they are about to sign.
+ */
+export async function listDirectOrderPharmacyRegistry(access: AccessContext): Promise<{
+  rows: DirectOrderRegistryPharmacy[];
+  canManage: boolean;
+  canClearReview: boolean;
+}> {
+  assertPharmacyRegistryAccess(access);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_pharmacies")
+    .select("*")
+    .eq("active", true)
+    .order("pharmacy_name", { ascending: true });
+  if (error) throw error;
+  const pharmacies = ((data ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
+  await attachDistributorCodes(pharmacies);
+
+  const [{ brickNameById, areaNameByCode, regionNameByCode }, orderRows] = await Promise.all([
+    loadDirectOrderGeoNames(),
+    (async () => {
+      const { data: rows } = await supabase.from("direct_order_requests").select("pharmacy_id, status");
+      return (rows ?? []) as Array<{ pharmacy_id: string | null; status: string | null }>;
+    })(),
+  ]);
+  const orderCounts = new Map<string, { total: number; pending: number }>();
+  for (const row of orderRows) {
+    if (!row.pharmacy_id) continue;
+    const bucket = orderCounts.get(row.pharmacy_id) ?? { total: 0, pending: 0 };
+    bucket.total += 1;
+    if (String(row.status ?? "") === "pending_approval") bucket.pending += 1;
+    orderCounts.set(row.pharmacy_id, bucket);
+  }
+
+  const rows = pharmacies.map((pharmacy) => ({
+    ...pharmacy,
+    brickName: pharmacy.brickId ? brickNameById.get(pharmacy.brickId) ?? null : null,
+    areaName: pharmacy.areaCode ? areaNameByCode.get(pharmacy.areaCode) ?? null : null,
+    regionName: pharmacy.regionCode ? regionNameByCode.get(pharmacy.regionCode) ?? null : null,
+    orderCount: orderCounts.get(pharmacy.id)?.total ?? 0,
+    pendingOrderCount: orderCounts.get(pharmacy.id)?.pending ?? 0,
+  }));
+  return {
+    rows,
+    canManage: canManagePharmacyRegistry(access),
+    canClearReview: access.scope === "system" || access.role === "Super Admin",
+  };
+}
+
+/**
+ * Register a pharmacy ahead of any order — and mark it CONFIRMED.
+ *
+ * This is the one place a pharmacy is born already verified, and the reason is that the person
+ * registering it IS the confirming authority. A Super Admin or the SFE Manager working through
+ * the registry, with no order in front of them and no deadline, is doing exactly the check the
+ * System Admin rung exists to force. Making them then approve their own entry on a later order
+ * would be theatre, and would defeat the whole point of setting the pharmacy up in advance.
+ *
+ * The order form is unchanged and still flags everything it creates — see
+ * createDirectOrderPharmacy. The difference is not the fields, it is who is typing and whether an
+ * order is waiting on the answer.
+ */
+export async function registerDirectOrderPharmacy(
+  access: AccessContext,
+  input: {
+    pharmacyName: string;
+    brickId?: string | null;
+    areaCode?: string | null;
+    regionCode?: string | null;
+    doctorName?: string | null;
+    pharmacyAddress?: string | null;
+    distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
+  },
+): Promise<DirectOrderPharmacy> {
+  assertPharmacyRegistryAccess(access);
+  const name = input.pharmacyName?.trim();
+  if (!name) badRequest("Pharmacy name is required.");
+  const doctorName = input.doctorName?.trim() || null;
+  const pharmacyAddress = input.pharmacyAddress?.trim() || null;
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
+
+  const supabase = getSupabaseAdmin();
+  const now = new Date().toISOString();
+  const { data: pharmacyRow, error } = await supabase
+    .from("direct_order_pharmacies")
+    .insert({
+      pharmacy_name: name,
+      brick_id: input.brickId ?? null,
+      area_code: input.areaCode ?? null,
+      region_code: input.regionCode ?? null,
+      doctor_name: doctorName,
+      pharmacy_address: pharmacyAddress,
+      created_by_hr_id: access.hrId,
+      verification_status: "verified",
+      entry_source: "catalogue",
+      verified_by_hr_id: access.hrId ?? null,
+      verified_at: now,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  const pharmacyId = String((pharmacyRow as Record<string, unknown>).id);
+
+  const mapByKey = await resolveCustomerCodeGeography(byDistributor);
+  if (byDistributor.size > 0) {
+    const { error: childError } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .insert(buildDistributorCodeRows(pharmacyId, byDistributor, mapByKey));
+    if (childError) throw childError;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${pharmacyId}`,
+    newValues: {
+      verificationStatus: "verified",
+      entrySource: "catalogue",
+      registeredBy: access.role,
+      distributorCodes: Array.from(byDistributor.entries()).map(([d, c]) => `${d}:${c}`),
+    },
+    summary: `Direct-order pharmacy "${name}" pre-registered and confirmed by ${access.hrId ?? "unknown"} (${access.role}).`,
+  });
+
+  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
+  await attachDistributorCodes([pharmacy]);
+  return pharmacy;
+}
+
+/** Editable identity/geography fields. Anything absent is left exactly as it was. */
+export async function updateDirectOrderPharmacyDetails(
+  access: AccessContext,
+  input: {
+    pharmacyId: string;
+    pharmacyName?: string | null;
+    brickId?: string | null;
+    areaCode?: string | null;
+    regionCode?: string | null;
+    doctorName?: string | null;
+    pharmacyAddress?: string | null;
+  },
+): Promise<void> {
+  assertPharmacyRegistryAccess(access);
+  const supabase = getSupabaseAdmin();
+  const { data: before } = await supabase
+    .from("direct_order_pharmacies")
+    .select("pharmacy_name, brick_id, area_code, region_code, doctor_name, pharmacy_address")
+    .eq("id", input.pharmacyId)
+    .maybeSingle();
+  if (!before) badRequest("Pharmacy not found.");
+
+  // Patch semantics, not replace: the UI sends only the fields it edited, and an absent key must
+  // never blank a column. `null` is a real value here (clear the doctor) and is distinguished from
+  // `undefined` (leave it alone) — hence the explicit `in` checks rather than `??`.
+  const patch: Record<string, unknown> = {};
+  if (input.pharmacyName !== undefined) {
+    const name = input.pharmacyName?.trim();
+    if (!name) badRequest("Pharmacy name cannot be empty.");
+    patch.pharmacy_name = name;
+  }
+  if (input.brickId !== undefined) patch.brick_id = input.brickId || null;
+  if (input.areaCode !== undefined) patch.area_code = input.areaCode || null;
+  if (input.regionCode !== undefined) patch.region_code = input.regionCode || null;
+  if (input.doctorName !== undefined) patch.doctor_name = input.doctorName?.trim() || null;
+  if (input.pharmacyAddress !== undefined) patch.pharmacy_address = input.pharmacyAddress?.trim() || null;
+  if (Object.keys(patch).length === 0) return;
+
+  const { error } = await supabase.from("direct_order_pharmacies").update(patch).eq("id", input.pharmacyId);
+  if (error) throw error;
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    oldValues: before as Record<string, unknown>,
+    newValues: patch,
+    summary: `Direct-order pharmacy details updated by ${access.hrId ?? "unknown"}.`,
+  });
+}
+
+/**
+ * Replace a pharmacy's whole set of distributor codes.
+ *
+ * Replace rather than merge, because the common case is FIXING one: مستشفى زمزم carries
+ * `829575 \ 1533576`, a single field holding two codes, matching nothing at the distributor. A
+ * merge would leave the broken pair in place beside the corrected one and the pharmacy would still
+ * match nothing. Sending the full intended set is unambiguous — what you see is what it becomes.
+ *
+ * Verification status is deliberately NOT touched. Correcting a code is not the same act as
+ * confirming a pharmacy, and folding them together would let an SFE Manager clear a pending
+ * pharmacy by editing a character. Clearing stays acknowledgeDirectOrderPharmacy, Super Admin only.
+ */
+export async function replaceDirectOrderPharmacyCodes(
+  access: AccessContext,
+  input: { pharmacyId: string; distributorCodes: Array<{ distributorCode: string; customerCode: string }> },
+): Promise<void> {
+  assertPharmacyRegistryAccess(access);
+  const supabase = getSupabaseAdmin();
+  const { data: pharmacy } = await supabase
+    .from("direct_order_pharmacies")
+    .select("id, pharmacy_name")
+    .eq("id", input.pharmacyId)
+    .maybeSingle();
+  if (!pharmacy) badRequest("Pharmacy not found.");
+
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
+  const { data: previous } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .select("distributor_code, customer_code")
+    .eq("pharmacy_id", input.pharmacyId);
+
+  const { error: deleteError } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .delete()
+    .eq("pharmacy_id", input.pharmacyId);
+  if (deleteError) throw deleteError;
+
+  const mapByKey = await resolveCustomerCodeGeography(byDistributor);
+  if (byDistributor.size > 0) {
+    const { error: insertError } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .insert(buildDistributorCodeRows(input.pharmacyId, byDistributor, mapByKey));
+    if (insertError) throw insertError;
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    oldValues: {
+      distributorCodes: ((previous ?? []) as Array<{ distributor_code: string; customer_code: string }>).map(
+        (row) => `${row.distributor_code}:${row.customer_code}`,
+      ),
+    },
+    newValues: {
+      distributorCodes: Array.from(byDistributor.entries()).map(([d, c]) => `${d}:${c}`),
+      resolvedAgainstCustomerMap: Array.from(byDistributor.entries()).filter(([d, c]) =>
+        mapByKey.has(`${d}::${c}`),
+      ).length,
+    },
+    summary: `Direct-order pharmacy distributor codes replaced by ${access.hrId ?? "unknown"}.`,
   });
 }
 

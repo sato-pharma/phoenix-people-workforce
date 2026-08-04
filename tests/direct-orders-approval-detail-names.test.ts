@@ -1115,4 +1115,103 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       assert.match(source, /selectedBrick\.regionName/, `${path} must label the picked brick's region by NAME`);
     }
   }
+
+  // ── Pharmacy registry: set a pharmacy up BEFORE an order needs it ───────────
+  // Owner request, 2026-08-04. Registering here counts as confirmation, because the person doing
+  // it IS the authority the approval chain would otherwise wait for.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+
+    // Who may open the registry (owner's choice: Super Admin + SFE Manager).
+    assert.match(
+      serviceSource,
+      /const PHARMACY_REGISTRY_ROLES = new Set<PhoenixRole>\(\["Super Admin", "SFE Manager"\]\)/,
+      "the registry is Super Admin + SFE Manager",
+    );
+
+    // THE boundary. SFE may register and edit, but must NOT be able to clear a pharmacy that is
+    // already holding an order — that is the System Admin rung, and SFE sits on the rung directly
+    // before it. Letting SFE clear it would let the first approver dissolve the second approver's
+    // step on a request they are about to sign.
+    const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
+    const ackBody = serviceSource.slice(ackIdx, ackIdx + 1200);
+    assert.match(
+      ackBody,
+      /access\.scope === "system" \|\| access\.role === "Super Admin"/,
+      "clearing a pharmacy must stay Super Admin, never widen to the registry roles",
+    );
+    assert.doesNotMatch(
+      ackBody,
+      /PHARMACY_REGISTRY_ROLES|canManagePharmacyRegistry|SFE Manager/,
+      "the acknowledgment must not be gated by the registry roles — SFE would clear its own next step",
+    );
+
+    // Every registry write is gated in the SERVICE, not in the route or the component. The route
+    // is reachable directly, so a hidden button proves nothing.
+    for (const fn of [
+      "listDirectOrderPharmacyRegistry",
+      "registerDirectOrderPharmacy",
+      "updateDirectOrderPharmacyDetails",
+      "replaceDirectOrderPharmacyCodes",
+    ]) {
+      const idx = serviceSource.indexOf(`export async function ${fn}(`);
+      assert.ok(idx > -1, `${fn} must exist`);
+      const body = serviceSource.slice(idx, idx + 900);
+      assert.match(body, /assertPharmacyRegistryAccess\(access\)/, `${fn} must gate on the registry roles`);
+    }
+
+    // A registry-born pharmacy is CONFIRMED — that is the entire point of pre-registering.
+    const regIdx = serviceSource.indexOf("export async function registerDirectOrderPharmacy(");
+    const regBody = serviceSource.slice(regIdx, serviceSource.indexOf("export async function updateDirectOrderPharmacyDetails(", regIdx));
+    assert.match(regBody, /verification_status: "verified"/, "a pre-registered pharmacy must not need a second confirmation");
+    assert.match(regBody, /entry_source: "catalogue"/);
+    assert.match(regBody, /verified_by_hr_id: access\.hrId/, "who confirmed it must be recorded");
+    assert.match(regBody, /writeRequiredAuditLog\(/, "pre-registration must be audited");
+
+    // …and the ORDER FORM must still flag everything it creates. If these two ever converge, a
+    // District Manager typing a pharmacy mid-order would silently skip the review entirely.
+    const createIdx = serviceSource.indexOf("export async function createDirectOrderPharmacy(");
+    const createBody = serviceSource.slice(createIdx, serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(", createIdx));
+    assert.match(
+      createBody,
+      /verification_status: "pending_review"/,
+      "the order form must keep flagging what it creates, whatever the registry does",
+    );
+    assert.doesNotMatch(
+      createBody,
+      /verification_status: "verified"/,
+      "the order form must never mint a confirmed pharmacy",
+    );
+
+    // Editing a code is not the same act as confirming a pharmacy. Folding them together would
+    // let an SFE Manager clear a pending pharmacy by changing one character.
+    const replaceIdx = serviceSource.indexOf("export async function replaceDirectOrderPharmacyCodes(");
+    const replaceBody = serviceSource.slice(replaceIdx, replaceIdx + 2200);
+    assert.doesNotMatch(
+      replaceBody,
+      /verification_status/,
+      "replacing codes must never touch verification status",
+    );
+    // Replace, not merge: the common case is FIXING a wrong code, and a merge would leave the
+    // broken pair sitting beside the corrected one.
+    assert.match(
+      replaceBody,
+      /\.delete\(\)\s*\n\s*\.eq\("pharmacy_id", input\.pharmacyId\)/,
+      "the old code set must be cleared before the new one is written",
+    );
+
+    // Both write paths must run the SAME code validation — a rule enforced in one but not the
+    // other is a rule that does not exist.
+    for (const [label, body] of [
+      ["the order form", createBody],
+      ["the registry", regBody],
+      ["the code replacement", replaceBody],
+    ] as const) {
+      assert.match(
+        body,
+        /normalizeDistributorCodePairs\(/,
+        `${label} must validate codes through the shared normalizer, not its own copy`,
+      );
+    }
+  }
 }

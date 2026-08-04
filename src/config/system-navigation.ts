@@ -47,6 +47,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
+  Store,
   Tags,
   Target,
   TriangleAlert,
@@ -2164,6 +2165,16 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     description: "Configure per-product bonus and discount caps.",
     permissions: [{ resource: "direct_orders", action: "read" }],
     roles: ["Super Admin", "SFE Manager", "CEO"],
+  },
+  {
+    href: "/admin/direct-orders/pharmacies",
+    icon: Store,
+    label: "Pharmacy Registry",
+    description: "Register a pharmacy and its distributor codes before an order needs it.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // Not CEO: the registry is a setup surface, and the read itself refuses anyone outside
+    // Super Admin / SFE Manager, so offering the link to CEO would only lead to a 403.
+    roles: ["Super Admin", "SFE Manager"],
   },
   {
     href: "/admin/direct-orders/pharmacy-variances",

@@ -336,6 +336,12 @@ export const accessRegistry = [
   // role action — the CEO holds direct_orders:approve but must NOT be able to move a month.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/sales-month", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacies", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Pharmacy registry — pre-register a pharmacy so a later order is recognised. Registry
+  // permission is only `read` because the real gate is a role check inside the service
+  // (Super Admin + SFE Manager); every sales role holds direct_orders:read and must NOT be
+  // able to mint a pre-confirmed pharmacy. The `confirm` action routes to the Super-Admin-only
+  // acknowledgeDirectOrderPharmacy, so SFE reaching it gets a 403 by design.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacies/registry", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Type-ahead over the distributor's customer catalogue for the new-pharmacy picker. Read-only,
   // so no CSRF; the territory bound lives in searchDistributorCustomers, which clamps every
   // result to the caller's own areas rather than trusting the query string.
