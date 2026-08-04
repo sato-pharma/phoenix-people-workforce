@@ -67,7 +67,7 @@ export type DirectOrderStepState = {
   status: DirectOrderStepStatus;
 };
 
-/** Bonus deal (qty × factory) or Discount deal (qty × public × (1−disc%)). */
+/** Bonus deal (qty × pharmacy price) or Discount deal (qty × public × (1−disc%)). */
 export type DirectOrderDealType = "bonus" | "discount";
 
 /** One mandatory distributor↔customer-code pair on a pharmacy (≥1 per pharmacy). */
@@ -128,12 +128,19 @@ export type DirectOrderRequest = {
   line: string;
   productCode: string;
   productName: string;
-  /** Kept as a reference even for bonus deals, which now price on `pharmacyPriceSnapshot`. */
+  /**
+   * DEAD FIELD — never read, never displayed, never part of any calculation.
+   *
+   * A direct order is priced on the pharmacy price (bonus) or the public price (discount) and on
+   * NOTHING else (owner instruction, 2026-08-04). This survives only because
+   * `direct_order_requests.factory_price_snapshot` is NOT NULL with no default, so the insert
+   * must still supply a value; dropping the column is a migration. Do not surface it anywhere.
+   */
   factoryPriceSnapshot: number;
   /**
-   * The pharmacy price this BONUS request was actually valued at. NULL means either a discount
-   * deal, or a bonus deal that fell back to the factory price because the product had no
-   * pharmacy price at submit time — which is exactly what `missingPharmacyPrice` reports.
+   * The pharmacy price this BONUS request was valued at. NULL only on a discount deal (which
+   * prices on the public price). A bonus deal with no pharmacy price is now refused at submit,
+   * so a bonus row can no longer carry a null here.
    * Snapshotted rather than re-read, so it keeps describing THIS row after the master changes.
    */
   pharmacyPriceSnapshot: number | null;
@@ -298,8 +305,6 @@ export type DirectOrderApprovalListItem = {
   activeStepOrder: number | null;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
-  /** True when a bonus deal fell back to the factory price because no pharmacy price was set. */
-  missingPharmacyPrice: boolean;
 };
 
 /** Everything the detail page needs, including the viewer's allowed actions. */
@@ -317,8 +322,7 @@ export type DirectOrderReportRow = {
   line: string;
   productCode: string;
   productName: string;
-  factoryPriceSnapshot: number;
-  /** The pharmacy price a bonus deal was valued at; null = discount deal, or factory fallback. */
+  /** The pharmacy price a bonus deal was valued at; null on a discount deal (public-priced). */
   pharmacyPriceSnapshot: number | null;
   qty: number;
   bonus: number;
@@ -400,8 +404,6 @@ export type DirectOrderApprovalDetail = {
   availableActions: DirectOrderAvailableActions;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
-  /** True when a bonus deal fell back to the factory price because no pharmacy price was set. */
-  missingPharmacyPrice: boolean;
   /**
    * Whether THIS viewer may book the order into a sales month. Finance (Ahmed El Maraghy) and
    * Super Admin can; the CEO and SFE Manager see the month but cannot change it.

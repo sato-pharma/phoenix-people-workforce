@@ -96,7 +96,6 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
-    missingPharmacyPrice: false,
     ...overrides,
   };
 }
@@ -321,12 +320,15 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.equal(valueOf("Area"), "—");
   }
   {
-    // A bonus deal that fell back must say so where the approver reads the price.
+    // A bonus deal can no longer be valued without a pharmacy price — submit refuses it, and
+    // there is no factory-price fallback (owner instruction, 2026-08-04). A legacy row that
+    // still carries no snapshot must therefore read "not set", never a substituted price.
     const fields = buildDirectOrderDetailFields(
-      detail({ request: request({ pharmacyPriceSnapshot: null }), missingPharmacyPrice: true }),
+      detail({ request: request({ pharmacyPriceSnapshot: null }) }),
     );
     const value = fields.find((field) => field.label === "Pharmacy price")?.value ?? "";
-    assert.match(value, /not set/i, "a fallback-priced bonus order must show that no pharmacy price was set");
+    assert.match(value, /not set/i, "a bonus order with no pharmacy price must say so, not show another price");
+    assert.doesNotMatch(value, /factory/i, "the approval window must never mention a factory price");
   }
   {
     // A discount deal shows BOTH prices too (owner rule: never skip a detail), each stating

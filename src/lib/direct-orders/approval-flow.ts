@@ -158,8 +158,8 @@ export function validateDiscount(input: { discountPct: number; capPct: number })
  * money change that is the feature — a back-compat signature accepting either key would let a
  * missed caller keep compiling while silently pricing on the wrong basis.
  *
- * Falling back to the factory price when a product has no pharmacy price yet belongs to the
- * CALLER (which also flags the fallback), not to this pure helper.
+ * There is no fallback: a direct order never uses the factory price (owner instruction,
+ * 2026-08-04). A bonus deal with no pharmacy price is refused by the caller before it gets here.
  */
 export function computeDirectOrderSalesValue(input: { qty: number; pharmacyPrice: number }): number {
   const qty = Math.max(0, Number(input.qty) || 0);

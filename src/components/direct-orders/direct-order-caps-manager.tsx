@@ -8,10 +8,9 @@ import type { DirectOrderCapRow } from "@/lib/direct-orders/caps";
 type ProductOption = {
   productCode: string;
   productName: string;
-  factoryPrice: number;
   /** Values DISCOUNT deals. */
   publicPrice: number | null;
-  /** Values BONUS deals. null = not set; submissions fall back to the factory price. */
+  /** Values BONUS deals. null = not set; a bonus order is then refused at submit. */
   pharmacyPrice: number | null;
 };
 
@@ -189,8 +188,8 @@ export function DirectOrderCapsManager({
             <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-500">Product prices</h3>
             <p className="mt-1 text-[11px] text-slate-500">
               A BONUS direct order is valued at qty × pharmacy price. A DISCOUNT order is valued at
-              qty × public price × (1 − discount %). A product with no pharmacy price still submits —
-              it falls back to the factory price and is flagged for the approver.
+              qty × public price × (1 − discount %). Those two prices are the only bases a direct
+              order uses, so a product with no pharmacy price cannot be submitted as a bonus deal.
             </p>
           </div>
           <label className="text-sm">
@@ -203,12 +202,12 @@ export function DirectOrderCapsManager({
             />
           </label>
         </div>
+
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-left text-[11px] font-black uppercase text-slate-500">
                 <th className="whitespace-nowrap px-2 py-1">Product</th>
-                <th className="whitespace-nowrap px-2 py-1 text-right">Factory price</th>
                 <th className="whitespace-nowrap px-2 py-1 text-right">Public price (discount)</th>
                 <th className="whitespace-nowrap px-2 py-1 text-right">Pharmacy price (bonus)</th>
                 {canEdit ? <th className="px-2 py-1" /> : null}
@@ -217,7 +216,7 @@ export function DirectOrderCapsManager({
             <tbody>
               {visibleProducts.length === 0 ? (
                 <tr>
-                  <td className="px-2 py-3 text-slate-400" colSpan={5}>
+                  <td className="px-2 py-3 text-slate-400" colSpan={4}>
                     No product matches “{productFilter}”.
                   </td>
                 </tr>
@@ -228,9 +227,6 @@ export function DirectOrderCapsManager({
                     <tr key={p.productCode} className="border-b border-slate-100">
                       <td className="whitespace-nowrap px-2 py-1.5">
                         {p.productName} <span className="text-slate-400">({p.productCode})</span>
-                      </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-500">
-                        {p.factoryPrice.toLocaleString("en-US")} EGP
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right">
                         {canEdit ? (

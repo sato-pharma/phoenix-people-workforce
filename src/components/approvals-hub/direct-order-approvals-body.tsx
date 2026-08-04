@@ -1,11 +1,10 @@
 import Link from "next/link";
 
+import { formatDealValueLabelled } from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
-const bonusCell = (row: DirectOrderApprovalListItem) =>
-  row.dealType === "discount" ? (row.discountPct == null ? "—" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
 function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] }) {
   const tone: Record<string, string> = {
@@ -35,7 +34,9 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
             <th className="px-3 py-2">Requester</th>
             <th className="px-3 py-2">Product</th>
             <th className="px-3 py-2 text-right">Qty</th>
-            <th className="px-3 py-2 text-right">Bonus</th>
+            {/* NOT "Bonus": a discount deal's percentage was rendered under that header, so 20% off
+                read as a 20% giveaway. The cell now names its own kind — see formatDealValueLabelled. */}
+            <th className="px-3 py-2 text-right">Bonus / Discount</th>
             <th className="px-3 py-2 text-right">Value</th>
             <th className="px-3 py-2">Pharmacy</th>
             <th className="px-3 py-2">Geography</th>
@@ -58,7 +59,7 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
               <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
-                {bonusCell(row)}
+                {formatDealValueLabelled(row)}
                 {row.bonusOverCap ? (
                   <span className="ml-1.5 inline-block rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-rose-700">
                     over cap
@@ -67,11 +68,6 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
               </td>
               <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums">
                 {money(row.salesValue)}
-                {row.missingPharmacyPrice ? (
-                  <span className="ml-1.5 inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-800">
-                    no pharmacy price
-                  </span>
-                ) : null}
               </td>
               <td className="whitespace-nowrap px-3 py-2">
                 <div className="text-slate-800">{row.pharmacyName}</div>

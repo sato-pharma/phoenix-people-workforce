@@ -74,6 +74,22 @@ export function dealFieldLabel(request: Pick<DirectOrderRequest, "dealType">): s
 }
 
 /**
+ * The deal figure carrying its OWN kind — for tables, where one fixed column header cannot.
+ *
+ * A detail view pairs dealFieldLabel with formatDealValue, so it always reads "Discount: 20%".
+ * A table has a single header, and both approval lists headed theirs "Bonus" while feeding a
+ * discount deal's PERCENTAGE into it — so a 20% discount rendered as "20%" under the word Bonus
+ * and read as a 20% giveaway. The number and its kind must therefore travel together here.
+ */
+export function formatDealValueLabelled(
+  request: Pick<DirectOrderRequest, "dealType" | "discountPct" | "bonus">,
+): string {
+  return request.dealType === "discount"
+    ? `${formatDealValue(request)} discount`
+    : `${formatDealValue(request)} bonus`;
+}
+
+/**
  * Labels the approval window must ALWAYS carry.
  *
  * This is the machine-checked completeness bar: the approved-order email has always shown the
@@ -126,7 +142,6 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     { label: "Deal type", value: request.dealType === "discount" ? "Discount" : "Bonus" },
     { label: "Quantity", value: units(request.qty) },
     { label: "Sales value", value: money(request.salesValue) },
-    { label: "Factory price", value: money(request.factoryPriceSnapshot) },
   ];
 
   // BOTH prices are always shown, not just the one that priced this deal. Which basis was used
@@ -158,7 +173,7 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
       request.dealType !== "bonus"
         ? unusedPrice(request.pharmacyPriceSnapshot, detail.productPharmacyPrice, "not used — discount deal")
         : request.pharmacyPriceSnapshot == null
-          ? `${DASH} (not set — valued at the factory price)`
+          ? `${DASH} (not set)`
           : `${money(request.pharmacyPriceSnapshot)} (used for this deal)`,
   });
   fields.push({

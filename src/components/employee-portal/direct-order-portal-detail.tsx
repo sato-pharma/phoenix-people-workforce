@@ -244,7 +244,6 @@ export function DirectOrderPortalDetail({
     steps,
     availableActions,
     bonusOverCap,
-    missingPharmacyPrice,
   } = detail;
   // Same shared field list the admin approval screen renders — see approval-fields.ts for why
   // it lives in the domain rather than being hand-maintained twice.
@@ -265,16 +264,11 @@ export function DirectOrderPortalDetail({
           </h2>
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </div>
-        {bonusOverCap || missingPharmacyPrice ? (
+        {bonusOverCap ? (
           <div className="space-y-1 border-b border-slate-100 bg-amber-50 px-4 py-2.5 sm:px-5">
             {bonusOverCap ? (
               <p className="text-[12px] font-bold text-amber-900">
                 Over cap -- this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
-              </p>
-            ) : null}
-            {missingPharmacyPrice ? (
-              <p className="text-[12px] font-bold text-amber-900">
-                No pharmacy price was set for this product -- the value above uses the factory price.
               </p>
             ) : null}
           </div>

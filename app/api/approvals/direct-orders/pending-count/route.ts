@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { countDirectOrderAwaiting } from "@/lib/direct-orders/service";
+import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,16 @@ export async function GET(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "direct_orders", "read");
     return NextResponse.json({ count: await countDirectOrderAwaiting(access) }, { headers: { "Cache-Control": "no-store" } });
-  } catch {
-    return NextResponse.json({ count: 0 });
+  } catch (error) {
+    // This used to `catch {}` and return a bare `count: 0`. A DB outage, a statement timeout and a
+    // genuinely empty queue then produced the identical answer, and the failure was never recorded
+    // anywhere — so an approver with money waiting on their rung saw no badge and no reason to look.
+    // `count` stays 0 so every existing badge consumer keeps working unchanged; `unavailable` lets a
+    // caller tell "nothing is waiting" from "we could not find out", and the log makes it visible.
+    logError("Direct order pending-count failed", {
+      labels: { event: "direct_order_pending_count_failed" },
+      error,
+    });
+    return NextResponse.json({ count: 0, unavailable: true }, { headers: { "Cache-Control": "no-store" } });
   }
 }

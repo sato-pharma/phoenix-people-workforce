@@ -105,22 +105,6 @@ function isRequestOverCap(
     : request.bonus > maxBonusUnits({ qty: request.qty, capPct: resolveBonusCapPct(caps, request.productCode) });
 }
 
-/**
- * True when a BONUS request's value fell back to the factory price because its product had no
- * pharmacy price at submit time.
- *
- * Deliberately derived from the SNAPSHOT, not from the live product master — the opposite
- * choice to isRequestOverCap above, and for the opposite reason. A cap is config that may
- * legitimately change; this is a fact about how THIS row's sales_value was actually computed.
- * Re-deriving it from the master would silently clear the flag the day the owner sets a
- * pharmacy price, on a row whose stored value was never recomputed.
- */
-function isFallbackPricedRequest(
-  request: Pick<DirectOrderRequest, "dealType" | "pharmacyPriceSnapshot">,
-): boolean {
-  return request.dealType === "bonus" && request.pharmacyPriceSnapshot == null;
-}
-
 /** Convert the resolver's assignment into the view-model shape (null = no seat, "we cannot say"). */
 function toDirectOrderAreaRep(assignment: AreaRepAssignment | null | undefined): DirectOrderAreaRep {
   if (!assignment) return { resolved: false, isVacant: false, repHrId: null, repName: null, repNames: [] };
@@ -1220,7 +1204,7 @@ export async function submitDirectOrder(
     badRequest("A valid money-collection date (YYYY-MM-DD) is required.");
   }
 
-  // Resolve the product from the master (name, line, factory price snapshot).
+  // Resolve the product from the master (name, line).
   const products = await listSourceOfSalesProducts();
   const product = products.find((candidate) => candidate.productCode === input.productCode);
   if (!product) badRequest(`Unknown product code "${input.productCode}".`);
@@ -1257,7 +1241,7 @@ export async function submitDirectOrder(
   // Both money inputs are read FRESH from the table rather than taken off `product`.
   // `listSourceOfSalesProducts()` is unstable_cache'd with a 600s revalidate and no price
   // setter busts that tag, so a price the owner just typed could be up to ten minutes stale.
-  // A cached factory price is fine for a dropdown label; it is not fine for a sales value.
+  // A stale price is fine for a dropdown label; it is not fine for a sales value.
   const { data: priceRow } = await supabase
     .from("source_of_sales_products")
     .select("public_price, pharmacy_price")
@@ -1280,15 +1264,29 @@ export async function submitDirectOrder(
     salesValue = computeDiscountSalesValue({ qty, publicPrice: publicPrice as number, discountPct });
   } else {
     // Bonus: value = qty × PHARMACY price (bonus units excluded); bonus capped by config.
-    // When the product has no pharmacy price yet we fall back to the factory price and FLAG it
-    // — never block. `pharmacyPrice` stays null in that case so the stored row records which
-    // basis was actually used (see isFallbackPricedRequest).
+    //
+    // There is NO factory-price fallback (owner ruling, 2026-08-04): a direct order is priced on
+    // the pharmacy price or the public price and never on the factory price. The old fallback
+    // silently repriced a bonus order onto a basis the business does not sell at, and when the
+    // factory price was missing too it produced a real order worth 0 EGP that climbed the whole
+    // chain to the CEO — Tigogrow (TG001) and Osteosat (OS001) are both in that state today.
+    // A missing pharmacy price is now REFUSED, exactly as the discount branch above refuses a
+    // missing public price. This deliberately replaces the earlier "flag, never block" rule.
     bonus = Math.floor(Number(input.bonus) || 0);
     const capPct = resolveBonusCapPct(caps, product.productCode);
     overCap = !validateBonus({ qty, bonus, capPct }).withinCap;
     const rawPharmacyPrice = prices?.pharmacy_price != null ? Number(prices.pharmacy_price) : null;
     pharmacyPrice = rawPharmacyPrice != null && rawPharmacyPrice > 0 ? rawPharmacyPrice : null;
-    salesValue = computeDirectOrderSalesValue({ qty, pharmacyPrice: pharmacyPrice ?? product.factoryPrice });
+    if (pharmacyPrice == null) {
+      badRequest(
+        `No pharmacy price is set for ${product.productName}. A bonus deal is valued on the pharmacy ` +
+          "price, so ask an admin to set it before submitting this order.",
+      );
+    }
+    // `pharmacyPrice` is non-null past the guard above, so the pharmacy price is the ONLY basis a
+    // bonus deal can ever be valued on. The product's factory price is deliberately not referenced
+    // here, and a test asserts this branch never names it again.
+    salesValue = computeDirectOrderSalesValue({ qty, pharmacyPrice });
   }
 
   // Load the pharmacy in full (a missing map entry IS "not found") — the approver's
@@ -1321,15 +1319,17 @@ export async function submitDirectOrder(
       line: product.line,
       product_code: product.productCode,
       product_name: product.productName,
-      factory_price_snapshot: product.factoryPrice,
+      // NOT NULL column that nothing reads. A direct order is priced on the pharmacy price or
+      // the public price and never on the factory price, so writing the real one would only
+      // put a number on screen that must not influence anything. Dropping the column is a
+      // migration; until then it is explicitly zero, meaning "not applicable".
+      factory_price_snapshot: 0,
       qty,
       bonus,
       bonus_override_reason: overrideReason,
       deal_type: dealType,
       discount_pct: discountPct,
       public_price_snapshot: publicPrice,
-      // NULL on a bonus deal means "fell back to the factory price" — the row stays honest
-      // about its own basis even after the product later gets a pharmacy price.
       pharmacy_price_snapshot: dealType === "bonus" ? pharmacyPrice : null,
       sales_value: salesValue,
       pharmacy_id: input.pharmacyId,
@@ -1371,9 +1371,8 @@ export async function submitDirectOrder(
     // Record which price basis produced this sales_value, so the timeline can answer
     // "why is this number what it is" without re-deriving it from a master that has moved on.
     metadata: {
-      basis: dealType === "bonus" ? (pharmacyPrice == null ? "factory_price_fallback" : "pharmacy_price") : "public_price",
+      basis: dealType === "bonus" ? "pharmacy_price" : "public_price",
       pharmacyPriceSnapshot: pharmacyPrice,
-      factoryPriceSnapshot: product.factoryPrice,
       publicPriceSnapshot: publicPrice,
       salesValue,
       overCap,
@@ -1771,12 +1770,16 @@ export async function reverseDirectOrder(
       line: original.line,
       product_code: original.productCode,
       product_name: original.productName,
-      factory_price_snapshot: original.factoryPriceSnapshot,
+      // Same dead NOT NULL column as on submit — never read, so never propagated.
+      factory_price_snapshot: 0,
       // A reversal mirrors its original exactly, so it must carry the same pricing basis.
-      // KNOWN GAP (pre-existing, separate ticket): deal_type, discount_pct and
-      // public_price_snapshot are NOT copied here, so every reversal row reads deal_type
-      // 'bonus' by column default even when reversing a discount order. Any query that
-      // filters direct_order_requests by deal_type must also exclude reversal rows.
+      // These three used to be omitted, and `deal_type` defaults to 'bonus' in the column
+      // definition — so reversing a DISCOUNT order silently produced a 'bonus' row whose
+      // sales_value had been computed from the public price. It mislabelled the deal in every
+      // list, report and export. Copied explicitly so the row stays consistent with its value.
+      deal_type: original.dealType,
+      discount_pct: original.discountPct,
+      public_price_snapshot: original.publicPriceSnapshot,
       pharmacy_price_snapshot: original.pharmacyPriceSnapshot,
       qty: original.qty,
       bonus: original.bonus,
@@ -1793,8 +1796,18 @@ export async function reverseDirectOrder(
   if (insertError) throw insertError;
   const reversal = mapRequestRow(inserted as Record<string, unknown>);
 
-  await supabase.from("direct_order_requests").update({ reversed_by_request_id: reversal.id }).eq("id", original.id);
-  await supabase.from("direct_order_approval_steps").insert(
+  // Both of these used to discard their error, unlike every other write in this file. A failed
+  // steps insert therefore returned `{ success: true }` on a reversal that has NO approval chain —
+  // and a request with no pending step can never be approved, rejected or returned again
+  // (decideDirectOrder refuses at "There is no pending approval step on this request"), so it
+  // sticks forever and only a Super Admin rebuild can free it. Surfacing the error at least makes
+  // the caller see the failure instead of being told it worked.
+  const { error: linkError } = await supabase
+    .from("direct_order_requests")
+    .update({ reversed_by_request_id: reversal.id })
+    .eq("id", original.id);
+  if (linkError) throw linkError;
+  const { error: reversalStepsError } = await supabase.from("direct_order_approval_steps").insert(
     chain.map((step) => ({
       request_id: reversal.id,
       step_order: step.order,
@@ -1805,6 +1818,7 @@ export async function reverseDirectOrder(
       status: "pending",
     })),
   );
+  if (reversalStepsError) throw reversalStepsError;
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -1819,8 +1833,18 @@ export async function reverseDirectOrder(
     eventType: "reversal_submitted",
     message: `Reversal of ${original.id}: ${reason}`,
   });
+  // SPREAD, never join: `.join(",")` collapsed every holder of the first rung's role into one
+  // string, and canonicalHrIdKey happily returns "hr-001,hr-002" as a truthy key — so the
+  // reversal's first approver was addressed as a single recipient who does not exist. It went
+  // unnoticed because the opening rung is SFE Manager, who is also in the CC set below; the
+  // moment the chain opens with anyone else, nobody would be told at all. Mirrors submit.
+  const reversalFirstStep = chain[0];
+  const reversalFirstApprovers =
+    reversalFirstStep.kind === "role" && reversalFirstStep.role
+      ? await hrIdsForRole(reversalFirstStep.role)
+      : [reversalFirstStep.approverHrId];
   await notifyDirectOrder({
-    recipients: [chain[0].kind === "role" && chain[0].role ? (await hrIdsForRole(chain[0].role)).join(",") : chain[0].approverHrId, ...(await ccRecipients())],
+    recipients: [...reversalFirstApprovers, ...(await ccRecipients())],
     title: "Direct order reversal awaiting approval",
     message: `A reversal of a direct order (${original.productName} × ${original.qty}) needs approval.`,
     eventType: "reversal_submitted",
@@ -1838,7 +1862,7 @@ export async function reverseDirectOrder(
  *
  * `direct_orders:read` alone is NOT sufficient: it is held by every requester role, so on its own it
  * would let any District/Regional/Product Manager fetch ANY order company-wide by id — requester,
- * pharmacy, doctor, quantities, factory/public price, bonus/discount and sales value included. This
+ * pharmacy, doctor, quantities, pharmacy/public price, bonus/discount and sales value included. This
  * mirrors the tiering the report already applies (resolveDirectOrderReportScope) and additionally
  * always admits an assigned approver, since someone who must decide a request has to be able to open
  * it even when the requester sits outside their own reporting subtree.
@@ -1956,7 +1980,9 @@ function nameLookup(): Promise<(hrId: string | null | undefined) => string | nul
 }
 
 /**
- * `missingPharmacyPrice` is computed here rather than passed in (unlike `bonusOverCap`, which
+ * (`missingPharmacyPrice` used to be computed here; a bonus deal with no pharmacy price is now
+ * refused at submit, so the flag could never be true and was removed.)
+ * (`bonusOverCap` is passed in, because it
  * needs the caps config): it is a pure function of the request row, so the call sites stay
  * untouched instead of growing a sixth positional boolean.
  */
@@ -1998,7 +2024,6 @@ function toApprovalListItem(
     activeStepLabel: active?.label ?? "",
     activeStepOrder: active?.order ?? null,
     bonusOverCap,
-    missingPharmacyPrice: isFallbackPricedRequest(request),
   };
 }
 
@@ -2146,15 +2171,15 @@ export type DirectOrderProductOption = {
   productCode: string;
   productName: string;
   line: string;
-  factoryPrice: number;
   /** Prices discount deals. */
   publicPrice: number | null;
-  /** Prices bonus deals. null = not set yet; the submit path falls back to factoryPrice. */
+  /** Prices bonus deals. null = not set; a bonus submission is then refused. */
   pharmacyPrice: number | null;
 };
 
 /**
- * Field-line products for the submit form (code, name, line, factory + public + pharmacy price).
+ * Field-line products for the submit form (code, name, line, public + pharmacy price).
+ * The factory price is deliberately NOT selected: a direct order never uses it.
  * Scoped to the caller's own line when `access` is given — a CNS rep must never be
  * offered a Pedia/Anti Infective product. Omit `access` for an unscoped admin listing
  * (e.g. the price/caps editor, which manages every product regardless of line).
@@ -2165,7 +2190,7 @@ export async function listDirectOrderProductOptions(
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("source_of_sales_products")
-    .select("product_code, product_name, line, factory_price, public_price, pharmacy_price")
+    .select("product_code, product_name, line, public_price, pharmacy_price")
     .eq("active", true)
     .neq("line", "IGNORE");
   if (access) {
@@ -2178,7 +2203,6 @@ export async function listDirectOrderProductOptions(
       productCode: String(p.product_code),
       productName: String(p.product_name ?? ""),
       line: String(p.line ?? ""),
-      factoryPrice: Number(p.factory_price ?? 0),
       publicPrice: p.public_price == null ? null : Number(p.public_price),
       pharmacyPrice: p.pharmacy_price == null ? null : Number(p.pharmacy_price),
     }))
@@ -2470,7 +2494,6 @@ export async function getDirectOrderApprovalDetail(
     steps: steps.map((step) => ({ ...step, approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role })),
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
-    missingPharmacyPrice: isFallbackPricedRequest(request),
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
   };
 }
@@ -2479,11 +2502,20 @@ export async function getDirectOrderApprovalDetail(
 
 // Owner tiering: these roles see EVERY direct order; everyone else sees their own
 // management subtree (RM ≈ their region) down to themselves (DSM/PM ≈ own).
+//
+// Finance Manager is here for a structural reason, not as a convenience (owner approved,
+// 2026-08-04). Finance OWNS the sales month — canSetDirectOrderSalesMonth admits B-185 and
+// nobody else — but B-185 is never a requester and never an approver, so without a company-wide
+// tier this scope resolved to "own", every list returned nothing, and canViewDirectOrderRequest
+// refused every id. The one person allowed to book a direct order into a month could not open a
+// single one, and 177,124.80 EGP of approved orders sat in no month, no rep, and no report.
+// Removing this entry silently strands that money again.
 const DIRECT_ORDER_REPORT_SEE_ALL_ROLES: PhoenixRole[] = [
   "Super Admin",
   "CEO",
   "SFE Manager",
   "National Sales Manager",
+  "Finance Manager",
 ];
 
 export function resolveDirectOrderReportScope(access: AccessContext): DirectOrderReportScope {
@@ -2579,7 +2611,6 @@ export async function getDirectOrderReport(
       line: request.line,
       productCode: request.productCode,
       productName: request.productName,
-      factoryPriceSnapshot: request.factoryPriceSnapshot,
       pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
       qty: request.qty,
       bonus: request.bonus,
@@ -2886,7 +2917,7 @@ export async function setDirectOrderSalesMonth(
  * Zero is stored as NULL, deliberately.
  *
  * A product priced "0" would read as "0.00 EGP" in the admin table while the submit path's
- * `> 0` guard treated it as unset and fell back to the factory price — two surfaces disagreeing
+ * `> 0` guard treated it as unset and refused the submission — two surfaces disagreeing
  * about the same product. Collapsing 0 to NULL makes the table, the missing-price flag and the
  * fallback agree on one meaning: "not set".
  */
