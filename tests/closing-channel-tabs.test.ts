@@ -1,0 +1,343 @@
+import assert from "node:assert/strict";
+
+import ExcelJS from "exceljs";
+
+import type { ClosingExportData, MonthlyClosingComparison } from "../src/lib/sales/monthly-closing-comparison.ts";
+import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
+import { buildMonthlyClosingWorkbook } from "../src/lib/sales/monthly-closing-export.ts";
+import {
+  injectDirectIntoMatrix,
+  type MonthlyClosingCell,
+  type MonthlyClosingDirectCell,
+  type MonthlyClosingMatrix,
+} from "../src/lib/sales/monthly-distributor-import.ts";
+import { areaProductKey } from "../src/lib/sales/store-sales-city-split.ts";
+import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts";
+
+// The Closing Matrix is the MASTER: retail + direct in one grid. The owner asked for each channel
+// on its own tab beside it (2026-08-05). The property that makes those tabs trustworthy is that
+// they are a PARTITION of the master — every EGP on the master appears on exactly one of them,
+// never both, never neither. This file pins that, through the real workbook builder:
+//
+//   1. retail total + direct total == master total, arithmetically, before any Excel is involved.
+//   2. Both sheets exist, carry their own TOTAL row, and their reconciliation Difference is 0.
+//   3. The store split moves retail money between areas WITHOUT breaking the tie — the split is a
+//      retail-only redistribution, so applying it to the retail half and to the master must land
+//      on the same number.
+//   4. The contribution columns say "Contr%" outright, so they are never read as achievement.
+
+const PRODUCT = { family: "Milk", productCode: "LA001", productName: "Lacto Advanced 1" };
+
+function cell(salesUnits: number, salesValue: number, targetValue: number | null = null): MonthlyClosingCell {
+  return {
+    achievement: targetValue === null || targetValue === 0 ? null : salesValue / targetValue,
+    salesUnits,
+    salesValue,
+    targetUnits: targetValue === null ? null : targetValue / 100,
+    targetValue,
+  };
+}
+
+function areaRow(regionCode: string, regionName: string, areaCode: string, areaName: string, cells: MonthlyClosingCell[]) {
+  return {
+    areaCode,
+    areaName,
+    cells,
+    kind: "area" as const,
+    regionCode,
+    regionName,
+    rowTotal: cell(
+      cells.reduce((sum, c) => sum + c.salesUnits, 0),
+      cells.reduce((sum, c) => sum + c.salesValue, 0),
+    ),
+  };
+}
+
+/** Retail only — two Menoufia areas of one city plus Cairo. June 2026, so no July special case. */
+function buildRetailMatrix(): MonthlyClosingMatrix {
+  return {
+    availableLines: ["Pedia"],
+    availablePeriods: ["2026-06"],
+    columns: [PRODUCT],
+    grandTotal: { cells: [cell(160, 48_000, 80_000)], kind: "grandTotal", rowTotal: cell(160, 48_000, 80_000) },
+    line: "Pedia",
+    period: "2026-06",
+    regions: [
+      {
+        areas: [
+          areaRow("D1", "Delta (1)", "D12", "Menoufia 1", [cell(100, 30_000, 50_000)]),
+          areaRow("D1", "Delta (1)", "D13", "Menoufia 2", [cell(30, 8_000, 30_000)]),
+        ],
+        regionCode: "D1",
+        regionName: "Delta (1)",
+        subtotal: {
+          cells: [cell(130, 38_000, 80_000)],
+          kind: "regionSubtotal",
+          regionCode: "D1",
+          regionName: "Delta (1)",
+          rowTotal: cell(130, 38_000, 80_000),
+        },
+      },
+      {
+        areas: [areaRow("CA", "Cairo", "CA3", "Cairo Centers", [cell(30, 10_000)])],
+        regionCode: "CA",
+        regionName: "Cairo",
+        subtotal: {
+          cells: [cell(30, 10_000)],
+          kind: "regionSubtotal",
+          regionCode: "CA",
+          regionName: "Cairo",
+          rowTotal: cell(30, 10_000),
+        },
+      },
+    ],
+  };
+}
+
+// Direct money is tagged with a REGION and a product, never an area — one in a region the retail
+// matrix has (Delta) and one in a region it does not (Upper Egypt), which is the case that proves
+// the direct tab cannot silently drop money that has no retail row to sit beside.
+const DIRECT_CELLS: MonthlyClosingDirectCell[] = [
+  { productCode: "LA001", regionCode: "D1", salesUnits: 20, salesValue: 7_000 },
+  { productCode: "LA001", regionCode: "UE", salesUnits: 10, salesValue: 5_000 },
+];
+
+const DIST_PRODUCT: ClosingExportData["distProduct"] = [
+  { areaCode: "D12", areaName: "Menoufia 1", distributorCode: "UCP", distributorName: "UCP", productCode: "LA001", productName: "Lacto Advanced 1", regionCode: "D1", regionName: "Delta (1)", units: 100, value: 30_000 },
+  { areaCode: "D13", areaName: "Menoufia 2", distributorCode: "UCP", distributorName: "UCP", productCode: "LA001", productName: "Lacto Advanced 1", regionCode: "D1", regionName: "Delta (1)", units: 30, value: 8_000 },
+  { areaCode: "CA3", areaName: "Cairo Centers", distributorCode: "UCP", distributorName: "UCP", productCode: "LA001", productName: "Lacto Advanced 1", regionCode: "CA", regionName: "Cairo", units: 30, value: 10_000 },
+];
+
+function buildComparison(): MonthlyClosingComparison {
+  return {
+    areaByDistributor: [],
+    avgPrice: [],
+    byDistributor: [],
+    coverage: [],
+    data: {
+      areaByDist: [],
+      bricks: [],
+      customers: [],
+      distProduct: DIST_PRODUCT,
+      masterAreas: [
+        { areaCode: "D12", areaName: "Menoufia 1", regionName: "Delta (1)" },
+        { areaCode: "D13", areaName: "Menoufia 2", regionName: "Delta (1)" },
+        { areaCode: "CA3", areaName: "Cairo Centers", regionName: "Cairo" },
+      ],
+      masterBricks: [],
+      productByDist: [],
+    },
+    distributors: [{ code: "UCP", name: "UCP" }],
+    insights: [],
+    line: "Pedia",
+    mix: { distributor: [], product: [], region: [] },
+    national: { areaCount: 3, customerCount: 0, productCount: 1, units: 160, value: 48_000 },
+    pareto: { customers: { rows: [], share: 0, topValue: 0, total: 0 } },
+    period: "2026-06",
+    productByDistributor: [],
+    rankings: { areas: [], bricks: [], customers: [], products: [], regions: [] },
+    regionByDistributor: [],
+    totalAreas: 3,
+    totalBricks: 0,
+    whiteSpace: { productGaps: [], singleDistributorAreas: [], zeroSalesAreas: [], zeroSalesBricks: [] },
+  };
+}
+
+/**
+ * A direct invoice row carrying its customer identity — what the Direct Orders module writes from
+ * 2026-08 (pharmacy code, name and address on every row it books).
+ */
+function directDetailRow(
+  clientCode: string,
+  clientName: string,
+  regionCode: string,
+  units: number,
+  value: number,
+): ClosingDetailRow {
+  return {
+    areaCode: "",
+    areaMismatch: false,
+    areaName: "",
+    blockCode: "",
+    bonusQty: 0,
+    brickId: "",
+    brickName: "",
+    brickUnmapped: false,
+    clientAddress: `${clientName} street`,
+    clientCode,
+    clientName,
+    discount: 0,
+    distributorCode: "DirectReq",
+    effectiveUnits: units,
+    exclusions: ["direct"],
+    factoryPrice: 0,
+    family: "Milk",
+    id: Math.round(value),
+    includedInClosing: false,
+    invoiceDate: null,
+    invoicePeriod: "2026-06",
+    isConfidential: false,
+    isDirect: true,
+    missingClientCode: false,
+    officialLine: "Pedia",
+    productCode: "LA001",
+    productName: "Lacto Advanced 1",
+    qty: units,
+    regionCode,
+    regionName: regionCode === "D1" ? "Delta (1)" : "Upper Egypt",
+    rowNumber: 1,
+    salesValue: value,
+    sheetAreaCode: "",
+    sheetAreaName: "",
+    sheetRegionCode: regionCode,
+    sheetRegionName: regionCode,
+    sheetValue: value,
+    validationState: "valid",
+  };
+}
+
+/** Every cell value of a sheet, row by row, with formulas reduced to their cached result. */
+function sheetValues(sheet: ExcelJS.Worksheet): (string | number | null)[][] {
+  const rows: (string | number | null)[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const values: (string | number | null)[] = [];
+    row.eachCell({ includeEmpty: true }, (excelCell) => {
+      const raw = excelCell.value;
+      if (raw && typeof raw === "object" && "result" in raw) values.push((raw as { result: number }).result);
+      else if (typeof raw === "number" || typeof raw === "string") values.push(raw);
+      else values.push(null);
+    });
+    rows.push(values);
+  });
+  return rows;
+}
+
+/** The numbers on the row whose first non-empty label matches. */
+function rowLabelled(rows: (string | number | null)[][], label: string): (string | number | null)[] | null {
+  return rows.find((row) => row.some((value) => typeof value === "string" && value.trim() === label)) ?? null;
+}
+
+export async function runClosingChannelTabsTests() {
+  const retail = buildRetailMatrix();
+  const master = injectDirectIntoMatrix(retail, DIRECT_CELLS);
+
+  const retailValue = retail.grandTotal.rowTotal.salesValue;
+  const directValue = DIRECT_CELLS.reduce((sum, entry) => sum + entry.salesValue, 0);
+  const masterValue = (master.companyTotal ?? master.grandTotal).rowTotal.salesValue;
+
+  // 1. The partition, in pure arithmetic.
+  assert.equal(retailValue, 48_000);
+  assert.equal(directValue, 12_000);
+  assert.equal(
+    retailValue + directValue,
+    masterValue,
+    "retail + direct must equal the master exactly — the channel tabs are a partition of it, not a third view",
+  );
+  assert.notEqual(
+    retail.grandTotal.rowTotal.salesValue,
+    masterValue,
+    "the retail matrix must be the PRE-injection grid; if it already equalled the master, direct would be double counted",
+  );
+
+  // 2 + 4. The sheets themselves.
+  const buffer = await buildMonthlyClosingWorkbook(master, buildComparison(), undefined, {
+    channels: { directCells: DIRECT_CELLS, retail },
+    storeSplitRows: [
+      directDetailRow("PH-001", "El Nile Pharmacy", "D1", 20, 7_000),
+      directDetailRow("PH-002", "Zamzam Hospital", "UE", 10, 5_000),
+    ],
+  });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+
+  const retailSheet = workbook.getWorksheet("Retail Sales (no direct)");
+  const directSheet = workbook.getWorksheet("Direct Sales (no retail)");
+  assert.ok(retailSheet, "the Retail tab is written whenever channels are supplied");
+  assert.ok(directSheet, "the Direct tab is written whenever channels are supplied");
+
+  const retailRows = sheetValues(retailSheet!);
+  const directRows = sheetValues(directSheet!);
+
+  const retailTotal = rowLabelled(retailRows, "RETAIL TOTAL");
+  assert.ok(retailTotal?.includes(48_000), "the Retail tab totals the retail channel and nothing else");
+  const directTotal = rowLabelled(directRows, "DIRECT TOTAL");
+  assert.ok(directTotal?.includes(12_000), "the Direct tab totals the direct channel and nothing else");
+
+  for (const [name, rows] of [["Retail", retailRows], ["Direct", directRows]] as const) {
+    const difference = rowLabelled(rows, "Difference");
+    assert.ok(difference, `${name} tab states its reconciliation against the master`);
+    assert.ok(
+      difference!.some((value) => value === 0),
+      `${name} tab's Difference row is zero — the two channels reproduce the master exactly`,
+    );
+    assert.ok(
+      rows.some((row) => row.some((value) => typeof value === "string" && value.includes("Contr%"))),
+      `${name} tab names its share column Contr%, so it is never read as an achievement`,
+    );
+  }
+
+  // A direct region with no retail row must still be listed, or its money would vanish from the
+  // only tab that reports it.
+  assert.ok(
+    directRows.some((row) => row.some((value) => value === 5_000)),
+    "a direct region absent from the retail grid still appears on the Direct tab",
+  );
+
+  // ── Achievement: present, and the two channels' percentages ADD to the master's ─────────────
+  // Both tabs divide by the SAME whole-month target, which is the property that makes them
+  // additive. If a channel tab ever grew its own target the sum would silently stop meaning
+  // anything, so the arithmetic is pinned here rather than trusted.
+  for (const [name, rows] of [["Retail", retailRows], ["Direct", directRows]] as const) {
+    assert.ok(
+      rows.some((row) => row.some((value) => typeof value === "string" && value === "Ach % of Target")),
+      `${name} tab carries the achievement column the owner asked for`,
+    );
+  }
+  const target = retail.grandTotal.rowTotal.targetValue!;
+  assert.equal(target, 80_000, "the fixture must carry a target, or the achievement assertions below prove nothing");
+  const masterAch = (master.companyTotal ?? master.grandTotal).rowTotal.salesValue / target;
+  assert.ok(
+    Math.abs(retailValue / target + directValue / target - masterAch) < 1e-9,
+    "retail Ach% + direct Ach% must equal the master's — same denominator, split numerator",
+  );
+
+  // ── The customer section: direct money named, and it re-adds to the same total ──────────────
+  const customerTotal = rowLabelled(directRows, "TOTAL — all customers");
+  assert.ok(customerTotal, "the Direct tab lists its orders customer by customer, not only by region");
+  assert.ok(
+    customerTotal!.includes(12_000),
+    "the customer section re-adds to the DIRECT TOTAL — the same money, once by region and once by customer",
+  );
+  for (const header of ["Customer Code", "Customer", "Details", "Medical Rep"]) {
+    assert.ok(
+      directRows.some((row) => row.some((value) => value === header)),
+      `the Direct tab names each order's ${header}`,
+    );
+  }
+
+  // 3. The store split is a retail-only redistribution: applying it to the retail half and to the
+  // master must leave both totals untouched, so the tie survives it.
+  const net = new Map([
+    [areaProductKey("D12", "LA001"), { qty: -20, value: -6_000 }],
+    [areaProductKey("D13", "LA001"), { qty: 20, value: 6_000 }],
+  ]);
+  const splitRetail = applyStoreSplitToMatrix(retail, net).matrix;
+  const splitMaster = applyStoreSplitToMatrix(master, net).matrix;
+  assert.equal(
+    splitRetail.grandTotal.rowTotal.salesValue,
+    retailValue,
+    "the split moves money between areas of one city; the retail total cannot change",
+  );
+  assert.equal(
+    splitRetail.grandTotal.rowTotal.salesValue + directValue,
+    (splitMaster.companyTotal ?? splitMaster.grandTotal).rowTotal.salesValue,
+    "after the split the two channels still add up to the master — the tie is not an accident of the unsplit case",
+  );
+
+  // The master's own contribution header must carry Contr% too (owner, 2026-08-05).
+  const matrixRows = sheetValues(workbook.getWorksheet("Closing Matrix")!);
+  assert.ok(
+    matrixRows.some((row) => row.some((value) => typeof value === "string" && value.includes("Contr%"))),
+    "the Closing Matrix's contribution columns say Contr%, not a bare % that reads like achievement",
+  );
+}

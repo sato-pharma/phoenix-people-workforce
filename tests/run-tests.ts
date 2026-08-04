@@ -608,6 +608,7 @@ import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-c
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
+import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1334,6 +1335,11 @@ await runTest(
 await runTest(
   "territory scope UE-split bridge (coarse UE matches UE-1/UE-2; no widening for unsplit or already-split codes)",
   runTerritoryScopeLineAwareTests,
+);
+
+await runTest(
+  "closing channel tabs (retail + direct partition the master exactly, survive the store split, and say Contr%)",
+  runClosingChannelTabsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

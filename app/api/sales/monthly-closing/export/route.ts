@@ -12,7 +12,7 @@ import {
   filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
   listMonthlyClosingPeriods,
-  loadMonthlyClosing,
+  loadMonthlyClosingParts,
   rebuildMatrixFromRows,
 } from "@/lib/sales/monthly-distributor-import";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -106,8 +106,14 @@ export async function POST(request: Request) {
     if (access.role === "Super Admin" || access.scope === "system") {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
-      const fullMatrix = await loadMonthlyClosing({ line: body.line ?? null, period: body.period ?? null });
-      const matrix = filterMonthlyClosingMatrix(fullMatrix, matrixFilter);
+      // The combined matrix AND its two halves. The channel tabs need retail-without-direct and
+      // direct-without-retail, and both must come from this one read so they cannot disagree with
+      // the master they sit beside.
+      const parts = await loadMonthlyClosingParts({ line: body.line ?? null, period: body.period ?? null });
+      const matrix = filterMonthlyClosingMatrix(parts.combined, matrixFilter);
+      // The retail half takes the IDENTICAL place filter, so an area on the Retail tab is the same
+      // area the master shows.
+      const retailFiltered = filterMonthlyClosingMatrix(parts.retail, matrixFilter);
 
       // Scope every other sheet to the areas the filtered matrix actually KEPT, rather than
       // re-applying the raw filter to each one. That is what makes the sheets agree: the matrix
@@ -212,6 +218,20 @@ export async function POST(request: Request) {
         storeSplitNet,
       );
 
+      // The channel tabs. The retail half gets the SAME split write-back as the master — the split
+      // only ever moves distributor (retail) money between areas of one city, so applying it to the
+      // retail grid is what keeps "Retail + Direct = master" true cell by cell.
+      //
+      // Omitted under a row-level filter: there the master is rebuilt from invoice rows and direct
+      // is dropped entirely (a distributor or Included/Excluded slice has no direct equivalent), so
+      // a channel pair would tie to nothing. Same honesty rule as the Target vs Achievement sheet.
+      const channels = rowLevelActive
+        ? null
+        : {
+          retail: applyStoreSplitToMatrix(retailFiltered, storeSplitNet).matrix,
+          directCells: parts.directCells,
+        };
+
       // The filter stamp, in human names (standing rule: names, never raw codes). Options lists
       // come from the caller's own scope, so every filterable code resolves; a code that matched
       // nothing falls back to itself rather than vanishing from the note.
@@ -243,6 +263,7 @@ export async function POST(request: Request) {
         : undefined;
 
       const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, details, {
+        channels,
         coverage: await coveragePromise,
         filterNote,
         includeTargetSheet: !rowLevelActive,
