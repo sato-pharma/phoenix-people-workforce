@@ -142,22 +142,26 @@ export function runFieldWorkforceThursdayHalfDayTests() {
   // A pure rule nothing calls is worth nothing: this module's rules have been half-implemented
   // before, with one surface corrected while the others kept paying the old figure.
   //
-  // Since 2026-08-03 Automated Payroll's CONTINUING-employee CRM figure is no
-  // longer computed here at all — it is whatever the Deductions module confirmed
-  // (see automated-payroll/deductions-source.ts), and that module's own CRM
-  // connector applies the weighting before a candidate is ever created. So the
-  // rule now has ONE home instead of two, and the connector assertions below are
-  // what keep it honest. The leaver settlement is still computed in payroll and
-  // must still weight.
+  // Since 2026-08-04 Automated Payroll computes NO deduction figure at all —
+  // continuing OR leaver. Every one is whatever the Deductions module confirmed
+  // (owner rule: "the deductions module [is] the only source of truth of
+  // deductions... no any deduction type should be read [from anywhere else]").
+  // The module's own CRM connector applies this weighting before a candidate is
+  // ever created, so the rule now has exactly ONE home and the connector
+  // assertions below are what keep it honest.
+  //
+  // This is the stronger guard, not a weaker one: it fails if payroll ever
+  // starts recomputing a deduction again, which is the drift that put two
+  // disagreeing figures on screen in the first place.
   assert.doesNotMatch(
     recommendSource,
-    /sumFieldWorkforceDeductionDayWeights\(keptDates, jobTitle\)/,
-    "payroll must not recompute the continuing-employee CRM figure — it pays what the Deductions module confirmed",
+    /sumFieldWorkforceDeductionDayWeights/,
+    "payroll must not weight CRM days itself — weighting belongs to the Deductions module's connector, because payroll no longer computes any deduction",
   );
-  assert.match(
+  assert.doesNotMatch(
     recommendSource,
-    /sumFieldWorkforceDeductionDayWeights\(\s*crmDates\.noActivityDates/,
-    "the leaver CRM path is still computed in payroll, so it must weight too, or a leaver's final settlement keeps the full-day charge",
+    /computeLeaverCrmDates/,
+    "the leaver CRM scan must be gone from payroll — a leaver's CRM deduction is the module's confirmed figure like everyone else's",
   );
   assert.match(
     crmConnectorSource,
@@ -180,9 +184,12 @@ export function runFieldWorkforceThursdayHalfDayTests() {
     /holidayResult\.calendarReachable === false \|\| holidayResult\.connected === false/,
     "the deductions module's leaver path must refuse to run on a degraded holiday calendar rather than charge Eid as a working day",
   );
-  assert.match(
+  // Automated Payroll needs no such guard any more, and that is the point: it
+  // never reads the holiday calendar for a deduction, because it never computes
+  // one. The guard lives with the calculation, in the connector above.
+  assert.doesNotMatch(
     recommendSource,
-    /holidayResult\.calendarReachable === false \|\| holidayResult\.connected === false/,
-    "Automated Payroll's leaver CRM path needs the same holiday-outage guard",
+    /getConfirmedNationalHolidays/,
+    "payroll must not consult the holiday calendar for deductions — it pays the Deductions module's confirmed figure, and the outage guard belongs where the calculation is",
   );
 }

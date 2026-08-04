@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildDeductionBuckets,
@@ -257,6 +258,36 @@ export function runAutomatedPayrollReadsDeductionsModuleTests() {
     STEP_DEFINITIONS.p2_manual_deductions.subtitle,
     /Part 1/,
     "the Part 2 catch-all must name where settled-in-Part-1 employees get theirs instead",
+  );
+
+  // ---- NOTHING is computed in payroll any more (owner rule 2026-08-04) -----
+  // "the deductions module [is] the only source of truth of deductions... no any
+  // deduction type should be read [from anywhere else]".
+  //
+  // A source-level guard because that is the only way to catch the failure this
+  // pins: someone reintroducing a live calculation next to a module read, which
+  // is invisible until two screens disagree about one employee's money. The
+  // wizard shipped with exactly that for two weeks.
+  const recommendSource = readFileSync(
+    new URL("../src/lib/automated-payroll/recommend.ts", import.meta.url),
+    "utf8",
+  );
+  for (const banned of [
+    "computeLeaverCrmDates",
+    "sumFieldWorkforceDeductionDayWeights",
+    "listFingerprintDeductionCandidates",
+    "listCrmDeductionCandidates",
+    "scanVisitsForRangeIncludingDeparted",
+  ]) {
+    assert.ok(
+      !recommendSource.includes(`${banned}(`),
+      `recommend.ts must not call ${banned} — every deduction figure is the Deductions module's confirmed one`,
+    );
+  }
+  // The one survivor, and why: leave-BALANCE bookkeeping is not a deduction.
+  assert.ok(
+    recommendSource.includes("computeVacationDeductionTotals"),
+    "the leave-balance draw-down must survive — confirming the vacation step still debits balances, which is a different question from salary",
   );
 
   assert.equal(STEP_DEFINITIONS.p1_fingerprint.phase, "part1", "fingerprint is a Part 1 deduction, always");

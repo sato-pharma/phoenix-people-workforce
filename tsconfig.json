@@ -49,6 +49,13 @@
     ".codex-worktrees",
     "_wt-*",
     "scripts/tmp",
-    "supabase/.temp"
+    "supabase/.temp",
+    // Gitignored scratch space (.gitignore: "outputs/"). Files rescued out of
+    // orphan worktrees land here with their original relative imports, which no
+    // longer resolve from this depth — so tsc failed on a file that is not in
+    // the repo, blocking typecheck and the pre-push hook for everyone. Same
+    // reasoning as the worktree entries above: if git ignores it, tsc should not
+    // be walking it.
+    "outputs"
   ]
 }

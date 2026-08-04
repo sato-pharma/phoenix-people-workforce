@@ -1211,7 +1211,10 @@ export function RecommendationStep({ runId, stepKey, confirmed, locked, onConfir
             onClick={() => void confirm()}
             className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
           >
-            {confirmed ? "Re-confirm & continue" : "Confirm & continue"}
+            {/* A greyed button with unchanged text reads as broken. Confirming
+                the Vacation step also re-settles leave balances, so it can sit
+                busy for a while — say so rather than look dead. */}
+            {busy ? "Confirming…" : confirmed ? "Re-confirm & continue" : "Confirm & continue"}
           </Button>
         </div>
       </div>
