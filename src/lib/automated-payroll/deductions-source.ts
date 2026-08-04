@@ -81,8 +81,23 @@ export type DeductionBuckets = {
    * candidate belonging to a one-part or leaving employee reaches no step —
    * the same shape of hole this file closed for loan/other. Leavers do get a
    * CRM figure, but from payroll's own `computeLeaverCrmDates`, not from here.
-   * Nobody is affected as of 2026-08-04 (every approved July row is two_parts);
-   * closing it changes what employees are charged, so it needs the owner first.
+   * OWNER DECISION 2026-08-04 — ACCEPTED AND CLOSED, not a bug awaiting a fix.
+   * Measured exposure on production that day: 0.00 EGP. The 20 one-part
+   * employees have produced ONE candidate in these categories in the module's
+   * whole lifetime and it was never approved, and every dsm_no_record and
+   * holiday_bridge row belongs to a two-part employee. The overlap is
+   * structural, not luck — these connectors target the field workforce.
+   *
+   * Do not "fix" this by wiring the map into the Part 1 steps. Two reasons:
+   * leavers are NOT missing their figures (they come from payroll's own
+   * settlement-aware engine — Base ÷ the month's ACTUAL days, capped at days
+   * worked so no post-resignation day is charged, a deliberate 2026-07-26 rule
+   * this must not overwrite), and `isSettledInPart1` is used in both directions
+   * to keep the two populations disjoint, so feeding a Part 1 step without
+   * removing the Part 2 path double-charges the same days.
+   *
+   * Reopen only if field-workforce staff — district managers especially — move
+   * onto one-part pay. That makes it live immediately.
    */
   crm: number;
   /** unpaid_vacation + insufficient_balance_vacation → the Part 2 vacation step. Same one-part/leaver gap as `crm`. */
