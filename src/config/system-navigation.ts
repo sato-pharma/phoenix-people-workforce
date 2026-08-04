@@ -348,11 +348,15 @@ const adminNavigationSectionSeeds = [
       // not one click inside a hub of reports. Removed from marketingRoiPageItems in the same
       // change so the module lives in exactly one place. Roles mirror the card it replaces plus
       // SFE Manager, which is what assertMarketingAdminPageAccess already admitted.
+      //
+      // CEO added 2026-08-04. They hold `ceo_approval`, the LAST required rung of the live chain,
+      // and this is the only shell they are ever shown (resolveNavigationMode pins CEO to "admin"),
+      // so without this link the final approver had no route to their own queue at all.
       {
         href: "/admin/marketing-requests/inbox",
         icon: Inbox,
         label: "Marketing Approval Inbox",
-        roles: ["District Manager", "Super Admin", "SFE Manager"],
+        roles: ["CEO", "District Manager", "Super Admin", "SFE Manager"],
       },
       // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
       // where each one is stopped. Deliberately separate from the inbox above, which only carries

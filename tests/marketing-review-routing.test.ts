@@ -11,6 +11,10 @@ import {
   resolveNavigationMode,
 } from "../src/lib/auth/permissions.ts";
 import { resolveLandingPathForRole } from "../src/lib/auth/landing.ts";
+import {
+  canAccessAdminShellEmployeeWorkspacePage,
+  workspaceMarketingRoles,
+} from "../src/lib/workspace/admin-shell-employee-roles.ts";
 
 function source(relPath: string): string {
   return readFileSync(relPath, "utf8");
@@ -29,10 +33,19 @@ export async function runMarketingReviewRoutingTests() {
   assert.equal(isAdminShellEmployeeRole("Financial Advisor"), true, "Financial Advisor is an admin-shell role");
   assert.equal(resolveNavigationMode(fa), "admin", "Financial Advisor uses the admin shell, not the portal");
   assert.equal(resolveLandingPathForRole("Financial Advisor"), "/workspace/marketing-requests/inbox");
-  const workspaceRolesSource = source("src/lib/workspace/admin-shell-employee.ts");
-  assert.match(workspaceRolesSource, /workspaceMarketingRoles\s*=/, "workspaceMarketingRoles is defined");
-  assert.match(workspaceRolesSource, /"Financial Advisor"/, "Financial Advisor reaches the workspace marketing inbox");
-  assert.match(workspaceRolesSource, /"Finance Manager"/, "Finance Manager (finance fallback) also reaches the workspace marketing inbox");
+  // These used to be regex matches over admin-shell-employee.ts, because that module imports
+  // next/navigation and could not be loaded here. The role sets now live in their own pure module
+  // (admin-shell-employee-roles.ts), so assert the real values instead of their spelling.
+  assert.equal(
+    canAccessAdminShellEmployeeWorkspacePage("Financial Advisor", workspaceMarketingRoles),
+    true,
+    "Financial Advisor reaches the workspace marketing inbox",
+  );
+  assert.equal(
+    canAccessAdminShellEmployeeWorkspacePage("Finance Manager", workspaceMarketingRoles),
+    true,
+    "Finance Manager (finance fallback) also reaches the workspace marketing inbox",
+  );
 
   // Granted: own self-service + report-it. Denied: any HR / payroll / sales / employee authority.
   assert.equal(await canAccess(fa, "employee_profile", "read"), true);

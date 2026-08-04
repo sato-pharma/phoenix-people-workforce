@@ -595,6 +595,7 @@ import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
+import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1248,6 +1249,10 @@ await runTest("sales vs target (no target reads as null not 0%, July 2026 has no
 await runTest(
   "SoS customer channel (six Arabic keywords ⇒ store; ة/ه fold; channel totals cover the whole side)",
   runSalesCustomerChannelTests,
+);
+await runTest(
+  "CEO marketing approval inbox (the final rung reaches page, sidebar link and decision page in the admin shell; the opt-in widens nothing else)",
+  runCeoMarketingApprovalInboxTests,
 );
 
 await runTest(

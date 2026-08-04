@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import {
   adminShellEmployeeRoles,
   canAccess,
-  isAdminShellEmployeeRole,
   type AccessContext,
   type PermissionAction,
   type PermissionResource,
@@ -11,28 +10,20 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { canAccessAdminShellEmployeeWorkspacePage } from "@/lib/workspace/admin-shell-employee-roles";
 
-export const workspaceMarketingRoles = [
-  "SFE Manager",
-  // Finance Execution of marketing requests runs from the workspace shell. Financial Advisor is the
-  // designated executor. Finance Manager is included so they can monitor requests as observers.
-  "Finance Manager",
-  "Financial Advisor",
-] as const satisfies readonly PhoenixRole[];
+// The role sets live in ./admin-shell-employee-roles (no next/navigation import, so tests can
+// import them directly). Re-exported here so existing call sites keep their import path.
+export {
+  canAccessAdminShellEmployeeWorkspacePage,
+  workspaceMarketingRoles,
+} from "@/lib/workspace/admin-shell-employee-roles";
 
 type WorkspaceAccessOptions = {
   action?: PermissionAction;
   allowedRoles?: readonly PhoenixRole[];
   resource?: PermissionResource;
 };
-
-function includesRole(roles: readonly PhoenixRole[], role: PhoenixRole) {
-  return roles.some((entry) => entry === role);
-}
-
-export function canUseAdminShellEmployeeWorkspace(role: PhoenixRole) {
-  return isAdminShellEmployeeRole(role);
-}
 
 export async function requireAdminShellEmployeeWorkspaceAccess({
   action = "read",
@@ -44,10 +35,7 @@ export async function requireAdminShellEmployeeWorkspaceAccess({
     redirect("/login");
   }
 
-  if (
-    access.role !== "Super Admin" &&
-    (!canUseAdminShellEmployeeWorkspace(access.role) || !includesRole(allowedRoles, access.role))
-  ) {
+  if (!canAccessAdminShellEmployeeWorkspacePage(access.role, allowedRoles)) {
     redirect(resolveLandingPathForRole(access.role));
   }
 
