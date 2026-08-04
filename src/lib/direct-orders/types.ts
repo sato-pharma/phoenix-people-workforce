@@ -129,15 +129,6 @@ export type DirectOrderRequest = {
   productCode: string;
   productName: string;
   /**
-   * DEAD FIELD — never read, never displayed, never part of any calculation.
-   *
-   * A direct order is priced on the pharmacy price (bonus) or the public price (discount) and on
-   * NOTHING else (owner instruction, 2026-08-04). This survives only because
-   * `direct_order_requests.factory_price_snapshot` is NOT NULL with no default, so the insert
-   * must still supply a value; dropping the column is a migration. Do not surface it anywhere.
-   */
-  factoryPriceSnapshot: number;
-  /**
    * The pharmacy price this BONUS request was valued at. NULL only on a discount deal (which
    * prices on the public price). A bonus deal with no pharmacy price is now refused at submit,
    * so a bonus row can no longer carry a null here.
