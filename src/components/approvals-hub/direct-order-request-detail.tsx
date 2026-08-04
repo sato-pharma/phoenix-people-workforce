@@ -64,7 +64,6 @@ export function DirectOrderRequestDetail({
     steps,
     availableActions,
     bonusOverCap,
-    missingPharmacyPrice,
   } = detail;
   // ONE shared field list, built in the domain. The admin screen and the portal screen each
   // used to hand-maintain their own copy, which is how both ended up printing raw brick/area
@@ -99,16 +98,11 @@ export function DirectOrderRequestDetail({
           </div>
         ) : null}
 
-        {bonusOverCap || missingPharmacyPrice ? (
+        {bonusOverCap ? (
           <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
             {bonusOverCap ? (
               <p className="text-[12px] font-bold text-amber-900">
                 Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
-              </p>
-            ) : null}
-            {missingPharmacyPrice ? (
-              <p className="text-[12px] font-bold text-amber-900">
-                No pharmacy price was set for this product — the value above uses the factory price.
               </p>
             ) : null}
           </div>

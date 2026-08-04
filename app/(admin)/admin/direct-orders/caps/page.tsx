@@ -32,7 +32,6 @@ export default async function DirectOrderCapsPage() {
         products={products.map((p) => ({
           productCode: p.productCode,
           productName: p.productName,
-          factoryPrice: p.factoryPrice,
           publicPrice: p.publicPrice,
           pharmacyPrice: p.pharmacyPrice,
         }))}

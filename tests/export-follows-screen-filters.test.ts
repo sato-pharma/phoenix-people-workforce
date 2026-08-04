@@ -55,7 +55,6 @@ function directOrder(overrides: Partial<DirectOrderReportRow> & { id: string }):
     discountPct: null,
     distributorCodesText: "Ibn Sina: 0000000123",
     doctorName: "Dr. Sameh",
-    factoryPriceSnapshot: 100,
     line: "Pedia",
     marketingRequestId: null,
     paidAmount: 0,

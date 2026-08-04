@@ -34,7 +34,6 @@ type ProductOption = {
   productCode: string;
   productName: string;
   line: string;
-  factoryPrice: number;
   publicPrice: number | null;
   pharmacyPrice: number | null;
 };
@@ -131,7 +130,9 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
   const hasPublicPrice = !!(product && product.publicPrice != null && product.publicPrice > 0);
   const hasPharmacyPrice = !!(product && product.pharmacyPrice != null && product.pharmacyPrice > 0);
   // Must reproduce the SERVER's fallback exactly, or the previewed number changes on submit.
-  const bonusBasis = product ? (hasPharmacyPrice ? product.pharmacyPrice! : product.factoryPrice) : 0;
+  // No factory-price fallback (owner ruling, 2026-08-04): a bonus deal is valued on the pharmacy
+  // price or it is refused, so a product without one previews 0 and cannot be submitted.
+  const bonusBasis = product && hasPharmacyPrice ? product.pharmacyPrice! : 0;
 
   const overCap = dealType === "discount" ? discountNum > discountCapPct : bonusNum > maxBonus;
   const salesValue = !product
@@ -145,7 +146,25 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
   );
   const selectedBrick = bricks.find((b) => b.brickId === newBrickId) ?? null;
 
-  const readyToSubmit = !busy && !!product && qtyNum > 0 && /^\d{4}-\d{2}-\d{2}$/.test(collectionDate);
+  // A row with a distributor but no customer code (or the reverse). The picker tells the submitter
+  // "a half-filled row cannot be saved" — but createPharmacyIfNeeded then filtered such rows out,
+  // so the row was silently discarded and the pharmacy registered with no code at all. The server
+  // refuses these pairs; the client simply never sent them. Blocking is what the warning promises.
+  const halfFilledDistRow =
+    pharmacyMode === "new" &&
+    distRows.some((row) => Boolean(row.distributorCode.trim()) !== Boolean(row.customerCode.trim()));
+
+  // A bonus deal is valued on the pharmacy price alone. Without one the server refuses the
+  // submission, so the button must refuse it too rather than round-tripping into an error.
+  const missingBonusBasis = dealType === "bonus" && !!product && !hasPharmacyPrice;
+
+  const readyToSubmit =
+    !busy &&
+    !!product &&
+    qtyNum > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(collectionDate) &&
+    !halfFilledDistRow &&
+    !missingBonusBasis;
 
   function updateDistRow(index: number, patch: Partial<{ distributorCode: string; customerCode: string }>) {
     setDistRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -159,9 +178,11 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
     if (!newName.trim()) throw new Error("New pharmacy name is required.");
     if (!newDoctor.trim()) throw new Error("Doctor name is required.");
     if (!newAddress.trim()) throw new Error("Pharmacy address is required.");
+    // Drop only entirely-blank rows (the default empty one). A HALF-filled row is passed through
+    // on purpose so the server's own refusal can fire — see the admin form for the full reason.
     const pairs = distRows
       .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
-      .filter((row) => row.distributorCode && row.customerCode);
+      .filter((row) => row.distributorCode || row.customerCode);
     // No refusal on an empty list (owner rule, 2026-08-04) — see the admin form for why.
     const res = await fetch("/api/direct-orders/pharmacies", {
       method: "POST",
@@ -239,7 +260,16 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
               <option value="">Select a product...</option>
               {products.map((p) => (
                 <option key={p.productCode} value={p.productCode}>
-                  {p.productName} - {p.line} - factory {money(p.factoryPrice)}
+                  {/* The factory price used to be shown here — the one price a direct order is never
+                      valued on. The dropdown now names the basis this deal will actually use. */}
+                  {p.productName} - {p.line} -{" "}
+                  {dealType === "discount"
+                    ? p.publicPrice != null && p.publicPrice > 0
+                      ? `public ${money(p.publicPrice)}`
+                      : "no public price set"
+                    : p.pharmacyPrice != null && p.pharmacyPrice > 0
+                      ? `pharmacy ${money(p.pharmacyPrice)}`
+                      : "no pharmacy price set"}
                 </option>
               ))}
             </select>
@@ -274,9 +304,18 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
               <div>
                 <label className={fieldLabelClassName}>Bonus (units)</label>
                 <input className={portalInputClassName} inputMode="numeric" value={bonus} onChange={(e) => setBonus(e.target.value)} placeholder="0" />
-                {product ? (
+                {/* Echo what the typed number MEANS — see the admin form for the incident. A hint
+                    reading "(25% of qty)" beside a numeric box led a submitter to type 25 intending
+                    25%, which was stored as 25 bonus UNITS and priced as a bonus deal. */}
+                {product && qtyNum > 0 ? (
                   <p className={`mt-1 text-[11px] ${overCap ? "font-bold text-rose-600" : "text-slate-500"}`}>
-                    Max bonus: {maxBonus} ({bonusCapPct}% of qty){overCap ? " -- over cap" : ""}
+                    {bonusNum.toLocaleString("en-US")} free units = {((bonusNum / qtyNum) * 100).toFixed(1)}% of
+                    {" "}{qtyNum.toLocaleString("en-US")}. Max {maxBonus} ({bonusCapPct}%)
+                    {overCap ? " -- over cap" : ""}
+                  </p>
+                ) : product ? (
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Free UNITS, not a percentage. Enter a quantity to see what it works out as.
                   </p>
                 ) : null}
               </div>
@@ -297,10 +336,13 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
             </p>
           ) : null}
 
-          {dealType === "bonus" && product && !hasPharmacyPrice ? (
-            <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
-              No pharmacy price is set for {product.productName} -- this order will be valued at the factory
-              price and flagged for the approver. Ask an admin to set the pharmacy price.
+          {/* This note used to say the order "will be valued at the factory price". There is no
+              factory-price fallback any more — a bonus deal is priced on the pharmacy price or it
+              is refused, so the message now states the refusal rather than promising a basis. */}
+          {missingBonusBasis ? (
+            <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-700">
+              No pharmacy price is set for {product?.productName}. A bonus deal is valued on the pharmacy
+              price, so this order cannot be submitted until an admin sets it.
             </p>
           ) : null}
 
@@ -324,7 +366,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
               product
                 ? dealType === "discount"
                   ? `${qtyNum.toLocaleString("en-US")} x ${money(product.publicPrice ?? 0)} x (1 - ${discountNum}%)`
-                  : `${qtyNum.toLocaleString("en-US")} x ${money(bonusBasis)} ${hasPharmacyPrice ? "pharmacy price" : "factory price (no pharmacy price set)"}`
+                  : `${qtyNum.toLocaleString("en-US")} x ${money(bonusBasis)} pharmacy price`
                 : undefined
             }
           />

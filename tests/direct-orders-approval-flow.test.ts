@@ -241,16 +241,38 @@ export function runDirectOrdersApprovalFlowTests() {
       submitBody.indexOf("// Load the pharmacy in full"),
     );
     assert.ok(bonusBranch.length > 0, "the bonus pricing branch must still be identifiable");
+    // SUPERSEDED RULE (owner ruling, 2026-08-04). This block previously asserted the opposite —
+    // "a missing pharmacy price must fall back and flag, never block". The owner has since ruled
+    // that a direct order is priced on the pharmacy price or the public price and NEVER on the
+    // factory price, so there is no basis left to fall back to: a missing pharmacy price is now
+    // refused, exactly as the discount branch refuses a missing public price. The old fallback
+    // also produced genuinely valueless orders — Tigogrow (TG001) and Osteosat (OS001) carry
+    // neither price, so a bonus order on either submitted at 0 EGP and reached the CEO.
+    // Bound to the CONDITION, not merely to the presence of the word `badRequest`: an earlier
+    // version of this assertion matched /badRequest/ alone and still passed when the guard was
+    // neutered to `if (false)`, which is precisely the failure a regression test exists to catch.
+    assert.match(
+      bonusBranch,
+      /if \(pharmacyPrice == null\) \{[\s\S]{0,240}badRequest\(/,
+      "a bonus deal with no pharmacy price must be REFUSED — there is no factory-price fallback any more",
+    );
     assert.doesNotMatch(
       bonusBranch,
-      /badRequest/,
-      "a missing pharmacy price must fall back and flag, never block — the bonus branch may not refuse anything",
+      /factoryPrice/,
+      "the factory price must never be a pricing basis for a direct order (owner ruling, 2026-08-04)",
     );
-    assert.match(bonusBranch, /pharmacyPrice \?\? product\.factoryPrice/, "the fallback basis is the factory price");
     assert.match(
+      bonusBranch,
+      /computeDirectOrderSalesValue\(\{ qty, pharmacyPrice \}\)/,
+      "a bonus deal must be valued on the pharmacy price alone",
+    );
+    // The old `isFallbackPricedRequest` flag is GONE, and its absence is asserted rather than
+    // left to rot: it existed only to say "this bonus order was valued at the factory price",
+    // a state that can no longer occur now that such a submission is refused outright.
+    assert.doesNotMatch(
       serviceSource,
-      /function isFallbackPricedRequest\(/,
-      "the missing-price flag must be derived from the SNAPSHOT, so it keeps telling the truth after the product master changes",
+      /isFallbackPricedRequest/,
+      "the factory-price fallback flag must not come back — a bonus order without a pharmacy price is refused, never re-priced",
     );
   }
 
@@ -335,4 +357,143 @@ export function runDirectOrdersApprovalFlowTests() {
   assert.equal(availClosed.approve.enabled, false);
   const availReturned = resolveActionAvailability({ status: "returned", steps: fresh, actorOrder: 1 });
   assert.equal(availReturned.approve.enabled, false);
+
+  // ── THE LOCKED PRICING RULE (owner, 2026-08-04, stated four times) ──────────
+  //   Discount → qty × PUBLIC price × (1 − discount%)
+  //   Bonus    → qty × PHARMACY price
+  //   The factory price is never used for anything in this module.
+  //
+  // Pinned with the owner's OWN worked example so the rule is checkable against the sentence he
+  // wrote, not against a paraphrase: Nermeen Salah, Lacto Advanced 1, 240 units, 25% discount,
+  // public price 330 → 59,400 EGP. That order had been recorded as a BONUS deal with 25 bonus
+  // units and valued at 240 × 281.688 = 67,605.12 — the bonus/discount conflation captured the
+  // wrong deal type, not merely the wrong label.
+  assert.equal(computeDiscountSalesValue({ qty: 240, publicPrice: 330, discountPct: 25 }), 59400);
+  // And the same 240 units as a BONUS deal price on the pharmacy price, never the public one.
+  assert.equal(computeDirectOrderSalesValue({ qty: 240, pharmacyPrice: 281.688 }), 67605.12);
+  assert.notEqual(
+    computeDiscountSalesValue({ qty: 240, publicPrice: 330, discountPct: 25 }),
+    computeDirectOrderSalesValue({ qty: 240, pharmacyPrice: 281.688 }),
+  );
+
+  // ── The factory price must not appear ANYWHERE in Direct Orders ─────────────
+  // Owner instruction, 2026-08-04, stated twice: a direct order is priced on the pharmacy price
+  // (bonus) or the public price (discount) and the factory price is not used for anything —
+  // not as a fallback basis, not as a report column, not in the export, the approval window or
+  // the approved-order email. It kept creeping back as a "harmless" reference column, which is
+  // how a number nobody should act on ends up on the screen where money is approved.
+  //
+  // `direct_order_requests.factory_price_snapshot` is NOT NULL with no default, so the insert
+  // still writes a literal 0 until a migration drops the column; that write is the ONLY place
+  // the name may legitimately appear in service.ts.
+  {
+    const files = [
+      ["../src/lib/direct-orders/report-workbook.ts", "the XLSX export"],
+      ["../src/lib/direct-orders/approved-email.ts", "the approved-order email"],
+      ["../src/components/direct-orders/direct-order-report-workspace.tsx", "the admin report"],
+      ["../src/components/employee-portal/direct-order-portal-report.tsx", "the portal report"],
+      ["../src/components/direct-orders/direct-order-caps-manager.tsx", "the caps screen"],
+      ["../src/components/approvals-hub/direct-order-request-detail.tsx", "the approval window"],
+      ["../src/components/employee-portal/direct-order-portal-detail.tsx", "the portal approval window"],
+    ] as const;
+    for (const [rel, what] of files) {
+      const source = readFileSync(new URL(rel, import.meta.url), "utf8");
+      const code = source
+        .split(/\r?\n/)
+        .filter((line) => {
+          const t = line.trim();
+          return !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*") && !t.startsWith("{/*");
+        })
+        .join("\n");
+      assert.doesNotMatch(
+        code,
+        /factoryPrice|factory_price|Factory price/i,
+        `${what} must not reference the factory price — a direct order never uses it`,
+      );
+    }
+  }
+
+  // ── Whoever owns the sales month must be able to SEE a direct order ─────────
+  // Finance owns the sales month (canSetDirectOrderSalesMonth admits exactly one HR_ID, B-185),
+  // but Finance is never a requester and never an approver. Without a company-wide report tier the
+  // scope resolved to "own", every list came back empty and canViewDirectOrderRequest refused every
+  // id — so the only person permitted to book an order into a month could not open one, and
+  // 177,124.80 EGP of approved orders sat in no month, no rep and no report. The two rules are a
+  // pair: dropping the role from the tier re-stranded the money silently, with nothing failing.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const tierIdx = serviceSource.indexOf("const DIRECT_ORDER_REPORT_SEE_ALL_ROLES");
+    assert.ok(tierIdx > -1, "the report tier list must still exist");
+    const tierBlock = serviceSource.slice(tierIdx, serviceSource.indexOf("];", tierIdx));
+    assert.match(
+      tierBlock,
+      /"Finance Manager"/,
+      "Finance Manager must keep company-wide direct-order scope, or the sales-month owner cannot reach a single order to book",
+    );
+    // And the setter itself must still be the thing that gates the write.
+    assert.match(
+      serviceSource,
+      /export function canSetDirectOrderSalesMonth\(/,
+      "the sales-month permission gate must still exist",
+    );
+  }
+
+  // ── A reversal must mirror its original's PRICING BASIS ─────────────────────
+  // `deal_type` is NOT NULL DEFAULT 'bonus' in the column definition, so omitting it from the
+  // reversal insert does not fail — it silently writes 'bonus'. Reversing a DISCOUNT order then
+  // produced a row labelled "Bonus" whose sales_value had been computed from the public price;
+  // and because the copied pharmacy_price_snapshot is null on a discount deal, that row also
+  // satisfied isFallbackPricedRequest (bonus + no pharmacy price) and got badged "no pharmacy
+  // price" for a product that has one. Two of production's five approved orders are discount
+  // deals, so this was reachable. Asserted against source because the insert is DB-bound.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const reverseIdx = serviceSource.indexOf("export async function reverseDirectOrder(");
+    assert.ok(reverseIdx > -1, "reverseDirectOrder must still exist");
+    const insertIdx = serviceSource.indexOf(".insert({", reverseIdx);
+    assert.ok(insertIdx > -1, "reverseDirectOrder must still insert the reversal row");
+    const reversalInsert = serviceSource.slice(insertIdx, serviceSource.indexOf("})", insertIdx));
+
+    assert.match(
+      reversalInsert,
+      /deal_type: original\.dealType/,
+      "a reversal must copy deal_type from its original, or the column default silently makes every reversal a 'bonus' row",
+    );
+    assert.match(
+      reversalInsert,
+      /discount_pct: original\.discountPct/,
+      "a reversal of a discount order must carry the discount percentage that produced its sales_value",
+    );
+    assert.match(
+      reversalInsert,
+      /public_price_snapshot: original\.publicPriceSnapshot/,
+      "a reversal of a discount order must carry the public price its sales_value was computed from",
+    );
+  }
+
+  // ── A reversal's first approver must be addressed as PEOPLE, not one joined string ──
+  // `hrIdsForRole(...).join(",")` collapsed every holder of the opening rung's role into a single
+  // recipient string, and canonicalHrIdKey returns "hr-001,hr-002" as a truthy key — so the
+  // notification was addressed to somebody who does not exist. It stayed invisible only because
+  // the opening rung is SFE Manager, who is separately in the CC set.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const reverseIdx = serviceSource.indexOf("export async function reverseDirectOrder(");
+    const reverseBody = serviceSource.slice(reverseIdx, serviceSource.indexOf("\n}", reverseIdx));
+    // Comment lines are stripped before the negative assertion: the fix's own explanatory comment
+    // quotes the bad `.join(",")` call, and a raw source match cannot tell prose from code.
+    const reverseCode = reverseBody
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+      .join("\n");
+    assert.ok(
+      !/\.join\(","\)/.test(reverseCode),
+      "reverseDirectOrder must not join role holders into one comma-separated pseudo recipient",
+    );
+    assert.match(
+      reverseBody,
+      /recipients: \[\.\.\.reversalFirstApprovers,/,
+      "reverseDirectOrder must spread the first rung's approvers into the recipient list, as submit does",
+    );
+  }
 }

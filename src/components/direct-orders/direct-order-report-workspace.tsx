@@ -50,7 +50,6 @@ const COLUMNS: Col[] = [
   { key: "productName", label: "Product" },
   { key: "qty", label: "Qty", numeric: true, render: (r) => units(r.qty) },
   { key: "bonus", label: "Bonus", numeric: true, render: (r) => units(r.bonus) },
-  { key: "factoryPriceSnapshot", label: "Factory price", numeric: true, render: (r) => money(r.factoryPriceSnapshot) },
   {
     key: "pharmacyPriceSnapshot",
     label: "Pharmacy price",
@@ -74,7 +73,15 @@ const COLUMNS: Col[] = [
   { key: "doctorName", label: "Doctor" },
   { key: "distributorCodesText", label: "Distributor codes" },
   { key: "collectionDate", label: "Collection date" },
-  { key: "salesMonth", label: "Sales month" },
+  // An APPROVED order with no sales month is money that has been signed off but is not in
+  // Source of Sales — a state someone has to act on, not an absent value. Rendering it as the
+  // same "—" every other empty cell uses is what let it stay invisible. Non-approved rows are
+  // not expected to carry a month, so those keep the neutral dash.
+  {
+    key: "salesMonth",
+    label: "Sales month",
+    render: (r) => (r.salesMonth ? r.salesMonth : r.status === "approved" ? "Not booked" : "—"),
+  },
   { key: "paymentDate", label: "Payment date" },
   { key: "paidAmount", label: "Paid", numeric: true, render: (r) => money(r.paidAmount) },
   { key: "remainingAmount", label: "Remaining", numeric: true, render: (r) => money(r.remainingAmount) },
@@ -131,6 +138,16 @@ export function DirectOrderReportWorkspace({
     const pending = filtered.filter((r) => r.status === "pending_approval").length;
     return { count: filtered.length, totalValue, approvedValue, pending };
   }, [filtered]);
+
+  // Deliberately measured on `rows`, NOT on `filtered`: this describes the viewer's whole
+  // population, so narrowing the status chips cannot make the warning disappear. An approved
+  // order with no sales month has been signed off but never reaches Source of Sales — the
+  // month is Finance-owned and set per order, so until someone picks one the value is real,
+  // committed, and absent from every sales number. Nothing else in the module says so.
+  const unbooked = useMemo(() => {
+    const orders = rows.filter((r) => r.status === "approved" && !r.salesMonth);
+    return { count: orders.length, value: orders.reduce((s, r) => s + (r.salesValue || 0), 0) };
+  }, [rows]);
 
   function toggleSort(key: keyof DirectOrderReportRow) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -196,6 +213,20 @@ export function DirectOrderReportWorkspace({
           {exporting ? "Exporting…" : "Export XLSX"}
         </button>
       </div>
+
+      {unbooked.count > 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <div className="text-[11px] font-black uppercase tracking-wider text-amber-700">
+            Approved, not booked into a sales month
+          </div>
+          <div className="mt-0.5 text-sm font-semibold text-amber-900">
+            {unbooked.count.toLocaleString("en-US")}{" "}
+            {unbooked.count === 1 ? "direct order" : "direct orders"} worth {money(unbooked.value)} EGP
+            {" "}are approved but are not in Source of Sales yet. Finance sets the sales month on each
+            order&apos;s own page.
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <KpiCard label="Rows" value={kpis.count.toLocaleString("en-US")} />

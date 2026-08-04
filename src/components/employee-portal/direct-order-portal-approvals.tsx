@@ -11,12 +11,14 @@ import {
   PortalResponsiveDataList,
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
+import { dealFieldLabel, formatDealValue, formatDealValueLabelled } from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "-");
-const bonusCell = (row: DirectOrderApprovalListItem) =>
-  row.dealType === "discount" ? (row.discountPct == null ? "-" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
+// No local bonusCell: it fed a discount deal's percentage into a column headed "Bonus".
+// The mobile card can label per field (dealFieldLabel); the desktop table has one fixed
+// header, so its cell carries its own kind (formatDealValueLabelled).
 
 const STATUS_TONE: Record<string, string> = {
   pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
@@ -71,7 +73,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
             fields={[
               { label: "Line", value: row.line },
               { label: "Qty", value: row.qty.toLocaleString("en-US") },
-              { label: "Bonus", value: bonusCell(row) },
+              { label: dealFieldLabel(row), value: formatDealValue(row) },
               { label: "Pharmacy", value: row.pharmacyName },
               // The card used to drop the pharmacy code entirely — an approver on a phone
               // could not tell two same-named pharmacies apart.
@@ -91,7 +93,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Requester</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Product</th>
               <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Qty</th>
-              <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Bonus</th>
+              <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Bonus / Discount</th>
               <th className="px-3 py-2 text-right text-[11px] font-black uppercase tracking-wider">Value</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Pharmacy</th>
               <th className="px-3 py-2 text-[11px] font-black uppercase tracking-wider">Geography</th>
@@ -113,7 +115,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
                   <div className="text-[11px] text-slate-500">{row.line}</div>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">{row.qty.toLocaleString("en-US")}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{bonusCell(row)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{formatDealValueLabelled(row)}</td>
                 <td className="px-3 py-2 text-right font-bold tabular-nums">{money(row.salesValue)}</td>
                 <td className="whitespace-nowrap px-3 py-2">
                   <div className="text-slate-800">{row.pharmacyName}</div>

@@ -66,7 +66,6 @@ const COLUMNS: Col[] = [
   { key: "productName", label: "Product" },
   { key: "qty", label: "Qty", numeric: true, render: (r) => units(r.qty) },
   { key: "bonus", label: "Bonus", numeric: true, render: (r) => units(r.bonus) },
-  { key: "factoryPriceSnapshot", label: "Factory price", numeric: true, render: (r) => money(r.factoryPriceSnapshot) },
   {
     key: "pharmacyPriceSnapshot",
     label: "Pharmacy price",
@@ -90,7 +89,13 @@ const COLUMNS: Col[] = [
   { key: "doctorName", label: "Doctor" },
   { key: "distributorCodesText", label: "Distributor codes" },
   { key: "collectionDate", label: "Collection date" },
-  { key: "salesMonth", label: "Sales month" },
+  // Same rule as the admin report: on an APPROVED order a blank month means "signed off but not
+  // in Source of Sales yet", which is a state, not a missing value. Only non-approved rows dash.
+  {
+    key: "salesMonth",
+    label: "Sales month",
+    render: (r) => (r.salesMonth ? r.salesMonth : r.status === "approved" ? "Not booked" : "-"),
+  },
   { key: "paymentDate", label: "Payment date" },
   { key: "paidAmount", label: "Paid", numeric: true, render: (r) => money(r.paidAmount) },
   { key: "remainingAmount", label: "Remaining", numeric: true, render: (r) => money(r.remainingAmount) },

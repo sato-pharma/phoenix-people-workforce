@@ -85,9 +85,7 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
     const dealLine =
       row.dealType === "discount"
         ? `Discount ${row.discountPct ?? 0}% · public price ${money(row.publicPriceSnapshot)}`
-        : row.pharmacyPriceSnapshot == null
-          ? `Bonus ${units(row.bonus)} units · factory price ${money(row.factoryPriceSnapshot)} (no pharmacy price set)`
-          : `Bonus ${units(row.bonus)} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
+        : `Bonus ${units(row.bonus)} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
 
     const metadataRows: Array<{ label: string; value: string | number | null | undefined }> = [
       { label: "Request ID", value: row.id },
