@@ -48,6 +48,16 @@ export function cairoHourMinute(at: Date = new Date()): { hour: number; minute: 
   return { hour, minute };
 }
 
+const CAIRO_WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Africa/Cairo day-of-week for `at` (defaults to now), 0=Sunday..6=Saturday — extracted from a
+ * formatted string for the same reason as {@link cairoHourMinute}: reconstructing a Date from
+ * Cairo wall-clock parts would silently depend on the runtime's own local timezone. */
+export function cairoDayOfWeek(at: Date = new Date()): number {
+  const short = at.toLocaleDateString("en-US", { timeZone: "Africa/Cairo", weekday: "short" });
+  return CAIRO_WEEKDAY_INDEX[short] ?? new Date(at).getUTCDay();
+}
+
 // The business window the live-sync cron exists for: reps are expected to log their first CRM
 // visit by late morning, so polling every ~15 min is only useful 8:30 AM-12:01 PM Cairo. The GCP
 // schedule itself fires a little wider than this (see setup-gcp-cron.sh) so this is the real,

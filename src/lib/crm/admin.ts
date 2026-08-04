@@ -5,7 +5,7 @@
  */
 
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { getCrmIdentityResolutions } from "@/lib/crm/identity";
+import { getCrmIdentityResolutions, normalizeCrmName } from "@/lib/crm/identity";
 import { getEffectiveExcludedAgentCrmIds } from "@/lib/crm/reads";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -48,7 +48,15 @@ function recordUnmappedIdentity(
   existing.visitCount += 1;
   existing.roles.add(role);
   if (visitDate < existing.firstSeen) existing.firstSeen = visitDate;
-  if (visitDate > existing.lastSeen) existing.lastSeen = visitDate;
+  if (visitDate >= existing.lastSeen) {
+    existing.lastSeen = visitDate;
+    // Keep the NEWEST label, not the first-seen one: a handed-over CRM account carries the
+    // current occupant's name on its latest rows, and this name is what the panel shows AND what
+    // a "mapped" decision records as the label the mapping applies to (see stampUnmappedVisitRows
+    // and the label-scoped override tier in identity.ts). Showing/recording the old occupant's
+    // label would scope the mapping to exactly the wrong rows.
+    if (name) existing.name = name;
+  }
 }
 
 /**
@@ -176,24 +184,94 @@ export async function setUnmappedCrmIdentityResolution(input: {
 
   let updatedVisits = 0;
   if (input.action === "mapped" && resolvedHrId) {
-    const { count: agentCount, error: agentError } = await supabase
-      .from(visitsTable)
-      .update({ agent_hr_id: resolvedHrId, updated_at: new Date().toISOString() }, { count: "exact" })
-      .eq("agent_crm_id", input.crmId)
-      .is("agent_hr_id", null);
-    if (agentError) throw new Error(agentError.message);
-    updatedVisits += agentCount ?? 0;
-
-    const { count: doubleCount, error: doubleError } = await supabase
-      .from(visitsTable)
-      .update({ double_hr_id: resolvedHrId, updated_at: new Date().toISOString() }, { count: "exact" })
-      .eq("double_crm_id", input.crmId)
-      .is("double_hr_id", null);
-    if (doubleError) throw new Error(doubleError.message);
-    updatedVisits += doubleCount ?? 0;
+    updatedVisits += await stampUnmappedVisitRows(supabase, {
+      crmId: input.crmId,
+      crmName: input.crmName ?? null,
+      hrId: resolvedHrId,
+      idColumn: "agent_crm_id",
+      nameColumn: "agent_name",
+      targetColumn: "agent_hr_id",
+    });
+    updatedVisits += await stampUnmappedVisitRows(supabase, {
+      crmId: input.crmId,
+      crmName: input.crmName ?? null,
+      hrId: resolvedHrId,
+      idColumn: "double_crm_id",
+      nameColumn: "double_name",
+      targetColumn: "double_hr_id",
+    });
   }
 
   return { resolvedEmployeeHrId: resolvedHrId, resolvedEmployeeName: resolvedName, updatedVisits };
+}
+
+/**
+ * Stamps the mapped hr id onto currently-unmapped visit rows for one CRM account — LABEL-SCOPED
+ * when the decision recorded the CRM display label it was made against. Production slots 1102,
+ * 1395 and 1399 each carry two different people's names across their history (a leaver's rows,
+ * then the replacement's), so the old blanket "every null row for this crm_id" stamp would file
+ * the previous occupant's work under the new hire. Rows whose label doesn't normalize to the
+ * decision's label are left unmapped for their own, separate decision. Without a recorded label
+ * (legacy callers) the blanket behavior is preserved. Name matching happens in JS via
+ * normalizeCrmName — the vendor emits the same person's label with inconsistent internal
+ * whitespace, so a SQL equality filter would silently skip real rows.
+ */
+async function stampUnmappedVisitRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  input: {
+    crmId: number;
+    crmName: string | null;
+    hrId: string;
+    idColumn: "agent_crm_id" | "double_crm_id";
+    nameColumn: "agent_name" | "double_name";
+    targetColumn: "agent_hr_id" | "double_hr_id";
+  },
+): Promise<number> {
+  const decisionLabel = normalizeCrmName(input.crmName);
+  if (!decisionLabel) {
+    const { count, error } = await supabase
+      .from(visitsTable)
+      .update({ [input.targetColumn]: input.hrId, updated_at: new Date().toISOString() }, { count: "exact" })
+      .eq(input.idColumn, input.crmId)
+      .is(input.targetColumn, null);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+
+  const matchingIds: string[] = [];
+  const pageSize = 1000;
+  let cursor: string | null = null;
+  for (;;) {
+    let query = supabase
+      .from(visitsTable)
+      .select(`id, ${input.nameColumn}`)
+      .eq(input.idColumn, input.crmId)
+      .is(input.targetColumn, null)
+      .order("id", { ascending: true })
+      .limit(pageSize);
+    if (cursor) query = query.gt("id", cursor);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const page = (data ?? []) as unknown as Array<{ id: string } & Record<string, string | null>>;
+    if (page.length === 0) break;
+    for (const row of page) {
+      if (normalizeCrmName(row[input.nameColumn]) === decisionLabel) matchingIds.push(row.id);
+    }
+    if (page.length < pageSize) break;
+    cursor = page[page.length - 1].id;
+  }
+
+  let updated = 0;
+  for (let from = 0; from < matchingIds.length; from += 500) {
+    const chunk = matchingIds.slice(from, from + 500);
+    const { count, error } = await supabase
+      .from(visitsTable)
+      .update({ [input.targetColumn]: input.hrId, updated_at: new Date().toISOString() }, { count: "exact" })
+      .in("id", chunk);
+    if (error) throw new Error(error.message);
+    updated += count ?? chunk.length;
+  }
+  return updated;
 }
 
 function mapSyncRun(row: Record<string, unknown>): VisitsSyncRun {

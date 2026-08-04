@@ -16,9 +16,9 @@ import { getEmployeeDirectoryRows, type EmployeeDirectoryRow } from "@/lib/emplo
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { CRM_IDENTITY_RESOLUTIONS_TABLE } from "@/lib/crm/tables";
 import { isCrmSchemaMissingError } from "@/lib/crm/schema";
-import type { CrmIdentityMaps, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
+import type { CrmIdentityMaps, CrmManualOverride, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
 
-export type { CrmIdentityMaps, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
+export type { CrmIdentityMaps, CrmManualOverride, CrmResolutionAction, CrmResolutionRow } from "@/lib/crm/types";
 
 /**
  * Trims + lowercases + collapses internal whitespace runs to a single space. The CRM's own
@@ -56,10 +56,13 @@ export function buildCrmIdentityMaps(
     if (hrIds.length === 1) hrIdByCrmUsername.set(key, hrIds[0]);
   }
 
-  const hrIdByManualOverride = new Map<string, string>();
+  const hrIdByManualOverride = new Map<string, CrmManualOverride>();
   for (const resolution of resolutions) {
     if (resolution.status === "mapped" && resolution.mappedHrId) {
-      hrIdByManualOverride.set(String(resolution.crmId), resolution.mappedHrId);
+      hrIdByManualOverride.set(String(resolution.crmId), {
+        hrId: resolution.mappedHrId,
+        label: normalizeCrmName(resolution.crmName),
+      });
     }
   }
 
@@ -169,9 +172,23 @@ export function resolveEmployeeAttribution(
   visitDate?: string | null,
 ): CrmAttribution {
   if (crmId != null) {
-    // Tier 1 — explicit admin decision. Not guarded (see the doc comment above).
+    // Tier 1 — explicit admin decision. Not guarded by the post-exit date (see the doc comment
+    // above), but LABEL-SCOPED when the resolution stored the CRM label it was decided against:
+    // production slots 1102/1395/1399 each carry TWO different people's names in their history
+    // (a leaver's rows, then the replacement's after the account was handed over), so an
+    // unconditional override would let a wide reconcile re-stamp the OLD occupant's rows with
+    // the NEW occupant's hr id. A mismatched label therefore falls through to the automatic
+    // tiers, which resolve the old occupant correctly and carry the post-exit guard. A record
+    // with NO label (check-ins carry a crm_id only) keeps the unconditional behavior — the
+    // handover-accuracy risk lives in visit attribution, and blocking check-ins would strip the
+    // GPS overlay from every correctly-mapped slot.
     const overridden = maps.hrIdByManualOverride.get(String(crmId));
-    if (overridden) return { blockedHrId: null, hrId: overridden };
+    if (overridden) {
+      const recordLabel = normalizeCrmName(name);
+      if (!overridden.label || !recordLabel || overridden.label === recordLabel) {
+        return { blockedHrId: null, hrId: overridden.hrId };
+      }
+    }
     // Tier 2 — employees.crm_id. This is the tier that misattributes a reused CRM slot.
     const byId = maps.hrIdByCrmId.get(String(crmId));
     if (byId) {
@@ -209,13 +226,16 @@ export function resolveEmployeeHrId(
 export async function getCrmIdentityResolutions(): Promise<CrmResolutionRow[]> {
   const { data, error } = await getSupabaseAdmin()
     .from(CRM_IDENTITY_RESOLUTIONS_TABLE)
-    .select("crm_id, status, mapped_hr_id");
+    .select("crm_id, status, mapped_hr_id, crm_name");
   if (error) {
     if (isCrmSchemaMissingError(error)) return [];
     throw new Error(error.message);
   }
-  return ((data ?? []) as Array<{ crm_id: number; mapped_hr_id: string | null; status: string }>).map((row) => ({
+  return (
+    (data ?? []) as Array<{ crm_id: number; crm_name: string | null; mapped_hr_id: string | null; status: string }>
+  ).map((row) => ({
     crmId: row.crm_id,
+    crmName: row.crm_name,
     mappedHrId: row.mapped_hr_id,
     status: row.status as CrmResolutionAction,
   }));

@@ -24,6 +24,8 @@ import {
 } from "@/lib/crm/identity";
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
+import { selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
+import { notifyUnmappedCrmAgentActivity } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hasGoogleServerKey } from "@/lib/google-maps/server";
@@ -603,6 +605,31 @@ export async function syncIReports360Visits(input: {
     // Field Workforce Compliance no longer caches a snapshot to refresh here — it always
     // reads this same mirror live on every view (see live-snapshots.ts), so a sync landing
     // new visit rows is immediately reflected with no separate refresh step needed.
+
+    // Unmapped-agent tripwire (best-effort, never fails the run): any RECENT visit in this fetch
+    // that resolved to no employee means someone's fieldwork is invisible right now. Detection
+    // runs on the FULL deduped fetch — not the narrowed upsert set — so a live-poll delta tick
+    // still sees an unmapped agent whose rows happened to be unchanged this tick.
+    try {
+      const alerts = selectUnmappedAgentAlerts({
+        recentSinceIso: addDaysIso(cairoTodayIso(), -14),
+        resolutions,
+        rows: dedupedVisitRows.map((row) => ({
+          agentCrmId: row.agent_crm_id,
+          agentHrId: row.agent_hr_id,
+          agentName: row.agent_name,
+          visitDate: row.visit_date,
+        })),
+      });
+      if (alerts.length > 0) {
+        await notifyUnmappedCrmAgentActivity({ alerts, dateFrom: input.dateFrom, dateTo: input.dateTo, runId });
+      }
+    } catch (error) {
+      logError("Unmapped CRM agent alerting failed; the sync itself succeeded", {
+        labels: { event: "crm_unmapped_agent_alert_failed", dateFrom: input.dateFrom, dateTo: input.dateTo },
+        error,
+      });
+    }
 
     return {
       // Surfaced so callers/notifications can see them. These two are the write path's most
