@@ -579,6 +579,12 @@ import { runExportFollowsScreenFiltersTests } from "./export-follows-screen-filt
 import { runNotificationDeliveryIntegrityTests } from "./notification-delivery-integrity.test.ts";
 import { runOutstationExpenseApprovalStateMetricsTests } from "./outstation-expense-approval-state-metrics.test.ts";
 
+import { runIncentiveSemesterWindowTests } from "./incentive-semester-window.test.ts";
+
+import { runReconciliationHarnessTests } from "./reconciliation-harness.test.ts";
+
+
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1216,6 +1222,10 @@ await runTest(
 );
 
 await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4,271 units; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
+
+await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
+
+await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

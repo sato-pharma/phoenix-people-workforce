@@ -1364,6 +1364,16 @@ export function EmployeePortalIncentivePage({ data }: { data: MedicalRepPortalDa
 
   return (
     <div className="space-y-5">
+      {/* An incentive is a SEMESTER figure. When the semester is not fully loaded the number below
+          is arithmetically real but not settled — a rep whose June sheet has not arrived is being
+          scored on five months while a colleague is scored on six. Saying so, with the month named,
+          is the difference between a provisional figure and a wrong promise. */}
+      {data.sales.incentiveWindowNotice ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-900">
+          {data.sales.incentiveWindowNotice}
+        </div>
+      ) : null}
+
       {/* KPI strip - Achievement + Base Salary + Basic Salary */}
       <IncentiveKpiCards data={data} isSalaryVisible={isIncentiveSalaryVisible} />
 
