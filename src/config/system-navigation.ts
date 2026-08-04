@@ -20,6 +20,7 @@ import {
   FileSpreadsheet,
   FileUp,
   Fingerprint,
+  Gauge,
   HeartPulse,
   Hourglass,
   IdCard,
@@ -629,6 +630,11 @@ const adminNavigationSectionSeeds = [
       // sales:read and lands in the ADMIN shell, hence cannot use the portal twin — had no way to
       // see target achievement at all.
       { href: "/sales/targets", icon: Target, label: "Targets", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
+      // Sales vs Target — reads the same au.f_monthly_achievement engine as Targets above, so the
+      // two surfaces cannot disagree. Admin-shell roles only; DM/RM/NSM/Medical Rep land in the
+      // employee-portal shell and use /employee-portals/sales-vs-target, which the page redirects
+      // them to rather than denying them.
+      { href: "/sales/vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ action: "read", resource: "sales" }], roles: ["Super Admin", "SFE Manager", "CEO"] },
     ],
     label: "Targets",
   },
@@ -798,6 +804,11 @@ const employeePortalNavigationSectionSeeds = [
       // PORTAL_CLOSING_ROLES: no Marketing Manager (Head-Office line) or Medical Rep (no line).
       { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
       { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
+      // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in
+      // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
+      // role here with no resolvable territory still fails closed to an empty scope.
+      { href: "/employee-portals/sales-vs-target", icon: Gauge, label: "Sales vs Target", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal counterpart of /business-review-s1, scoped per viewer. Medical Rep is deliberately
       // absent — the owner ruled this module is managers-only. CEO/SFE Manager/Super Admin reach it
       // through the admin entry instead, since that is the shell they land in.

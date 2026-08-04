@@ -90,6 +90,13 @@ export type EmployeePortalNavVisibility = {
   // for RM and line managers). Every page enforces sales/weekly_sales read AND the per-viewer
   // AnalyticsViewerScope server-side; this flag only surfaces the sidebar link.
   showSalesAnalyticsTab?: boolean;
+  // Sales vs Target (/employee-portals/sales-vs-target) — Source of Sales + Direct Orders measured
+  // against target, from July 2026 onwards. The FIRST sales surface a Medical Rep can open (owner
+  // decision 2026-08-04, reversing the 2026-07-30 call that kept reps out of portal Targets); a rep
+  // is bounded to their own attributed rows by resolveVsTargetBound, which is the enforcing gate
+  // this flag must stay in sync with. Marketing Manager is included because their Head-Office line
+  // resolves through MARKETING_OVERSIGHT to the three product lines, so the page is not empty.
+  showSalesVsTargetTab?: boolean;
   // Territory & Sales Drilldown — geography-rooted (Region>Area>Block>Brick>Pharmacy) sales
   // tree at /employee-portals/territory-drilldown. All four sales roles now shipped (see
   // TERRITORY_DRILLDOWN_ROLES in src/lib/sales/territory/service.ts, the server-side gate
@@ -490,6 +497,14 @@ export function resolveEmployeePortalNavVisibility(
     // see the 3 core dashboards; Regional Manager + the line managers additionally get Executive
     // Comparison + Reconciliation (see canViewPortalDetailedAnalytics). CEO/SA/SFE use /admin analytics.
     showSalesAnalyticsTab:
+      isMedicalRep ||
+      isDistrictManager ||
+      resolvedRole === "Regional Manager" ||
+      isNationalSalesManager ||
+      isProductManager ||
+      isGroupProductManager ||
+      isMarketingManager,
+    showSalesVsTargetTab:
       isMedicalRep ||
       isDistrictManager ||
       resolvedRole === "Regional Manager" ||

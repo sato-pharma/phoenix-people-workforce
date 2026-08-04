@@ -15,6 +15,7 @@ import {
   FileSpreadsheet,
   FileText,
   Fingerprint,
+  Gauge,
   Gift,
   Headphones,
   Home,
@@ -72,6 +73,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "360", fullLabel: "Employee 360", href: "/employee-portals/employee-360", icon: IdCard },
   { label: "Analytics", fullLabel: "Attendance Analytics", href: "/employee-portals/fingerprint-analytics", icon: Fingerprint, flags: ["showFingerprintReportTab"] },
   // Sales Intelligence (Product / Group Product Managers)
+  // Sales vs Target leads the sales group: it is the field force's daily dashboard and the only
+  // sales destination a Medical Rep can open, so it must be reachable from the phone bottom bar
+  // rather than the desktop sidebar alone.
+  { label: "vs Target", fullLabel: "Sales vs Target", href: "/employee-portals/sales-vs-target", icon: Gauge, flags: ["showSalesVsTargetTab"] },
   { label: "ROI", fullLabel: "ROI Intelligence", href: "/employee-portals/roi", icon: Target, flags: ["showRoiIntelligenceTab"] },
   { label: "SoS", fullLabel: "Source of Sales", href: "/employee-portals/source-of-sales", icon: ChartColumnBig, flags: ["showSourceOfSalesTab"] },
   // The three sales destinations below plus My Visits/Team Calendar further down were in the
