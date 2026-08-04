@@ -72,6 +72,10 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       pharmacyAddress: "12 El Merghany Street, Heliopolis, Cairo",
       distributorCodes: [],
       geoVarianceResolved: false,
+      verificationStatus: "verified",
+      entrySource: "catalogue",
+      verifiedByHrId: null,
+      verifiedAt: null,
       createdByHrId: "HR-100",
       active: true,
     },
@@ -572,6 +576,83 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(backup, /create schema if not exists direct_orders_backup_/, "the snapshot must live in a dated schema");
     assert.doesNotMatch(backup, /create table if not exists public\./, "never snapshot into public");
     assert.match(backup, /revoke all on schema[\s\S]*from public/, "revoke from PUBLIC, not just anon/authenticated");
+  }
+
+  // ── Picking the pharmacy from the distributor's own customer list ──────────
+  // Replaces typing a code from memory. A wrong code is not a typo: retail sales match on
+  // (distributor, customer code), so it silently attributes another pharmacy's sales here.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const idx = serviceSource.indexOf("export async function searchDistributorCustomers(");
+    assert.ok(idx > -1, "the customer search must exist");
+    const body = serviceSource.slice(idx, serviceSource.indexOf("export async function listDirectOrderDistributorOptions(", idx));
+
+    // SCOPE IS A SECURITY BOUNDARY. Without it a District Manager could enumerate another
+    // region's entire customer list by crafting a query string.
+    assert.match(body, /listDirectOrderAreaAndBrickOptions\(access\)/, "the search must derive the caller's own areas");
+    assert.match(
+      body,
+      /if \(!unrestricted && !allowedAreaCodes\.has\(wantedArea\.toUpperCase\(\)\)\) return \[\];/,
+      "an area outside the caller's scope must return nothing, never be honoured",
+    );
+    assert.match(
+      body,
+      /unrestricted \|\| !option\.areaCode \|\| allowedAreaCodes\.has\(option\.areaCode\.toUpperCase\(\)\)/,
+      "results must be re-checked against the caller's areas, not trusted from the query",
+    );
+    // The reserved pseudo-distributors must not be searchable either.
+    assert.match(body, /DIRECT_ORDER_EXCLUDED_DISTRIBUTOR_CODES\.has\(distributorCode\.toLowerCase\(\)\)/);
+    // A pattern metacharacter in the query must not widen the match.
+    assert.match(body, /replace\(\/\[%_,\(\)\]\/g, " "\)/, "search input must be escaped before ilike");
+
+    // Verification is DERIVED from the catalogue, never taken from the client — a client flag
+    // could be wrong or forged, and the catalogue is the only thing that knows.
+    const createIdx = serviceSource.indexOf("export async function createDirectOrderPharmacy(");
+    const createBody = serviceSource.slice(createIdx, serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(", createIdx));
+    assert.match(
+      createBody,
+      /const unresolved = Array\.from\(byDistributor\.entries\(\)\)\.filter\(/,
+      "verification must be derived by checking each code against the catalogue",
+    );
+    assert.match(createBody, /verification_status: "pending_review"/, "an unrecognised code must flag the pharmacy");
+    // …and must NEVER block the submission.
+    assert.doesNotMatch(
+      createBody,
+      /unresolved[\s\S]{0,200}badRequest/,
+      "an unrecognised code must flag the pharmacy, never block the request",
+    );
+
+    // Acknowledgment is Super-Admin only: an approver holds direct_orders:approve but must not
+    // be able to self-clear the pharmacy they are approving against.
+    const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
+    const ackBody = serviceSource.slice(ackIdx, ackIdx + 1600);
+    assert.match(ackBody, /access\.scope === "system" \|\| access\.role === "Super Admin"/);
+    assert.match(ackBody, /Forbidden: only a System Admin can acknowledge a pharmacy\./);
+    assert.match(ackBody, /writeRequiredAuditLog\(/, "clearing a pharmacy must be audited with its prior state");
+
+    // The flag is pointless if the approver cannot see it.
+    const adminDetail = readFileSync(
+      new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      adminDetail,
+      /pharmacy\?\.verificationStatus === "pending_review"/,
+      "the approval window must surface an unverified pharmacy",
+    );
+
+    // The picker must not silently keep a code that belonged to a different distributor.
+    const picker = readFileSync(
+      new URL("../src/components/direct-orders/distributor-customer-picker.tsx", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      picker,
+      /onChange\(\{ distributorCode: event\.target\.value, customerCode: "", customerName: "" \}\)/,
+      "changing distributor must clear the chosen customer — the code belongs to the old one",
+    );
+    assert.match(picker, /seq !== requestSeq\.current/, "a stale type-ahead response must not overwrite a newer one");
+    assert.match(picker, /Not listed\? Enter the code manually/, "manual entry must always remain available");
   }
 
   // ── A requester tracks their OWN order in the same detail an approver reads ─

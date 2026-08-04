@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
+
 import {
   computeDirectOrderSalesValue,
   computeDiscountSalesValue,
@@ -374,18 +376,19 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 <div className="border border-[#eef1f3] p-2">
                   <p className="mb-1 text-[11px] font-black uppercase tracking-wider text-slate-500">Distributor customer codes *</p>
                   {distRows.map((row, index) => (
-                    <div key={index} className="mb-1.5 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2">
-                      <select className={inputClass()} value={row.distributorCode} onChange={(e) => updateDistRow(index, { distributorCode: e.target.value })}>
-                        <option value="">Distributor…</option>
-                        {distributors.map((d) => (
-                          <option key={d.distributorCode} value={d.distributorCode}>{d.distributorName}</option>
-                        ))}
-                      </select>
-                      <input className={inputClass()} value={row.customerCode} onChange={(e) => updateDistRow(index, { customerCode: e.target.value })} placeholder="Customer code" />
-                      {distRows.length > 1 ? (
-                        <button type="button" className="mt-1 px-2 text-slate-400 hover:text-rose-600" onClick={() => setDistRows((prev) => prev.filter((_, i) => i !== index))}>✕</button>
-                      ) : <span />}
-                    </div>
+                    <DistributorCustomerPicker
+                      key={index}
+                      row={row}
+                      distributors={distributors}
+                      areas={areas}
+                      inputClassName={inputClass()}
+                      onChange={(patch) => updateDistRow(index, patch)}
+                      onRemove={
+                        distRows.length > 1
+                          ? () => setDistRows((prev) => prev.filter((_, i) => i !== index))
+                          : undefined
+                      }
+                    />
                   ))}
                   <button type="button" className="text-[12px] font-bold text-orange-600 hover:text-orange-700" onClick={() => setDistRows((prev) => [...prev, { distributorCode: "", customerCode: "" }])}>
                     + Add distributor

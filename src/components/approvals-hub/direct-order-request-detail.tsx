@@ -55,6 +55,7 @@ export function DirectOrderRequestDetail({
 
   const {
     request,
+    pharmacy,
     distributors,
     pharmacyHistory,
     retailHistory,
@@ -85,6 +86,16 @@ export function DirectOrderRequestDetail({
           </h2>
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </header>
+
+        {pharmacy?.verificationStatus === "pending_review" ? (
+          <div className="border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
+            <p className="text-[12px] font-bold text-rose-900">
+              Pharmacy not in the distributor catalogue — its customer code was entered by hand and has
+              not been confirmed. Retail sales match on that code, so an incorrect one would attribute a
+              different pharmacy&apos;s sales here. Needs SFE review and a System Admin acknowledgment.
+            </p>
+          </div>
+        ) : null}
 
         {bonusOverCap || missingPharmacyPrice ? (
           <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
