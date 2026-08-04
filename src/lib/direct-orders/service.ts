@@ -445,6 +445,15 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
   };
 }
 
+/**
+ * A `code → name` resolver for the code validators, so a refusal names the distributor the
+ * submitter actually chose from the dropdown rather than its internal code.
+ */
+async function distributorNameResolver(): Promise<(code: string) => string> {
+  const names = await loadDistributorNames();
+  return (code: string) => names.get(code) ?? code;
+}
+
 /** distributor_code → distributor_name, for display. */
 async function loadDistributorNames(): Promise<Map<string, string>> {
   const supabase = getSupabaseAdmin();
@@ -522,18 +531,43 @@ function assertSingleCustomerCode(customerCode: string): void {
  * child table, and a rule enforced in one but not the other is a rule that does not exist — the
  * registry would happily store the second code the order form refuses.
  *
- * Blank pairs are dropped rather than refused: an empty row in the UI means "I did not fill this
- * in", not "I meant to submit nothing". Codes are OPTIONAL overall (owner rule, 2026-08-04); what
- * an unknown code costs is an extra approval rung, not a refusal.
+ * A row where BOTH halves are blank is skipped, and that is not carelessness: the form always
+ * renders one empty row, and leaving it alone is the legitimate "I do not know the code" answer.
+ * Codes are OPTIONAL overall (owner rule, 2026-08-04) — an unknown code costs an extra approval
+ * rung, not a refusal.
+ *
+ * A row where only ONE half is filled is refused. It used to be skipped alongside the blank ones,
+ * and that was wrong for a reason that took a live investigation to surface: a submitter who picks
+ * a distributor, searches, finds nothing and moves on has visibly started filling the row. The
+ * server discarded it without a word, and the pharmacy was then recorded as "no distributor or
+ * customer code was given" — a statement the submitter would have disputed, and both of them right.
+ * Two pharmacies reached approval that way (Ibrahim pharmacy and محمد ميجا, 2026-08-04).
+ *
+ * `distributorName` keeps the refusal readable — an approver should never be shown a raw code.
  */
 function normalizeDistributorCodePairs(
   pairs: Array<{ distributorCode: string; customerCode: string }> | undefined,
+  distributorName?: (code: string) => string,
 ): Map<string, string> {
+  const nameOf = (code: string) => distributorName?.(code)?.trim() || code;
   const byDistributor = new Map<string, string>();
   for (const pair of pairs ?? []) {
     const distributorCode = String(pair.distributorCode ?? "").trim();
     const customerCode = String(pair.customerCode ?? "").trim();
-    if (!distributorCode || !customerCode) continue;
+    if (!distributorCode && !customerCode) continue; // untouched row — the legitimate empty answer
+    if (distributorCode && !customerCode) {
+      badRequest(
+        `You picked ${nameOf(distributorCode)} but did not choose a customer for it. ` +
+          "Search that distributor's list for the pharmacy, or use \"Not listed? Enter the code manually\" — " +
+          "or remove the row with ✕ if you do not know its code. Leaving it half-filled would drop it silently.",
+      );
+    }
+    if (!distributorCode && customerCode) {
+      badRequest(
+        `The customer code "${customerCode}" has no distributor. A code only means anything alongside ` +
+          "the distributor that issued it — pick the distributor, or remove the row.",
+      );
+    }
     assertSingleCustomerCode(customerCode);
     if (byDistributor.has(distributorCode)) {
       // UNIQUE (pharmacy_id, distributor_code) would reject this anyway, but as an opaque
@@ -625,7 +659,7 @@ export async function createDirectOrderPharmacy(
   // with nothing valid to put in it.
   //
   // When codes ARE supplied they are still validated: one per distributor, one code per field.
-  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
 
   const supabase = getSupabaseAdmin();
   // Every hand-registered pharmacy starts UNRECOGNISED, and the row says so from the first insert
@@ -859,7 +893,7 @@ export async function registerDirectOrderPharmacy(
   if (!name) badRequest("Pharmacy name is required.");
   const doctorName = input.doctorName?.trim() || null;
   const pharmacyAddress = input.pharmacyAddress?.trim() || null;
-  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
 
   const supabase = getSupabaseAdmin();
   const now = new Date().toISOString();
@@ -985,7 +1019,7 @@ export async function replaceDirectOrderPharmacyCodes(
     .maybeSingle();
   if (!pharmacy) badRequest("Pharmacy not found.");
 
-  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes);
+  const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
   const { data: previous } = await supabase
     .from("direct_order_pharmacy_distributor_codes")
     .select("distributor_code, customer_code")
