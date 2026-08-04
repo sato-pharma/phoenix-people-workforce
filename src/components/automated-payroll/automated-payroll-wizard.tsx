@@ -189,6 +189,34 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     }
   };
 
+  /**
+   * The "& continue" half of "Confirm & continue" (owner-reported 2026-08-04:
+   * "when I press confirm & continue it's greyed out and nothing happens").
+   *
+   * The confirm itself was always working — it was verified landing in
+   * automated_payroll_step_state — but the wizard only reloaded the run and left
+   * HR sitting on the step they had just finished, with nothing moving. On the
+   * Vacation step that reads especially like a hang, because it is the one step
+   * whose confirm ALSO re-settles leave balances, so its button stays greyed
+   * several times longer than any other.
+   *
+   * Advancing by position, not by "next unconfirmed": HR works these steps in
+   * order, and skipping ahead over a step they deliberately left for later would
+   * be its own surprise.
+   */
+  const onStepConfirmed = async (stepKey: StepKey) => {
+    const keys = stepPhase(stepKey) === "part1" ? PART1_STEP_KEYS : PART2_STEP_KEYS;
+    const next = keys[keys.indexOf(stepKey) + 1];
+    const title = stepDefinition(stepKey).title;
+    setNotice(
+      next
+        ? `${title} confirmed — moved on to ${stepDefinition(next).title}.`
+        : `${title} confirmed. That was the last step of this part — you can confirm the part above now.`,
+    );
+    if (next) setActiveStep(next);
+    await loadRun(month, year);
+  };
+
   const loadRecon = async () => {
     if (!run) return;
     setBusy(true);
@@ -584,7 +612,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 stepKey={activeStep}
                 confirmed={confirmedSet.has(activeStep)}
                 locked={stepLocked(activeStep)}
-                onConfirmed={() => void loadRun(month, year)}
+                onConfirmed={() => void onStepConfirmed(activeStep)}
               />
             ) : (
               <div className="p-6 text-center text-sm text-slate-500">Select a step above to begin.</div>
