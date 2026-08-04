@@ -250,12 +250,23 @@ export function stripRestrictedColumns(matrix: MonthlyClosingMatrix): MonthlyClo
  * region-scoped viewer must not see. Matches by canonical region NAME because the sales access-scope
  * engine resolves a viewer's regions by name (resolveSalesAccessScope.allowedRegionNames, already
  * canonicalized). Pure — no IO.
+ *
+ * A block the organogram refined out of a coarser region ("Upper Egypt 1", split from "Upper
+ * Egypt") also matches on its BASE name. Employee rows still carry the coarse label — both Anti
+ * Infective Upper Egypt managers read "Upper Egypt" — so matching on the refined name alone would
+ * hand a region-scoped viewer an empty closing the moment their region was split. Seat-scoped
+ * viewers (District / Regional Manager) never reach this path; they are bound by area codes via
+ * scopeMatrixToAreaCodes, which is unaffected by how the blocks are grouped.
  */
 export function scopeMatrixToRegionNames(
   matrix: MonthlyClosingMatrix,
   names: Set<string>,
 ): MonthlyClosingMatrix {
-  const regions = matrix.regions.filter((region) => names.has(canonicalizeRegionName(region.regionName)));
+  const regions = matrix.regions.filter(
+    (region) =>
+      names.has(canonicalizeRegionName(region.regionName))
+      || (region.baseRegionName != null && names.has(canonicalizeRegionName(region.baseRegionName))),
+  );
   const columnCount = matrix.columns.length;
   const grandCells = Array.from({ length: columnCount }, (_, index) =>
     sumCells(

@@ -475,6 +475,7 @@ import { runSosLatentGuardsTests } from "./sos-latent-guards.test.ts";
 import { runSosDirectInAchievementTests } from "./sos-direct-in-achievement.test.ts";
 import { runSosDirectToDmTests } from "./sos-direct-to-dm.test.ts";
 import { runClosingMatrixTargetsTests } from "./closing-matrix-targets.test.ts";
+import { runClosingMatrixOrganogramDistrictTests } from "./closing-matrix-organogram-districts.test.ts";
 import { runDirectRegionAllocationTests } from "./direct-region-allocation.test.ts";
 import { runDirectAmbiguousRegionBlockTests } from "./direct-ambiguous-region-block.test.ts";
 import { runSosCodedPathCrossAreaGuardTests } from "./sos-coded-path-cross-area-guard.test.ts";
@@ -1054,6 +1055,7 @@ await runTest('SoS latent guards + decisions of record', runSosLatentGuardsTests
 await runTest('SoS Direct counts toward achievement (targets were set including it)', runSosDirectInAchievementTests);
 await runTest('SoS Direct reaches its region DM (not a rep), and UE-1/UE-2 exist to tag', runSosDirectToDmTests);
 await runTest('Closing Matrix target columns (missing target is "—", never a 0 that fakes achievement)', runClosingMatrixTargetsTests);
+await runTest('Closing Matrix organogram districts (Anti Infective UE splits into UE-1/UE-2; reassignments do not move)', runClosingMatrixOrganogramDistrictTests);
 await runTest('Direct region allocation (shares normalise to 1; a no-op where unconfigured)', runDirectRegionAllocationTests);
 await runTest('Direct ambiguous region blocks at upload (Anti Infective only; CNS/Pedia keep "UE")', runDirectAmbiguousRegionBlockTests);
 await runTest('SoS coded-path cross-area guard (blank-brick auto-fill never crosses the typed area)', runSosCodedPathCrossAreaGuardTests);

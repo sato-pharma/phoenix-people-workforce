@@ -3153,6 +3153,15 @@ export type MonthlyClosingSubtotalRow = {
 
 export type MonthlyClosingRegionGroup = {
   areas: MonthlyClosingAreaRow[];
+  /**
+   * The geographic region this block was refined OUT OF, when the organogram sub-divides it —
+   * e.g. "UE" / "Upper Egypt" for the Anti Infective "UE-1" block. Undefined on a block that is
+   * already a plain sheet region. Kept so a viewer scoped by the COARSE region name ("Upper
+   * Egypt", which is what their employee row still says) can still match a refined block —
+   * see scopeMatrixToRegionNames in ./monthly-closing-portal.
+   */
+  baseRegionCode?: string;
+  baseRegionName?: string;
   regionCode: string;
   regionName: string;
   subtotal: MonthlyClosingSubtotalRow;
@@ -3210,9 +3219,57 @@ export type MonthlyClosingDirectCell = {
 
 const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "AB", "D1", "D2", "OT"] as const;
 
+/** The plain geographic region a (possibly refined) district code belongs to: "UE-1" -> "UE". */
+export function baseClosingRegionCode(regionCode: string) {
+  const code = normalizeCode(regionCode);
+  const dash = code.indexOf("-");
+  return dash === -1 ? code : code.slice(0, dash);
+}
+
 function monthlyClosingRegionRank(regionCode: string) {
-  const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(regionCode as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
+  // A refined district ("UE-1") sorts with its parent region, then by its own code, so the two
+  // Upper Egypt districts stay adjacent and in the reader's expected national order.
+  const base = baseClosingRegionCode(regionCode);
+  const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(base as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
   return index === -1 ? MONTHLY_CLOSING_REGION_ORDER.length : index;
+}
+
+/**
+ * One organogram district assignment for the line being shown — `au_v_line_area_map`'s
+ * `operational_region_code`, named via `au_v_regions`.
+ */
+export type MonthlyClosingDistrict = {
+  areaCode: string;
+  regionCode: string;
+  regionName: string;
+};
+
+/**
+ * Does the organogram merely SUB-DIVIDE the area's own geographic region?
+ *
+ * The closing grid groups areas by the region code their sales rows carry. The People Organogram
+ * (`au.line_area_map.operational_region_code`) is the source of truth for org structure and is
+ * sometimes MORE granular than the flat sheet geography: Anti Infective genuinely runs Upper Egypt
+ * as two districts with two managers — "UE-1" (Minia 1/2, under SEAT-AIF-ADM-UE-1) and "UE-2"
+ * (Assuit 1/2, Sohag 1/2, Qena 1/2, under SEAT-AIF-DM-UE-2) — while `source_of_sales_areas` has a
+ * single flat "UE". Reported as one merged block, neither manager could read their own number.
+ *
+ * But the SAME column also encodes two things that are NOT refinements, and adopting those here
+ * would silently restate district subtotals nobody asked to change:
+ *   • line-specific "Others" parking — Anti Infective CA5/D11/D17/D25/GZ7 -> "OT";
+ *   • a neighbouring district owning one area — Anti Infective GZ6 -> "UE-1", CNS D16 -> "AB".
+ *
+ * So an override is honoured only when the organogram code is the geographic code plus a suffix
+ * ("UE" -> "UE-1"). Verified against production 2026-08-02: across all three lines this matches
+ * exactly Anti Infective UE1,UE2 -> UE-1 and UE3..UE8 -> UE-2, and nothing else — CNS and Pedia
+ * are untouched. Region SUBTOTALS move; no area is added, dropped or double-counted, so the
+ * national grand total is unchanged by construction.
+ */
+export function isClosingRegionRefinement(sheetRegionCode: string, organogramRegionCode: string) {
+  const sheet = normalizeCode(sheetRegionCode);
+  const organogram = normalizeCode(organogramRegionCode);
+  if (!sheet || !organogram || sheet === organogram) return false;
+  return organogram.startsWith(`${sheet}-`);
 }
 
 function emptyClosingCell(): MonthlyClosingCell {
@@ -3278,6 +3335,11 @@ export function buildMonthlyClosingMatrix(input: {
   availableLines: string[];
   availablePeriods: string[];
   cells: MonthlyClosingAggregateCell[];
+  /**
+   * Organogram districts for this line. Only REFINEMENTS are honoured
+   * (see isClosingRegionRefinement); absent ⇒ pure sheet geography, exactly as before.
+   */
+  districts?: MonthlyClosingDistrict[];
   line: string | null;
   period: string | null;
   products: SalesProductReference[];
@@ -3305,9 +3367,39 @@ export function buildMonthlyClosingMatrix(input: {
     targetLookup.set(`${normalizeCode(target.areaCode)} ${normalizeCode(target.productCode)}`, target);
   });
 
+  // Resolve each area's DISTRICT — the organogram's region when it merely sub-divides the area's
+  // own geography, otherwise the sheet region untouched. Computed once and reused by the sort and
+  // the roll-up so the two can never disagree about where an area belongs.
+  const districtByAreaCode = new Map<string, MonthlyClosingDistrict>();
+  (input.districts ?? []).forEach((district) => {
+    const areaCode = normalizeCode(district.areaCode);
+    if (areaCode) districtByAreaCode.set(areaCode, district);
+  });
+  type ResolvedRegion = {
+    baseRegionCode?: string;
+    baseRegionName?: string;
+    regionCode: string;
+    regionName: string;
+  };
+  const regionOf = (area: SalesAreaReference): ResolvedRegion => {
+    const sheetCode = normalizeCode(area.regionCode);
+    const sheetName = normalizeDisplay(area.regionName) || sheetCode;
+    const district = districtByAreaCode.get(normalizeCode(area.areaCode));
+    if (!district || !isClosingRegionRefinement(sheetCode, district.regionCode)) {
+      return { regionCode: sheetCode, regionName: sheetName };
+    }
+    const regionCode = normalizeCode(district.regionCode);
+    return {
+      baseRegionCode: sheetCode,
+      baseRegionName: sheetName,
+      regionCode,
+      regionName: normalizeDisplay(district.regionName) || regionCode,
+    };
+  };
+
   const sortedAreas = [...input.areas].sort((left, right) => {
-    const leftRegion = normalizeCode(left.regionCode);
-    const rightRegion = normalizeCode(right.regionCode);
+    const leftRegion = regionOf(left).regionCode;
+    const rightRegion = regionOf(right).regionCode;
     const rankDelta = monthlyClosingRegionRank(leftRegion) - monthlyClosingRegionRank(rightRegion);
     if (rankDelta !== 0) return rankDelta;
     if (leftRegion !== rightRegion) return leftRegion.localeCompare(rightRegion);
@@ -3315,10 +3407,11 @@ export function buildMonthlyClosingMatrix(input: {
   });
 
   const areaRowsByRegion = new Map<string, MonthlyClosingAreaRow[]>();
-  const regionNames = new Map<string, string>();
+  const regionMeta = new Map<string, ResolvedRegion>();
 
   sortedAreas.forEach((area) => {
-    const regionCode = normalizeCode(area.regionCode);
+    const resolved = regionOf(area);
+    const regionCode = resolved.regionCode;
     const areaCode = normalizeCode(area.areaCode);
     const cells = columns.map((column) => {
       const aggregate = cellLookup.get(`${areaCode} ${column.productCode}`);
@@ -3342,12 +3435,12 @@ export function buildMonthlyClosingMatrix(input: {
       cells,
       kind: "area",
       regionCode,
-      regionName: normalizeDisplay(area.regionName) || regionCode,
+      regionName: resolved.regionName,
       rowTotal: sumClosingRowTotal(cells),
     };
     if (!areaRowsByRegion.has(regionCode)) areaRowsByRegion.set(regionCode, []);
     areaRowsByRegion.get(regionCode)?.push(row);
-    if (!regionNames.has(regionCode)) regionNames.set(regionCode, row.regionName);
+    if (!regionMeta.has(regionCode)) regionMeta.set(regionCode, resolved);
   });
 
   const regions: MonthlyClosingRegionGroup[] = [...areaRowsByRegion.entries()].map(([regionCode, areas]) => {
@@ -3356,9 +3449,12 @@ export function buildMonthlyClosingMatrix(input: {
       areas.forEach((area) => addClosingSales(cell, area.cells[columnIndex]));
       return roundedClosingCell(cell);
     });
-    const regionName = regionNames.get(regionCode) ?? regionCode;
+    const meta = regionMeta.get(regionCode);
+    const regionName = meta?.regionName ?? regionCode;
     return {
       areas,
+      baseRegionCode: meta?.baseRegionCode,
+      baseRegionName: meta?.baseRegionName,
       regionCode,
       regionName,
       subtotal: {
@@ -3433,6 +3529,15 @@ export function injectDirectIntoMatrix(
   });
 
   const regionNameByCode = new Map(matrix.regions.map((region) => [region.regionCode, region.regionName]));
+  // A direct row can still carry the COARSE region an organogram refinement has since split away
+  // (an Anti Infective "UE" direct row now that the grid shows UE-1 / UE-2). It gets its own block
+  // below rather than being silently folded into one district; name it from the region it came
+  // from so it reads as "Upper Egypt", not a bare code.
+  matrix.regions.forEach((region) => {
+    if (region.baseRegionCode && region.baseRegionName && !regionNameByCode.has(region.baseRegionCode)) {
+      regionNameByCode.set(region.baseRegionCode, region.baseRegionName);
+    }
+  });
   const makeDirectArea = (regionCode: string, cells: MonthlyClosingCell[]): MonthlyClosingAreaRow => ({
     areaCode: "DIRECT",
     areaName: "Direct",
@@ -3560,6 +3665,9 @@ export function filterMonthlyClosingMatrix(
 
     regions.push({
       areas,
+      // Carried through so a filtered matrix stays scopeable by the coarse region name.
+      baseRegionCode: region.baseRegionCode,
+      baseRegionName: region.baseRegionName,
       regionCode: region.regionCode,
       regionName: region.regionName,
       subtotal: {
@@ -3688,6 +3796,46 @@ async function listActiveSalesAreas(): Promise<SalesAreaReference[]> {
   );
 }
 
+/**
+ * The organogram's districts for one official line, from the People Organogram wrapper views.
+ *
+ * Names come from `au_v_regions`, NOT `source_of_sales_regions`: au's vocabulary is the more
+ * granular one, so it is the only place a refined code like "UE-1" has a real name ("Upper
+ * Egypt 1"). Returns [] for a line with no organogram mapping (Head Office), which leaves the
+ * grid on pure sheet geography.
+ */
+async function listMonthlyClosingDistricts(officialLine: string): Promise<MonthlyClosingDistrict[]> {
+  const auLineCode = resolveTargetLineCode(officialLine);
+  if (!auLineCode) return [];
+
+  const supabase = getSupabaseAdmin();
+  const [mapResult, regionsResult] = await Promise.all([
+    supabase
+      .from("au_v_line_area_map")
+      .select("area_code,operational_region_code")
+      .eq("line_code", auLineCode),
+    supabase.from("au_v_regions").select("region_code,region_name").eq("is_active", true),
+  ]);
+
+  if (mapResult.error) throw toQueryError(mapResult.error);
+  if (regionsResult.error) throw toQueryError(regionsResult.error);
+
+  const regionNameByCode = new Map<string, string>();
+  (regionsResult.data ?? []).forEach((row) => {
+    const record = row as Record<string, unknown>;
+    const code = normalizeCode(record.region_code);
+    if (code) regionNameByCode.set(code, normalizeDisplay(record.region_name));
+  });
+
+  return (mapResult.data ?? []).flatMap((row) => {
+    const record = row as Record<string, unknown>;
+    const areaCode = normalizeCode(record.area_code);
+    const regionCode = normalizeCode(record.operational_region_code);
+    if (!areaCode || !regionCode) return [];
+    return [{ areaCode, regionCode, regionName: regionNameByCode.get(regionCode) || regionCode }];
+  });
+}
+
 async function listLineProductsForClosing(line: string): Promise<SalesProductReference[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
@@ -3733,15 +3881,19 @@ export async function loadMonthlyClosing(input?: {
   // Without a line or a validated month there is nothing to aggregate — still return the
   // area skeleton + product columns so the UI renders an empty (zeroed) matrix cleanly.
   if (!selectedLine || !selectedPeriod) {
-    const [areas, products] = await Promise.all([
+    const [areas, products, districts] = await Promise.all([
       listActiveSalesAreas(),
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
+      selectedLine
+        ? listMonthlyClosingDistricts(selectedLine).catch(() => [])
+        : Promise.resolve<MonthlyClosingDistrict[]>([]),
     ]);
     return buildMonthlyClosingMatrix({
       areas,
       availableLines,
       availablePeriods,
       cells: [],
+      districts,
       line: selectedLine,
       period: selectedPeriod,
       products,
@@ -3754,7 +3906,7 @@ export async function loadMonthlyClosing(input?: {
   // disagree about a target. A line that resolves to no target code — Head Office — simply gets
   // none, and every target cell renders "—".
   const targetLineCode = resolveTargetLineCode(selectedLine);
-  const [areas, products, aggregateData, directData, targetRows] = await Promise.all([
+  const [areas, products, aggregateData, directData, targetRows, districts] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
@@ -3762,6 +3914,9 @@ export async function loadMonthlyClosing(input?: {
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
+    // Same rule for the organogram: if the seat map is unreachable the grid falls back to plain
+    // sheet geography (one merged "UE") rather than failing the whole closing.
+    listMonthlyClosingDistricts(selectedLine).catch(() => []),
   ]);
 
   const targets: MonthlyClosingTargetCell[] = targetRows
@@ -3792,6 +3947,7 @@ export async function loadMonthlyClosing(input?: {
     availableLines,
     availablePeriods,
     cells,
+    districts,
     line: selectedLine,
     period: selectedPeriod,
     products,
