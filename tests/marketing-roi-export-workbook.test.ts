@@ -80,6 +80,10 @@ function sampleReport(): MarketingRoiReport {
       restrictedExcludedCount: 0,
     },
     appliedFilters: { ...emptyRoiFilterState(), line: ["Anti Inf"] },
+    // No shared claims in this fixture: one request, so nothing to deduct. The field is required
+    // rather than optional precisely so a caller that rebuilds the KPI band has to decide what the
+    // claimed-line ledger is — defaulting it to empty is what let the ROI pages read ~52% high.
+    attributionLines: [],
     autoAppliedByDimension: {},
     includedRestricted: false,
     generatedAtIso: META.generatedAtIso,

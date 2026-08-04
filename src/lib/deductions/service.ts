@@ -894,13 +894,74 @@ async function getEmployeeDirectory(): Promise<Map<string, EmployeeDirectoryEntr
   return map;
 }
 
+export type EmployeeCategoryBucket = { days: number; amount: number; candidateCount: number };
+
 export type EmployeeMonthDeductionSummary = {
   employeeHrId: string;
   employeeName: string | null;
   monthKey: string;
-  byCategory: Partial<Record<DeductionsCandidate["category"], { days: number; amount: number; candidateCount: number }>>;
-  totalAmount: number;
+  /** What pressing Publish right now would actually deduct from THIS employee. */
+  willPublish: Partial<Record<DeductionsCandidate["category"], EmployeeCategoryBucket>>;
+  /** Detected but NOT eligible yet — awaiting a decision. Will not be deducted. */
+  pending: Partial<Record<DeductionsCandidate["category"], EmployeeCategoryBucket>>;
+  willPublishTotal: number;
+  pendingTotal: number;
 };
+
+/**
+ * The per-employee split, pure and exported so it can be tested without a DB.
+ *
+ * Uses `isEligibleForPublish` — the predicate publishMonth itself uses — for the
+ * identical reason getCompanyMonthSummaryByCategory does: six of the seven
+ * categories publish only on an explicit "Approved for Payroll", so summing
+ * every not-cleared candidate tells an employee they will lose money that
+ * publishing will never take. On production 2026-07 that made one person's card
+ * read 6,183.86 EGP against a real deduction of 0.00. Splitting the two figures
+ * here is what keeps the By Employee tab and the Overview tab in agreement by
+ * construction rather than by two hand-maintained rules.
+ */
+export function summarizeEmployeeMonthCandidates(input: {
+  candidates: readonly DeductionsCandidateWithDecision[];
+  monthKey: string;
+}): EmployeeMonthDeductionSummary | null {
+  if (input.candidates.length === 0) return null;
+
+  const willPublish: EmployeeMonthDeductionSummary["willPublish"] = {};
+  const pending: EmployeeMonthDeductionSummary["pending"] = {};
+  let willPublishTotal = 0;
+  let pendingTotal = 0;
+  for (const candidate of input.candidates) {
+    if (candidate.decision?.decisionStatus === "Do Not Take Action") continue;
+    const amount = candidate.decision?.appliedAmount ?? candidate.estimatedAmount ?? 0;
+    const days = candidate.unit === "days" ? (candidate.decision?.appliedValue ?? candidate.rawValue) : 0;
+    const eligible = isEligibleForPublish(candidate);
+    const target = eligible ? willPublish : pending;
+    const entry = target[candidate.category] ?? { days: 0, amount: 0, candidateCount: 0 };
+    entry.days += days;
+    entry.amount += amount;
+    entry.candidateCount += 1;
+    target[candidate.category] = entry;
+    if (eligible) willPublishTotal += amount;
+    else pendingTotal += amount;
+  }
+
+  for (const category of deductionsCategories) {
+    const publishable = willPublish[category];
+    if (publishable) publishable.amount = Math.round(publishable.amount * 100) / 100;
+    const awaiting = pending[category];
+    if (awaiting) awaiting.amount = Math.round(awaiting.amount * 100) / 100;
+  }
+
+  return {
+    employeeHrId: input.candidates[0].employeeHrId,
+    employeeName: input.candidates[0].employeeName,
+    monthKey: normalizeMonthKey(input.monthKey),
+    willPublish,
+    pending,
+    willPublishTotal: Math.round(willPublishTotal * 100) / 100,
+    pendingTotal: Math.round(pendingTotal * 100) / 100,
+  };
+}
 
 /** The per-employee deduction summary — every category's totals for one employee, one month. */
 export async function getEmployeeMonthSummary(input: {
@@ -910,29 +971,7 @@ export async function getEmployeeMonthSummary(input: {
   const compact = compactDeductionsHrId(input.employeeHrId);
   if (!compact) return null;
   const candidates = await listCandidatesForMonth({ monthKey: input.monthKey, employeeHrIdCompact: compact });
-  if (candidates.length === 0) return null;
-
-  const byCategory: EmployeeMonthDeductionSummary["byCategory"] = {};
-  let totalAmount = 0;
-  for (const candidate of candidates) {
-    if (candidate.decision?.decisionStatus === "Do Not Take Action") continue;
-    const amount = candidate.decision?.appliedAmount ?? candidate.estimatedAmount ?? 0;
-    const days = candidate.unit === "days" ? (candidate.decision?.appliedValue ?? candidate.rawValue) : 0;
-    const entry = byCategory[candidate.category] ?? { days: 0, amount: 0, candidateCount: 0 };
-    entry.days += days;
-    entry.amount += amount;
-    entry.candidateCount += 1;
-    byCategory[candidate.category] = entry;
-    totalAmount += amount;
-  }
-
-  return {
-    employeeHrId: candidates[0].employeeHrId,
-    employeeName: candidates[0].employeeName,
-    monthKey: normalizeMonthKey(input.monthKey),
-    byCategory,
-    totalAmount: Math.round(totalAmount * 100) / 100,
-  };
+  return summarizeEmployeeMonthCandidates({ candidates, monthKey: input.monthKey });
 }
 
 export type CategorySummaryBucket = {

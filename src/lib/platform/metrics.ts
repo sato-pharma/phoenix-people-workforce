@@ -20,6 +20,7 @@ import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
 import { getProbationRows } from "@/lib/probation/service";
 import { buildRecruitmentOnboardingMetrics } from "@/lib/recruitment/onboarding-metrics";
+import { classifyOrganogramStructureLevel, seatOccupancyKey } from "@/lib/reports/organogram-safety";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { buildVacationPlatformMetrics } from "@/lib/vacation/metrics";
 import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
@@ -192,12 +193,114 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// A fixed structural seat, in the shape the organogram's own occupancy key reads.
+// Every field is optional so an employee directory row and a position_vacancies
+// lookup row can both be passed straight through without a per-caller adapter.
+type WorkforceSeatRow = {
+  areaName?: string | null;
+  jobTitle?: string | null;
+  lineName?: string | null;
+  managerHrId?: string | null;
+  managerName?: string | null;
+  positionTitle?: string | null;
+};
+
+type WorkforceVacancySeatRow = WorkforceSeatRow & {
+  // Two distinct position_vacancies columns carry the seat-continuity marker and
+  // callers expose different ones — the organogram row model surfaces
+  // manager_replacement_for_hr_id, the employee-directory lookup surfaces
+  // replacement_for_hr_id. Reading only one of them silently drops the marker for
+  // the other caller and hides a seat that is genuinely placeable.
+  managerReplacementForHrId?: string | null;
+  replacementForHrId?: string | null;
+  vacancyCode?: string | null;
+};
+
 type WorkforceMetricDirectory = {
-  employees: Array<Pick<EmployeeDirectoryData["employees"][number], "areaName" | "employmentStatus" | "fullName" | "hrId" | "lineName" | "managerHrId">>;
+  employees: Array<
+    Pick<EmployeeDirectoryData["employees"][number], "areaName" | "employmentStatus" | "fullName" | "hrId" | "lineName" | "managerHrId"> &
+      WorkforceSeatRow
+  >;
   lookups: {
-    workforceVacancies: Array<{ vacancyCode?: string | null }>;
+    workforceVacancies: WorkforceVacancySeatRow[];
   };
 };
+
+function organogramSeat(row: WorkforceSeatRow) {
+  return {
+    areaName: row.areaName ?? null,
+    jobTitle: row.jobTitle ?? null,
+    lineName: row.lineName ?? null,
+    managerHrId: row.managerHrId ?? null,
+    managerName: row.managerName ?? null,
+    positionTitle: row.positionTitle ?? null,
+  };
+}
+
+/**
+ * Open vacancies collapsed to DISTINCT UNOCCUPIED SEATS — the same figure the
+ * Organogram and the Vacancy Report show.
+ *
+ * `position_vacancies` stores one row per vacancy EVENT, not one per seat. A seat
+ * that emptied twice carries two open rows, and a seat an active employee has
+ * since taken keeps its stale open row because the hire path only closes a
+ * vacancy it can positively match. Counting rows therefore inflates the number —
+ * in production 45 open rows stand for 33 real seats, 7 of those rows sitting on
+ * seats somebody already occupies — and every "total structure" derived from it
+ * inherits the inflation. Occupancy decides filled-vs-vacant here, never the
+ * mutable `status` column, which is why the key comes from organogram-safety
+ * instead of a third private copy of the same rule.
+ */
+export function countUnoccupiedWorkforceSeats(input: {
+  employees: WorkforceSeatRow[];
+  vacancies: WorkforceVacancySeatRow[];
+}) {
+  const occupiedSeatKeys = new Set<string>();
+  for (const employee of input.employees) {
+    const key = seatOccupancyKey(organogramSeat(employee));
+    if (key) occupiedSeatKeys.add(key);
+  }
+
+  const countedSeatKeys = new Set<string>();
+  const countedVacancyCodes = new Set<string>();
+  let openSeats = 0;
+
+  for (const vacancy of input.vacancies) {
+    const seat = organogramSeat(vacancy);
+    const level = classifyOrganogramStructureLevel(seat);
+
+    // A vacant DSM/RSM/NSM seat has to report to a known manager to be placeable
+    // in the structure; one with neither a manager nor a seat-continuity marker is
+    // orphaned import debris that the organogram hides, so counting it here would
+    // put the tile back above the chart it is supposed to agree with.
+    const isManagerSeat = level === "dsm" || level === "nsm" || level === "rsm";
+    const seatContinuityHrId =
+      vacancy.managerReplacementForHrId ?? vacancy.replacementForHrId ?? "";
+    if (isManagerSeat && !String(vacancy.managerHrId ?? "").trim() && !String(seatContinuityHrId).trim()) {
+      continue;
+    }
+
+    const seatKey = seatOccupancyKey(seat);
+    if (seatKey) {
+      if (occupiedSeatKeys.has(seatKey) || countedSeatKeys.has(seatKey)) continue;
+      countedSeatKeys.add(seatKey);
+      openSeats += 1;
+      continue;
+    }
+
+    // No resolvable seat — a non-sales role such as a Head Office position, or a
+    // row missing area/line/manager. Those are never suppressed on a guess, only
+    // deduped by code, so a genuinely under-specified vacancy still counts once.
+    const vacancyCode = String(vacancy.vacancyCode ?? "").trim().toUpperCase();
+    if (vacancyCode) {
+      if (countedVacancyCodes.has(vacancyCode)) continue;
+      countedVacancyCodes.add(vacancyCode);
+    }
+    openSeats += 1;
+  }
+
+  return openSeats;
+}
 
 export function canReadCompanyWorkforceAggregates(context: Pick<AccessContext, "role" | "scope" | "source">) {
   if (context.source === "guest" || context.scope === "none") return false;
@@ -218,13 +321,19 @@ export function buildCompanyWorkforceAggregateMetrics(directory: WorkforceMetric
   const employees = directory.employees.filter((employee) =>
     !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
   );
-  const activeEmployees = employees.filter((employee) =>
+  const activeEmployeeRows = employees.filter((employee) =>
     ["active", "on_leave"].includes(String(employee.employmentStatus ?? "").trim().toLowerCase()),
-  ).length;
+  );
+  const activeEmployees = activeEmployeeRows.length;
   const totalEmployees = employees.length;
-  const openVacancies = directory.lookups.workforceVacancies
-    .filter((vacancy) => !isDisposableFixtureText(vacancy.vacancyCode))
-    .length;
+  // Only ACTIVE employees may mark a seat occupied — a resigned person's seat has
+  // to stay countable as vacant, which is the whole point of keying on occupancy.
+  const openVacancies = countUnoccupiedWorkforceSeats({
+    employees: activeEmployeeRows,
+    vacancies: directory.lookups.workforceVacancies.filter(
+      (vacancy) => !isDisposableFixtureText(vacancy.vacancyCode),
+    ),
+  });
   const structure = calculateWorkforceStructureSummary({ activeEmployees, openVacancies });
 
   return {

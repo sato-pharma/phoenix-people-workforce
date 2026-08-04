@@ -19,6 +19,9 @@ const summaryColumns: Array<{ key: keyof MonthlyAttendanceSummaryRow; label: str
   { key: "expectedWorkingDays", label: "Expected Days" },
   { key: "presentDays", label: "Present" },
   { key: "absentDays", label: "Absent" },
+  // Days the attendance device delivered nothing at all. Shown next to Absent so a reader can see
+  // at a glance that a low Present count is missing data rather than missing people.
+  { key: "noDataDays", label: "No Data" },
   { key: "leaveDays", label: "On Leave" },
   { key: "holidayDays", label: "Holidays" },
   { key: "lateCount", label: "Late" },
@@ -80,11 +83,22 @@ export async function generateMonthlyAttendanceSummaryWorkbook(data: MonthlyAtte
   sheet.getCell(1, 1).value = `Monthly Attendance Summary — ${data.month}`;
 
   sheet.mergeCells(2, 1, 2, columnCount);
+  // The absence figures must never leave this file looking complete when they are not: a day the
+  // attendance device never reported is excluded from Expected/Absent upstream, and is called out
+  // here so nobody reads a quiet month as a well-behaved one.
+  const missingDataNote = data.missingDataDates.length > 0
+    ? ` | INCOMPLETE — no attendance data for ${data.missingDataDates.length} working ` +
+      `${data.missingDataDates.length === 1 ? "day" : "days"} (${data.missingDataDates.join(", ")}), ` +
+      `excluded from Expected and Absent`
+    : "";
   sheet.getCell(2, 1).value =
     `Period: ${data.dateFrom} to ${data.dateTo} | Employees: ${data.totals.employees} | ` +
     `Expected: ${data.totals.expectedWorkingDays} | Present: ${data.totals.presentDays} | ` +
-    `Absent: ${data.totals.absentDays} (${data.totals.absenceRate}%) | Late: ${data.totals.lateCount}`;
-  sheet.getCell(2, 1).font = { color: { argb: "FF475569" }, italic: true };
+    `Absent: ${data.totals.absentDays} (${data.totals.absenceRate}%) | Late: ${data.totals.lateCount}` +
+    missingDataNote;
+  sheet.getCell(2, 1).font = data.missingDataDates.length > 0
+    ? { bold: true, color: { argb: "FFB91C1C" } }
+    : { color: { argb: "FF475569" }, italic: true };
   sheet.getCell(2, 1).alignment = { horizontal: "center" };
 
   sheet.mergeCells(3, 1, 3, columnCount);

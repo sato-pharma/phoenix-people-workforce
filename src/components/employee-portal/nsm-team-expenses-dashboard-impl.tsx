@@ -16,6 +16,11 @@ import { SafeResponsiveContainer } from "@/components/charts/safe-responsive-con
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import type { NsmTeamExpensesData } from "@/lib/employee-portal/service";
+import {
+  EXPENSE_STATE_LABEL,
+  expenseApprovalState,
+  type ExpenseApprovalState,
+} from "@/lib/outstation/approval-state";
 import { formatEmployeeDisplayName } from "@/lib/utils";
 
 /* ---------- helpers ---------- */
@@ -71,6 +76,21 @@ function expenseColor(value: number, maxValue: number): string {
   if (ratio >= 0.4) return "#f59e0b"; // amber
   return "#10b981"; // green – lower spenders
 }
+
+/**
+ * Trip status colours, one entry per approval state.
+ *
+ * Approval is 3-state; keying these off `hrApproved` alone painted every rejected trip amber and
+ * labelled it Pending, on the same page whose Pending stat card deliberately excludes it.
+ */
+const stateTone: Record<
+  ExpenseApprovalState,
+  { accent: string; background: string; text: string }
+> = {
+  approved: { accent: "#10b981", background: "#dcfce7", text: "#15803d" },
+  pending: { accent: "#f59e0b", background: "#fef3c7", text: "#92400e" },
+  rejected: { accent: "#f43f5e", background: "#ffe4e6", text: "#be123c" },
+};
 
 /** Thin left-border color per stat context. */
 const statBorders: Record<string, string> = {
@@ -421,54 +441,56 @@ export function NsmTeamExpensesDashboard({
 
         {/* Mobile card view */}
         <div className="grid gap-2.5 md:hidden">
-          {data.expenseRows.slice(0, 20).map((expense) => (
-            <div
-              className="relative min-w-0 overflow-hidden rounded border border-slate-100 bg-white shadow-sm"
-              key={`${expense.tripId}-${expense.date}-${expense.dsmName}`}
-            >
+          {data.expenseRows.slice(0, 20).map((expense) => {
+            const state = expenseApprovalState(expense);
+            const tone = stateTone[state];
+
+            return (
               <div
-                className="absolute inset-y-0 left-0 w-[3px]"
-                style={{ backgroundColor: expense.hrApproved ? "#10b981" : "#f59e0b" }}
-              />
-              <div className="pl-4 pr-3 pt-3 pb-2.5">
-                <div className="flex items-start gap-2.5">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words text-sm font-semibold leading-tight text-slate-900">
-                      {expense.dsmName}
-                    </p>
-                    <p className="mt-0.5 text-[10px] text-slate-400">
-                      {formatDate(expense.date)} · Trip #{expense.tripId || "N/A"}
+                className="relative min-w-0 overflow-hidden rounded border border-slate-100 bg-white shadow-sm"
+                key={`${expense.tripId}-${expense.date}-${expense.dsmName}`}
+              >
+                <div
+                  className="absolute inset-y-0 left-0 w-[3px]"
+                  style={{ backgroundColor: tone.accent }}
+                />
+                <div className="pl-4 pr-3 pt-3 pb-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="break-words text-sm font-semibold leading-tight text-slate-900">
+                        {expense.dsmName}
+                      </p>
+                      <p className="mt-0.5 text-[10px] text-slate-400">
+                        {formatDate(expense.date)} · Trip #{expense.tripId || "N/A"}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-base font-bold text-slate-900">
+                      {egp(expense.total)}
                     </p>
                   </div>
-                  <p className="shrink-0 text-base font-bold text-slate-900">
-                    {egp(expense.total)}
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span
+                      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
+                      style={{ backgroundColor: tone.background, color: tone.text }}
+                    >
+                      {EXPENSE_STATE_LABEL[state]}
+                    </span>
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      {expense.requestType || "Other"}
+                    </span>
+                    <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                      {formatKm(expense.km)}
+                    </span>
+                  </div>
+
+                  <p className="mt-1.5 break-words text-[10px] text-slate-400">
+                    {formatRoute(expense.from, expense.to)}
                   </p>
                 </div>
-
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  <span
-                    className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: expense.hrApproved ? "#dcfce7" : "#fef3c7",
-                      color: expense.hrApproved ? "#15803d" : "#92400e",
-                    }}
-                  >
-                    {expense.hrApproved ? "Approved" : "Pending"}
-                  </span>
-                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                    {expense.requestType || "Other"}
-                  </span>
-                  <span className="inline-flex items-center rounded bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
-                    {formatKm(expense.km)}
-                  </span>
-                </div>
-
-                <p className="mt-1.5 break-words text-[10px] text-slate-400">
-                  {formatRoute(expense.from, expense.to)}
-                </p>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Desktop table view */}
@@ -487,46 +509,50 @@ export function NsmTeamExpensesDashboard({
               </tr>
             </thead>
             <tbody>
-              {data.expenseRows.slice(0, 20).map((expense) => (
-                <tr
-                  key={`${expense.tripId}-${expense.date}-${expense.dsmName}`}
-                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
-                >
-                  <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
-                    <p className="break-words font-medium leading-tight text-slate-900">{expense.dsmName}</p>
-                    <p className="text-[10px] text-slate-400">{expense.hrId ?? "N/A"}</p>
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
-                    {expense.tripId || "N/A"}
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
-                    {formatDate(expense.date)}
-                  </td>
-                  <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
-                    {expense.requestType || "Other"}
-                  </td>
-                  <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
-                    <p className="break-words text-slate-700">{formatRoute(expense.from, expense.to)}</p>
-                  </td>
-                  <td className="py-2.5 px-3 text-right font-medium text-slate-900 border-r border-slate-100">
-                    {egp(expense.total)}
-                  </td>
-                  <td className="py-2.5 px-3 text-right text-slate-700 border-r border-slate-100">
-                    {formatKm(expense.km)}
-                  </td>
-                  <td className="py-2.5 px-3 text-center">
-                    <span
-                      className="inline-flex rounded px-2 py-0.5 text-[11px] font-semibold"
-                      style={{
-                        backgroundColor: expense.hrApproved ? "#dcfce7" : "#fef3c7",
-                        color: expense.hrApproved ? "#15803d" : "#92400e",
-                      }}
-                    >
-                      {expense.hrApproved ? "Approved" : "Pending"}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {data.expenseRows.slice(0, 20).map((expense) => {
+                const state = expenseApprovalState(expense);
+
+                return (
+                  <tr
+                    key={`${expense.tripId}-${expense.date}-${expense.dsmName}`}
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                  >
+                    <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
+                      <p className="break-words font-medium leading-tight text-slate-900">{expense.dsmName}</p>
+                      <p className="text-[10px] text-slate-400">{expense.hrId ?? "N/A"}</p>
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
+                      {expense.tripId || "N/A"}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
+                      {formatDate(expense.date)}
+                    </td>
+                    <td className="py-2.5 px-3 text-slate-700 border-r border-slate-100">
+                      {expense.requestType || "Other"}
+                    </td>
+                    <td className="min-w-0 py-2.5 px-3 border-r border-slate-100">
+                      <p className="break-words text-slate-700">{formatRoute(expense.from, expense.to)}</p>
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-slate-900 border-r border-slate-100">
+                      {egp(expense.total)}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-slate-700 border-r border-slate-100">
+                      {formatKm(expense.km)}
+                    </td>
+                    <td className="py-2.5 px-3 text-center">
+                      <span
+                        className="inline-flex rounded px-2 py-0.5 text-[11px] font-semibold"
+                        style={{
+                          backgroundColor: stateTone[state].background,
+                          color: stateTone[state].text,
+                        }}
+                      >
+                        {EXPENSE_STATE_LABEL[state]}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

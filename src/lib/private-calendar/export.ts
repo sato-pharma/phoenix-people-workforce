@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import type { PrivateCalendarEmployeeOption, PrivateCalendarSeverity, PrivateCalendarWorkspace } from "@/lib/private-calendar/logic";
-import { privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
+import { privateCalendarItemOccursOn, privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
 
 // Phoenix-identity export for the private calendar.
 // Every calendar day of the month gets exactly one row in a single table — never
@@ -10,6 +10,18 @@ import { privateCalendarSourceLabels } from "@/lib/private-calendar/logic";
 // reads as one clear, continuous list. Days with no recognized item fall back to
 // that day's exception (if any) or a plain "-" (non-workday / nothing to report).
 // Columns: Date · Day · [Employee, team exports only] · Source · Activity · Status · Time · Detail
+//
+// This module holds no filter rules of its own: it renders exactly the items and exceptions the
+// workspace carries, and re-deriving the screen's filter predicate here would be a second copy of
+// it, free to drift from the one the calendar applies.
+//
+// KNOWN GAP, not fixed here: the caller does not hand it a filtered workspace either. The export
+// link in src/components/employee-portal/private-calendar.tsx passes only year/month/employeeHrId/
+// view/actualOnly, while source, status, employee, department, line, exception-only, the search
+// box and the hidden-source toggles all live in client state and never reach
+// /api/private-calendar/export. So the sheet is always the UNFILTERED month. Closing that means
+// carrying those filters on the export URL and applying them where the workspace is built — a
+// change to the component and the route, not to this file.
 
 const X = {
   slate900: "FF0F172A",
@@ -107,6 +119,11 @@ function exportEmployees(workspace: PrivateCalendarWorkspace): PrivateCalendarEm
 // One row per calendar day per employee — every day of the month is represented,
 // not just days with a recognized item, and exceptions are folded straight into
 // that day's row instead of living in a separate table.
+//
+// Day membership goes through privateCalendarItemOccursOn, the same start..end test the on-screen
+// month grid uses, so a multi-day item lands on every day it covers. Matching on startDate alone put
+// a 4-day vacation or a multi-day Eid on its first day only and left the remaining days reading "-",
+// i.e. "nothing to report" — and this sheet is the artifact HR keeps.
 function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
   const dates = monthDatesFromWeeks(workspace.weeks);
   const employees = exportEmployees(workspace);
@@ -116,7 +133,7 @@ function buildExportRows(workspace: PrivateCalendarWorkspace): ExportDayRow[] {
   for (const employee of employees) {
     for (const date of dates) {
       const dayItems = workspace.items.filter(
-        (item) => item.startDate === date && (!multiEmployee || item.employeeHrId === employee.hrId),
+        (item) => privateCalendarItemOccursOn(item, date) && (!multiEmployee || item.employeeHrId === employee.hrId),
       );
       const dayExceptions = workspace.exceptions.filter(
         (exception) => exception.date === date && (!multiEmployee || exception.employeeHrId === employee.hrId),

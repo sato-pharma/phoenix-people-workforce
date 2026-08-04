@@ -182,7 +182,7 @@ export async function getMarketingRoiTracker(
   const scopedRows = full.rows.filter((row) => (originById.get(row.requestId) ?? "phoenix") === origin);
   const report = {
     ...full,
-    kpi: buildKpiBand(scopedRows, full.kpi.salesDataAsOf ?? null, full.kpi.restrictedExcludedCount ?? 0),
+    kpi: buildKpiBand(scopedRows, full.kpi.salesDataAsOf ?? null, full.kpi.restrictedExcludedCount ?? 0, full.attributionLines),
     rows: scopedRows,
   };
 

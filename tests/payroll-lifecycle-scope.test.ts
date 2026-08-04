@@ -4,12 +4,15 @@ import { readFileSync } from "node:fs";
 import { isPayrollIneligibleEmployee } from "../src/lib/payroll/eligibility.ts";
 
 /**
- * WP-4 regression coverage: payroll read views (dashboard / export) must exclude
- * terminal and payroll-ineligible employees, and the Payslips Center data-layer
- * functions must enforce a company-scope access guard. The payroll service and
- * payslip-center modules are env-bound (Supabase admin client), so the pure rule
- * is unit-tested directly and the service wiring is locked via source assertions
- * (mirroring tests/vacation-module and tests/workforce-hierarchy-continuity).
+ * WP-4 regression coverage for the payroll eligibility rule and the Payslips Center
+ * company-scope guard. The rule answers a BUILD-time question — who belongs in a new
+ * batch — and is consumed by the payroll template roster and the automated-payroll
+ * recommender. It is deliberately absent from the payroll read views: an existing
+ * batch's membership is historical, so filtering it by today's employment removes
+ * people who were legitimately paid (see tests/payroll-batch-membership.test.ts).
+ * The service and payslip-center modules are env-bound (Supabase admin client), so
+ * the pure rule is unit-tested directly and the wiring is locked via source
+ * assertions (mirroring tests/vacation-module and tests/workforce-hierarchy-continuity).
  */
 export function runPayrollLifecycleScopeTests() {
   // -- Pure eligibility rule.
@@ -59,57 +62,35 @@ export function runPayrollLifecycleScopeTests() {
     "payroll_eligible=false employee is excluded",
   );
 
-  // -- Wiring: payroll service applies the blocklist on top of access scope.
+  // -- Wiring: the eligibility rule belongs to the BUILD path, not the read path.
+  //    Applying it to an existing batch is the defect covered by
+  //    tests/payroll-batch-membership.test.ts, which asserts its absence here.
   const serviceSource = readFileSync(
     new URL("../src/lib/payroll/service.ts", import.meta.url),
     "utf8",
   );
+  const templateRouteSource = readFileSync(
+    new URL("../app/api/payroll/template/route.ts", import.meta.url),
+    "utf8",
+  );
   assert.match(
-    serviceSource,
+    templateRouteSource,
     /getEmployeeDirectoryRows\(\{ includeInactive: true \}\)/,
-    "ineligibility blocklist must be built from the full roster (including inactive)",
+    "the new-batch roster must be built from the full roster (including inactive) so a mid-month leaver is still offered for their final pay",
   );
   assert.match(
-    serviceSource,
-    /isPayrollIneligibleEmployee\(employee\)/,
-    "blocklist must use the canonical payroll eligibility rule",
-  );
-  assert.match(
-    serviceSource,
-    /ineligibleHrIds/,
-    "access filter must carry the lifecycle/eligibility blocklist",
-  );
-  assert.match(
-    serviceSource,
-    /!isPayrollRecordIneligible\(row, accessFilter\.ineligibleHrIds\)/,
-    "record filtering must drop ineligible employees (incl. COMPANY/system)",
-  );
-  assert.match(
-    serviceSource,
-    /!isPayrollFlagIneligible\(row, accessFilter\.ineligibleHrIds\)/,
-    "flag filtering must drop ineligible employees",
+    templateRouteSource,
+    /isTerminalPayrollEmployeeForPeriod\(employee, month, year\)/,
+    "the new-batch roster must decide leavers per PERIOD, not by today's status",
   );
 
-  // -- SELF-scope carve-out: self-service reads keep the viewer's own payslips
-  //    (even if payroll_eligible=false) but remain strictly self-only.
-  assert.match(
-    serviceSource,
-    /accessContext\.scope !== "system" && getPayrollScope\(accessContext\) === "SELF"/,
-    "self-scope reads must be detected for the eligibility carve-out",
-  );
-  assert.match(
-    serviceSource,
-    /isSelfScopeRead \? Promise\.resolve\(new Set<string>\(\)\) : buildPayrollIneligibleHrIdSet\(\)/,
-    "self-scope must skip the eligibility blocklist; company/system keeps it",
-  );
   // SELF scope still restricts records to the viewer's own HR_ID (self-only).
   assert.match(
     serviceSource,
     /payrollScope === "SELF"[\s\S]*allowedHrIds: new Set\(\[currentHrId\]\)/,
     "SELF scope must restrict allowed records to the viewer only",
   );
-  // The blocklist is still applied via scope (isPayrollRecordInScope) so the
-  // carve-out never broadens visibility beyond the viewer.
+  // Scope is the sole limb of the read filter, so it alone bounds visibility.
   assert.match(
     serviceSource,
     /isPayrollRecordInScope\(row, accessFilter\.allowedHrIds\)/,

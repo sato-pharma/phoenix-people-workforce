@@ -12,10 +12,11 @@
 // which took every unpaid_duration_days > 0 row with no reason filter at all.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { canonicalHrIdKey } from "@/lib/hr-id.ts";
 import { scanVisitsForRangeIncludingDeparted } from "@/lib/crm/reads.ts";
 import { calculatePaymentForRequest } from "@/lib/vacation/service.ts";
 import { getBaseSalaryMap } from "@/lib/payroll/copilot/feeders.ts";
-import { assertBaseSalaryMapLoaded } from "./health.ts";
+import { assertBaseSalaryMapLoaded, assertSourceScanned } from "./health.ts";
 import { calculateDeductionAmountFromBaseSalary } from "../calculations.ts";
 import { compactDeductionsHrId } from "../candidate-key.ts";
 import type { DeductionsCandidateDraft, DeductionsCategory } from "../types.ts";
@@ -405,6 +406,12 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   // (scanVisitsForRangeIncludingDeparted throws on failure rather than returning empty.)
   if (employeeError) throw new Error(`Vacation connector: employees read failed: ${employeeError.message}`);
   if (requestError) throw new Error(`Vacation connector: vacation request read failed: ${requestError.message}`);
+  // This scan now feeds a RECONCILE, not an insert-only pass: a day it does not
+  // return is superseded in the ledger. An empty mirror would therefore RETRACT
+  // vacation days that really happened, not merely miss them, so zero visits
+  // company-wide for a whole month has to fail the run. Zero ANNUAL-LEAVE rows is
+  // a legitimate answer and is checked against the whole scan, not the -4 subset.
+  assertSourceScanned("Vacation connector (CRM source)", visits.length, "the iReports360 visit mirror");
   const visitRows = visits.filter((visit) => Number(visit.visit_type) === CRM_ANNUAL_VACATION_VISIT_TYPE);
 
   // MIXED DAYS: a date carrying BOTH a vacation record and real work.
@@ -438,9 +445,13 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     if (crmId) employeeByCrmId.set(crmId, { hrId: row.hr_id, name: row.full_name, hireDate: row.hire_date });
   }
 
+  // Keyed canonically, never on the raw string. The two sides come from different
+  // tables (employees.hr_id vs v2_vacation_requests.employee_hr_id); a case or
+  // spacing difference between them would silently miss the coverage lookup, and
+  // a missed lookup here is a day charged twice, not a cosmetic mismatch.
   const coveredByHrId = new Map<string, Array<{ start: string; end: string }>>();
   for (const row of (requestRows ?? []) as Array<{ employee_hr_id: string | null; start_date: string | null; end_date: string | null }>) {
-    const hrId = String(row.employee_hr_id ?? "").trim();
+    const hrId = canonicalHrIdKey(row.employee_hr_id);
     if (!hrId || !row.start_date) continue;
     const list = coveredByHrId.get(hrId) ?? [];
     list.push({ start: String(row.start_date).slice(0, 10), end: String(row.end_date ?? row.start_date).slice(0, 10) });
@@ -458,7 +469,9 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
     if (!employee) continue;
     const day = String(visit.visit_date ?? "").slice(0, 10);
     if (!day) continue;
-    const covered = (coveredByHrId.get(employee.hrId) ?? []).some((range) => day >= range.start && day <= range.end);
+    const covered = (coveredByHrId.get(canonicalHrIdKey(employee.hrId) ?? "") ?? []).some(
+      (range) => day >= range.start && day <= range.end,
+    );
     // An HR request already covers this day — the request path above owns it, and taking
     // it here too would double-book the same absence.
     if (covered) continue;
@@ -565,6 +578,52 @@ async function collectCrmSubmittedUnpaidVacationDays(input: {
   return drafts;
 }
 
+/**
+ * ONE EMPLOYEE-DAY OF UNPAID VACATION IS CHARGEABLE ONCE, AND THE HR REQUEST WINS.
+ *
+ * It is the human-filed record: someone applied, a manager approved it, and the
+ * balance engine priced it. A CRM annual-leave record is a detection of the same
+ * absence, so where both describe a day, only the request may charge it.
+ *
+ * The CRM scan already skips a day an HR request covers, but that guard is one
+ * directional and buried inside the scan, so it holds only for the two drafts of
+ * a single run. Stating the rule here — where the two sources are combined, and
+ * where the next reader looks — is what stops a future widening of either query
+ * from reintroducing the duplicate. It is also the only form of the rule that
+ * can be unit-tested: both sources are Supabase-backed, this is not.
+ *
+ * The stale half of the pair is a separate problem: a CRM candidate written
+ * before the request was filed stays live, and the (category, candidate_key)
+ * unique index cannot see it because the two keys differ only by their source
+ * prefix. `collect.ts` reconciles this category so that older row is superseded
+ * rather than left to charge the same day again (July 2026 production: 19
+ * employee-days, 8,822.54 EGP).
+ */
+export function mergeVacationSourcesHrRequestWins(input: {
+  fromCrm: readonly DeductionsCandidateDraft[];
+  fromRequests: readonly DeductionsCandidateDraft[];
+}): DeductionsCandidateDraft[] {
+  const claimedByRequest = new Set<string>();
+  for (const draft of input.fromRequests) {
+    const hrKey = canonicalHrIdKey(draft.employeeHrId);
+    if (!hrKey) continue;
+    for (const date of draft.dates) {
+      claimedByRequest.add(`${hrKey}:${date}`);
+    }
+  }
+
+  const crmDraftsNotAlreadyClaimed = input.fromCrm.filter((draft) => {
+    const hrKey = canonicalHrIdKey(draft.employeeHrId);
+    // An unidentifiable employee cannot be matched against a request, and
+    // dropping it here would silently lose a real absence — the service layer
+    // rejects the draft and reports it instead.
+    if (!hrKey) return true;
+    return !draft.dates.some((date) => claimedByRequest.has(`${hrKey}:${date}`));
+  });
+
+  return [...input.fromRequests, ...crmDraftsNotAlreadyClaimed];
+}
+
 export async function collectUnpaidVacationCandidates(input: {
   month: number;
   year: number;
@@ -579,7 +638,7 @@ export async function collectUnpaidVacationCandidates(input: {
     }),
     collectCrmSubmittedUnpaidVacationDays({ ...input, category: "unpaid_vacation", unpaidReasons }),
   ]);
-  return [...fromRequests, ...fromCrm];
+  return mergeVacationSourcesHrRequestWins({ fromCrm, fromRequests });
 }
 
 export async function collectInsufficientBalanceVacationCandidates(input: {
@@ -596,5 +655,5 @@ export async function collectInsufficientBalanceVacationCandidates(input: {
     }),
     collectCrmSubmittedUnpaidVacationDays({ ...input, category: "insufficient_balance_vacation", unpaidReasons }),
   ]);
-  return [...fromRequests, ...fromCrm];
+  return mergeVacationSourcesHrRequestWins({ fromCrm, fromRequests });
 }

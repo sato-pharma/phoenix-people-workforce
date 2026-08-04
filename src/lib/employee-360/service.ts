@@ -477,30 +477,32 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
   const avgLastHour = mean(lasts);
   const avgSpanHours = avgFirstHour != null && avgLastHour != null ? avgLastHour - avgFirstHour : null;
 
-  // per-month coverage trend (check-in days ÷ productive active days)
   const activeDaysByMonth = new Map<string, Set<string>>();
+  const gpsDays = new Set(perDay.keys());
+  const visitDays = new Set<string>();
   for (const v of visits) {
     if (isProductiveVisit(v) && v.visit_date) {
+      visitDays.add(v.visit_date);
       const m = v.visit_date.slice(0, 7);
       const s = activeDaysByMonth.get(m) ?? new Set<string>();
       s.add(v.visit_date);
       activeDaysByMonth.set(m, s);
     }
   }
+
+  // Coverage is "how many of your ACTIVE days carry a GPS check-in", so both sides of the ratio
+  // count the same days. Dividing every GPS day by active days mixed two populations: a check-in
+  // logged on a day with no productive visit pushed the share past 100% for 6 of the 92 live reps,
+  // one of them to 150%, which reads as better-than-perfect corroboration.
+  const corroboratedDays = new Set(Array.from(visitDays).filter((day) => gpsDays.has(day)));
+  const uncorroboratedDays = visitDays.size - corroboratedDays.size;
+
+  // per-month coverage trend (corroborated active days ÷ productive active days)
   const months = Array.from(new Set([...activeDaysByMonth.keys(), ...monthDays.keys()])).sort();
   const coverageTrend = months.map((month) => {
-    const active = activeDaysByMonth.get(month)?.size ?? 0;
-    const gps = monthDays.get(month)?.size ?? 0;
-    return { month, coverage: active > 0 ? gps / active : null };
-  });
-
-  // uncorroborated: productive visit days with no GPS check-in that day
-  const gpsDays = new Set(perDay.keys());
-  const visitDays = new Set<string>();
-  for (const v of visits) if (isProductiveVisit(v) && v.visit_date) visitDays.add(v.visit_date);
-  let uncorroboratedDays = 0;
-  visitDays.forEach((d) => {
-    if (!gpsDays.has(d)) uncorroboratedDays += 1;
+    const active = activeDaysByMonth.get(month) ?? new Set<string>();
+    const corroborated = Array.from(active).filter((day) => gpsDays.has(day)).length;
+    return { month, coverage: active.size > 0 ? corroborated / active.size : null };
   });
 
   const fmtHour = (h: number | null) => {
@@ -509,11 +511,11 @@ export function summarizeCheckins(checkins: CheckinRow[], visits: VisitRow[], vi
     const mm = Math.round((h - hh) * 60);
     return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   };
-  const coverage = visitSummary.activeDays > 0 ? distinctCheckinDays / visitSummary.activeDays : null;
+  const coverage = visitSummary.activeDays > 0 ? corroboratedDays.size / visitSummary.activeDays : null;
   const summaryText =
     checkinCount === 0
       ? "No GPS check-ins were logged — timing and authenticity cannot be assessed (usually the mobile app GPS is off)."
-      : `${checkinCount.toLocaleString()} GPS check-ins across ${distinctCheckinDays} days (${Math.round((coverage ?? 0) * 100)}% of active days). ` +
+      : `${checkinCount.toLocaleString()} GPS check-ins across ${distinctCheckinDays} days (${Math.round((coverage ?? 0) * 100)}% of active days corroborated). ` +
         `Typical field window ${fmtHour(avgFirstHour)}–${fmtHour(avgLastHour)} (~${avgSpanHours?.toFixed(1)}h). ` +
         `${uncorroboratedDays} visit day(s) had no GPS. ${locations.size} distinct locations; ` +
         `${Math.round((lateNight / checkinCount) * 100)}% of check-ins fall after 22:00.`;

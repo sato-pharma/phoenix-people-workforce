@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation";
 import { Check, ChevronDown, ChevronUp, Download, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import {
+  companyVacationReportFilterParams,
+  filterCompanyVacationReportRows,
+  type CompanyVacationHasBalanceFilter,
+  type CompanyVacationReportFilters,
+} from "@/lib/vacation/company-vacation-report-filters";
 import type { CompanyVacationReportRow, CompanyVacationReportSource } from "@/lib/vacation/company-vacation-report";
 
 const SOURCE_BADGE_CLASS: Record<CompanyVacationReportSource, string> = {
@@ -40,13 +46,6 @@ function isCrmSignalSource(source: CompanyVacationReportSource) {
 
 function rowKey(row: CompanyVacationReportRow) {
   return `${row.hrId}|${row.startDate}|${row.source}`;
-}
-
-type HasBalanceFilter = "All" | "Yes" | "No" | "N/A";
-
-function hasBalanceFilterValue(row: CompanyVacationReportRow): HasBalanceFilter {
-  if (row.hasBalance === null) return "N/A";
-  return row.hasBalance ? "Yes" : "No";
 }
 
 function HasBalanceBadge({ hasBalance }: { hasBalance: boolean | null }) {
@@ -147,7 +146,7 @@ export function CompanyVacationReportTable({
   const [source, setSource] = useState<CompanyVacationReportSource | "All">("All");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lineName, setLineName] = useState("All");
-  const [hasBalance, setHasBalance] = useState<HasBalanceFilter>("All");
+  const [hasBalance, setHasBalance] = useState<CompanyVacationHasBalanceFilter>("All");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -159,18 +158,22 @@ export function CompanyVacationReportTable({
     return ["All", ...[...names].sort((left, right) => left.localeCompare(right))];
   }, [rows]);
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return rows.filter((row) => {
-      if (source !== "All" && row.source !== source) return false;
-      if (lineName !== "All" && (row.lineName ?? "") !== lineName) return false;
-      if (hasBalance !== "All" && hasBalanceFilterValue(row) !== hasBalance) return false;
-      if (fromDate && row.endDate < fromDate) return false;
-      if (toDate && row.startDate > toDate) return false;
-      if (!needle) return true;
-      return `${row.employeeName} ${row.hrId} ${row.jobTitle ?? ""} ${row.lineName ?? ""}`.toLowerCase().includes(needle);
-    });
-  }, [rows, query, source, lineName, hasBalance, fromDate, toDate]);
+  const filters = useMemo<CompanyVacationReportFilters>(
+    () => ({ fromDate, hasBalance, lineName, query, source, toDate }),
+    [fromDate, hasBalance, lineName, query, source, toDate],
+  );
+
+  const filtered = useMemo(() => filterCompanyVacationReportRows(rows, filters), [rows, filters]);
+
+  // The export is a plain GET that re-loads the range server-side, so the filters have to ride
+  // along in the URL: without them the workbook ships the whole year while the counter beside
+  // this link is describing the filtered slice.
+  const exportHref = useMemo(() => {
+    const params = companyVacationReportFilterParams(filters);
+    params.set("startDate", startDate);
+    params.set("endDate", endDate);
+    return `/api/vacation/company-report/export?${params.toString()}`;
+  }, [endDate, filters, startDate]);
 
   const resetAdvancedFilters = () => {
     setLineName("All");
@@ -249,7 +252,7 @@ export function CompanyVacationReportTable({
           </p>
           <a
             className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
-            href={`/api/vacation/company-report/export?startDate=${startDate}&endDate=${endDate}`}
+            href={exportHref}
           >
             <Download className="h-3.5 w-3.5" />
             Export Excel
@@ -275,7 +278,7 @@ export function CompanyVacationReportTable({
             Has Balance
             <select
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal"
-              onChange={(event) => setHasBalance(event.target.value as HasBalanceFilter)}
+              onChange={(event) => setHasBalance(event.target.value as CompanyVacationHasBalanceFilter)}
               value={hasBalance}
             >
               <option value="All">All</option>

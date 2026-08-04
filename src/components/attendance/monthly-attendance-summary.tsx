@@ -79,6 +79,15 @@ export function MonthlyAttendanceSummary({ initialData, initialError, month }: P
           The public-holiday calendar could not be reached. Company holidays are still applied, but public holidays in this month may be counted as working days, slightly overcounting absences.
         </AdminCallout>
       ) : null}
+      {/* An attendance-agent outage used to be indistinguishable from mass absence: days with no
+          punch data at all were counted against every employee. Those days are now excluded from
+          the figures and named here instead, because this report's Absent column is read as
+          evidence about people. */}
+      {initialData && initialData.missingDataDates.length > 0 ? (
+        <AdminCallout tone="danger">
+          {`No attendance data was received for ${initialData.missingDataDates.length} working ${initialData.missingDataDates.length === 1 ? "day" : "days"} in this month: ${initialData.missingDataDates.join(", ")}. Those days are excluded from the figures below rather than counted as absence — this month is incomplete until the attendance device is back online and the days are re-ingested.`}
+        </AdminCallout>
+      ) : null}
 
       <AdminTableShell
         description="Pick a month to roll up. The current month only counts days through today."

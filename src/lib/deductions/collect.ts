@@ -20,7 +20,8 @@ import {
   collectInsufficientBalanceVacationCandidates,
   collectUnpaidVacationCandidates,
 } from "./connectors/vacation.ts";
-import { insertCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
+import { insertCandidateDrafts, reconcileCandidateDrafts, type CandidateDraftInsertResult } from "./service.ts";
+import type { DeductionsCategory } from "./types.ts";
 
 export type DeductionCollectorKey =
   | "fingerprint"
@@ -39,6 +40,18 @@ type Collector = {
   key: DeductionCollectorKey;
   label: string;
   run: (input: CollectorInput) => Promise<Awaited<ReturnType<typeof collectFingerprintCandidates>>>;
+  /**
+   * Set only when this collector is the ONLY writer of that category, and its
+   * run covers the whole company for the whole month. Then a re-run is a
+   * replacement: anything live in the category the fresh scan no longer emits
+   * has been retracted at the source and is superseded instead of left standing.
+   *
+   * Leave unset wherever a category has more than one writer — superseding on
+   * behalf of another writer would delete its work. `crm` is written by both the
+   * CRM and district-manager collectors; `other` by the holiday bridge and by
+   * manual HR entries.
+   */
+  reconcilesWholeCategory?: DeductionsCategory;
 };
 
 /**
@@ -54,8 +67,24 @@ export const DEDUCTION_COLLECTORS: readonly Collector[] = [
   // always reports "created=0" and the workspace render a permanently empty category —
   // an operator cannot tell that apart from a broken connector. The category constant
   // and its historical rows stay untouched; only the live collection step is retired.
-  { key: "unpaid_vacation", label: "Unpaid Vacation", run: collectUnpaidVacationCandidates },
-  { key: "insufficient_balance_vacation", label: "Insufficient Balance Vacation", run: collectInsufficientBalanceVacationCandidates },
+  //
+  // Both vacation collectors reconcile. A vacation day is found by two sources —
+  // the HR request and a CRM annual-leave record — and the HR request wins, so
+  // once a request is filed for a day CRM already flagged, the CRM candidate is
+  // no longer supported by the source. Insert-only left it live and the same day
+  // was charged twice (July 2026 production: 19 employee-days, 8,822.54 EGP).
+  {
+    key: "unpaid_vacation",
+    label: "Unpaid Vacation",
+    reconcilesWholeCategory: "unpaid_vacation",
+    run: collectUnpaidVacationCandidates,
+  },
+  {
+    key: "insufficient_balance_vacation",
+    label: "Insufficient Balance Vacation",
+    reconcilesWholeCategory: "insufficient_balance_vacation",
+    run: collectInsufficientBalanceVacationCandidates,
+  },
   // After the four that own their own populations, before holiday_bridge. Like
   // holiday_bridge it dedups against the live ledger, so it must not run before
   // the categories whose days it needs to avoid.
@@ -102,14 +131,18 @@ export function isCollectableMonth(input: { month: number; year: number }): bool
 }
 
 /**
- * Runs exactly one connector for one month and inserts whatever's new into
+ * Runs exactly one connector for one month and writes whatever's new into
  * deductions_candidates. The connector's own idempotency probe means re-running
  * this for the same month and connector is always safe — already-live
- * candidates are skipped, not duplicated.
+ * candidates are skipped, not duplicated. A connector that declares
+ * `reconcilesWholeCategory` goes further: its live candidates the fresh scan no
+ * longer emits are superseded, so a re-run replaces rather than accumulates.
  *
  * A connector that throws is reported as a warning rather than propagated, so a
  * caller stepping through all five gets the same "one failure does not stop the
- * others" isolation the single-shot version had.
+ * others" isolation the single-shot version had. The throw also happens BEFORE
+ * either write, which is what keeps reconciliation safe: a failed scan can never
+ * be mistaken for "the source retracted everything".
  */
 export async function collectOneConnectorForMonth(
   input: CollectorInput & { connector: DeductionCollectorKey },
@@ -134,6 +167,17 @@ export async function collectOneConnectorForMonth(
   const { month, year, createdBy } = input;
   try {
     const drafts = await collector.run({ month, year, createdBy });
+    if (collector.reconcilesWholeCategory) {
+      return await reconcileCandidateDrafts({
+        createdBy,
+        drafts,
+        scope: {
+          category: collector.reconcilesWholeCategory,
+          monthKey: `${year}-${String(month).padStart(2, "0")}`,
+        },
+        sourceLabel: collector.label,
+      });
+    }
     return await insertCandidateDrafts({ createdBy, drafts, sourceLabel: collector.label });
   } catch (error) {
     return {

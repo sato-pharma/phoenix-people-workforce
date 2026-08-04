@@ -1,4 +1,5 @@
 import { normalizeHrIdForAccess } from "@/lib/auth/permissions";
+import { expenseApprovalState } from "@/lib/outstation/approval-state";
 import { payableExpenseAmount } from "@/lib/outstation/payable";
 import { roundCurrency } from "@/lib/payroll/money";
 import type { PayrollExpenseApproval } from "@/lib/payroll/types";
@@ -83,6 +84,11 @@ export function summarizePayrollExpenses(
   expenses: PayrollExpenseApproval[],
 ): PayrollExpenseSummary {
   const approvedRows = expenses.filter((expense) => expense.hrApproved);
+  // Approval is 3-state and `hrApproved` encodes only one of them, so a plain `!hrApproved` also
+  // sweeps in every REJECTED trip. Pending is the money HR still has to decide on; a rejected trip
+  // is decided and will never be paid, so counting it here inflates the backlog on the same screens
+  // that render that trip with its own Rejected badge and offer a Rejected filter.
+  const pendingRows = expenses.filter((expense) => expenseApprovalState(expense) === "pending");
   const totalAmount = roundCurrency(expenses.reduce((sum, expense) => sum + (expense.total || 0), 0));
 
   return {
@@ -98,11 +104,9 @@ export function summarizePayrollExpenses(
     approvedRows: approvedRows.length,
     averageCostPerTrip: expenses.length > 0 ? roundCurrency(totalAmount / expenses.length) : 0,
     pendingAmount: roundCurrency(
-      expenses
-        .filter((expense) => !expense.hrApproved)
-        .reduce((sum, expense) => sum + (expense.total || 0), 0),
+      pendingRows.reduce((sum, expense) => sum + (expense.total || 0), 0),
     ),
-    pendingRows: expenses.filter((expense) => !expense.hrApproved).length,
+    pendingRows: pendingRows.length,
     specialistCount: new Set(expenses.map((expense) => expense.specialist).filter(Boolean)).size,
     totalAllowance: roundCurrency(expenses.reduce((sum, expense) => sum + (expense.allowance || 0), 0)),
     totalAmount,
@@ -240,10 +244,18 @@ export function buildPayrollExpenseDsmSummaries(input: {
     existing.totalExpenses += expense.total || 0;
     existing.totalDistance += expense.km || 0;
 
-    if (expense.hrApproved) {
+    // These per-DSM figures sit directly beneath the header stat cards built by
+    // summarizePayrollExpenses, so they must answer both questions identically:
+    //   - Approved is the PAYABLE amount, not the raw claim. Reading `total` here put an adjusted
+    //     trip's full claim in the table under a header card showing what HR actually cleared —
+    //     two different numbers, both labelled Approved, on one screen.
+    //   - Rejected belongs to neither queue. It still counts in totalTrips/totalExpenses (it was
+    //     spent effort) but it is not awaiting a decision and it is not money that moves.
+    const state = expenseApprovalState(expense);
+    if (state === "approved") {
       existing.approvedTrips += 1;
-      existing.approvedAmount += expense.total || 0;
-    } else {
+      existing.approvedAmount += payableExpenseAmount(expense.approvedAmount, expense.total);
+    } else if (state === "pending") {
       existing.pendingTrips += 1;
       existing.pendingAmount += expense.total || 0;
     }

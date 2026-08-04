@@ -33,6 +33,7 @@ import {
   type MarketingRoiViewSales,
   type MarketingRoiViewSalesAggregate,
   type MarketingRoiViewSalesRow,
+  type RoiAttributionLine,
   type RoiFilterKey,
   type RoiFilterState,
 } from "@/lib/marketing-requests/roi-report-types";
@@ -114,6 +115,40 @@ const APPROVED_STATUSES = new Set<MarketingRoiReportRow["status"]>([
   "closed",
   "finance_hold",
 ]);
+
+/** Statuses whose money is still awaiting a decision. */
+const PENDING_STATUSES = new Set<MarketingRoiReportRow["status"]>([
+  "draft",
+  "pending_approval",
+  "pending_validation",
+  "returned",
+]);
+
+/**
+ * Which KPI money bucket a request's attributed sales belong to — `null` for `rejected` and
+ * `archived`, which belong to NEITHER. Their sales are real history, but the money is neither
+ * committed nor awaiting anyone: the band's own chip reads "held in pending requests", so
+ * bucketing everything that is not approved as pending told an executive that 277,353 EGP of
+ * refused and archived spend was still live.
+ */
+export function roiValueBucket(status: MarketingRoiReportRow["status"]): "approved" | "pending" | null {
+  if (APPROVED_STATUSES.has(status)) return "approved";
+  if (PENDING_STATUSES.has(status)) return "pending";
+  return null;
+}
+
+/**
+ * The default report scope — what an executive means by "our marketing spend".
+ *
+ * The ROI index deliberately loads every status that carries a pay date so archived and rejected
+ * campaigns stay selectable in the filter panel; without this default an unfiltered page therefore
+ * opened on all of them and its headline cost read 1,336,971 EGP against the Sales-Marketing
+ * Intelligence dashboard's 762,010. An explicit status selection always wins, so opting back into
+ * archived or rejected still works.
+ */
+export function resolveRoiStatusScope(status: RoiFilterState["status"]): RoiFilterState["status"] {
+  return status.length > 0 ? status : [...APPROVED_STATUSES];
+}
 
 export function toNum(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -756,6 +791,109 @@ export async function loadActuals(
   }
 }
 
+export type { RoiAttributionLine } from "@/lib/marketing-requests/roi-report-types";
+
+type AttributionLineDbRow = {
+  customer_code: string;
+  distributor_code: string | null;
+  invoice_period: string;
+  product_code: string;
+  qty: number | string | null;
+  request_id: string;
+  value: number | string | null;
+};
+
+const ATTRIBUTION_LINE_CHUNK_SIZE = 150;
+
+/**
+ * Every claimed invoice line for the given requests, one row per (request, matched sale), in a
+ * few bulk calls — never one RPC per request.
+ *
+ * Deliberately a local loader rather than a call into coverage-report-service's export version of
+ * the same read: that module imports this one, so reusing it would close an import cycle.
+ */
+export async function loadAttributionLines(
+  supabase: SupabaseAdmin,
+  requestIds: string[],
+  excludeCodes: string[],
+): Promise<RoiAttributionLine[]> {
+  const lines: RoiAttributionLine[] = [];
+  if (requestIds.length === 0) return lines;
+
+  for (const part of chunk(requestIds, ATTRIBUTION_LINE_CHUNK_SIZE)) {
+    if (part.length === 0) continue;
+    // rpcAll, not a bare .rpc(): PostgREST caps every response at db-max-rows (1000) with no
+    // error, and lines lost to that cap are lines whose overlap goes unseen — the KPI band would
+    // silently drift back up toward the double-counted total it exists to correct.
+    // Ordered for deterministic paging.
+    const data = await rpcAll<AttributionLineDbRow>(
+      supabase,
+      "phx_marketing_coverage_export_sales_detail",
+      { p_request_ids: part, p_exclude_product_codes: excludeCodes },
+      ["request_id", "invoice_period", "product_code", "customer_code"],
+    );
+    for (const row of data ?? []) {
+      lines.push({
+        customerCode: row.customer_code,
+        distributorCode: row.distributor_code ?? "",
+        invoicePeriod: row.invoice_period,
+        productCode: row.product_code,
+        qty: toNum(row.qty),
+        requestId: row.request_id,
+        value: toNum(row.value),
+      });
+    }
+  }
+  return lines;
+}
+
+const attributionLineKey = (line: RoiAttributionLine): string =>
+  `${line.distributorCode}|${line.customerCode}|${line.productCode}|${line.invoicePeriod}|${line.qty}|${line.value}`;
+
+/**
+ * How much value would be counted more than once if these claimed lines were simply added up.
+ *
+ * Attribution matches a campaign to an invoice line on distributor + pharmacy code + product +
+ * month and nothing makes that match exclusive, so two campaigns targeting the same pharmacy and
+ * product over overlapping ROI windows both legitimately claim the same sale. Per request that is
+ * correct; a COMPANY-WIDE total that adds the per-request figures is not (production: 729,884.77
+ * added up against 480,155.92 of real sales, +52%).
+ *
+ * The RPC does not expose the underlying sale's row id, so identical lines are reconciled as a
+ * MULTISET: a signature appearing three times within one request is three distinct sales, and the
+ * union keeps the most copies any single request claimed. Deduping on the signature alone would
+ * collapse those three into one and under-report the company's sales (197 signatures cover 309
+ * real lines in production). Two requests matching the same signature always matched the same
+ * sales, because the match criteria in the signature are the whole of the match.
+ */
+export function sharedAttributionOverlap(lines: RoiAttributionLine[]): number {
+  const copiesByRequest = new Map<string, Map<string, number>>();
+  const valueByLine = new Map<string, number>();
+  let claimed = 0;
+
+  for (const line of lines) {
+    const key = attributionLineKey(line);
+    valueByLine.set(key, line.value);
+    let perRequest = copiesByRequest.get(key);
+    if (!perRequest) {
+      perRequest = new Map<string, number>();
+      copiesByRequest.set(key, perRequest);
+    }
+    perRequest.set(line.requestId, (perRequest.get(line.requestId) ?? 0) + 1);
+    claimed += line.value;
+  }
+
+  let distinct = 0;
+  for (const [key, perRequest] of copiesByRequest) {
+    let copies = 0;
+    for (const count of perRequest.values()) {
+      if (count > copies) copies = count;
+    }
+    distinct += (valueByLine.get(key) ?? 0) * copies;
+  }
+  return claimed - distinct;
+}
+
 /**
  * The filtered, role-scoped ROI report + executive KPI band. `filters` is the full
  * RoiFilterState; confidential products are included only when a CEO/Super Admin
@@ -776,9 +914,18 @@ export async function getMarketingRoiReport(
   }
   const supabase = getSupabaseAdmin();
   const customerNameById = ctx.customerNameById;
+  // The scope the report actually ran on, echoed back as appliedFilters.
+  //
+  // NOT yet visible in the Filter Engine panel: roi-filter-engine.tsx keeps its own `filters`
+  // state and never reads report.appliedFilters, so today the only reader is the export
+  // workbook's "Applied filters" line (marketing-roi-workbook.ts). Until the panel adopts
+  // appliedFilters (or renders the default as chips itself), the default status scope IS applied
+  // invisibly — an unfiltered viewer sees 101 requests where the index holds 218, with nothing
+  // on screen saying why. Do not describe this line as the fix for that.
+  const scopedFilters: RoiFilterState = { ...filters, status: resolveRoiStatusScope(filters.status) };
 
   // 1) apply every non-ROI filter to the scoped index.
-  const candidates = ctx.entries.filter((entry) => matchesNonRoiFilters(entry, filters));
+  const candidates = ctx.entries.filter((entry) => matchesNonRoiFilters(entry, scopedFilters));
 
   // 2) attribution (rolled up, confidential-masked unless opted-in).
   const excludeCodes = includeRestricted ? [] : RESTRICTED_CODES_UPPER;
@@ -809,9 +956,11 @@ export async function getMarketingRoiReport(
   }
 
   const restrictedRequestIds = new Set<string>();
+  const withheldRequestIds = new Set<string>();
   const rows: MarketingRoiReportRow[] = candidates.map((entry) => {
     const request = ctx.requestById.get(entry.requestId)!;
     const withheld = masked && entry.hasRestrictedProduct;
+    if (withheld) withheldRequestIds.add(entry.requestId);
     const actuals = withheld
       ? { value: 0, units: 0, salesRows: 0, quality: "no_sales" }
       : actualsByRequest.get(entry.requestId) ?? { value: 0, units: 0, salesRows: 0, quality: "no_sales" };
@@ -901,22 +1050,60 @@ export async function getMarketingRoiReport(
     (count, row) => (restrictedRequestIds.has(row.requestId) ? count + 1 : count),
     0,
   );
-  const kpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount);
+
+  // 5) the claimed lines behind the DISPLAYED rows, so the company-wide band can count a sale that
+  // several campaigns each legitimately claim exactly once. Withheld requests contribute 0 to the
+  // rows, so their lines must not join the ledger either or the band would deduct value no row
+  // ever added. A failure here is rethrown rather than swallowed: a band silently rebuilt without
+  // the ledger reads ~50% high, and an inflated headline is worse than an error state.
+  const ledgerRequestIds = finalRows
+    .map((row) => row.requestId)
+    .filter((requestId) => !withheldRequestIds.has(requestId));
+  let attributionLines: RoiAttributionLine[];
+  try {
+    attributionLines = await loadAttributionLines(supabase, ledgerRequestIds, excludeCodes);
+  } catch (error) {
+    logRoiServiceFailure("getMarketingRoiReport:loadAttributionLines", error, {
+      role: access.role,
+      requestCount: ledgerRequestIds.length,
+      masking: excludeCodes.length > 0,
+    });
+    throw error;
+  }
+  const kpi = buildKpiBand(finalRows, ctx.salesDataAsOf, restrictedExcludedCount, attributionLines);
 
   return {
     rows: finalRows,
     kpi,
-    appliedFilters: filters,
+    appliedFilters: scopedFilters,
+    attributionLines,
     autoAppliedByDimension,
     includedRestricted: includeRestricted,
     generatedAtIso,
   };
 }
 
+/**
+ * The executive band over one row set.
+ *
+ * `attributionLines` are the claimed invoice lines behind those rows. They are narrowed to the
+ * rows present here before anything is deducted, so a caller that has already narrowed `rows`
+ * CAN pass the full report's ledger and still get the overlap of ITS subset.
+ *
+ * Passing none leaves the money totals as the plain sum of the rows, which over-states any set
+ * where two campaigns claim the same sale (production: 729,884.77 summed vs 480,155.92 real,
+ * +52%). Three callers still pass none and are therefore STILL double-counted — they need the
+ * same wiring getMarketingRoiReport now does, in their own files:
+ *   - roi-tracker-service.ts (ROI Tracking / Live Tracker rebuild the band per origin)
+ *   - coverage-report-service.ts (Marketing Coverage Report's "Actual sales (EGP)")
+ *   - employee-360/pm-marketing.ts (the PM/GPM marketing card)
+ * The default is `[]` only so those call sites keep compiling; it is not a safe default.
+ */
 export function buildKpiBand(
   rows: MarketingRoiReportRow[],
   salesDataAsOf: string | null,
   restrictedExcludedCount: number,
+  attributionLines: RoiAttributionLine[] = [],
 ): MarketingRoiKpiBand {
   let totalEstimatedCost = 0;
   let totalExpectedRoi = 0;
@@ -939,24 +1126,42 @@ export function buildKpiBand(
     else if (row.resultStatus === "behind") behindCount += 1;
     else if (row.resultStatus === "awaiting_data") awaitingDataCount += 1;
     else noDataCount += 1;
-    if (APPROVED_STATUSES.has(row.status)) approvedValue += row.actualSalesValue;
-    else pendingValue += row.actualSalesValue;
+    const bucket = roiValueBucket(row.status);
+    if (bucket === "approved") approvedValue += row.actualSalesValue;
+    else if (bucket === "pending") pendingValue += row.actualSalesValue;
     if (!row.salesDataComplete) incompleteWindowCount += 1;
   }
+
+  // Deduct only value the ledger PROVES was claimed twice, rather than rebuilding the totals from
+  // the ledger: direct-order sales are attributed per request and never appear as claimed lines,
+  // so a ledger-built total would drop them entirely the moment a campaign tracks direct orders.
+  const bucketByRequestId = new Map(rows.map((row) => [row.requestId, roiValueBucket(row.status)] as const));
+  const bandLines = attributionLines.filter((line) => bucketByRequestId.has(line.requestId));
+  const dedupe = (value: number, lines: RoiAttributionLine[]): number =>
+    Math.max(value - sharedAttributionOverlap(lines), 0);
+  const distinctActualValue = dedupe(totalActualValue, bandLines);
+  const distinctApprovedValue = dedupe(
+    approvedValue,
+    bandLines.filter((line) => bucketByRequestId.get(line.requestId) === "approved"),
+  );
+  const distinctPendingValue = dedupe(
+    pendingValue,
+    bandLines.filter((line) => bucketByRequestId.get(line.requestId) === "pending"),
+  );
 
   return {
     requestCount: rows.length,
     totalEstimatedCost: roundMarketingMoney(totalEstimatedCost),
     totalExpectedRoi: roundMarketingMoney(totalExpectedRoi),
     totalRequiredRoi: roundMarketingMoney(totalRequiredRoi),
-    totalActualValue: roundMarketingMoney(totalActualValue),
-    coverageRatio: totalRequiredRoi > 0 ? roundMarketingRatio(totalActualValue / totalRequiredRoi) : 0,
+    totalActualValue: roundMarketingMoney(distinctActualValue),
+    coverageRatio: totalRequiredRoi > 0 ? roundMarketingRatio(distinctActualValue / totalRequiredRoi) : 0,
     onTrackCount,
     behindCount,
     awaitingDataCount,
     noDataCount,
-    approvedValue: roundMarketingMoney(approvedValue),
-    pendingValue: roundMarketingMoney(pendingValue),
+    approvedValue: roundMarketingMoney(distinctApprovedValue),
+    pendingValue: roundMarketingMoney(distinctPendingValue),
     salesDataAsOf,
     incompleteWindowCount,
     restrictedExcludedCount,

@@ -4,6 +4,11 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertSystemAdministratorWorkspaceAccess, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { generateCompanyVacationReportWorkbook } from "@/lib/vacation/company-vacation-report-export";
+import {
+  describeCompanyVacationReportFilters,
+  filterCompanyVacationReportRows,
+  parseCompanyVacationReportFilters,
+} from "@/lib/vacation/company-vacation-report-filters";
 import { getCompanyVacationReport } from "@/lib/vacation/company-vacation-report";
 import { toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -13,6 +18,28 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const DEFAULT_START_DATE = "2026-01-01";
+
+/** Row 4 of the sheet — the blank spacer the workbook leaves between its range banner (row 3)
+ * and the header (row 6). */
+const FILTER_NOTE_ROW = 4;
+
+/**
+ * Writes the filter stamp onto the sheet itself. A downloaded workbook is forwarded without the
+ * screen it came from, so a filtered one that looks exactly like a full-range one is how a slice
+ * of the year gets read as the whole year by whoever opens it next.
+ */
+function stampFilterNote(workbook: ReturnType<typeof generateCompanyVacationReportWorkbook>, note: string) {
+  const sheet = workbook.getWorksheet("Company Vacation Report");
+  if (!sheet) return;
+  const cell = sheet.getCell(FILTER_NOTE_ROW, 1);
+  // If the sheet layout ever moves real content up into the spacer, skip rather than overwrite
+  // a header or a leave row.
+  if (cell.value != null) return;
+  if (sheet.columnCount > 1) sheet.mergeCells(FILTER_NOTE_ROW, 1, FILTER_NOTE_ROW, sheet.columnCount);
+  cell.value = note;
+  cell.font = { bold: true, color: { argb: "FF9A3412" }, italic: true };
+  cell.alignment = { horizontal: "center", wrapText: true };
+}
 
 function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
@@ -37,22 +64,34 @@ export async function GET(request: Request) {
     const startDate = url.searchParams.get("startDate") ?? DEFAULT_START_DATE;
     const endDate = url.searchParams.get("endDate") ?? new Date().toISOString().slice(0, 10);
 
-    const rows = await getCompanyVacationReport({ endDate, startDate });
+    // The link carries the reader's on-screen filters — their slice, never their permissions
+    // (the workspace gate above already decided that). Narrowing here with the same
+    // filterCompanyVacationReportRows the table uses is what keeps the workbook equal to the
+    // "N rows · M employees · D total days" counter printed next to the Export button.
+    const filters = parseCompanyVacationReportFilters(url.searchParams);
+    const rangeRows = await getCompanyVacationReport({ endDate, startDate });
+    const rows = filterCompanyVacationReportRows(rangeRows, filters);
+    const filterNote = describeCompanyVacationReportFilters(filters);
 
     await writeAuditLog({
       actorLoginId: resolveEmployeeIdentityId(access) ?? access.loginId ?? "system",
       entityId: `${startDate}:${endDate}`,
       entityType: "vacation_report_export",
-      newValues: { endDate, rowCount: rows.length, startDate },
-      summary: "Company vacation report exported.",
+      newValues: { endDate, filters, rangeRowCount: rangeRows.length, rowCount: rows.length, startDate },
+      summary: filterNote ? `Company vacation report exported. ${filterNote}` : "Company vacation report exported.",
     });
 
     const workbook = generateCompanyVacationReportWorkbook({ endDate, rows, startDate });
+    if (filterNote) stampFilterNote(workbook, filterNote);
     const buffer = await workbook.xlsx.writeBuffer();
+
+    // A filtered file is named as one: two downloads of the same range that hold different row
+    // counts must not land in the reader's Downloads folder under the same name.
+    const fileName = `company-vacation-report-${startDate}-to-${endDate}${filterNote ? "-filtered" : ""}.xlsx`;
 
     return new NextResponse(buffer, {
       headers: {
-        "Content-Disposition": `attachment; filename="company-vacation-report-${startDate}-to-${endDate}.xlsx"`,
+        "Content-Disposition": `attachment; filename="${fileName}"`,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
     });

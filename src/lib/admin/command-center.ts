@@ -14,7 +14,7 @@ import { buildLifecycleRiskMetrics } from "@/lib/lifecycle-risk/metrics";
 import { getOperationalRecentActivity, type OperationalActivitySummary } from "@/lib/operations/events";
 import { getPayrollExpenseMetrics } from "@/lib/outstation/expenses";
 import { getPayrollDashboard } from "@/lib/payroll/service";
-import { getPlatformMetrics } from "@/lib/platform/metrics";
+import { countUnoccupiedWorkforceSeats, getPlatformMetrics } from "@/lib/platform/metrics";
 import { getProbationRows } from "@/lib/probation/service";
 import { getSalesPlatformMetrics } from "@/lib/sales/service";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -239,7 +239,16 @@ function buildDataHealth(
   const salesLinkageRate = salesCounts.totalRows > 0 ? (salesCounts.linkedRows / salesCounts.totalRows) * 100 : 100;
   const workforceStructure = calculateWorkforceStructureSummary({
     activeEmployees: activeEmployees.length,
-    openVacancies: directory?.lookups.workforceVacancies.length ?? 0,
+    // Seats, not position_vacancies rows: the raw row count double-counts a seat
+    // that emptied more than once and keeps stale rows on seats an active
+    // employee already fills, so this card used to read 45 where the Organogram
+    // read 33. countUnoccupiedWorkforceSeats is the one place that rule lives.
+    openVacancies: directory
+      ? countUnoccupiedWorkforceSeats({
+          employees: activeEmployees,
+          vacancies: directory.lookups.workforceVacancies,
+        })
+      : 0,
   });
 
   return {

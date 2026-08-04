@@ -471,12 +471,15 @@ type CompanySummary = {
   pendingTotal: number;
 };
 
+type EmployeeCategoryBucket = { days: number; amount: number; candidateCount: number };
 type EmployeeSummary = {
   employeeHrId: string;
   employeeName: string | null;
   monthKey: string;
-  byCategory: Partial<Record<DeductionsCategory, { days: number; amount: number; candidateCount: number }>>;
-  totalAmount: number;
+  willPublish: Partial<Record<DeductionsCategory, EmployeeCategoryBucket>>;
+  pending: Partial<Record<DeductionsCategory, EmployeeCategoryBucket>>;
+  willPublishTotal: number;
+  pendingTotal: number;
 } | null;
 
 const DECISION_STATUSES = ["Approved for Payroll", "Do Not Take Action", "Needs Follow-up", "Disputed"] as const;
@@ -1378,27 +1381,48 @@ function ByEmployeeTab({ monthKey }: { monthKey: string }) {
                 belongs in the lookup box above, not in the heading. */}
             {summary.employeeName?.trim() || "Name unavailable"}
           </h3>
+          {/* Same two-figure presentation as the Overview tab, and for the same
+              reason: a per-person card that folds Pending into one "Total" tells
+              an employee they are losing money publishing will never take. The
+              category rows carry the will-publish amount; anything still
+              awaiting a decision is stated beside it, never added to it. */}
           <div className="mt-3 divide-y divide-slate-100 border border-slate-200">
             {visibleDeductionsCategories
-              .filter((category) => summary.byCategory[category])
+              .filter((category) => summary.willPublish[category] || summary.pending[category])
               .map((category, index) => {
                 const config = DEDUCTIONS_CATEGORY_CONFIG[category];
-                const bucket = summary.byCategory[category]!;
+                const willPublish = summary.willPublish[category];
+                const pending = summary.pending[category];
                 return (
-                  <div className={["flex items-center justify-between px-4 py-2.5", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={category}>
-                    <span className="text-sm font-semibold text-slate-800">{config.label}</span>
-                    <span className="text-sm font-black text-slate-900">
-                      {bucket.days > 0 ? `${bucket.days} day(s) · ` : ""}
-                      {money(bucket.amount)} EGP
-                    </span>
+                  <div className={["px-4 py-2.5", index % 2 === 1 ? "bg-slate-50/60" : ""].join(" ")} key={category}>
+                    <div className="flex items-center justify-between">
+                      <span className="whitespace-nowrap text-sm font-semibold text-slate-800">{config.label}</span>
+                      <span className="whitespace-nowrap text-sm font-black text-slate-900">
+                        {(willPublish?.days ?? 0) > 0 ? `${willPublish!.days} day(s) · ` : ""}
+                        {money(willPublish?.amount ?? 0)} EGP
+                      </span>
+                    </div>
+                    {pending ? (
+                      <p className="mt-1 whitespace-nowrap text-xs font-bold text-amber-700">
+                        + {pending.candidateCount} pending ({money(pending.amount)} EGP) — not publishing
+                      </p>
+                    ) : null}
                   </div>
                 );
               })}
           </div>
           <div className="mt-3 flex items-center justify-between border border-slate-900 bg-slate-900 px-4 py-2.5">
-            <span className="text-xs font-black uppercase tracking-[0.1em] text-orange-400">Total</span>
-            <span className="text-lg font-black text-white">{money(summary.totalAmount)} EGP</span>
+            <span className="whitespace-nowrap text-xs font-black uppercase tracking-[0.1em] text-orange-400">Will publish</span>
+            <span className="whitespace-nowrap text-lg font-black text-white">{money(summary.willPublishTotal)} EGP</span>
           </div>
+          {summary.pendingTotal > 0 ? (
+            <div className="mt-2 flex items-center justify-between border border-amber-300 bg-amber-50 px-4 py-2.5">
+              <span className="whitespace-nowrap text-xs font-black uppercase tracking-[0.1em] text-amber-700">
+                Pending — will NOT publish
+              </span>
+              <span className="whitespace-nowrap text-lg font-black text-amber-900">{money(summary.pendingTotal)} EGP</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
