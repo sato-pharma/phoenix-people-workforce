@@ -21,35 +21,45 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
   const expenses = source("src/lib/outstation/expenses.ts");
 
-  // ── Rule 1 (revised 2026-07-13): Submit notification → Super Admin + CEO, full details ──
-  // Outstation/expense submissions auto-approve directly to payroll (no human
-  // pending-approval step). Instead of an actionable "approve this" alert, every
-  // active Super Admin AND the CEO get a live, informational feed of what was just
-  // submitted — by email + Telegram, with the full request detail (amounts, GPS,
-  // risk signals) — not the submitter's manager, and not the wider approver set
-  // that has no outstation approval authority. (Super-Admin-only was a regression:
-  // it silently dropped the CEO from every outstation alert.)
+  // ── Rule 1 (revised 2026-08-04): Submit mail → the EMPLOYEE, managers Cc, Super Admin Bcc ──
+  // SUPERSEDES the 2026-07-13 rule below it, which fanned every submission out to every
+  // active Super Admin AND the CEO and told the submitting employee nothing. The CEO was
+  // receiving one mail per outstation submission company-wide; that is the complaint this
+  // replaced. The envelope is now one message: To the employee (it is his confirmation),
+  // Cc his direct manager, Cc the skip-level manager UNLESS that person is the CEO, Bcc
+  // every active Super Admin. See src/lib/outstation/submit-recipients.ts — the envelope
+  // decision itself is unit-tested in outstation-submit-email-routing.test.ts.
   assert.match(
     service,
     /async function notifyOutstationSubmitted/,
-    "RULE 1: notifyOutstationSubmitted must exist — Super Admin + CEO get a submit alert",
+    "RULE 1: notifyOutstationSubmitted must exist — it is the employee's submit confirmation",
   );
 
   const submitNotifySlice = functionSlice(service, "async function notifyOutstationSubmitted");
   assert.match(
     submitNotifySlice,
-    /resolveOutstationSubmitAlertHrIds/,
-    "submit notification must resolve recipients via the submit-alert lookup, not the employee's manager",
-  );
-  assert.doesNotMatch(
-    submitNotifySlice,
-    /direct_manager/,
-    "submit notification must NOT go to the submitter's manager — Super Admin + CEO only",
+    /resolveOutstationSubmitRouting\(request\.employeeHrId\)/,
+    "submit mail must build its envelope from the employee's own reporting chain",
   );
   assert.match(
     submitNotifySlice,
-    /channels:\s*\["email",\s*"telegram",\s*"push"\]/,
-    "submit notification must be delivered via email + Telegram + push",
+    /recipientHrId: routing\.toHrId/,
+    "the employee must be the To recipient, not a Super Admin",
+  );
+  assert.match(
+    submitNotifySlice,
+    /email: \{ bcc: bccAddresses, cc: ccAddresses, metrics \}/,
+    "managers must ride on Cc and Super Admins on Bcc of that ONE message — never as separate sends",
+  );
+  assert.doesNotMatch(
+    submitNotifySlice,
+    /resolveOutstationSubmitAlertHrIds/,
+    "the old Super Admin + CEO broadcast lookup must be gone, not merely bypassed",
+  );
+  assert.match(
+    submitNotifySlice,
+    /channels:\s*\["in_app",\s*"email",\s*"telegram",\s*"push"\]/,
+    "submit notification must reach the employee in-app as well as by email/Telegram/push",
   );
   assert.match(
     submitNotifySlice,
@@ -71,22 +81,39 @@ export function runOutstationNotificationsTests() {
     "metrics must include an explicit Status label (the {{status}} token has no other source)",
   );
   // Trip start/end must be human-formatted, not the raw ISO timestamp stored on the request.
+  // Owner format (2026-08-04): "Tuesday, 17 October 2026", Africa/Cairo — formatPhoenixLongDate,
+  // NOT the short formatDateValue that the dense admin tables keep using.
   assert.match(
     submitNotifySlice,
-    /label: "Trip start",\s*value: formatDateValue\(request\.tripStartDate\)/,
-    "Trip start must be formatted via formatDateValue, not the raw ISO string",
+    /label: "Trip start",\s*value: formatPhoenixLongDate\(request\.tripStartDate\)/,
+    "Trip start must use the owner's long Cairo date format, not raw ISO or the short form",
   );
   assert.match(
     submitNotifySlice,
-    /label: "Trip end",\s*value: formatDateValue\(request\.tripEndDate\)/,
-    "Trip end must be formatted via formatDateValue, not the raw ISO string",
+    /label: "Trip end",\s*value: formatPhoenixLongDate\(request\.tripEndDate\)/,
+    "Trip end must use the owner's long Cairo date format, not raw ISO or the short form",
   );
 
-  const submitAlertLookupSlice = functionSlice(service, "async function resolveOutstationSubmitAlertHrIds");
+  // ── Owner request (2026-08-04): captured location reads as a place, not a coordinate pair ──
+  assert.doesNotMatch(
+    submitNotifySlice,
+    /\$\{request\.capturedLatitude\},\s*\$\{request\.capturedLongitude\}/,
+    "the submit mail must not print raw captured coordinates",
+  );
   assert.match(
-    submitAlertLookupSlice,
-    /\.in\("role",\s*\["Super Admin",\s*"CEO"\]\)/,
-    "submit notification recipients must be scoped to Super Admin + CEO roles",
+    submitNotifySlice,
+    /label: "Captured brick"/,
+    "the submit mail must carry the brick resolved from the captured point",
+  );
+  assert.match(
+    submitNotifySlice,
+    /label: "Captured area \/ region"/,
+    "the submit mail must carry the level above the brick (area / region)",
+  );
+  assert.match(
+    submitNotifySlice,
+    /label: "Location match"/,
+    "a nearest-brick match is an approximation and must always ship its confidence",
   );
 
   // submitOutstationRequest now makes the system decision itself: accepted -> push to
@@ -96,7 +123,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitDecisionSlice,
     /notifyOutstationSubmitted\(/,
-    "an accepted submit fires the Super Admin/CEO alert",
+    "an accepted submit fires the employee's submit confirmation",
   );
   assert.match(
     submitDecisionSlice,
@@ -133,7 +160,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     approveSlice,
     /notifyOutstationSubmitted\(/,
-    "RULE 1: approveOutstationRequestForPayroll must fire the Super Admin submit alert",
+    "RULE 1: approveOutstationRequestForPayroll must fire the employee's submit confirmation",
   );
   assert.doesNotMatch(
     approveSlice,

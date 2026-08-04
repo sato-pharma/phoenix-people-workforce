@@ -18,6 +18,7 @@ import type { DoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-anal
 import { validateLiveCarEvidence } from "@/lib/outstation/car-evidence";
 import {
   createOutstationCarEvidenceSignedUrl,
+  createOutstationEvidenceSignedUrls,
   deleteOutstationCarEvidenceImage,
   deleteOutstationTicketAttachments,
   uploadOutstationCarEvidenceImage,
@@ -32,7 +33,15 @@ import {
   outstationTicketEvidenceRejection,
 } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { formatDateValue } from "@/lib/i18n/format";
+import { formatDateValue, formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
+import {
+  attachOutstationCapturedLocations,
+  resolveOutstationCapturedLocation,
+} from "@/lib/outstation/captured-location";
+import {
+  resolveOutstationRecipientAddresses,
+  resolveOutstationSubmitRouting,
+} from "@/lib/outstation/submit-recipients";
 import { createSystemNotification, createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
@@ -1076,38 +1085,15 @@ export async function calculateOutstationExpense(
 
 // ── Approval notifications ────────────────────────────────────────────────────
 // Submission auto-approves in the same request (no pending-approval step for a
-// human to act on), so instead of a "needs approval" alert we notify every active
-// Super Admin, on every fresh submission, with the full request details — a live
-// audit feed rather than an action queue. Every send is best-effort: a
-// notification failure must never roll back or fail the underlying submit.
+// human to act on), so the submit mail is a CONFIRMATION to the employee rather
+// than an action queue, with his reporting line copied for visibility. Every send
+// is best-effort: a notification failure must never roll back or fail the
+// underlying submit. See submit-recipients.ts for who lands in To/Cc/Bcc and why.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
 
 function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
-}
-
-// Owner decision (2026-07-13): the submit alert must reach Super Admin (system oversight) AND
-// the CEO, not Super Admin alone — the original Super-Admin-only scoping silently dropped the
-// CEO from every outstation alert. Finance Manager stays excluded (not requested).
-async function resolveOutstationSubmitAlertHrIds(): Promise<string[]> {
-  try {
-    const { data, error } = await getSupabaseAdmin()
-      .from("app_auth_users")
-      .select("hr_id,role,is_active")
-      .eq("is_active", true)
-      .in("role", ["Super Admin", "CEO"]);
-    if (error) throw error;
-    const hrIds = new Set<string>();
-    for (const row of (data ?? []) as Array<{ hr_id?: string | null }>) {
-      const hrId = text(row.hr_id);
-      if (hrId) hrIds.add(hrId);
-    }
-    return Array.from(hrIds);
-  } catch (error) {
-    logError("Outstation submit-alert recipient lookup failed; submit notification skipped", { labels: { event: "outstation_submit_alert_recipient_lookup_failed" }, error });
-    return [];
-  }
 }
 
 // Fires once per fresh submission: the employee wizard, offline sync, the
@@ -1120,8 +1106,21 @@ async function notifyOutstationSubmitted(
   options: { heldForReview?: boolean } = {},
 ) {
   try {
-    const recipients = await resolveOutstationSubmitAlertHrIds();
-    if (recipients.length === 0) return;
+    // To = the employee, Cc = his manager (+ skip-level unless that is the CEO),
+    // Bcc = active Super Admins. Nothing is sent when the employee cannot be
+    // identified: a confirmation with no one to confirm TO is not worth mailing to
+    // his managers alone.
+    const routing = await resolveOutstationSubmitRouting(request.employeeHrId);
+    if (!routing.toHrId) {
+      logError("Outstation submit email skipped — submitting employee could not be resolved", {
+        labels: { event: "outstation_submit_email_employee_unresolved", requestId: String(request.id) },
+      });
+      return;
+    }
+    const [ccAddresses, bccAddresses] = await Promise.all([
+      resolveOutstationRecipientAddresses(routing.ccHrIds),
+      resolveOutstationRecipientAddresses(routing.bccHrIds),
+    ]);
     const heldForReview = Boolean(options.heldForReview);
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
@@ -1129,11 +1128,13 @@ async function notifyOutstationSubmitted(
     const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
     const tripLength = request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)`;
 
-    const directory = await getEmployeeDirectory();
-    const employeeRow = directory.employees.find(
-      (row) => normalizeHrIdForAccess(row.hrId) === normalizeHrIdForAccess(request.employeeHrId),
-    );
-    const managerName = text(employeeRow?.managerName) || "—";
+    const managerName = text(routing.managerName) || "—";
+    // Brick / area / region for the captured GPS point, so the mail carries a place
+    // name instead of a coordinate pair. Best-effort — never blocks the send.
+    const capturedLocation = await resolveOutstationCapturedLocation({
+      latitude: request.capturedLatitude,
+      longitude: request.capturedLongitude,
+    });
 
     const metrics = [
       ...(heldForReview
@@ -1161,8 +1162,10 @@ async function notifyOutstationSubmitted(
       // Formatted (not raw ISO) since the template renders these directly into "{{startDate}}
       // to {{endDate}}" text.
       { label: "Amount", value: claimedAmount },
-      { label: "Trip start", value: formatDateValue(request.tripStartDate) },
-      { label: "Trip end", value: formatDateValue(request.tripEndDate) },
+      // Owner format (2026-08-04): "Tuesday, 17 October 2026", Africa/Cairo, everywhere in
+      // this mail. formatDateValue's short "17 Oct 2026" stays in the dense admin tables.
+      { label: "Trip start", value: formatPhoenixLongDate(request.tripStartDate) },
+      { label: "Trip end", value: formatPhoenixLongDate(request.tripEndDate) },
       // "Duration" (in addition to "Trip length") is what the OUTSTATION template's
       // {{duration}} token looks up.
       { label: "Trip length", value: tripLength },
@@ -1195,9 +1198,20 @@ async function notifyOutstationSubmitted(
         label: "Territory validation",
         value: `${request.territoryValidationStatus} — ${text(request.territoryValidationReason) || "—"}`,
       },
+      // Captured location, as a place rather than a coordinate pair. Labels are deliberately
+      // prefixed "Captured …": the plain "Area" label above is the EMPLOYEE's area and is what
+      // the OUTSTATION template's {{area}} token resolves through metricValue(), so a second
+      // metric labelled "Area" would silently hijack that token.
+      { label: "Captured location", value: capturedLocation.label },
+      { label: "Captured brick", value: capturedLocation.brickLabel },
+      { label: "Captured area / region", value: `${capturedLocation.areaLabel} · ${capturedLocation.regionLabel}` },
       {
-        label: "GPS capture",
-        value: `${request.capturedLatitude}, ${request.capturedLongitude} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`,
+        // Nearest-centroid match quality — shown so a far-from-any-brick capture can never
+        // read as an exact one. See captured-location.ts.
+        label: "Location match",
+        value: capturedLocation.confidence
+          ? `${capturedLocation.confidence} · captured ${formatPhoenixDateTime(request.capturedAt)} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`
+          : `Not matched · captured ${formatPhoenixDateTime(request.capturedAt)} (±${request.capturedAccuracyMeters}m, ${request.offlineCaptured ? "offline sync" : "online"})`,
       },
       { label: "Notes", value: text(request.notes) || "—" },
     ];
@@ -1205,44 +1219,56 @@ async function notifyOutstationSubmitted(
     // Short human summary only — the structured fields above (rendered separately as the
     // template's metrics table) already carry every detail, so repeating them here as a
     // second wall of text made the email read as duplicated content.
+    // Addressed to the employee — he is now the "To", so it reads as his confirmation.
+    // The managers on Cc are reading over his shoulder, which is why the detail table
+    // below it still carries the full request.
     const messageLines = [
       ...(heldForReview
         ? [
-            `HELD FOR REVIEW: this request's residence/destination governorate could not be confirmed automatically, so it was NOT added to payroll. Approve or reject it in the Expense Command Center.`,
+            `HELD FOR REVIEW: this request's residence/destination governorate could not be confirmed automatically, so it was NOT added to payroll yet. A Super Admin will approve or reject it.`,
           ]
         : []),
-      `${request.employeeName} (${request.employeeHrId}) submitted an outstation expense request for ${claimedAmount}.`,
-      `Trip: ${formatDateValue(request.tripStartDate)} to ${formatDateValue(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Your outstation expense request for ${claimedAmount} was submitted on ${formatPhoenixDateTime(request.createdAt)}.`,
+      `Trip: ${formatPhoenixLongDate(request.tripStartDate)} to ${formatPhoenixLongDate(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
+      `Captured location: ${capturedLocation.label}`,
       `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
+      `Your manager${ccAddresses.length > 1 ? "s are" : " is"} copied on this message.`,
     ];
 
-    await createSystemNotificationForRecipients(
-      {
+    await createSystemNotification({
+      actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+      category: "general",
+      channels: ["in_app", "email", "telegram", "push"],
+      email: { bcc: bccAddresses, cc: ccAddresses, metrics },
+      eventType: "request_submitted",
+      message: messageLines.join("\n"),
+      metadata: {
         actionUrl,
-        category: "general",
-        channels: ["email", "telegram", "push"],
-        email: { metrics },
-        eventType: "request_submitted",
-        message: messageLines.join("\n"),
-        metadata: {
-          actionUrl,
-          claimedAmount,
-          employeeHrId: request.employeeHrId,
-          employeeName: request.employeeName,
-          idempotencyKey: `outstation:${request.id}:request_submitted`,
-          requestId: String(request.id),
-          status: "Submitted",
+        claimedAmount,
+        employeeHrId: request.employeeHrId,
+        employeeName: request.employeeName,
+        idempotencyKey: `outstation:${request.id}:request_submitted`,
+        requestId: String(request.id),
+        status: "Submitted",
+        // Recorded so a "who was copied?" question is answerable from the audit row alone,
+        // without re-deriving a reporting line that may have changed since.
+        submitEnvelope: {
+          bccHrIds: routing.bccHrIds,
+          ccHrIds: routing.ccHrIds,
+          routing: "employee_to_manager_cc_superadmin_bcc",
+          toHrId: routing.toHrId,
         },
-        module: "outstation",
-        priority: heldForReview ? "high" : "normal",
-        recordId: String(request.id),
-        telegram: { buttons: [{ label: "Review in Phoenix", url: actionUrl }] },
-        title: heldForReview
-          ? `Outstation request needs review — ${request.employeeName} (${claimedAmount})`
-          : `New outstation expense submitted — ${request.employeeName} (${claimedAmount})`,
       },
-      recipients,
-    );
+      module: "outstation",
+      priority: heldForReview ? "high" : "normal",
+      recipientHrId: routing.toHrId,
+      recordId: String(request.id),
+      subjectHrId: request.employeeHrId,
+      telegram: { buttons: [{ label: "Open my expenses", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
+      title: heldForReview
+        ? `Your outstation expense request needs review — ${claimedAmount}`
+        : `Your outstation expense request was submitted — ${claimedAmount}`,
+    });
   } catch (error) {
     logError("Outstation submitted notification dispatch failed (non-blocking)", { labels: { event: "outstation_submitted_notification_dispatch_failed" }, error });
   }
@@ -1269,12 +1295,14 @@ async function notifyOutstationDecision(input: {
             { label: "Employee", value: r.employeeName },
             { label: "Amount", value: amount },
             { label: "Destination", value: text(r.toLabel) },
-            { label: "Trip start", value: r.tripStartDate },
-            { label: "Trip end", value: r.tripEndDate },
+            // Were raw ISO ("2026-10-17"), which is what the owner's 2026-08-04 format
+            // complaint was pointing at. Same Cairo long-date shape as the submit mail.
+            { label: "Trip start", value: formatPhoenixLongDate(r.tripStartDate) },
+            { label: "Trip end", value: formatPhoenixLongDate(r.tripEndDate) },
           ],
         },
         eventType: "request_rejected",
-        message: `Your expense request for ${amount} (${r.tripStartDate} to ${r.tripEndDate}) was rejected. Reason: ${reason}`,
+        message: `Your expense request for ${amount} (${formatPhoenixLongDate(r.tripStartDate)} to ${formatPhoenixLongDate(r.tripEndDate)}) was rejected. Reason: ${reason}`,
         metadata: {
           actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
           amount,
@@ -1739,18 +1767,29 @@ function mapOutstationRequestRow(row: Record<string, unknown>): OutstationExpens
   };
 }
 
+/**
+ * Signs both evidence kinds a request can carry: the car photo AND the ticket attachments.
+ *
+ * Tickets were previously left unsigned here, so the admin request detail received only
+ * their metadata (name/type/size) and rendered each one as an inert row — it looked
+ * clickable but had no href, which is the "the ticket attachment doesn't open" report of
+ * 2026-08-04. The Expense Approvals page never hit this because it fetches its own signed
+ * URLs from /api/admin/outstation/[id]/attachments.
+ */
 async function attachCarEvidenceSignedUrls(
   requests: OutstationExpenseRequest[],
 ): Promise<OutstationExpenseRequest[]> {
   return Promise.all(
     requests.map(async (request) => {
-      const carEvidenceImageUrl = await createOutstationCarEvidenceSignedUrl(
-        request.carEvidenceImagePath,
-      );
+      const [carEvidenceImageUrl, ticketAttachmentUrls] = await Promise.all([
+        createOutstationCarEvidenceSignedUrl(request.carEvidenceImagePath),
+        createOutstationEvidenceSignedUrls(request.ticketAttachmentPaths ?? []),
+      ]);
 
       return {
         ...request,
         carEvidenceImageUrl,
+        ticketAttachmentUrls,
       };
     }),
   );
@@ -1981,7 +2020,10 @@ export async function listOutstationRequests(options?: { includeCarEvidenceSigne
     throw new Error(error.message);
   }
 
-  const requests = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRow);
+  // Brick / area / region per row, so the admin detail can show a place name instead of the
+  // raw coordinate pair. One cached centroid load for the whole page — see captured-location.ts.
+  const requests = await attachOutstationCapturedLocations(mapped);
   return options?.includeCarEvidenceSignedUrls
     ? attachCarEvidenceSignedUrls(requests)
     : requests;
@@ -2004,7 +2046,14 @@ export async function getOutstationRequestById(
 
   if (!data) return null;
 
-  const request = mapOutstationRequestRow(data as Record<string, unknown>);
+  const mapped = mapOutstationRequestRow(data as Record<string, unknown>);
+  const request = {
+    ...mapped,
+    capturedLocation: await resolveOutstationCapturedLocation({
+      latitude: mapped.capturedLatitude,
+      longitude: mapped.capturedLongitude,
+    }),
+  };
   if (!options?.includeCarEvidenceSignedUrl) return request;
 
   return {

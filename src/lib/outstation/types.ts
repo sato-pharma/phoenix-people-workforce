@@ -41,6 +41,20 @@ export type OutstationTicketAttachmentMetadata = {
   uploadedAt: string;
 };
 
+/**
+ * Readable geography for a captured GPS point — the replacement for showing a raw
+ * coordinate pair. Lives here (rather than in captured-location.ts) so the request type can
+ * reference it without a circular import back through the resolver.
+ */
+export type OutstationCapturedLocationSummary = {
+  areaLabel: string;
+  brickLabel: string;
+  /** Nearest-centroid match quality, e.g. "High · 0.4 km". Null when nothing matched. */
+  confidence: string | null;
+  label: string;
+  regionLabel: string;
+};
+
 export type OutstationTerritoryValidationStatus =
   | "matched"
   | "outside_expected_territory"
@@ -201,6 +215,13 @@ export type OutstationCalculationResult = OutstationCaptureResult & {
 export type OutstationExpenseRequest = {
   allowanceAmount: number;
   allowanceBreakdown: OutstationAllowanceBreakdown | null;
+  /**
+   * Brick / area / region for the captured GPS point, DERIVED at read time from
+   * captured_latitude/longitude — never stored, so it always reflects today's geography
+   * (see captured-location.ts). Null on read paths that do not enrich, which is why every
+   * consumer must treat it as optional rather than assume it is present.
+   */
+  capturedLocation?: OutstationCapturedLocationSummary | null;
   attachmentCount: number;
   approvalRecommendation: OutstationApprovalRecommendation;
   approvalReason: string;
@@ -260,6 +281,13 @@ export type OutstationExpenseRequest = {
   returnTicketAmount: number;
   ticketAttachmentMetadata: OutstationTicketAttachmentMetadata[];
   ticketAttachmentPaths: string[];
+  /**
+   * Signed, time-limited URLs for `ticketAttachmentPaths`, index-aligned with it (and so with
+   * `ticketAttachmentMetadata`). Only populated on read paths that ask for signed URLs; an
+   * entry is null when that one path could not be signed. Optional for the same reason
+   * `carEvidenceImageUrl` is nullable — most read paths never sign.
+   */
+  ticketAttachmentUrls?: Array<string | null>;
   ticketAmount: number;
   toArea: string | null;
   toCity: string | null;
