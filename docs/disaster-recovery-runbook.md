@@ -1,81 +1,231 @@
 # Phoenix Workforce — Disaster Recovery & Operations Runbook
 
-> ## ⛔ THIS RUNBOOK IS OUT OF DATE — READ THIS FIRST
+> ## Production runs on Railway — the 2026-08-01 GCP → Railway cutover
 >
-> **Production moved from GCP Cloud Run to Railway on 2026-08-01.** The GCP billing account was
-> closed and every billable API in project `phoenix-workforce-498619` now returns
-> `BILLING_DISABLED`. Everything below that starts with `gcloud` will fail, including — most
-> dangerously — the rollback procedure, which is the one thing you would reach for at 3am.
+> On 2026-08-01 the GCP billing account (`01BDEA-A20B4C-CC568F`, project `phoenix-workforce-498619`)
+> was closed over an unpaid balance the owner chose not to settle. Every `gcloud` command against
+> that project now fails `BILLING_DISABLED`, permanently — GCP is dead, not standby, and Google is
+> expected to delete the project's resources roughly 30 days after closure. Production moved to
+> **Railway** the same day. **Every procedure in this runbook is the current Railway procedure** —
+> nothing below needs a `gcloud` command. Historical Cloud Run detail is kept only where it is
+> genuinely useful context, and is always labeled historical.
 >
-> **Until this document is rewritten, use these instead:**
->
-> | You need to | Do this |
+> | Fact | Now |
 > |---|---|
-> | **Roll back a bad deploy** | Railway → project `Phoenix-HR-Workforce` → service `phoenix-people-workforce` → **Deployments** → find the last good one → **Redeploy**. There is no traffic-splitting; it is all-or-nothing. |
-> | Confirm what is live | `GET /api/healthz` and read `revision`. Not the workflow list — merges no longer go through a deploy workflow. |
-> | Check readiness | `GET /api/readyz` → `{database:true, env:true}`, `warnings: []` |
-> | Check email | `GET /api/health/email` → 200 healthy |
-> | **Check alerts** | **There are none.** All five Cloud Monitoring policies and the uptime check died with GCP and nothing has replaced them. Healthchecks.io still covers cron liveness only. |
-> | Read logs | Railway → service → **Deploy Logs**. Cloud Logging is gone, so the `labels.event` search recipes below no longer apply — `event` is now a top-level JSON key. |
+> | Host | Railway — project `Phoenix-HR-Workforce`, env `production`, service `phoenix-people-workforce` (region `sfo`, US West) |
+> | Deploy trigger | push/merge to `main` (GitHub-connected auto-deploy) — **the merge is the deploy**: full traffic, within minutes, no staged rollout, no smoke test |
+> | Confirm what's live | `curl https://phoenix-hr.satopharma.com/api/healthz` → read `revision` |
+> | Migrations | applied by hand, **before** the merge — the Railway build runs none |
+> | Scheduler | third-party **cron-job.org**, outside this repo (§7) — not GCP Cloud Scheduler (still fires, always 401s, ignore it) and not Railway's own `phoenix-cron` (disabled, never worked) |
+> | Alerting | 🔴 **nothing pages the owner.** Healthchecks.io (cron liveness only) is the one survivor — see §1 |
+> | Staging | **no staging app** — only the staging Supabase database survives |
 >
-> Scheduling: the 8 Cloud Scheduler jobs are dead. A `phoenix-cron` Railway service exists but its
-> effectiveness is unverified. `scripts/setup-gcp-cron.sh` remains the only reliable inventory of
-> what is *supposed* to run — read it, do not run it.
+> **Railway identifiers** (verified live 2026-08-04 via `railway status`; scripted CLI calls below
+> use IDs, not names — that's the proven-reliable pattern here):
+>
+> | Object | Name | ID |
+> |---|---|---|
+> | Project | `Phoenix-HR-Workforce` | `dc218ad3-99b7-4aff-be38-953a57524a71` |
+> | Environment | `production` | `cd5600e6-99dd-4b1c-80b2-16af8770abef` |
+> | Service (app) | `phoenix-people-workforce` | `30356676-116b-4886-ac6e-89041d80185e` |
+> | Service (cron — disabled, ignore) | `phoenix-cron` | `179e6a73-d891-4fbc-a89e-ac53ef461821` |
+>
+> Re-confirm the topology yourself before trusting the table above — it has drifted once already:
+> ```bash
+> railway status -p dc218ad3-99b7-4aff-be38-953a57524a71 -e cd5600e6-99dd-4b1c-80b2-16af8770abef --json
+> ```
 
-_Historical context (pre-2026-08-01): production ran on **GCP Cloud Run** (project `phoenix-workforce-498619`, region `europe-west3` since the 2026-07-17 region cutover, service `phoenix-hr`) at **https://phoenix-hr.satopharma.com**, backed by Supabase (`ozucdzovmcqvepbozvqf`), Resend (email), and Cloud Scheduler. The domain and Supabase project are unchanged. No secret values appear in this document._
+_Historical context (pre-2026-08-01): production ran on **GCP Cloud Run** (project
+`phoenix-workforce-498619`, region `europe-west3`, service `phoenix-hr`) at the same domain,
+backed by Supabase, Resend, and Google Cloud Scheduler. The domain and Supabase project are
+unchanged across the cutover. No secret values appear in this document._
 
 ## 1. Incident response — first 5 minutes
 
-1. **Confirm scope:** open `https://phoenix-hr.satopharma.com/api/healthz` (liveness) and `/api/readyz` (dependency readiness). `readyz` returns `{database:true, env:true}` when healthy, HTTP 503 when a dependency is down.
-2. **Check alerts:** GCP Monitoring → Alerting. Active policies: Cloud Run 5xx rate, p95 latency, uptime-check failure, Cloud Scheduler failures, app auth/cron/webhook failure spike. Alerts deliver to the owner email channel.
-3. **Check logs:** Cloud Logging → `resource.type="cloud_run_revision" resource.labels.service_name="phoenix-hr" severity>=ERROR`. Structured events carry `labels.event` (`cron_unauthorized`, `webhook_signature_invalid`, `cron_failed`, `background_job_failed`).
-4. **Classify:** app error (deploy a fix / roll back) vs data issue (see §4) vs dependency outage (Supabase/Resend status pages).
+1. **Confirm scope:** `https://phoenix-hr.satopharma.com/api/healthz` (liveness — 200 plus
+   `revision`, the running commit SHA) and `/api/readyz` (readiness — `{database:true, env:true}`
+   plus a `warnings: []` array for non-fatal notification-config drift; HTTP 503 when a required
+   dependency isn't ready). For email specifically: `/api/health/email` → 200 `healthy`.
+2. **Check alerts:** 🔴 **there is no alerting layer any more.** All five GCP Cloud Monitoring
+   policies (5xx rate, p95 latency, uptime, scheduler failure, auth-failure spike, config drift) died
+   with the GCP shutdown and nothing has replaced them; Sentry was separately retired 2026-07-31.
+   The only thing that still pages anyone is the **Healthchecks.io** dead-man's-switch, and it only
+   answers one question — did a cron job run at all. Check its dashboard for any check showing
+   `DOWN`, check `/admin/system-issues` → **Issues & Errors** tab (app-level `app_error_events`;
+   the infra-log half shows a permanent "not connected" banner — that's expected, not a bug, use
+   `railway logs` for infra-level failures instead), and check the Railway dashboard's service
+   metrics (CPU / memory / restarts). None of these push a notification — you have to go look.
+3. **Check logs:**
+   ```bash
+   railway logs -s phoenix-people-workforce -e production -p Phoenix-HR-Workforce
+   ```
+   Structured single-line JSON; `event` is a top-level key (`cron_unauthorized`,
+   `webhook_signature_invalid` / `webhook_misconfigured`, `cron_failed` / `background_job_failed`,
+   `config_drift`). Add `--http --json` for the HTTP access log (`clientUa`, `httpStatus`, `@path` —
+   this is how a genuine cron-job.org call is told apart from the noisy, harmless 401s still coming
+   from GCP Cloud Scheduler, see §7). Useful filters: `--filter "@level:error"`,
+   `--http --status ">=400"`, `--since 1h`.
+4. **Classify:** application error (deploy a fix or roll back — §2/§3) vs. data issue (§4) vs.
+   dependency outage (Supabase/Resend status pages) vs. scheduler outage (cron-job.org dashboard,
+   §7 — check this before telling anyone notifications/outbox/iReports sync are stalled; it has kept
+   running silently through outages that looked total from inside this repo before).
 
 ## 2. Rollback (fastest recovery for a bad deploy)
 
-Cloud Run keeps prior revisions; traffic can be moved instantly with no rebuild.
+Railway has no traffic-splitting — a deploy is either live at 100% or it isn't. There are two ways
+back; use **A** unless you have a specific reason to reach for **B**.
+
+### A. Revert the commit (reliable — matches git history, always available)
 
 ```bash
-# List recent revisions (most recent first)
-gcloud run revisions list --service=phoenix-hr --region=europe-west3 --project=phoenix-workforce-498619
-
-# Roll 100% traffic back to a known-good revision
-gcloud run services update-traffic phoenix-hr \
-  --region=europe-west3 --project=phoenix-workforce-498619 \
-  --to-revisions <GOOD_REVISION>=100
+git checkout -b codex/revert-<short-reason> origin/main
+git revert <bad-sha>
+git push -u origin codex/revert-<short-reason>
+gh pr create --title "revert: <reason>" --body "Reverts <bad-sha> — <why>"
 ```
 
-The deploy pipeline (`.github/workflows/deploy-cloud-run.yml`) already deploys **no-traffic + smoke-tested** and only promotes on success, so a broken build should not reach 100% in the first place. Container images/revisions are retained by Cloud Run for rollback.
+Wait for the 5 required checks to go green (`validate`, `lint`, `typecheck`, `secret-scan`,
+`sast-scan` — `gh pr checks <PR-number> --required`; don't foreground-watch, check back). Get
+explicit owner approval — merging to `main` always needs it, incident or not (AGENTS.md §6) — then:
+
+```bash
+gh pr merge <PR-number>
+```
+
+Never `gh pr merge --auto` — `allow_auto_merge` is `false` on this repo and it would be rejected
+anyway, but the habit is worth not forming. Once merged, Railway ships it at full traffic within
+minutes — there's no staged rollout or smoke test standing between the merge and the fix reaching
+employees, which is what makes this a real rollback path and not just "eventually." Confirm:
+
+```bash
+curl -s https://phoenix-hr.satopharma.com/api/healthz
+```
+
+`revision` should move off the bad SHA. To independently confirm a deploy actually fired (separate
+from what's serving traffic): `gh api repos/Gawish-1997/phoenix-people-workforce/deployments` —
+rows read `Phoenix-HR-Workforce / production … "Deployed to Railway"`.
+
+🔴 **This applies no migrations.** If the bad deploy shipped a schema change, the revert only undoes
+the code — undo the schema separately (§4, docs/migrations.md) or the reverted code may now be
+missing a column/function the still-forward schema expects.
+
+### B. Redeploy an older build from the Railway dashboard (faster, code-only issues)
+
+```bash
+railway deployment list -s phoenix-people-workforce -e production -p Phoenix-HR-Workforce
+```
+
+lists recent deployments with IDs, statuses, and timestamps. 🔴 **The CLI cannot redeploy an
+arbitrary older one** — `railway redeploy` / `railway deployment redeploy` only redeploy the
+*latest* deployment of a service; neither takes a deployment-ID argument. To restore a specific
+older build: Railway dashboard → project `Phoenix-HR-Workforce` → service `phoenix-people-workforce`
+→ **Deployments** → find the last-good one → **Redeploy**.
+
+This does not touch git — `main` still points at the bad commit, so the next merge (or the next
+`railway redeploy`, see the warning in §5) ships the bad commit again. Follow up with option A once
+the immediate fire is out, so code and deployment don't quietly diverge.
+
+Confirm the same way: `curl -s https://phoenix-hr.satopharma.com/api/healthz`.
 
 ## 3. Redeploy / forward-fix
 
-- Merge a fix to `main` → CI must pass → the deploy workflow auto-deploys (gated on CI success, SHA-pinned actions, env-validated, no-traffic → smoke → promote).
-- Manual: Actions → "Deploy to Google Cloud Run" → **Run workflow** (`workflow_dispatch`), or `gcloud run deploy phoenix-hr --source . --region europe-west3 --project phoenix-workforce-498619`.
+Same pipeline as §2A: branch → PR → the 5 required checks → explicit owner approval → `gh pr merge`.
+There is no separate "Deploy to Railway" workflow to dispatch — the merge **is** the deploy, and it
+ships within minutes at full traffic. See §2A for the exact commands and the deployments-API check.
+
+🔴 **Apply any required database migration before merging, not after** (§4) — the Railway build has
+no migration step (`package.json` has no `db push`/`migrate` script; `build` is plain `next build`,
+`start` is plain `next start`). Code that selects a new column or calls a new function goes live
+before the schema does unless you apply the migration first; the failure is silent until a user
+opens the affected page.
+
+Confirm: `curl -s https://phoenix-hr.satopharma.com/api/healthz` → `revision` matches the new
+commit.
 
 ## 4. Database recovery (Supabase)
 
-- **NEVER** run a destructive restore on production without explicit owner approval and a verified backup.
-- **Point-in-time recovery / backups:** Supabase dashboard → Database → Backups (owner-gated; confirm PITR + retention are enabled — see §8).
-- All schema changes are migration-based (`supabase/migrations/`). To recover schema, re-apply migrations to a fresh project.
-- The durable job queue (`background_jobs`) and `app_error_events` are non-critical/transient; safe to truncate if corrupted (they hold no business records).
+- **A full restore is the most destructive action in this runbook.** Supabase writes are
+  pre-authorized end to end for routine work (AGENTS.md §8 — no permission prompt blocks a migration
+  or a query), but a point-in-time or project restore is irreversible and can lose every write since
+  the restore point, across payroll, attendance, and sales data. Treat it as AGENTS.md §6's
+  "irreversible operation," not as pre-authorized: show the target, the restore point, the expected
+  data-loss window, and **wait for the owner to say go, live, in the conversation**, before running
+  it.
+- **Point-in-time recovery / backups:** Supabase dashboard → Database → Backups, or the Supabase
+  MCP's restore capability — same blast radius either way. Confirm PITR and retention meet policy
+  before you need them, not during the incident (§8 below).
+- All schema changes are migration-based (`supabase/migrations/`). To recover schema, re-apply
+  migrations to a fresh project in order — see docs/migrations.md. History before 2026-07-11 was
+  collapsed into one baseline-snapshot migration
+  (`20260711135352_phoenix_production_schema_baseline.sql`); the pre-baseline files are archived
+  under `supabase/_migrations_archive/` for reference only and must never be re-applied or
+  re-timestamped.
+- The durable job queue (`background_jobs`) and `app_error_events` are non-critical/transient; safe
+  to truncate if corrupted (they hold no business records).
+- Prove any recovery against `pg_class` / `pg_proc` / a row count — never against `list_migrations`,
+  it reports the migration ledger, not what's actually live on the server.
 
 ## 5. Secret rotation
 
-Secrets live in the Cloud Run service env (owner-managed). To rotate one (owner-run — never minted or entered by automation):
+Secrets live in Railway service environment variables (owner-managed; a production env-var change
+needs its own explicit approval per AGENTS.md §6, same as any other production deploy). To rotate
+one:
 
 ```bash
-# Example shape (values entered by the owner; not shown here):
-gcloud run services update phoenix-hr --region=europe-west3 --project=phoenix-workforce-498619 \
-  --update-env-vars "<NAME>=<NEW_VALUE>"
+printf '%s' "$NEW_VALUE" | railway variables set <NAME> --stdin \
+  -p dc218ad3-99b7-4aff-be38-953a57524a71 \
+  -e cd5600e6-99dd-4b1c-80b2-16af8770abef \
+  -s 30356676-116b-4886-ac6e-89041d80185e \
+  --skip-deploys
+
+railway redeploy -y \
+  -p dc218ad3-99b7-4aff-be38-953a57524a71 \
+  -e cd5600e6-99dd-4b1c-80b2-16af8770abef \
+  -s 30356676-116b-4886-ac6e-89041d80185e
 ```
 
-`CRON_SECRET` rotation must also update the `Authorization: Bearer` header on **all** Cloud Scheduler jobs (`phoenix-notify-daily`, `phoenix-process-notifications`, `phoenix-ireports360-sync`, `phoenix-reconcile-visits`, `phoenix-background-jobs`) in the same window, or crons 401. `RESEND_WEBHOOK_SECRET` rotation must also be updated in the Resend dashboard.
+- Use `printf`, never `echo` — a trailing `\n` silently breaks a byte-exact secret comparison
+  downstream. A related CRLF-corrupted `CRON_SECRET` write (Git Bash piping into secret storage,
+  Cloud-Run era) 401'd every cron for ~14 minutes — same failure shape, don't relearn it.
+- Pipe the value over stdin; never type it into the command line or the Railway web UI's variable
+  editor — Railway renders *staged* (unsaved) variable values unmasked, so an open changes panel can
+  leak a secret into a screen share or a transcript.
+- 🔴 **`railway redeploy` is a full rebuild from `main` HEAD, not a config-only bounce** — verified
+  2026-08-02: redeploying only to pick up one new environment variable rebuilt from `main` and
+  shipped two unrelated commits that had not gone live yet. Record `/api/healthz` `revision`
+  immediately before and after any `railway redeploy`, so an unintended ship is visible immediately.
+
+`CRON_SECRET` rotation must also update the `Authorization` header on **every** job in the
+cron-job.org dashboard in the same window, or every cron 401s (§7). `RESEND_WEBHOOK_SECRET`
+rotation must also be updated in the Resend dashboard (§8).
+
+> **TODO(verify):** the current cron-job.org job list/IDs — that account is outside this repo and
+> its schedule has already drifted from the paper record in docs/deployment.md § Cron Jobs at least
+> once. Confirm the live list in the dashboard before rotating, rather than trusting any doc.
 
 ## 6. Pause switches (containment)
 
-- **Email:** set `EMAIL_NOTIFICATIONS_ENABLED=false` (all sends skip) or `PHOENIX_EMAIL_DELIVERY_MODE=testing` (redirect to internal test inboxes) via a Cloud Run env update.
-- **Crons:** `gcloud scheduler jobs pause <JOB> --location=us-central1 --project=phoenix-workforce-498619` for each job.
-- **Read-only-ish:** `APP_ENV=preview` + `PHOENIX_PREVIEW_READ_ONLY=true` blocks most mutations (preview-read-only guard) — use only if the deployment is intended as a temporary safe read surface.
+- **Email:** same mechanism as §5 —
+  ```bash
+  printf 'false' | railway variables set EMAIL_NOTIFICATIONS_ENABLED --stdin \
+    -p dc218ad3-99b7-4aff-be38-953a57524a71 -e cd5600e6-99dd-4b1c-80b2-16af8770abef \
+    -s 30356676-116b-4886-ac6e-89041d80185e --skip-deploys
+  ```
+  (all sends skip), or set `PHOENIX_EMAIL_DELIVERY_MODE=testing` the same way to redirect every send
+  to the internal test inboxes instead of stopping it outright. Either way, follow with
+  `railway redeploy` and read the §5 warning first — it is a full deploy, not a flag flip.
+- **Crons:** cron-job.org dashboard → find the job → disable it. There is no CLI/API path documented
+  in this repo — it's a third-party account outside version control (§7).
+  > **TODO(verify):** who holds login access to the cron-job.org account, and whether it has an API
+  > key that would let this be scripted instead of done by hand in the dashboard mid-incident.
+- **Read-only / maintenance mode: there isn't one.** `PHOENIX_PREVIEW_READ_ONLY` /
+  `APP_ENV=preview` is a leftover Vercel-preview guard confirmed inert today — nothing in this
+  Railway topology ever sets `APP_ENV=preview`, so setting the flag alone does nothing. Do not reach
+  for it as a containment lever during an incident; it will not do what the name suggests. There is
+  no maintenance-mode or read-only kill switch anywhere in the codebase today (verified: no
+  `MAINTENANCE_MODE` / `READ_ONLY_MODE` / `KILL_SWITCH`-style flag exists in `src/`). Full
+  containment currently means pausing crons (above) plus the email switch — there is no faster
+  single lever.
 
 ## 7. External callback / integration inventory
 
@@ -89,8 +239,14 @@ gcloud run services update phoenix-hr --region=europe-west3 --project=phoenix-wo
 | Google Maps / Calendar | outbound | server + browser keys | Google APIs | — |
 | OpenAI (+ fallbacks) | outbound | `OPENAI_API_KEY` | api.openai.com | — |
 | On-prem attendance agent | inbound | `ATTENDANCE_AGENT_TOKEN` bearer | `…/api/attendance/raw-punches` | `ON CONFLICT DO NOTHING` |
-| Cloud Scheduler → crons | inbound | `CRON_SECRET` bearer | `/api/notifications/*`, `/api/cron/*` | per-job |
-| GitHub Actions → Cloud Run | deploy | Workload Identity Federation | `WIF_PROVIDER` / `WIF_SERVICE_ACCOUNT` | — |
+| **cron-job.org → crons** | inbound | `CRON_SECRET` bearer | `/api/notifications/*`, `/api/cron/*` | per-job |
+| GitHub → Railway | deploy | Railway's own GitHub App connection (no repo secret) | configured in the Railway dashboard, not this repo | — |
+
+🔴 Two other callers still hit the cron routes and both are noise, not signal: **GCP Cloud
+Scheduler**'s 8 jobs still fire but 401 on every route (secret mismatch against a dead project —
+don't chase it), and Railway's own `phoenix-cron` service is disabled and never reached the app
+while it ran. Tell them apart in `railway logs --http --json` by `clientUa`: a `cron-job.org` UA
+from a Hetzner IP is real; `Google-Cloud-Scheduler` is not.
 
 ## 8. Owner-gated verifications (external consoles)
 
@@ -99,8 +255,14 @@ gcloud run services update phoenix-hr --region=europe-west3 --project=phoenix-wo
 | Resend webhook endpoint | Resend → Webhooks | `https://phoenix-hr.satopharma.com/api/webhooks/resend`; signing secret == `RESEND_WEBHOOK_SECRET` |
 | Supabase Auth Site URL | Supabase → Auth → URL Config | Site URL + redirects = canonical domain (low impact: app uses app-managed auth, bridge uses admin API) |
 | Supabase backups / PITR | Supabase → Database → Backups | PITR enabled + retention that meets policy |
-| GCP alert notification channel | Monitoring → Alerting → Channels | owner email verified/receiving |
+| Healthchecks.io notification channel | healthchecks.io → project → Integrations | at least one channel (email/Slack/Telegram/…) configured and receiving — this is the **only** alert left that pages anyone (§1) |
+| cron-job.org account access | cron-job.org dashboard (third-party, outside this repo) | someone on the team can list/edit jobs; job list matches docs/deployment.md § Cron Jobs |
 
-## 9. Vercel retirement
+## 9. Vercel — fully decommissioned, not a rollback target
 
-There is **no runtime dependency on Vercel** (verified by the `check-no-stale-domains` CI gate — no `vercel.app` / `process.env.VERCEL` in shipped source). The old Vercel deployment is useful only as a temporary rollback reference and can be decommissioned once (a) the Resend webhook endpoint is confirmed on the new domain and (b) an authenticated role smoke passes. Keep DNS pointed at the Cloud Run domain mapping (Google-managed cert).
+Vercel predates Cloud Run and is now doubly legacy. There is **no runtime dependency on it**
+(enforced by the `check:no-stale-domains` CI gate — no `vercel.app` / `process.env.VERCEL` allowed
+in shipped source), and AGENTS.md §3 records it as fully decommissioned: never deploy to it or
+verify against it, and it is not a rollback target — use §2 instead. DNS for the production domain
+points at Railway (Cloudflare `CNAME phoenix-hr -> xok6ir4p.up.railway.app`, unproxied), not at any
+Vercel or Cloud Run mapping.

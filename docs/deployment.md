@@ -160,8 +160,11 @@ There is no traffic-splitting rollback any more. To roll back, **revert the comm
 the revert merge is itself a deploy and ships the previous code the same way. Confirm with
 `/api/healthz` that `revision` moved to the reverted SHA.
 
-Railway also keeps prior deployments and can redeploy one from the CLI, which is faster than a
-rebuild when the last good commit is known. If the cutover itself ever needs reversing, the
+Railway also keeps prior deployments and can redeploy the last-good one from the **dashboard**
+(project `Phoenix-HR-Workforce` → service `phoenix-people-workforce` → **Deployments** → **Redeploy**) —
+faster than a rebuild when the last good commit is known. The **CLI cannot** redeploy an arbitrary
+older deployment (`railway redeploy` only redeploys the *latest*); see
+docs/disaster-recovery-runbook.md § 2. If the cutover itself ever needs reversing, the
 pre-cutover Cloudflare record was `A 8.232.10.208` (Cloud Run) — but note GCP deletes a closed
 project's resources roughly 30 days after closure, so that target may no longer exist.
 
