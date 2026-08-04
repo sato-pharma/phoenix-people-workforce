@@ -587,6 +587,7 @@ import { runOutstationSubmitEmailRoutingTests } from "./outstation-submit-email-
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1232,6 +1233,10 @@ await runTest("reconciliation harness (a breach names both figures and their sou
 await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest(
+  "SoS customer channel (six Arabic keywords ⇒ store; ة/ه fold; channel totals cover the whole side)",
+  runSalesCustomerChannelTests,
+);
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
 const slowest = [...testDurationsMs].sort((a, b) => b.durationMs - a.durationMs).slice(0, 10);

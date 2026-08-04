@@ -20,6 +20,7 @@ import {
   Trash2,
   TrendingUp,
   UploadCloud,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
@@ -32,6 +33,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CustomersChannelTab } from "@/components/sales/customers-channel-tab";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
 import { SalesQueue } from "@/components/sales/sales-queue";
@@ -941,7 +943,7 @@ function UploadStatusPanel({
   );
 }
 
-type SourceOfSalesTab = "approvals" | "coverage" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
+type SourceOfSalesTab = "approvals" | "coverage" | "customers" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes, initialTab, initialProductsSearch, initialQueue, initialQueueError }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1394,6 +1396,18 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             <TrendingUp className="h-4 w-4" />
             Coverage
           </Button>
+          {/* Customers — the customer base split into Pharmacies and Stores by name keyword. */}
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "customers" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("customers")}
+            variant="secondary"
+          >
+            <Users className="h-4 w-4" />
+            Customers
+          </Button>
         </div>
 
         {actionMessage ? (
@@ -1659,6 +1673,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           />
         ) : activeTab === "coverage" ? (
           <SosCoverageTab bricks={mappingReferences.bricks} />
+        ) : activeTab === "customers" ? (
+          <CustomersChannelTab />
         ) : (
           <SourceOfSalesProductsTab
             initialProducts={initialProducts}
