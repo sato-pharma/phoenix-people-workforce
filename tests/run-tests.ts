@@ -597,6 +597,7 @@ import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
+import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1265,6 +1266,11 @@ await runTest(
 await runTest(
   "store split applied to the closing matrix (sales move between areas, TARGETS are never touched, achievement re-derives, grand total holds)",
   runStoreSplitMatrixTests,
+);
+
+await runTest(
+  "marketing approval inbox nav badge (gating rows only — not CC, not upcoming, not a request that already left pending_approval; overdue on the step's own default_sla_days, never on a null one)",
+  runMarketingApprovalInboxNavBadgeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

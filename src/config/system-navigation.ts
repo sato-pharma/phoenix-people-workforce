@@ -90,7 +90,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-approvals-pending" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending";
+  navBadge?: "direct-orders-approvals-pending" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -356,6 +356,11 @@ const adminNavigationSectionSeeds = [
         href: "/admin/marketing-requests/inbox",
         icon: Inbox,
         label: "Marketing Approval Inbox",
+        // The pending badge the comment above promised. It needs its OWN kind: marketing is
+        // deliberately excluded from the consolidated approvals hub (see the comments in
+        // src/lib/action-center/service.ts and app/api/approvals-hub/hub-data/route.ts), so
+        // "approvals-hub-pending" would count everything EXCEPT this inbox.
+        navBadge: "marketing-approvals-pending",
         roles: ["CEO", "District Manager", "Super Admin", "SFE Manager"],
       },
       // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
@@ -900,6 +905,10 @@ const employeePortalNavigationSectionSeeds = [
         href: "/employee-portals/marketing-requests/inbox",
         icon: Inbox,
         label: "Approval Inbox",
+        // Same dedicated badge as the admin-shell tab — this is the surface the portal-side
+        // approvers on the chain (District Manager / National Sales Manager, Marketing Manager)
+        // actually use.
+        navBadge: "marketing-approvals-pending",
         roles: [
           "Medical Rep",
           "District Manager",

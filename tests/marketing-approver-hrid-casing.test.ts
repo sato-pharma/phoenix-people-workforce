@@ -144,15 +144,24 @@ export async function runMarketingApproverHrIdCasingTests() {
     /const actorHrKeys = hrIdLookupKeys\(actorHrId\)/,
     "the approver inbox must expand the actor id into every HR_ID dialect",
   );
-  // Three queries now: the actor's own CURRENT gating step, their CC steps, and (2026-08-04) the
-  // steps still PENDING for them — the "coming to you" tracking rows. Every one of them must use
-  // the dialect-expanded keys, or that section silently empties for exactly the approvers whose
-  // HR_ID casing differs between the session and the employee master.
+  // Four queries now: the actor's own CURRENT gating step, their CC steps, (2026-08-04) the steps
+  // still PENDING for them — the "coming to you" tracking rows — and the sidebar pending-count
+  // badge in getMarketingApproverBadge. Every one of them must use the dialect-expanded keys, or
+  // that section silently empties for exactly the approvers whose HR_ID casing differs between the
+  // session and the employee master. (A badge stuck on zero reads as "nothing waiting on me",
+  // which is worse than an empty page — nobody opens the page to discover otherwise.)
   const inboxFilters = service.match(/\.in\("assigned_hr_id", actorHrKeys\)/g) ?? [];
   assert.equal(
     inboxFilters.length,
-    3,
-    "all three inbox queries (gating + CC + upcoming) must match assigned_hr_id case-insensitively",
+    4,
+    "all four approver-scoped queries (gating + CC + upcoming + nav badge) must match assigned_hr_id case-insensitively",
+  );
+  // The real invariant behind the count above: no approver-scoped read may filter assigned_hr_id by
+  // exact match. A new query added with .eq() would leave the count at 4 and still be broken.
+  assert.doesNotMatch(
+    service,
+    /\.eq\("assigned_hr_id"/,
+    "no approver-scoped query may match assigned_hr_id exactly — the session id and employee master disagree on casing",
   );
 
   // ── The drafts route must NOT mask a real constraint violation as "schema not applied" ──
