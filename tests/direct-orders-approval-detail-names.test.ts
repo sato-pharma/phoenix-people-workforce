@@ -611,7 +611,20 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "the pharmacy gate must apply to the FINAL approval only",
     );
     assert.match(decideBody, /verificationStatus === "pending_review"/, "an unverified pharmacy must block finalization");
-    assert.match(decideBody, /A System Admin must/, "the refusal must say what is needed to clear it");
+    assert.match(decideBody, /A System Admin has to check it first/, "the refusal must say what is needed to clear it");
+    // Plain English, checked as a rule rather than a one-off: "catalogue" is the word the owner
+    // said he could not understand ("i donot under4stand"), and it had leaked into three surfaces.
+    for (const [label, source] of [
+      ["the refusal message", decideBody],
+      [
+        "the approval-window banner",
+        readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8")
+          .split("verificationStatus === \"pending_review\"")[1]
+          ?.slice(0, 700) ?? "",
+      ],
+    ] as const) {
+      assert.doesNotMatch(source, /catalogue/i, `${label} must not use the word "catalogue"`);
+    }
     // Earlier rungs must NOT be blocked — SFE and the sales line still review normally.
     const gateIdx = decideBody.indexOf('verificationStatus === "pending_review"');
     const beforeGate = decideBody.slice(0, gateIdx);
@@ -693,14 +706,93 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(
       createBody,
       /const unresolved = Array\.from\(byDistributor\.entries\(\)\)\.filter\(/,
-      "verification must be derived by checking each code against the catalogue",
+      "the review REASON must still be derived by checking each code against the customer map",
     );
-    assert.match(createBody, /verification_status: "pending_review"/, "an unrecognised code must flag the pharmacy");
+    assert.match(createBody, /verification_status: "pending_review"/, "a hand-registered pharmacy must be flagged");
     // …and must NEVER block the submission.
     assert.doesNotMatch(
       createBody,
       /unresolved[\s\S]{0,200}badRequest/,
       "an unrecognised code must flag the pharmacy, never block the request",
+    );
+
+    // ── All THREE situations, not just the unrecognised code (owner rule, 2026-08-04) ────────
+    //
+    // The flag is set ON THE INSERT, unconditionally. Reaching createDirectOrderPharmacy means
+    // the submitter could not find the pharmacy in Phoenix and typed it in — which is situation 1
+    // and subsumes the other two. Deriving it from the codes instead would let a hand-typed
+    // pharmacy whose code happened to collide with a real one skip review altogether.
+    const insertIdx = createBody.indexOf('.from("direct_order_pharmacies")');
+    const insertBlock = createBody.slice(insertIdx, createBody.indexOf(".single();", insertIdx));
+    assert.match(
+      insertBlock,
+      /verification_status: "pending_review"/,
+      "the pending_review flag must be part of the INSERT, not a conditional update after it",
+    );
+    assert.match(insertBlock, /entry_source: "manual"/, "a hand-registered pharmacy must record how it got here");
+
+    // Situation 3 — no distributor and no code at all — must be accepted. This is the refusal
+    // the owner had removed; if it comes back, a submitter who does not know the code is stuck
+    // and invents one, which is exactly how "829575 \ 1533576" reached production.
+    assert.doesNotMatch(
+      createBody,
+      /Add at least one distributor/,
+      "distributor + customer code are OPTIONAL — the request takes an extra rung instead",
+    );
+    assert.doesNotMatch(
+      createBody,
+      /byDistributor\.size === 0[\s\S]{0,120}badRequest/,
+      "an empty distributor list must never refuse the registration",
+    );
+    // With no codes there is nothing to look up, and `.in(col, [])` is not a safe no-op.
+    assert.match(
+      createBody,
+      /if \(byDistributor\.size > 0\) \{/,
+      "the customer-map lookup must be skipped entirely when no codes were given",
+    );
+
+    // ── The extra rung, and the fact that approving it IS the acknowledgment ────────────────
+    const chainIdx = serviceSource.indexOf("async function buildApprovalChain(");
+    const chainBody = serviceSource.slice(chainIdx, serviceSource.indexOf("// ── Row mappers", chainIdx));
+    assert.match(
+      chainBody,
+      /if \(input\.pharmacyUnverified\) \{[\s\S]{0,240}role: SYSTEM_ADMIN_ACK_ROLE/,
+      "the ack rung must be added only when the pharmacy is unrecognised",
+    );
+    // Order matters: SFE is pushed first, the admin second, the management line after both.
+    assert.ok(
+      chainBody.indexOf("SFE_VALIDATION_ROLE") < chainBody.indexOf("SYSTEM_ADMIN_ACK_ROLE"),
+      "SFE must be pushed onto the chain before the System Admin rung",
+    );
+    assert.ok(
+      chainBody.indexOf("SYSTEM_ADMIN_ACK_ROLE") < chainBody.indexOf("const straightToCeo"),
+      "the System Admin rung must come before the management line, not after it",
+    );
+
+    // Every caller that builds a chain must pass the flag — a missed one silently drops the rung
+    // and the request goes back to failing at the CEO with nobody having been asked.
+    const chainCallSites = serviceSource.match(/buildApprovalChain\(\{[\s\S]{0,320}?\}\)/g) ?? [];
+    assert.equal(chainCallSites.length, 3, "submit, rebuild and reverse each build a chain");
+    for (const [index, call] of chainCallSites.entries()) {
+      assert.match(call, /pharmacyUnverified:/, `buildApprovalChain call ${index + 1} must pass pharmacyUnverified`);
+    }
+
+    // Approving the rung IS the acknowledgment — one decision, one state change. Keeping them
+    // separate is what let an admin approve the request and still leave the pharmacy unverified,
+    // so the CEO hit the block anyway and nobody could tell which action was outstanding.
+    const decideStart = serviceSource.indexOf("export async function decideDirectOrder(");
+    const decideSource = serviceSource.slice(decideStart, serviceSource.indexOf("// ── Reversal", decideStart));
+    assert.match(
+      decideSource,
+      /input\.decision === "approve" && isSystemAdminAckStep\(activeStep\)[\s\S]{0,200}acknowledgeDirectOrderPharmacy\(/,
+      "approving the System Admin rung must verify the pharmacy",
+    );
+    // Only on approve: a rejection may well BE because the pharmacy is wrong.
+    const ackCall = decideSource.slice(0, decideSource.indexOf("acknowledgeDirectOrderPharmacy("));
+    assert.match(
+      ackCall.slice(-160),
+      /input\.decision === "approve"/,
+      "the acknowledgment must be guarded by the approve decision, not fire on any decision",
     );
 
     // Acknowledgment is Super-Admin only: an approver holds direct_orders:approve but must not

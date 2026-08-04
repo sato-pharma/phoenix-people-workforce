@@ -21,6 +21,8 @@ import {
   computeDiscountSalesValue,
   evaluateStepAction,
   SFE_VALIDATION_ROLE,
+  SYSTEM_ADMIN_ACK_ROLE,
+  isSystemAdminAckStep,
   maxBonusUnits,
   resolveActiveStep,
   validateBonus,
@@ -243,6 +245,23 @@ function directoryLookup(directory: EmployeeDirectoryData) {
 }
 
 /**
+ * Is this pharmacy still waiting for a System Admin to acknowledge it?
+ *
+ * Read straight from the row rather than from a caller-supplied flag: the chain shape depends on
+ * it, and a stale flag would build a chain with a rung that should not be there (or, worse,
+ * without the one that should).
+ */
+async function isPharmacyAwaitingReview(pharmacyId: string): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("direct_order_pharmacies")
+    .select("verification_status")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  return String((data as { verification_status?: string } | null)?.verification_status ?? "verified") === "pending_review";
+}
+
+/**
  * Build the ordered approval chain. Sales roles climb their ACTUAL manager chain
  * (managerHrId) up to — but not including — the CEO; Product/Group-Product Managers
  * go straight to the CEO. The final rung is always the CEO resolved by role.
@@ -250,6 +269,12 @@ function directoryLookup(directory: EmployeeDirectoryData) {
 async function buildApprovalChain(input: {
   requesterHrId: string;
   requesterRole: PhoenixRole;
+  /**
+   * True when Phoenix does not recognise the request's pharmacy, which inserts the System Admin
+   * acknowledgment rung directly after SFE. Defaults to false so a caller that forgets it gets
+   * the ordinary chain rather than a phantom rung.
+   */
+  pharmacyUnverified?: boolean;
 }): Promise<Array<Omit<DirectOrderStepState, "status">>> {
   const directory = await getEmployeeDirectory();
   const lookup = directoryLookup(directory);
@@ -264,6 +289,19 @@ async function buildApprovalChain(input: {
   // like the CEO's — whoever currently holds SFE Manager acts on it — so it survives a change of
   // post-holder without touching any in-flight request.
   rungs.push({ kind: "role", role: SFE_VALIDATION_ROLE, approverHrId: null, label: "SFE Manager" });
+
+  // A pharmacy Phoenix does not recognise adds ONE rung, right behind SFE (owner rule,
+  // 2026-08-04). Behind SFE and not in front of it because SFE is the one who can say whether
+  // this pharmacy should exist at all; the System Admin then confirms its codes. Asking the
+  // admin first would make them adjudicate a request the sales side may reject anyway.
+  if (input.pharmacyUnverified) {
+    rungs.push({
+      kind: "role",
+      role: SYSTEM_ADMIN_ACK_ROLE,
+      approverHrId: null,
+      label: "System Admin (new pharmacy)",
+    });
+  }
 
   const straightToCeo =
     input.requesterRole === "Product Manager" || input.requesterRole === "Group Product Manager";
@@ -497,7 +535,16 @@ export async function createDirectOrderPharmacy(
   const pharmacyAddress = input.pharmacyAddress?.trim();
   if (!pharmacyAddress) badRequest("Pharmacy address is required.");
 
-  // ≥1 distributor + customer code is now mandatory; one code per distributor.
+  // Distributor + customer code are OPTIONAL (owner rule, 2026-08-04). A submitter who does not
+  // know the distributor, or the code, or either, can still register the pharmacy and keep
+  // working. What it costs is one extra rung: the request waits for SFE validation and then a
+  // System Admin acknowledgment before it rejoins the ordinary chain.
+  //
+  // Refusing here was the worse option: it does not produce a correct code, it produces an
+  // invented one. That is exactly how "829575 \ 1533576" reached production — a required field
+  // with nothing valid to put in it.
+  //
+  // When codes ARE supplied they are still validated: one per distributor, one code per field.
   const byDistributor = new Map<string, string>();
   for (const pair of input.distributorCodes ?? []) {
     const distributorCode = String(pair.distributorCode ?? "").trim();
@@ -514,11 +561,21 @@ export async function createDirectOrderPharmacy(
     }
     byDistributor.set(distributorCode, customerCode);
   }
-  if (byDistributor.size === 0) {
-    badRequest("Add at least one distributor and its customer code for this pharmacy.");
-  }
 
   const supabase = getSupabaseAdmin();
+  // Every hand-registered pharmacy starts UNRECOGNISED, and the row says so from the first insert
+  // rather than being corrected a moment later (owner rule, 2026-08-04 — "the three situations").
+  //
+  // This is the whole rule in one line, and it is stricter than deriving the state from the codes
+  // alone on purpose. Reaching this function AT ALL means the submitter could not find the
+  // pharmacy in Phoenix and typed it in, which is situation 1. Situations 2 and 3 — a code the
+  // distributor's list does not contain, and no code at all — are then just narrower cases of it.
+  // Deriving from the codes would have let a hand-typed pharmacy whose code happened to collide
+  // with a real one skip review entirely, which is the exact mis-attribution the review exists
+  // to catch.
+  //
+  // Picking an existing pharmacy from the list never calls this function, so an ordinary request
+  // is unaffected: it keeps the plain SFE → management → CEO chain.
   const { data: pharmacyRow, error } = await supabase
     .from("direct_order_pharmacies")
     .insert({
@@ -529,6 +586,8 @@ export async function createDirectOrderPharmacy(
       doctor_name: doctorName,
       pharmacy_address: pharmacyAddress,
       created_by_hr_id: access.hrId,
+      verification_status: "pending_review",
+      entry_source: "manual",
     })
     .select("*")
     .single();
@@ -536,73 +595,65 @@ export async function createDirectOrderPharmacy(
   const pharmacyId = String((pharmacyRow as Record<string, unknown>).id);
 
   // Resolve each (distributor, customer code) → brick via the customer map (best-effort).
-  const distributorCodes = Array.from(byDistributor.keys());
-  const customerCodes = Array.from(byDistributor.values());
-  const { data: mapRows } = await supabase
-    .from("source_of_sales_customer_map")
-    .select("distributor_code, customer_code, brick_id, area_code, region_code")
-    .in("distributor_code", distributorCodes)
-    .in("customer_code", customerCodes);
+  // Skipped entirely when no codes were given: `.in(col, [])` is not a harmless no-op in
+  // PostgREST, and there is nothing to resolve anyway.
   const mapByKey = new Map<string, { brick: string | null; area: string | null; region: string | null }>();
-  for (const row of (mapRows ?? []) as Array<Record<string, unknown>>) {
-    mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
-      brick: row.brick_id ? String(row.brick_id) : null,
-      area: row.area_code ? String(row.area_code) : null,
-      region: row.region_code ? String(row.region_code) : null,
+  if (byDistributor.size > 0) {
+    const { data: mapRows } = await supabase
+      .from("source_of_sales_customer_map")
+      .select("distributor_code, customer_code, brick_id, area_code, region_code")
+      .in("distributor_code", Array.from(byDistributor.keys()))
+      .in("customer_code", Array.from(byDistributor.values()));
+    for (const row of (mapRows ?? []) as Array<Record<string, unknown>>) {
+      mapByKey.set(`${row.distributor_code}::${row.customer_code}`, {
+        brick: row.brick_id ? String(row.brick_id) : null,
+        area: row.area_code ? String(row.area_code) : null,
+        region: row.region_code ? String(row.region_code) : null,
+      });
+    }
+
+    const childRows = Array.from(byDistributor.entries()).map(([distributorCode, customerCode]) => {
+      const mapped = mapByKey.get(`${distributorCode}::${customerCode}`);
+      return {
+        pharmacy_id: pharmacyId,
+        distributor_code: distributorCode,
+        customer_code: customerCode,
+        mapped_brick_id: mapped?.brick ?? null,
+        mapped_area_code: mapped?.area ?? null,
+        mapped_region_code: mapped?.region ?? null,
+      };
     });
+    const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert(childRows);
+    if (childError) throw childError;
   }
 
-  const childRows = Array.from(byDistributor.entries()).map(([distributorCode, customerCode]) => {
-    const mapped = mapByKey.get(`${distributorCode}::${customerCode}`);
-    return {
-      pharmacy_id: pharmacyId,
-      distributor_code: distributorCode,
-      customer_code: customerCode,
-      mapped_brick_id: mapped?.brick ?? null,
-      mapped_area_code: mapped?.area ?? null,
-      mapped_region_code: mapped?.region ?? null,
-    };
-  });
-  const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert(childRows);
-  if (childError) throw childError;
-
-  // Verification is DERIVED from whether every code exists in the distributor's own catalogue,
-  // not taken from a client flag. The client could simply lie — or, far likelier, get it wrong —
-  // and the catalogue is the only thing that actually knows whether a code is real.
-  //
-  // The owner's rule holds: an unrecognised code never BLOCKS the submission. It marks the
-  // pharmacy for SFE review and a Super-Admin acknowledgment instead, so a genuinely new
-  // pharmacy can still be ordered for today and reconciled afterwards.
+  // Record WHY this pharmacy is awaiting review, in the reviewer's own terms. The state itself is
+  // already decided (every hand-registered pharmacy waits); this is the audit trail that tells the
+  // System Admin what to actually check, which is a different question for each situation.
   const unresolved = Array.from(byDistributor.entries()).filter(
     ([distributorCode, customerCode]) => !mapByKey.has(`${distributorCode}::${customerCode}`),
   );
-  let finalRow = pharmacyRow as Record<string, unknown>;
-  if (unresolved.length > 0) {
-    const { data: flagged, error: flagError } = await supabase
-      .from("direct_order_pharmacies")
-      .update({
-        verification_status: "pending_review",
-        entry_source: "manual",
-      })
-      .eq("id", pharmacyId)
-      .select("*")
-      .single();
-    if (flagError) throw flagError;
-    finalRow = flagged as Record<string, unknown>;
+  const reviewReason =
+    byDistributor.size === 0
+      ? "no distributor or customer code was given"
+      : unresolved.length > 0
+        ? `${unresolved.length} customer code(s) are not in the distributor's own list`
+        : "the pharmacy was typed in by hand rather than picked from Phoenix";
 
-    await writeRequiredAuditLog({
-      actorLoginId: access.loginId ?? access.hrId,
-      entityType: "direct_order_request",
-      entityId: `pharmacy:${pharmacyId}`,
-      newValues: {
-        verificationStatus: "pending_review",
-        unrecognisedPairs: unresolved.map(([distributorCode, customerCode]) => `${distributorCode}:${customerCode}`),
-      },
-      summary: `Direct-order pharmacy "${name}" registered with ${unresolved.length} code(s) not in the distributor catalogue — pending review.`,
-    });
-  }
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${pharmacyId}`,
+    newValues: {
+      verificationStatus: "pending_review",
+      entrySource: "manual",
+      reviewReason,
+      unrecognisedPairs: unresolved.map(([distributorCode, customerCode]) => `${distributorCode}:${customerCode}`),
+    },
+    summary: `Direct-order pharmacy "${name}" registered by hand — awaiting SFE validation and System Admin acknowledgment (${reviewReason}).`,
+  });
 
-  const pharmacy = mapPharmacyRow(finalRow);
+  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
   await attachDistributorCodes([pharmacy]);
   return pharmacy;
 }
@@ -897,7 +948,11 @@ export async function submitDirectOrder(
     status: "draft",
   });
 
-  const chain = await buildApprovalChain({ requesterHrId: actorHrId, requesterRole: access.role });
+  const chain = await buildApprovalChain({
+    requesterHrId: actorHrId,
+    requesterRole: access.role,
+    pharmacyUnverified: pharmacy.verificationStatus === "pending_review",
+  });
 
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
@@ -1040,23 +1095,20 @@ export async function decideDirectOrder(
   const evaluation = evaluateStepAction({ steps, actorOrder: activeStep.order, decision: input.decision });
   if (!evaluation.allowed) badRequest(evaluation.reason ?? "This action is not allowed right now.");
 
-  // An unverified pharmacy blocks the FINAL approval only (owner rule, 2026-08-04). This is the
-  // one deliberate block in the module, and it is narrow on purpose:
+  // Backstop for chains built BEFORE the System Admin rung existed (owner rule, 2026-08-04).
   //
-  //   - SFE and the sales line still review and pass the request normally, so the order keeps
-  //     moving and the submitter is not stuck waiting on an admin before anything can happen.
-  //   - Only the last rung refuses, because that is the step that injects money into Source of
-  //     Sales against a distributor code nobody has confirmed exists.
-  //
-  // A pharmacy is 'pending_review' when a customer code was not found in that distributor's own
-  // catalogue — the state a hand-typed code lands in. Acknowledging it is Super-Admin only.
+  // New requests on an unrecognised pharmacy carry the rung, so the admin has already decided long
+  // before the CEO sees it and this never fires. Requests submitted earlier have no such rung, and
+  // for those the last approval is the moment money enters Source of Sales against a distributor
+  // code nobody confirmed — so it still refuses there. Rebuilding the chain (or acknowledging the
+  // pharmacy directly) clears it.
   if (input.decision === "approve" && evaluation.isFinal) {
     const pharmacyForGate = (await loadPharmaciesByIds([request.pharmacyId])).get(request.pharmacyId) ?? null;
     if (pharmacyForGate?.verificationStatus === "pending_review") {
       badRequest(
-        `"${pharmacyForGate.pharmacyName}" (${pharmacyForGate.phoenixPharmacyCode}) has a distributor customer code ` +
-          "that is not in the distributor's own list, so it cannot be finalized yet. A System Admin must " +
-          "acknowledge the pharmacy first — every earlier approval on this request stands.",
+        `${pharmacyForGate.pharmacyName} (${pharmacyForGate.phoenixPharmacyCode}) is a new pharmacy that Phoenix ` +
+          "has not confirmed yet, so this order cannot be finalized. A System Admin has to check it first. " +
+          "Every approval already given on this request stands.",
       );
     }
   }
@@ -1108,6 +1160,18 @@ export async function decideDirectOrder(
     eventType: input.decision,
     message: comment ?? `${input.decision} at step ${activeStep.order}.`,
   });
+
+  // Approving the System Admin rung IS the acknowledgment — there is no second button to press.
+  //
+  // Keeping them separate is what made the old design fail: the admin could approve the request
+  // and still leave the pharmacy unverified, so the CEO hit the block anyway and nobody could tell
+  // which of the two actions was outstanding. One rung, one decision, one state change.
+  //
+  // Only on approve: rejecting or returning must leave the pharmacy unconfirmed, because the
+  // reason for the rejection may well BE that the pharmacy is wrong.
+  if (input.decision === "approve" && isSystemAdminAckStep(activeStep)) {
+    await acknowledgeDirectOrderPharmacy(access, { pharmacyId: request.pharmacyId });
+  }
 
   // An over-cap order that reaches final approval is recorded explicitly. This is what
   // replaced the old CEO-only gate: the answer to "who let this through" is an event, not
@@ -1249,6 +1313,7 @@ export async function rebuildDirectOrderApprovalChain(
   const chain = await buildApprovalChain({
     requesterHrId: request.requesterHrId,
     requesterRole: request.requesterRole,
+    pharmacyUnverified: await isPharmacyAwaitingReview(request.pharmacyId),
   });
   const nextLabels = chain.map((step) => step.label);
 
@@ -1333,7 +1398,11 @@ export async function reverseDirectOrder(
   if (original.status !== "approved") badRequest("Only an approved direct order can be reversed.");
   if (original.reversedByRequestId) badRequest("This direct order already has a reversal in progress.");
 
-  const chain = await buildApprovalChain({ requesterHrId: actorHrId, requesterRole: access.role });
+  const chain = await buildApprovalChain({
+    requesterHrId: actorHrId,
+    requesterRole: access.role,
+    pharmacyUnverified: await isPharmacyAwaitingReview(original.pharmacyId),
+  });
 
   const { data: inserted, error: insertError } = await supabase
     .from("direct_order_requests")
