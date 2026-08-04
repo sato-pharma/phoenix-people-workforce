@@ -2,7 +2,11 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 import { resolveEmployeeAccessRole } from "../src/lib/employees/access-role.ts";
-import { phoenixCompanyJobTitles } from "../src/lib/auth/permissions.ts";
+import {
+  getRolePrivilegeRank,
+  permissionMatrix,
+  phoenixCompanyJobTitles,
+} from "../src/lib/auth/permissions.ts";
 
 export function runEmployeeAccessProvisioningTests() {
   // GOVERNANCE: a job title is descriptive only and is never a permission
@@ -85,4 +89,63 @@ export function runEmployeeAccessProvisioningTests() {
   assert.match(accessControlSource, /from\("app_auth_users"\)/);
   assert.match(accessControlSource, /from\("user_access_profiles"\)/);
   assert.match(accessControlSource, /provisionSupabaseAuthIdentity/);
+
+  // ── Talent Acquisition can finish a hire (2026-08-04) ────────────────────────────────
+  // Adding an employee always tried to create their login through upsertAccessUser, whose
+  // Super-Admin-only gate threw for every other role. The error was caught and rendered as a
+  // note, so CN-0006 and PD-0007 were created with no way to sign in and nobody was told.
+  const talentAcquisition = permissionMatrix["Talent Acquisition"];
+
+  assert.ok(
+    talentAcquisition.recruitment?.includes("approve"),
+    "Talent Acquisition must be able to mark an application hired (POST /api/recruitment/applications/[id]/convert asserts recruitment:approve)",
+  );
+  assert.ok(
+    !talentAcquisition.recruitment?.includes("delete"),
+    "Talent Acquisition must still NOT delete applications or requisitions",
+  );
+
+  // The widened grants must not have leaked into user administration: creating a login goes
+  // through the narrow create-only entry point below, never the Users & Access surface.
+  for (const resource of ["user_admin", "admin_access", "permission_admin"] as const) {
+    assert.equal(
+      talentAcquisition[resource]?.length ?? 0,
+      0,
+      `Talent Acquisition must hold no ${resource} permission`,
+    );
+  }
+
+  // The provisioning path routes a Talent Acquisition actor to the narrow entry point and
+  // leaves Super Admin on the original one.
+  assert.match(provisioningSource, /provisionEmployeeAccountForRecruiting/);
+  assert.match(accessControlSource, /export async function provisionEmployeeAccountForRecruiting/);
+
+  // That entry point must stay CREATE-ONLY — if it could edit an existing account it would
+  // become a way to change roles without Super Admin.
+  assert.match(
+    accessControlSource,
+    /provisionEmployeeAccountForRecruiting[\s\S]{0,1400}already exists/,
+    "provisionEmployeeAccountForRecruiting must refuse an account that already exists",
+  );
+  assert.match(
+    accessControlSource,
+    /provisionEmployeeAccountForRecruiting[\s\S]{0,1400}cannot grant a sales scope override/,
+    "provisionEmployeeAccountForRecruiting must refuse a sales scope override",
+  );
+
+  // The rank boundary is what actually stops Talent Acquisition creating a privileged
+  // account: assertActorMayManageUser rejects any target whose rank is >= the actor's.
+  const talentAcquisitionRank = getRolePrivilegeRank("Talent Acquisition");
+  for (const blockedRole of ["Super Admin", "CEO", "Finance Manager", "Talent Acquisition"] as const) {
+    assert.ok(
+      getRolePrivilegeRank(blockedRole) >= talentAcquisitionRank,
+      `${blockedRole} must rank at or above Talent Acquisition so provisioning refuses it`,
+    );
+  }
+  for (const allowedRole of ["Employee", "Medical Rep", "District Manager"] as const) {
+    assert.ok(
+      getRolePrivilegeRank(allowedRole) < talentAcquisitionRank,
+      `${allowedRole} must rank below Talent Acquisition so a new hire can be provisioned`,
+    );
+  }
 }

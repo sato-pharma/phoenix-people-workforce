@@ -504,7 +504,13 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     offers: ["read", "create", "update", "export"],
     vacancies: ["read", "create", "update", "export"],
-    recruitment: ["read", "create", "update", "export", "import"],
+    // `approve` is what POST /api/recruitment/applications/[id]/convert asserts — it is the
+    // act of marking an application hired, i.e. the final step of recruiting, not an approval
+    // of anyone else's request. Without it Talent Acquisition could run a candidate through
+    // screening and interviews and then be unable to finish the hire (owner-confirmed
+    // 2026-08-04). Deliberately still NO `delete`: removing an application or a requisition
+    // stays with Super Admin.
+    recruitment: ["read", "create", "update", "approve", "export", "import"],
     candidates: ["read", "create", "update", "delete", "export", "import"],
     support_requests: ["read", "create", "update", "export"],
     report_it: ["read", "create"],

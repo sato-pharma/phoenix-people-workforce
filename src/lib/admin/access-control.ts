@@ -505,7 +505,56 @@ export async function upsertRolePermissionOverride(
 
 export async function upsertAccessUser(input: AccessUserMutation, actor?: AccessActor | null) {
   assertSuperAdminUserAdminActor(actor);
+  return upsertAccessUserCore(input, actor);
+}
 
+/**
+ * Narrow entry point for provisioning a NEW hire's portal login from the employee-add flow
+ * (Talent Acquisition only — Super Admin keeps using upsertAccessUser above).
+ *
+ * Before this existed, adding an employee always tried to create their login via
+ * upsertAccessUser, whose Super-Admin-only gate threw for every other role. The failure was
+ * caught and shown as one line of text the actor had no permission to act on, so every
+ * employee Talent Acquisition added silently ended up with no way to sign in (CN-0006 and
+ * PD-0007, 2026-08-04).
+ *
+ * Deliberately bypasses assertSuperAdminUserAdminActor for the same reason
+ * updateAccountActiveForRecruiting does — that shared gate also covers role/scope/permission
+ * changes, which this path must never grant. Everything it protects is still enforced here:
+ *
+ *  - create-only: refuses if the account already exists, so it can never EDIT an account
+ *    (no role changes, no reactivating a disabled admin, no session invalidation).
+ *  - no scope grants: a sales scope override is rejected outright.
+ *  - rank-bounded: assertActorMayManageUser (called unchanged inside the core) hard-blocks
+ *    Super Admin targets for any non-Super-Admin actor and rejects peer-or-higher roles.
+ *    Talent Acquisition's rank is 150 (getRolePrivilegeRank), so CEO (300), Finance Manager
+ *    (200) and another Talent Acquisition (150) are all refused; only default-rank (100)
+ *    employee accounts are reachable — the same boundary the activation tool already uses.
+ */
+export async function provisionEmployeeAccountForRecruiting(
+  input: AccessUserMutation,
+  actor: AccessActor,
+) {
+  if (actor.role !== "Talent Acquisition") {
+    throw new Error("Forbidden: only Talent Acquisition can use this tool.");
+  }
+  if (input.salesScopeOverride) {
+    throw new Error("Forbidden: this tool cannot grant a sales scope override.");
+  }
+
+  const loginId = (input.loginId || input.hrId || "").trim();
+  if (!loginId) throw new Error("HR_ID or login ID is required.");
+
+  if (await supabaseUser(loginId)) {
+    throw new Error(
+      `Account ${loginId} already exists. Ask a Super Admin to change an existing account.`,
+    );
+  }
+
+  return upsertAccessUserCore({ ...input, salesScopeOverride: null }, actor);
+}
+
+async function upsertAccessUserCore(input: AccessUserMutation, actor?: AccessActor | null) {
   const loginId = (input.loginId || input.hrId || "").trim();
   if (!loginId) throw new Error("HR_ID or login ID is required.");
 

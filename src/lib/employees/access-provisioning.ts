@@ -1,4 +1,5 @@
 import {
+  provisionEmployeeAccountForRecruiting,
   upsertAccessUser,
   type AccessActor,
 } from "@/lib/admin/access-control";
@@ -64,20 +65,26 @@ export async function provisionNewHireAccess(input: {
     }
 
     try {
-      await upsertAccessUser(
-        {
-          email: employee.workEmail,
-          governanceReason: `Auto-created from ${input.source} for ${hrId}.`,
-          hrId,
-          isActive: true,
-          line: employee.lineName,
-          loginId: hrId,
-          managerHrId: employee.managerHrId,
-          name: employee.displayName,
-          role: resolveEmployeeAccessRole(employee),
-        },
-        input.actor,
-      );
+      const mutation = {
+        email: employee.workEmail,
+        governanceReason: `Auto-created from ${input.source} for ${hrId}.`,
+        hrId,
+        isActive: true,
+        line: employee.lineName,
+        loginId: hrId,
+        managerHrId: employee.managerHrId,
+        name: employee.displayName,
+        role: resolveEmployeeAccessRole(employee),
+      };
+
+      // upsertAccessUser is Super-Admin-only. Talent Acquisition can add employees but could
+      // never create their login, so every hire they made ended up unable to sign in. Route
+      // them through the create-only, rank-bounded entry point instead of failing.
+      if (input.actor?.loginId && input.actor.role === "Talent Acquisition") {
+        await provisionEmployeeAccountForRecruiting(mutation, input.actor);
+      } else {
+        await upsertAccessUser(mutation, input.actor);
+      }
 
       results.push({ hrId, status: "created" });
     } catch (error) {
