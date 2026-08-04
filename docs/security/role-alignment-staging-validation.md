@@ -1,5 +1,12 @@
 # Phoenix Role Alignment Staging Validation
 
+> **Reconciled 2026-08-04 — this runbook targets a DEAD project.** The sandbox it uses,
+> ref `oaifhavixhdtwmseshff` (`sato.hr2@hotmail.com`), **no longer exists** — `list_projects`
+> returns only production `ozucdzovmcqvepbozvqf` and staging `cifwmndunmlxjhyjugxa`
+> (see AGENTS.md §3). Every `oaifhavixhdtwmseshff` reference below is stale, and the runbook
+> **cannot be run as written** until a fresh free/staging RLS target is provisioned. Do
+> **not** substitute the production project.
+
 This runbook validates `supabase/20260511_phoenix_role_alignment.sql` against a staging or branch Supabase database only.
 
 Do not run this against production. The runner applies the migration to the target database after safety checks pass.
@@ -9,6 +16,9 @@ For Windows local Supabase prerequisites, see [Local Supabase RLS Prerequisites]
 For the sandbox completion summary and production planning status, see [Phoenix Role Alignment Production Readiness](./role-alignment-production-readiness.md).
 
 ## Approved Testing Sandbox
+
+> **Dead ref (2026-08-04):** `oaifhavixhdtwmseshff` below resolves to nothing — see the banner
+> at the top of this file. Provision and substitute a live free/staging target before running.
 
 Use only this existing free Supabase project for Phoenix RLS staging validation:
 

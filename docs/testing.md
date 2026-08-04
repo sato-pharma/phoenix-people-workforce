@@ -17,7 +17,7 @@ Located in `tests/*.test.ts`. Each file exports a named run function (e.g., `run
 pnpm run test
 ```
 
-This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 22+).
+This executes `tests/run-tests.ts`, which imports and runs all registered test functions. Tests run with Node.js `--experimental-strip-types` (requires Node 24+ — the repo's `engines.node` floor).
 
 ### Adding a Test
 
@@ -78,14 +78,23 @@ These test against real data and require valid credentials.
 | Coaching | coaching-scoring, coaching-permissions, coaching-analytics |
 | Expenses & outstation | medical-rep-expenses, outstation-policy-classification |
 | Workflow & registry | workflow-registry, workflow-registry-enforcement, workflow-control |
-| Phase validation | phase13-36 (staging/production validation pipeline) |
+| Phase validation | phase13-33 (staging/production validation smoke tests, registered in `run-tests.ts`) |
 
 ## CI Integration
 
-All tests run automatically in the CI pipeline:
+CI runs five checks across two workflows — `.github/workflows/ci.yml` and
+`.github/workflows/security-scan.yml`:
 
-- **Unit tests:** always (validate job)
-- **E2E smoke:** always (preview-smoke job, after validate passes)
-- **Full E2E:** manual dispatch only (full-e2e job)
+| Check | Workflow | What it runs |
+|---|---|---|
+| `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite** (`pnpm run test`), the production **build**, and the Playwright **login smoke test** — all in one job. |
+| `lint` | ci.yml | `pnpm run lint` (parallel job). |
+| `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
+| `secret-scan` | security-scan.yml | gitleaks secret scan (PRs + daily schedule; currently non-blocking). |
+| `sast-scan` | security-scan.yml | Semgrep SAST scan (PRs + daily schedule; currently non-blocking). |
 
-See `.github/workflows/ci.yml` for details.
+There is no longer a separate `preview-smoke` job — the login smoke test moved into
+`validate`. The full Playwright E2E suite runs only on manual `workflow_dispatch` (the
+`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 5 checks green before a merge can
+land** (there is no required human review — solo owner); per AGENTS.md §3 a merge to `main` then
+deploys to production immediately.

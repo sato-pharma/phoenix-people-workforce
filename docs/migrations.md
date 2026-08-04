@@ -39,13 +39,20 @@ The supabase/ root also contains historical hardening scripts and operational pa
 
 ## Migration Pipeline
 
-Staging validation still runs through the phase25-27 mutation smoke scripts (RLS,
-browser-auth, app-service — see docs/scripts.md). The phase28-36 production
-approval/reconciliation gate was **retired 2026-07-11**: those scripts hardcode
-checks against one specific pre-baseline migration (now archived under
-`supabase/_migrations_archive/pre-baseline-2026-07-11/`) and cannot validate any
-migration written since. There is currently no scripted gate for taking a new
-migration to production — apply via the Supabase MCP `apply_migration` tool (or
+**Reconciled 2026-08-04.** There is currently **no scripted gate** for taking a new
+migration to production. The `phase25`-`phase27` staging mutation-smoke scripts and the
+`phase28`-`phase37` production approval/reconciliation scripts **still exist in
+`package.json`** — but no automated gate invokes them: neither `check:harden` nor
+`.github/workflows/ci.yml` runs any `phase*` script. The `phase28`+ production-gate scripts
+were **retired as a gate on 2026-07-11** (retired, not deleted): they hardcode checks
+against one specific pre-baseline migration (now archived under
+`supabase/_migrations_archive/pre-baseline-2026-07-11/`) and cannot validate any migration
+written since the baseline. They are kept for reference only — do not treat a green
+`phase*` run as production sign-off. Note also (AGENTS.md §3) that there is **no staging
+application** any more, only the staging Supabase *database* (`cifwmndunmlxjhyjugxa`), so
+the browser-auth smoke (`phase26`) has nothing to run against.
+
+To take a new migration to production, apply via the Supabase MCP `apply_migration` tool (or
 `supabase db push`) to staging first, verify with `get_advisors` plus a targeted
 `pg_policies`/`pg_constraint`/`has_function_privilege` check, then repeat against
 production after explicit approval. If the apply tool records a drifted

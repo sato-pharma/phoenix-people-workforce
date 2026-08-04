@@ -39,7 +39,7 @@
 |---|---|
 | [Testing](testing.md) | Test strategy, running tests, adding new tests |
 | [Scripts Reference](scripts.md) | All npm scripts with safety classifications |
-| [Deployment](deployment.md) | GCP Cloud Run deployment workflow, branch model, production verification |
+| [Deployment](deployment.md) | Railway deployment (auto-deploy on push to `main`), branch model, production verification |
 | [Troubleshooting](troubleshooting.md) | Common issues and solutions |
 
 ## Operations

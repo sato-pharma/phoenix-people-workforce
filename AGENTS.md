@@ -188,11 +188,12 @@ again unless scope, risk, target, or validation result materially changes.
 **Always require separate, explicit, plain-language approval before:**
 
 - Merging a PR or otherwise updating `main`.
-- Applying a migration to staging or production (production needs its own, separate approval).
+- Applying a migration to staging or production (production needs its own, separate approval). **Exception: Supabase writes/migrations are pre-authorized per §8's grant — announce destructive/bulk prod changes, don't wait.**
 - Deploying to production or changing production environment variables.
 - Changing authentication, authorization, RLS, payroll, employee-lifecycle data, or other high-risk live behavior.
 - Rebasing, resetting, deleting a branch or worktree, force-pushing, rewriting history, rolling back, or any destructive Git command.
 - Bulk updating or deleting live data, destructive SQL, or any irreversible operation.
+- Creating or deleting a Supabase project, or reading project secrets — the owner-connector `mcp__45bb6356-…` can do these, and §8's Supabase pre-authorization does NOT cover them.
 - Editing any of the three protected files listed in [CLAUDE.md](CLAUDE.md).
 
 Approval covers only the explained action, scope, environment, and target. Silence, an approval for
@@ -252,11 +253,12 @@ console, network/API response, deployment logs, and database/RLS evidence before
 
 ## 8. Supabase and data safety
 
+- **Supabase writes are pre-authorized end to end — NO approval prompt** (owner's `autoMode` grant in `~/.claude/settings.json`, applied by hand 2026-08-02, which deliberately removes the §6 gate for Supabase). It covers the `supabase-staging` and `supabase-production` MCP servers, the owner's connector `mcp__45bb6356-…`, and the `supabase` CLI (`supabase` / `npx` / `pnpm` / `pnpm dlx`, incl. `db push`), on staging AND production (`ozucdzovmcqvepbozvqf`) — every read tool and every write tool: `execute_sql` mutations, `apply_migration`, bulk and destructive SQL. **You do NOT wait for a separate approval.** The one standing condition: **announce any destructive or bulk PRODUCTION change (it can mutate real payroll data) in plain words before you run it, and give the owner a chance to stop it** — the removed prompt is a UI gate, not licence to skip telling him. (This grant does NOT cover creating/deleting a project or reading secrets — see §6.) `mcp__b345e47e-…` stays denied.
 - All schema changes must be migration-based, repeatable, reviewable, and rollback-aware. Never patch production manually.
 - Before any database action, print and verify the exact project ref, resolving it with `list_projects` rather than trusting a ref pasted in a prompt or copied from an older doc — this line once named a long-deleted staging project, so "verify the ref" confirmed a dead value and the obvious recovery pointed at production.
 - Both Supabase MCP servers (`supabase-staging`, `supabase-production`) can see BOTH projects. **The server name guarantees nothing — the `project_id` argument is the only thing separating staging from production on every call.**
 - Prefer those two named servers for all routine work. Any UUID-named Supabase tool (a claude.ai account connector) has an identity you cannot verify from its name alone, so it stays deny-listed by default — never call an unrecognized one, and flag it if it reappears. `mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*` remains denied.
-- **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool, and treat its writes with the same section 6 approval rules as any other production mutation.
+- **Owner-confirmed exception (2026-08-02):** `mcp__45bb6356-8105-4482-9464-25bfd754baec__*` is the owner's own claude.ai Supabase connector. He confirmed ownership and instructed its removal from the deny list, so it is callable. Note its consent grant is **broader than either named server** — read+write on Secrets, Environment, and Projects, meaning it can read project secrets and create or delete projects. Reach for the named servers first; use this one only when it is actually the right tool. Its DB writes fall under the pre-authorized grant above (announce destructive/bulk prod changes; no wait), but **creating/deleting a project or reading secrets is NOT covered — get an explicit go for those** (see §6).
 - Before destructive or bulk live-data work, inventory the target, create or verify a backup, show the exact mutation, and define post-change counts or checks.
 - Verify RLS, grants, RPC authorization, service-role boundaries, and browser-role exposure whenever permissions or data access change. Service-role credentials and privileged operations stay server-only.
 - Visibility in this app is **application-scoped, not RLS-scoped** — most code paths use the service-role client. Changing auth or sessions will not move what a user can see, but a `?? getSupabaseAdmin()` fallback is a silent fail-open.
