@@ -516,6 +516,7 @@ import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
 import { runApiErrorsMustBeThrownTests } from "./api-errors-must-be-thrown.test.ts";
 import { runDirectOrderReportColumnsTests } from "./direct-orders-report-columns.test.ts";
+import { runMarketingRequestReportColumnsTests } from "./marketing-request-report-columns.test.ts";
 import { runDirectOrderValidationCaptureReachableTests } from "./direct-orders-validation-capture-reachable.test.ts";
 import { runDirectOrderSheetWebhookTests } from "./direct-orders-sheet-webhook.test.ts";
 import { runDirectOrderReverseAuthorizationTests } from "./direct-orders-reverse-authorization.test.ts";
@@ -1209,6 +1210,7 @@ await runTest("direct orders approval flow (ladder per role, sequential gating, 
 await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
 await runTest("api-errors factories are always thrown, never called bare (a dropped error is a guard that does nothing)", runApiErrorsMustBeThrownTests);
 await runTest("direct orders report columns (39-column twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);
+await runTest("marketing request report columns (positional twins, owner's 16 headers first, Sunday-week W2 rule, Cairo times)", runMarketingRequestReportColumnsTests);
 await runTest("direct orders validation capture is reachable from BOTH the admin and portal routes (requester-only, held-only)", runDirectOrderValidationCaptureReachableTests);
 await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed)", runDirectOrderSheetWebhookTests);
 await runTest("direct orders reverse authorization (scope guard inherited, registry-gated, real status passed)", runDirectOrderReverseAuthorizationTests);

@@ -82,6 +82,7 @@ import {
   type OverlapCandidate,
 } from "@/lib/marketing-requests/request-overlap";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type MarketingProductDbRow = {
@@ -3343,6 +3344,8 @@ export async function decideMarketingRequestWorkflow(
     request,
     title: isExecution ? "Marketing request executed" : "Marketing request approved",
   });
+  // After the decision has committed, so the ping cannot sit between the approval and the money.
+  pingMarketingRequestSheet("request_decided");
   return { decision, request, step: decidedStep };
 }
 
@@ -4623,6 +4626,9 @@ export async function createMarketingValidationRecord(
     }
     }
 
+    // A newly validated customer or pharmacy changes the evidence and validation columns the
+    // sheet shows, so it is worth a refresh even though no request row moved.
+    pingMarketingRequestSheet("validation_recorded");
     return rows;
   } catch (error) {
     // Order matters: the link rows FK to both, and pharmacies are deleted before customers so a
@@ -5183,6 +5189,7 @@ export async function createMarketingRequestDraft(
       title: "Marketing request submitted",
     }).catch((error: unknown) => logNotificationSendFailure("marketingRequests.createMarketingRequestDraft.submitted", error));
 
+    pingMarketingRequestSheet("request_submitted");
     return draftDetail;
   } catch (error) {
     await supabase.from("marketing_requests").delete().eq("id", request.id);
@@ -5335,11 +5342,13 @@ export async function resubmitReturnedMarketingRequest(
     title: "Marketing request resubmitted",
   });
 
-  return {
+  const resubmitted = {
     ...request,
     pharmacies,
     products: ((productsInsert.data ?? []) as MarketingRequestProductDbRow[]).map(mapProduct),
   };
+  pingMarketingRequestSheet("request_resubmitted");
+  return resubmitted;
 }
 
 /** Approver inbox: marketing requests awaiting the current user's decision. */
@@ -5998,6 +6007,8 @@ export async function uploadMarketingFinanceEvidence(params: {
     requests: [mapRequest(requestRow)],
   });
 
+  // A finance file landing is exactly when the sheet's "Open invoice" cell becomes clickable.
+  pingMarketingRequestSheet("finance_evidence_uploaded");
   return rows[0];
 }
 

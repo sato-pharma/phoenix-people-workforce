@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCcw } from "lucide-react";
+import { Download, RefreshCcw } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -221,6 +221,19 @@ export function MarketingAllRequests() {
         >
           Archived / imported ({workspace.summary.imported})
         </button>
+        {/* `download` is load-bearing, not decoration: the target is an API route that streams an
+            .xlsx, and without it the @next/next/no-html-link-for-pages rule demands a <Link> that
+            would hand a binary attachment to the client router. A plain GET also means a slow
+            workbook never strands a spinner on screen. Server-side permission is enforced in the
+            loader — this control is UX only. */}
+        <a
+          className="ml-auto inline-flex items-center gap-2 rounded border border-slate-200 bg-white px-3.5 py-2 text-xs font-black text-slate-700 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-700"
+          download
+          href="/api/marketing-requests/report/export"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download full report
+        </a>
       </div>
 
       <PortalSection
