@@ -24,7 +24,7 @@ import {
 } from "@/lib/crm/identity";
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
 import { addDaysIso, cairoTodayIso, todayIso } from "@/lib/crm/dates";
-import { selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
+import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "@/lib/crm/unmapped-alert";
 import { notifyUnmappedCrmAgentActivity } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -609,18 +609,32 @@ export async function syncIReports360Visits(input: {
     // Unmapped-agent tripwire (best-effort, never fails the run): any RECENT visit in this fetch
     // that resolved to no employee means someone's fieldwork is invisible right now. Detection
     // runs on the FULL deduped fetch — not the narrowed upsert set — so a live-poll delta tick
-    // still sees an unmapped agent whose rows happened to be unchanged this tick.
+    // still sees an unmapped agent whose rows happened to be unchanged this tick. Also checks every
+    // "mapped" override against the current roster (independent of this window's fetch) — a
+    // resolution can go stale without ever producing an unresolved row, see
+    // selectOrphanedMappedIdentities.
     try {
-      const alerts = selectUnmappedAgentAlerts({
-        recentSinceIso: addDaysIso(cairoTodayIso(), -14),
-        resolutions,
-        rows: dedupedVisitRows.map((row) => ({
-          agentCrmId: row.agent_crm_id,
-          agentHrId: row.agent_hr_id,
-          agentName: row.agent_name,
-          visitDate: row.visit_date,
-        })),
-      });
+      const alerts = [
+        ...selectUnmappedAgentAlerts({
+          recentSinceIso: addDaysIso(cairoTodayIso(), -14),
+          resolutions,
+          rows: dedupedVisitRows.map((row) => ({
+            agentCrmId: row.agent_crm_id,
+            agentHrId: row.agent_hr_id,
+            agentName: row.agent_name,
+            visitDate: row.visit_date,
+          })),
+        }),
+        // Cheap (iterates the already-loaded, small resolutions list — no extra query) and
+        // deliberately unconditional on this window's fetch: an override going stale (its target
+        // hr_id renamed/replaced/removed) is a standing fact about the mapping, not something tied
+        // to today's visit volume — see selectOrphanedMappedIdentities.
+        ...selectOrphanedMappedIdentities({
+          asOfIso: cairoTodayIso(),
+          resolutions,
+          validHrIds: new Set(employees.map((employee) => employee.hrId.toLowerCase())),
+        }),
+      ];
       if (alerts.length > 0) {
         await notifyUnmappedCrmAgentActivity({ alerts, dateFrom: input.dateFrom, dateTo: input.dateTo, runId });
       }

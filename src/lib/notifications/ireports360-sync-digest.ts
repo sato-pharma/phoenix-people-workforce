@@ -146,12 +146,25 @@ export function isoWeekKeyOf(date: Date): string {
 const UNMAPPED_ALERT_TITLES: Record<UnmappedAgentAlertKind, string> = {
   mapped_label_drift: "CRM Account Changed Hands — Mapping No Longer Applies",
   new_unmapped: "New CRM Agent With No Phoenix Mapping — Work Is Invisible",
+  orphaned_mapped_hr_id: "CRM Mapping Points To A Missing Employee Record",
   pending_reminder: "CRM Agent Still Unmapped — Weekly Reminder",
   reused_resigned_slot: "Resigned CRM Account Reused — A Rep's Work Is Hidden",
 };
 
 function buildUnmappedAgentMessage(alert: UnmappedAgentAlert): string {
   const who = alert.agentName?.trim() || "(no name on the CRM record)";
+  // Own shape entirely: this account IS mapped, so "unmapped visits this window" (the shared tail
+  // below) would misdescribe it — the fresh work exists, it is just filed under a stale hr id.
+  if (alert.kind === "orphaned_mapped_hr_id") {
+    return [
+      `🔴 A mapped CRM account (${who}, CRM account #${alert.agentCrmId}) points at HR ID "${alert.staleHrId}",`,
+      "which no longer matches any employee. This mapping was correct once, but that roster row was since",
+      "renamed, replaced, or removed — every fresh visit on this account is still filed under the missing",
+      "hr id, invisible to that person's own portal, their manager's team view, and payroll's activity check.",
+      "",
+      "Fix → /admin/crm → Unmapped Agents → re-map this account to the correct CURRENT HR ID.",
+    ].join("\n");
+  }
   const span = alert.firstDay === alert.lastDay ? `on ${alert.lastDay}` : `${alert.firstDay} → ${alert.lastDay}`;
   const lines: string[] = [];
   if (alert.kind === "new_unmapped") {

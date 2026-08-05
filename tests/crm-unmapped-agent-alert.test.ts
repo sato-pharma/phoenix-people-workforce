@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { selectUnmappedAgentAlerts } from "../src/lib/crm/unmapped-alert.ts";
+import { selectOrphanedMappedIdentities, selectUnmappedAgentAlerts } from "../src/lib/crm/unmapped-alert.ts";
 import { isoWeekKeyOf } from "../src/lib/notifications/ireports360-sync-digest.ts";
 import type { CrmResolutionRow } from "../src/lib/crm/types.ts";
 
@@ -90,6 +90,61 @@ export function runCrmUnmappedAgentAlertTests() {
     ],
   });
   assert.deepEqual(ordered.map((alert) => alert.agentCrmId), [9, 7]);
+
+  // ── selectOrphanedMappedIdentities: a "mapped" override whose target hr_id no longer exists ──
+  // Real production case (2026-08-05): crm_id 1102 was mapped to "B-165" a day before her real
+  // employee row ("PD-0008") was created, then "B-165" left the roster entirely — the override
+  // never noticed because it isn't scoped to a window of fresh rows, it just points nowhere.
+  const orphaned = selectOrphanedMappedIdentities({
+    asOfIso: "2026-08-05",
+    resolutions: [
+      { crmId: 1102, crmName: "Gannatallah.Amer ( Imbaba - P )", mappedHrId: "B-165", status: "mapped" },
+    ],
+    validHrIds: new Set(["pd-0008", "ai-0005"]),
+  });
+  assert.equal(orphaned.length, 1, "a mapped override whose target hr_id matches no current employee must alert");
+  assert.equal(orphaned[0].kind, "orphaned_mapped_hr_id");
+  assert.equal(orphaned[0].agentCrmId, 1102);
+  assert.equal(orphaned[0].staleHrId, "B-165");
+  assert.equal(orphaned[0].agentName, "Gannatallah.Amer ( Imbaba - P )");
+
+  const stillValid = selectOrphanedMappedIdentities({
+    asOfIso: "2026-08-05",
+    resolutions: [{ crmId: 1247, crmName: "Mahmoud.Abdelreheem ( Cairo West / A )", mappedHrId: "AI-0005", status: "mapped" }],
+    validHrIds: new Set(["ai-0005"]),
+  });
+  assert.equal(stillValid.length, 0, "a mapped override whose target still exists must stay silent");
+
+  const caseInsensitive = selectOrphanedMappedIdentities({
+    asOfIso: "2026-08-05",
+    resolutions: [{ crmId: 1247, crmName: null, mappedHrId: "AI-0005", status: "mapped" }],
+    validHrIds: new Set(["ai-0005"]),
+  });
+  assert.equal(caseInsensitive.length, 0, "hr_id casing must not cause a false orphan (roster and CRM casing are known to drift)");
+
+  const notMappedStatus = selectOrphanedMappedIdentities({
+    asOfIso: "2026-08-05",
+    resolutions: [
+      { crmId: 1395, crmName: "(Helwan-Maadi / P)", mappedHrId: "B-999", status: "resigned" },
+      { crmId: 1536, crmName: null, mappedHrId: null, status: "pending" },
+    ],
+    validHrIds: new Set(),
+  });
+  assert.equal(
+    notMappedStatus.length,
+    0,
+    "only status=mapped is an active override — resigned/pending decisions do not attribute work and must not alert here",
+  );
+
+  const orderedOrphans = selectOrphanedMappedIdentities({
+    asOfIso: "2026-08-05",
+    resolutions: [
+      { crmId: 900, crmName: null, mappedHrId: "X-1", status: "mapped" },
+      { crmId: 100, crmName: null, mappedHrId: "X-2", status: "mapped" },
+    ],
+    validHrIds: new Set(),
+  });
+  assert.deepEqual(orderedOrphans.map((alert) => alert.agentCrmId), [100, 900]);
 
   // ── isoWeekKeyOf: the alert idempotency window ───────────────────────────────────────────────
   assert.equal(isoWeekKeyOf(new Date("2026-08-04T00:00:00Z")), "2026-W32");
