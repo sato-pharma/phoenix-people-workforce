@@ -2415,16 +2415,32 @@ export async function reverseDirectOrder(
   if (!reason) badRequest("A reason is required to reverse a direct order.");
 
   const supabase = getSupabaseAdmin();
-  const { data: originalRow, error } = await supabase
-    .from("direct_order_requests")
-    .select("*")
-    .eq("id", input.requestId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!originalRow) badRequest("Direct order request not found.");
-  const original = mapRequestRow(originalRow as Record<string, unknown>);
+  // Read through getDirectOrderRequest, NOT a raw admin query. This used to select the row
+  // directly, which walked straight past canViewDirectOrderRequest — the scope guard that lives at
+  // that choke point precisely so "every current and future caller inherits it". The effect was
+  // that any holder of direct_orders:create could reverse ANY approved order in the company given
+  // its id: no requester check, no chain membership, no area. It returns null for out-of-scope as
+  // well as missing, so an id cannot be used to probe which requests exist.
+  const found = await getDirectOrderRequest(access, input.requestId);
+  if (!found) badRequest("Direct order request not found.");
+  const original = found.request;
   if (original.status !== "approved") badRequest("Only an approved direct order can be reversed.");
   if (original.reversedByRequestId) badRequest("This direct order already has a reversal in progress.");
+
+  // Reverse was the one declared registry action with no gate, so its role list was whatever
+  // `direct_orders:create` happens to grant — which includes Medical Rep and Financial Advisor,
+  // neither of whom the registry lists for this action. Reversing retires an order's Source-of-Sales
+  // injection, so the two must agree.
+  //
+  // expectedNextStatus is "reversed" to match the registry, though the transition is two-phase in
+  // practice: this call creates a reversing request that must itself be approved, and only that
+  // final approval retires the original. The registry describes the outcome, not the initiation.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "reverse",
+    expectedNextStatus: "reversed",
+    status: original.status,
+  });
 
   const chain = await buildApprovalChain({
     requesterHrId: actorHrId,
