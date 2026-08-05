@@ -4,6 +4,7 @@ import { notificationConfigWarnings } from "@/lib/observability/config-drift";
 import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { auditWorkflowRegistryModules } from "@/lib/workflow-registry/service";
 
 // Readiness probe: verifies the process can actually serve requests — required config is
 // present AND Supabase is reachable with a cheap head query. Returns 503 (not ready) when
@@ -48,6 +49,30 @@ export async function GET() {
     databaseError = error instanceof Error ? error.message : "supabase unreachable";
   }
 
+  // Which workflow modules the loader cannot load.
+  //
+  // An invalid module is SKIPPED — one bad row must not break every other module's transitions —
+  // but that presents to users as "module is missing or inactive" with no visible signal. On
+  // 2026-08-05 the direct_orders row declared 6 statuses while 5 of its actions referenced `held`
+  // and `expired`; every rep trying to submit was refused, including plain `submit`, and the only
+  // trace was a log line. It surfaced when a user complained. This makes it a one-request check.
+  //
+  // Deliberately does NOT flip readiness to 503: one broken module does not stop the process
+  // serving, and cycling the container would fix nothing while taking the rest of the app down.
+  let skippedModules: Array<{ moduleKey: string; reason: string }> = [];
+  let registryCheckError: string | null = null;
+  try {
+    ({ skipped: skippedModules } = await auditWorkflowRegistryModules());
+    if (skippedModules.length > 0) {
+      logWarning("Workflow registry modules failed validation and are being skipped", {
+        labels: { event: "workflow_registry_modules_skipped", count: String(skippedModules.length) },
+        context: { skipped: skippedModules },
+      });
+    }
+  } catch (error) {
+    registryCheckError = error instanceof Error ? error.message : "registry unreadable";
+  }
+
   const ready = missingEnv.length === 0 && databaseOk;
   return NextResponse.json(
     {
@@ -58,6 +83,11 @@ export async function GET() {
         missingEnv,
         database: databaseOk,
         databaseError: databaseOk ? null : databaseError,
+          // A skipped module reads to users as a MISSING one. Naming it here turns a silent
+          // outage into a one-request diagnosis.
+        workflowRegistry: skippedModules.length === 0 && !registryCheckError,
+        skippedWorkflowModules: skippedModules,
+        registryCheckError,
       },
       // Non-fatal notification-config drift (email flag / Resend key unset in prod). Present
       // so an operator or synthetic monitor can catch a silent-email regression early.
