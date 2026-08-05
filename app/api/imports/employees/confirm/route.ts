@@ -1062,7 +1062,10 @@ async function upsertVacancies(
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "imports", "import");
+    // Deliberately the `employees` resource, not `imports` — this mutates employee
+    // records and Super Admin/Talent Acquisition are the only roles that can reach
+    // this page at all. `imports` gates the unrelated /api/admin/users/bulk instead.
+    await assertPermission(access, "employees", "import");
 
     const formData = await request.formData();
     const file = formData.get("file");
