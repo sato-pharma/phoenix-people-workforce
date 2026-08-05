@@ -17,6 +17,10 @@ import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashbo
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
+import {
+  describeDirectOrderPharmacyStanding,
+  normalizeDirectOrderTrustState,
+} from "@/lib/direct-orders/pharmacy-standing";
 
 import {
   computeDirectOrderSalesValue,
@@ -416,6 +420,8 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     verifiedAt: row.verified_at ? String(row.verified_at) : null,
     createdByHrId: String(row.created_by_hr_id),
     active: row.active !== false,
+    trustState: normalizeDirectOrderTrustState(row.trust_state),
+    probationStartedAt: row.probation_started_at ? String(row.probation_started_at) : null,
   };
 }
 
@@ -3397,6 +3403,15 @@ export async function getDirectOrderApprovalDetail(
     pharmacyHistory,
     retailHistory: retail.rows,
     retailUnmatchable: retail.unmatchable,
+    // Spec D2: the reason an empty retail table is empty. Computed here, server-side, so the
+    // window renders prose it cannot contradict — and so a provisional pharmacy never looks like
+    // an established one that merely had a quiet quarter.
+    pharmacyStanding: pharmacy
+      ? describeDirectOrderPharmacyStanding({
+          trustState: pharmacy.trustState,
+          probationStartedAt: pharmacy.probationStartedAt,
+        })
+      : null,
     steps: steps.map((step) => ({
       ...step,
       approverName: step.approverHrId ? nameOf(step.approverHrId) : step.role,

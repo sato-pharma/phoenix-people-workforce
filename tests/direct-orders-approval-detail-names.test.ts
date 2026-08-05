@@ -78,6 +78,8 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       verifiedAt: null,
       createdByHrId: "HR-100",
       active: true,
+      trustState: "trusted",
+      probationStartedAt: null,
     },
     productPharmacyPrice: null,
     productPublicPrice: null,
@@ -92,6 +94,9 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     pharmacyHistory: [],
     retailHistory: [],
     retailUnmatchable: false,
+    // This fixture's pharmacy is trusted, so its standing is not what these tests are about —
+    // `tests/direct-orders-pharmacy-standing.test.ts` owns spec D2's wording.
+    pharmacyStanding: null,
     canSetSalesMonth: false,
     steps: [],
     availableActions: { approve: true, reject: true, return: true },

@@ -159,6 +159,31 @@ export type DirectOrderPharmacyDistributorCode = {
 };
 
 /** The reusable pharmacy registry row (direct-side equivalent of a distributor client_code). */
+/**
+ * Whether Phoenix has established that a pharmacy exists (spec A3).
+ *
+ * Distinct from `verificationStatus`, which records whether an ADMIN looked at the registration.
+ * This records whether the WORLD confirmed it: a distributor invoiced it, or its collection was
+ * paid. An admin can be wrong; a footprint cannot be faked into a distributor's own sheet.
+ */
+export type DirectOrderPharmacyTrustState = "trusted" | "provisional" | "phantom_suspected";
+
+/**
+ * What the approval window says where a sales table would be (spec D2).
+ *
+ * Carries the sentence rather than only the numbers, because "an empty table must never read as
+ * zero" is a rule about words. Built server-side in the domain so the window cannot phrase it a
+ * second way — see `src/lib/direct-orders/pharmacy-standing.ts`.
+ */
+export type DirectOrderPharmacyStanding = {
+  trustState: DirectOrderPharmacyTrustState;
+  /** 1-based day within the probation window; null when the clock was never started. */
+  probationDay: number | null;
+  windowDays: number;
+  /** Approver-facing prose for an empty history. Never a count. */
+  noHistoryNote: string;
+};
+
 export type DirectOrderPharmacy = {
   id: string;
   /** Phoenix-generated stable code, e.g. "DOP-000123". */
@@ -205,6 +230,13 @@ export type DirectOrderPharmacy = {
   verifiedAt: string | null;
   createdByHrId: string;
   active: boolean;
+  /** See DirectOrderPharmacyTrustState. Column default is 'trusted'. */
+  trustState: DirectOrderPharmacyTrustState;
+  /**
+   * When the 90-day window opened. NULL on every pharmacy that predates the clock — which today is
+   * all 10 provisional ones — so it must never be read as "day zero".
+   */
+  probationStartedAt: string | null;
 };
 
 /** A single direct order request (header + its one line, since grain = single line). */
@@ -496,6 +528,13 @@ export type DirectOrderApprovalDetail = {
   retailHistory: DirectOrderRetailHistoryRow[];
   /** True when the pharmacy has no distributor pair that can be matched to retail sales at all. */
   retailUnmatchable: boolean;
+  /**
+   * Why the retail table is empty, in words (spec D2). Null only when the request has no pharmacy
+   * at all. Read this INSTEAD of inferring anything from `retailHistory.length === 0`: a trusted
+   * pharmacy that has not bought and a provisional one that has never been proved both produce
+   * zero rows, and they are opposite risks.
+   */
+  pharmacyStanding: DirectOrderPharmacyStanding | null;
   steps: Array<DirectOrderStepState & { approverName: string | null; decidedByName: string | null }>;
   availableActions: DirectOrderAvailableActions;
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
