@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
+import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
 
 import {
@@ -268,6 +269,23 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">New direct order</h3>
         </header>
         <div className="space-y-4 px-4 py-4">
+          {/* Invoice-photo prefill (spec B5). Above the fields because it fills them, and mounted
+              on BOTH this form and its portal twin — a control that lives only here is a control no
+              medical rep can reach, which this module already shipped once with the validation
+              capture. It only ever proposes: nothing below moves until a line is accepted. */}
+          <InvoiceCapture
+            customerHint="Choose this pharmacy below to use it."
+            onApply={(payload) => {
+              setProductCode(payload.productCode);
+              setQty(payload.qty);
+              // A bonus quantity on the invoice IS a bonus deal; a discount is never legible from a
+              // printed line, so it is left alone rather than guessed.
+              if (payload.bonus) {
+                setDealType("bonus");
+                setBonus(payload.bonus);
+              }
+            }}
+          />
           <div>
             <label className={labelClass()}>Product</label>
             <select className={inputClass()} value={productCode} onChange={(e) => setProductCode(e.target.value)}>

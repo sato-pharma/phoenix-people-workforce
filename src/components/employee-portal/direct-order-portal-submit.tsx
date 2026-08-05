@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Send } from "lucide-react";
 
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
+import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 
 import {
   PortalDesktopTable,
@@ -259,6 +260,20 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
     <div className="space-y-5 pb-24 md:pb-0">
       <PortalSection eyebrow="New Request" title="Submit a direct order" description="Company (direct) orders route to your first approver on submit -- up your management line to the CEO.">
         <div className="space-y-4 p-4 sm:p-5">
+          {/* Invoice-photo prefill (spec B5). THIS is the copy that matters most: every medical rep
+              and district manager is redirected into the portal, so the admin twin alone would be
+              unreachable by the people holding the invoices. Same component, same rules. */}
+          <InvoiceCapture
+            customerHint="Choose this pharmacy below to use it."
+            onApply={(payload) => {
+              setProductCode(payload.productCode);
+              setQty(payload.qty);
+              if (payload.bonus) {
+                setDealType("bonus");
+                setBonus(payload.bonus);
+              }
+            }}
+          />
           <div>
             <label className={fieldLabelClassName}>Product</label>
             <select className={portalInputClassName} value={productCode} onChange={(e) => setProductCode(e.target.value)}>
