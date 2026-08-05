@@ -1,5 +1,16 @@
 # Test coverage — what the number means here
 
+> **The SonarQube PR check was retired on 2026-08-05** (owner decision) —
+> `.github/workflows/sonarqube.yml` is trigger-disabled and no longer runs on pull requests. Its
+> Quality Gate proved unsatisfiable: the failing condition was `Security Hotspots Reviewed = 100%`,
+> which counts human UI reviews rather than code quality, and which re-raises every time
+> `update-branch` moves the head. See that workflow's header for the full account.
+>
+> **The measurements below remain accurate and still worth reading** — the `c8 --all` wiring is
+> unchanged, and these are the real numbers for this codebase. What is no longer live is the *gate*:
+> the "recommended threshold" note near the end is superseded, since nothing is gating on it.
+> `sast-scan` and `secret-scan` remain required checks on main.
+
 Written 2026-08-05, after PR #1748 was blocked by SonarQube reporting **4.3% coverage on new code**
 while the repo appeared to be at **55%**. Both figures were produced by the same tooling, and the
 gap between them is the whole story.
