@@ -108,6 +108,13 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/logout", reason: "Session teardown endpoint accepts an existing cookie but does not expose data." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/heartbeat", reason: "Session heartbeat endpoint validates the Phoenix session token directly." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/password-setup/:token", reason: "Password setup/reset is protected by a one-time token." }),
+  // Live Direct Orders report links (owner request, 2026-08-05). Unauthenticated ON PURPOSE: the
+  // recipient has no Phoenix account, and a Google Sheet's IMPORTDATA formula cannot log in.
+  // The 32-byte token is the credential, and resolveDirectOrderReportShareLink checks revocation,
+  // expiry, passcode (live surface) and the creator-frozen scope BEFORE reading any row. Every
+  // open is counted; both responses are no-store + noindex so a cached copy cannot outlive a revoke.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/direct-orders/:token/feed", reason: "CSV feed for a Google Sheet IMPORTDATA formula, which cannot authenticate; guarded by a 32-byte token with mandatory expiry, revoke and creator-frozen scope." }),
+  tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/share/direct-orders/:token/live", reason: "Read-only live report for a recipient with no Phoenix account; additionally requires a passcode carried in the POST body, never the query string." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
   // Biometric (passkey) sign-in. The two /login/* routes are credential bootstrap exactly like
   // /api/auth/login — no session exists yet, and the WebAuthn signature IS the credential. The
@@ -144,6 +151,7 @@ export const accessRegistry = [
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/recruitment-email-intake", reason: "Scheduled IMAP poll for inbound recruitment CV intake, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/inbound-intake", reason: "Durable inbound-CV intake queue worker drain, guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-expire-held", reason: "Daily 14-day expiry sweep for held direct orders (spec B6), guarded by CRON_SECRET." }),
+  tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/direct-orders-probation", reason: "Daily 90-day probation sweep: promotes pharmacies with a footprint, reports phantoms (spec A3), guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/brevo-keepalive", reason: "Resets Brevo's 90-day inactivity expiry on the email failover key and reports a revoked key; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "cron-secret", methods: ["GET", "POST"], pattern: "/api/cron/reconciliation-check", reason: "Read-only reconciliation harness comparing each domain service against an independent derivation; guarded by CRON_SECRET." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/health/email", reason: "Unauthenticated health check; reports env-var presence only, no secrets or PII." }),
@@ -356,12 +364,23 @@ export const accessRegistry = [
   // The Held Desk (spec C3). Registry permission is only `read` because the real gate is the
   // Super-Admin identity check inside the service (same idiom as the acknowledge route above).
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/held", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // Pharmacy Validation (spec A2). GET is the Super Admin desk and POST is a rep submitting
+  // evidence, so the registry permission is the module's `create`/`read` while the REAL gate is
+  // the identity check inside the service — same idiom as the acknowledge route.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacy-validations", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // "Did you mean…" candidates for a claimed pharmacy name (spec B4). Read-only, area-agnostic on
+  // purpose: the point is to show the rep a pharmacy they may have mis-spelled, wherever it sits.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-suggestions", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacy-validations/:id/decision", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/held/notify", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Acknowledging a hand-entered pharmacy. Registry permission is only `read` because the real
   // gate is a Super-Admin identity check inside acknowledgeDirectOrderPharmacy — an approver
   // holds direct_orders:approve but must NOT be able to self-clear an unverified pharmacy.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/:id/acknowledge", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/direct-orders/report/export", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfExemptReason: "read-only report export; request body carries no mutation" }),
+  // Minting and revoking the live links above. Gated on `export` — publishing the report outside
+  // the login wall is the export permission's strongest form, not a lesser read.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/report/share-links", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/caps", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/variances", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/marketing-requests/coverage-report/export", permission: { resource: "expenses", action: "read" }, guard: "domain-helper", csrfExemptReason: "Read-only Coverage Report export: serialises the role-scoped, filtered report into a styled XLSX; performs no state mutation." }),

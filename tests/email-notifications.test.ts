@@ -69,6 +69,12 @@ export function runEmailNotificationTests() {
     // (CEO + system admin CC'd) on final CEO approval — a fixed renderer, not the DB
     // template engine. See src/lib/direct-orders/approved-email.ts.
     "src/lib/direct-orders/approved-email.ts",
+    // The probation sweep's phantom report (spec A3): written by the system, to a fixed audience
+    // — the owner and the CEO — when a pharmacy completes 90 days with no distributor sales and
+    // no payment. Direct send for the same reasons as approved-email.ts: a bespoke premium table
+    // rather than a DB template, and an alert that must not depend on the recipient having a
+    // notification preference configured.
+    "src/lib/direct-orders/phantom-report.ts",
     "src/lib/email-templates/service.ts",
     "src/lib/email/send-phoenix-email.ts",
     // A Super Admin's manual approval of a held item re-sends the EXACT held content,
