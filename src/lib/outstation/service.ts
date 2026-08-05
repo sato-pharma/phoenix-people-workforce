@@ -137,11 +137,14 @@ function cleanText(value: unknown) {
 function appendCarEvidenceNote(
   notes: string | null,
   metadata: OutstationCarEvidenceMetadata | null | undefined,
+  // Every transportation type carries an arrival photo now, so the audit line must not
+  // label a train's evidence "Car". The stored shape is unchanged — only the label moves.
+  transportationType: OutstationTransportationType,
 ) {
   if (!metadata) return notes;
 
   const evidenceLine = [
-    "Car live evidence:",
+    transportationType === "car" ? "Car live evidence:" : "Arrival photo evidence:",
     `source=${metadata.source}`,
     `hr_id=${metadata.employeeHrId}`,
     `captured_at=${metadata.capturedAt}`,
@@ -1368,14 +1371,17 @@ export async function submitOutstationRequest(
   const identity = await getEmployeeIdentity(access);
   const residence = await getResidenceLocationForEmployee(identity.employeeHrId);
   const supabase = getSupabaseAdmin();
-  const storedCarEvidenceMetadata =
-    calculation.transportationType === "car" && input.carEvidenceMetadata
-      ? {
-          ...input.carEvidenceMetadata,
-          employeeHrId: calculation.employeeHrId,
-          requestId: input.carEvidenceMetadata.requestId ?? null,
-        }
-      : null;
+  // Stored for EVERY transportation type, not car only. validateLiveArrivalEvidence() above
+  // already refuses a train or bus request that carries no arrival photo, so gating the
+  // persistence on `car` meant the only photo that could ever satisfy the gate was silently
+  // dropped for the very types the gate had just been widened to cover.
+  const storedCarEvidenceMetadata = input.carEvidenceMetadata
+    ? {
+        ...input.carEvidenceMetadata,
+        employeeHrId: calculation.employeeHrId,
+        requestId: input.carEvidenceMetadata.requestId ?? null,
+      }
+    : null;
   let carEvidenceImagePath: string | null = null;
 
   // A blocked draft is recoverable; an approved 0.00 EGP fuel line is not. Condition and message
@@ -1385,19 +1391,23 @@ export async function submitOutstationRequest(
     throw new Error(UNPRICEABLE_CAR_TRIP_MESSAGE);
   }
 
-  if (calculation.transportationType === "car") {
-    if (!input.carEvidenceImageDataUrl) {
-      throw new Error("Car transport requires the live camera evidence image before submitting the request.");
-    }
-    if (!storedCarEvidenceMetadata) {
-      throw new Error("Car live camera evidence metadata is missing.");
-    }
-
-    carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
-      imageDataUrl: input.carEvidenceImageDataUrl,
-      metadata: storedCarEvidenceMetadata,
-    });
+  // The arrival image is uploaded for every transportation type. The refusal names the
+  // employee's actual transport so a train passenger is never told to photograph a car.
+  if (!input.carEvidenceImageDataUrl) {
+    throw new Error(
+      calculation.transportationType === "car"
+        ? "Car transport requires the live camera evidence image before submitting the request."
+        : `A ${calculation.transportationType} trip requires the live arrival photo before submitting the request.`,
+    );
   }
+  if (!storedCarEvidenceMetadata) {
+    throw new Error("The live arrival photo metadata is missing.");
+  }
+
+  carEvidenceImagePath = await uploadOutstationCarEvidenceImage({
+    imageDataUrl: input.carEvidenceImageDataUrl,
+    metadata: storedCarEvidenceMetadata,
+  });
 
   const workloadPayload = await resolveOutstationWorkloadPayload({
     employeeHrId: calculation.employeeHrId,
@@ -1538,7 +1548,11 @@ export async function submitOutstationRequest(
     medical_trip_hr_id: calculation.medicalTripHrId,
     medical_trip_name: calculation.medicalTripName,
     minimum_required_distance_km: calculation.minimumRequiredDistanceKm,
-    notes: appendCarEvidenceNote(calculation.notes, storedCarEvidenceMetadata),
+    notes: appendCarEvidenceNote(
+      calculation.notes,
+      storedCarEvidenceMetadata,
+      calculation.transportationType,
+    ),
     offline_captured: calculation.offlineCaptured,
     overnight_days: calculation.overnightDays,
     report_am_workload: calculation.reportAmWorkload,
@@ -1604,7 +1618,11 @@ export async function submitOutstationRequest(
       .from("outstation_expense_requests")
       .update({
         car_evidence_metadata: metadataWithRequestId,
-        notes: appendCarEvidenceNote(calculation.notes, metadataWithRequestId),
+        notes: appendCarEvidenceNote(
+          calculation.notes,
+          metadataWithRequestId,
+          calculation.transportationType,
+        ),
       })
       .eq("id", data.id);
 
@@ -1618,7 +1636,11 @@ export async function submitOutstationRequest(
     car_evidence_image_path: carEvidenceImagePath,
     car_evidence_metadata: persistedCarEvidenceMetadata,
     notes: persistedCarEvidenceMetadata
-      ? appendCarEvidenceNote(calculation.notes, persistedCarEvidenceMetadata)
+      ? appendCarEvidenceNote(
+          calculation.notes,
+          persistedCarEvidenceMetadata,
+          calculation.transportationType,
+        )
       : data.notes,
   });
   if (decisionStatus === "rejected_by_system") {
