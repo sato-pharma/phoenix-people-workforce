@@ -25,10 +25,35 @@ name: SonarQube Cloud
 # it's off under the project's Administration -> Analysis Method if issues
 # other than the one above show up.
 
+# RETIRED 2026-08-05 (owner decision) — trigger-disabled, not deleted, the same way
+# deploy-cloud-run.yml was kept after the Railway cutover. `workflow_dispatch` only:
+# it no longer runs on pull requests and no longer posts a check.
+#
+# WHY. The Quality Gate blocked PR #1784 for hours and could not be satisfied or even
+# diagnosed. The failing condition is invisible from CI — the scanner logs only
+# `QUALITY GATE STATUS: FAILED`, and every sonarcloud.io API endpoint returns 404 for
+# this private project — so each attempt was a guess. Four failed in sequence:
+#
+#   1. wrote more tests            — the number was a measurement bug, not a test gap
+#   2. fixed the measurement (#1749, `c8 --all`) — gate unmoved
+#   3. lowered Coverage on New Code to 50%       — gate unmoved
+#   4. removed the ReDoS-shaped regex it flagged — gate unmoved
+#
+# The real condition was `Security Hotspots Reviewed = 100%`, which counts HUMAN
+# reviews in the SonarCloud UI, not code quality. A scanner can never satisfy it, and
+# because branch protection requires up-to-date branches, nearly every PR here gets an
+# update-branch that moves the head — re-raising the hotspot as new and needing review
+# again. Neither a manual review nor removing the condition cleared it. At ~30
+# commits/day that is a permanently red check, and a permanently red check is one
+# everybody learns to ignore — worse than no check at all.
+#
+# NOTHING SECURITY-RELATED IS LOST. `sast-scan` and `secret-scan` remain REQUIRED
+# status checks on main (with validate, lint, typecheck). Sonar was never required.
+#
+# To revive: restore the `pull_request` trigger below. Scan config, coverage wiring and
+# the measured-coverage rationale are left intact in sonar-project.properties and
+# docs/testing-coverage.md.
 on:
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 # Cancel a PR's superseded run when it's pushed again - a fixup shouldn't pay
