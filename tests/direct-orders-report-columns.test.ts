@@ -51,6 +51,7 @@ function row(overrides: Partial<DirectOrderReportRow> = {}): DirectOrderReportRo
     sosBatchId: null,
     createdAt: "2026-08-04T10:00:00.000Z",
     decidedAt: null,
+    decidedByName: "",
     activeStepLabel: "Completed",
     activeStepOrder: null,
     pharmacyCode: "DOP-000010",
@@ -80,10 +81,10 @@ export function runDirectOrderReportColumnsTests() {
   );
 
   // The owner's rule is "do not minus even one field". The count is that promise, pinned — it went
-  // 39 -> 43 (held clock) -> 44 (evidence link) on 2026-08-05. Adding is fine and expected; this assertion
+  // 39 -> 43 (held clock) -> 44 (evidence link) -> 45 (decided by) on 2026-08-05. Adding is fine and expected; this assertion
   // exists to make a REMOVAL impossible to do quietly, so update it deliberately or not at all.
-  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 44, "the Direct Orders report is a 44-column report");
-  for (const promised of ["Status", "Sales value (EGP)", "Pharmacy name", "Held at", "Days to expiry"]) {
+  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 45, "the Direct Orders report is a 45-column report");
+  for (const promised of ["Status", "Sales value (EGP)", "Pharmacy name", "Held at", "Days to expiry", "Decided by"]) {
     assert.ok(
       directOrderReportColumnIndex(promised) >= 0,
       `"${promised}" must still be a column — the count alone would let a swap slip through`,
@@ -136,6 +137,21 @@ export function runDirectOrderReportColumnsTests() {
     // A missing status is not a held order.
     assert.equal(heldClockCells("2026-08-04T00:00:00Z", null, now)[3], null);
   }
+
+  // ── Who decided it ───────────────────────────────────────────────────────────────────────
+  // On 2026-08-05 a script rejected fourteen orders with no actor recorded — nine of them already
+  // fully approved, one finalised by the CEO 1h43m earlier. Nothing on the report distinguished
+  // that from a person's decision. "(system)" is what makes it visible at a glance.
+  assert.equal(
+    directOrderReportRowCells(row({ decidedByName: "(system)" }))[directOrderReportColumnIndex("Decided by")],
+    "(system)",
+  );
+  assert.equal(
+    directOrderReportRowCells(row({ decidedByName: "Anwar Gaweesh" }))[directOrderReportColumnIndex("Decided by")],
+    "Anwar Gaweesh",
+  );
+  // No decision at all stays blank — not "(system)", which would claim a decision was made.
+  assert.equal(directOrderReportRowCells(row())[directOrderReportColumnIndex("Decided by")], "");
 
   // ── Clickable evidence ───────────────────────────────────────────────────────────────────
   // The link column is LAST, and it is the same column in the .xlsx and the live sheet — only the

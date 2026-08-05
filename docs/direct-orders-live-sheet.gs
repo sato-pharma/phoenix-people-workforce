@@ -151,6 +151,9 @@ var STATUS_RULES = [
  * expire on the same day and nothing on the sheet said so — a number going red is the cheapest
  * possible way for that to never be a surprise again.
  */
+/** Money and quantity columns that get a magnitude gradient. See applyStatusColours. */
+var GRADIENT_COLUMNS = ["Sales value (EGP)", "Qty (units)", "Paid (EGP)", "Remaining (EGP)"];
+
 var EXPIRY_COLUMN = "Days to expiry";
 var EXPIRY_RED_WITHIN_DAYS = 4;
 var EXPIRY_AMBER_WITHIN_DAYS = 8;
@@ -168,7 +171,33 @@ var LINK_LABELS = {
 };
 
 var EXEC_TAB = "Executive Summary";
-var TAB_ORDER = [EXEC_TAB, "Direct Orders", "By Status", "Cover", "Backup"];
+var COMPARISON_TAB = "Comparison";
+var STATUS_TAB = "Status Breakdown";
+var AUDIT_TAB = "Audit Trail";
+
+/**
+ * Tabs this sheet shipped under an earlier, less formal name.
+ *
+ * The owner's rule (2026-08-05): every tab name reads as something that belongs in a board pack.
+ * "God Mode" and "Backup" did not; "By Status" was a fragment rather than a title.
+ *
+ * Each entry RENAMES the existing tab rather than letting a new one appear beside it. Inserting a
+ * fresh tab would strand the old one, frozen at whatever it last showed — and for the audit trail
+ * that would also abandon the history, which is the only thing it exists to keep.
+ */
+var LEGACY_TAB_NAMES = [
+  { from: "God Mode", to: EXEC_TAB },
+  { from: "By Status", to: STATUS_TAB },
+  { from: "Backup", to: AUDIT_TAB }
+];
+
+var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, "Direct Orders", STATUS_TAB, "Cover", AUDIT_TAB];
+
+// Chart geometry, shared with the Marketing sheet so the two read as one system.
+var CHART_COL = 7;      // charts float to the right of the table, clear of it
+var CHART_WIDTH = 540;
+var MIN_BLOCK_ROWS = 14;
+var ROW_PX = 21;
 
 // ── Entry points ────────────────────────────────────────────────────────────────
 
@@ -327,6 +356,10 @@ function refreshDirectOrders() {
   // `created` collects any tab this run had to make. Tab ORDER is only touched when that list is
   // non-empty, because ordering requires setActiveSheet — which yanks the viewer off whatever tab
   // they are reading. Doing that once a minute made the sheet unusable.
+  // Before anything is drawn: rename any tab still carrying an older, less formal name, so the
+  // builders below find the tab that already exists instead of creating a second one beside it.
+  migrateLegacyTabNames(ss);
+
   var created = [];
   buildOrdersSheet(ss, bundle.orders, stamp, created);
   buildByStatusSheet(ss, bundle.byStatus, created);
@@ -336,9 +369,14 @@ function refreshDirectOrders() {
   // does not exist yet or the column set moved — never on a routine refresh.
   if (!ss.getSheetByName(EXEC_TAB) || !headerMatches(ss.getSheetByName("Direct Orders"), bundle.orders[0], ROW_HEADER)) {
     buildExecutiveSummarySheet(ss, bundle.orders[0], stamp, created);
+    // Needs the whole grid, not just its header: every chart is sized to the number of distinct
+    // statuses / lines / products / regions actually present, so nothing is silently truncated.
+    buildComparisonSheet(ss, bundle.orders, stamp, created);
   } else {
     ss.getSheetByName(EXEC_TAB).getRange(ROW_SUBTITLE, 1)
       .setValue("Everything at a glance — updated " + stamp + " (Cairo)");
+    var cmp = ss.getSheetByName(COMPARISON_TAB);
+    if (cmp) cmp.getRange(ROW_SUBTITLE, 1).setValue("Side by side — updated " + stamp + " (Cairo)");
   }
 
   // Last, and inside its own try: the backup is a safety net, so a fault in it must never take
@@ -619,6 +657,27 @@ function applyStatusColours(sheet, header) {
     );
   }
 
+  // ── Value gradients ──────────────────────────────────────────────────────────────────────
+  // A colour SCALE, not data bars. Sheets draws data bars from zero across the cell, so on a
+  // column where one order is 133,056 and the next is 1,309 every small order renders as an
+  // invisible sliver — the reader sees one bar and thirteen blanks. A three-point scale keeps
+  // every row readable and still makes the big ones jump out.
+  //
+  // Deliberately pale: these sit in the same eyeline as the status colours, which carry meaning
+  // rather than magnitude, and a strong gradient would out-shout them.
+  for (var g = 0; g < GRADIENT_COLUMNS.length; g++) {
+    var gi = header.indexOf(GRADIENT_COLUMNS[g]);
+    if (gi < 0) continue;
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .setGradientMinpoint("#FFFFFF")
+        .setGradientMidpointWithValue("#FFEDD5", SpreadsheetApp.InterpolationType.PERCENTILE, "50")
+        .setGradientMaxpoint("#FDBA74")
+        .setRanges([sheet.getRange(ROW_DATA, gi + 1, MAX_DATA_ROWS, 1)])
+        .build()
+    );
+  }
+
   sheet.setConditionalFormatRules(rules);
 }
 
@@ -698,6 +757,14 @@ function buildExecutiveSummarySheet(ss, header, stamp, created) {
   row = queryBlock(sheet, row, "By status", ["Status", "Orders", "Value (EGP)"],
     groupFormula(header, "Status"));
 
+  // Placed ABOVE "Needs attention" on purpose: the alert counts say how many things are
+  // wrong, this says what just MOVED — and on 2026-08-05 the thing that mattered was a
+  // change nobody had made, not a count that had gone up.
+  row = sectionTitle(sheet, row, "Changed most recently");
+  row = queryBlock(sheet, row, "Every status change this sheet has ever seen, newest first",
+    ["When (Cairo)", "Change", "Request", "Row hash"],
+    recentChangesFormula(AUDIT_TAB, 25), 25);
+
   row = sectionTitle(sheet, row, "Needs attention");
   var alertFirst = row;
   var alerts = [
@@ -732,6 +799,26 @@ function buildExecutiveSummarySheet(ss, header, stamp, created) {
     .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT).setFontSize(10);
 }
 
+/**
+ * The newest entries in the audit trail, most recent first.
+ *
+ * The Audit Trail records every version of every row and nobody reads an append-only log. On
+ * 2026-08-05 fourteen direct orders flipped to rejected inside 58 minutes — nine of them already
+ * approved — and the sheet held every one of those transitions while showing none of them. The
+ * owner found it by eye, two hours later.
+ *
+ * Sorted by ROW POSITION, not by the captured timestamp: the timestamp is a display string whose
+ * format has changed across versions of this script, so sorting on it would put "05 Aug" above
+ * "22 Jul" and quietly mis-order the very thing this block exists to surface. Row order is append
+ * order, which is chronological by construction.
+ */
+function recentChangesFormula(auditTab, rows) {
+  var n = rows || 25;
+  var q = "'" + auditTab + "'!";
+  return '=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + q + 'A2:D5000,ROW(' + q + 'A2:A5000)},'
+    + q + 'A2:A5000<>""),5,FALSE),' + n + ',4),"No changes recorded yet.")';
+}
+
 /** Four KPI tiles across: big number, small label under it. */
 function tileRow(sheet, row, tiles) {
   for (var i = 0; i < tiles.length; i++) {
@@ -755,8 +842,8 @@ function tileRow(sheet, row, tiles) {
   return row + 3;
 }
 
-function sectionTitle(sheet, row, title) {
-  sheet.getRange(row, 2, 1, 8).setBackground(INK);
+function sectionTitle(sheet, row, title, cols) {
+  sheet.getRange(row, 2, 1, cols || 8).setBackground(INK);
   sheet.getRange(row, 2).setValue(title)
     .setFontFamily(FONT).setFontSize(12).setFontWeight("bold").setFontColor(ORANGE);
   sheet.setRowHeight(row, 26);
@@ -770,7 +857,8 @@ function sectionTitle(sheet, row, title) {
  * on its own and the script never leaves last week's longer table half-erased under this week's
  * shorter one.
  */
-function queryBlock(sheet, row, caption, headers, formula) {
+function queryBlock(sheet, row, caption, headers, formula, rows) {
+  var span = rows || 12;
   sheet.getRange(row, 2).setValue(caption)
     .setFontFamily(FONT).setFontSize(10.5).setFontWeight("bold").setFontColor(SLATE);
   row++;
@@ -780,10 +868,10 @@ function queryBlock(sheet, row, caption, headers, formula) {
     .setBorder(null, null, true, null, null, null, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
   row++;
   sheet.getRange(row, 2).setFormula(formula);
-  sheet.getRange(row, 2, 12, headers.length).setFontFamily(FONT).setFontSize(10);
-  sheet.getRange(row, 3, 12, 1).setNumberFormat(UNITS_FMT);
-  sheet.getRange(row, 4, 12, 1).setNumberFormat(VALUE_FMT);
-  return row + 13;
+  sheet.getRange(row, 2, span, headers.length).setFontFamily(FONT).setFontSize(10);
+  sheet.getRange(row, 3, span, 1).setNumberFormat(UNITS_FMT);
+  sheet.getRange(row, 4, span, 2).setNumberFormat(VALUE_FMT);
+  return row + span + 1;
 }
 
 function spanOf(header, label) {
@@ -813,10 +901,243 @@ function heldGroupFormula(header, groupLabel) {
     + "order by sum(Col2) desc label count(Col2) '', sum(Col2) ''\",0),\"—\")";
 }
 
-/** The By Status breakdown, mirroring the .xlsx's second sheet. */
+// ── Comparison ──────────────────────────────────────────────────────────────────
+
+/**
+ * The same numbers as SHAPES.
+ *
+ * Executive Summary answers "what is the state of things". This one answers the question that
+ * follows it — "measured against WHAT" — and it is the only tab with charts on it.
+ *
+ * Three things make it trustworthy rather than decorative:
+ *
+ *   1. EVERY CHART IS BOUND TO THE TABLE BESIDE IT. Not to values this script computed and pasted:
+ *      to the range the table's QUERY spills into. So the picture and the figures are the same
+ *      object seen twice and cannot drift apart, and both follow a filter on Direct Orders together
+ *      — filter that tab to one region and every chart here redraws for that region.
+ *   2. NOTHING IS TRUNCATED. Each block is sized to the number of groups that actually exist, so no
+ *      chart shows a "top N" the reader was not told about, and none shows empty slots.
+ *   3. A BLOCK WHOSE COLUMNS THE FEED DOES NOT SEND IS SKIPPED, not drawn empty. An axis standing
+ *      over nothing reads as "the data is missing" when the truth is that this build never had the
+ *      field.
+ *
+ * Built ONCE, on a rebuild, like every other layout in this file.
+ */
+function buildComparisonSheet(ss, grid, stamp, created) {
+  if (!grid || grid.length === 0) return;
+  var header = grid[0];
+
+  var sheet = getOrCreateSheet(ss, COMPARISON_TAB, created);
+  resetSheet(sheet);
+
+  sheet.setColumnWidth(1, 28);
+  sheet.setColumnWidth(2, 260);
+  for (var w = 3; w <= 5; w++) sheet.setColumnWidth(w, 150);
+  sheet.setColumnWidth(6, 24); // gutter between the table and the chart floating beside it
+  for (var c = CHART_COL; c < CHART_COL + 6; c++) sheet.setColumnWidth(c, 92);
+
+  bandTitle(sheet, 12, COMPARISON_TAB, "Side by side — updated " + stamp + " (Cairo)");
+  sheet.setFrozenRows(2);
+
+  var blocks = comparisonBlocks(header, grid);
+  var needed = 6;
+  for (var n = 0; n < blocks.length; n++) needed += blockBudget(blocks[n].rows) + 3;
+  ensureRows(sheet, needed);
+
+  var row = 4;
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    // 11, not 12: sectionTitle starts at column B, so eleven columns end exactly under the brand
+    // band's twelve, which start at column A.
+    row = sectionTitle(sheet, row, block.section, 11);
+    var top = row;
+    // A group count of zero still gets one row, so the block shows the "—" its formula returns
+    // rather than asking for a range of no height, which throws.
+    var span = Math.max(block.rows, 1);
+    var budget = blockBudget(block.rows);
+    var next = queryBlock(sheet, top, block.caption, block.headers, block.formula, span);
+    if (block.rows > 0) addChart(sheet, top, span, budget, block.chart);
+    row = Math.max(next, top + budget + 1);
+  }
+
+  sheet.getRange(row, 2)
+    .setValue("Every table and every chart on this tab is a live formula over the Direct Orders tab — filter that tab and this whole page follows it.")
+    .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT).setFontSize(10);
+}
+
+/** Which comparisons the feed can actually support, in reading order. */
+function comparisonBlocks(header, grid) {
+  var blocks = [];
+  function has() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (header.indexOf(arguments[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  if (has("Status", "Sales value (EGP)", "Qty (units)")) {
+    blocks.push({
+      section: "Status against status",
+      caption: "Where the money is sitting, and how much of it",
+      headers: ["Status", "Orders", "Value (EGP)", "Units"],
+      formula: groupTwoFormula(header, "Status", "Sales value (EGP)", "Qty (units)"),
+      rows: distinctCount(grid, "Status"),
+      chart: { type: "COLUMN", title: "Value and units, by status", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Line", "Sales value (EGP)", "Qty (units)")) {
+    blocks.push({
+      section: "Line against line",
+      caption: "What each line is selling through direct orders",
+      headers: ["Line", "Orders", "Value (EGP)", "Units"],
+      formula: groupTwoFormula(header, "Line", "Sales value (EGP)", "Qty (units)"),
+      rows: distinctCount(grid, "Line"),
+      chart: { type: "COLUMN", title: "Value and units, by line", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Product", "Sales value (EGP)", "Qty (units)")) {
+    blocks.push({
+      section: "Product against product",
+      caption: "Which products the direct-order channel actually moves",
+      // Horizontal bars: product names are long, and the owner's rule is that text is never
+      // truncated and never wrapped. On a column chart they would be slanted or clipped.
+      headers: ["Product", "Orders", "Value (EGP)", "Units"],
+      formula: groupTwoFormula(header, "Product", "Sales value (EGP)", "Qty (units)"),
+      rows: distinctCount(grid, "Product"),
+      chart: { type: "BAR", title: "Value and units, by product", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Region", "Sales value (EGP)", "Qty (units)")) {
+    blocks.push({
+      section: "Region against region",
+      caption: "Where the direct-order value lands geographically",
+      headers: ["Region", "Orders", "Value (EGP)", "Units"],
+      formula: groupTwoFormula(header, "Region", "Sales value (EGP)", "Qty (units)"),
+      rows: distinctCount(grid, "Region"),
+      chart: { type: "BAR", title: "Value and units, by region", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Requester", "Sales value (EGP)", "Qty (units)")) {
+    blocks.push({
+      section: "Requester against requester",
+      caption: "Who is raising the direct orders, and for how much",
+      headers: ["Requester", "Orders", "Value (EGP)", "Units"],
+      formula: groupTwoFormula(header, "Requester", "Sales value (EGP)", "Qty (units)"),
+      rows: distinctCount(grid, "Requester"),
+      chart: { type: "BAR", title: "Value and units, by requester", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Requester", "Sales value (EGP)", "Status")) {
+    blocks.push({
+      section: "Held exposure",
+      caption: "Held value by requester — the concentration that actually carries risk",
+      headers: ["Requester", "Held orders", "Held value (EGP)"],
+      formula: heldGroupFormula(header, "Requester"),
+      rows: distinctCount(grid, "Requester"),
+      // One series, and red rather than the brand orange: this block is the risk, not the report.
+      chart: { type: "BAR", title: "Held value, by requester", firstValue: 4, valueCount: 1, colors: ["#DC2626"] }
+    });
+  }
+
+  if (has("Deal type", "Sales value (EGP)")) {
+    blocks.push({
+      section: "Bonus against discount",
+      caption: "How the value splits between the two deal types",
+      headers: ["Deal type", "Orders", "Value (EGP)"],
+      formula: groupFormula(header, "Deal type"),
+      rows: distinctCount(grid, "Deal type"),
+      chart: { type: "PIE", title: "Value by deal type", firstValue: 4, valueCount: 1 }
+    });
+  }
+
+  return blocks;
+}
+
+/** GROUP BY one column, counting rows and summing TWO numeric columns, biggest first. */
+function groupTwoFormula(header, groupLabel, sumA, sumB) {
+  var g = spanOf(header, groupLabel), a = spanOf(header, sumA), b = spanOf(header, sumB);
+  if (!g || !a || !b) return '="—"';
+  return '=IFERROR(QUERY({' + g + "," + a + "," + b + '},'
+    + '"select Col1, count(Col2), sum(Col2), sum(Col3) where Col1 is not null group by Col1 '
+    + "order by sum(Col2) desc label count(Col2) '', sum(Col2) '', sum(Col3) ''\",0),\"—\")";
+}
+
+function distinctCount(grid, label) {
+  if (!grid || grid.length < 2) return 0;
+  var index = grid[0].indexOf(label);
+  if (index < 0) return 0;
+  var seen = {};
+  var total = 0;
+  for (var r = 1; r < grid.length; r++) {
+    var value = grid[r][index];
+    if (value === undefined || value === null || String(value) === "") continue;
+    // Prefixed so a value like "constructor" cannot collide with an Object prototype member.
+    var key = "·" + String(value);
+    if (!seen[key]) { seen[key] = true; total++; }
+  }
+  return total;
+}
+
+function blockBudget(rows) {
+  return Math.max(Math.max(rows, 1) + 2, MIN_BLOCK_ROWS);
+}
+
+function chartType(name) {
+  if (name === "BAR") return Charts.ChartType.BAR;
+  if (name === "PIE") return Charts.ChartType.PIE;
+  return Charts.ChartType.COLUMN;
+}
+
+function addChart(sheet, top, span, budget, spec) {
+  var dataRow = top + 2;
+  var isPie = spec.type === "PIE";
+
+  var builder = sheet.newChart()
+    .setChartType(chartType(spec.type))
+    .setPosition(top, CHART_COL, 0, 0)
+    .addRange(sheet.getRange(dataRow, 2, span, 1))
+    .addRange(sheet.getRange(dataRow, spec.firstValue, span, spec.valueCount))
+    .setOption("title", spec.title)
+    .setOption("useFirstColumnAsDomain", true)
+    .setOption("fontName", FONT)
+    .setOption("backgroundColor", WHITE)
+    .setOption("colors", spec.colors || [ORANGE, INK])
+    .setOption("titleTextStyle", { bold: true, color: INK, fontName: FONT, fontSize: 12 })
+    .setOption("legend", {
+      position: isPie ? "right" : "bottom",
+      textStyle: { color: SLATE, fontName: FONT, fontSize: 10 }
+    })
+    .setOption("width", CHART_WIDTH)
+    .setOption("height", Math.max(budget * ROW_PX - 16, 180));
+
+  if (!isPie) {
+    // A BAR chart is a COLUMN chart on its side, so its VALUE axis is the horizontal one. Formatting
+    // vAxis on both would put the money format on the product names and leave the money axis writing
+    // 1,200,000 in full — which forces the plot area narrow enough that the bars stop being
+    // comparable by eye. "short" renders that as 1.2M.
+    var value = {
+      format: "short",
+      gridlines: { color: HAIRLINE },
+      textStyle: { color: SLATE, fontName: FONT, fontSize: 10 }
+    };
+    var category = { textStyle: { color: SLATE, fontName: FONT, fontSize: 10 } };
+    builder
+      .setOption("hAxis", spec.type === "BAR" ? value : category)
+      .setOption("vAxis", spec.type === "BAR" ? category : value);
+  }
+
+  sheet.insertChart(builder.build());
+}
+
+/** The status breakdown, mirroring the .xlsx's second sheet. */
 function buildByStatusSheet(ss, grid, created) {
   if (!grid.length) return;
-  var sheet = getOrCreateSheet(ss, "By Status", created);
+  var sheet = getOrCreateSheet(ss, STATUS_TAB, created);
 
   var header = grid[0];
   var body = grid.slice(1);
@@ -982,7 +1303,7 @@ function appendBackup(ss, grid, stamp, created) {
   var body = grid.slice(1);
   if (!body.length) return;
 
-  var sheet = getOrCreateSheet(ss, "Backup", created);
+  var sheet = getOrCreateSheet(ss, AUDIT_TAB, created);
   var META = ["Captured (Cairo)", "Change", "Request ID", "Row hash"];
 
   // Build the header once, on first use.
@@ -1122,6 +1443,29 @@ function headerMatches(sheet, header, headerRow) {
   return true;
 }
 
+/**
+ * Rename any tab still carrying an old name, in place.
+ *
+ * Runs on EVERY refresh, not only a rebuild, and is deliberately cheap: getSheetByName against a
+ * three-entry list costs nothing, and the alternative is a sheet that keeps its old tab forever
+ * because the rebuild that would have renamed it never happened to fire.
+ *
+ * If BOTH names somehow exist, the old one is left alone rather than merged or deleted — two tabs
+ * is a confusing morning; silently discarding whichever one held the real history is a bad week.
+ */
+function migrateLegacyTabNames(ss) {
+  for (var i = 0; i < LEGACY_TAB_NAMES.length; i++) {
+    var entry = LEGACY_TAB_NAMES[i];
+    var legacy = ss.getSheetByName(entry.from);
+    if (!legacy) continue;
+    if (ss.getSheetByName(entry.to)) {
+      console.error("Both '" + entry.from + "' and '" + entry.to + "' exist; leaving the old tab alone rather than guessing which to keep.");
+      continue;
+    }
+    legacy.setName(entry.to);
+  }
+}
+
 /** Grow the sheet if someone has deleted rows by hand, or every getRange below would throw. */
 function ensureRows(sheet, needed) {
   var have = sheet.getMaxRows();
@@ -1203,7 +1547,7 @@ function columnLetter(index) {
   return s;
 }
 
-/** Put the tabs in the .xlsx's order: Cover, Direct Orders, By Status. */
+/** Put the tabs in a stable, readable order. */
 function orderTabs(ss, names) {
   for (var i = 0; i < names.length; i++) {
     var sheet = ss.getSheetByName(names[i]);

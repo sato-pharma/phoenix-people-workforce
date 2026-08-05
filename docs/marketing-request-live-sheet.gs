@@ -271,7 +271,22 @@ var SECTIONS = [
 
 var EXEC_TAB = "Executive Summary";
 /** What that panel was called before. Kept so an existing sheet is RENAMED, not duplicated. */
-var LEGACY_EXEC_TAB = "God Mode";
+var AUDIT_TAB = "Audit Trail";
+
+/**
+ * Tabs this sheet shipped under an earlier, less formal name.
+ *
+ * The owner's rule (2026-08-05): every tab name reads as something that belongs in a board pack.
+ * "God Mode" and "Backup" did not.
+ *
+ * Each entry RENAMES the existing tab rather than letting a new one appear beside it. Inserting a
+ * fresh tab would strand the old one, frozen at whatever it last showed — and for the audit trail
+ * that would also abandon the history, which is the only thing it exists to keep.
+ */
+var LEGACY_TAB_NAMES = [
+  { from: "God Mode", to: EXEC_TAB },
+  { from: "Backup", to: AUDIT_TAB }
+];
 
 var COMPARISON_TAB = "Comparison";
 
@@ -301,9 +316,9 @@ var ROW_PX = 21;
  * tab a rebuild must never touch, because resetting it would throw away the history that is its
  * entire reason for existing.
  */
-var BACKUP_TAB = "Backup";
 
-var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover", BACKUP_TAB];
+
+var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover", AUDIT_TAB];
 
 // ── Entry points ────────────────────────────────────────────────────────────────
 
@@ -428,6 +443,10 @@ function refreshMarketingRequests() {
   // ONE signature decides whether any layout work happens at all. It covers every tab's column set,
   // so a feed that gains a column rebuilds everything, and a feed that has not changed rebuilds
   // nothing — which is every refresh but the first.
+  // Before anything is drawn: rename any tab still carrying an older, less formal name, so the
+  // builders below find the tab that already exists instead of creating a second one beside it.
+  migrateLegacyTabNames(ss);
+
   var signature = buildLayoutSignature(bundle);
   var rebuild = props.getProperty("layoutSignature") !== signature;
 
@@ -787,19 +806,9 @@ function applyStatusColours(sheet, header) {
  * a lens rather than a summary: filter Requests to one line and this panel reports that line.
  */
 function buildExecutiveSummarySheet(ss, header, stamp) {
+  // Legacy names are already handled by migrateLegacyTabNames() before any builder runs.
   var sheet = ss.getSheetByName(EXEC_TAB);
-  if (!sheet) {
-    // This panel shipped as "God Mode" first. RENAME the existing tab rather than inserting a new
-    // one beside it: creating a fresh tab would leave the old one behind, frozen at whatever it
-    // last showed, and a stale board panel that still looks live is worse than no panel at all.
-    var legacy = ss.getSheetByName(LEGACY_EXEC_TAB);
-    if (legacy) {
-      legacy.setName(EXEC_TAB);
-      sheet = legacy;
-    } else {
-      sheet = ss.insertSheet(EXEC_TAB);
-    }
-  }
+  if (!sheet) sheet = ss.insertSheet(EXEC_TAB);
   resetSheet(sheet);
   ensureRows(sheet, 120);
 
@@ -862,6 +871,14 @@ function buildExecutiveSummarySheet(ss, header, stamp) {
     ["Request", "Account / Dr.", "Amount (EGP)", "Est. ROI (EGP)", "Status"],
     topFormula(header));
 
+  // Placed ABOVE "Needs attention" on purpose: the alert counts say how many things are
+  // wrong, this says what just MOVED — and on 2026-08-05 the thing that mattered was a
+  // change nobody had made, not a count that had gone up.
+  row = sectionTitle(sheet, row, "Changed most recently");
+  row = queryBlock(sheet, row, "Every change this sheet has ever seen, newest first",
+    ["When (Cairo)", "Change", "Request", "Row hash"],
+    recentChangesFormula(AUDIT_TAB, 25), 25);
+
   row = sectionTitle(sheet, row, "Needs attention");
   var alertFirstRow = row;
   var alerts = [
@@ -897,6 +914,26 @@ function buildExecutiveSummarySheet(ss, header, stamp) {
   sheet.getRange(row, 2)
     .setValue("Every figure here is a live formula over the Requests tab — filter that tab and this panel follows it.")
     .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT).setFontSize(10);
+}
+
+/**
+ * The newest entries in the audit trail, most recent first.
+ *
+ * The Audit Trail records every version of every row and nobody reads an append-only log. On
+ * 2026-08-05 fourteen direct orders flipped to rejected inside 58 minutes — nine of them already
+ * approved — and the sheet held every one of those transitions while showing none of them. The
+ * owner found it by eye, two hours later.
+ *
+ * Sorted by ROW POSITION, not by the captured timestamp: the timestamp is a display string whose
+ * format has changed across versions of this script, so sorting on it would put "05 Aug" above
+ * "22 Jul" and quietly mis-order the very thing this block exists to surface. Row order is append
+ * order, which is chronological by construction.
+ */
+function recentChangesFormula(auditTab, rows) {
+  var n = rows || 25;
+  var q = "'" + auditTab + "'!";
+  return '=IFERROR(ARRAY_CONSTRAIN(SORT(FILTER({' + q + 'A2:D5000,ROW(' + q + 'A2:A5000)},'
+    + q + 'A2:A5000<>""),5,FALSE),' + n + ',4),"No changes recorded yet.")';
 }
 
 /** Four KPI tiles across: big number, small label under it. */
@@ -1250,8 +1287,8 @@ function appendBackup(ss, grid, stamp) {
   var body = grid.slice(1);
   if (!body.length) return;
 
-  var sheet = ss.getSheetByName(BACKUP_TAB);
-  if (!sheet) sheet = ss.insertSheet(BACKUP_TAB);
+  var sheet = ss.getSheetByName(AUDIT_TAB);
+  if (!sheet) sheet = ss.insertSheet(AUDIT_TAB);
   var META = ["Captured (Cairo)", "Change", "Request code", "Row hash"];
 
   // Build the header once, on first use. Never rebuilt — see the note above.
@@ -1355,6 +1392,29 @@ function buildCoverSheet(ss, summary, stamp) {
 function stampSheet(ss, name, text) {
   var sheet = ss.getSheetByName(name);
   if (sheet) sheet.getRange(ROW_SUBTITLE, 1).setValue(text);
+}
+
+/**
+ * Rename any tab still carrying an old name, in place.
+ *
+ * Runs on EVERY refresh, not only a rebuild, and is deliberately cheap: getSheetByName against a
+ * two-entry list costs nothing, and the alternative is a sheet that keeps its old tab forever
+ * because the rebuild that would have renamed it never happened to fire.
+ *
+ * If BOTH names somehow exist, the old one is left alone rather than merged or deleted — two tabs
+ * is a confusing morning; silently discarding whichever one held the real history is a bad week.
+ */
+function migrateLegacyTabNames(ss) {
+  for (var i = 0; i < LEGACY_TAB_NAMES.length; i++) {
+    var entry = LEGACY_TAB_NAMES[i];
+    var legacy = ss.getSheetByName(entry.from);
+    if (!legacy) continue;
+    if (ss.getSheetByName(entry.to)) {
+      console.error("Both '" + entry.from + "' and '" + entry.to + "' exist; leaving the old tab alone rather than guessing which to keep.");
+      continue;
+    }
+    legacy.setName(entry.to);
+  }
 }
 
 function ensureRows(sheet, needed) {
