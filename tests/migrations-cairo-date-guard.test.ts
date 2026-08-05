@@ -37,17 +37,84 @@ export function runMigrationsCairoDateGuardTests() {
 
   // Strip anything that is inert text, so an explanatory comment describing the bug — this
   // guard's own migration header is full of them — cannot be mistaken for a real occurrence.
+  // ONE left-to-right pass, deliberately not a sequence of .replace() calls. Two independent
+  // passes are wrong in whichever order you pick:
+  //   comments first → a `--` inside a literal, ('Split -- out', current_date), truncates the line
+  //                    and the guard silently misses the current_date after it;
+  //   literals first → an apostrophe inside a comment, `-- the owner's decision`, opens a literal
+  //                    that swallows real code up to the next quote.
+  // Only a single scan consuming whichever delimiter it meets first is correct in both directions.
+  // Inert spans are blanked to spaces rather than deleted so newlines survive and the offender
+  // line numbers reported below stay accurate.
   function stripInertText(raw: string): string {
-    return raw
-      .replace(/\/\*[\s\S]*?\*\//g, " ") // block comments
-      .split("\n")
-      .map((line) => {
-        const idx = line.indexOf("--");
-        return idx >= 0 ? line.slice(0, idx) : line;
-      })
-      .join("\n")
-      .replace(/'(?:[^']|'')*'/g, "''"); // single-quoted literals ('' is an escaped quote)
+    const blank = (s: string) => s.replace(/[^\n]/g, " ");
+    let out = "";
+    let i = 0;
+
+    while (i < raw.length) {
+      if (raw[i] === "-" && raw[i + 1] === "-") {
+        const nl = raw.indexOf("\n", i);
+        const stop = nl === -1 ? raw.length : nl;
+        out += blank(raw.slice(i, stop));
+        i = stop;
+      } else if (raw[i] === "/" && raw[i + 1] === "*") {
+        const close = raw.indexOf("*/", i + 2);
+        const stop = close === -1 ? raw.length : close + 2;
+        out += blank(raw.slice(i, stop));
+        i = stop;
+      } else if (raw[i] === "'") {
+        let j = i + 1;
+        while (j < raw.length) {
+          if (raw[j] !== "'") {
+            j += 1;
+          } else if (raw[j + 1] === "'") {
+            j += 2; // '' is an escaped quote — still inside the literal
+          } else {
+            j += 1;
+            break;
+          }
+        }
+        out += blank(raw.slice(i, j));
+        i = j;
+      } else {
+        out += raw[i];
+        i += 1;
+      }
+    }
+    return out;
   }
+
+  // The scanner is this guard's blind spot if it is wrong, so pin both failure directions.
+  assert.match(
+    stripInertText("insert into x values ('Split -- out of GZ6', current_date);"),
+    /current_date/,
+    "a -- inside a string literal must not hide the rest of the line from the guard",
+  );
+  // Two apostrophes, not one: a single apostrophe can never open a literal, so a one-apostrophe
+  // case passes even under the broken literals-first ordering and proves nothing. With two, that
+  // ordering opens a literal at `owner'` and closes it at `that'`, blanking the real statement
+  // between them — measured, it swallows the entire input.
+  assert.match(
+    stripInertText(
+      [
+        "-- the owner's decision 2026-08-03",
+        "insert into au.line_area_map values ('UE9', current_date);",
+        "-- that's the whole change",
+      ].join("\n"),
+    ),
+    /current_date/,
+    "apostrophes in two comments must not open a literal spanning the real code between them",
+  );
+  assert.doesNotMatch(
+    stripInertText("-- this comment merely describes current_date\nselect 1;"),
+    /current_date/,
+    "a comment naming the banned expression must still be inert",
+  );
+  assert.equal(
+    stripInertText("a\n/* multi\nline */\nb").split("\n").length,
+    4,
+    "blanking must preserve newlines so offender line numbers stay accurate",
+  );
 
   // Unzoned "today" expressions. `current_date` is the one that actually bit; `now()::date` and
   // `current_timestamp::date` are the same defect written differently, so close them too.
