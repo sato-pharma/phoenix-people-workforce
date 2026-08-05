@@ -14,8 +14,9 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 //
 // ORDER MATTERS, AND IT IS THE WHOLE DESIGN
 //   1. mint the new link          — old one still works
-//   2. push it to the sheet       — sheet stores it and confirms with "rotated"
-//   3. ONLY THEN revoke the old   — and only if step 2 actually confirmed
+//   2. push it to the sheet       — fire it, but do NOT trust the reply
+//   3. observe that the sheet USED the new token — evidence, not a claim
+//   4. ONLY THEN revoke the old   — and only if step 3 actually observed a read
 //
 // Revoking first, or revoking on an unconfirmed push, would leave the owner with a sheet that
 // cannot read anything and no way to fix it except by hand — the exact failure this is meant to
@@ -31,6 +32,29 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ROTATION_TIMEOUT_MS = 15000;
+
+/**
+ * How long to wait for the sheet to PROVE it took the new token, and how often to look.
+ *
+ * Proof is an actual read: the script calls refreshDirectOrders() straight after storing the token,
+ * which fetches the feed and bumps that link's access_count. Google usually does this within a
+ * couple of seconds; 40s is generous and still leaves room inside the route's 60s maxDuration.
+ */
+const CONFIRM_WINDOW_MS = 40000;
+const CONFIRM_POLL_MS = 2500;
+
+/** Has the sheet actually fetched with this token yet? */
+async function tokenHasBeenUsed(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  token: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("direct_order_report_share_links")
+    .select("access_count")
+    .eq("token", token)
+    .maybeSingle();
+  return Number((data as { access_count?: number } | null)?.access_count ?? 0) > 0;
+}
 
 export type SheetTokenRotationResult =
   | { rotated: false; reason: string }
@@ -103,31 +127,58 @@ export async function rotateDirectOrderSheetToken(): Promise<SheetTokenRotationR
   if (insertError) throw insertError;
 
   // 2. Hand it to the sheet, authorised by the token still in force.
-  let confirmed = false;
+  //
+  // The reply is NOT the confirmation, and this is the whole point of the fix. Apps Script answers
+  // a POST with a 302, and per the fetch spec a 302 on POST is followed as a GET — so what comes
+  // back is whatever that redirect serves, often an HTML page, even though doPost has already run
+  // and done the work. Trusting that body made the rotation refuse twice on 2026-08-05 while the
+  // sheet had in fact stored the new token perfectly. It reported failure over success.
   try {
-    const response = await fetch(webhookUrl, {
+    await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ secret: currentSecret, reason: "token_rotation", rotateToken: newToken }),
       signal: AbortSignal.timeout(ROTATION_TIMEOUT_MS),
       redirect: "follow",
     });
-    confirmed = response.ok && (await response.text()).trim() === "rotated";
   } catch (error) {
-    logWarning("Direct Orders sheet token rotation could not reach the sheet", {
-      labels: { event: "direct_order_sheet_rotation_unreachable" },
+    // Even a thrown fetch is not proof of failure — the request may well have been delivered and
+    // processed before the connection went wrong. The observation below decides, not this.
+    logWarning("Direct Orders sheet token rotation: the push errored (the observation still decides)", {
+      labels: { event: "direct_order_sheet_rotation_push_error" },
       error,
     });
+  }
+
+  // 3. Confirm by OBSERVATION, on our side of the wire.
+  //
+  // The sheet proves it stored the token by USING it: the script calls refreshDirectOrders()
+  // immediately after saving, which fetches the feed and bumps that link's access_count. A read we
+  // recorded ourselves cannot be faked by a redirect, an HTML error page, or a flaky connection —
+  // it is the difference between a claim and evidence.
+  let confirmed = false;
+  const deadline = Date.now() + CONFIRM_WINDOW_MS;
+  while (Date.now() < deadline) {
+    if (await tokenHasBeenUsed(supabase, newToken)) {
+      confirmed = true;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, CONFIRM_POLL_MS));
   }
 
   if (!confirmed) {
     // The sheet never took the new token. Clean up the one we minted and leave everything on the
     // old one — a working sheet with an old token beats a dead sheet with a new one.
     await supabase.from("direct_order_report_share_links").delete().eq("token", newToken);
-    return { rotated: false, reason: "the sheet did not confirm the new token; nothing was revoked" };
+    return {
+      rotated: false,
+      reason:
+        `the sheet never read with the new token within ${Math.round(CONFIRM_WINDOW_MS / 1000)}s, ` +
+        `so it was deleted and nothing was revoked — the old token is still live and the sheet keeps working`,
+    };
   }
 
-  // 3. Confirmed — now the old one can go.
+  // 4. Confirmed by observation — only now can the old one go.
   await supabase
     .from("direct_order_report_share_links")
     .update({ revoked_at: new Date().toISOString(), revoked_by_hr_id: "system:rotation" })
