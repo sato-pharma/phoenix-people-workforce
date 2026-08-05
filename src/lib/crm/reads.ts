@@ -90,6 +90,23 @@ export const CRM_RESIGNED_IN_LIST = `(${CRM_RESIGNED_AGENT_CRM_IDS.join(",")})`;
 // list stays the permanent safety-net for the unresolvable placeholder/owner-excluded agents the
 // live join can never catch. Fail-safe: any error computing the live set falls back to the static
 // list alone (over-hide, never under-hide). Cached ~5 min; employment-status changes are rare.
+//
+// HANDED-OVER SLOTS MUST NOT STAY EXCLUDED. The scan above is unscoped by date, so a departed
+// employee's own OLD rows on a crm_id permanently mark that crm_id as "departed" even after the
+// slot is legitimately reassigned to a new, currently active employee — exactly the resignation
+// flow's own rule (see resignations/service.ts: a leaver's employees.crm_id is cleared "so the
+// replacement hire can inherit it", owner rule 2026-08-05). Without this carve-out, the successor's
+// OWN current visits vanish from every company-wide read the moment they inherit the slot — portal,
+// admin reports, Double Visit Analytics, AND the Field Workforce Compliance matrix that feeds
+// automated payroll's no-activity deduction detector. Verified in production 2026-08-05: crm_id
+// 1399 (B-97's slot from 2026-01-01 to her 2026-06-28 resignation) was reassigned to AI-0006
+// (hired 2026-08-02) — all 23 of his visits were excluded because B-97's 1,229 historical rows on
+// the same crm_id kept it in the live set. Mirrors the reasoning already applied BY HAND to the
+// static list for slots 1102/1395/1477/1521 ("reused slot now resolving to an ACTIVE employee;
+// keeping it here was hiding an active rep's data") — this makes the live tier self-heal the same
+// way instead of requiring a manual removal for every future handover. Deliberately does NOT touch
+// the static list itself: some of its entries are owner-excluded ACTIVE employees on purpose (e.g.
+// the CEO), and that decision must never be silently reversed just because they are still employed.
 const EXCLUDED_AGENTS_TTL_MS = 5 * 60_000;
 type EffectiveExclusion = { ids: number[]; inList: string };
 let excludedAgentsCache: (EffectiveExclusion & { at: number }) | null = null;
@@ -129,6 +146,21 @@ async function scanDepartedAgentCrmIds(departedHrIds: readonly string[]): Promis
   return Array.from(ids);
 }
 
+/**
+ * Pure: drops any scanned "departed" crm_id that a currently ACTIVE/on_leave employee now owns
+ * (`employees.crm_id`) — a handed-over CRM slot. Split out from {@link computeEffectiveExclusion}
+ * so the handover carve-out is provable without mocking Supabase (same rationale as every other
+ * pure-core extraction in this module, e.g. `selectUnmappedAgentAlerts`). Only ever REMOVES ids
+ * from the live-scanned set; the hand-maintained static list is a separate, untouched input to the
+ * final union, so an owner-excluded active employee (the CEO, etc.) stays excluded regardless.
+ */
+export function resolveLiveDepartedExclusion(input: {
+  scannedCrmIds: readonly number[];
+  activeEmployeeCrmIds: ReadonlySet<string>;
+}): number[] {
+  return input.scannedCrmIds.filter((id) => !input.activeEmployeeCrmIds.has(String(id)));
+}
+
 /** Compute the effective exclusion (static ∪ live departed). Never throws: a failure in the live
  * tier is logged and degrades to the static list alone. */
 async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
@@ -139,7 +171,15 @@ async function computeEffectiveExclusion(): Promise<EffectiveExclusion> {
       .filter((employee) => !isActiveLifecycleStatus(employee.employmentStatus))
       .map((employee) => employee.hrId)
       .filter((hrId): hrId is string => Boolean(hrId));
-    if (departedHrIds.length > 0) liveIds = await scanDepartedAgentCrmIds(departedHrIds);
+    if (departedHrIds.length > 0) {
+      const scannedCrmIds = await scanDepartedAgentCrmIds(departedHrIds);
+      const activeEmployeeCrmIds = new Set(
+        employees
+          .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus) && employee.crmId)
+          .map((employee) => String(employee.crmId)),
+      );
+      liveIds = resolveLiveDepartedExclusion({ scannedCrmIds, activeEmployeeCrmIds });
+    }
   } catch (error) {
     // Best-effort live tier; the static safety-net still applies (fail-safe over-hide).
     logError("Live departed-agent CRM exclusion failed; using static list only", {

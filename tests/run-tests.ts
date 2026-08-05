@@ -643,6 +643,7 @@ import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-
 import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
+import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1427,6 +1428,11 @@ await runTest(
 await runTest(
   "SFE Manager admin sales/customers-database nav cards never dead-end into a Super-Admin-only redirect",
   runSfeManagerNavDeadLinksTests,
+);
+
+await runTest(
+  "CRM live departed-exclusion handover (a crm_id reassigned to a currently active employee is no longer blanket-hidden — AI-0006/B-97 slot 1399 incident)",
+  runCrmDepartedExclusionHandoverTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
