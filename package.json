@@ -36,6 +36,7 @@
     "security:preflight:local": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/security-preflight-local.ts",
     "ops:a9-mm-rebuild": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/rebuild-a9-marketing-manager-account.ts",
     "ops:a9-mm-rebuild:dry-run": "pnpm run ops:a9-mm-rebuild -- --dry-run --backup",
+    "ops:provision-accounts": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./scripts/alias-loader.mjs scripts/provision-missing-employee-accounts.ts",
     "check:edit": "pnpm run typecheck",
     "check:harden": "pnpm run check:routes && pnpm run check:migrations && pnpm run check:sql-backups && pnpm run check:deductions-write-contract && pnpm run check:no-stale-domains && pnpm run lint && pnpm exec next typegen && pnpm run typecheck && pnpm run test && pnpm run build",
     "analyze": "next build --experimental-analyze",
