@@ -347,7 +347,16 @@ export function PharmacyRegistryManager({
                   )}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2">
-                  {row.verificationStatus === "pending_review" ? (
+                  {/* Same reason as the mobile card below: this was a two-way branch, so a rejected
+                      pharmacy rendered green as "Confirmed". Tested first, deliberately. */}
+                  {row.verificationStatus === "rejected" ? (
+                    <div className="space-y-1">
+                      <span className="inline-block bg-rose-200 px-2 py-0.5 text-[11px] font-black text-rose-900">
+                        Rejected — proven false
+                      </span>
+                      <p className="text-[11px] text-slate-500">Deactivated; cannot be used or confirmed.</p>
+                    </div>
+                  ) : row.verificationStatus === "pending_review" ? (
                     <div className="space-y-1">
                       <span className="inline-block bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800">
                         Waiting for confirmation
@@ -401,7 +410,12 @@ export function PharmacyRegistryManager({
                 <div className="font-semibold text-slate-800">{row.pharmacyName}</div>
                 <div className="text-[11px] text-slate-400">{row.phoenixPharmacyCode}</div>
               </div>
-              {row.verificationStatus === "pending_review" ? (
+              {/* `rejected` MUST be tested before the else. This was a two-way if/else, so a
+                  rejected pharmacy fell through and rendered as a green "Confirmed" — a pharmacy
+                  proven false, shown as trusted, with no type error to catch it. */}
+              {row.verificationStatus === "rejected" ? (
+                <span className="bg-rose-200 px-2 py-0.5 text-[11px] font-black text-rose-900">Rejected</span>
+              ) : row.verificationStatus === "pending_review" ? (
                 <span className="bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800">Waiting</span>
               ) : (
                 <span className="bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">Confirmed</span>

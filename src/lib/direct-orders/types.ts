@@ -54,6 +54,36 @@ export type DirectOrderStatus =
   // every rejection rate and per-rep counter that groups by status (audit F3).
   | "cancelled";
 
+/** The three states a pharmacy's verification can be in. */
+export type DirectOrderPharmacyVerificationStatus = "verified" | "pending_review" | "rejected";
+
+/**
+ * Turn whatever the database holds into a verification status, without inventing trust.
+ *
+ * This replaced a one-line ternary that read:
+ *
+ *     String(row.verification_status ?? "verified") === "pending_review" ? "pending_review" : "verified"
+ *
+ * which was BINARY: anything that was not `pending_review` became `verified`. Adding `rejected` to
+ * the database while that line stood would have reported every rejected pharmacy as **verified** —
+ * the exact inverse of the truth — in the picker, the approval detail and the registry manager,
+ * with no type error and no failing test anywhere.
+ *
+ * Unknown values now resolve to `pending_review`, not `verified`: a value this code does not
+ * recognise is a reason for a human to look, never a reason to trust. Only a null/absent column
+ * still reads as `verified`, because that is the column's own default and predates all of this.
+ */
+export function normalizePharmacyVerificationStatus(
+  value: unknown,
+): DirectOrderPharmacyVerificationStatus {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "verified";
+  if (raw === "pending_review") return "pending_review";
+  if (raw === "rejected") return "rejected";
+  if (raw === "verified") return "verified";
+  return "pending_review";
+}
+
 export function isTerminalDirectOrderStatus(status: DirectOrderStatus): boolean {
   return (
     status === "approved" ||
@@ -136,7 +166,18 @@ export type DirectOrderPharmacy = {
    * line → CEO), because an unconfirmed code is how a different pharmacy's retail sales end up
    * attributed here.
    */
-  verificationStatus: "verified" | "pending_review";
+  /**
+   * `rejected` is the outcome the model had no word for until 2026-08-05, when the owner ruled that
+   * ten hand-created pharmacies were false. The only states available were `verified` and
+   * `pending_review`, so the permanent record of that decision read "awaiting a look" — which is
+   * not what happened. A refusal that the data cannot express becomes, over time, a refusal nobody
+   * can find.
+   *
+   * Rejecting ALWAYS deactivates: `active = false` is what actually removes a pharmacy from the
+   * picker, the directory search and the probation sweep (12 query sites filter on it), so a
+   * rejected-but-active row would be a contradiction the rest of the module would not honour.
+   */
+  verificationStatus: "verified" | "pending_review" | "rejected";
   /** 'manual' when the pharmacy was registered by hand; 'catalogue' when it came from the list. */
   entrySource: "catalogue" | "manual";
   verifiedByHrId: string | null;

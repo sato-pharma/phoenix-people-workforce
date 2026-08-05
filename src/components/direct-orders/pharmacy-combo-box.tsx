@@ -156,6 +156,12 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
                   {hit.verificationStatus === "pending_review" ? (
                     <span className="bg-amber-100 px-1 py-0.5 font-bold text-amber-800">awaiting validation</span>
                   ) : null}
+                  {/* A rejected pharmacy is deactivated, so it should never reach this list at all —
+                      every search path filters on `active`. Labelled anyway: if one ever does
+                      appear, the submitter must see WHY rather than a row that looks ordinary. */}
+                  {hit.verificationStatus === "rejected" ? (
+                    <span className="bg-rose-100 px-1 py-0.5 font-bold text-rose-800">rejected — do not use</span>
+                  ) : null}
                 </span>
                 {hit.address ? (
                   <span className="mt-0.5 block text-[11px] text-slate-400" dir="auto">

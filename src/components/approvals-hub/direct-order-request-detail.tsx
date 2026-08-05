@@ -115,6 +115,16 @@ export function DirectOrderRequestDetail({
               database.
             </p>
           </div>
+        ) : pharmacy?.verificationStatus === "rejected" ? (
+          /* Proven false, not merely unreviewed. An approver must never see this as "awaiting a
+             look" — the pharmacy was refused, and the strongest thing this screen can do is say so
+             before anyone considers acting on the order. */
+          <div className="border-b border-[#eef1f3] bg-rose-100 px-4 py-2.5">
+            <p className="text-[12px] font-black text-rose-900">
+              REJECTED PHARMACY — this pharmacy was examined and found not to be real. The order
+              behind it must not be approved, and the pharmacy cannot be used again.
+            </p>
+          </div>
         ) : pharmacy?.verificationStatus === "pending_review" ? (
           <div className="border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
             <p className="text-[12px] font-bold text-rose-900">
