@@ -5,6 +5,7 @@ import {
   DIRECT_ORDER_REPORT_COLUMNS,
   HELD_ORDER_LIFETIME_DAYS,
   directOrderReportColumnIndex,
+  directOrderShareFileUrl,
   heldClockCells,
   directOrderReportRowCells,
   summariseDirectOrderReport,
@@ -79,9 +80,9 @@ export function runDirectOrderReportColumnsTests() {
   );
 
   // The owner's rule is "do not minus even one field". The count is that promise, pinned — it went
-  // 39 -> 43 on 2026-08-05 when the held clock arrived. Adding is fine and expected; this assertion
+  // 39 -> 43 (held clock) -> 44 (evidence link) on 2026-08-05. Adding is fine and expected; this assertion
   // exists to make a REMOVAL impossible to do quietly, so update it deliberately or not at all.
-  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 43, "the Direct Orders report is a 43-column report");
+  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 44, "the Direct Orders report is a 44-column report");
   for (const promised of ["Status", "Sales value (EGP)", "Pharmacy name", "Held at", "Days to expiry"]) {
     assert.ok(
       directOrderReportColumnIndex(promised) >= 0,
@@ -116,6 +117,27 @@ export function runDirectOrderReportColumnsTests() {
     assert.equal(String(expires).slice(0, 10), "2026-08-18", "14 days from the 4th is the 18th");
     assert.equal(daysLeft, 8, "and 8 of those days are left");
   }
+
+  // ── Clickable evidence ───────────────────────────────────────────────────────────────────
+  // The link column is LAST, and it is the same column in the .xlsx and the live sheet — only the
+  // URL base differs. Omitting the argument (the plain download) must blank it rather than throw
+  // or write "undefined" into a cell the owner reads.
+  assert.equal(DIRECT_ORDER_REPORT_COLUMNS[DIRECT_ORDER_REPORT_COLUMNS.length - 1].label, "Evidence photo link");
+  assert.equal(directOrderReportRowCells(row()).at(-1), null, "no links argument means a blank cell");
+  assert.equal(
+    directOrderReportRowCells(row(), { evidence: "https://x/e" }).at(-1),
+    "https://x/e",
+  );
+
+  // The file URL is addressed by REQUEST ID, never by storage path: a path parameter would turn the
+  // route into a read primitive over a private bucket holding employee photos and leave attachments.
+  const fileUrl = directOrderShareFileUrl("https://phoenix-hr.satopharma.com/", "tok en", "req/1");
+  assert.equal(
+    fileUrl,
+    "https://phoenix-hr.satopharma.com/api/share/direct-orders/tok%20en/file?kind=evidence&request=req%2F1",
+    "both the token and the request id must be URL-encoded, and the trailing slash collapsed",
+  );
+  assert.ok(!/storage|path=/.test(fileUrl), "the URL must never carry a storage path");
 
   // Values must land under their own header, not merely be present somewhere.
   const at = (label: string) => cells[directOrderReportColumnIndex(label)];

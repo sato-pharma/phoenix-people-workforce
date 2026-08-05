@@ -70,7 +70,9 @@ export async function buildDirectOrdersReportWorkbook(
   const endRow = writeTable(dataSheet, 1, {
     title: `Direct Orders — ${rows.length} row(s)`,
     columns: DIRECT_ORDER_REPORT_COLUMNS,
-    rows: rows.map(directOrderReportRowCells),
+    // Wrapped, not passed by reference: Array.map hands the callback an INDEX as its second
+    // argument, which would land in the file-links parameter and quietly become the evidence cell.
+    rows: rows.map((row) => directOrderReportRowCells(row)),
     totals,
   });
   dataSheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: DIRECT_ORDER_REPORT_COLUMNS.length } };

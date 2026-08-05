@@ -123,9 +123,26 @@ export const DIRECT_ORDER_REPORT_COLUMNS: DirectOrderReportColumn[] = [
   { label: "Days held", right: true, numFmt: "#,##0.0" },
   { label: "Held expires" },
   { label: "Days to expiry", right: true, numFmt: "#,##0.0" },
+  // The storefront photo taken to prove the pharmacy exists. The URL differs by surface — the
+  // .xlsx has no authenticated file route, the live sheet uses a token-scoped one — but the COLUMN
+  // is the same one in the same place, so the download and the sheet stay the same report.
+  { label: "Evidence photo link", width: 52 },
 ];
 
-export function directOrderReportRowCells(row: DirectOrderReportRow): DirectOrderReportCell[] {
+/**
+ * Where the evidence column points for this surface, or null when there is no photo.
+ *
+ * Null renders blank, deliberately different from a link that 404s: a reader who clicks a dead
+ * link concludes the system lost the photograph, when the truth is that none was ever taken.
+ */
+export type DirectOrderFileLinks = { evidence: string | null };
+
+const NO_FILE_LINKS: DirectOrderFileLinks = { evidence: null };
+
+export function directOrderReportRowCells(
+  row: DirectOrderReportRow,
+  links: DirectOrderFileLinks = NO_FILE_LINKS,
+): DirectOrderReportCell[] {
   return [
     row.status,
     row.requesterName,
@@ -167,7 +184,21 @@ export function directOrderReportRowCells(row: DirectOrderReportRow): DirectOrde
     row.createdAt,
     row.decidedAt ?? "",
     ...heldClockCells(row.heldAt),
+    links.evidence,
   ];
+}
+
+/**
+ * Where a token-scoped evidence photo lives. Kept beside the column definition so the two cannot
+ * disagree about the shape of the URL.
+ *
+ * Addressed by REQUEST ID, never by storage path. A path parameter — even a signed one — would
+ * turn the file route into a read primitive over a private bucket, where one traversal bug exposes
+ * every employee photo and leave attachment in the project.
+ */
+export function directOrderShareFileUrl(baseUrl: string, token: string, requestId: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  return `${base}/api/share/direct-orders/${encodeURIComponent(token)}/file?kind=evidence&request=${encodeURIComponent(requestId)}`;
 }
 
 /** The index a named column sits at, so a consumer never hard-codes a position. */
