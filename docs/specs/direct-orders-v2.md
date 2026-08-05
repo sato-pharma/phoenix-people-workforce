@@ -91,6 +91,26 @@ database ever touches approvals, sales, achievement, or incentives.
       server-side so nothing in the browser betrays a model. Applies to B4, B5, E2, E3 and
       anything AI-assisted later.
 
+## D5. Live report sharing (owner request, 2026-08-05 — added after Stage 1)
+
+- [ ] **D5a. Google Sheets feed.** A tokenized CSV endpoint a Google Sheet pulls with
+      `=IMPORTDATA(...)`, so the sheet refreshes itself and can be shared with people who have no
+      Phoenix account. Google's own sheet-sharing is the access control. Refresh is Google's
+      cadence (~hourly), NOT instant.
+- [ ] **D5b. Live web link.** Same data as a read-only page for a person with no account.
+      **Passcode required**, carried in the POST body — never the query string, where it would
+      land in browser history, referrer headers and proxy logs and look protected while leaking.
+- [ ] **D5c. Controls, on by default.** 32-byte token · MANDATORY expiry (30d default, 180 max) ·
+      one-click revoke · scope FROZEN to the creator at creation (a link cannot widen when its
+      creator is promoted) · every open counted and stamped · `no-store` + `noindex` so a cached
+      or crawled copy cannot outlive a revoke · Super Admin sees every link that exists.
+- [ ] **D5d. Gated on EXPORT, not read.** Publishing the report outside the login wall is the
+      strongest form of export; a reader who may not download the file must not be able to
+      publish it instead.
+- [ ] **D5e (later). Push into the Sheet** via the Google Sheets API once the owner supplies an
+      active GCP service-account key, so the sheet updates the moment an order is approved rather
+      than waiting for Google's poll.
+
 ## E. Deterrence & reporting
 
 - [ ] **E1. Per-rep counters:** held, expired, refused-matches — visible to managers and owner.

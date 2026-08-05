@@ -1,0 +1,53 @@
+import { NextResponse } from "next/server";
+
+import {
+  buildDirectOrderReportCsv,
+  resolveDirectOrderReportShareLink,
+} from "@/lib/direct-orders/report-share-links";
+import { isForbiddenError } from "@/lib/auth/server";
+import { toApiError } from "@/lib/http/api-errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+/**
+ * CSV feed for a Google Sheet's IMPORTDATA (owner request, 2026-08-05).
+ *
+ * UNAUTHENTICATED BY DESIGN, and that is the whole risk: a spreadsheet formula cannot log in or
+ * type a passcode, so the token in the URL is the only credential. Everything that makes that
+ * survivable lives in resolveDirectOrderReportShareLink — existence, revocation, expiry, and the
+ * creator-frozen scope are all checked there before a single row is read.
+ *
+ * The intended handling is that this URL lives inside a private Google Sheet's formula and is
+ * never given to a person; the SHEET's own Google sharing is then the access control. The human
+ * surface (`/api/share/direct-orders/[token]/live`) is the one that demands a passcode.
+ *
+ * Every response is no-store and noindex: a cached or crawled copy of this data would outlive the
+ * revocation switch, which would defeat the point of having one.
+ */
+export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+  try {
+    const { token } = await params;
+    const resolved = await resolveDirectOrderReportShareLink({ token, surface: "feed" });
+    const csv = buildDirectOrderReportCsv(resolved.rows);
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Cache-Control": "no-store, max-age=0",
+        "X-Robots-Tag": "noindex, nofollow, noarchive",
+        "Content-Disposition": 'inline; filename="direct-orders.csv"',
+      },
+    });
+  } catch (error) {
+    const apiError = toApiError(error, "This link is not available.");
+    const status = isForbiddenError(error) ? 403 : apiError.status;
+    // Deliberately terse: a probing caller learns whether a token is live, never anything about
+    // the data behind it.
+    return new NextResponse(apiError.message, {
+      status,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "X-Robots-Tag": "noindex, nofollow" },
+    });
+  }
+}
