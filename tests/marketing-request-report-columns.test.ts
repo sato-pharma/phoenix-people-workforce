@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   APPROVAL_COLUMNS,
@@ -257,4 +258,32 @@ export async function runMarketingRequestReportColumnsTests() {
   // Omitting the links argument (the plain .xlsx download) must blank all three rather than throw
   // or emit "undefined" into a cell the owner reads.
   assert.deepEqual(requestRowCells(request(), 1).slice(-3), [null, null, null]);
+
+  // ── 7. The share feed must build file links from the CONFIGURED public URL ──
+  //
+  // This shipped once as `new URL(request.url).origin`. Behind Railway's proxy that is the
+  // container's internal bind address, so every photo link in the owner's live sheet came out as
+  // https://0.0.0.0:8080/… and opened nothing. Reading x-forwarded-host would fix the address and
+  // introduce a worse problem: a caller-controlled header deciding where the sheet's links point.
+  //
+  // A source assertion rather than a call, because the defect lives in how the route OBTAINS the
+  // base URL — buildMarketingReportBundleCsv is perfectly happy to be handed a wrong one.
+  const feedRoute = readFileSync("app/api/share/marketing-requests/[token]/feed/route.ts", "utf8");
+  // Comments are stripped first. The banned patterns are named in the route's own comment as the
+  // record of what went wrong and why it is not coming back — a check that cannot tell prose from
+  // code would force that explanation to be deleted to stay green, which is the opposite of what
+  // is wanted.
+  const feedCode = feedRoute.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.ok(
+    feedCode.includes("baseUrl: systemDeployment.productionUrl"),
+    "the share feed must build file links from the configured public URL",
+  );
+  assert.ok(
+    !/new URL\(\s*_?request\.url\s*\)/.test(feedCode),
+    "the share feed must NOT derive its base URL from the request — behind the proxy that is 0.0.0.0:8080",
+  );
+  assert.ok(
+    !/x-forwarded-host/i.test(feedCode),
+    "the share feed must NOT trust a caller-supplied host header to decide where the sheet's links point",
+  );
 }
