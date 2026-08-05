@@ -38,13 +38,18 @@
  *               FORMULA over the Requests tab, so it stays right between refreshes and — more
  *               usefully — recalculates when you filter Requests, making it a lens on whatever
  *               slice you are looking at rather than a fixed company summary.
+ *   Comparison — the same live data as SHAPES: month against month in calendar order, line against
+ *               line, region against region, what each line promised against what it was required
+ *               to return, and where the money is sitting. Every chart is bound to the table beside
+ *               it, so the two cannot disagree and both follow a filter on Requests together.
+ *   Key Data  — the columns a decision actually needs, a projection of the same Requests rows.
  *   Requests / Products / Approval trail / Pharmacies — banded tables, frozen header and first
  *               column, a filter, a sticky TOTAL bar, and colour-coded status columns.
  *   Cover     — provenance.
  *
  * WHY A SCRIPT AND NOT =IMPORTDATA
  *   IMPORTDATA refreshes on Google's own schedule — roughly hourly, not configurable — and can
- *   only ever produce one flat table. This runs on a 1-minute trigger, builds six tabs, and renders
+ *   only ever produce one flat table. This runs on a 1-minute trigger, builds eight tabs, and renders
  *   hyperlinks. Phoenix also PUSHES to doPost() the moment a request changes, so in practice the
  *   sheet is current within seconds.
  *
@@ -239,7 +244,28 @@ var EXEC_TAB = "Executive Summary";
 /** What that panel was called before. Kept so an existing sheet is RENAMED, not duplicated. */
 var LEGACY_EXEC_TAB = "God Mode";
 
-var TAB_ORDER = [EXEC_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover"];
+var COMPARISON_TAB = "Comparison";
+
+/**
+ * The columns the Comparison tab groups by.
+ *
+ * Their DISTINCT COUNTS ride the layout signature, which is what lets every chart be sized to the
+ * data instead of to a guess. A chart bound to a fixed 12-row window would show empty slots for the
+ * months that have not happened yet; a chart bound to today's count alone would silently omit a
+ * region that appears next week — and a decision chart that quietly drops a region is far worse
+ * than an ugly one. Folding the counts into the signature gets both: exact sizing now, and a
+ * rebuild the moment a new month, line, region or status shows up.
+ */
+var COMPARISON_DOMAINS = ["Month", "Line", "Region", "Status"];
+
+/** Charts float to the right of their own table, starting at this column. */
+var CHART_COL = 7;
+var CHART_WIDTH = 540;
+/** A block is never shorter than this, so a three-row breakdown still gets a readable chart. */
+var MIN_BLOCK_ROWS = 14;
+var ROW_PX = 21;
+
+var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover"];
 
 // ── Entry points ────────────────────────────────────────────────────────────────
 
@@ -348,12 +374,16 @@ function refreshMarketingRequests() {
 
   if (rebuild) {
     buildExecutiveSummarySheet(ss, bundle.REQUESTS[0], stamp);
+    // Needs the whole grid, not just its header: every chart on that tab is sized to the number of
+    // distinct months / lines / regions / statuses actually present.
+    buildComparisonSheet(ss, bundle.REQUESTS, stamp);
     buildCoverSheet(ss, bundle.SUMMARY || [], stamp);
     orderTabs(ss, TAB_ORDER);
     props.setProperty("layoutSignature", signature);
   } else {
     // The only thing a routine refresh changes outside the data itself: the "as at" stamps.
     stampSheet(ss, EXEC_TAB, "Everything at a glance — refreshed " + stamp + " (Cairo)");
+    stampSheet(ss, COMPARISON_TAB, "Side by side — refreshed " + stamp + " (Cairo)");
     stampSheet(ss, "Cover", "Live — refreshed " + stamp + " (Cairo)");
   }
 }
@@ -368,7 +398,44 @@ function buildLayoutSignature(bundle) {
   // KEY_COLUMNS is part of the signature too, so editing that list and running Rebuild layout is
   // not even necessary — changing which columns matter is itself a layout change.
   parts.push(KEY_TAB + ":" + KEY_COLUMNS.join("|"));
+
+  // The Comparison tab's shape is not its columns but how many BARS each chart has. A new month, a
+  // new region or a status nobody had used before genuinely changes that layout, so it belongs in
+  // the signature exactly as a new feed column does. Everything else — a request's amount changing,
+  // ten more requests in a month that already exists — leaves it untouched, which is the common
+  // case and still rebuilds nothing.
+  var domains = [];
+  for (var d = 0; d < COMPARISON_DOMAINS.length; d++) {
+    domains.push(COMPARISON_DOMAINS[d] + "=" + distinctCount(bundle.REQUESTS, COMPARISON_DOMAINS[d]));
+  }
+  parts.push(COMPARISON_TAB + ":" + domains.join(","));
+
   return parts.join("‖");
+}
+
+/**
+ * How many distinct non-empty values one column holds — the number of groups its QUERY will return.
+ *
+ * Counted the same way the QUERY groups (`where Col1 is not null`), so the row budget a block is
+ * given and the number of rows it actually spills cannot drift apart.
+ */
+function distinctCount(grid, label) {
+  if (!grid || grid.length < 2) return 0;
+  var index = grid[0].indexOf(label);
+  if (index < 0) return 0;
+  var seen = {};
+  var total = 0;
+  for (var r = 1; r < grid.length; r++) {
+    var value = grid[r][index];
+    if (value === undefined || value === null || String(value) === "") continue;
+    // Prefixed so a value like "constructor" cannot collide with an Object prototype member.
+    var key = "·" + String(value);
+    if (!seen[key]) {
+      seen[key] = true;
+      total++;
+    }
+  }
+  return total;
 }
 
 /**
@@ -648,12 +715,8 @@ function buildExecutiveSummarySheet(ss, header, stamp) {
   resetSheet(sheet);
   ensureRows(sheet, 120);
 
-  var Q = "'Requests'!";
   function rangeOf(label) {
-    var index = header.indexOf(label);
-    if (index < 0) return null;
-    var letter = columnLetter(index + 1);
-    return Q + letter + ROW_DATA + ":" + letter + LAST_ROW;
+    return requestsSpan(header, label);
   }
   var rStatus = rangeOf("Status");
   var rAmount = rangeOf("Amount");
@@ -765,8 +828,9 @@ function tileRow(sheet, row, tiles) {
   return row + 3;
 }
 
-function sectionTitle(sheet, row, title) {
-  sheet.getRange(row, 2, 1, 8).setBackground(INK);
+/** `cols` widens the band on a tab whose panel is wider than the Executive Summary's eight. */
+function sectionTitle(sheet, row, title, cols) {
+  sheet.getRange(row, 2, 1, cols || 8).setBackground(INK);
   sheet.getRange(row, 2).setValue(title)
     .setFontFamily(FONT).setFontSize(12).setFontWeight("bold").setFontColor(ORANGE);
   sheet.setRowHeight(row, 26);
@@ -779,8 +843,13 @@ function sectionTitle(sheet, row, title) {
  * A spilling QUERY rather than script-written values, so the block grows and shrinks with the data
  * on its own — three lines today, forty next quarter, with no layout change and no risk of the
  * script leaving last month's longer table half-erased underneath this month's shorter one.
+ *
+ * `rows` is how many rows to FORMAT and reserve. It defaults to twelve, which is what the Executive
+ * Summary's breakdowns have always used. The Comparison tab passes the real group count instead,
+ * because a chart bound to this block has to know exactly how tall it is.
  */
-function queryBlock(sheet, row, caption, headers, formula) {
+function queryBlock(sheet, row, caption, headers, formula, rows) {
+  var span = rows || 12;
   sheet.getRange(row, 2).setValue(caption)
     .setFontFamily(FONT).setFontSize(10.5).setFontWeight("bold").setFontColor(SLATE);
   row++;
@@ -790,22 +859,31 @@ function queryBlock(sheet, row, caption, headers, formula) {
     .setBorder(null, null, true, null, null, null, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
   row++;
   sheet.getRange(row, 2).setFormula(formula);
-  sheet.getRange(row, 2, 12, headers.length).setFontFamily(FONT).setFontSize(10);
-  sheet.getRange(row, 3, 12, 1).setNumberFormat(UNITS_FMT);
-  sheet.getRange(row, 4, 12, 2).setNumberFormat(VALUE_FMT);
-  return row + 13;
+  sheet.getRange(row, 2, span, headers.length).setFontFamily(FONT).setFontSize(10);
+  sheet.getRange(row, 3, span, 1).setNumberFormat(UNITS_FMT);
+  sheet.getRange(row, 4, span, 2).setNumberFormat(VALUE_FMT);
+  return row + span + 1;
+}
+
+/**
+ * The fixed span of one Requests column — 'Requests'!D5:D2004 — or null when the feed never sends
+ * that label.
+ *
+ * Fixed rather than sized to the data, for the reason STABILITY gives at the top of this file: a
+ * range that tracked the row count would rewrite every formula each time a request was added.
+ */
+function requestsSpan(header, label) {
+  var index = header.indexOf(label);
+  if (index < 0) return null;
+  var letter = columnLetter(index + 1);
+  return "'Requests'!" + letter + ROW_DATA + ":" + letter + LAST_ROW;
 }
 
 /** GROUP BY one column, counting rows and summing two money columns, biggest spend first. */
 function groupFormula(header, groupLabel, sumA, sumB) {
-  var Q = "'Requests'!";
-  function span(label) {
-    var index = header.indexOf(label);
-    if (index < 0) return null;
-    var letter = columnLetter(index + 1);
-    return Q + letter + ROW_DATA + ":" + letter + LAST_ROW;
-  }
-  var g = span(groupLabel), a = span(sumA), b = span(sumB);
+  var g = requestsSpan(header, groupLabel),
+    a = requestsSpan(header, sumA),
+    b = requestsSpan(header, sumB);
   if (!g || !a || !b) return '="—"';
   // "is not null" drops the empty tail of the fixed range, which would otherwise show up as a
   // nameless group holding a total the reader cannot act on.
@@ -817,18 +895,249 @@ function groupFormula(header, groupLabel, sumA, sumB) {
 
 /** The ten biggest requests, with enough context to act on one. */
 function topFormula(header) {
-  var Q = "'Requests'!";
-  function span(label) {
-    var index = header.indexOf(label);
-    if (index < 0) return null;
-    var letter = columnLetter(index + 1);
-    return Q + letter + ROW_DATA + ":" + letter + LAST_ROW;
-  }
-  var code = span("Request code"), acct = span("Account/Dr.Name"),
-    amt = span("Amount"), roi = span("Estimated ROI"), stat = span("Status");
+  var code = requestsSpan(header, "Request code"), acct = requestsSpan(header, "Account/Dr.Name"),
+    amt = requestsSpan(header, "Amount"), roi = requestsSpan(header, "Estimated ROI"),
+    stat = requestsSpan(header, "Status");
   if (!code || !acct || !amt || !roi || !stat) return '="—"';
   return '=IFERROR(QUERY({' + code + "," + acct + "," + amt + "," + roi + "," + stat + '},'
     + '"select * where Col1 is not null order by Col3 desc limit 10",0),"—")';
+}
+
+// ── Comparison ──────────────────────────────────────────────────────────────────
+
+/**
+ * The same numbers as shapes.
+ *
+ * The Executive Summary answers "how much, and where is it stuck". This tab answers the question
+ * that follows it — "measured against WHAT" — and it is the only tab with charts on it.
+ *
+ * Three things make it trustworthy rather than decorative:
+ *
+ *   1. EVERY CHART IS BOUND TO THE TABLE BESIDE IT. Not to values this script computed and pasted:
+ *      to the range the table's QUERY spills into. So the picture and the figures are the same
+ *      object seen twice and cannot drift apart, and both follow a filter on Requests together —
+ *      filter that tab to one line and every chart here redraws for that line.
+ *   2. NOTHING IS TRUNCATED. Each block is sized to the number of groups that actually exist, so no
+ *      chart shows a "top N" the reader was not told about, and none shows empty slots for months
+ *      that have not happened. That is only possible because COMPARISON_DOMAINS' distinct counts
+ *      are part of the layout signature — see buildLayoutSignature.
+ *   3. A BLOCK WHOSE COLUMNS THE FEED DOES NOT SEND IS SKIPPED, not drawn empty — the same rule Key
+ *      Data follows. An axis standing over nothing reads as "the data is missing" when the truth is
+ *      that this build of Phoenix never had the field.
+ *
+ * Built ONCE, on a rebuild, like every other layout in this file.
+ */
+function buildComparisonSheet(ss, grid, stamp) {
+  if (!grid || grid.length === 0) return;
+  var header = grid[0];
+
+  var sheet = ss.getSheetByName(COMPARISON_TAB);
+  if (!sheet) sheet = ss.insertSheet(COMPARISON_TAB);
+  resetSheet(sheet);
+
+  sheet.setColumnWidth(1, 28);
+  sheet.setColumnWidth(2, 240);
+  for (var w = 3; w <= 5; w++) sheet.setColumnWidth(w, 150);
+  sheet.setColumnWidth(6, 24); // gutter between the table and the chart floating beside it
+  for (var c = CHART_COL; c < CHART_COL + 6; c++) sheet.setColumnWidth(c, 92);
+
+  bandTitle(sheet, 12, COMPARISON_TAB, "Side by side — refreshed " + stamp + " (Cairo)");
+  sheet.setFrozenRows(2);
+
+  var blocks = comparisonBlocks(header, grid);
+  var needed = 6;
+  for (var n = 0; n < blocks.length; n++) needed += blockBudget(blocks[n].rows) + 3;
+  ensureRows(sheet, needed);
+
+  var row = 4;
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    // 11, not 12: sectionTitle starts at column B, so eleven columns end exactly under the brand
+    // band's twelve, which start at column A.
+    row = sectionTitle(sheet, row, block.section, 11);
+
+    var top = row;
+    // A group count of zero still gets one row, so the block shows the "—" its formula returns
+    // rather than asking for a range of no height, which throws.
+    var span = Math.max(block.rows, 1);
+    var budget = blockBudget(block.rows);
+    var next = queryBlock(sheet, top, block.caption, block.headers, block.formula, span);
+    if (block.rows > 0) addChart(sheet, top, span, budget, block.chart);
+    row = Math.max(next, top + budget + 1);
+  }
+
+  sheet.getRange(row, 2)
+    .setValue("Every table and every chart on this tab is a live formula over the Requests tab — filter that tab and this whole page follows it.")
+    .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT).setFontSize(10);
+}
+
+/** Rows a block occupies: its own height, or the minimum a chart needs to stay readable. */
+function blockBudget(rows) {
+  return Math.max(Math.max(rows, 1) + 2, MIN_BLOCK_ROWS);
+}
+
+/**
+ * The five comparisons, in reading order.
+ *
+ * Line, region and status also appear as tables on the Executive Summary. That is deliberate and
+ * not duplication for its own sake: a chart has to have its source range on the sheet, and the
+ * owner's standing rule is that a chart never replaces the table — management reads both.
+ */
+function comparisonBlocks(header, grid) {
+  var blocks = [];
+
+  function has() {
+    for (var i = 0; i < arguments.length; i++) {
+      if (header.indexOf(arguments[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  if (has("Month", "Amount", "Estimated ROI")) {
+    blocks.push({
+      section: "Month against month",
+      caption: "Spend and estimated return, in calendar order",
+      headers: ["Month", "Requests", "Spend (EGP)", "Est. ROI (EGP)"],
+      formula: monthTrendFormula(header),
+      rows: distinctCount(grid, "Month"),
+      chart: { type: "COLUMN", title: "Spend vs estimated return, by month", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Line", "Amount", "Estimated ROI")) {
+    blocks.push({
+      section: "Line against line",
+      caption: "What each line spends, and what it expects back",
+      headers: ["Line", "Requests", "Spend (EGP)", "Est. ROI (EGP)"],
+      formula: groupFormula(header, "Line", "Amount", "Estimated ROI"),
+      rows: distinctCount(grid, "Line"),
+      chart: { type: "COLUMN", title: "Spend vs estimated return, by line", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Region", "Amount", "Estimated ROI")) {
+    blocks.push({
+      section: "Region against region",
+      caption: "Where the spend lands geographically",
+      // Horizontal bars, not columns: region names are long, and the owner's rule is that text is
+      // never truncated and never wrapped. On a column chart they would be slanted or clipped.
+      headers: ["Region", "Requests", "Spend (EGP)", "Est. ROI (EGP)"],
+      formula: groupFormula(header, "Region", "Amount", "Estimated ROI"),
+      rows: distinctCount(grid, "Region"),
+      chart: { type: "BAR", title: "Spend vs estimated return, by region", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Line", "Estimated ROI", "Required ROI")) {
+    blocks.push({
+      section: "Promise against requirement",
+      caption: "What each line's requests estimate, against what they had to return to qualify",
+      headers: ["Line", "Requests", "Est. ROI (EGP)", "Required ROI (EGP)"],
+      formula: groupFormula(header, "Line", "Estimated ROI", "Required ROI"),
+      rows: distinctCount(grid, "Line"),
+      // The one chart where a shorter first bar is the finding: any line whose estimate sits below
+      // its requirement is spending against a return it has already said it will not make.
+      chart: { type: "COLUMN", title: "Estimated vs required return, by line", firstValue: 4, valueCount: 2 }
+    });
+  }
+
+  if (has("Status", "Amount", "Estimated ROI")) {
+    blocks.push({
+      section: "Where the money is sitting",
+      caption: "Spend by the state each request is in",
+      headers: ["Status", "Requests", "Spend (EGP)", "Est. ROI (EGP)"],
+      formula: groupFormula(header, "Status", "Amount", "Estimated ROI"),
+      rows: distinctCount(grid, "Status"),
+      chart: {
+        type: "PIE", title: "Share of spend by status", firstValue: 4, valueCount: 1,
+        colors: [ORANGE, INK, "#F59E0B", SLATE, "#FDBA74", MUTED]
+      }
+    });
+  }
+
+  return blocks;
+}
+
+/**
+ * The same grouping as groupFormula, ordered by CALENDAR rather than by size.
+ *
+ * The feed sends Month as the words "August 2026", so every ordering the QUERY itself can offer is
+ * the wrong one: by spend it is not a trend at all, and alphabetically April comes before August
+ * comes before December. Turning each label back into a real date and sorting on that is the only
+ * way this reads as a timeline.
+ *
+ * A label neither DATEVALUE form can read sorts to the front rather than killing the block. One
+ * unparseable month must not blank a year of trend — and IFERROR around the whole formula would do
+ * exactly that.
+ */
+function monthTrendFormula(header) {
+  var g = requestsSpan(header, "Month"),
+    a = requestsSpan(header, "Amount"),
+    b = requestsSpan(header, "Estimated ROI");
+  if (!g || !a || !b) return '="—"';
+
+  var query = "QUERY({" + g + "," + a + "," + b + "},"
+    + '"select Col1, count(Col2), sum(Col2), sum(Col3) where Col1 is not null '
+    + "group by Col1 label count(Col2) '', sum(Col2) '', sum(Col3) ''\",0)";
+  var key = 'ARRAYFORMULA(IFERROR(DATEVALUE(INDEX(q,0,1)),IFERROR(DATEVALUE("1 "&INDEX(q,0,1)),0)))';
+  return "=IFERROR(LET(q," + query + ",SORT(q," + key + ",TRUE)),\"—\")";
+}
+
+/**
+ * One chart, floating beside its own table.
+ *
+ * Bound to the block's spill range, never to values this script computed — so it follows the data
+ * on the next recalculation without any refresh touching it, which is the whole STABILITY rule at
+ * the top of this file applied to a picture instead of a cell.
+ *
+ * Its height comes from the block's row budget rather than a constant, so a three-row breakdown
+ * gets a short chart instead of one hanging over the section beneath it.
+ */
+function addChart(sheet, top, span, budget, spec) {
+  var dataRow = top + 2;
+  var isPie = spec.type === "PIE";
+
+  var builder = sheet.newChart()
+    .setChartType(chartType(spec.type))
+    .setPosition(top, CHART_COL, 0, 0)
+    .addRange(sheet.getRange(dataRow, 2, span, 1))
+    .addRange(sheet.getRange(dataRow, spec.firstValue, span, spec.valueCount))
+    .setOption("title", spec.title)
+    .setOption("useFirstColumnAsDomain", true)
+    .setOption("fontName", FONT)
+    .setOption("backgroundColor", WHITE)
+    .setOption("colors", spec.colors || [ORANGE, INK])
+    .setOption("titleTextStyle", { bold: true, color: INK, fontName: FONT, fontSize: 12 })
+    .setOption("legend", {
+      position: isPie ? "right" : "bottom",
+      textStyle: { color: SLATE, fontName: FONT, fontSize: 10 }
+    })
+    .setOption("width", CHART_WIDTH)
+    .setOption("height", Math.max(budget * ROW_PX - 16, 180));
+
+  if (!isPie) {
+    // A BAR chart is a COLUMN chart on its side, so its VALUE axis is the horizontal one. Formatting
+    // vAxis on both would put the money format on the region names and leave the money axis writing
+    // 1,200,000 in full — which is what forces the plot area narrow enough that the bars stop being
+    // comparable by eye. "short" renders that as 1.2M.
+    var value = {
+      format: "short",
+      gridlines: { color: HAIRLINE },
+      textStyle: { color: SLATE, fontName: FONT, fontSize: 10 }
+    };
+    var category = { textStyle: { color: SLATE, fontName: FONT, fontSize: 10 } };
+    builder
+      .setOption("hAxis", spec.type === "BAR" ? value : category)
+      .setOption("vAxis", spec.type === "BAR" ? category : value);
+  }
+
+  sheet.insertChart(builder.build());
+}
+
+function chartType(name) {
+  if (name === "BAR") return Charts.ChartType.BAR;
+  if (name === "PIE") return Charts.ChartType.PIE;
+  return Charts.ChartType.COLUMN;
 }
 
 // ── Cover ───────────────────────────────────────────────────────────────────────
@@ -887,6 +1196,13 @@ function resetSheet(sheet) {
   } catch (err) { /* none */ }
   try {
     sheet.setConditionalFormatRules([]);
+  } catch (err) { /* none */ }
+  // Charts survive clear() as well — they float above the grid rather than living in it. Leaving
+  // them would stack a second copy of every chart on top of the first on the next rebuild, and the
+  // stale one underneath still points at the ranges the old layout used.
+  try {
+    var charts = sheet.getCharts();
+    for (var c = 0; c < charts.length; c++) sheet.removeChart(charts[c]);
   } catch (err) { /* none */ }
   try {
     sheet.getRange(1, 1, Math.max(sheet.getMaxRows(), 1), Math.max(sheet.getMaxColumns(), 1)).breakApart();
