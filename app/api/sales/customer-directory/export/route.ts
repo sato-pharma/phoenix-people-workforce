@@ -1,6 +1,7 @@
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
+import type { CustomerChannel } from "@/lib/sales/customer-channel";
 import { loadCustomerDirectoryRows, type CustomerDirectoryFilters } from "@/lib/sales/customer-directory";
 import { NextResponse } from "next/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
@@ -13,7 +14,7 @@ const COLUMNS: ExportColumn[] = [
   { key: "clientCode", label: "Customer Code", width: 16 },
   { key: "clientName", label: "Customer Name", width: 34 },
   { key: "channel", label: "Channel", width: 12 },
-  { key: "matchedKeywords", label: "Store Keyword", width: 22 },
+  { key: "matchedKeywords", label: "Matched Word", width: 22 },
   { key: "clientAddress", label: "Address", width: 44 },
   { key: "distributorName", label: "Distributor", width: 18 },
   { key: "brickId", label: "Brick ID", width: 12 },
@@ -23,6 +24,20 @@ const COLUMNS: ExportColumn[] = [
   { key: "totalUnits", label: "Units", numeric: true, width: 12 },
   { key: "totalValue", label: "Value (EGP)", numeric: true, width: 16 },
 ];
+
+// Exhaustive by construction: adding a channel to CustomerChannel breaks the build here rather
+// than silently exporting every hospital as a pharmacy.
+const CHANNEL_ROW_LABEL: Record<CustomerChannel, string> = {
+  hospital: "Hospital",
+  pharmacy: "Pharmacy",
+  store: "Store",
+};
+
+const CHANNEL_SCOPE_LABEL: Record<CustomerChannel, string> = {
+  hospital: "Hospitals only",
+  pharmacy: "Pharmacies only",
+  store: "Stores only",
+};
 
 function scopeLabel(filters: CustomerDirectoryFilters) {
   const parts: string[] = [];
@@ -36,7 +51,7 @@ function scopeLabel(filters: CustomerDirectoryFilters) {
   if (filters.areaCodes?.length) parts.push(`${filters.areaCodes.length} area(s)`);
   if (filters.brickCodes?.length) parts.push(`${filters.brickCodes.length} brick(s)`);
   if (filters.search?.trim()) parts.push(`search "${filters.search.trim()}"`);
-  if (filters.channel) parts.push(filters.channel === "store" ? "Stores only" : "Pharmacies only");
+  if (filters.channel) parts.push(CHANNEL_SCOPE_LABEL[filters.channel]);
   return parts.join("  ·  ");
 }
 
@@ -56,7 +71,10 @@ export async function POST(request: Request) {
     const filters: CustomerDirectoryFilters = {
       areaCodes: Array.isArray(body.areaCodes) ? body.areaCodes : [],
       brickCodes: Array.isArray(body.brickCodes) ? body.brickCodes : [],
-      channel: body.channel === "pharmacy" || body.channel === "store" ? body.channel : null,
+      channel:
+        body.channel === "hospital" || body.channel === "pharmacy" || body.channel === "store"
+          ? body.channel
+          : null,
       distributorCodes: Array.isArray(body.distributorCodes) ? body.distributorCodes : [],
       fromPeriod: typeof body.fromPeriod === "string" ? body.fromPeriod : null,
       regionCodes: Array.isArray(body.regionCodes) ? body.regionCodes : [],
@@ -69,7 +87,7 @@ export async function POST(request: Request) {
       area: row.areaName,
       brickId: row.brickId,
       brickName: row.brickName,
-      channel: row.channel === "store" ? "Store" : "Pharmacy",
+      channel: CHANNEL_ROW_LABEL[row.channel],
       clientAddress: row.clientAddress,
       clientCode: row.clientCode,
       clientName: row.clientName,

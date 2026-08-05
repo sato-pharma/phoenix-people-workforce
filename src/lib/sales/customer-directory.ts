@@ -2,7 +2,7 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import {
   classifyCustomerChannel,
-  matchedStoreKeywords,
+  matchedChannelKeywords,
   type CustomerChannel,
 } from "@/lib/sales/customer-channel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -56,14 +56,20 @@ export type CustomerDirectoryRow = {
   areaName: string;
   brickId: string;
   brickName: string;
-  /** "store" when the name carries one of the owner's six words, else "pharmacy". */
+  /**
+   * "hospital" when the name carries a hospital word, "store" when it carries one of the owner's
+   * six store words, else "pharmacy".
+   */
   channel: CustomerChannel;
   clientAddress: string;
   clientCode: string;
   clientName: string;
   distributorCode: string;
   distributorName: string;
-  /** Which words made this a store — empty for a pharmacy. Shown so a false positive is visible. */
+  /**
+   * Which words placed this customer in its channel — empty for a pharmacy. Shown so a false
+   * positive is visible.
+   */
   matchedKeywords: string[];
   regionCode: string;
   regionName: string;
@@ -88,6 +94,7 @@ export type CustomerChannelGroup = {
 };
 
 export type CustomerDirectoryChannelResult = {
+  hospitals: CustomerChannelGroup;
   pharmacies: CustomerChannelGroup;
   stores: CustomerChannelGroup;
 };
@@ -173,7 +180,7 @@ export function mapDirectoryRowsToNames(rows: DirectoryRpcRow[], maps: NameMaps)
       clientCode: String(row.client_code ?? ""),
       clientName,
       distributorCode,
-      matchedKeywords: matchedStoreKeywords(clientName),
+      matchedKeywords: matchedChannelKeywords(clientName),
       distributorName: maps.distributorName.get(normalizeCode(distributorCode)) ?? distributorCode,
       regionCode,
       regionName: maps.regionName.get(normalizeCode(regionCode)) ?? regionCode,
@@ -390,7 +397,7 @@ export async function loadCustomerDirectoryInitialData(
   };
 }
 
-// Pure: split already-loaded directory rows into the two channels and total each side.
+// Pure: split already-loaded directory rows into the three channels and total each side.
 // Totals are summed BEFORE the display cap is applied, so "Stores: 125,440,939 EGP" means all
 // stores — not the first page of them. Exported for direct testing.
 export function splitDirectoryByChannel(rows: CustomerDirectoryRow[]): CustomerDirectoryChannelResult {
@@ -410,7 +417,7 @@ export function splitDirectoryByChannel(rows: CustomerDirectoryRow[]): CustomerD
       truncated: all.length > DIRECTORY_RESULT_LIMIT,
     };
   };
-  return { pharmacies: build("pharmacy"), stores: build("store") };
+  return { hospitals: build("hospital"), pharmacies: build("pharmacy"), stores: build("store") };
 }
 
 // The Customers tab: the same filtered directory, cut into Pharmacies and Stores.
