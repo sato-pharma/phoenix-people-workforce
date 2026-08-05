@@ -141,23 +141,50 @@ export function runDirectOrderSheetWebhookTests() {
     "with no explicit property the fallback must be the feed token currently in force",
   );
 
-  // ── The token itself must be rotatable ───────────────────────────────────────────────────
-  // The bootstrap token is committed to this repository, so it lives in git history permanently.
-  // What makes that harmless is that it is only a BOOTSTRAP: once Phoenix rotates, the live token
-  // sits in a Script Property committed nowhere, and the bootstrap is revoked server-side.
-  assert.match(
-    scriptSource,
-    /function feedToken\(\) \{\s*\n\s*var stored = PropertiesService\.getScriptProperties\(\)\.getProperty\("FEED_TOKEN"\);\s*\n\s*return stored \|\| BOOTSTRAP_FEED_TOKEN;/,
-    "a rotated FEED_TOKEN must win over the committed bootstrap — otherwise rotation cannot make the committed token worthless",
+  // ── No feed token may live in this file, ever ────────────────────────────────────────────
+  // It shipped once as a "bootstrap" constant, on the reasoning that rotating would revoke it and
+  // make the committed copy worthless. It did — and a dead credential in a file is still a
+  // credential in a file: it reads as live to the next person, and it invites the next setup to
+  // paste a live one beside it. git keeps whatever is written there for good, so the slot is gone.
+  assert.ok(
+    !/BOOTSTRAP_FEED_TOKEN/.test(scriptSource),
+    "the committed bootstrap token slot must stay deleted — an emptied one invites a live token back into git",
+  );
+  // Any long base64url run outside a comment is the shape a real token has. This is the check that
+  // fires if someone pastes their live token in "just to test it".
+  const codeOnly = scriptSource.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.ok(
+    !/["'][A-Za-z0-9_-]{30,}["']/.test(codeOnly),
+    "no token-shaped literal may appear in the script — the feed token belongs in a Script Property",
   );
   assert.match(
     scriptSource,
-    /function feedUrl\(\) \{\s*\n\s*return FEED_BASE \+ feedToken\(\)/,
+    /function feedToken\(\) \{\s*\n\s*return String\(PropertiesService\.getScriptProperties\(\)\.getProperty\("FEED_TOKEN"\)/,
+    "the token must come only from the Script Property, which is committed nowhere",
+  );
+  // A missing token must be distinguishable from a refused feed, and must not fetch a URL with an
+  // empty token in it — that 404s and reads as a revoked link, sending the debugger somewhere else.
+  assert.match(
+    scriptSource,
+    /return token \? FEED_BASE \+ token \+ "\/feed\?bundle=1" : "";/,
+    "an unconfigured token must yield no URL at all rather than a URL with a hole in it",
+  );
+  assert.match(
+    scriptSource,
+    /function feedUrl\(\) \{\s*\n\s*var token = feedToken\(\);/,
     "the feed URL must be built per call from the CURRENT token — a cached URL would keep using a rotated-away token",
   );
+  // The refresh must resolve the URL on every run rather than fetch a module-level constant, or a
+  // rotation never takes effect. It now reads feedUrl() into a local first so it can tell "no token
+  // configured" apart from "the feed refused us" — both of which look identical from the sheet.
   assert.match(
     scriptSource,
-    /UrlFetchApp\.fetch\(feedUrl\(\)/,
-    "the refresh must fetch through feedUrl(), not a constant, or rotation never takes effect",
+    /function refreshDirectOrders\(\) \{\s*\n\s*var url = feedUrl\(\);/,
+    "the refresh must resolve the feed URL per run, or rotation never takes effect",
+  );
+  assert.match(
+    scriptSource,
+    /UrlFetchApp\.fetch\(url,/,
+    "the refresh must fetch the freshly resolved URL, not a constant",
   );
 }
