@@ -397,6 +397,9 @@ const defaultPermissionMatrix: PermissionMap = {
     overview: ["read"],
     admin_access: ["read"],
     system_cleanup: allActions,
+    // Bulk login-account/role admin (/api/admin/users/bulk) only. Employee-record bulk
+    // import (/api/imports/employees/*) checks the `employees` resource instead, so
+    // Talent Acquisition's full `employees` grant covers it without touching this key.
     imports: allActions,
     contracts: allActions,
     coaching: allActions,
@@ -442,7 +445,7 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "export"],
     crm_visits: ["read"],
     overview: ["read"],
-    imports: ["read"],
+    imports: ["read"], // Bulk user-admin preview only — see Super Admin's `imports` note above.
     // SoD: read/export only — contract renew/not-renew (can drive termination)
     // belongs to Super Admin/HR. The CEO is observational on contracts.
     contracts: ["read", "export"],
@@ -518,6 +521,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // Owner-requested expansion (2026-07-24): full portal parity for people-facing HR
     // tooling — employee directory, contract renewal, resignations, and org chart —
     // matching Super Admin's action set on these specific resources.
+    // Also covers bulk employee import (/api/imports/employees/*, owner-approved 2026-08-05)
+    // — that route checks the `employees` resource, not `imports`, so this single grant is
+    // what unlocks it. Does not touch the unrelated, still Super-Admin-only
+    // /api/admin/users/bulk (bulk login-account/role admin), gated on `imports`.
     employees: allActions,
     contracts: allActions,
     resignations: allActions,
