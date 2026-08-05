@@ -53,7 +53,7 @@ export function runEmployee360PortalBrowseTests() {
   // Owner rule (2026-07-30): every role sees THEMSELVES plus everyone reporting to them, at any
   // depth — e.g. a Regional Manager reaches their District Managers AND the Medical Reps under
   // those DSMs. The per-subject gate already allowed this; only a navigation path was missing, so
-  // the self report now also renders a "My Team" roster built from the SAME subtree-aware door.
+  // the portal index renders a "My Team" roster built from the SAME subtree-aware door.
   assert.match(
     indexSource,
     /async function buildEmployee360Picker\(/,
@@ -73,11 +73,47 @@ export function runEmployee360PortalBrowseTests() {
     "the viewer must remain a selectable option in the picker (do not exclude self locally)",
   );
   // A leaf viewer (Medical Rep, whose subtree is only themselves) must not get a pointless
-  // one-option picker — the section only renders when there is somebody else to pick.
-  assert.match(
-    indexSource,
-    /teamRoster\.length > 1 \?/,
-    "the picker must be hidden when the viewer is the only visible subject",
+  // one-option picker — the browse list only renders when there is somebody else to pick.
+  const pickerBranchIdx = indexSource.indexOf("if (teamRoster.length > 1)");
+  assert.ok(pickerBranchIdx > -1, "the picker must be hidden when the viewer is the only visible subject");
+
+  // Owner rule (2026-08-05): the picker and the viewer's OWN report must never share the screen.
+  // A District Manager used to see their own card under "District Mgrs" sitting directly above
+  // their own rendered report — the same person drawn twice — and pressing that card opened a
+  // THIRD copy on the detail route. The browse branch must therefore RETURN, not render a report
+  // underneath the cards.
+  assert.equal(
+    indexSource.split("<Employee360View").length - 1,
+    1,
+    "the portal index must render Employee360View at most once — only the leaf viewer's own report",
+  );
+  assert.ok(
+    indexSource.indexOf("<Employee360View") > pickerBranchIdx,
+    "the picker branch must return before the report renders — a manager must never see the picker and their own report at once",
+  );
+  // The period chips control the report, so on a browse list with no report they are a dead
+  // control. They belong only to the leaf viewer's self-report branch, below the picker return.
+  assert.ok(
+    indexSource.indexOf("<PeriodFilter") > pickerBranchIdx,
+    "the period filter must not sit on the browse list, where it would control nothing",
+  );
+  // The expensive load sits behind that return too: every 360 call crosses the Atlantic
+  // (Railway sfo → Supabase eu-central-1), so a browse list that still loads a full profile is a
+  // slow page rendering data it immediately throws away.
+  assert.ok(
+    indexSource.indexOf("getEmployee360Profile(") > pickerBranchIdx,
+    "the Employee 360 profile load must happen only after the browse branch has returned",
+  );
+  // The browse branch sits ABOVE the field-force check on purpose: a manager whose own job title
+  // is outside the six covered families still owns their team's reports, and with no self report
+  // left to fall back on, "Not covered" would otherwise strand them with nothing.
+  // Anchored to the JSX attribute, not the bare copy — the branch above quotes that same string in
+  // a comment, and a bare indexOf would match the comment and silently invert this check.
+  const notCoveredJsxIdx = indexSource.indexOf('title="Not covered by Employee 360"');
+  assert.ok(notCoveredJsxIdx > -1, "the out-of-scope state must still exist for a leaf viewer");
+  assert.ok(
+    pickerBranchIdx < notCoveredJsxIdx,
+    "a manager outside the six field-force families must still reach their team, not a 'Not covered' dead end",
   );
   // The roster must never invent its own scoping: it reuses resolveEmployee360VisibleRows, so it can
   // only ever list people the viewer could already open by direct URL (navigation, not access).

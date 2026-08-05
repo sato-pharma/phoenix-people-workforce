@@ -66,7 +66,8 @@ function Shell({
  * the admin index already enforce (canViewEmployee360Subject), so this only surfaces people the
  * viewer could already open by direct URL: it widens navigation, never access.
  *
- * Never throws — the picker must not be able to break the report it sits above.
+ * Never throws — for anyone with a team this picker IS the page, so a roster failure must degrade
+ * to "no team visible", never to a blank Employee 360.
  */
 async function buildEmployee360Picker(
   access: AccessContext,
@@ -170,11 +171,11 @@ export default async function EmployeePortalEmployee360Page({
     );
   }
 
-  // Every role sees themselves plus everyone in their own reporting subtree, so the picker below is
-  // built for both paths: the normal self report, and the case where the viewer's OWN record is not
-  // a viewable 360 subject (an owner-excluded person — see isEmployee360ExcludedSubject). In that
-  // second case there is no self report to render, but their team is still legitimately theirs to
-  // open, so we show the picker alone instead of bouncing them out of the module.
+  // Every role sees themselves plus everyone in their own reporting subtree, so the roster is built
+  // before any branch decides what to render. It drives both picker paths: the normal
+  // manager-with-a-team browse list, and the case where the viewer's OWN record is not a viewable
+  // 360 subject (an owner-excluded person — see isEmployee360ExcludedSubject), where their team is
+  // still legitimately theirs to open, so we show the picker instead of bouncing them out.
   const teamRoster = await buildEmployee360Picker(access, target.hrId);
 
   // The shared 360 gate stays the single source of truth rather than assuming self-view inline.
@@ -197,6 +198,39 @@ export default async function EmployeePortalEmployee360Page({
             title="Employee 360"
           />
         )}
+      </Shell>
+    );
+  }
+
+  // Owner rule (2026-08-05): the picker and the viewer's OWN report must never share the
+  // screen. A manager used to see their own card under "District Mgrs" sitting directly above
+  // their own rendered report — the same person drawn twice — and pressing that card opened a
+  // THIRD copy on the detail route. So whenever there is somebody to pick, this page is the
+  // browse list and nothing else: pressing a name (their own included) opens that person's
+  // report on /employee-portals/employee-360/[hrId], exactly like the admin surface.
+  //
+  // Returning here also skips the entire profile / team-health / lifecycle load below, which is
+  // pure waste when no report is rendered — and every one of those calls crosses the Atlantic
+  // (Railway sfo → Supabase eu-central-1), so this is the difference between a slow page and an
+  // instant one. It sits above the !roleCategory check on purpose: a manager whose own job title
+  // is outside the six field-force families still owns their team's reports, and must not be
+  // shown "Not covered by Employee 360" now that there is no self report to fall back on.
+  if (teamRoster.length > 1) {
+    return (
+      <Shell description="Pick yourself or anyone in your team to open their 360 report." title="Employee 360">
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
+            <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+              you + {teamRoster.length - 1} in your team
+            </span>
+          </div>
+          {/* Open on the viewer's OWN role tab, not Medical Reps (which is first in
+              EMPLOYEE_360_ROLE_ORDER and would otherwise always win) — so a Regional Manager
+              lands on "Regional Mgrs" with their own card first, and reaches their DSMs and reps
+              on the neighbouring tabs. */}
+          <EmployeeSearchList employees={teamRoster} basePath={PORTAL_BASE_PATH} defaultTab={roleCategory} />
+        </section>
       </Shell>
     );
   }
@@ -369,21 +403,10 @@ export default async function EmployeePortalEmployee360Page({
           hrId={subject.hrId}
           to={period.current.to}
         />
-        {teamRoster.length > 1 ? (
-          <section className="space-y-2">
-            <div className="flex items-baseline justify-between gap-3">
-              <h2 className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Select Employee</h2>
-              <span className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
-                you + {teamRoster.length - 1} in your team
-              </span>
-            </div>
-            {/* Open on the viewer's OWN role tab, not Medical Reps (which is first in
-                EMPLOYEE_360_ROLE_ORDER and would otherwise always win) — so a Regional Manager
-                lands on "Regional Mgrs" with themselves selectable, and reaches their DSMs and reps
-                on the neighbouring tabs. */}
-            <EmployeeSearchList employees={teamRoster} basePath={PORTAL_BASE_PATH} defaultTab={roleCategory} />
-          </section>
-        ) : null}
+        {/* No picker here by design — this branch is only reached when the viewer is the ONLY
+            visible subject (a Medical Rep, or a manager whose reports are all inactive), so there
+            is nobody to pick and the report is the whole page. Anyone with a team returned above
+            with the browse list instead. */}
         <Employee360View
           category={roleCategory}
           comparison={comparison}
