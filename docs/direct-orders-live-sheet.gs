@@ -27,7 +27,7 @@
  *   Refreshes every minute from then on, including while the sheet is closed.
  *
  * SECURITY
- *   FEED_URL contains a bearer token: anyone holding it can read every direct order
+ *   The feed token is a bearer credential: anyone holding it can read every direct order
  *   this link's scope covers. Keep the SHEET private and share the sheet, never the
  *   URL. The token can be revoked server-side at any time, which instantly kills this
  *   script's access.
@@ -40,10 +40,30 @@
  */
 
 // ── Configuration ────────────────────────────────────────────────────────────────
-var FEED_URL =
-  "https://phoenix-hr.satopharma.com/api/share/direct-orders/" +
-  "pgn0W2b6jES7op9t7bChvrdzI95xoZbuygXb35Gu--w" +
-  "/feed?bundle=1";
+var FEED_BASE = "https://phoenix-hr.satopharma.com/api/share/direct-orders/";
+
+/**
+ * BOOTSTRAP ONLY — the token used until Phoenix hands over a rotated one.
+ *
+ * This file is committed to the repository, so anything written here is a permanent credential in
+ * git history. That is why it is a bootstrap and not the real answer: the moment Phoenix rotates,
+ * the live token lives in a Script Property (which is NOT committed anywhere) and this value is
+ * revoked server-side, making the copy in git worthless.
+ *
+ * Rotation is automatic — see doPost's rotateToken branch. Nobody has to open this editor for it.
+ */
+var BOOTSTRAP_FEED_TOKEN = "pgn0W2b6jES7op9t7bChvrdzI95xoZbuygXb35Gu--w";
+
+/** The token in force right now: a rotated one if Phoenix has sent it, else the bootstrap. */
+function feedToken() {
+  var stored = PropertiesService.getScriptProperties().getProperty("FEED_TOKEN");
+  return stored || BOOTSTRAP_FEED_TOKEN;
+}
+
+/** Built per call, never cached — a rotation must take effect on the very next refresh. */
+function feedUrl() {
+  return FEED_BASE + feedToken() + "/feed?bundle=1";
+}
 
 var TZ = "Africa/Cairo";
 
@@ -107,26 +127,80 @@ function installTrigger() {
  *   Property: WEBHOOK_SECRET     Value: <the same long random string you put in Railway>
  */
 function doPost(e) {
-  var expected = PropertiesService.getScriptProperties().getProperty("WEBHOOK_SECRET");
+  var expected = resolveWebhookSecret();
   if (!expected) {
     // Refuse rather than accept everything. An unset secret must fail CLOSED — the opposite would
     // mean a fresh deployment silently accepts any caller on the internet.
     return ContentService.createTextOutput("not configured").setMimeType(ContentService.MimeType.TEXT);
   }
 
-  var supplied = "";
+  var payload = {};
   try {
-    supplied = String(JSON.parse(e && e.postData ? e.postData.contents : "{}").secret || "");
+    payload = JSON.parse(e && e.postData ? e.postData.contents : "{}") || {};
   } catch (err) {
-    supplied = "";
+    payload = {};
   }
   // Deliberately vague: a caller learns whether they are authorised, never why not.
-  if (supplied !== expected) {
+  if (String(payload.secret || "") !== expected) {
     return ContentService.createTextOutput("denied").setMimeType(ContentService.MimeType.TEXT);
+  }
+
+  // ── Token rotation ───────────────────────────────────────────────────────────────────────
+  // Phoenix mints a new share token and hands it over HERE, authorised by the token currently in
+  // force. Storing it in a Script Property — which is not committed anywhere — is what lets the
+  // bootstrap token in this file be revoked and become worthless, without anyone opening the editor.
+  //
+  // Phoenix only revokes the old token AFTER confirming this returned "rotated", so a rotation that
+  // fails to arrive leaves the sheet working on the old one rather than dead.
+  var rotate = String(payload.rotateToken || "").trim();
+  if (rotate) {
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(rotate)) {
+      // Refuse anything that is not a plausible token rather than storing rubbish that would
+      // silently break every refresh from here on.
+      return ContentService.createTextOutput("bad token").setMimeType(ContentService.MimeType.TEXT);
+    }
+    var props = PropertiesService.getScriptProperties();
+    // PIN THE WEBHOOK SECRET FIRST, and the order is not incidental.
+    //
+    // With no explicit WEBHOOK_SECRET the secret defaults to the feed token. Rotating FEED_TOKEN
+    // would therefore move the secret too — while Phoenix's SHEET_REFRESH_WEBHOOK_SECRET still held
+    // the old value, because a running app cannot rewrite its own environment. Every push after the
+    // first rotation would have been denied, silently, with the sheet quietly falling back to its
+    // 60-second timer and nobody the wiser.
+    //
+    // Pinning the CURRENT secret separates the two concerns for good: the feed token rotates freely
+    // as the data credential, while the webhook secret stays put as the trigger password. The pinned
+    // value is only ever a permission to say "refresh yourself" — it reads nothing.
+    if (!props.getProperty("WEBHOOK_SECRET")) props.setProperty("WEBHOOK_SECRET", expected);
+    props.setProperty("FEED_TOKEN", rotate);
+    refreshDirectOrders();
+    return ContentService.createTextOutput("rotated").setMimeType(ContentService.MimeType.TEXT);
   }
 
   refreshDirectOrders();
   return ContentService.createTextOutput("ok").setMimeType(ContentService.MimeType.TEXT);
+}
+
+/**
+ * What value authorises a push?
+ *
+ * A Script Property named WEBHOOK_SECRET wins if one is set. If not, the feed token this script
+ * already holds is used instead — which means the push endpoint works the moment the script is
+ * pasted, with nothing else to configure.
+ *
+ * That fallback grants NOTHING extra, and the reason is worth stating: the only thing doPost can do
+ * is make this sheet re-read the feed. Anyone holding the feed token can already read that feed
+ * directly, in full, whenever they like. Authorising a refresh with the same token therefore adds
+ * no capability an attacker did not already have — while an unset secret with no fallback would
+ * either lock the owner out or, worse, tempt someone to accept unauthenticated calls.
+ *
+ * Set WEBHOOK_SECRET explicitly if you ever want the two separated — for instance after rotating
+ * the feed token.
+ */
+function resolveWebhookSecret() {
+  var explicit = PropertiesService.getScriptProperties().getProperty("WEBHOOK_SECRET");
+  if (explicit) return explicit;
+  return feedToken();
 }
 
 /** Adds a Phoenix menu so a refresh can also be forced by hand. */
@@ -141,7 +215,7 @@ function onOpen() {
 function refreshDirectOrders() {
   var response;
   try {
-    response = UrlFetchApp.fetch(FEED_URL, { muteHttpExceptions: true });
+    response = UrlFetchApp.fetch(feedUrl(), { muteHttpExceptions: true });
   } catch (err) {
     console.error("Feed unreachable: " + err);
     return; // keep whatever is on screen
