@@ -1939,12 +1939,19 @@ function writeDirectChannelSheet(
   ];
   const customerTotalUnits = customers.reduce((sum, entry) => sum + entry.units, 0);
   const customerTotalValue = Math.round(customers.reduce((sum, entry) => sum + entry.value, 0) * 100) / 100;
+  // TWO different reasons for an empty section, and saying the wrong one is its own defect: a line
+  // with no direct business at all was being told its direct sheet had arrived without customer
+  // identity, which reads as a data-quality problem where none exists (found on CNS 2026-07).
+  const noDirectAtAll = rows.length === 0;
   row = writeTable(sheet, row, {
     columns: customerColumns,
     note: customers.length === 0
-      ? "This month's direct sheet carries no customer identity — it arrived with the client code, name " +
-        "and address blank on every row, so there is nothing to name here. Orders raised through the " +
-        "Direct Orders module carry their pharmacy, so this section fills itself from the month that module went live."
+      ? (noDirectAtAll
+        ? "No direct orders reached this line and month, so there is no customer to name. Nothing is " +
+          "missing from this sheet — this channel simply had no business here."
+        : "This month's direct sheet carries no customer identity — it arrived with the client code, name " +
+          "and address blank on every row, so there is nothing to name here. Orders raised through the " +
+          "Direct Orders module carry their pharmacy, so this section fills itself from the month that module went live.")
       : "Every direct order of this line and month, by customer. The total below equals the DIRECT TOTAL " +
         "above — the same money, once by region and once by customer.",
     rows: customers.map((entry) => [
