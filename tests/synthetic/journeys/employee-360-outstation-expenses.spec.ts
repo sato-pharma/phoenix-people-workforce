@@ -76,8 +76,13 @@ test("Employee 360 manager profile shows expenses without a schema error", async
       await expect(firstProfileLink).toBeVisible();
       await Promise.all([page.waitForURL(/\/employee-360\/.+/), firstProfileLink.click()]);
 
-      await expect(page.getByRole("heading", { level: 2, name: /Visits & Coverage/i })).toBeVisible();
+      // That section's heading is role-conditional — employee-360-view.tsx:560 renders
+      // `isLeader ? "Own Field Presence" : "Visits & Coverage"`. A district manager is a leader,
+      // so asserting the rep wording here could never pass. Same section, different label.
+      await expect(page.getByRole("heading", { level: 2, name: /Own Field Presence/i })).toBeVisible();
       await expect(page.getByText(SCHEMA_ERROR_TEXT)).toHaveCount(0);
+      // Leaders only (DM/RM/NSM/PM/TM) — see employee-360-view.tsx:724. This is the assertion the
+      // whole journey exists for, and it has not executed since the UI changed.
       await expect(page.getByRole("heading", { level: 2, name: /Expenses & Outstation/i })).toBeVisible();
     },
   );
