@@ -1,0 +1,110 @@
+name: Direct Orders daily sweeps
+
+# The two clocks that make the held lane a parking lot instead of a swamp:
+#
+#   direct-orders-expire-held  - a direct order still `held` 14 days after it was parked expires,
+#                                logged, evented, requester notified (spec B6).
+#   direct-orders-probation    - a pharmacy approved into PROVISIONAL is checked against its
+#                                90-day footprint; it is promoted to trusted or flagged (spec A3).
+#
+# Both shipped in #1738/#1748 with no schedule behind them, so the clocks were never wound.
+#
+# WHY HERE AND NOT cron-job.org
+# The rest of production's cron lives in a free-tier third-party account whose schedule exists only
+# inside that account - AGENTS.md calls it out as an undocumented single point of failure that no
+# runbook describes. A workflow in this repo is version-controlled, reviewable in a PR, and visible
+# to anyone reading the code. It also fails loudly: a red workflow run emails the owner, whereas a
+# silently deleted third-party job looks exactly like a job that is working.
+#
+# Timing: 23:17 UTC is ~02:17 Cairo, well clear of the working day. Deliberately off the hour -
+# GitHub's scheduler is busiest on the hour and delays those runs the most. Egypt's DST shifts this
+# by an hour twice a year, which is irrelevant for a daily sweep.
+
+on:
+  schedule:
+    - cron: "17 23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never let a slow run overlap the next day's. Both sweeps are idempotent, but two concurrent
+# passes would double the notifications a requester receives.
+concurrency:
+  group: direct-orders-sweeps
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Run the held-order 14-day expiry sweep
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ROUTE: direct-orders-expire-held
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET is not set on this repository; the sweep cannot authenticate."
+            exit 1
+          fi
+          body=$(mktemp)
+          code=$(curl -sS --max-time 120 -o "$body" -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://phoenix-hr.satopharma.com/api/cron/${ROUTE}")
+          echo "HTTP $code"
+          cat "$body"
+          echo ""
+          {
+            echo "### ${ROUTE}"
+            echo ""
+            echo "HTTP \`$code\`"
+            echo ""
+            echo '```json'
+            cat "$body"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # A non-200 must fail the run. A sweep that quietly 401s looks identical to one with
+          # nothing to do - both print a small number and move on.
+          if [ "$code" != "200" ]; then
+            echo "::error::${ROUTE} returned HTTP $code"
+            exit 1
+          fi
+
+      - name: Run the 90-day pharmacy probation sweep
+        # `always()` so a failure in the expiry sweep does not silently skip this one. They are
+        # independent clocks; one being broken is not a reason to stop winding the other.
+        if: always()
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          ROUTE: direct-orders-probation
+        run: |
+          set -euo pipefail
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::CRON_SECRET is not set on this repository; the sweep cannot authenticate."
+            exit 1
+          fi
+          body=$(mktemp)
+          code=$(curl -sS --max-time 120 -o "$body" -w '%{http_code}' \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://phoenix-hr.satopharma.com/api/cron/${ROUTE}")
+          echo "HTTP $code"
+          cat "$body"
+          echo ""
+          {
+            echo "### ${ROUTE}"
+            echo ""
+            echo "HTTP \`$code\`"
+            echo ""
+            echo '```json'
+            cat "$body"
+            echo ""
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" != "200" ]; then
+            echo "::error::${ROUTE} returned HTTP $code"
+            exit 1
+          fi
