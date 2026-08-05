@@ -14,7 +14,9 @@ import {
 import { buildMonthlyClosingWorkbook } from "../src/lib/sales/monthly-closing-export.ts";
 import {
   filterMonthlyClosingMatrix,
+  injectDirectIntoMatrix,
   type MonthlyClosingCell,
+  type MonthlyClosingDirectCell,
   type MonthlyClosingMatrix,
 } from "../src/lib/sales/monthly-distributor-import.ts";
 import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts";
@@ -256,19 +258,38 @@ function reconciliationCell(book: ExcelJS.Workbook, startsWith: string, column: 
 /**
  * Does the Total sheet's own reconciliation block add up, using the numbers the FILE carries?
  *
- * Data rows + store split − headline. The Difference row states exactly this, but it states it as
- * a formula caching zero, and a cached zero does not survive the round trip — so re-adding the
- * three published rows proves the same thing against values that do.
+ * Data rows + direct + store split − headline. The Difference row states exactly this, but it
+ * states it as a formula caching zero, and a cached zero does not survive the round trip — so
+ * re-adding the published rows proves the same thing against values that do.
+ *
+ * Direct belongs in the sum because direct orders never arrive as a distributor invoice line and so
+ * have no row on the Data sheet at all. Leaving them out is what used to make this block print a
+ * Difference with every explanatory line reading zero.
  */
 function reconciliationGap(book: ExcelJS.Workbook): number {
-  const data = reconciliationCell(book, "Data sheet — rows feeding the closing", 3) ?? 0;
-  const headline = reconciliationCell(book, "Closing Matrix grand total", 3) ?? 0;
   const sheet = book.getWorksheet("Total");
-  let split = 0;
-  sheet?.eachRow((row) => {
-    if (String(row.getCell(1).value ?? "").startsWith("Store split")) split = Number(row.getCell(3).value ?? 0);
-  });
-  return data + split - headline;
+  // Matched on the prefix so a wording change to the label cannot silently disable the check.
+  // Cells here can be plain numbers OR formula objects carrying a cached result — `Number({...})`
+  // on the latter is NaN, which would pass straight through the sum and read as a broken sheet.
+  const numeric = (value: unknown): number => {
+    if (typeof value === "number") return value;
+    if (value && typeof value === "object" && "result" in value) {
+      return Number((value as { result?: unknown }).result ?? 0) || 0;
+    }
+    return Number(value ?? 0) || 0;
+  };
+  const rowStartingWith = (prefix: string): number => {
+    let found = 0;
+    sheet?.eachRow((row) => {
+      if (String(row.getCell(1).value ?? "").startsWith(prefix)) found = numeric(row.getCell(3).value);
+    });
+    return found;
+  };
+  const data = rowStartingWith("Data sheet —");
+  const direct = rowStartingWith("+ Direct orders");
+  const split = rowStartingWith("Store split");
+  const headline = reconciliationCell(book, "Closing Matrix grand total", 3) ?? 0;
+  return data + direct + split - headline;
 }
 
 /** The signed store-split disclosure line, or null when the workbook does not carry one. */
@@ -317,6 +338,40 @@ function runRouteWiringChecks() {
 
 export async function runMonthlyClosingExportStoreSplitFilteredTests() {
   runRouteWiringChecks();
+
+  // ── A month WITH direct orders: the Total sheet must still bridge to zero ──
+  // Direct orders never arrive as a distributor invoice line, so they have no row on the Data
+  // sheet. The reconciliation used to print the resulting Difference with "Excluded — Direct
+  // orders = 0" beside it, so the sheet built to prove the headline was the one that made the
+  // numbers look wrong. The bridge now names the direct money explicitly.
+  {
+    const retail = fullMatrix();
+    const directCells: MonthlyClosingDirectCell[] = [
+      { productCode: retail.columns[0]!.productCode, regionCode: retail.regions[0]!.regionCode, salesUnits: 40, salesValue: 4_000 },
+    ];
+    const master = injectDirectIntoMatrix(retail, directCells);
+    const monthRows = detailsFor(MONTH_ROWS);
+    const { details } = prepareClosingStoreSplit(monthRows, []);
+    const buffer = await buildMonthlyClosingWorkbook(master, comparisonFor(details.rows), details, {
+      channels: { directCells, retail },
+      storeSplitRows: monthRows.rows,
+      storeSplitScopeAreaCodes: [],
+    });
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(buffer as unknown as ArrayBuffer);
+
+    assert.equal(
+      reconciliationCell(book, "+ Direct orders counted in the matrix", 3),
+      4_000,
+      "the reconciliation must name the direct money the Data sheet cannot carry, not leave it at 0",
+    );
+    assert.equal(
+      reconciliationGap(book),
+      0,
+      "Data rows + direct must reproduce the headline exactly — an unexplained Difference is what "
+        + "made the closing look untrustworthy",
+    );
+  }
 
   // ── The whole month: the split moves money between the three Alexandria areas, nothing else ──
   const whole = await exportWorkbook([]);

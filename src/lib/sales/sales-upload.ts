@@ -358,6 +358,11 @@ function codedParsedRowToCodedRow(p: ParsedDistributorRow): CodedRow {
     discount: p.discount,
     distributorCode: p.distributorCode,
     invoiceDate: p.invoicePeriod ?? p.invoiceDate ?? "",
+    // ParsedDistributorRow.invoiceDate IS the day-level ISO date (YYYY-MM-DD) — the line above
+    // deliberately prefers invoicePeriod because CodedRow.invoiceDate is the PERIOD. So the real
+    // date belongs here, on invoiceDay. Writing null instead would leave the Direct upload path
+    // dateless, which is the exact gap this field was added to close.
+    invoiceDay: p.invoiceDate,
     invoiceNumber: p.invoiceNumber,
     isDirect: p.isDirect,
     officialLine: p.officialLine,
