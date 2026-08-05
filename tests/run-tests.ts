@@ -624,6 +624,7 @@ import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closin
 
 import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
 import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-office.test.ts";
+import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1373,6 +1374,11 @@ await runTest(
 await runTest(
   "store split detail report (mirrors the split exactly; shares add back to the sale; pharmacies and direct never appear)",
   runStoreSplitDetailReportTests,
+);
+
+await runTest(
+  "closing region grouping is per line (Anti Infective by organogram, Pedia and CNS by geography, gate consulted before the fetch)",
+  runClosingRegionGroupingPerLineTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -74,6 +74,32 @@ export type LineOperationalRegionMap = {
 };
 
 /**
+ * The ONLY lines whose closing groups areas by the ORGANOGRAM instead of by geography.
+ *
+ * Anti Infective is on this list because its Upper Egypt is genuinely two DM districts, and the
+ * owner wants UE-1 / UE-2 subtotals on the sheet rather than one UE lump.
+ *
+ * Every other line groups by `source_of_sales_areas.region_code` — plain geography — because the
+ * owner reads those regions as places. Without this gate the organogram was applied to ALL lines
+ * and silently restated them (measured on 2026-07): Pedia moved 4 areas, putting **Kafr El-Sheikh 1
+ * inside Alex-Behira** — AB read 186,580.13 / 20.3% where geography gives 178,503.75 / 24.1%, and
+ * Delta 1 read 291,702.60 / 36.4% against a true 301,128.98 / 30.7%. CNS moved 7, including Down
+ * town into Giza and Fayoum into Others. Both sales AND targets travel with an area, so the
+ * achievement moved in opposite directions in the two regions and neither number was the one the
+ * owner was reading it as. It also contradicted his own ruling that an Others area is "calculated
+ * with others but laying under Cairo".
+ *
+ * ADDING A LINE HERE REWRITES THAT LINE'S REGION SUBTOTALS — ask the owner first, every time.
+ * (Owner ruling 2026-08-05: fix Pedia and CNS, keep Anti Infective as is.)
+ */
+const CLOSING_ORGANOGRAM_REGION_LINES = new Set(["anti_infective"]);
+
+/** Does this line's closing group by the organogram? Line code as `resolveTargetLineCode` returns. */
+export function usesOrganogramRegions(lineCode: string | null | undefined): boolean {
+  return CLOSING_ORGANOGRAM_REGION_LINES.has(String(lineCode ?? "").trim().toLowerCase());
+}
+
+/**
  * Re-labels each area with the region the organogram gives it for this line. An area the map does
  * not cover keeps its geographic region rather than vanishing — a missing mapping must never cost
  * the matrix a row of sales.
