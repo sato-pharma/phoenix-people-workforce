@@ -136,6 +136,8 @@ export const DIRECT_ORDER_REPORT_COLUMNS: DirectOrderReportColumn[] = [
   { label: "Request ID", width: 20 },
   { label: "Created at" },
   { label: "Decided at" },
+  // Who, not just when. A script decision and a CEO decision look identical without this.
+  { label: "Decided by" },
   // The held clock. A held order is not parked — it is on a 14-day fuse (spec B6,
   // expireStaleHeldDirectOrders). "Status: held" says nothing about how much of that fuse is left,
   // and on 2026-08-05 that gap covered 11 orders worth 509,736 EGP all due to expire the same day.
@@ -203,6 +205,7 @@ export function directOrderReportRowCells(
     row.id,
     row.createdAt,
     row.decidedAt ?? "",
+    row.decidedByName ?? "",
     ...heldClockCells(row.heldAt, row.status),
     links.evidence,
   ];

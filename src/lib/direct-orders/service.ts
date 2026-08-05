@@ -3486,6 +3486,42 @@ export async function resolveVisibleRequesterHrIds(access: AccessContext): Promi
 }
 
 /** All direct orders visible to the caller (tiered), fully denormalized, newest first. */
+/**
+ * Who actually put each request into the state it is in now.
+ *
+ * NOT `approval_steps.decided_by_hr_id`: a decision can bypass the step chain entirely. On
+ * 2026-08-05 a script rejected fourteen orders — nine of them already fully approved — writing
+ * `status` directly and leaving every step untouched. The steps still said "approved by the CEO"
+ * while the order read rejected, so the steps are the wrong source for this question.
+ *
+ * The events log is the right one: it records every transition including the ones no approver made.
+ * A null actor there means no human took the action, which is exactly the thing worth seeing.
+ */
+async function loadDecidingActors(requestIds: string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  if (requestIds.length === 0) return out;
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_events")
+    .select("request_id, actor_hr_id, event_type, created_at")
+    .in("request_id", requestIds)
+    .in("event_type", ["approve", "rejected", "held", "expired", "reversed", "return"])
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  // Ascending, so the last write per request wins and the map ends up holding the MOST RECENT
+  // decision. A null actor is stored as null deliberately rather than skipped — "decided by nobody"
+  // is a fact, not a missing value, and the report renders it as "(system)".
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const id = String(row.request_id ?? "");
+    if (!id) continue;
+    const actor = row.actor_hr_id ? String(row.actor_hr_id) : null;
+    out.set(id, actor);
+  }
+  return out;
+}
+
 export async function getDirectOrderReport(
   access: AccessContext,
   options?: { requestId?: string },
@@ -3510,6 +3546,7 @@ export async function getDirectOrderReport(
   const stepsByReq = await loadStepsForRequests(requests.map((request) => request.id));
   const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
   const nameOf = await nameLookup();
+  const decidedByReq = await loadDecidingActors(requests.map((request) => request.id));
 
   // Resolve brick/area/region CODES → NAMES for display (owner wants both). Shared with the
   // approval detail and the approvals lists — see @/lib/direct-orders/geo-names.
@@ -3548,6 +3585,15 @@ export async function getDirectOrderReport(
       createdAt: request.createdAt,
       decidedAt: request.decidedAt,
       heldAt: request.heldAt,
+      // "(system)" where the events log records the transition with no actor — a script decision,
+      // not a person's. Undefined (no decision event at all) stays blank rather than claiming one.
+      decidedByName: decidedByReq.has(request.id)
+        ? (decidedByReq.get(request.id)
+          // Fall back to the raw HR id rather than blanking: an actor we cannot name is still an
+          // actor, and blanking would make it indistinguishable from "(system)".
+          ? (nameOf(decidedByReq.get(request.id) as string) ?? String(decidedByReq.get(request.id)))
+          : "(system)")
+        : "",
       activeStepLabel: active?.label ?? "",
       activeStepOrder: active?.order ?? null,
       pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "",

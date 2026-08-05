@@ -53,6 +53,7 @@ function directOrder(overrides: Partial<DirectOrderReportRow> & { id: string }):
     createdAt: "2026-07-01T09:00:00.000Z",
     dealType: "bonus",
     decidedAt: null,
+    decidedByName: "",
     discountPct: null,
     distributorCodesText: "Ibn Sina: 0000000123",
     doctorName: "Dr. Sameh",

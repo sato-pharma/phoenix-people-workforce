@@ -436,6 +436,8 @@ export type DirectOrderReportRow = {
   decidedAt: string | null;
   /** When the order entered `held`. Drives the 14-day expiry clock shown on the report. */
   heldAt: string | null;
+  /** Who put the order in its current state; "(system)" when no human actor is recorded. */
+  decidedByName: string;
   activeStepLabel: string;
   activeStepOrder: number | null;
   // pharmacy (from the registry)
