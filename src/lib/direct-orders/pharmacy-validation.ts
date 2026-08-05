@@ -3,8 +3,13 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { acknowledgeDirectOrderPharmacy } from "@/lib/direct-orders/service";
+import {
+  checkDirectOrderStorefrontEvidence,
+  type DirectOrderEvidenceCheck,
+} from "@/lib/direct-orders/evidence-check";
 import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +81,13 @@ export type DirectOrderValidationRow = {
   decisionNotes: string | null;
   /** Short-lived signed URL for the evidence photo; null when there is no photo on file. */
   photoUrl: string | null;
+  /**
+   * What the storefront photo was read to say (spec E2).
+   *
+   * NULL means NO ANSWER — not yet read, or it could not be read — and the desk must render it as
+   * such. It is advisory only: nothing in the decide path consults it, and a test asserts that.
+   */
+  evidenceCheck: DirectOrderEvidenceCheck | null;
 };
 
 function assertValidationDeskAccess(access: AccessContext): void {
@@ -320,6 +332,31 @@ export async function requestDirectOrderPharmacyValidation(
   }
   await supabase.from("direct_order_pharmacy_validations").update({ storage_path: path }).eq("id", validationId);
 
+  // Read the storefront evidence once, here, so the answer is already on the Super Admin's desk
+  // when they open it (spec E2). The bytes are already in hand from the parse above, so nothing is
+  // re-downloaded.
+  //
+  // WRAPPED SO IT CANNOT FAIL THE FILING. The rep is standing in front of the pharmacy; a model
+  // being busy, rate-limited, or returning nonsense must leave their evidence filed and this column
+  // null. Same reasoning as pingDirectOrderSheet being void-and-unawaitable, and looksLikeCv failing
+  // open: an assist that can block the thing it assists is not an assist.
+  //
+  // A null column means "no answer", never "passed" — the desk renders it as such.
+  try {
+    const evidenceCheck = await checkDirectOrderStorefrontEvidence({ bytes, claimedPharmacyName: claimedName });
+    if (evidenceCheck) {
+      await supabase
+        .from("direct_order_pharmacy_validations")
+        .update({ evidence_check: evidenceCheck })
+        .eq("id", validationId);
+    }
+  } catch (error) {
+    logError("Storefront evidence check failed; the validation was filed without it", {
+      labels: { event: "direct_order_evidence_check_failed", validationId },
+      error: error instanceof Error ? error : new Error(String(error)),
+    });
+  }
+
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
     entityType: "direct_order_request",
@@ -450,6 +487,9 @@ export async function listDirectOrderPharmacyValidations(
       decidedAt: row.decided_at ? String(row.decided_at) : null,
       decisionNotes: row.decision_notes ? String(row.decision_notes) : null,
       photoUrl,
+      // Read straight through: the column is null whenever there is no answer, and null must stay
+      // null all the way to the screen rather than becoming a default that reads like a pass.
+      evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
     });
   }
   return out;
