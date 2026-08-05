@@ -3878,7 +3878,67 @@ export function rebuildMatrixFromRows(
   };
 }
 
-export async function listMonthlyClosingLines(): Promise<string[]> {
+/**
+ * The lines a Monthly Closing can be produced for.
+ *
+ * HEAD OFFICE IS DELIBERATELY NOT ONE OF THEM (owner decision, 2026-08-05). The closing excludes
+ * the confidential products LA003 / LA004 / SS001 by construction — and on Head Office those
+ * products are essentially the entire line. Measured on production for 2026-07: the closing showed
+ * **546.00 EGP** against a line that actually held **50,965,312.08**, with zero targets to measure
+ * any of it against. A sheet reporting 0.001% of a line is not a small inaccuracy, it is a
+ * misleading document that anyone could forward.
+ *
+ * Excluding it HERE, at the single source every surface reads, is what makes it unreachable rather
+ * than merely hidden: the admin page, `/api/sales/monthly-closing`, the export route and the portal
+ * all take their line list from this function, and `loadMonthlyClosing` only accepts a line that
+ * appears in it — so a hand-typed `?line=Head Office` falls back to a real line instead of
+ * rendering the misleading sheet. Head Office data is untouched everywhere else (Source of Sales,
+ * analytics, the confidential reveal); this is about one report that cannot represent it honestly.
+ */
+/**
+ * Sentinel values that live in `source_of_sales_products.line` but are not sales lines at all.
+ * "IGNORE" tags a product that is deliberately kept out of the numbers; it carries zero units and
+ * zero value (production, 2026-07), so offering it as a closing produced an empty sheet and put a
+ * word that is plainly not a business line in the owner's dropdown.
+ */
+const NON_SALES_LINE_KEYS = new Set(["ignore"]);
+
+function isNonSalesLine(line: string): boolean {
+  return NON_SALES_LINE_KEYS.has(line.trim().toLowerCase());
+}
+
+/**
+ * Which of these raw `source_of_sales_products.line` values can be closed — the whole rule, with
+ * no database in it, so it can be exercised directly rather than described.
+ */
+export function selectClosingLines(
+  rawLines: readonly unknown[],
+  options?: { includeHeadOffice?: boolean },
+): string[] {
+  const lines = new Set<string>();
+  rawLines.forEach((raw) => {
+    const line = normalizeDisplay(raw);
+    if (!line) return;
+    // A sentinel is never a closing, for any caller — including the published-everything gate,
+    // which would otherwise wait forever for "IGNORE" to be published.
+    if (isNonSalesLine(line)) return;
+    if (!options?.includeHeadOffice && isHeadOfficeLine(line)) return;
+    lines.add(line);
+  });
+  return [...lines].sort((left, right) => left.localeCompare(right));
+}
+
+export async function listMonthlyClosingLines(
+  options?: {
+    /**
+     * Include Head Office anyway. For callers asking a DIFFERENT question than "which lines can be
+     * closed" — `runSosMonthlyClosingReportCheck` asks "is every active line published yet", and
+     * quietly shrinking its line set would make a scheduled email start firing on a condition it
+     * has never fired on. Only that caller passes this.
+     */
+    includeHeadOffice?: boolean;
+  },
+): Promise<string[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("source_of_sales_products")
@@ -3887,12 +3947,7 @@ export async function listMonthlyClosingLines(): Promise<string[]> {
 
   if (error) throw toQueryError(error);
 
-  const lines = new Set<string>();
-  (data ?? []).forEach((row) => {
-    const line = normalizeDisplay((row as Record<string, unknown>).line);
-    if (line) lines.add(line);
-  });
-  return [...lines].sort((left, right) => left.localeCompare(right));
+  return selectClosingLines((data ?? []).map((row) => (row as Record<string, unknown>).line), options);
 }
 
 export async function listMonthlyClosingPeriods(): Promise<string[]> {
