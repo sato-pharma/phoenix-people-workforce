@@ -17,6 +17,9 @@ function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] 
     // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
     held: "bg-orange-100 text-orange-800",
     expired: "bg-slate-300 text-slate-600",
+    // Cancelled = withdrawn by its requester while held (audit F3). Zinc, not slate, so it cannot be
+    // mistaken at a glance for `expired` — one is the requester tidying up, the other is neglect.
+    cancelled: "bg-zinc-200 text-zinc-700",
   };
   return (
     <span className={`inline-block px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone[status] ?? "bg-slate-100 text-slate-600"}`}>

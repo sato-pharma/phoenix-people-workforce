@@ -523,6 +523,7 @@ import { runDirectOrderReverseAuthorizationTests } from "./direct-orders-reverse
 import { runDirectOrderErrorClassificationTests } from "./direct-orders-error-classification.test.ts";
 import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
+import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
 import { runDirectOrdersPharmacyValidationTests } from "./direct-orders-pharmacy-validation.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
@@ -1220,7 +1221,8 @@ await runTest("direct orders reverse authorization (scope guard inherited, regis
 await runTest("direct orders error classification (every bare refusal reaches the caller as the right status, not 500)", runDirectOrderErrorClassificationTests);
 await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
-await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation and the 14-day clock are the only doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
+await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
+await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation, the 14-day clock and a requester withdrawal are the doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
 await runTest("direct orders pharmacy validation (live-capture evidence only, server-side GPS verdict, probation can fail an approved pharmacy, suggestions are reproducible evidence)", runDirectOrdersPharmacyValidationTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
 await runTest("analytics dim_products excludes confidential Head Office line (filter dropdown leak fix)", runAnalyticsDimProductsHeadOfficeExclusionTests);

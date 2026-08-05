@@ -14,6 +14,7 @@ export type DirectOrderWorkflowActionKey =
   | "submit_held"
   | "revive_held"
   | "expire_held"
+  | "cancel_held"
   | "approve_intermediate"
   | "approve_final"
   | "reject"

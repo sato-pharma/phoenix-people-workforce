@@ -77,6 +77,8 @@ const STATUS_TONE: Record<string, string> = {
   // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
   held: "bg-orange-50 text-orange-700 ring-orange-200",
   expired: "bg-slate-200 text-slate-500 ring-slate-300",
+  // Cancelled = withdrawn by its requester while held (audit F3).
+  cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-300",
 };
 
 function StatusPill({ status }: { status: string }) {

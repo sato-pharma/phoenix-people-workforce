@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DirectOrderPortalDetail } from "@/components/employee-portal/direct-order-portal-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
+import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
+import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -28,6 +30,12 @@ export default async function PortalMyDirectOrderDetailPage({ params }: { params
   // Same predicate on both pages so they cannot diverge again.
   const showValidation = canCaptureDirectOrderValidation(access.hrId, detail);
 
+  // The way OUT of the held lane for an order that should never have been raised (audit F3). Mounted
+  // on this page as well as the admin twin for exactly the reason the capture had to be: a rep only
+  // ever reaches the portal, so a control that lives only on the admin page cannot be used by the
+  // person it was built for.
+  const showCancel = canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail);
+
   return (
     <EmployeePortalPageShell
       badge="Direct Orders"
@@ -45,6 +53,14 @@ export default async function PortalMyDirectOrderDetailPage({ params }: { params
             pharmacyId={detail.pharmacy.id}
             pharmacyName={detail.pharmacy.pharmacyName}
             requestId={detail.request.id}
+          />
+        ) : null}
+        {showCancel && detail ? (
+          <CancelHeldOrder
+            requestId={detail.request.id}
+            productName={detail.request.productName}
+            qty={detail.request.qty}
+            salesValue={detail.request.salesValue}
           />
         ) : null}
       </div>

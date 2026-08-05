@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 
 import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
+import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
+import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -36,6 +38,10 @@ export default async function AdminMyDirectOrderDetailPage({ params }: { params:
   // did once, and the portal (the only route a rep can reach) was the one left without a door.
   const showValidation = canCaptureDirectOrderValidation(access.hrId, detail);
 
+  // The other door out of the held lane (audit F3): withdrawing an order that should not have been
+  // raised. Same shared predicate as the portal twin, for the same reason as the capture above.
+  const showCancel = canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail);
+
   return (
     <div className="space-y-5">
       <DirectOrderRequestDetail detail={detail} backHref="/admin/direct-orders" backLabel="Back to My Direct Orders" />
@@ -44,6 +50,14 @@ export default async function AdminMyDirectOrderDetailPage({ params }: { params:
           pharmacyId={detail.pharmacy.id}
           pharmacyName={detail.pharmacy.pharmacyName}
           requestId={detail.request.id}
+        />
+      ) : null}
+      {showCancel && detail ? (
+        <CancelHeldOrder
+          requestId={detail.request.id}
+          productName={detail.request.productName}
+          qty={detail.request.qty}
+          salesValue={detail.request.salesValue}
         />
       ) : null}
     </div>

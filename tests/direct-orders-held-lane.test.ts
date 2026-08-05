@@ -88,7 +88,9 @@ export function runDirectOrdersHeldLaneTests() {
     "the clock defaults to 14 days (owner spec B6)",
   );
   assert.ok(isTerminalDirectOrderStatus("expired"), "expired is terminal — a dead end, not a pause");
-  assert.ok(!isTerminalDirectOrderStatus("held"), "held is NOT terminal — it has two live doors out");
+  // Three doors since 2026-08-05: validation revives it, the 14-day clock expires it, and the
+  // requester can withdraw it (audit F3, cancel_held).
+  assert.ok(!isTerminalDirectOrderStatus("held"), "held is NOT terminal — it has three live doors out");
 
   // The sweep is a guarded cron route, not an open endpoint.
   const cronSource = readFileSync(
