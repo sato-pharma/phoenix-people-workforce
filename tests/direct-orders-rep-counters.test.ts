@@ -64,10 +64,10 @@ export function runDirectOrderRepCountersTests() {
 
   // ── Sorted by money, not alphabet ────────────────────────────────────────────────────────
   //
-  // This used to pin `b.heldValue - a.heldValue`. On 2026-08-05 twelve false pharmacies were
+  // This used to pin `b.heldValue - a.heldValue`. On 2026-08-05 twelve pharmacies were
   // rejected and every held value went to zero, so that sort silently degraded to alphabetical at
   // exactly the moment the table was most worth reading. "Money at risk" now means parked PLUS
-  // proven false, and the second assertion below stops that definition quietly narrowing again.
+  // rejected, and the second assertion below stops that definition quietly narrowing again.
   assert.match(
     source,
     /atRisk\(b\) - atRisk\(a\) \|\|[\s\S]{0,180}?b\.matchedExisting - a\.matchedExisting/,
@@ -75,8 +75,8 @@ export function runDirectOrderRepCountersTests() {
   );
   assert.match(
     source,
-    /const atRisk = \(r: DirectOrderRepCounters\) => r\.heldValue \+ r\.refusedAsFalseValue;/,
-    "money at risk must include refused-as-false, or a fully cleaned-up module sorts as if nothing ever happened",
+    /const atRisk = \(r: DirectOrderRepCounters\) => r\.heldValue \+ r\.ordersRejectedValue;/,
+    "money at risk must include orders on rejected pharmacies, or a fully cleaned-up module sorts as if nothing ever happened",
   );
 
   // ── Empty must speak ─────────────────────────────────────────────────────────────────────
