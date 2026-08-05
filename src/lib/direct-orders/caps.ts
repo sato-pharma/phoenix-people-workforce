@@ -1,5 +1,6 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // UI-editable bonus & discount caps. Percentages (0–100) live in `direct_order_caps`
@@ -130,7 +131,13 @@ export async function upsertDirectOrderCap(
 
 export async function deleteDirectOrderCap(access: AccessContext, productCode: string): Promise<void> {
   if (!isSuperAdmin(access)) throw new Error("Forbidden: only a System Admin can change caps.");
-  if (productCode === DIRECT_ORDER_GLOBAL_CAP_KEY) throw new Error("The global cap cannot be deleted.");
+  // validationError, not a bare Error. toApiError classifies bare Errors by MESSAGE PATTERN, and
+  // this wording matches none of them, so it fell through to a 500 — telling an admin the server
+  // broke when they had simply been refused. The sibling check above survives only because
+  // "… is required." happens to match one of the patterns.
+  if (productCode === DIRECT_ORDER_GLOBAL_CAP_KEY) {
+    throw validationError("The global cap cannot be deleted.");
+  }
   const supabase = getSupabaseAdmin();
   const { error } = await supabase.from("direct_order_caps").delete().eq("product_code", productCode);
   if (error) throw error;

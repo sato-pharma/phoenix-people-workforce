@@ -184,8 +184,81 @@ would not catch it.
 
 ## C6.3 — Role gates including denial paths
 
-*Not started.*
+All **16** exported mutations in `service.ts` were enumerated and each one's guard read directly.
 
-## C6.3 — Role gates including denial paths
+### Result: no new authorization holes
 
-*Not started.*
+Beyond F4/F5 (already fixed), every mutation is properly gated:
+
+| Guard | Functions |
+|---|---|
+| `assertPharmacyRegistryAccess` — System Admin or SFE Manager | `registerDirectOrderPharmacy`, `updateDirectOrderPharmacyDetails`, `replaceDirectOrderPharmacyCodes` |
+| `canSetDirectOrderSalesMonth` — system, Super Admin, or the Finance HR ID | `setDirectOrderSalesMonth` |
+| `canResolveGeoVariances` — System Admin | `resolvePharmacyGeoVariance` |
+| inline Super Admin | `setDirectOrderProductPrices`, `rebuildDirectOrderApprovalChain`, `acknowledgeDirectOrderPharmacy`, `expireStaleHeldDirectOrders` |
+| `assertPermission` | `submitDirectOrder`, `decideDirectOrder`, `createDirectOrderPharmacy`, `reverseDirectOrder`, `searchDirectOrderPharmacyDirectory` |
+
+Notably `setDirectOrderSalesMonth` — the GOLDEN RULE path that injects sales — is correctly
+restricted despite carrying only `direct_orders:read` as its coarse permission. The real gate is the
+named helper immediately after it.
+
+### Methodological warning (worth more than a finding)
+
+An automated scan for `assertPermission(...)` and `access.role === "..."` reported **five** functions
+as unguarded. **All five were false alarms.** This module's guards are overwhelmingly *named
+helpers* — `assertPharmacyRegistryAccess`, `canSetDirectOrderSalesMonth`, `canResolveGeoVariances` —
+which no grep for the obvious patterns will find.
+
+Anyone repeating this audit with tooling will systematically under-report the guards and "discover"
+holes that do not exist. Read the first ten lines of each function instead.
+
+### Denial paths
+
+Route handlers classify errors with `isForbiddenError(error)`, which matches
+`message.toLowerCase().startsWith("forbidden:")` — so the **message prefix is the protocol**.
+Checked across the module:
+
+- **13** bare `throw new Error("Forbidden: …")` — all carry the prefix, all return **403** ✅
+- **7** `throw forbiddenError(...)` — `toApiError` returns `ApiError` instances unchanged, so all
+  return **403** regardless of message ✅
+
+### F7 — one denial returns 500 instead of 400 (low)
+
+`toApiError` classifies *bare* Errors by message pattern. One message in the module matches none:
+
+```
+src/lib/direct-orders/caps.ts:133   "The global cap cannot be deleted."
+   -> falls through every pattern -> new ApiError(500, "internal_error")
+```
+
+A user who tries to delete the global cap is told the **server broke**, when in fact they were
+correctly refused. The sibling message two lines up, `"… is required."`, matches ` is required` and
+correctly returns 400.
+
+**Fix:** throw `validationError("The global cap cannot be deleted.")` instead of a bare `Error`.
+
+This is the fragility the prefix convention creates: correctness depends on wording. A typed error
+does not.
+
+---
+
+## Summary
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| F5 | `reverse` had no ownership/scope check — any create-holder could reverse any approved order company-wide | medium-high | **fixed** (#1768) |
+| F4 | `reverse` ungated, so Medical Rep / Financial Advisor could reverse | medium | **fixed** (#1768) |
+| F3 | No action retires a held duplicate | medium | open |
+| F2 | Validation flow bypasses the registry entirely | medium | open |
+| F1 | Registry declares 6 statuses; the DB allows 8 | medium | open |
+| F6 | Gate is passed a literal status, not the row's | low-medium | fixed at `reverse`; open at 3 sites |
+| F7 | One denial returns 500 instead of 400 | low | open |
+
+**Five suspicions were tested and cleared**, each recorded above rather than deleted: the cron can
+run `expire_held`; PM/GPM submissions have a working approval path; `setDirectOrderSalesMonth` is
+properly restricted; the pharmacy-registry mutations are properly restricted; and every
+`forbiddenError` denial does return 403.
+
+The most valuable output is arguably not a finding at all: **the guards in this module are named
+helpers, so grep-based auditing of it produces false alarms.** Anyone repeating this should read the
+functions.
