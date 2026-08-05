@@ -105,6 +105,59 @@ var NUMERIC = {
 /** The two columns that get a grand total on the Direct Orders tab. */
 var TOTALLED = ["Qty (units)", "Sales value (EGP)"];
 
+// ── Premium layout (2026-08-05) ─────────────────────────────────────────────────
+// Fixed geometry, matching the Marketing sheet so the two read as one system.
+//
+// The TOTAL bar sits ABOVE the data. Below it, the bar moves every time an order is approved or
+// expires, which forces a rewrite on every refresh — the churn this file already fights everywhere
+// else. Above the data it never moves, it stays inside the frozen panes so it is visible while you
+// scroll 43 columns, and it is still outside the filter range.
+var ROW_TITLE = 1;
+var ROW_SUBTITLE = 2;
+var ROW_TOTAL = 3;
+var ROW_HEADER = 4;
+var ROW_DATA = 5;
+var MAX_DATA_ROWS = 2000;
+var LAST_ROW = ROW_DATA + MAX_DATA_ROWS - 1;
+
+var INK = "#0F172A";
+var HAIRLINE = "#E2E8F0";
+var TILE_BG = "#FFF7ED";
+var ZEBRA_A = "#FFFFFF";
+var ZEBRA_B = "#FFF8F1";
+var TOTAL_BG = "#1F2937";
+var PCT_FMT = "0.0%";
+
+/** Every column carrying a state word. */
+var STATUS_COLUMNS = ["Status", "Awaiting step", "Deal type"];
+
+/**
+ * Colour by MEANING, not by column: green done, red needs a decision, amber waiting, blue in
+ * flight, grey parked. Set in ONE call — setConditionalFormatRules REPLACES the list, so appending
+ * per column would leave only the last column coloured.
+ */
+var STATUS_RULES = [
+  { match: ["approved", "Approved", "collected", "Collected"], bg: "#DCFCE7", fg: "#166534" },
+  { match: ["rejected", "Rejected", "expired", "Expired", "reversed", "Reversed"], bg: "#FEE2E2", fg: "#991B1B" },
+  { match: ["held", "Held", "pending_validation", "Pending validation"], bg: "#FEF3C7", fg: "#92400E" },
+  { match: ["pending_approval", "Pending approval", "submitted", "Submitted"], bg: "#DBEAFE", fg: "#1E40AF" },
+  { match: ["draft", "Draft", "withdrawn", "Withdrawn", "cancelled", "Cancelled"], bg: "#F1F5F9", fg: "#475569" }
+];
+
+/**
+ * The held fuse, coloured by how much of it is left (spec B6 = 14 days).
+ *
+ * Red inside 4 days, amber inside 8. On 2026-08-05 eleven orders worth 509,736 EGP were all due to
+ * expire on the same day and nothing on the sheet said so — a number going red is the cheapest
+ * possible way for that to never be a surprise again.
+ */
+var EXPIRY_COLUMN = "Days to expiry";
+var EXPIRY_RED_WITHIN_DAYS = 4;
+var EXPIRY_AMBER_WITHIN_DAYS = 8;
+
+var EXEC_TAB = "Executive Summary";
+var TAB_ORDER = [EXEC_TAB, "Direct Orders", "By Status", "Cover", "Backup"];
+
 // ── Entry points ────────────────────────────────────────────────────────────────
 
 /** Run once, by hand, to install the 1-minute trigger. Safe to re-run. */
@@ -267,6 +320,15 @@ function refreshDirectOrders() {
   buildByStatusSheet(ss, bundle.byStatus, created);
   buildCoverSheet(ss, bundle.summary, bundle.orders.length - 1, stamp, created);
 
+  // The panel is pure live formulas over the Direct Orders tab, so it needs building only when it
+  // does not exist yet or the column set moved — never on a routine refresh.
+  if (!ss.getSheetByName(EXEC_TAB) || !headerMatches(ss.getSheetByName("Direct Orders"), bundle.orders[0], ROW_HEADER)) {
+    buildExecutiveSummarySheet(ss, bundle.orders[0], stamp, created);
+  } else {
+    ss.getSheetByName(EXEC_TAB).getRange(ROW_SUBTITLE, 1)
+      .setValue("Everything at a glance — updated " + stamp + " (Cairo)");
+  }
+
   // Last, and inside its own try: the backup is a safety net, so a fault in it must never take
   // down the refresh that feeds the live tabs.
   try {
@@ -275,7 +337,7 @@ function refreshDirectOrders() {
     console.error("Backup append failed (live tabs are unaffected): " + err);
   }
 
-  if (created.length) orderTabs(ss, ["Cover", "Direct Orders", "By Status", "Backup"]);
+  if (created.length) orderTabs(ss, TAB_ORDER);
 }
 
 // ── Feed parsing ────────────────────────────────────────────────────────────────
@@ -378,119 +440,358 @@ function buildOrdersSheet(ss, grid, stamp, created) {
   var sheet = getOrCreateSheet(ss, "Direct Orders", created);
 
   // Rebuild the STRUCTURE only when it is actually wrong — first run, or the column set changed
-  // (e.g. the 25-to-39 upgrade). On every other refresh only the values are rewritten, which is
-  // what stops the sheet flickering, jumping and resizing itself once a minute.
-  var rebuild = !headerMatches(sheet, header);
-  var previousLastRow = sheet.getLastRow();
+  // (e.g. the 39-to-43 held-clock upgrade). On every other refresh only the values are rewritten,
+  // which is what stops the sheet flickering, jumping and resizing itself once a minute.
+  var rebuild = !headerMatches(sheet, header, ROW_HEADER);
+  if (rebuild) buildOrdersFrame(sheet, header, cols);
+  ensureRows(sheet, LAST_ROW);
 
-  if (rebuild) {
-    resetSheet(sheet);
-    bandTitle(sheet, cols, "Direct Orders", null);
-    sheet.getRange(2, 1, 1, cols)
-      .setValues([header])
-      .setBackground(BLACK)
-      .setFontColor(WHITE)
-      .setFontWeight("bold")
-      .setFontFamily(FONT)
-      .setFontSize(10.5)
-      .setVerticalAlignment("middle")
-      .setWrap(true);
-    sheet.setRowHeight(2, 34);
-  }
-
-  // Body (row 3 onward). Numbers are coerced so totals and formats actually apply.
+  // ── the only part that runs every minute ──
   if (body.length) {
     var values = [];
-    var backgrounds = [];
-    for (var r = 0; r < body.length; r++) {
+    for (var r = 0; r < body.length && r < MAX_DATA_ROWS; r++) {
       var row = [];
-      var band = [];
       for (var c = 0; c < cols; c++) {
-        var raw = c < body[r].length ? body[r][c] : "";
-        row.push(coerce(header[c], raw));
-        band.push(r % 2 === 1 ? ZEBRA : WHITE);
+        row.push(coerce(header[c], c < body[r].length ? body[r][c] : ""));
       }
       values.push(row);
-      backgrounds.push(band);
     }
-    var bodyRange = sheet.getRange(3, 1, body.length, cols);
-    bodyRange
-      .setValues(values)
-      .setBackgrounds(backgrounds)
-      .setFontColor(SLATE)
-      .setFontFamily(FONT)
-      .setFontSize(10.5)
-      .setVerticalAlignment("middle")
-      .setWrap(false); // owner's rule: never wrap, never truncate with an ellipsis
-    applyColumnFormats(sheet, header, 3, body.length);
+    sheet.getRange(ROW_DATA, 1, values.length, cols).setValues(values);
+    // Orders disappear (approved, expired, reversed). Clear the tail only — formatting is untouched,
+    // so those rows keep their banding and are ready for the next, longer refresh.
+    var tail = LAST_ROW - (ROW_DATA + values.length) + 1;
+    if (tail > 0) sheet.getRange(ROW_DATA + values.length, 1, tail, cols).clearContent();
+  } else {
+    sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols).clearContent();
   }
 
-  // Grand total row, in the .xlsx's amber. Written as live =SUM formulas rather than
-  // pre-computed numbers so the figure stays correct if anyone edits a cell by hand.
-  var totalRow = 3 + body.length;
-  var totals = [];
+  sheet.getRange(ROW_SUBTITLE, 1).setValue("Every direct order, live — updated " + stamp + " (Cairo)");
+}
+
+/**
+ * Everything that is NOT data. First build, or when the column set changes — never on a refresh.
+ */
+function buildOrdersFrame(sheet, header, cols) {
+  resetSheet(sheet);
+  ensureRows(sheet, LAST_ROW);
+  bandTitle(sheet, cols, "Direct Orders", "Every direct order, live");
+
+  // ── the sticky TOTAL bar, ABOVE the data so it never moves ──
+  var totalRange = sheet.getRange(ROW_TOTAL, 1, 1, cols);
+  totalRange.setBackground(TOTAL_BG).setFontColor(WHITE).setFontFamily(FONT)
+    .setFontWeight("bold").setFontSize(10.5).setVerticalAlignment("middle");
+  sheet.setRowHeight(ROW_TOTAL, 28);
+  sheet.getRange(ROW_TOTAL, 1).setValue("TOTAL ▸");
   for (var t = 0; t < cols; t++) {
-    if (header[t] === "Status") {
-      totals.push("TOTAL");
-    } else if (TOTALLED.indexOf(header[t]) !== -1 && body.length) {
-      var letter = columnLetter(t + 1);
-      totals.push("=SUM(" + letter + "3:" + letter + (totalRow - 1) + ")");
-    } else {
-      totals.push("");
+    if (TOTALLED.indexOf(header[t]) === -1) continue;
+    var letter = columnLetter(t + 1);
+    // SUBTOTAL(109) = sum IGNORING filtered-out rows. Plain SUM would show the whole company while
+    // the reader looked at one region — wrong in the most convincing possible way, because it is
+    // correct for a selection nobody made.
+    sheet.getRange(ROW_TOTAL, t + 1)
+      .setFormula("=SUBTOTAL(109," + letter + ROW_DATA + ":" + letter + LAST_ROW + ")")
+      .setNumberFormat(NUMERIC[header[t]] || VALUE_FMT)
+      .setHorizontalAlignment("right");
+  }
+
+  // ── header ──
+  sheet.getRange(ROW_HEADER, 1, 1, cols)
+    .setValues([header])
+    .setBackground(INK).setFontColor(WHITE).setFontWeight("bold")
+    .setFontFamily(FONT).setFontSize(10.5).setVerticalAlignment("middle").setWrap(true)
+    .setBorder(true, true, true, true, true, true, ORANGE, SpreadsheetApp.BorderStyle.SOLID);
+  sheet.setRowHeight(ROW_HEADER, 36);
+
+  // Band, total and header all stay on screen; the first column stays on screen sideways. The
+  // frozen column is only possible because bandTitle PAINTS the band instead of merging it.
+  sheet.setFrozenRows(ROW_HEADER);
+  sheet.setFrozenColumns(1);
+
+  // ── body formatting, over the FIXED range ──
+  var body = sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols);
+  body.setFontFamily(FONT).setFontSize(10).setFontColor(SLATE)
+    .setVerticalAlignment("middle")
+    .setWrap(false) // owner's rule: never wrap, never truncate with an ellipsis
+    .setBorder(true, true, true, true, true, true, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
+
+  for (var n = 0; n < cols; n++) {
+    var fmt = NUMERIC[header[n]];
+    if (fmt) {
+      sheet.getRange(ROW_DATA, n + 1, MAX_DATA_ROWS, 1).setNumberFormat(fmt).setHorizontalAlignment("right");
     }
   }
-  var totalRange = sheet.getRange(totalRow, 1, 1, cols);
-  totalRange
-    .setValues([totals])
-    .setBackground(AMBER)
-    .setFontColor(BLACK)
-    .setFontWeight("bold")
-    .setFontFamily(FONT)
-    .setFontSize(10.5);
-  applyColumnFormats(sheet, header, totalRow, 1);
 
-  // Alignment: numeric columns right, everything else left.
-  for (var a = 0; a < cols; a++) {
-    var align = NUMERIC.hasOwnProperty(header[a]) ? "right" : "left";
-    sheet.getRange(2, a + 1, totalRow - 1, 1).setHorizontalAlignment(align);
+  applyZebra(sheet, cols);
+  applyStatusColours(sheet, header);
+  sizeColumns(sheet, header, cols);
+
+  // Header + data only. Including the TOTAL bar would let a filter hide or re-sort the grand total,
+  // which is how a report ends up showing a number that belongs to nothing on screen. That is
+  // exactly why the bar sits above the data rather than below it.
+  try {
+    sheet.getRange(ROW_HEADER, 1, MAX_DATA_ROWS + 1, cols).createFilter();
+  } catch (err) {
+    // a filter already exists — cosmetic, never fail the build over it
+  }
+}
+
+/**
+ * Zebra striping as real BANDING, not per-row background fills.
+ *
+ * The previous version computed a full backgrounds matrix and wrote it on EVERY refresh — one of
+ * the things that made the sheet feel alive in the wrong way. Banding is a single sheet-level
+ * object: one call, written once, and it re-stripes itself as rows are filtered. Painted
+ * backgrounds also go wrong the moment anything is filtered, because the stripes stay with the
+ * ROWS rather than with what is visible.
+ */
+function applyZebra(sheet, cols) {
+  try {
+    var existing = sheet.getBandings();
+    for (var i = 0; i < existing.length; i++) existing[i].remove();
+    sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols)
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+    var banding = sheet.getBandings()[0];
+    if (banding) banding.setFirstRowColor(ZEBRA_A).setSecondRowColor(ZEBRA_B);
+  } catch (err) {
+    // banding is cosmetic — never fail the build over it
+  }
+}
+
+/** Colour every status column by meaning, and the held fuse by how much of it is left. */
+function applyStatusColours(sheet, header) {
+  var rules = [];
+  var statusRanges = [];
+  for (var i = 0; i < header.length; i++) {
+    if (STATUS_COLUMNS.indexOf(String(header[i])) >= 0) {
+      statusRanges.push(sheet.getRange(ROW_DATA, i + 1, MAX_DATA_ROWS, 1));
+    }
+  }
+  if (statusRanges.length) {
+    for (var r = 0; r < STATUS_RULES.length; r++) {
+      for (var m = 0; m < STATUS_RULES[r].match.length; m++) {
+        rules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextEqualTo(STATUS_RULES[r].match[m])
+            .setBackground(STATUS_RULES[r].bg)
+            .setFontColor(STATUS_RULES[r].fg)
+            .setRanges(statusRanges)
+            .build()
+        );
+      }
+    }
   }
 
-  sheet.getRange(2, 1, totalRow - 1, cols).setBorder(true, true, true, true, true, true, GRID, SpreadsheetApp.BorderStyle.SOLID);
-
-  // Orders can disappear (approved, expired, reversed). Clear whatever the previous run left below
-  // the new total row, or a deleted order lingers on screen forever as a ghost.
-  if (previousLastRow > totalRow) {
-    sheet.getRange(totalRow + 1, 1, previousLastRow - totalRow, Math.max(cols, sheet.getLastColumn())).clear();
+  var expiryIndex = header.indexOf(EXPIRY_COLUMN);
+  if (expiryIndex >= 0) {
+    var expiry = [sheet.getRange(ROW_DATA, expiryIndex + 1, MAX_DATA_ROWS, 1)];
+    // Red first: rules are evaluated in order and the first match wins, so an order 2 days from
+    // expiry must not be caught by the amber "under 8" rule on the way past.
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberLessThanOrEqualTo(EXPIRY_RED_WITHIN_DAYS)
+        .setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true)
+        .setRanges(expiry).build()
+    );
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberLessThanOrEqualTo(EXPIRY_AMBER_WITHIN_DAYS)
+        .setBackground("#FEF3C7").setFontColor("#92400E")
+        .setRanges(expiry).build()
+    );
   }
 
-  // Structure-only work. Re-running any of this every minute is what made the sheet unusable:
-  // autoResize changes every column width while you are reading, and re-creating the filter throws
-  // away whatever filter YOU had applied.
-  var rowCountChanged = previousLastRow !== totalRow;
-  if (rebuild) {
-    // Rows 1-2 (brand band + header) stay pinned; row 3 is the first scrolling order.
-    //
-    // No setFrozenColumns here. The row-1 band is merged across all 39 columns, and Google refuses
-    // to freeze a column boundary that would cut a merged cell in half ("you can't freeze columns
-    // which contain only part of a merged cell"). Un-merging to allow it is worse: overflow text
-    // does not render across a frozen-pane edge, so the title would appear truncated the moment you
-    // scrolled right — and truncated text is exactly what this report must never show.
-    sheet.setFrozenRows(2);
-    sizeColumns(sheet, header, cols);
-  }
-  if (rebuild || rowCountChanged) {
-    if (sheet.getFilter()) sheet.getFilter().remove();
-    // Header + body only. Including the TOTAL row would let a filter hide or re-sort the grand
-    // total, which is how a report ends up showing a number that belongs to nothing on screen.
-    if (body.length) sheet.getRange(2, 1, body.length + 1, cols).createFilter();
-  }
+  sheet.setConditionalFormatRules(rules);
+}
 
-  // Refresh stamp, parked clear of the table. Value-only, so it never disturbs the layout.
-  var stampCell = sheet.getRange(1, cols + 2);
-  stampCell.setValue("Updated " + stamp + " (Cairo)");
-  if (rebuild) {
-    stampCell.setFontColor(MUTED).setFontFamily(FONT).setFontSize(9).setFontStyle("italic");
+/**
+ * The one tab to look at.
+ *
+ * Every figure is a LIVE FORMULA over the Direct Orders tab, never a value this script computed and
+ * pasted. It therefore stays right in the minute between refreshes and — more usefully —
+ * recalculates when the reader filters Direct Orders, making it a lens on whatever slice they are
+ * looking at rather than a fixed company summary.
+ *
+ * Built ONCE, like every other frame in this file.
+ */
+function buildExecutiveSummarySheet(ss, header, stamp, created) {
+  var sheet = getOrCreateSheet(ss, EXEC_TAB, created);
+  resetSheet(sheet);
+  ensureRows(sheet, 120);
+
+  var Q = "'Direct Orders'!";
+  function span(label) {
+    var index = header.indexOf(label);
+    if (index < 0) return null;
+    var letter = columnLetter(index + 1);
+    return Q + letter + ROW_DATA + ":" + letter + LAST_ROW;
   }
+  var rStatus = span("Status");
+  var rValue = span("Sales value (EGP)");
+  var rQty = span("Qty (units)");
+  var rReq = span("Requester");
+  var rProduct = span("Product");
+  var rExpiry = span(EXPIRY_COLUMN);
+  var rId = span("Request ID");
+
+  sheet.setColumnWidth(1, 28);
+  sheet.setColumnWidth(2, 260);
+  for (var w = 3; w <= 9; w++) sheet.setColumnWidth(w, 160);
+
+  bandTitle(sheet, 9, "Executive Summary", "Everything at a glance — updated " + stamp + " (Cairo)");
+  sheet.setFrozenRows(2);
+
+  var row = 4;
+  row = tileRow(sheet, row, [
+    { label: "Orders", formula: rId ? "=COUNTA(" + rId + ")" : "=0", fmt: UNITS_FMT },
+    { label: "Total value (EGP)", formula: rValue ? "=SUM(" + rValue + ")" : "=0", fmt: VALUE_FMT },
+    { label: "Units", formula: rQty ? "=SUM(" + rQty + ")" : "=0", fmt: UNITS_FMT },
+    { label: "Approved (EGP)", formula: (rStatus && rValue) ? '=SUMIF(' + rStatus + ',"approved",' + rValue + ')' : "=0", fmt: VALUE_FMT }
+  ]);
+
+  // The held block is the reason this tab exists. On 2026-08-05 it would have read: 11 orders,
+  // 509,736 EGP, 98% of everything, all expiring the same day.
+  row = tileRow(sheet, row, [
+    { label: "HELD orders", formula: rStatus ? '=COUNTIF(' + rStatus + ',"held")' : "=0", fmt: UNITS_FMT },
+    { label: "HELD value (EGP)", formula: (rStatus && rValue) ? '=SUMIF(' + rStatus + ',"held",' + rValue + ')' : "=0", fmt: VALUE_FMT },
+    {
+      label: "Held share of value",
+      // IFERROR, not a bare divide: an empty report makes the denominator zero, and a #DIV/0! on
+      // the headline tile makes the whole panel look broken.
+      formula: (rStatus && rValue) ? '=IFERROR(SUMIF(' + rStatus + ',"held",' + rValue + ')/SUM(' + rValue + '),0)' : "=0",
+      fmt: PCT_FMT
+    },
+    {
+      label: "Soonest expiry (days)",
+      // MIN over a filtered range, so an approved order's blank clock cannot win the minimum.
+      formula: (rExpiry && rStatus) ? '=IFERROR(MIN(IF(' + rStatus + '="held",' + rExpiry + ')),"—")' : '="—"',
+      fmt: "#,##0.0",
+      arrayFormula: true
+    }
+  ]);
+
+  row = sectionTitle(sheet, row, "Where the exposure sits");
+  row = queryBlock(sheet, row, "Held value by requester", ["Requester", "Orders", "Held value (EGP)"],
+    heldGroupFormula(header, "Requester"));
+  row = queryBlock(sheet, row, "Held value by product", ["Product", "Orders", "Held value (EGP)"],
+    heldGroupFormula(header, "Product"));
+
+  row = sectionTitle(sheet, row, "Everything by status");
+  row = queryBlock(sheet, row, "By status", ["Status", "Orders", "Value (EGP)"],
+    groupFormula(header, "Status"));
+
+  row = sectionTitle(sheet, row, "Needs attention");
+  var alertFirst = row;
+  var alerts = [
+    ["Held orders expiring within " + EXPIRY_RED_WITHIN_DAYS + " days",
+      (rStatus && rExpiry) ? '=COUNTIFS(' + rStatus + ',"held",' + rExpiry + ',"<=' + EXPIRY_RED_WITHIN_DAYS + '")' : "=0"],
+    ["Held orders expiring within " + EXPIRY_AMBER_WITHIN_DAYS + " days",
+      (rStatus && rExpiry) ? '=COUNTIFS(' + rStatus + ',"held",' + rExpiry + ',"<=' + EXPIRY_AMBER_WITHIN_DAYS + '")' : "=0"],
+    ["Already expired", rStatus ? '=COUNTIF(' + rStatus + ',"expired")' : "=0"],
+    ["Rejected", rStatus ? '=COUNTIF(' + rStatus + ',"rejected")' : "=0"],
+    ["Reversed", rStatus ? '=COUNTIF(' + rStatus + ',"reversed")' : "=0"]
+  ];
+  for (var a = 0; a < alerts.length; a++) {
+    sheet.getRange(row, 2).setValue(alerts[a][0]).setFontFamily(FONT).setFontSize(10.5).setFontColor(SLATE);
+    sheet.getRange(row, 3).setFormula(alerts[a][1]).setNumberFormat(UNITS_FMT)
+      .setFontFamily(FONT).setFontWeight("bold").setHorizontalAlignment("left");
+    sheet.getRange(row, 2, 1, 2).setBorder(null, null, true, null, null, null, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
+    row++;
+  }
+  try {
+    sheet.setConditionalFormatRules([
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenNumberGreaterThan(0)
+        .setBackground("#FEE2E2").setFontColor("#991B1B").setBold(true)
+        .setRanges([sheet.getRange(alertFirst, 3, alerts.length, 1)])
+        .build()
+    ]);
+  } catch (err) { /* cosmetic */ }
+
+  row += 2;
+  sheet.getRange(row, 2)
+    .setValue("Every figure here is a live formula over the Direct Orders tab — filter that tab and this panel follows it.")
+    .setFontColor(MUTED).setFontStyle("italic").setFontFamily(FONT).setFontSize(10);
+}
+
+/** Four KPI tiles across: big number, small label under it. */
+function tileRow(sheet, row, tiles) {
+  for (var i = 0; i < tiles.length; i++) {
+    var c = 2 + i * 2;
+    sheet.getRange(row, c, 2, 2).setBackground(TILE_BG)
+      .setBorder(true, true, true, true, false, false, AMBER, SpreadsheetApp.BorderStyle.SOLID);
+    var cell = sheet.getRange(row, c);
+    // MIN(IF(...)) needs ARRAYFORMULA to evaluate the condition across the range rather than
+    // against a single cell. Everything else is a plain aggregate and must NOT be wrapped.
+    cell.setFormula(tiles[i].arrayFormula
+      ? "=ARRAYFORMULA(" + tiles[i].formula.substring(1) + ")"
+      : tiles[i].formula);
+    cell.setNumberFormat(tiles[i].fmt)
+      .setFontFamily(FONT).setFontSize(20).setFontWeight("bold").setFontColor(INK)
+      .setVerticalAlignment("bottom");
+    sheet.getRange(row + 1, c).setValue(tiles[i].label)
+      .setFontFamily(FONT).setFontSize(9.5).setFontColor(SLATE).setVerticalAlignment("top");
+  }
+  sheet.setRowHeight(row, 36);
+  sheet.setRowHeight(row + 1, 20);
+  return row + 3;
+}
+
+function sectionTitle(sheet, row, title) {
+  sheet.getRange(row, 2, 1, 8).setBackground(INK);
+  sheet.getRange(row, 2).setValue(title)
+    .setFontFamily(FONT).setFontSize(12).setFontWeight("bold").setFontColor(ORANGE);
+  sheet.setRowHeight(row, 26);
+  return row + 2;
+}
+
+/**
+ * One breakdown: a caption, a header row, then a single formula that SPILLS its result.
+ *
+ * A spilling QUERY rather than script-written values, so the block grows and shrinks with the data
+ * on its own and the script never leaves last week's longer table half-erased under this week's
+ * shorter one.
+ */
+function queryBlock(sheet, row, caption, headers, formula) {
+  sheet.getRange(row, 2).setValue(caption)
+    .setFontFamily(FONT).setFontSize(10.5).setFontWeight("bold").setFontColor(SLATE);
+  row++;
+  sheet.getRange(row, 2, 1, headers.length).setValues([headers])
+    .setBackground("#F1F5F9").setFontFamily(FONT).setFontSize(9.5).setFontWeight("bold")
+    .setFontColor(SLATE)
+    .setBorder(null, null, true, null, null, null, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
+  row++;
+  sheet.getRange(row, 2).setFormula(formula);
+  sheet.getRange(row, 2, 12, headers.length).setFontFamily(FONT).setFontSize(10);
+  sheet.getRange(row, 3, 12, 1).setNumberFormat(UNITS_FMT);
+  sheet.getRange(row, 4, 12, 1).setNumberFormat(VALUE_FMT);
+  return row + 13;
+}
+
+function spanOf(header, label) {
+  var index = header.indexOf(label);
+  if (index < 0) return null;
+  var letter = columnLetter(index + 1);
+  return "'Direct Orders'!" + letter + ROW_DATA + ":" + letter + LAST_ROW;
+}
+
+/** GROUP BY one column over every order, counting and summing value, biggest first. */
+function groupFormula(header, groupLabel) {
+  var g = spanOf(header, groupLabel), v = spanOf(header, "Sales value (EGP)");
+  if (!g || !v) return '="—"';
+  // "is not null" drops the empty tail of the fixed range, which would otherwise show as a nameless
+  // group holding a total the reader cannot act on.
+  return '=IFERROR(QUERY({' + g + "," + v + '},'
+    + '"select Col1, count(Col2), sum(Col2) where Col1 is not null group by Col1 '
+    + "order by sum(Col2) desc label count(Col2) '', sum(Col2) ''\",0),\"—\")";
+}
+
+/** The same, restricted to HELD orders — the concentration that actually carries risk. */
+function heldGroupFormula(header, groupLabel) {
+  var g = spanOf(header, groupLabel), v = spanOf(header, "Sales value (EGP)"), s = spanOf(header, "Status");
+  if (!g || !v || !s) return '="—"';
+  return '=IFERROR(QUERY({' + g + "," + v + "," + s + '},'
+    + '"select Col1, count(Col2), sum(Col2) where Col3 = \'held\' and Col1 is not null group by Col1 '
+    + "order by sum(Col2) desc label count(Col2) '', sum(Col2) ''\",0),\"—\")";
 }
 
 /** The By Status breakdown, mirroring the .xlsx's second sheet. */
@@ -759,7 +1060,23 @@ function getOrCreateSheet(ss, name, created) {
 
 /** Wipe a sheet to bare metal. Only called when the layout genuinely has to change. */
 function resetSheet(sheet) {
+  // clear() wipes content and formats but NOT merges, banding or conditional-format rules, so a
+  // sheet built by an earlier version keeps all three forever — and the merged brand band in
+  // particular is exactly what makes setFrozenColumns throw. Strip them first, or a fix in this
+  // file never reaches an existing sheet.
   if (sheet.getFilter()) sheet.getFilter().remove();
+  try {
+    var bandings = sheet.getBandings();
+    for (var i = 0; i < bandings.length; i++) bandings[i].remove();
+  } catch (err) { /* none */ }
+  try {
+    sheet.setConditionalFormatRules([]);
+  } catch (err) { /* none */ }
+  try {
+    sheet.getRange(1, 1, Math.max(sheet.getMaxRows(), 1), Math.max(sheet.getMaxColumns(), 1)).breakApart();
+  } catch (err) { /* no merges to break */ }
+  sheet.setFrozenRows(0);
+  sheet.setFrozenColumns(0);
   sheet.clear();
   sheet.clearNotes();
   sheet.setHiddenGridlines(true);
@@ -774,39 +1091,57 @@ function resetSheet(sheet) {
  * the 25-to-39-column upgrade automatically: the header changes, so a rebuild happens once, then
  * never again.
  */
-function headerMatches(sheet, header) {
-  if (sheet.getLastRow() < 2) return false;
+function headerMatches(sheet, header, headerRow) {
+  var at = headerRow || 2;
+  if (sheet.getLastRow() < at) return false;
   var width = sheet.getLastColumn();
   if (width !== header.length) return false;
-  var current = sheet.getRange(2, 1, 1, width).getValues()[0];
+  var current = sheet.getRange(at, 1, 1, width).getValues()[0];
   for (var i = 0; i < header.length; i++) {
     if (String(current[i]) !== String(header[i])) return false;
   }
   return true;
 }
 
+/** Grow the sheet if someone has deleted rows by hand, or every getRange below would throw. */
+function ensureRows(sheet, needed) {
+  var have = sheet.getMaxRows();
+  if (have < needed) sheet.insertRowsAfter(have, needed - have);
+}
+
 /** The Phoenix two-row brand band: black bar, orange title, muted subtitle. */
 function bandTitle(sheet, cols, title, subtitle) {
-  sheet.getRange(1, 1, 1, cols).merge()
+  // PAINTED, not merged.
+  //
+  // Merging row 1 across all 43 columns makes Google refuse setFrozenColumns(1) — "you can't freeze
+  // columns which contain only part of a merged cell". This file used to answer that by giving up
+  // the frozen column, which costs the reader the Status and Requester the moment they scroll
+  // right on a deliberately very wide sheet.
+  //
+  // Filling the row's BACKGROUND and putting the text in an unmerged A1 looks identical: the
+  // adjacent band cells are empty, so the title overflows across them the way any long cell does.
+  // No merge, so the frozen column survives — and unlike the old comment's fear, overflow renders
+  // fine because the text starts inside the frozen pane rather than crossing into it.
+  sheet.getRange(1, 1, 1, cols).setBackground(BLACK);
+  sheet.getRange(1, 1)
     .setValue(title)
-    .setBackground(BLACK)
     .setFontColor(ORANGE)
     .setFontWeight("bold")
     .setFontFamily(FONT)
     .setFontSize(subtitle ? 16 : 12)
     .setVerticalAlignment("middle");
-  sheet.setRowHeight(1, subtitle ? 44 : 28);
+  sheet.setRowHeight(1, subtitle ? 40 : 28);
 
   if (subtitle) {
-    sheet.getRange(2, 1, 1, cols).merge()
+    sheet.getRange(2, 1, 1, cols).setBackground(BLACK);
+    sheet.getRange(2, 1)
       .setValue(subtitle)
-      .setBackground(BLACK)
       .setFontColor(MUTED)
       .setFontStyle("italic")
       .setFontFamily(FONT)
       .setFontSize(10.5)
       .setVerticalAlignment("middle");
-    sheet.setRowHeight(2, 24);
+    sheet.setRowHeight(2, 22);
   }
 }
 
