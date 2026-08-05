@@ -1,6 +1,7 @@
 import { loadRegionCrosswalk } from "@/lib/employees/region-resolver";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isActiveImportEmployee } from "@/lib/imports/employee-lifecycle";
+import { addFullNameHolder } from "@/lib/imports/employee-name-collision";
 import type {
   ExistingEmployeeOrgSeat,
   ExistingImportState,
@@ -128,22 +129,22 @@ async function loadEmployeeState(
 ) {
   let result = await supabase
     .from("employees")
-    .select("hr_id,crm_id,crm_username,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
+    .select("hr_id,full_name,crm_id,crm_username,employment_status,organogram_visible,payroll_eligible,job_title,region_name,line_id,area_id,position_id");
 
   if (
     result.error &&
     (result.error.message.toLowerCase().includes("organogram_visible") ||
       result.error.message.toLowerCase().includes("payroll_eligible"))
   ) {
-    result = await supabase.from("employees").select("hr_id,crm_id,crm_username,employment_status,job_title,region_name,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,full_name,crm_id,crm_username,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_username")) {
-    result = await supabase.from("employees").select("hr_id,crm_id,employment_status,job_title,region_name,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,full_name,crm_id,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error && result.error.message.toLowerCase().includes("crm_id")) {
-    result = await supabase.from("employees").select("hr_id,employment_status,job_title,region_name,line_id,area_id,position_id");
+    result = await supabase.from("employees").select("hr_id,full_name,employment_status,job_title,region_name,line_id,area_id,position_id");
   }
 
   if (result.error) {
@@ -155,6 +156,7 @@ async function loadEmployeeState(
     crm_username?: string | null;
     area_id?: number | null;
     employment_status?: string | null;
+    full_name?: string | null;
     hr_id: string | null;
     job_title?: string | null;
     line_id?: number | null;
@@ -167,6 +169,9 @@ async function loadEmployeeState(
   const crmUsernameToHrId = new Map<string, string>();
   const employeeOrgSeats: ExistingEmployeeOrgSeat[] = [];
   const employeeHrIdByCanonicalKey = new Map<string, { hrId: string }>();
+  // Backs the validator's nickname guard. Built through the SAME helper the validator normalizes
+  // with, so the file side and the directory side cannot disagree about what "same name" means.
+  const employeeHrIdsByFullNameKey = new Map<string, string[]>();
 
   for (const row of rows) {
     const crmId = String(row.crm_id ?? "").trim().toLowerCase();
@@ -188,6 +193,8 @@ async function loadEmployeeState(
       }
     }
 
+    addFullNameHolder(employeeHrIdsByFullNameKey, row.full_name, hrId);
+
     if (hrId && isActiveImportEmployee(row)) {
       employeeOrgSeats.push({
         areaCode: typeof row.area_id === "number" ? lookups?.areaIdToCode.get(row.area_id) ?? null : null,
@@ -205,6 +212,7 @@ async function loadEmployeeState(
     crmUsernameToHrId,
     employeeOrgSeats,
     employeeHrIdByCanonicalKey,
+    employeeHrIdsByFullNameKey,
     employeeHrIds: new Set(
       rows.flatMap((row) => (row.hr_id ? [String(row.hr_id).trim().toUpperCase()] : [])),
     ),

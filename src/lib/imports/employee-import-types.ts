@@ -215,6 +215,12 @@ export type ExistingImportState = {
    * confirm route's upsert conflict-matches the existing row instead of duplicating it.
    */
   employeeHrIdByCanonicalKey?: Map<string, { hrId: string }>;
+  /**
+   * Normalized full name -> the hr_id(s) already carrying it. Backs the nickname guard: an
+   * uploaded nickname that is really a DIFFERENT employee's name is refused rather than written.
+   * A name is NOT unique here (two people genuinely share one), so the value is a list.
+   */
+  employeeHrIdsByFullNameKey?: Map<string, string[]>;
   managerHrIds?: Set<string>;
   terminalEmployeeHrIds?: Set<string>;
   protectedLifecycleHrIds?: Set<string>;
