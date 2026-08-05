@@ -294,7 +294,16 @@ var CHART_WIDTH = 540;
 var MIN_BLOCK_ROWS = 14;
 var ROW_PX = 21;
 
-var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover"];
+/**
+ * The append-only change history. Ported from the Direct Orders sheet, which had it first.
+ *
+ * Deliberately LAST in the tab order and deliberately outside the layout signature: it is the one
+ * tab a rebuild must never touch, because resetting it would throw away the history that is its
+ * entire reason for existing.
+ */
+var BACKUP_TAB = "Backup";
+
+var TAB_ORDER = [EXEC_TAB, COMPARISON_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover", BACKUP_TAB];
 
 // ── Entry points ────────────────────────────────────────────────────────────────
 
@@ -455,6 +464,15 @@ function refreshMarketingRequests() {
     stampSheet(ss, EXEC_TAB, "Everything at a glance — refreshed " + stamp + " (Cairo)");
     stampSheet(ss, COMPARISON_TAB, "Side by side — refreshed " + stamp + " (Cairo)");
     stampSheet(ss, "Cover", "Live — refreshed " + stamp + " (Cairo)");
+  }
+
+  // Last, and inside its own try: the archive is a safety net, so a fault in it must never take
+  // down the refresh that feeds the live tabs. It runs on EVERY pass, rebuild or not — a change
+  // that happened during a rebuild is exactly as worth recording as any other.
+  try {
+    appendBackup(ss, bundle.REQUESTS, stamp);
+  } catch (err) {
+    console.error("Backup append failed (live tabs are unaffected): " + err);
   }
 }
 
@@ -1208,6 +1226,99 @@ function chartType(name) {
   if (name === "BAR") return Charts.ChartType.BAR;
   if (name === "PIE") return Charts.ChartType.PIE;
   return Charts.ChartType.COLUMN;
+}
+
+// ── Backup: the append-only change history ──────────────────────────────────────
+
+/**
+ * Every version of every request, appended, never overwritten.
+ *
+ * The live tabs answer "what is true now". This one answers "what did it say before, and when did
+ * it change" — the question you actually have when a figure is disputed. Ported from the Direct
+ * Orders sheet, which had it first and is the better half of the two designs.
+ *
+ * A row is appended only when its CONTENT hash differs from the last one recorded for that request,
+ * so a request that has not moved costs nothing however long the sheet runs. Only the request code
+ * and the hash are read back — keeping that to two columns is what stops the archive slowing the
+ * 60-second cycle as it grows past a few thousand rows.
+ *
+ * Deliberately outside the layout signature: this tab is APPEND-ONLY, so it must never be reset by
+ * a rebuild. Losing the history to a styling change would defeat the entire point of keeping it.
+ */
+function appendBackup(ss, grid, stamp) {
+  var header = grid[0];
+  var body = grid.slice(1);
+  if (!body.length) return;
+
+  var sheet = ss.getSheetByName(BACKUP_TAB);
+  if (!sheet) sheet = ss.insertSheet(BACKUP_TAB);
+  var META = ["Captured (Cairo)", "Change", "Request code", "Row hash"];
+
+  // Build the header once, on first use. Never rebuilt — see the note above.
+  if (sheet.getLastRow() < 1) {
+    var head = META.concat(header);
+    sheet.getRange(1, 1, 1, head.length)
+      .setValues([head])
+      .setBackground(INK).setFontColor(WHITE).setFontWeight("bold")
+      .setFontFamily(FONT).setFontSize(10.5);
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 160);
+    sheet.setColumnWidth(2, 90);
+    sheet.setColumnWidth(3, 240);
+    sheet.setColumnWidth(4, 110);
+  }
+
+  var lastRow = sheet.getLastRow();
+  var seen = {};
+  if (lastRow > 1) {
+    var known = sheet.getRange(2, 3, lastRow - 1, 2).getValues();
+    for (var k = 0; k < known.length; k++) {
+      // Later rows overwrite earlier ones, so this ends up holding the MOST RECENT hash per request.
+      if (known[k][0]) seen[String(known[k][0])] = String(known[k][1]);
+    }
+  }
+
+  var codeIndex = header.indexOf("Request code");
+  if (codeIndex < 0) return;
+
+  var pending = [];
+  for (var r = 0; r < body.length; r++) {
+    var row = body[r];
+    var code = String(row[codeIndex] || "");
+    if (!code) continue;
+    var hash = hashRow(row);
+    var previous = seen[code];
+    if (previous === hash) continue; // unchanged — nothing to record
+    pending.push([stamp, previous === undefined ? "new" : "updated", code, hash].concat(row));
+  }
+  if (!pending.length) return;
+
+  var width = META.length + header.length;
+  // Normalise width: a short row would otherwise shift every later column.
+  for (var p = 0; p < pending.length; p++) {
+    while (pending[p].length < width) pending[p].push("");
+    pending[p] = pending[p].slice(0, width);
+  }
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, width)
+    .setValues(pending)
+    .setFontFamily(FONT).setFontSize(10).setFontColor(SLATE);
+}
+
+/**
+ * A cheap content fingerprint for one row.
+ *
+ * Not a cryptographic hash and does not need to be — it only has to differ when the row differs.
+ * Joined on \u001f (unit separator), a character no spreadsheet cell contains, so "a","bc" and "ab","c" cannot
+ * collide the way a comma-joined string would.
+ */
+function hashRow(row) {
+  var text = row.join("\u001f");
+  var h = 0;
+  for (var i = 0; i < text.length; i++) {
+    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+  }
+  return String(h);
 }
 
 // ── Cover ───────────────────────────────────────────────────────────────────────
