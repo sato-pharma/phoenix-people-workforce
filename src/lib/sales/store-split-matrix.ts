@@ -78,6 +78,15 @@ function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: numbe
  * that are not in `matrix`; they have nowhere to land and are skipped, and the amount skipped is
  * exactly what `applied` lets the caller state out loud instead of losing.
  */
+/**
+ * The synthetic "Direct orders (company)" pseudo-area — the only row the split must never touch.
+ * Both conditions on purpose: the areaCode is what identifies it, and `isDirect` keeps a real area
+ * that happens to be coded "DIRECT" from being skipped by accident.
+ */
+function isSyntheticDirectArea(area: { areaCode?: string; isDirect?: boolean }): boolean {
+  return Boolean(area.isDirect) && String(area.areaCode ?? "").trim().toUpperCase() === "DIRECT";
+}
+
 export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): StoreSplitApplication {
   const nothingApplied = { qty: 0, value: 0 };
   if (net.size === 0) return { applied: nothingApplied, matrix };
@@ -91,8 +100,18 @@ export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMa
     const regionDelta = matrix.columns.map(() => ({ qty: 0, value: 0 }));
 
     const areas = region.areas.map((area) => {
-      // The synthetic Direct row inside a region has no real area and never participates.
-      if (area.isDirect) return area;
+      // The synthetic "Direct orders (company)" row has no real area and never participates —
+      // identified by its areaCode, NEVER by `isDirect` alone.
+      //
+      // `isDirect` means two different things on an area row, exactly as monthly-closing-export.ts
+      // already spells out: the synthetic Direct pseudo-area (areaCode "DIRECT"), and — in July
+      // 2026 — a REAL area that absorbed hand-mapped direct money and is still Kafr El-Sheikh or
+      // Menoufia. Treating the second as the first skipped those areas' city split on the master
+      // while the Retail tab and the Store Split sheet still applied it, so the redistribution
+      // stopped netting to zero and the master's own grand total moved: Anti Infective 2026-07
+      // came out 22,336.87 EGP short. A total-preserving move that changes the total is the whole
+      // bug in one sentence.
+      if (isSyntheticDirectArea(area)) return area;
       let areaChanged = false;
       const cells = area.cells.map((cell, index) => {
         const column = matrix.columns[index];

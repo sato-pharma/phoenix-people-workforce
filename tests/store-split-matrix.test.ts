@@ -157,4 +157,41 @@ export function runStoreSplitMatrixTests() {
     { qty: -20, value: -6_000 },
     "the amount that left the matrix is reported exactly, so nothing goes missing unexplained",
   );
+
+  // ── A REAL area that absorbed direct money still takes its city split ───────────────────────
+  // `isDirect` marks two different things on an area row: the synthetic "Direct orders (company)"
+  // pseudo-area, and — in July 2026 — a real area that absorbed hand-mapped direct money and is
+  // still Menoufia. Skipping the second broke the invariant this whole module rests on: a
+  // redistribution that nets to zero changed the grand total, because only one side of each move
+  // landed. Anti Infective 2026-07 came out 22,336.87 EGP short on the master that way, while the
+  // Retail tab and the Store Split sheet both showed the move.
+  const julyLike = buildMatrix();
+  const absorbed = julyLike.regions[0]?.areas[1] as { isDirect?: boolean };
+  absorbed.isDirect = true; // D13 "Menoufia 2" — a REAL area, flagged only because it took direct
+
+  const zeroSum = new Map([
+    [areaProductKey("D12", "LA001"), { qty: -30, value: -9_000 }],
+    [areaProductKey("D13", "LA001"), { qty: 30, value: 9_000 }],
+  ]);
+  const withAbsorbed = applyStoreSplitToMatrix(julyLike, zeroSum);
+  assert.equal(
+    matrixSalesValue(withAbsorbed.matrix),
+    matrixSalesValue(julyLike),
+    "a net-zero redistribution cannot change the grand total, even when the receiving area carries direct",
+  );
+  assert.deepEqual(
+    withAbsorbed.applied,
+    { qty: 0, value: 0 },
+    "both sides of the move landed inside the matrix, so nothing is reported as escaping it",
+  );
+  assert.equal(
+    areaOf(withAbsorbed.matrix, "D13")?.rowTotal.salesValue,
+    12_000 + 9_000,
+    "the direct-absorbing area receives its share — it is Menoufia, not the synthetic Direct row",
+  );
+  assert.equal(
+    areaOf(withAbsorbed.matrix, "DIRECT")?.rowTotal.salesValue,
+    5_000,
+    "…while the synthetic Direct row, identified by its areaCode, is still never moved",
+  );
 }
