@@ -98,12 +98,20 @@ export async function POST(request: Request) {
     // from-rows comparison can slice the customer and brick rankings by product.
     const comparisonFromRows = rowLevelActive || matrixFilter.productCodes.length > 0;
 
-    // Only the admin account gets the full 6-sheet workbook (Matrix, Distributor Comparison,
-    // Rankings, Gaps, Summary, plus the Data/Total audit pair). loadMonthlyClosing and
-    // loadMonthlyClosingComparison read company-wide and take no account of WHO is asking — the
+    // The full 6-sheet workbook (Matrix, Distributor Comparison, Rankings, Gaps, Summary, plus the
+    // Data/Total audit pair) goes to Super Admin/system scope AND SFE Manager. loadMonthlyClosing
+    // and loadMonthlyClosingComparison read company-wide and take no account of WHO is asking — the
     // scope passed below is the reader's on-screen filter, a convenience, never a permission
-    // boundary. That is why this stays behind exactly the same admin-only gate it always had.
-    if (access.role === "Super Admin" || access.scope === "system") {
+    // boundary. Confidential products and the Head Office line stay locked out independently, deep
+    // inside loadMonthlyClosingDetails (canViewRestrictedProducts / canViewHeadOfficeLine, CEO /
+    // Super Admin only) — so admitting SFE Manager here cannot leak either.
+    //
+    // SFE Manager was added 2026-08-05 (PR #1785, follow-up fix same day): the admin page already
+    // shows him this exact matrix, view + download only, never publish (publish stays hard-gated to
+    // Super Admin independently in publish/route.ts). His export must match what his own screen
+    // shows rather than silently falling back to the scoped-role branch below, which is built for
+    // District/Regional/National Sales Manager and PM/GPM and returns a different, lesser workbook.
+    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager") {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
       // The combined matrix AND its two halves. The channel tabs need retail-without-direct and
@@ -277,12 +285,12 @@ export async function POST(request: Request) {
       return fileResponse(buffer, `phoenix-monthly-closing-${slug(matrix.line)}-${slug(matrix.period)}.xlsx`);
     }
 
-    // Every other role that can reach the Details tab (sales:export is granted on every scoped
-    // sales role — District/Regional/National Sales Manager, Product/Group Product Manager, and
-    // any other "sales: read" role) can export exactly what that tab shows them: the raw rows
-    // already scoped by loadMonthlyClosingDetails (line, region, per-user product allowlist,
-    // confidential lock). No Matrix/Comparison sheets — those loaders are unscoped and would
-    // leak data outside this caller's access if included here.
+    // Every other scoped sales role (District/Regional/National Sales Manager, Product/Group
+    // Product Manager, and any other "sales: read" role — SFE Manager is carved out above) can
+    // export exactly what the Details tab shows them: the raw rows already scoped by
+    // loadMonthlyClosingDetails (line, region, per-user product allowlist, confidential lock). No
+    // Matrix/Comparison sheets — those loaders are unscoped and would leak data outside this
+    // caller's access if included here.
     const [availableLines, availablePeriods] = await Promise.all([
       listMonthlyClosingLines(),
       listMonthlyClosingPeriods(),

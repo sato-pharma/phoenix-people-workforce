@@ -163,4 +163,20 @@ export function runSfeManagerNavDeadLinksTests() {
     /access\.role\s*!==\s*"SFE Manager"/,
     "Customer Directory's export route must explicitly admit SFE Manager, mirroring the page gate.",
   );
+
+  // (7) Monthly Closing's export route must mirror the page's carve-out too -- fixed 2026-08-05.
+  // SFE Manager sees the full company-wide matrix in the workspace, so his download must be the
+  // SAME full workbook, not the scoped "Details" fallback built for District/Regional/National
+  // Sales Manager and PM/GPM. That fallback is a structurally different file (no Matrix/
+  // Comparison/Rankings/Gaps/Summary sheets, a different filename) -- a silent regression here
+  // hands him back the wrong export instead of a 403, which is exactly what shipped the same day
+  // as the page carve-out and is the bug this test exists to catch.
+  const monthlyClosingExportSource = readFileSync("app/api/sales/monthly-closing/export/route.ts", "utf8");
+  assert.ok(
+    monthlyClosingExportSource.includes(
+      'access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager"',
+    ),
+    "Monthly Closing's export route must admit SFE Manager into the full-workbook branch, mirroring the page's " +
+      "view+download carve-out -- otherwise his Export XLSX click silently downloads the Details-only workbook.",
+  );
 }
