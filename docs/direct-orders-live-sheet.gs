@@ -1,9 +1,17 @@
 /**
  * Phoenix Workforce — Direct Orders live Google Sheet
  * ==================================================================================
- * Rebuilds the owner's Google Sheet every minute from the share-link feed, as a
- * faithful copy of the downloadable Direct Orders .xlsx: the same three tabs, the
- * same 39 columns, the same Phoenix styling, the same totals.
+ * Keeps the owner's Google Sheet in step with the share-link feed, as a faithful
+ * copy of the downloadable Direct Orders .xlsx: the same three tabs, the same 39
+ * columns, the same Phoenix styling, the same totals.
+ *
+ * STRUCTURE ONCE, VALUES EVERY MINUTE
+ *   The layout is only rebuilt when it is actually wrong -- first run, or the column
+ *   set changed. Every other refresh writes VALUES ONLY. The first version rebuilt
+ *   everything each minute, which made the sheet unusable: it cleared and redrew (a
+ *   visible flicker), re-ran autoResize (columns resizing while you read), and
+ *   re-ordered the tabs via setActiveSheet -- which yanked the viewer off whatever
+ *   tab they had open, once a minute.
  *
  * WHY A SCRIPT AND NOT =IMPORTDATA
  *   IMPORTDATA refreshes on Google's own schedule — roughly hourly, not configurable
@@ -120,11 +128,15 @@ function refreshDirectOrders() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var stamp = Utilities.formatDate(new Date(), TZ, "yyyy-MM-dd HH:mm:ss");
 
-  buildOrdersSheet(ss, bundle.orders, stamp);
-  buildByStatusSheet(ss, bundle.byStatus);
-  buildCoverSheet(ss, bundle.summary, bundle.orders.length - 1, stamp);
+  // `created` collects any tab this run had to make. Tab ORDER is only touched when that list is
+  // non-empty, because ordering requires setActiveSheet — which yanks the viewer off whatever tab
+  // they are reading. Doing that once a minute made the sheet unusable.
+  var created = [];
+  buildOrdersSheet(ss, bundle.orders, stamp, created);
+  buildByStatusSheet(ss, bundle.byStatus, created);
+  buildCoverSheet(ss, bundle.summary, bundle.orders.length - 1, stamp, created);
 
-  orderTabs(ss, ["Cover", "Direct Orders", "By Status"]);
+  if (created.length) orderTabs(ss, ["Cover", "Direct Orders", "By Status"]);
 }
 
 // ── Feed parsing ────────────────────────────────────────────────────────────────
@@ -219,26 +231,33 @@ function deriveSections(orders) {
 // ── Sheet builders ──────────────────────────────────────────────────────────────
 
 /** The main table: 39 columns, frozen header, filter, banded rows, grand total. */
-function buildOrdersSheet(ss, grid, stamp) {
+function buildOrdersSheet(ss, grid, stamp, created) {
   var header = grid[0];
   var body = grid.slice(1);
   var cols = header.length;
 
-  var sheet = resetSheet(ss, "Direct Orders");
-  bandTitle(sheet, cols, "Direct Orders — " + body.length + " row(s)", null);
+  var sheet = getOrCreateSheet(ss, "Direct Orders", created);
 
-  // Header row (row 2).
-  var headerRange = sheet.getRange(2, 1, 1, cols);
-  headerRange
-    .setValues([header])
-    .setBackground(BLACK)
-    .setFontColor(WHITE)
-    .setFontWeight("bold")
-    .setFontFamily(FONT)
-    .setFontSize(10.5)
-    .setVerticalAlignment("middle")
-    .setWrap(true);
-  sheet.setRowHeight(2, 34);
+  // Rebuild the STRUCTURE only when it is actually wrong — first run, or the column set changed
+  // (e.g. the 25-to-39 upgrade). On every other refresh only the values are rewritten, which is
+  // what stops the sheet flickering, jumping and resizing itself once a minute.
+  var rebuild = !headerMatches(sheet, header);
+  var previousLastRow = sheet.getLastRow();
+
+  if (rebuild) {
+    resetSheet(sheet);
+    bandTitle(sheet, cols, "Direct Orders", null);
+    sheet.getRange(2, 1, 1, cols)
+      .setValues([header])
+      .setBackground(BLACK)
+      .setFontColor(WHITE)
+      .setFontWeight("bold")
+      .setFontFamily(FONT)
+      .setFontSize(10.5)
+      .setVerticalAlignment("middle")
+      .setWrap(true);
+    sheet.setRowHeight(2, 34);
+  }
 
   // Body (row 3 onward). Numbers are coerced so totals and formats actually apply.
   if (body.length) {
@@ -298,47 +317,68 @@ function buildOrdersSheet(ss, grid, stamp) {
   }
 
   sheet.getRange(2, 1, totalRow - 1, cols).setBorder(true, true, true, true, true, true, GRID, SpreadsheetApp.BorderStyle.SOLID);
-  // Rows 1-2 (brand band + header) stay pinned; row 3 is the first scrolling order.
-  //
-  // No setFrozenColumns here. The row-1 band is merged across all 39 columns, and Google refuses
-  // to freeze a column boundary that would cut a merged cell in half ("you can't freeze columns
-  // which contain only part of a merged cell"). Un-merging to allow it is worse: overflow text
-  // does not render across a frozen-pane edge, so the title would appear truncated the moment you
-  // scrolled right — and truncated text is exactly what this report must never show.
-  sheet.setFrozenRows(2);
-  if (sheet.getFilter()) sheet.getFilter().remove();
-  // Header + body only. Including the TOTAL row would let a filter hide or re-sort the grand
-  // total, which is how a report ends up showing a number that belongs to nothing on screen.
-  if (body.length) sheet.getRange(2, 1, body.length + 1, cols).createFilter();
-  sizeColumns(sheet, header, cols);
 
-  // Refresh stamp, parked clear of the table.
-  sheet.getRange(1, cols + 2)
-    .setValue("Updated " + stamp + " (Cairo)")
-    .setFontColor(MUTED)
-    .setFontFamily(FONT)
-    .setFontSize(9)
-    .setFontStyle("italic");
+  // Orders can disappear (approved, expired, reversed). Clear whatever the previous run left below
+  // the new total row, or a deleted order lingers on screen forever as a ghost.
+  if (previousLastRow > totalRow) {
+    sheet.getRange(totalRow + 1, 1, previousLastRow - totalRow, Math.max(cols, sheet.getLastColumn())).clear();
+  }
+
+  // Structure-only work. Re-running any of this every minute is what made the sheet unusable:
+  // autoResize changes every column width while you are reading, and re-creating the filter throws
+  // away whatever filter YOU had applied.
+  var rowCountChanged = previousLastRow !== totalRow;
+  if (rebuild) {
+    // Rows 1-2 (brand band + header) stay pinned; row 3 is the first scrolling order.
+    //
+    // No setFrozenColumns here. The row-1 band is merged across all 39 columns, and Google refuses
+    // to freeze a column boundary that would cut a merged cell in half ("you can't freeze columns
+    // which contain only part of a merged cell"). Un-merging to allow it is worse: overflow text
+    // does not render across a frozen-pane edge, so the title would appear truncated the moment you
+    // scrolled right — and truncated text is exactly what this report must never show.
+    sheet.setFrozenRows(2);
+    sizeColumns(sheet, header, cols);
+  }
+  if (rebuild || rowCountChanged) {
+    if (sheet.getFilter()) sheet.getFilter().remove();
+    // Header + body only. Including the TOTAL row would let a filter hide or re-sort the grand
+    // total, which is how a report ends up showing a number that belongs to nothing on screen.
+    if (body.length) sheet.getRange(2, 1, body.length + 1, cols).createFilter();
+  }
+
+  // Refresh stamp, parked clear of the table. Value-only, so it never disturbs the layout.
+  var stampCell = sheet.getRange(1, cols + 2);
+  stampCell.setValue("Updated " + stamp + " (Cairo)");
+  if (rebuild) {
+    stampCell.setFontColor(MUTED).setFontFamily(FONT).setFontSize(9).setFontStyle("italic");
+  }
 }
 
 /** The By Status breakdown, mirroring the .xlsx's second sheet. */
-function buildByStatusSheet(ss, grid) {
-  var sheet = resetSheet(ss, "By Status");
+function buildByStatusSheet(ss, grid, created) {
   if (!grid.length) return;
+  var sheet = getOrCreateSheet(ss, "By Status", created);
 
   var header = grid[0];
   var body = grid.slice(1);
   var cols = header.length;
 
-  bandTitle(sheet, cols, "Direct orders by status", null);
+  // Same rule as the orders tab: structure once, values every time. A status can appear or vanish
+  // as orders move, so the row count changes -- but the LAYOUT does not.
+  var rebuild = !headerMatches(sheet, header);
+  var previousLastRow = sheet.getLastRow();
 
-  sheet.getRange(2, 1, 1, cols)
-    .setValues([header])
-    .setBackground(BLACK)
-    .setFontColor(WHITE)
-    .setFontWeight("bold")
-    .setFontFamily(FONT)
-    .setFontSize(10.5);
+  if (rebuild) {
+    resetSheet(sheet);
+    bandTitle(sheet, cols, "Direct orders by status", null);
+    sheet.getRange(2, 1, 1, cols)
+      .setValues([header])
+      .setBackground(BLACK)
+      .setFontColor(WHITE)
+      .setFontWeight("bold")
+      .setFontFamily(FONT)
+      .setFontSize(10.5);
+  }
 
   if (body.length) {
     var values = [];
@@ -378,17 +418,31 @@ function buildByStatusSheet(ss, grid) {
 
   sheet.getRange(2, 2, totalRow - 1, 2).setHorizontalAlignment("right");
   sheet.getRange(2, 1, totalRow - 1, 3).setBorder(true, true, true, true, true, true, GRID, SpreadsheetApp.BorderStyle.SOLID);
-  sheet.setFrozenRows(2);
-  sheet.setColumnWidth(1, 200);
-  sheet.setColumnWidth(2, 120);
-  sheet.setColumnWidth(3, 180);
+
+  // A status that no longer occurs must not linger below the new total row.
+  if (previousLastRow > totalRow) {
+    sheet.getRange(totalRow + 1, 1, previousLastRow - totalRow, 3).clear();
+  }
+
+  if (rebuild) {
+    sheet.setFrozenRows(2);
+    sheet.setColumnWidth(1, 200);
+    sheet.setColumnWidth(2, 120);
+    sheet.setColumnWidth(3, 180);
+  }
 }
 
 /** The Cover / provenance sheet, matching the .xlsx's first sheet. */
-function buildCoverSheet(ss, summary, rowCount, stamp) {
-  var sheet = resetSheet(ss, "Cover");
-  sheet.setColumnWidth(1, 260);
-  sheet.setColumnWidth(2, 460);
+function buildCoverSheet(ss, summary, rowCount, stamp, created) {
+  var sheet = getOrCreateSheet(ss, "Cover", created);
+  // The cover is small and entirely derived, so a full redraw here is cheap and invisible — but
+  // the column widths and brand band are only set when the sheet is actually being built.
+  var rebuild = sheet.getLastRow() < 5;
+  if (rebuild) {
+    resetSheet(sheet);
+    sheet.setColumnWidth(1, 260);
+    sheet.setColumnWidth(2, 460);
+  }
 
   bandTitle(
     sheet,
@@ -448,15 +502,48 @@ function buildCoverSheet(ss, summary, rowCount, stamp) {
 
 // ── Shared helpers ──────────────────────────────────────────────────────────────
 
-/** Get or create a sheet, wiped of both values AND formatting for a clean rebuild. */
-function resetSheet(ss, name) {
+/**
+ * Get a sheet, creating it only if absent. Records creations in `created` so the caller knows a
+ * structural build is needed — and so tab ordering runs once rather than every minute.
+ *
+ * Deliberately does NOT clear. Clearing on every refresh is what made the sheet flicker: the whole
+ * table vanished and reappeared once a minute, which reads as data loss even though it isn't.
+ */
+function getOrCreateSheet(ss, name, created) {
   var sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+    created.push(name);
+  }
+  return sheet;
+}
+
+/** Wipe a sheet to bare metal. Only called when the layout genuinely has to change. */
+function resetSheet(sheet) {
   if (sheet.getFilter()) sheet.getFilter().remove();
   sheet.clear();
   sheet.clearNotes();
   sheet.setHiddenGridlines(true);
   return sheet;
+}
+
+/**
+ * Does this sheet already carry exactly this header on row 2?
+ *
+ * The decision that keeps the sheet still. Same header means the structure is right and only the
+ * VALUES need refreshing — no clear, no restyle, no column resize, no filter churn. It also handles
+ * the 25-to-39-column upgrade automatically: the header changes, so a rebuild happens once, then
+ * never again.
+ */
+function headerMatches(sheet, header) {
+  if (sheet.getLastRow() < 2) return false;
+  var width = sheet.getLastColumn();
+  if (width !== header.length) return false;
+  var current = sheet.getRange(2, 1, 1, width).getValues()[0];
+  for (var i = 0; i < header.length; i++) {
+    if (String(current[i]) !== String(header[i])) return false;
+  }
+  return true;
 }
 
 /** The Phoenix two-row brand band: black bar, orange title, muted subtitle. */
