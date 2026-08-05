@@ -35,6 +35,23 @@ export type DirectOrderRepCounters = {
   /** Orders the 14-day clock killed — the cost of not resolving a held order. */
   expired: number;
   expiredValue: number;
+  /**
+   * Orders refused because the PHARMACY they stood on was ruled false.
+   *
+   * The strongest signal in this table, and it was invisible until 2026-08-05: the query fetched
+   * only `held` and `expired`, so the moment twelve false pharmacies were rejected and their
+   * fourteen orders refused, every counter went to zero and the page reported that there was
+   * nothing to count. The cleanest possible outcome — the fraud found and closed — erased the
+   * record of it.
+   *
+   * Counts ONLY orders whose pharmacy carries `verification_status = 'rejected'`. An ordinary
+   * rejected order is an approver declining a deal on a real pharmacy and says nothing about the
+   * requester; conflating the two would accuse people of something they did not do.
+   */
+  refusedAsFalse: number;
+  refusedAsFalseValue: number;
+  /** Distinct false pharmacies they created — four small ones is a different story from one large. */
+  falsePharmacies: number;
   /** Validation evidence submitted: the rep did use the door. */
   validationsSubmitted: number;
   /** Claimed new, and the Super Admin found it already existed. THE deterrence signal. */
@@ -82,15 +99,24 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
 
   const supabase = getSupabaseAdmin();
 
-  const [{ data: requestRows }, { data: validationRows }, { data: employeeRows }] = await Promise.all([
+  const [
+    { data: requestRows },
+    { data: validationRows },
+    { data: employeeRows },
+    { data: rejectedPharmacyRows },
+  ] = await Promise.all([
     supabase
       .from("direct_order_requests")
-      .select("requester_hr_id, requester_role, status, sales_value, held_at")
-      .in("status", ["held", "expired"]),
+      .select("requester_hr_id, requester_role, status, sales_value, held_at, pharmacy_id")
+      .in("status", ["held", "expired", "rejected"]),
     supabase
       .from("direct_order_pharmacy_validations")
       .select("requested_by_hr_id, status, suggestions_refused"),
     supabase.from("employees").select("hr_id, full_name, job_title, area_name"),
+    // Fetched as a set rather than joined, so a rejected order can be tested against it without a
+    // second round trip per row — every one of those crosses the Atlantic (Railway sfo to Supabase
+    // eu-central-1), and this table already makes three.
+    supabase.from("direct_order_pharmacies").select("id").eq("verification_status", "rejected"),
   ]);
 
   const employees = new Map<string, Row>();
@@ -126,6 +152,9 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       heldValue: 0,
       expired: 0,
       expiredValue: 0,
+      refusedAsFalse: 0,
+      refusedAsFalseValue: 0,
+      falsePharmacies: 0,
       validationsSubmitted: 0,
       matchedExisting: 0,
       validationsRejected: 0,
@@ -136,20 +165,46 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
     return fresh;
   };
 
+  const falsePharmacyIds = new Set(
+    ((rejectedPharmacyRows ?? []) as Row[]).map((row) => String(row.id ?? "")).filter(Boolean),
+  );
+  /** Distinct false pharmacies per rep — counted as a set so two orders on one do not read as two. */
+  const falsePharmaciesByRep = new Map<string, Set<string>>();
+
   for (const row of (requestRows ?? []) as Row[]) {
     const hrId = String(row.requester_hr_id ?? "");
     if (!inScope(hrId)) continue;
+    const status = String(row.status);
+    const pharmacyId = String(row.pharmacy_id ?? "");
+
+    // Decided BEFORE ensure(), on purpose. An ordinary rejected order — an approver declining a
+    // deal on a perfectly real pharmacy — must not create a row here at all, or every requester who
+    // has ever had an order turned down would appear in a table about phantom pharmacies.
+    if (status === "rejected" && !falsePharmacyIds.has(pharmacyId)) continue;
+
     const rep = ensure(hrId, String(row.requester_role ?? ""));
     const value = num(row.sales_value);
-    if (String(row.status) === "held") {
+    if (status === "held") {
       rep.held += 1;
       rep.heldValue += value;
       const heldAt = row.held_at ? String(row.held_at) : null;
       if (heldAt && (!rep.lastHeldAt || heldAt > rep.lastHeldAt)) rep.lastHeldAt = heldAt;
-    } else {
+    } else if (status === "expired") {
       rep.expired += 1;
       rep.expiredValue += value;
+    } else {
+      rep.refusedAsFalse += 1;
+      rep.refusedAsFalseValue += value;
+      const key = canonicalHrIdKey(hrId) ?? hrId;
+      const seen = falsePharmaciesByRep.get(key) ?? new Set<string>();
+      seen.add(pharmacyId);
+      falsePharmaciesByRep.set(key, seen);
     }
+  }
+
+  for (const [key, pharmacies] of falsePharmaciesByRep) {
+    const rep = byRep.get(key);
+    if (rep) rep.falsePharmacies = pharmacies.size;
   }
 
   for (const row of (validationRows ?? []) as Row[]) {
@@ -162,11 +217,15 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
     if (row.suggestions_refused === true) rep.suggestionsRefused += 1;
   }
 
-  // Worst first: the people with the most money parked, then the most matched-existing. A counter
-  // table sorted alphabetically buries the thing it exists to surface.
+  // Worst first, by money claimed on a pharmacy that was not right — parked now (`held`) plus proven
+  // false (`refusedAsFalse`). Sorting on heldValue alone put every rep at zero the moment the false
+  // pharmacies were rejected, which sorted the table alphabetically at exactly the point it was
+  // most worth reading.
+  const atRisk = (r: DirectOrderRepCounters) => r.heldValue + r.refusedAsFalseValue;
   const rows = Array.from(byRep.values()).sort(
     (a, b) =>
-      b.heldValue - a.heldValue ||
+      atRisk(b) - atRisk(a) ||
+      b.refusedAsFalse - a.refusedAsFalse ||
       b.matchedExisting - a.matchedExisting ||
       b.held - a.held ||
       a.name.localeCompare(b.name),
@@ -174,9 +233,10 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
 
   let emptyReason: string | null = null;
   if (rows.length === 0) {
+    // Now genuinely means "nothing has ever gone wrong", not "the problem was cleaned up".
     emptyReason = companyWide
-      ? "No direct order has been held or expired yet — nothing to count."
-      : "Nobody in your team has a held or expired direct order.";
+      ? "No direct order has been held, expired, or refused on a false pharmacy — nothing to count."
+      : "Nobody in your team has a held or expired direct order, or one refused on a false pharmacy.";
   }
 
   return { rows, companyWide, emptyReason };
