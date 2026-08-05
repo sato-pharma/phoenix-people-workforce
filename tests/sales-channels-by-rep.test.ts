@@ -1,0 +1,102 @@
+import assert from "node:assert/strict";
+
+import {
+  channelStems,
+  excludedProductCodes,
+  labelFor,
+  mapChannelsByRepRow,
+  totalsFor,
+} from "../src/lib/sales/channels-by-rep.ts";
+import {
+  HOSPITAL_NAME_KEYWORDS,
+  normalizeCustomerName,
+  STORE_NAME_KEYWORDS,
+} from "../src/lib/sales/customer-channel.ts";
+import { RESTRICTED_PRODUCT_CODES } from "../src/lib/sales/access-scope.ts";
+
+export async function runSalesChannelsByRepTests() {
+  // ── the stems must be DERIVED, never a second copy ──────────────────────────────────────────
+  // customer-channel.ts declares itself THE single edit point: "adding an entry re-classifies all
+  // history". A hardcoded copy in the service or in SQL breaks that silently the first time one is
+  // edited and the other is not. This is not hypothetical — a hand-transcribed copy of these six
+  // words mis-stated the store channel by 8.7M EGP and 94 customers before it was caught.
+  const stems = channelStems();
+  assert.deepEqual(
+    stems.store,
+    STORE_NAME_KEYWORDS.map((k) => normalizeCustomerName(k.stem)),
+    "store stems must be derived from STORE_NAME_KEYWORDS, not copied",
+  );
+  assert.deepEqual(
+    stems.hospital,
+    HOSPITAL_NAME_KEYWORDS.map((k) => normalizeCustomerName(k.stem)),
+    "hospital stems must be derived from HOSPITAL_NAME_KEYWORDS, not copied",
+  );
+  // Folded, so they can be compared against a folded customer name: الشركة -> الشركه.
+  assert.ok(stems.store.includes("الشركه"), "stems must be folded the way a name will be folded");
+  assert.ok(!stems.store.includes(""), "a blank stem would match every name");
+
+  // ── restricted products: excluded by default, revealable only by CEO / Super Admin ───────────
+  // Those three codes are 81.5% of all sales value, so this gate decides whether the tab shows the
+  // business or a fifth of it — and it must fail CLOSED for every other role.
+  assert.deepEqual(
+    excludedProductCodes("Super Admin", false),
+    [...RESTRICTED_PRODUCT_CODES],
+    "restricted products are excluded by DEFAULT even for a Super Admin",
+  );
+  assert.deepEqual(
+    excludedProductCodes("Super Admin", true),
+    [],
+    "a Super Admin who opts in may reveal them",
+  );
+  assert.deepEqual(
+    excludedProductCodes("CEO", true),
+    [],
+    "a CEO who opts in may reveal them",
+  );
+  assert.deepEqual(
+    excludedProductCodes("Medical Rep", true),
+    [...RESTRICTED_PRODUCT_CODES],
+    "opting in must be IGNORED for every other role — API tampering cannot reveal them",
+  );
+
+  // ── attribution buckets ─────────────────────────────────────────────────────────────────────
+  // Sales that reach no person are ~27% of value. They must survive as their own labelled rows,
+  // because a per-rep table that adds to less than the company total is a table that gets
+  // questioned — and the gap is the interesting part, not noise to hide.
+  const rep = mapChannelsByRepRow({
+    seat_id: "SEAT-1", rep_hr_id: "HR-1", rep_name: "Adel Srour",
+    line_code: "cns", area_code: "A1", area_name: "Cairo East",
+    hospital_value: 10, store_value: 20, pharmacy_value: 70, total_value: 100,
+    hospital_customers: 1, store_customers: 2, pharmacy_customers: 7,
+  });
+  assert.equal(rep.attribution, "rep");
+  assert.equal(rep.label, "Adel Srour", "a rep row is labelled with the person's name");
+
+  const vacant = mapChannelsByRepRow({
+    seat_id: "SEAT-2", rep_hr_id: null, rep_name: null,
+    area_code: "A2", area_name: "Giza West", total_value: 50,
+  });
+  assert.equal(vacant.attribution, "vacant-seat", "a seat with no occupant is its own bucket");
+  assert.equal(vacant.label, "Vacant seat — Giza West");
+
+  const unmapped = mapChannelsByRepRow({
+    seat_id: null, rep_hr_id: null, rep_name: null, area_code: null, total_value: 25,
+  });
+  assert.equal(unmapped.attribution, "unmapped", "no seat at all is a third, distinct bucket");
+  assert.equal(unmapped.label, "Not on the seat model");
+
+  // A vacant seat with no area name still says what it is rather than rendering blank.
+  assert.equal(labelFor({ areaCode: null, areaName: null, attribution: "vacant-seat", repName: null }), "Vacant seat");
+
+  // ── totals ──────────────────────────────────────────────────────────────────────────────────
+  const totals = totalsFor([rep, vacant, unmapped]);
+  assert.equal(totals.totalValue, 175, "totals cover every row, attributed or not");
+  assert.equal(
+    totals.unattributedValue,
+    75,
+    "unattributed is the vacant seat plus the unmapped rows — never the rep's",
+  );
+  assert.equal(totals.pharmacyValue, 70);
+  assert.equal(totals.hospitalValue, 10);
+  assert.equal(totals.storeValue, 20);
+}
