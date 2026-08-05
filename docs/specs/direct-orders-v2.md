@@ -4,7 +4,7 @@
 **Status:** Stage 1 shipped as [#1738](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1738)
 and Stage 2 as [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748); both are
 merged and live. All six migrations those two PRs carried are applied in production — verified
-2026-08-06 against `pg_class`/`pg_proc`, not the migration ledger. **7 of 28 items are closed**;
+2026-08-06 against `pg_class`/`pg_proc`, not the migration ledger. **15 of 28 items are closed**;
 every remaining box is open, and section H records exactly what each one is still waiting on.
 **Rule for every item:** it is DONE only when its checkbox is ticked with a link to the PR + the
 test that locks it. Claims without proof do not close an item.
@@ -38,6 +38,13 @@ database ever touches approvals, sales, achievement, or incentives.
       both footprints ("distributor sales count", "a paid collection counts"), and the demotion of a
       provisional pharmacy "so a wrong approval self-corrects". Phantom report:
       `src/lib/direct-orders/phantom-report.ts`, swept by `/api/cron/direct-orders-probation`.
+      **Repaired 2026-08-06** in
+      [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829): the footprint
+      lookup queried `source_of_sales_import_rows.customer_code`, a column that does not exist —
+      PostgREST answered with an error and no count, the code read `count ?? 0`, and so the
+      **promotion half of probation could never fire once.** Two live pharmacies had 23 matching
+      rows between them the whole time. Now filtered on `client_code` and the error is thrown,
+      locked by `tests/direct-orders-pharmacy-standing.test.ts`.
 - [x] **A4. Cleanup of 2026-08-04 data.** The 10 hand-created pharmacies (DOP-000001..10) and
       their 12 requests migrate into the new states. **Open owner decisions:** see section G.
 
@@ -129,9 +136,16 @@ database ever touches approvals, sales, achievement, or incentives.
       validation evidence photos) · order lines (qty, bonus, discount, pharmacy price, value per
       the LOCKED pricing rule) · full chain history (who, when, wrote what) · collection date +
       payment state · Finance-month badge.
-- [ ] **D2. Pharmacy sales history** from SoS shown to approvers (distributors, recent months,
+- [x] **D2. Pharmacy sales history** from SoS shown to approvers (distributors, recent months,
       products, values). Provisional pharmacy → "no history — new pharmacy, probation day X/90"
       in words. An empty table must never read as zero.
+      **Closed by** the retail table in
+      [#1665](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1665) plus the standing
+      prose in [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829) ·
+      `tests/direct-orders-pharmacy-standing.test.ts` — locks "a null probation clock is not day
+      zero — it is no clock at all", "an established pharmacy with no sales must read as not having
+      bought, never as unverified", and that the window renders the domain's sentence rather than
+      inferring anything from `retailHistory.length`.
 - [ ] **D3. Premium, polished design** matching the module's design identity. Desktop = full
       tables; mobile = cards. No truncation, no wrapping. Owner emphasis (twice): the manager-
       facing approval experience is the face of the system — it must feel premium, complete, and
@@ -233,7 +247,7 @@ missing feature — read the middle column before building anything.**
 | B3 area auto-fill | Yes, #1738 (`/api/direct-orders/pharmacies/from-directory`) | No test |
 | C5 visibility from creation | Partly, #1738 (registry grants) | `direct-orders-registry-chain-grants.test.ts` predates it (#1701) and locks SFE decision grants, not read-only-from-creation |
 | D1 detail on one screen | Yes, #1738 (`direct-order-request-detail.tsx`, +142) | The test changed alongside it locks chain/pharmacy-verification rules, not D1's field inventory |
-| D2 pharmacy sales history | **Yes, #1738** — the 2026-08-06 audit said "No"; that was **wrong**, it grepped `src/components/direct-orders/` and the file is at `src/components/approvals-hub/direct-order-request-detail.tsx`. Both halves ship: `loadPharmacyRetailHistory` (SoS distributor sales) and `loadPharmacyOrderHistory` (prior direct orders, this request excluded) | Only a test. The empty state the audit demanded already exists and reads *"No other direct orders recorded for this pharmacy yet — this is its first."* — not a zero |
+| ~~D2 pharmacy sales history~~ | **Yes** — the 2026-08-06 audit said "No"; that was **wrong**, it grepped `src/components/direct-orders/` and the file is at `src/components/approvals-hub/direct-order-request-detail.tsx`. Both halves ship: `loadPharmacyRetailHistory` (SoS distributor sales) and `loadPharmacyOrderHistory` (prior direct orders, this request excluded) | **Now closed** by [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829), which added the missing half — the probation wording, so a provisional pharmacy no longer reads like an established one that merely had a quiet quarter — plus the test |
 | D3 premium design | Yes, #1738 | Needs browser verification at desktop + mobile, not a unit test |
 | D5a Sheets feed | Yes, #1748 | Its tests arrived in #1754 and lock CSV **column parity** only |
 | D5b live web link | Yes, #1748 | Nothing tests the passcode-in-POST-body rule |

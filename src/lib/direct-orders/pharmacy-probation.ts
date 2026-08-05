@@ -66,12 +66,20 @@ async function findFootprint(input: {
   );
 
   for (const pair of pairs) {
-    const { count } = await supabase
+    // `client_code`, NOT `customer_code`. The SoS import table has no column by the latter name —
+    // that is what the DIRECT-ORDER side calls it. PostgREST answers an unknown column with an
+    // error and no count, and the old code read `count ?? 0`, so every lookup silently returned
+    // "no footprint" and the promotion path could never fire once. Two live pharmacies had
+    // footprints the whole time (IS/348325, PS/0001559824 — 23 rows between them).
+    const { count, error } = await supabase
       .from("source_of_sales_import_rows")
       .select("id", { count: "exact", head: true })
       .eq("distributor_code", pair.distributor_code)
-      .eq("customer_code", pair.customer_code)
+      .eq("client_code", pair.customer_code)
       .limit(1);
+    // Never swallow this again: a footprint we FAILED to look up is not a footprint we know is
+    // absent, and the difference decides whether a real pharmacy gets reported as a phantom.
+    if (error) throw error;
     if ((count ?? 0) > 0) {
       return { found: true, reason: `Distributor sales recorded for ${pair.distributor_code}/${pair.customer_code}` };
     }

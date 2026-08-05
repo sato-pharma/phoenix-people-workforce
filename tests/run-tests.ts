@@ -649,6 +649,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
+import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1447,6 +1448,11 @@ await runTest(
 await runTest(
   "the arrival-photo capture stays reachable for every transport type the validator refuses to exempt",
   runOutstationArrivalPhotoCaptureReachableTests,
+);
+
+await runTest(
+  "direct orders pharmacy standing (spec D2: an empty sales table explains itself in words; a null probation clock is never day zero; the footprint query names the column SoS actually has)",
+  runDirectOrdersPharmacyStandingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -72,6 +72,7 @@ export function DirectOrderRequestDetail({
     pharmacyHistory,
     retailHistory,
     retailUnmatchable,
+    pharmacyStanding,
     canSetSalesMonth,
     steps,
     availableActions,
@@ -267,8 +268,18 @@ export function DirectOrderRequestDetail({
             matched. Register it against the distributor that actually supplies it to see them here.
           </p>
         ) : retailHistory.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-slate-500">
-            No distributor sales found for this pharmacy&apos;s customer codes.
+          /* Spec D2: WHY it is empty, not just that it is. A provisional pharmacy and an
+             established one that simply has not bought both produce zero rows, and they are
+             opposite risks — so the sentence comes from the domain, never from a count here. */
+          <p
+            className={`px-4 py-4 text-sm ${
+              pharmacyStanding && pharmacyStanding.trustState !== "trusted"
+                ? "font-semibold text-amber-700"
+                : "text-slate-500"
+            }`}
+          >
+            {pharmacyStanding?.noHistoryNote ??
+              "No distributor sales found for this pharmacy's customer codes."}
           </p>
         ) : (
           <div className="overflow-x-auto">
