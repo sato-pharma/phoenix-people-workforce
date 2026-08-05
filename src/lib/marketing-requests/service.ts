@@ -20,6 +20,7 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
+  loadMarketingEvidencePhotosByEntityIds,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
 } from "@/lib/marketing-requests/evidence-photo-storage";
@@ -175,6 +176,14 @@ export type MarketingDecisionProductLine = {
 export type MarketingDecisionPharmacy = {
   distributorName: string;
   distributorPharmacyCode: string;
+  /**
+   * Signed URL for this pharmacy's own retained shop-front photo, or null when none was kept.
+   *
+   * The pharmacy photo is captured and stored on exactly the same rule as the customer's — two of
+   * the three rows that historically claimed unretained proof were pharmacies, not customers — so
+   * not surfacing it would mean storing evidence nobody can ever look at.
+   */
+  evidencePhotoUrl: string | null;
   notes: string | null;
   pharmacyCode: string;
   pharmacyName: string;
@@ -3054,6 +3063,15 @@ async function loadMarketingDecisionPharmacies(
   const codeById = new Map(codeRows.map((row) => [String(row.id), row]));
   const distributorById = new Map(distributorRows.map((row) => [String(row.id), row]));
 
+  // One index read + one batch signing call for every target pharmacy, rather than a pair per row.
+  // Same never-break-the-screen rule as everything else here: a failure yields an empty map, and
+  // each pharmacy then renders as having no retained image.
+  const evidenceByPharmacyId = await loadMarketingEvidencePhotosByEntityIds({
+    entityIds: pharmacyIds,
+    entityType: "pharmacy",
+    supabase,
+  }).catch(() => new Map<string, { capturedAt: string | null; signedUrl: string }>());
+
   return rows.map((row) => {
     const pharmacy = row.pharmacy_id ? pharmacyById.get(String(row.pharmacy_id)) : undefined;
     const code = row.distributor_code_id ? codeById.get(String(row.distributor_code_id)) : undefined;
@@ -3064,6 +3082,9 @@ async function loadMarketingDecisionPharmacies(
     return {
       distributorName: cleanText(distributor?.display_name) ?? "Unknown distributor",
       distributorPharmacyCode: cleanText(code?.distributor_pharmacy_code) ?? "-",
+      evidencePhotoUrl: row.pharmacy_id
+        ? evidenceByPharmacyId.get(String(row.pharmacy_id))?.signedUrl ?? null
+        : null,
       notes: cleanText(row.notes),
       pharmacyCode: cleanText(pharmacy?.pharmacy_code) ?? "-",
       pharmacyName: cleanText(pharmacy?.display_name) ?? "Unresolved pharmacy",

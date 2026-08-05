@@ -269,6 +269,17 @@ export function MarketingRequestDecisionConfirmation({
                   <p className="mt-1 text-[11px] font-semibold text-slate-500">
                     {pharmacy.distributorName} · vendor code {pharmacy.distributorPharmacyCode} · pharmacy {pharmacy.pharmacyCode}
                   </p>
+                  {/* The pharmacy's own shop front. Captured and stored on the same rule as the
+                      customer's, so it must be visible on the same rule too — storing evidence no
+                      approver can look at is the defect this whole change exists to end. */}
+                  {pharmacy.evidencePhotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      alt={`Live capture of ${pharmacy.pharmacyName}`}
+                      className="mt-1.5 h-40 w-full border border-slate-200 bg-slate-50 object-contain"
+                      src={pharmacy.evidencePhotoUrl}
+                    />
+                  ) : null}
                   {pharmacy.notes ? (
                     <p className="mt-1 text-[11px] font-medium text-slate-600">{pharmacy.notes}</p>
                   ) : null}
