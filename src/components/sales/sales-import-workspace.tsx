@@ -21,6 +21,7 @@ import {
   TrendingUp,
   UploadCloud,
   Users,
+  UserSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
@@ -33,6 +34,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ChannelsByRepTab } from "@/components/sales/channels-by-rep-tab";
 import { CustomersChannelTab } from "@/components/sales/customers-channel-tab";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
 import { MonthlySalesWizard } from "@/components/sales/monthly-sales-wizard";
@@ -943,7 +945,7 @@ function UploadStatusPanel({
   );
 }
 
-type SourceOfSalesTab = "approvals" | "coverage" | "customers" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
+type SourceOfSalesTab = "approvals" | "channels-by-rep" | "coverage" | "customers" | "dashboard" | "mapping" | "monthly-sales" | "products" | "sheets";
 
 export function SalesImportWorkspace({ distributors, initialBatches, initialDashboard, initialError, initialProducts, mappingReferences, profiledDistributorCodes, initialTab, initialProductsSearch, initialQueue, initialQueueError }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1408,6 +1410,18 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             <Users className="h-4 w-4" />
             Customers
           </Button>
+          {/* Channels by Rep — the same three channels, but per rep instead of per customer. */}
+          <Button
+            className={cn(
+              "gap-2 rounded-xl font-black",
+              activeTab === "channels-by-rep" ? "bg-[#0B0B0B] text-white hover:bg-[#F97316]" : "",
+            )}
+            onClick={() => setActiveTab("channels-by-rep")}
+            variant="secondary"
+          >
+            <UserSquare className="h-4 w-4" />
+            Channels by Rep
+          </Button>
         </div>
 
         {actionMessage ? (
@@ -1673,6 +1687,8 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
           />
         ) : activeTab === "coverage" ? (
           <SosCoverageTab bricks={mappingReferences.bricks} />
+        ) : activeTab === "channels-by-rep" ? (
+          <ChannelsByRepTab />
         ) : activeTab === "customers" ? (
           <CustomersChannelTab />
         ) : (
