@@ -269,7 +269,7 @@ export async function runSalesRestrictedProductsTests() {
       clientCode: "C1", clientName: "Client One", clientAddress: null, discount: 0,
       distributorCode: "SF", invoiceDate: "2026-07-01", invoiceNumber: null, isDirect: false,
       officialLine: "CNS", productCode: "LA001", productName: "Lacto Advanced 1", qty: 10,
-      rawRowNumber: 1, regionCode: "R1", regionName: "Region 1", value: 1000,
+      rawRow: {}, rawRowNumber: 1, regionCode: "R1", regionName: "Region 1", value: 1000,
       ...overrides,
     };
   }

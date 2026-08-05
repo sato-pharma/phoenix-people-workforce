@@ -364,6 +364,9 @@ function codedParsedRowToCodedRow(p: ParsedDistributorRow): CodedRow {
     productCode: p.productCode,
     productName: p.productName,
     qty: p.qty,
+    // The coded path already captured the source row via rawImportRow — carry it rather than
+    // dropping it here, so both import routes agree about what the file contained.
+    rawRow: p.rawRow,
     rawRowNumber: p.rowNumber,
     regionCode: p.regionCode,
     regionName: p.regionName,

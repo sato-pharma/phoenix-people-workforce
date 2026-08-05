@@ -232,6 +232,37 @@ export function headerRowTexts(sheet: ExcelJS.Worksheet, profile?: DistributorPr
   return texts;
 }
 
+/**
+ * The file's own column headings, by column index — read once per sheet.
+ *
+ * HeaderMap.col is keyed by a NORMALIZED heading (lowercased, trimmed), which is right for lookup
+ * and useless for provenance: it cannot tell you the file said "ADDRESSSHIP" rather than "Address".
+ * These are the headings verbatim, so a stored row can be read back and compared against what a
+ * profile expects.
+ *
+ * EVERY heading is captured, not just the ones the profile maps. A column nobody mapped is exactly
+ * the column you need to see when a field arrives empty and the question is whether the distributor
+ * ever sent it.
+ */
+function sourceColumnLabels(sheet: ExcelJS.Worksheet, map: HeaderMap): Map<number, string> {
+  const labels = new Map<number, string>();
+  sheet.getRow(map.headerRow).eachCell({ includeEmpty: false }, (cell, c) => {
+    const label = cellText(cell).trim();
+    if (label) labels.set(c, label);
+  });
+  return labels;
+}
+
+/** One source row, keyed by the file's own headings. Empty cells are dropped, not stored as "". */
+function rawSourceRow(row: ExcelJS.Row, labels: Map<number, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [column, label] of labels) {
+    const text = cellText(row.getCell(column)).trim();
+    if (text) out[label] = text;
+  }
+  return out;
+}
+
 function firstValue(row: ExcelJS.Row, map: HeaderMap, columns: string[] | undefined): string {
   for (const name of columns ?? []) {
     const c = map.col.get(normalizeHeaderKey(name));
@@ -251,6 +282,8 @@ export function normalizeRows(
   maps: Crosswalks,
 ): NormalizeResult {
   const header = buildHeaderMap(sheet, profile);
+  // Read once per sheet, not once per row: the header row does not change while we walk the data.
+  const columnLabels = sourceColumnLabels(sheet, header);
   // Honour explicit per-distributor date format; only auto-detect when not set.
   // All Egyptian distributors are DD-MM-YYYY so auto-detection is unnecessary and can mis-parse
   // a month where every day-value is <= 12 (e.g. early-month data → month-first mis-read).
@@ -440,6 +473,7 @@ export function normalizeRows(
       productCode,
       productName: product?.productName ?? productCode,
       qty: Number.isFinite(qty) ? qty : 0,
+      rawRow: rawSourceRow(row, columnLabels),
       rawRowNumber: r,
       regionCode: hierarchy.regionCode,
       regionName: hierarchy.regionName,

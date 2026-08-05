@@ -9,6 +9,9 @@ import type { CodedRow } from "../src/lib/sales/normalizer/types.ts";
 //   20260603175151_monthly_closing_value_recompute    — discount
 //   20260603213432_customer_directory                 — client_code, client_name, client_address
 //   20260604101304_direct_channel                     — is_direct
+//   sos_import_rows_client_address_source             — client_address_source (provenance: NULL =
+//                                                       the distributor's file, else where an
+//                                                       inferred address came from)
 // Note: there is NO block_name and NO brick_name column on this table (brick_name lives on
 // source_of_sales_bricks). The persisted insert object must stay a subset of this set, otherwise
 // PostgREST rejects (or silently drops) the whole "Import (validated)" batch.
@@ -36,8 +39,20 @@ const VALID_IMPORT_ROW_COLUMNS = new Set([
   "client_code",
   "client_name",
   "client_address",
+  "client_address_source",
   "is_direct",
 ]);
+
+// A source row as the file had it, keyed by the file's own headings — deliberately including a
+// column no profile maps ("Sales Rep"), because an unmapped column is exactly what you need to see
+// when a field arrives empty and the question is whether the distributor ever sent it.
+const SOURCE_ROW = {
+  ADDRESSSHIP: "10 Nile St",
+  "Customer Code": "C123",
+  "Customer Name": "Pharmacy X",
+  QTY: "6",
+  "Sales Rep": "Mahmoud",
+};
 
 function codedRow(overrides: Partial<CodedRow> = {}): CodedRow {
   return {
@@ -58,6 +73,7 @@ function codedRow(overrides: Partial<CodedRow> = {}): CodedRow {
     productCode: "LA001",
     productName: "Lacto 1",
     qty: 6,
+    rawRow: { ...SOURCE_ROW },
     rawRowNumber: 2,
     regionCode: "CA",
     regionName: "Cairo",
@@ -104,6 +120,28 @@ export async function runSosNormalizerPersistShapeTests() {
   assert.equal(second!.brick_id, "B2");
   assert.equal(second!.row_number, 2);
   assert.equal(second!.value, 30);
+
+  // The address the engine resolved must SURVIVE the persist step. This was written as a literal
+  // null, which is why client_address was empty on 100% of 294,445 production rows for all 15
+  // distributors while client_name — one line down, same mechanism — was 100% populated. The
+  // emptiness read as "the distributors do not send an address"; it was simply never stored.
+  assert.equal(first!.client_address, "10 Nile St", "client_address must carry, not be discarded");
+  assert.equal(
+    buildNormalizedImportRows([codedRow({ clientAddress: null })], "b")[0]!.client_address,
+    null,
+    "a row with no address still persists null rather than an empty string",
+  );
+
+  // raw_row must carry the source row keyed by the FILE's own headings, including columns no
+  // profile maps. It was a literal {}, so 282,215 of 294,445 rows hold no record of what their
+  // distributor actually sent — which is why the real header names could not be recovered from the
+  // database when the address came out empty.
+  assert.deepEqual(first!.raw_row, SOURCE_ROW, "raw_row must be the source row, not {}");
+  assert.equal(
+    (first!.raw_row as Record<string, string>)["Sales Rep"],
+    "Mahmoud",
+    "raw_row must keep columns the profile does not map — those are the ones you need when a field is empty",
+  );
 
   // Non-finite numerics fall back to 0 (never NaN, which would break the numeric columns).
   const [naNsafe] = buildNormalizedImportRows([codedRow({ qty: Number.NaN, value: Number.NaN, discount: Number.NaN, bonusQty: Number.NaN })], "batch-2");

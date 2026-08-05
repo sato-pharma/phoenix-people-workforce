@@ -106,6 +106,15 @@ export type CodedRow = {
   productCode: string;
   productName: string;
   qty: number;
+  /**
+   * The source row exactly as the file had it, keyed by the file's OWN column headings.
+   *
+   * Required, not optional, so a future producer of a CodedRow cannot quietly omit it — which is
+   * how `raw_row` came to be written as `{}` on 282,215 of 294,445 rows, leaving no record of what
+   * columns a distributor actually sent. That mattered: when the customer address came out empty
+   * for every row, the file's real headers could not be recovered from the database to prove why.
+   */
+  rawRow: Record<string, string>;
   rawRowNumber: number;
   regionCode: string;
   regionName: string;
