@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 import { PharmacyComboBox, type PharmacySearchHit } from "@/components/direct-orders/pharmacy-combo-box";
@@ -56,19 +57,9 @@ const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} E
 const bonusCell = (row: DirectOrderApprovalListItem) =>
   row.dealType === "discount" ? (row.discountPct == null ? "—" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
-const STATUS_TONE: Record<string, string> = {
-  pending_approval: "bg-amber-100 text-amber-800",
-  approved: "bg-emerald-100 text-emerald-800",
-  rejected: "bg-rose-100 text-rose-800",
-  returned: "bg-slate-200 text-slate-700",
-  reversed: "bg-slate-200 text-slate-700",
-  draft: "bg-slate-100 text-slate-600",
-  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
-  held: "bg-orange-100 text-orange-800",
-  expired: "bg-slate-300 text-slate-600",
-  // Cancelled = withdrawn by its requester while held (audit F3).
-  cancelled: "bg-zinc-200 text-zinc-700",
-};
+// The tone map moved to @/components/direct-orders/direct-order-status-pill. This page rendered the
+// pill inline rather than through a component, which is why it was the easiest of the four to miss
+// (spec C2).
 
 function labelClass() {
   return "block text-[11px] font-black uppercase tracking-wider text-slate-500";
@@ -583,9 +574,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                     <td className="px-3 py-2">{r.pharmacyName}</td>
                     <td className="px-3 py-2">
-                      <span className={`inline-block px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${STATUS_TONE[r.status] ?? "bg-slate-100 text-slate-600"}`}>
-                        {r.status.replace(/_/g, " ")}
-                      </span>
+                      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} />
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                       {r.status === "pending_approval" ? r.activeStepLabel || "—" : "—"}

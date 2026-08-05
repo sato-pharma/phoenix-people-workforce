@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Send } from "lucide-react";
 
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
 
@@ -68,27 +69,9 @@ const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} E
 const bonusCell = (row: DirectOrderApprovalListItem) =>
   row.dealType === "discount" ? (row.discountPct == null ? "-" : `${row.discountPct}%`) : row.bonus.toLocaleString("en-US");
 
-const STATUS_TONE: Record<string, string> = {
-  pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
-  approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  rejected: "bg-rose-50 text-rose-700 ring-rose-200",
-  returned: "bg-sky-50 text-sky-700 ring-sky-200",
-  reversed: "bg-slate-100 text-slate-600 ring-slate-200",
-  draft: "bg-slate-50 text-slate-500 ring-slate-200",
-  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
-  held: "bg-orange-50 text-orange-700 ring-orange-200",
-  expired: "bg-slate-200 text-slate-500 ring-slate-300",
-  // Cancelled = withdrawn by its requester while held (audit F3).
-  cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-300",
-};
-
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ring-1 ${STATUS_TONE[status] ?? "bg-slate-50 text-slate-500 ring-slate-200"}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  );
-}
+// The tone map and the pill moved to @/components/direct-orders/direct-order-status-pill
+// (variant="ring" keeps this page's look). A requester's own list is the surface where a plain
+// "Approved" misleads most — it is their order and their money (spec C2).
 
 const fieldLabelClassName = "mb-1.5 block text-[11px] font-black uppercase tracking-wide text-slate-500";
 
@@ -513,7 +496,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
               <PortalRecordCard
                 title={r.productName}
                 meta={`${r.line} - ${r.pharmacyName}`}
-                status={<StatusPill status={r.status} />}
+                status={<DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} variant="ring" />}
                 accent={r.status === "approved" ? "emerald" : r.status === "rejected" ? "rose" : "orange"}
                 actions={
                   <Link
@@ -579,7 +562,7 @@ export function DirectOrderPortalSubmit({ products, areas, bricks, distributors,
                       </td>
                       <td className="px-3 py-2 text-right font-bold tabular-nums">{money(r.salesValue)}</td>
                       <td className="px-3 py-2">{r.pharmacyName}</td>
-                      <td className="px-3 py-2"><StatusPill status={r.status} /></td>
+                      <td className="px-3 py-2"><DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} variant="ring" /></td>
                       <td className="whitespace-nowrap px-3 py-2 text-slate-600">
                         {r.status === "pending_approval" ? r.activeStepLabel || "-" : "-"}
                       </td>

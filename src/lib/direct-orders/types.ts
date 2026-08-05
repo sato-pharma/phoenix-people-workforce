@@ -84,6 +84,27 @@ export function normalizePharmacyVerificationStatus(
   return "pending_review";
 }
 
+/**
+ * Should this order be shown as "approved — awaiting Finance month"? (spec C2)
+ *
+ * Domain logic, not presentation, which is why it lives here beside the other status predicate
+ * rather than inside the pill that renders it. The tests run under
+ * `node --experimental-strip-types`, which cannot load a .tsx file at all — so a rule kept in the
+ * component could only ever be checked by matching its source text, and a source match proves a
+ * string is present, not that the rule is right.
+ *
+ * That distinction matters here because production cannot check it either: on 2026-08-05 every
+ * direct order was rejected, leaving zero approved rows and zero rows carrying a sales_month.
+ * Neither the case where the badge must appear nor the case where it must stay hidden exists in the
+ * data, so this function is the only place the behaviour can actually be proven.
+ */
+export function showsAwaitingFinanceMonth(
+  status: DirectOrderStatus | string,
+  salesMonth: string | null,
+): boolean {
+  return String(status) === "approved" && !salesMonth;
+}
+
 export function isTerminalDirectOrderStatus(status: DirectOrderStatus): boolean {
   return (
     status === "approved" ||
@@ -358,6 +379,17 @@ export type DirectOrderApprovalListItem = {
   /** Distributor NAMES only ("Ibn Sina · Overseas"); the name→code pairs live on the detail. */
   distributorNames: string;
   status: DirectOrderStatus;
+  /**
+   * The month Finance booked this order into, or null.
+   *
+   * On this list type specifically, because `approved` alone is misleading everywhere it is shown.
+   * CEO approval never injects sales (the GOLDEN RULE, spec C2) — injection happens only when the
+   * Finance Manager books the order into a month. Without this field the four surfaces that render
+   * an approval list item can only say "Approved", which reads as "the money is counted" when it is
+   * not. On 2026-08-05 two orders sat approved with a null month and nothing injected; nothing on
+   * screen said so.
+   */
+  salesMonth: string | null;
   createdAt: string;
   decidedAt: string | null;
   /** The rung currently waiting (empty for terminal requests). */

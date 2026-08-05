@@ -1,32 +1,15 @@
 import Link from "next/link";
 
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { formatDealValueLabelled } from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
 
-function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] }) {
-  const tone: Record<string, string> = {
-    pending_approval: "bg-amber-100 text-amber-800",
-    approved: "bg-emerald-100 text-emerald-800",
-    rejected: "bg-rose-100 text-rose-800",
-    returned: "bg-slate-200 text-slate-700",
-    reversed: "bg-slate-200 text-slate-700",
-    draft: "bg-slate-100 text-slate-600",
-    // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
-    held: "bg-orange-100 text-orange-800",
-    expired: "bg-slate-300 text-slate-600",
-    // Cancelled = withdrawn by its requester while held (audit F3). Zinc, not slate, so it cannot be
-    // mistaken at a glance for `expired` — one is the requester tidying up, the other is neglect.
-    cancelled: "bg-zinc-200 text-zinc-700",
-  };
-  return (
-    <span className={`inline-block px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${tone[status] ?? "bg-slate-100 text-slate-600"}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  );
-}
+// The status pill moved to @/components/direct-orders/direct-order-status-pill. It was a local copy
+// here and three near-identical copies elsewhere, which is exactly why "Approved" could not be made
+// to say "awaiting Finance month" without the same edit landing in four files (spec C2).
 
 function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[]; base: string; showWaiting: boolean }) {
   if (rows.length === 0) {
@@ -87,7 +70,7 @@ function Table({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[
               <td className="whitespace-nowrap px-3 py-2 text-slate-700">
                 {row.medicalRepVacant ? "Vacant" : row.medicalRepName || "—"}
               </td>
-              <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "—" : <StatusPill status={row.status} />}</td>
+              <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "—" : <DirectOrderStatusPill status={row.status} salesMonth={row.salesMonth} />}</td>
               <td className="px-3 py-2 text-slate-600">{shortDate(row.createdAt)}</td>
               <td className="px-3 py-2 text-right">
                 <Link href={`${base}/${encodeURIComponent(row.id)}`} className="font-bold text-orange-600 hover:text-orange-700">
