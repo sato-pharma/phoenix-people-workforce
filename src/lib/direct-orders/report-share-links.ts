@@ -155,7 +155,7 @@ export async function revokeDirectOrderReportShareLink(access: AccessContext, li
     .select("id, created_by_hr_id, token")
     .eq("id", linkId)
     .maybeSingle();
-  if (!row) notFoundError("Share link not found.");
+  if (!row) throw notFoundError("Share link not found.");
   const isAdmin = access.scope === "system" || access.role === "Super Admin";
   const owns = String((row as { created_by_hr_id: string }).created_by_hr_id).toUpperCase() === (access.hrId ?? "").toUpperCase();
   if (!isAdmin && !owns) throw forbiddenError("You can only revoke a link you created.");
@@ -194,7 +194,7 @@ export async function resolveDirectOrderReportShareLink(input: {
   surface: "live" | "feed";
 }): Promise<ResolvedShareLink> {
   const token = String(input.token ?? "").trim();
-  if (!token) notFoundError("Link not found.");
+  if (!token) throw notFoundError("Link not found.");
 
   const supabase = getSupabaseAdmin();
   const { data: row } = await supabase
@@ -204,9 +204,9 @@ export async function resolveDirectOrderReportShareLink(input: {
     .maybeSingle();
   // Same answer for "no such link" and "wrong surface": a probing caller learns nothing about
   // which tokens exist.
-  if (!row) notFoundError("Link not found.");
+  if (!row) throw notFoundError("Link not found.");
   const link = row as Record<string, unknown>;
-  if (String(link.surface) !== input.surface) notFoundError("Link not found.");
+  if (String(link.surface) !== input.surface) throw notFoundError("Link not found.");
   if (link.revoked_at) throw forbiddenError("This link has been revoked.");
   if (new Date(String(link.expires_at)).getTime() < Date.now()) throw forbiddenError("This link has expired.");
 

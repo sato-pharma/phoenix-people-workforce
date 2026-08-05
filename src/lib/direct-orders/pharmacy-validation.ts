@@ -194,7 +194,7 @@ export async function requestDirectOrderPharmacyValidation(
     .select("id, area_code, verification_status")
     .eq("id", pharmacyId)
     .maybeSingle();
-  if (!pharmacy) notFoundError("Pharmacy not found.");
+  if (!pharmacy) throw notFoundError("Pharmacy not found.");
 
   const areaCode = (pharmacy as { area_code?: string | null }).area_code ?? null;
   // Resolved SERVER-SIDE from the stored geography — never taken from the browser, which is the
@@ -419,7 +419,7 @@ export async function decideDirectOrderPharmacyValidation(
     .select("*")
     .eq("id", input.validationId)
     .maybeSingle();
-  if (!row) notFoundError("Validation not found.");
+  if (!row) throw notFoundError("Validation not found.");
   if (String((row as { status?: string }).status ?? "") !== "pending") {
     badRequest("This validation has already been decided.");
   }
