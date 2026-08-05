@@ -149,6 +149,46 @@ function bucketFor(category: DeductionsCategory): keyof DeductionBuckets {
 }
 
 /**
+ * The DAYS this candidate actually charges. NEVER a count of dates.
+ *
+ * THE BUG THIS CLOSES (found 2026-08-05 on production; armed, not yet fired).
+ * `candidateAmount` scaled by `resolveAppliedDeductionDates().length` — a COUNT
+ * OF DATES — against `rawValue`, which is measured in DAYS and is routinely
+ * FRACTIONAL. For CRM the two coincide (5 days = 5 dates), which is why this
+ * survived review. Fingerprint breaks it: a late arrival is 0.13 days carrying
+ * ONE date, so `estimate / 0.13 * 1` rescaled every partial-day deduction to a
+ * FULL day.
+ *
+ * Measured on live July 2026 candidates: 62 rows across 21 employees, 26,671.23
+ * EGP of real deductions that would have reached the sheet as 70,545.20 EGP —
+ * +43,873.97 EGP, worst single row 14.3x (0.07 days: 15.73 -> 224.71 EGP).
+ * Nothing had been charged only because every fractional row was still Pending;
+ * approving one was all it took. The module's own publish path never had this —
+ * it uses `appliedAmount ?? estimatedAmount` and does not scale — so the two
+ * screens disagreed on the same rows, which is the exact failure this bridge
+ * was built to end.
+ *
+ * The reviewer's stored `appliedValue` is authoritative when present, and in
+ * practice it always is: `resolveDecisionCharge` writes it (plus an
+ * `appliedAmount`, which short-circuits before this is reached) whenever days
+ * are narrowed. The pro-rata fallback covers a row carrying narrowed DATES but
+ * no stored day count, where the FRACTION of days kept is the only honest
+ * reading — the same apportionment `clipLeaveToMonth` already applies, and
+ * deliberately not a plain re-count.
+ */
+export function chargedDeductionDays(candidate: DeductionsCandidateWithDecision): number {
+  const stated = candidate.decision?.appliedValue;
+  if (stated != null && Number.isFinite(stated)) return stated;
+
+  const detected = candidate.dates.length;
+  const kept = resolveAppliedDeductionDates(candidate).length;
+  // Never narrowed (or nothing to apportion against): the candidate charges
+  // exactly what the detection engine measured, fraction and all.
+  if (detected === 0 || kept === detected) return candidate.rawValue;
+  return Math.round(candidate.rawValue * (kept / detected) * 100) / 100;
+}
+
+/**
  * One candidate's payable amount. Returns 0 rather than null for an
  * unresolvable row: the candidate passed the module's eligibility gate, so it
  * belongs on the sheet, and a null here would silently drop it instead.
@@ -159,7 +199,7 @@ export function candidateAmount(candidate: DeductionsCandidateWithDecision): num
 
   if (candidate.unit !== "days") return roundCurrency(candidate.estimatedAmount ?? 0);
 
-  const charged = resolveAppliedDeductionDates(candidate).length;
+  const charged = chargedDeductionDays(candidate);
   const scaled = scaleDeductionAmountToDays({
     estimatedAmount: candidate.estimatedAmount,
     rawValue: candidate.rawValue,
@@ -193,7 +233,10 @@ export function buildDeductionBuckets(
     entry.lines.push({
       category: candidate.category,
       dates,
-      days: candidate.unit === "days" ? dates.length : 0,
+      // The charged DAYS, not `dates.length` — same unit error the amount had,
+      // and the step sums these into the Deduction Days column, so a 0.13-day
+      // late arrival must not be reported to HR as a whole day off.
+      days: candidate.unit === "days" ? chargedDeductionDays(candidate) : 0,
       amount,
       reason: candidate.reason ?? "",
       status: candidate.decision?.decisionStatus ?? "Pending",

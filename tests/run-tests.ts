@@ -630,6 +630,7 @@ import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closin
 import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
 import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-office.test.ts";
 import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
+import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1389,6 +1390,11 @@ await runTest(
 await runTest(
   "closing region grouping is per line (Anti Infective by organogram, Pedia and CNS by geography, gate consulted before the fetch)",
   runClosingRegionGroupingPerLineTests,
+);
+
+await runTest(
+  "payroll fractional deduction days (a 0.13-day late arrival charges 377.42 EGP, never a whole day at 2,903.23)",
+  runPayrollFractionalDeductionDayScalingTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
