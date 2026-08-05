@@ -6,6 +6,11 @@ import { assertPermission, systemAccessContext } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  DIRECT_ORDER_REPORT_COLUMNS,
+  directOrderReportRowCells,
+  summariseDirectOrderReport,
+} from "@/lib/direct-orders/report-columns";
+import {
   filterDirectOrderReportRows,
   parseDirectOrderReportFilters,
 } from "@/lib/direct-orders/report-filters";
@@ -249,33 +254,63 @@ export async function resolveDirectOrderReportShareLink(input: {
   };
 }
 
-/** CSV for Google Sheets IMPORTDATA. RFC4180 quoting — a pharmacy name with a comma must survive. */
+/** RFC4180 quoting — a pharmacy name containing a comma must survive the round trip. */
+function csvCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * CSV of the order table for the owner's live Google Sheet.
+ *
+ * The columns are `DIRECT_ORDER_REPORT_COLUMNS` — the SAME array the downloadable .xlsx uses, not a
+ * parallel list. The first cut of this function carried its own hand-written 25-column subset,
+ * which meant the live Sheet and the export were already two different reports on the day they
+ * shipped. They now cannot drift, because there is only one definition of a Direct Orders row.
+ */
 export function buildDirectOrderReportCsv(rows: DirectOrderReportRow[]): string {
-  const headers = [
-    "Request ID", "Status", "Requester", "Role", "Line", "Product code", "Product",
-    "Quantity", "Bonus", "Deal type", "Discount %", "Sales value (EGP)",
-    "Pharmacy", "Pharmacy code", "Brick", "Area", "Region",
-    "Collection date", "Sales month", "Payment date", "Paid", "Remaining",
-    "Submitted", "Decided", "Waiting on",
-  ];
-  const cell = (value: unknown): string => {
-    if (value === null || value === undefined) return "";
-    const text = String(value);
-    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-  };
-  const lines = [headers.map(cell).join(",")];
-  for (const r of rows) {
-    lines.push(
-      [
-        r.id, r.status, r.requesterName, r.requesterRole, r.line, r.productCode, r.productName,
-        r.qty, r.bonus, r.dealType, r.discountPct ?? "", r.salesValue,
-        r.pharmacyName, r.pharmacyCode, r.brickName ?? "", r.areaName ?? "", r.regionName ?? "",
-        r.collectionDate ?? "", r.salesMonth ?? "", r.paymentDate ?? "", r.paidAmount ?? "", r.remainingAmount ?? "",
-        r.createdAt, r.decidedAt ?? "", r.activeStepLabel,
-      ].map(cell).join(","),
-    );
+  const lines = [DIRECT_ORDER_REPORT_COLUMNS.map((column) => csvCell(column.label)).join(",")];
+  for (const row of rows) {
+    lines.push(directOrderReportRowCells(row).map(csvCell).join(","));
   }
-  // Leading BOM so Excel opens Arabic pharmacy names correctly instead of as mojibake — the same
-  // failure that made tonight's first emails unreadable.
+  // Leading BOM so Excel opens Arabic pharmacy names correctly instead of as mojibake.
   return `﻿${lines.join("\r\n")}\r\n`;
+}
+
+/**
+ * The whole workbook as one payload: the cover's headline figures, the By Status breakdown, and
+ * the full order table — mirroring the three sheets of the .xlsx export.
+ *
+ * Delivered as ONE response with `#`-prefixed section markers rather than three endpoints, because
+ * every section then describes the same instant. Three sequential fetches of a live report could
+ * not promise that, and a cover row reading "14 orders" above a table listing 15 is exactly the
+ * kind of quiet inconsistency that destroys trust in a number.
+ */
+export function buildDirectOrderReportBundleCsv(rows: DirectOrderReportRow[], scope: string): string {
+  const { totalValue, approvedValue, totalUnits, byStatus } = summariseDirectOrderReport(rows);
+  const out: string[] = [];
+
+  out.push("#SUMMARY");
+  out.push(["Metric", "Value"].map(csvCell).join(","));
+  const summaryRows: Array<[string, string]> = [
+    ["Visibility scope", scope],
+    ["Rows", String(rows.length)],
+    ["Total sales value (EGP)", totalValue.toFixed(2)],
+    ["Approved sales value (EGP)", approvedValue.toFixed(2)],
+    ["Total units", String(totalUnits)],
+  ];
+  for (const [label, value] of summaryRows) out.push([label, value].map(csvCell).join(","));
+
+  out.push("#BYSTATUS");
+  out.push(["Status", "Requests", "Sales value (EGP)"].map(csvCell).join(","));
+  for (const entry of byStatus) {
+    out.push([entry.status, entry.count, entry.value.toFixed(2)].map(csvCell).join(","));
+  }
+
+  out.push("#ORDERS");
+  out.push(DIRECT_ORDER_REPORT_COLUMNS.map((column) => csvCell(column.label)).join(","));
+  for (const row of rows) out.push(directOrderReportRowCells(row).map(csvCell).join(","));
+
+  return `﻿${out.join("\r\n")}\r\n`;
 }

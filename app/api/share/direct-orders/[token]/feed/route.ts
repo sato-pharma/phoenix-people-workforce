@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  buildDirectOrderReportBundleCsv,
   buildDirectOrderReportCsv,
   resolveDirectOrderReportShareLink,
 } from "@/lib/direct-orders/report-share-links";
@@ -30,7 +31,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
   try {
     const { token } = await params;
     const resolved = await resolveDirectOrderReportShareLink({ token, surface: "feed" });
-    const csv = buildDirectOrderReportCsv(resolved.rows);
+    // ?bundle=1 returns the cover figures, the by-status breakdown and the order table in ONE
+    // response, so the Sheet's three tabs are always the same snapshot. The bare form stays a plain
+    // single-table CSV, because an IMPORTDATA formula cannot skip section markers.
+    const wantsBundle = new URL(request.url).searchParams.get("bundle") === "1";
+    const csv = wantsBundle
+      ? buildDirectOrderReportBundleCsv(resolved.rows, resolved.scope)
+      : buildDirectOrderReportCsv(resolved.rows);
     return new NextResponse(csv, {
       status: 200,
       headers: {
