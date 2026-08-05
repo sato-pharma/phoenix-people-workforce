@@ -84,8 +84,21 @@ jobs:
       # in sonar-project.properties). --env-file-if-exists=.env.local is a no-op
       # here: that file is gitignored and never checked out in CI, so this step
       # never touches the production Supabase credentials it points to locally.
+      #
+      # --all is what makes the number TRUE (added 2026-08-05 after PR #1748 was
+      # reported at 4.3% "coverage on new code" while the repo appeared to be at
+      # 55%). Without it c8 only reports files it LOADED, so the ~2,300 source
+      # files no test ever imports were absent from lcov entirely — not scored as
+      # 0%, simply invisible. Sonar reads a missing file as 0% while the local
+      # summary quietly left it out of the denominator, which is how the two
+      # numbers disagreed by an order of magnitude. Measured effect: repo-wide
+      # line coverage 55.1% -> 22.5% (117,862/523,394). Nothing got worse; the
+      # 55% was never real.
+      #
+      # --src bounds the sweep to the application's own code, so --all does not
+      # drag in build output or fixtures.
       - name: Test with coverage
-        run: pnpm exec c8 --reporter=lcov --reporter=text -o coverage node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts
+        run: pnpm exec c8 --all --src=src --src=app --exclude='tests/**' --exclude='**/*.test.ts' --exclude='.next/**' --reporter=lcov --reporter=text-summary -o coverage node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts
 
       - name: SonarQube Cloud Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
