@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
+import { resolveStoredHrId } from "@/lib/hr-id";
 import {
   clearPermissionMatrixCache,
   getPayrollScope,
@@ -708,7 +709,11 @@ async function upsertAccessUserCore(input: AccessUserMutation, actor?: AccessAct
         .from("user_access_profiles")
         .upsert({
           auth_user_id: authUserId,
-          hr_id: input.hrId?.trim() || loginId,
+          // user_access_profiles.hr_id is a case-sensitive FK to employees.hr_id, which is
+          // stored uppercase. This value is TYPED BY AN ADMIN in the Access Control form, so
+          // normalise it instead of trusting the keystrokes — "b-97" would otherwise be
+          // rejected with a raw 23503 rather than matching the B-97 the admin meant.
+          hr_id: resolveStoredHrId(input.hrId) ?? resolveStoredHrId(loginId) ?? loginId,
           is_active: nextIsActive,
           line,
           login_id: loginId,
