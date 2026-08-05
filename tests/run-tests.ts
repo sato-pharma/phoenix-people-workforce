@@ -635,6 +635,7 @@ import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-offic
 import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
 import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
+import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1407,6 +1408,11 @@ await runTest(
 await runTest(
   "deductions CRM single month scan (one shared company-wide visit scan, never one per leaver — a wider window cannot change a leaver's charge)",
   runDeductionsCrmSingleMonthScanTests,
+);
+
+await runTest(
+  "SFE Manager admin sales/customers-database nav cards never dead-end into a Super-Admin-only redirect",
+  runSfeManagerNavDeadLinksTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
