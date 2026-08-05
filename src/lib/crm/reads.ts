@@ -56,7 +56,7 @@ export function isCrmDoubleVisitRow(row: {
  * crm-resigned-agents-exclusion-list). */
 export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   832, 851, 1024, 1035, 1071, 1134, 1146, 1148, 1152, 1156, 1158, 1159, 1163, 1166, 1221,
-  1222, 1236, 1246, 1247, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
+  1222, 1236, 1246, 1249, 1272, 1280, 1284, 1286, 1288, 1295, 1303, 1304, 1330, 1345, 1351,
   1354, 1357, 1367, 1368, 1369, 1370, 1371, 1372, 1373, 1374, 1376, 1377, 1378, 1381, 1382, 1389,
   1396, 1402, 1407, 1409, 1437, 1476, 1478, 1486, 1492, 1493, 1504, 1508, 1510, 1511,
   1512, 1514, 1515, 1516, 1518, 1519, 1522, 1523, 1524, 1528,
@@ -76,6 +76,11 @@ export const CRM_RESIGNED_AGENT_CRM_IDS: readonly number[] = [
   // fieldwork invisible no matter what the roster says. Removing them is what lets the roster row
   // the owner is about to add actually take effect; until it exists their visits show as unmapped,
   // which is the honest state and what the unmapped-agent alert reports.
+  // 2026-08-05: crm_id 1247 REMOVED (owner confirmed) — reused slot now carrying AI-0005 (Mahmoud
+  // Abdelreheem, Medical Representative, Cairo West / A, hired 2026-08-01); keeping it here hid 22
+  // of his visits logged the same day this was found. Same failure class as 1477/1102/1395/1521 —
+  // found by auditing the rest of this list for active employees after fixing the live-tier
+  // equivalent of this bug (see resolveLiveDepartedExclusion below).
 ];
 
 /** PostgREST `in` list literal for the STATIC resigned ids, e.g. "(832,851,...)". Used as the
