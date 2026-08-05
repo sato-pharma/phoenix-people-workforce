@@ -1,5 +1,10 @@
 import ExcelJS from "exceljs";
 
+import {
+  DIRECT_ORDER_REPORT_COLUMNS,
+  directOrderReportRowCells,
+  summariseDirectOrderReport,
+} from "@/lib/direct-orders/report-columns";
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 import {
   buildCoverSheet,
@@ -8,8 +13,13 @@ import {
   VALUE_FMT,
   writeTable,
   type CellValue,
-  type TableColumn,
 } from "@/lib/export/phoenix-xlsx-style";
+
+// The column list and row builder now live in report-columns.ts, which carries no ExcelJS import,
+// so the live share-link CSV feed can render the identical 39 columns without loading a
+// spreadsheet engine on every poll. Re-exported here because this module was their original home
+// and the export route imports them from it.
+export { DIRECT_ORDER_REPORT_COLUMNS, directOrderReportRowCells };
 
 export type DirectOrdersReportMeta = {
   generatedByName: string;
@@ -19,109 +29,14 @@ export type DirectOrdersReportMeta = {
   exportId: string;
 };
 
-// Every column — the owner's rule is "do not minus even one field".
-//
-// COLUMNS and toRow() below are POSITIONAL TWINS with no compile-time link between them.
-// Adding an entry to one without the other silently shifts every later column in the owner's
-// xlsx — the header would say "Area" over region data. `tests/direct-orders-approval-flow.test.ts`
-// asserts the two lengths match; keep that test passing rather than trusting care.
-export const DIRECT_ORDER_REPORT_COLUMNS: TableColumn[] = [
-  { label: "Status" },
-  { label: "Requester" },
-  { label: "Requester HR_ID" },
-  { label: "Requester role" },
-  { label: "Line" },
-  { label: "Product code" },
-  { label: "Product" },
-  { label: "Qty (units)", right: true, numFmt: UNITS_FMT },
-  { label: "Bonus (units)", right: true, numFmt: UNITS_FMT },
-  { label: "Pharmacy price", right: true, numFmt: VALUE_FMT },
-  { label: "Sales value (EGP)", right: true, numFmt: VALUE_FMT },
-  { label: "Deal type" },
-  { label: "Discount %", right: true },
-  { label: "Public price", right: true, numFmt: VALUE_FMT },
-  { label: "Bonus override reason", width: 26 },
-  { label: "Pharmacy code" },
-  { label: "Pharmacy name", width: 24 },
-  { label: "Pharmacy address", width: 28 },
-  { label: "Brick", width: 18 },
-  { label: "Brick code" },
-  { label: "Area", width: 16 },
-  { label: "Area code" },
-  { label: "Region", width: 14 },
-  { label: "Region code" },
-  { label: "Doctor" },
-  { label: "Distributor codes", width: 34 },
-  { label: "Collection date" },
-  { label: "Sales month" },
-  { label: "Payment date" },
-  { label: "Paid (EGP)", right: true, numFmt: VALUE_FMT },
-  { label: "Remaining (EGP)", right: true, numFmt: VALUE_FMT },
-  { label: "Marketing request", width: 20 },
-  { label: "Reversal of", width: 20 },
-  { label: "Reversed by", width: 20 },
-  { label: "SoS batch", width: 20 },
-  { label: "Awaiting step" },
-  { label: "Request ID", width: 20 },
-  { label: "Created at" },
-  { label: "Decided at" },
-];
-
-export function directOrderReportRowCells(row: DirectOrderReportRow): CellValue[] {
-  return [
-    row.status,
-    row.requesterName,
-    row.requesterHrId,
-    row.requesterRole,
-    row.line,
-    row.productCode,
-    row.productName,
-    row.qty,
-    row.bonus,
-    row.pharmacyPriceSnapshot ?? "",
-    row.salesValue,
-    row.dealType,
-    row.discountPct ?? "",
-    row.publicPriceSnapshot ?? "",
-    row.bonusOverrideReason ?? "",
-    row.pharmacyCode,
-    row.pharmacyName,
-    row.pharmacyAddress,
-    row.brickName,
-    row.brickId,
-    row.areaName,
-    row.areaCode,
-    row.regionName,
-    row.regionCode,
-    row.doctorName,
-    row.distributorCodesText,
-    row.collectionDate ?? "",
-    row.salesMonth ?? "",
-    row.paymentDate ?? "",
-    row.paidAmount,
-    row.remainingAmount,
-    row.marketingRequestId ?? "",
-    row.reversalOfRequestId ?? "",
-    row.reversedByRequestId ?? "",
-    row.sosBatchId ?? "",
-    row.activeStepLabel,
-    row.id,
-    row.createdAt,
-    row.decidedAt ?? "",
-  ];
-}
-
 export async function buildDirectOrdersReportWorkbook(
   rows: DirectOrderReportRow[],
   meta: DirectOrdersReportMeta,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
 
-  const totalValue = rows.reduce((sum, r) => sum + (Number.isFinite(r.salesValue) ? r.salesValue : 0), 0);
-  const approvedValue = rows
-    .filter((r) => r.status === "approved")
-    .reduce((sum, r) => sum + (Number.isFinite(r.salesValue) ? r.salesValue : 0), 0);
-  const totalUnits = rows.reduce((sum, r) => sum + (Number.isFinite(r.qty) ? r.qty : 0), 0);
+  // Shared with the live Google Sheet, so the two can never quote different totals.
+  const { totalValue, approvedValue, totalUnits, byStatus } = summariseDirectOrderReport(rows);
 
   buildCoverSheet(workbook, {
     title: "Direct Orders Report",
@@ -141,8 +56,10 @@ export async function buildDirectOrdersReportWorkbook(
   });
 
   // Main table — every field.
+  // ySplit 2, not 3: writeTable puts the title on row 1 and the header on row 2, so freezing three
+  // rows pinned the FIRST ORDER to the top of the sheet as though it were part of the header.
   const dataSheet = workbook.addWorksheet(sanitizeSheetName("Direct Orders"), {
-    views: [{ state: "frozen", ySplit: 3, xSplit: 0 }],
+    views: [{ state: "frozen", ySplit: 2, xSplit: 0 }],
   });
   const totals: CellValue[] = DIRECT_ORDER_REPORT_COLUMNS.map((column) => {
     if (column.label === "Qty (units)") return totalUnits;
@@ -159,13 +76,6 @@ export async function buildDirectOrdersReportWorkbook(
   dataSheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: DIRECT_ORDER_REPORT_COLUMNS.length } };
 
   // By-status summary sheet.
-  const byStatus = new Map<string, { count: number; value: number }>();
-  for (const row of rows) {
-    const entry = byStatus.get(row.status) ?? { count: 0, value: 0 };
-    entry.count += 1;
-    entry.value += Number.isFinite(row.salesValue) ? row.salesValue : 0;
-    byStatus.set(row.status, entry);
-  }
   const summarySheet = workbook.addWorksheet(sanitizeSheetName("By Status"));
   writeTable(summarySheet, 1, {
     title: "Direct orders by status",
@@ -174,9 +84,7 @@ export async function buildDirectOrdersReportWorkbook(
       { label: "Requests", right: true, numFmt: UNITS_FMT },
       { label: "Sales value (EGP)", right: true, numFmt: VALUE_FMT },
     ],
-    rows: Array.from(byStatus.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([status, entry]) => [status, entry.count, entry.value] as CellValue[]),
+    rows: byStatus.map((entry) => [entry.status, entry.count, entry.value] as CellValue[]),
     totals: ["TOTAL", rows.length, totalValue],
   });
 

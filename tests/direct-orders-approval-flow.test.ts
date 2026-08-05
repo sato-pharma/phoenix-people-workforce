@@ -295,14 +295,16 @@ export function runDirectOrdersApprovalFlowTests() {
   // They have no compile-time link: adding to one and not the other silently shifts every
   // later column in the owner's export, so the header would sit above the wrong data.
   {
-    const workbookSource = readFileSync(new URL("../src/lib/direct-orders/report-workbook.ts", import.meta.url), "utf8");
+    // The pair lives in report-columns.ts, which carries no ExcelJS import, so the live Google
+    // Sheet feed renders the identical columns without loading a spreadsheet engine on every poll.
+    const workbookSource = readFileSync(new URL("../src/lib/direct-orders/report-columns.ts", import.meta.url), "utf8");
     const columnsBlock = workbookSource.slice(
       workbookSource.indexOf("export const DIRECT_ORDER_REPORT_COLUMNS"),
       workbookSource.indexOf("export function directOrderReportRowCells"),
     );
     const rowsBlock = workbookSource.slice(
       workbookSource.indexOf("export function directOrderReportRowCells"),
-      workbookSource.indexOf("export async function buildDirectOrdersReportWorkbook"),
+      workbookSource.indexOf("export function directOrderReportColumnIndex"),
     );
     const columnCount = (columnsBlock.match(/\{ label: "/g) ?? []).length;
     const cellCount = (rowsBlock.match(/^\s{4}row\./gm) ?? []).length;
@@ -313,6 +315,41 @@ export function runDirectOrdersApprovalFlowTests() {
     );
     assert.match(columnsBlock, /\{ label: "Pharmacy price"/, "the report must expose the pharmacy price");
     assert.match(rowsBlock, /row\.pharmacyPriceSnapshot/, "the row builder must emit the pharmacy price");
+  }
+
+  // ── The live Sheet feed and the .xlsx are ONE report ─────────────────────────
+  // The CSV feed originally carried its own hand-written 25-column subset, so the owner's live
+  // Google Sheet and his downloaded workbook were already different reports on the day they
+  // shipped — same title, same link, quietly different columns. The fix was to delete the second
+  // list, not to keep the two in step by hand.
+  {
+    const shareSource = readFileSync(new URL("../src/lib/direct-orders/report-share-links.ts", import.meta.url), "utf8");
+    assert.match(
+      shareSource,
+      /import \{\s*DIRECT_ORDER_REPORT_COLUMNS,\s*directOrderReportRowCells,/,
+      "the CSV feed must build its columns from the shared report-columns definition, never its own list",
+    );
+    const csvBlock = shareSource.slice(
+      shareSource.indexOf("export function buildDirectOrderReportCsv"),
+      shareSource.indexOf("export function buildDirectOrderReportBundleCsv"),
+    );
+    assert.doesNotMatch(
+      csvBlock,
+      /const headers = \[/,
+      "SECOND COLUMN LIST IS BACK: the CSV feed must not hand-roll its own headers — that is how the Sheet and the .xlsx drifted apart",
+    );
+    assert.match(
+      csvBlock,
+      /DIRECT_ORDER_REPORT_COLUMNS\.map/,
+      "the CSV header row must be derived from the shared column list",
+    );
+    // report-columns.ts exists precisely so this hot path never loads ExcelJS. If someone points
+    // the feed back at report-workbook.ts, every 60-second poll pays for a spreadsheet engine.
+    assert.doesNotMatch(
+      shareSource,
+      /from "@\/lib\/direct-orders\/report-workbook"/,
+      "the share feed must not import report-workbook — that pulls ExcelJS into a route polled every minute",
+    );
   }
 
   // ── resolveActiveStep ───────────────────────────────────────────────────────
