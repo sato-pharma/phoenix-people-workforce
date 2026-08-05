@@ -352,6 +352,26 @@ export function MobileOutstationWizard({
   // transportIcon was removed when WizardStep migrated from icon containers
   // to numbered indices (visual polish — no logic change).
   const isTicketBased = transportationType === "train" || transportationType === "bus";
+  // The arrival photo is required for EVERY transportation type — validateLiveArrivalEvidence()
+  // was widened past `car` on 2026-08-04. The capture card below must therefore render for every
+  // type too. While it rendered on `car` only, a train or bus employee had no control anywhere on
+  // the page that could satisfy a rule the server was already enforcing, so every train and bus
+  // submission died on a 400 that the mobile layout pushed off-screen below the sticky footer.
+  const arrivalPhotoBadge = transportationType === "car" ? "Car live photo" : "Arrival photo";
+  const arrivalPhotoHint =
+    transportationType === "car"
+      ? "Car requests require one in-app camera photo with GPS and app-generated timestamp."
+      : transportationType === "other"
+        ? "This trip requires one in-app arrival photo with GPS and app-generated timestamp."
+        : `A ${transportationType} trip requires one in-app arrival photo with GPS and app-generated timestamp.`;
+  const arrivalPhotoMissingMessage =
+    transportationType === "car"
+      ? "Capture the live car photo before submitting this car request."
+      : "Capture the live arrival photo before submitting this request.";
+  // Kept deliberately short: this one renders inside the narrow mobile action bar and
+  // must stay on a single line without wrapping.
+  const arrivalPhotoMissingShort =
+    transportationType === "car" ? "Capture the car photo first" : "Capture the arrival photo first";
   const durationSummary = calculation
     ? calculation.sameDayTrip
       ? "Return the same day"
@@ -1027,8 +1047,8 @@ export function MobileOutstationWizard({
       return;
     }
 
-    if (transportationType === "car" && !hasCarEvidence) {
-      setMessage("Capture the live car photo before submitting this car request.");
+    if (!hasCarEvidence) {
+      setMessage(arrivalPhotoMissingMessage);
       return;
     }
 
@@ -1054,8 +1074,7 @@ export function MobileOutstationWizard({
       const response = await fetch(endpoint, {
         body: JSON.stringify({
           ...requestPayload,
-          carEvidenceImageDataUrl:
-            transportationType === "car" ? carEvidence?.imageDataUrl : undefined,
+          carEvidenceImageDataUrl: carEvidence?.imageDataUrl,
           claimedTotalAmount: calculation?.expectedTotalAmount ?? 0,
           ticketAttachments,
         }),
@@ -1583,16 +1602,15 @@ export function MobileOutstationWizard({
         ) : null}
       </Card>
 
-      {transportationType === "car" ? (
-        <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
+      <Card className="rounded-lg border border-gray-100 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.06)] sm:p-5">
           <span className="rounded-md bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-600">
-            Car live photo
+            {arrivalPhotoBadge}
           </span>
           <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
             Capture one live photo from device camera
           </h2>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-500">
-            Car requests require one in-app camera photo with GPS and app-generated timestamp.
+            {arrivalPhotoHint}
           </p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <label className="block">
@@ -1685,14 +1703,16 @@ export function MobileOutstationWizard({
             </div>
           ) : null}
         </Card>
-      ) : (
-        <TicketUploadCard
-          attachmentCount={ticketFiles.length}
-          onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
-          transportationType={transportationType}
-          visible={transportationType === "train" || transportationType === "bus"}
-        />
-      )}
+
+      {/* Rendered alongside the arrival photo, never instead of it — a train or bus
+          request carries BOTH its ticket and its live arrival photo. The card hides
+          itself for car and other via `visible`. */}
+      <TicketUploadCard
+        attachmentCount={ticketFiles.length}
+        onFilesSelected={(files) => setTicketFiles(files ? Array.from(files) : [])}
+        transportationType={transportationType}
+        visible={isTicketBased}
+      />
 
       <EligibilityResultCard result={calculation} />
       <OutstationCostBreakdown result={calculation} />
@@ -1719,7 +1739,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  (transportationType === "car" && !hasCarEvidence)
+                  !hasCarEvidence
                 }
                 onClick={submit}
                 type="button"
@@ -1732,6 +1752,13 @@ export function MobileOutstationWizard({
                     : "Submit Request"}
               </Button>
             </div>
+            {/* A disabled button that says nothing is what made this look broken: the
+                employee pressed it and the page did not react. Always name the reason. */}
+            {!hasCarEvidence ? (
+              <p className="mt-2 text-[12px] font-semibold text-amber-700">
+                {arrivalPhotoMissingMessage}
+              </p>
+            ) : null}
           </Card>
 
           {/* Mobile sticky footer (< sm). Includes a spacer above the
@@ -1744,6 +1771,11 @@ export function MobileOutstationWizard({
             role="region"
             aria-label="Submit expense action bar"
           >
+            {!hasCarEvidence ? (
+              <p className="mb-1.5 whitespace-nowrap text-[11px] font-semibold text-amber-700">
+                {arrivalPhotoMissingShort}
+              </p>
+            ) : null}
             <div className="flex items-center gap-2">
               <ApprovalRecommendationBadge value={calculation.approvalRecommendation} />
               <Button
@@ -1751,7 +1783,7 @@ export function MobileOutstationWizard({
                 disabled={
                   isSubmitting ||
                   calculation.eligibilityStatus === "not_eligible" ||
-                  (transportationType === "car" && !hasCarEvidence)
+                  !hasCarEvidence
                 }
                 onClick={submit}
                 type="button"
@@ -1769,13 +1801,31 @@ export function MobileOutstationWizard({
       ) : null}
 
       {message ? (
-        <Card
-          aria-live="polite"
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800"
-          role="status"
-        >
-          {message}
-        </Card>
+        <>
+          <Card
+            aria-live="polite"
+            className="hidden rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800 sm:block"
+            role="status"
+          >
+            {message}
+          </Card>
+          {/* On a phone this card sat in normal flow BELOW the fixed submit bar, at the
+              very end of the scroll area. Every refusal — including the server's — landed
+              off-screen, so pressing Submit looked like it did nothing at all. Pinned above
+              the action bar it is now the first thing the employee sees. */}
+          <div
+            className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom,0px)+4.25rem)] z-50 sm:hidden print:hidden"
+            data-no-print
+          >
+            <Card
+              aria-live="polite"
+              className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium text-amber-800 shadow-lg"
+              role="status"
+            >
+              {message}
+            </Card>
+          </div>
+        </>
       ) : null}
     </div>
   );

@@ -645,6 +645,7 @@ import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fraction
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
+import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1435,6 +1436,11 @@ await runTest(
 await runTest(
   "CRM live departed-exclusion handover (a crm_id reassigned to a currently active employee is no longer blanket-hidden — AI-0006/B-97 slot 1399 incident)",
   runCrmDepartedExclusionHandoverTests,
+);
+
+await runTest(
+  "the arrival-photo capture stays reachable for every transport type the validator refuses to exempt",
+  runOutstationArrivalPhotoCaptureReachableTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
