@@ -18,7 +18,11 @@ test("Employee 360 directory loads", async ({ page }, testInfo) => {
     testInfo,
     { id: "employee-360-directory", name: "Employee 360 directory loads", route: "/employee-360", role: "Super Admin" },
     async (page) => {
-      await expect(page.getByPlaceholder(/Search by name, HR ID, job title, line, area or manager/i)).toBeVisible();
+      // The placeholder is templated per tab — `Search ${meta.label.toLowerCase()} by name, …`
+      // (employee-search-list.tsx:260) — so match only the stable tail. "job title" left the
+      // placeholder when the Job title dropdown became role tabs; it is still free-text
+      // searchable (the search haystack still includes jobTitle).
+      await expect(page.getByPlaceholder(/by name, HR ID, line, area or manager/i)).toBeVisible();
       await expect(page.getByText(SCHEMA_ERROR_TEXT)).toHaveCount(0);
     },
   );
@@ -35,11 +39,10 @@ test("Employee 360 Medical Rep profile loads with expenses correctly hidden", as
       role: "Super Admin",
     },
     async (page) => {
-      await page.getByRole("button", { name: /Filters/i }).click();
-      // The select's accessible name reflects its current value ("All job titles"),
-      // not the micro-label span above it, so target it via the wrapping <label>'s
-      // text instead of getByLabel (verified against the live DOM).
-      await page.locator('label:has-text("Job title") select').selectOption("Medical Representative");
+      // The Job title filter dropdown no longer exists — FILTERS is now Line/Area/Manager only
+      // (employee-search-list.tsx:49-52) and role selection moved to tabs. The chip text comes
+      // from EMPLOYEE_360_ROLE_META[...].tab in src/lib/employee-360/roles.ts, NOT .label.
+      await page.getByRole("button", { name: /Medical Reps/i }).click();
 
       const firstProfileLink = page.locator('a[href^="/employee-360/"]').first();
       await expect(firstProfileLink).toBeVisible();
@@ -64,10 +67,10 @@ test("Employee 360 manager profile shows expenses without a schema error", async
       role: "Super Admin",
     },
     async (page) => {
-      await page.getByRole("button", { name: /Filters/i }).click();
-      // District Sales Manager is in the traveling-manager allowlist (DM/RM/NSM/TM/PM/GPM) —
-      // this is exactly the role whose profile crashed under the renamed table.
-      await page.locator('label:has-text("Job title") select').selectOption("District Sales Manager");
+      // District managers are in the traveling-manager allowlist (DM/RM/NSM/TM/PM/GPM) — exactly
+      // the role whose profile crashed under the renamed table. Note the tab chip is abbreviated
+      // to "District Mgrs" while the header label is "District Managers"; line 235 renders .tab.
+      await page.getByRole("button", { name: /District Mgrs/i }).click();
 
       const firstProfileLink = page.locator('a[href^="/employee-360/"]').first();
       await expect(firstProfileLink).toBeVisible();
