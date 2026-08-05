@@ -406,6 +406,52 @@ export function collectLeaverCrmCandidate(input: {
  * employee who normally logs visits but had a genuinely idle month still has a
  * usable signal and stays in scope.
  */
+export type ZeroCrmSignalEmployeeRow = {
+  hr_id: string;
+  job_title: string | null;
+  crm_id: string | null;
+};
+
+/**
+ * The zero-signal rule itself, with the Supabase read lifted out so it can be
+ * unit-tested. This decides whether an eligible employee is EXCLUDED from CRM
+ * no-activity deductions entirely, which is worth several tens of thousands of
+ * EGP a month (see the header above: A-9 and A-8, 53,161.29 EGP in July 2026) —
+ * a rule that expensive should not live only inside a database round-trip.
+ *
+ * An employee has "signal" if the month's visits name them either by resolved
+ * hr-id or by crm_id. Both matter: the mirror's `agent_hr_id` is resolved at
+ * sync time and is frequently null, so crm_id is the fallback identity.
+ */
+export function computeZeroCrmSignalKeys(input: {
+  employeeRows: readonly ZeroCrmSignalEmployeeRow[];
+  visits: readonly LeaverVisitRow[];
+}): Set<string> {
+  const zeroSignal = new Set<string>();
+  const activeHrKeys = new Set<string>();
+  const activeCrmIds = new Set<string>();
+  for (const visit of input.visits) {
+    const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
+    const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "");
+    if (agentKey) activeHrKeys.add(agentKey);
+    if (doubleKey) activeHrKeys.add(doubleKey);
+    const agentCrm = String(visit.agent_crm_id ?? "").trim();
+    const doubleCrm = String(visit.double_crm_id ?? "").trim();
+    if (agentCrm) activeCrmIds.add(agentCrm);
+    if (doubleCrm) activeCrmIds.add(doubleCrm);
+  }
+
+  for (const row of input.employeeRows) {
+    if (!isFieldWorkforceComplianceEligibleTitle(row.job_title)) continue;
+    const key = canonicalHrIdKey(row.hr_id);
+    if (!key) continue;
+    const crmIdText = row.crm_id != null ? String(row.crm_id).trim() : "";
+    const hasSignal = activeHrKeys.has(key) || (crmIdText !== "" && activeCrmIds.has(crmIdText));
+    if (!hasSignal) zeroSignal.add(key);
+  }
+  return zeroSignal;
+}
+
 async function loadZeroCrmSignalHrIdKeys(input: {
   /**
    * The month's visits, from collectCrmCandidates' single shared scan. This used to
@@ -414,44 +460,19 @@ async function loadZeroCrmSignalHrIdKeys(input: {
    */
   visits: readonly LeaverVisitRow[];
 }): Promise<Set<string>> {
-  const zeroSignal = new Set<string>();
   try {
     const supabase = getSupabaseAdmin();
     const { data: employeeRows, error } = await supabase.from("employees").select("hr_id,job_title,crm_id");
-    const visits = input.visits;
     // Defensive, matching loadCrmIdentityUnresolvedHrIdKeys: if this check
     // cannot run, exclude nobody rather than silently suppressing real findings.
-    if (error) return zeroSignal;
-
-    const activeHrKeys = new Set<string>();
-    const activeCrmIds = new Set<string>();
-    for (const visit of visits) {
-      const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "");
-      const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "");
-      if (agentKey) activeHrKeys.add(agentKey);
-      if (doubleKey) activeHrKeys.add(doubleKey);
-      const agentCrm = String(visit.agent_crm_id ?? "").trim();
-      const doubleCrm = String(visit.double_crm_id ?? "").trim();
-      if (agentCrm) activeCrmIds.add(agentCrm);
-      if (doubleCrm) activeCrmIds.add(doubleCrm);
-    }
-
-    for (const row of (employeeRows ?? []) as Array<{
-      hr_id: string;
-      job_title: string | null;
-      crm_id: string | null;
-    }>) {
-      if (!isFieldWorkforceComplianceEligibleTitle(row.job_title)) continue;
-      const key = canonicalHrIdKey(row.hr_id);
-      if (!key) continue;
-      const crmIdText = row.crm_id != null ? String(row.crm_id).trim() : "";
-      const hasSignal = activeHrKeys.has(key) || (crmIdText !== "" && activeCrmIds.has(crmIdText));
-      if (!hasSignal) zeroSignal.add(key);
-    }
+    if (error) return new Set();
+    return computeZeroCrmSignalKeys({
+      employeeRows: (employeeRows ?? []) as ZeroCrmSignalEmployeeRow[],
+      visits: input.visits,
+    });
   } catch {
     return new Set();
   }
-  return zeroSignal;
 }
 
 /**
@@ -577,11 +598,33 @@ const LEAVER_VISIT_COLUMNS = "visit_date,visit_type,agent_hr_id,double_hr_id,age
  * than once per leaver. Still called only when the month actually has leavers to settle, so a
  * month with none keeps acquiring no holiday-calendar dependency at all — exactly as before.
  */
-async function loadLeaverHolidayDates(month: number, year: number): Promise<Set<string>> {
-  const holidayResult = await getConfirmedNationalHolidays({ month, year });
+/** The shape {@link holidayDatesFromResult} needs from getConfirmedNationalHolidays. */
+export type HolidayCalendarResult = {
+  calendarReachable?: boolean | null;
+  connected?: boolean | null;
+  message?: string | null;
+  holidays: ReadonlyArray<{ startDate: string; endDate?: string | null }>;
+};
+
+/**
+ * The fail-closed guard and the date expansion, with the fetch lifted out so both
+ * are unit-testable. The guard is the whole point of this function and it had no
+ * test at all: a degraded calendar must THROW, because silently returning the
+ * fixed-date-only holiday set turns every moving Islamic/Coptic holiday into an
+ * ordinary working day and charges a leaver for taking Eid off.
+ *
+ * Exported for tests. A rule this expensive should be provable without a network
+ * call to Google's calendar.
+ */
+export function holidayDatesFromResult(input: {
+  holidayResult: HolidayCalendarResult;
+  month: number;
+  year: number;
+}): Set<string> {
+  const { holidayResult } = input;
   if (holidayResult.calendarReachable === false || holidayResult.connected === false) {
     throw new Error(
-      `CRM connector: the national-holiday calendar is degraded for ${year}-${String(month).padStart(2, "0")}` +
+      `CRM connector: the national-holiday calendar is degraded for ${input.year}-${String(input.month).padStart(2, "0")}` +
         ` (${holidayResult.message ?? "no detail reported"}).` +
         " Refusing to compute leaver CRM no-activity deductions: moving Islamic/Coptic holidays" +
         " would be missing and charged as working days.",
@@ -594,6 +637,11 @@ async function loadLeaverHolidayDates(month: number, year: number): Promise<Set<
     }
   }
   return holidayDates;
+}
+
+async function loadLeaverHolidayDates(month: number, year: number): Promise<Set<string>> {
+  const holidayResult = await getConfirmedNationalHolidays({ month, year });
+  return holidayDatesFromResult({ holidayResult, month, year });
 }
 
 export async function collectCrmCandidates(input: {
