@@ -6,6 +6,10 @@ import {
   loadMonthlyClosingComparison,
   loadMonthlyClosingComparisonFromRows,
 } from "@/lib/sales/monthly-closing-comparison";
+import {
+  loadMonthlyClosingChannelBreakdown,
+  loadMonthlyClosingChannelComparison,
+} from "@/lib/sales/monthly-closing-channel-comparison";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { buildClosingDetailsWorkbook, buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
 import {
@@ -189,6 +193,32 @@ export async function POST(request: Request) {
       // is omitted) rather than ever costing the workbook.
       const coveragePromise = loadMonthlySourceCoverage(matrix.line, matrix.period).catch(() => null);
 
+      // Channel Comparison — the ONLY sheet that reaches outside the exported month, so it is the
+      // only one the route has to fetch extra data for. It covers the whole line across every
+      // month up to and including this one, which is exactly why it is dropped from any FILTERED
+      // export: a whole-line, whole-history comparison sitting beside a workbook narrowed to one
+      // region, product or distributor would describe a different population than every sheet
+      // around it. One RPC for the whole block, plus one target read per month.
+      //
+      // Restricted products are NOT revealed here even for a CEO who opted in, because every
+      // closing RPC (phx_monthly_closing_matrix, phx_closing_distributor_product, phx_closing_*)
+      // hard-excludes them in SQL. Following the opt-in would make this the one sheet that
+      // disagrees with the Closing Matrix beside it; the sheet states which view produced it.
+      const channelEligible = !rowLevelActive && !placeNarrowed && matrixFilter.productCodes.length === 0;
+      const channelComparisonPromise = channelEligible
+        ? loadMonthlyClosingChannelComparison(
+          matrix.line,
+          // Every validated month of this line up to and including the exported one — a trend
+          // that ends where the workbook does, never one that runs past it.
+          matrix.availablePeriods.filter((candidate) => !matrix.period || candidate <= matrix.period),
+        ).catch(() => null)
+        : Promise.resolve(null);
+      // The same channel money cut by product, rep, area and brick — this month only, so it needs
+      // no period list. Same eligibility as above for the same reason.
+      const channelBreakdownPromise = channelEligible
+        ? loadMonthlyClosingChannelBreakdown(matrix.line, matrix.period).catch(() => null)
+        : Promise.resolve(null);
+
       // Every row of the month in the caller's scope, place filter NOT yet applied — the input the
       // store split has to see to allocate a city correctly.
       const monthRows = await detailsPromise;
@@ -268,9 +298,16 @@ export async function POST(request: Request) {
             ? " Targets are set per area & product company-wide and cannot be sliced this way, so"
               + " Target vs Achievement and the Direct channel rows are omitted."
             : "")
+          + (channelEligible
+            ? ""
+            : " The two Channel sheets are omitted too: they cover the WHOLE line, so they cannot be"
+              + " narrowed to this slice without describing a different population than the rest of"
+              + " the workbook. Export without filters to see them.")
         : undefined;
 
       const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, details, {
+        channelBreakdown: await channelBreakdownPromise,
+        channelComparison: await channelComparisonPromise,
         channels,
         coverage: await coveragePromise,
         filterNote,

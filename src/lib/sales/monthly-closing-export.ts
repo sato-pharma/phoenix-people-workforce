@@ -11,6 +11,17 @@ import {
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
+import {
+  breakdownLeader,
+  CHANNEL_ORDER,
+  channelShare,
+  resolveBreakdownLabel,
+  sumBreakdownRows,
+  type BreakdownNameMaps,
+  type ChannelBreakdown,
+  type ChannelBreakdownDimension,
+  type ChannelComparison,
+} from "@/lib/sales/monthly-closing-channel-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
 import {
@@ -1068,6 +1079,460 @@ function writeComparisonSheet(workbook: ExcelJS.Workbook, c: MonthlyClosingCompa
       F(div0(countifs([[ref.brkDist, d.distributorCode], [ref.brkValue, ">0"]]), `COUNTA(${ref.mbId})`), c.totalBricks > 0 ? d.brickCount / c.totalBricks : 0),
     ]),
     title: "Coverage",
+  });
+}
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "2026-01" -> "Jan 2026". Names, never codes — and short enough that no header ever wraps. */
+function monthLabel(period: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(period.trim());
+  if (!match) return period;
+  const index = Number(match[2]) - 1;
+  return index >= 0 && index < 12 ? `${MONTH_NAMES[index]} ${match[1]}` : period;
+}
+
+/**
+ * Channel Comparison — Hospitals vs Stores vs Pharmacies, month by month.
+ *
+ * WHY THIS SHEET HOLDS VALUES WHERE EVERY OTHER SHEET HOLDS =SUMIFS(Calc!…):
+ * the hidden Calc sheet carries Distributor | Region | Area | Product | Units | Value and nothing
+ * else — no customer NAME (the channel is derived from it) and no MONTH (this sheet compares the
+ * months either side of the exported one). Neither dimension exists there to sum over, so a
+ * SUMIFS could not be written at all without first shipping a second copy of these very figures
+ * into Calc for the formula to read back — ceremony that would look live while adding nothing.
+ *
+ * So the same split the "Target vs Achievement" sheet already uses applies here: the measured
+ * figures are written as VALUES, and every number DERIVED from them — row totals, share of the
+ * line, the monthly mix, achievement — is a live formula over this sheet's own cells. Edit a
+ * figure and everything computed from it still moves. The sheet says so on itself, so it does not
+ * read as an inconsistency someone should "fix".
+ *
+ * Targets are shown for the MONTH TOTAL only, never per channel: they are keyed
+ * (month, line, area, product) and carry no channel dimension, so a per-channel target would be a
+ * number Phoenix invented rather than one anybody set.
+ */
+function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelComparison, period: string | null) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Channel Comparison"), {
+    views: [{ state: "frozen", xSplit: 1, ySplit: 5 }],
+  });
+
+  const months = c.periods;
+  const monthCount = months.length;
+  // Channel | one column per month | Total | % Share
+  const FIRST_MONTH_COL = 2;
+  const totalCol = FIRST_MONTH_COL + monthCount;
+  const shareCol = totalCol + 1;
+  const colOf = (monthIndex: number) => columnLetter(FIRST_MONTH_COL + monthIndex);
+  const firstMonthLetter = colOf(0);
+  const lastMonthLetter = monthCount > 0 ? colOf(monthCount - 1) : firstMonthLetter;
+
+  bandHeader(sheet, c.line, period, "Channel Comparison", Math.max(3, shareCol));
+
+  if (monthCount === 0) {
+    writeTable(sheet, 4, {
+      columns: [{ label: "Channel", width: 24 }],
+      note: "No validated month of this line has any customer sales, so there is nothing to compare yet.",
+      rows: [],
+      title: "Sales by Customer Channel",
+    });
+    return;
+  }
+
+  // writeTable puts the title on `start`, the header on start+1 and the first data row on start+2.
+  // Three channel rows then a TOTAL row, so every cross-block reference below is deterministic.
+  const CHANNEL_ROWS = CHANNEL_ORDER.length;
+  const blockFirstRow = (start: number) => start + 2;
+  const blockTotalRow = (start: number) => start + 2 + CHANNEL_ROWS;
+
+  const monthColumns = (): TableColumn[] =>
+    months.map((month) => ({ label: monthLabel(month), numFmt: VALUE_FMT, right: true, width: 13 }));
+
+  const scopeNote = c.restrictedProductsIncluded
+    ? "Figures INCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim) because this export was "
+      + "taken with them revealed. Every other export of this month excludes them and will show smaller numbers."
+    : "Figures EXCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim), which is the default view for "
+      + "every role. A CEO or Super Admin who reveals them gets a materially different picture, not a rounding difference.";
+
+  let row = 4;
+
+  // ── Block 1 — Value by month ───────────────────────────────────────────────
+  const valueStart = row;
+  const valueFirstRow = blockFirstRow(valueStart);
+  const valueTotalRow = blockTotalRow(valueStart);
+  row = writeTable(sheet, valueStart, {
+    columns: [
+      { label: "Channel", width: 24 },
+      ...monthColumns(),
+      { dataBar: true, label: "Total", numFmt: VALUE_FMT, right: true, width: 15 },
+      { label: "% Share", numFmt: PCT_FMT, right: true, width: 10 },
+    ],
+    note:
+      `This sheet spans ${monthLabel(months[0])} to ${monthLabel(months[monthCount - 1])} — every validated month `
+      + "of this line up to and including the one named at the top. It is the only sheet in this workbook that "
+      + "looks outside the exported month. Every figure below is the SAME money the Closing Matrix publishes for "
+      + "each of those months, split by who bought it. The channel comes from the customer's name, and the name is "
+      + "not in this workbook's hidden Calc sheet — so the monthly figures are written as values while every total, "
+      + "share and percentage is a live formula over the cells beside it. " + scopeNote,
+    rows: c.rows.map((channelRow, index) => {
+      const excelRow = valueFirstRow + index;
+      return [
+        channelRow.label,
+        ...months.map((month) => channelRow.byPeriod[month]?.value ?? 0),
+        F(`SUM(${firstMonthLetter}${excelRow}:${lastMonthLetter}${excelRow})`, channelRow.total.value),
+        F(
+          `IFERROR(${columnLetter(totalCol)}${excelRow}/${columnLetter(totalCol)}$${valueTotalRow},0)`,
+          channelShare(channelRow.total.value, c.grandTotal.value),
+        ),
+      ];
+    }),
+    title: "1 · Value by Month (EGP)",
+    totals: [
+      "TOTAL",
+      ...months.map((month, index) =>
+        F(
+          `SUM(${colOf(index)}${valueFirstRow}:${colOf(index)}${valueFirstRow + CHANNEL_ROWS - 1})`,
+          c.totalsByPeriod[month]?.value ?? 0,
+        ),
+      ),
+      F(`SUM(${firstMonthLetter}${valueTotalRow}:${lastMonthLetter}${valueTotalRow})`, c.grandTotal.value),
+      F(`IFERROR(${columnLetter(totalCol)}${valueTotalRow}/${columnLetter(totalCol)}${valueTotalRow},0)`, 1),
+    ],
+  });
+
+  // ── Block 2 — Units by month ───────────────────────────────────────────────
+  const unitsStart = row;
+  const unitsFirstRow = blockFirstRow(unitsStart);
+  const unitsTotalRow = blockTotalRow(unitsStart);
+  row = writeTable(sheet, unitsStart, {
+    columns: [
+      { label: "Channel", width: 24 },
+      ...months.map((month) => ({ label: monthLabel(month), numFmt: UNITS_FMT, right: true, width: 13 })),
+      { dataBar: true, label: "Total", numFmt: UNITS_FMT, right: true, width: 15 },
+      { label: "% Share", numFmt: PCT_FMT, right: true, width: 10 },
+    ],
+    note:
+      "Units are boxes, counted the same way the closing counts them. A channel can move in units without "
+      + "moving in value when its product mix changes, which is exactly what this block is here to expose.",
+    rows: c.rows.map((channelRow, index) => {
+      const excelRow = unitsFirstRow + index;
+      return [
+        channelRow.label,
+        ...months.map((month) => channelRow.byPeriod[month]?.units ?? 0),
+        F(`SUM(${firstMonthLetter}${excelRow}:${lastMonthLetter}${excelRow})`, channelRow.total.units),
+        F(
+          `IFERROR(${columnLetter(totalCol)}${excelRow}/${columnLetter(totalCol)}$${unitsTotalRow},0)`,
+          channelShare(channelRow.total.units, c.grandTotal.units),
+        ),
+      ];
+    }),
+    title: "2 · Units by Month",
+    totals: [
+      "TOTAL",
+      ...months.map((month, index) =>
+        F(
+          `SUM(${colOf(index)}${unitsFirstRow}:${colOf(index)}${unitsFirstRow + CHANNEL_ROWS - 1})`,
+          c.totalsByPeriod[month]?.units ?? 0,
+        ),
+      ),
+      F(`SUM(${firstMonthLetter}${unitsTotalRow}:${lastMonthLetter}${unitsTotalRow})`, c.grandTotal.units),
+      F(`IFERROR(${columnLetter(totalCol)}${unitsTotalRow}/${columnLetter(totalCol)}${unitsTotalRow},0)`, 1),
+    ],
+  });
+
+  // ── Block 3 — Customers by month ───────────────────────────────────────────
+  // No Total column that SUMS: the same pharmacy buys in most months, so adding the months would
+  // report several times more pharmacies than the line has. The busiest single month is the
+  // honest headline, and it is a live MAX over the row rather than a number typed in.
+  const customersStart = row;
+  const customersFirstRow = blockFirstRow(customersStart);
+  row = writeTable(sheet, customersStart, {
+    columns: [
+      { label: "Channel", width: 24 },
+      ...months.map((month) => ({ label: monthLabel(month), numFmt: UNITS_FMT, right: true, width: 13 })),
+      { label: "Busiest Month", numFmt: UNITS_FMT, right: true, width: 15 },
+    ],
+    note:
+      "Distinct customers that bought in that month — a pharmacy buying from three distributors counts ONCE. "
+      + "The months are deliberately not added together: nearly every customer buys in more than one month, so a "
+      + "sum would multiply the customer base. The last column is the busiest single month instead. Direct orders "
+      + "carry no customer code, so each distinct direct customer NAME counts as one customer.",
+    rows: c.rows.map((channelRow, index) => {
+      const excelRow = customersFirstRow + index;
+      return [
+        channelRow.label,
+        ...months.map((month) => channelRow.byPeriod[month]?.customers ?? 0),
+        F(`MAX(${firstMonthLetter}${excelRow}:${lastMonthLetter}${excelRow})`, channelRow.total.customers),
+      ];
+    }),
+    title: "3 · Customers by Month (distinct)",
+    totals: [
+      "TOTAL",
+      ...months.map((month, index) =>
+        F(
+          `SUM(${colOf(index)}${customersFirstRow}:${colOf(index)}${customersFirstRow + CHANNEL_ROWS - 1})`,
+          c.totalsByPeriod[month]?.customers ?? 0,
+        ),
+      ),
+      F(
+        `MAX(${firstMonthLetter}${blockTotalRow(customersStart)}:${lastMonthLetter}${blockTotalRow(customersStart)})`,
+        c.grandTotal.customers,
+      ),
+    ],
+  });
+
+  // ── Block 4 — Mix % by month ───────────────────────────────────────────────
+  // Entirely live: each cell divides Block 1's channel cell by Block 1's month total, so the mix
+  // can never drift from the money it describes.
+  const mixStart = row;
+  const mixFirstRow = blockFirstRow(mixStart);
+  row = writeTable(sheet, mixStart, {
+    columns: [
+      { label: "Channel", width: 24 },
+      ...months.map((month) => ({ label: monthLabel(month), numFmt: PCT_FMT, right: true, width: 13 })),
+      { label: "Total", numFmt: PCT_FMT, right: true, width: 15 },
+    ],
+    note:
+      "Each channel as a share of that month's value. This is the block worth reading first: a channel can hold "
+      + "its money while its share of the line moves, and the value columns above will look flat while it happens. "
+      + "Every cell divides the matching cell of block 1 by that month's total, so it recalculates with them.",
+    rows: c.rows.map((channelRow, index) => {
+      const valueRow = valueFirstRow + index;
+      return [
+        channelRow.label,
+        ...months.map((month, monthIndex) =>
+          F(
+            `IFERROR(${colOf(monthIndex)}${valueRow}/${colOf(monthIndex)}$${valueTotalRow},0)`,
+            channelShare(channelRow.byPeriod[month]?.value ?? 0, c.totalsByPeriod[month]?.value ?? 0),
+          ),
+        ),
+        F(
+          `IFERROR(${columnLetter(totalCol)}${valueRow}/${columnLetter(totalCol)}$${valueTotalRow},0)`,
+          channelShare(channelRow.total.value, c.grandTotal.value),
+        ),
+      ];
+    }),
+    title: "4 · Mix % by Month (share of the month's value)",
+    totals: [
+      "TOTAL",
+      ...months.map((month, monthIndex) =>
+        F(
+          `SUM(${colOf(monthIndex)}${mixFirstRow}:${colOf(monthIndex)}${mixFirstRow + CHANNEL_ROWS - 1})`,
+          (c.totalsByPeriod[month]?.value ?? 0) > 0 ? 1 : 0,
+        ),
+      ),
+      F(`SUM(${columnLetter(totalCol)}${mixFirstRow}:${columnLetter(totalCol)}${mixFirstRow + CHANNEL_ROWS - 1})`, c.grandTotal.value > 0 ? 1 : 0),
+    ],
+  });
+
+  // ── Block 5 — Month total vs target ────────────────────────────────────────
+  const targetStart = row;
+  const targetFirstRow = blockFirstRow(targetStart);
+  const hasAnyTarget = months.some(
+    (month) => c.targetsByPeriod[month]?.targetValue != null || c.targetsByPeriod[month]?.targetUnits != null,
+  );
+  writeTable(sheet, targetStart, {
+    columns: [
+      { label: "Month", width: 24 },
+      { dataBar: true, label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 16 },
+      { label: "Target Value", numFmt: VALUE_FMT, right: true, width: 16 },
+      { label: "Ach %", numFmt: PCT_FMT, right: true, width: 10 },
+      { label: "Sales Units", numFmt: UNITS_FMT, right: true, width: 13 },
+      { label: "Target Units", numFmt: UNITS_FMT, right: true, width: 13 },
+    ],
+    note:
+      "THE TARGET IS THE MONTH TOTAL, NOT A PER-CHANNEL TARGET, AND THAT IS DELIBERATE. Targets are set per "
+      + "month, line, area and product — they carry no customer channel at all, so splitting one across "
+      + "Hospitals, Stores and Pharmacies would invent three numbers nobody set. The month total beside the "
+      + "channel split is the real figure. "
+      + (hasAnyTarget
+        ? "A blank target is a month no target was uploaded for — it is NOT a target of zero, and no achievement "
+          + "is claimed against it. Sales Value reads from block 1's TOTAL row and Ach % divides this row's own "
+          + "two cells, so both stay correct if a figure is edited. On the ALL MONTHS row, Sales Value is every "
+          + "month, but Ach % counts ONLY the months that carry a target — dividing untargeted months' sales by "
+          + "the targeted months' figure would print a percentage against a target nobody set."
+        : "No targets are loaded for any month of this line, so the target and achievement columns are blank "
+          + "throughout. That is an absence of data, not a target of zero."),
+    rows: months.map((month, monthIndex) => {
+      const excelRow = targetFirstRow + monthIndex;
+      const target = c.targetsByPeriod[month] ?? { targetUnits: null, targetValue: null };
+      const totals = c.totalsByPeriod[month] ?? { customers: 0, units: 0, value: 0 };
+      return [
+        monthLabel(month),
+        F(`${colOf(monthIndex)}${valueTotalRow}`, totals.value),
+        target.targetValue,
+        // Blank rather than 0 when there is no target to divide by.
+        F(
+          `IFERROR(IF(C${excelRow}="","",B${excelRow}/C${excelRow}),"")`,
+          target.targetValue ? totals.value / target.targetValue : 0,
+        ),
+        F(`${colOf(monthIndex)}${unitsTotalRow}`, totals.units),
+        target.targetUnits,
+      ];
+    }),
+    title: "5 · Month Total vs Target",
+    totals: (() => {
+      const lastTargetRow = targetFirstRow + monthCount - 1;
+      const targetValueSum = months.reduce((sum, month) => sum + (c.targetsByPeriod[month]?.targetValue ?? 0), 0);
+      const targetUnitsSum = months.reduce((sum, month) => sum + (c.targetsByPeriod[month]?.targetUnits ?? 0), 0);
+      // Sales of the months that carry a target — the only sales an achievement % may be taken on.
+      const targetedSalesValue = months.reduce(
+        (sum, month) => sum + ((c.targetsByPeriod[month]?.targetValue ?? 0) > 0 ? (c.totalsByPeriod[month]?.value ?? 0) : 0),
+        0,
+      );
+      return [
+        "ALL MONTHS",
+        F(`SUM(B${targetFirstRow}:B${lastTargetRow})`, c.grandTotal.value),
+        F(`SUM(C${targetFirstRow}:C${lastTargetRow})`, targetValueSum),
+        // Summed sales over summed targets — never the average of the monthly percentages, and
+        // deliberately only over the months that HAVE a target. Most months here have none, so
+        // dividing every month's sales by the one month that was targeted would print a wildly
+        // flattering percentage against a target nobody set for those months.
+        F(
+          `IFERROR(IF(SUM(C${targetFirstRow}:C${lastTargetRow})=0,"",`
+          + `SUMIF(C${targetFirstRow}:C${lastTargetRow},">0",B${targetFirstRow}:B${lastTargetRow})`
+          + `/SUM(C${targetFirstRow}:C${lastTargetRow})),"")`,
+          targetValueSum > 0 ? targetedSalesValue / targetValueSum : 0,
+        ),
+        F(`SUM(E${targetFirstRow}:E${lastTargetRow})`, c.grandTotal.units),
+        F(`SUM(F${targetFirstRow}:F${lastTargetRow})`, targetUnitsSum),
+      ];
+    })(),
+  });
+}
+
+/**
+ * Channel by Product / Rep / Area / Brick — the exported month, cut four ways.
+ *
+ * The companion to Channel Comparison: that sheet answers "how did the three channels move month by
+ * month", this one answers "inside THIS month, which products, reps, areas and bricks is that money
+ * in". Four grids, same shape as the Product/Region/Area × Distributor grids on the Distributor
+ * Comparison sheet, so a reader who can read one can read these.
+ *
+ * ON ITS OWN SHEET, NOT APPENDED TO Channel Comparison: the brick grid alone runs to hundreds of
+ * rows (234 on Anti Infective 2026-07, and Gaps & White-Space already reaches 508), which would
+ * bury the month-by-month blocks under a scroll.
+ *
+ * EVERY GRID SUMS TO THE MONTH TOTAL, and that is the property to protect. Money that reaches no
+ * product, rep, area or brick gets a named row rather than being dropped — direct orders carry no
+ * area and no brick at all, an area can be absent from the seat model, and a seat can have no
+ * current occupant. Each of those is a visible row here, so the four TOTAL rows agree with each
+ * other and with the Closing Matrix.
+ *
+ * Same convention as the sheet before it: the measured figures are values (the channel comes from
+ * the customer's name, which the hidden Calc sheet does not carry), and every number derived from
+ * them — each row's Total, and each grid's TOTAL row — is a live formula over this sheet's cells.
+ */
+function writeChannelBreakdownSheet(
+  workbook: ExcelJS.Workbook,
+  breakdown: ChannelBreakdown,
+  matrix: MonthlyClosingMatrix,
+  comparison: MonthlyClosingComparison,
+) {
+  // Excel caps a sheet name at 31 characters and sanitizeSheetName truncates silently, so the tab
+  // keeps a short name and the band header below carries the full "by Product / Rep / Area / Brick"
+  // title. A truncated tab would also miss its SHEET_GUIDE key and render "—" on the Dashboard.
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Channel Breakdown"), {
+    views: [{ state: "frozen", xSplit: 1, ySplit: 5 }],
+  });
+
+  const upperKey = (value: string) => value.trim().toUpperCase();
+  const maps: BreakdownNameMaps = {
+    areaName: new Map(comparison.data.masterAreas.map((area) => [upperKey(area.areaCode), area.areaName])),
+    brickName: new Map(comparison.data.masterBricks.map((brick) => [upperKey(brick.brickId), brick.brickName])),
+    productName: new Map(matrix.columns.map((product) => [upperKey(product.productCode), product.productName])),
+  };
+
+  // Channel | Hospitals | Stores | Pharmacies | Total | Leader
+  const COLS = 6;
+  bandHeader(sheet, breakdown.line, breakdown.period, "Channel by Product / Rep / Area / Brick", COLS);
+
+  const scopeNote = breakdown.restrictedProductsIncluded
+    ? "Figures INCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim) because this export was taken with them revealed."
+    : "Figures EXCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim), which is the default view for every role.";
+
+  const grids: ReadonlyArray<{ dimension: ChannelBreakdownDimension; first: string; note: string; title: string }> = [
+    {
+      dimension: "product",
+      first: "Product",
+      note: "Which products the store and hospital money is actually in. A product sold only through pharmacies "
+        + "and one leaning on wholesalers need different conversations, and the value columns alone never show it.",
+      title: "1 · Product × Channel",
+    },
+    {
+      dimension: "rep",
+      first: "Medical Rep",
+      note: "A sale reaches a rep through its area: sales area → canonical area → this line's active REP seat → "
+        + "that seat's current occupant. Sales that reach no rep are NOT hidden — an area that is not on the seat "
+        + "model, a seat nobody occupies today, and the direct orders (which no seat owns) each get their own row. "
+        + "Those rows are the interesting part, not an error to look past.",
+      title: "2 · Medical Rep × Channel",
+    },
+    {
+      dimension: "area",
+      first: "Area",
+      note: "Direct orders carry no area on the row at all — they reach the closing from the Direct Orders module "
+        + "rather than a distributor invoice line — so they appear as their own named row rather than being spread "
+        + "over areas they were never tagged with, or dropped.",
+      title: "3 · Area × Channel",
+    },
+    {
+      dimension: "brick",
+      first: "Brick",
+      note: "The finest cut, and the longest grid. Two kinds of row carry no brick and are named as such: direct "
+        + "orders, and distributor lines whose brick did not map to the master.",
+      title: "4 · Brick × Channel",
+    },
+  ];
+
+  let row = 4;
+  grids.forEach((grid, index) => {
+    const rows = breakdown.byDimension[grid.dimension];
+    const totals = sumBreakdownRows(rows);
+    const firstDataRow = row + 2;
+    const lastDataRow = firstDataRow + rows.length - 1;
+
+    row = writeTable(sheet, row, {
+      columns: [
+        // Wide enough for the longest bucket wording ("Direct orders (company) — no rep seat owns
+        // them", 46 characters) so no row label is clipped by the number column beside it.
+        { label: grid.first, width: 48 },
+        { label: "Hospitals", numFmt: VALUE_FMT, right: true, width: 14 },
+        { label: "Stores", numFmt: VALUE_FMT, right: true, width: 14 },
+        { label: "Pharmacies", numFmt: VALUE_FMT, right: true, width: 14 },
+        { dataBar: true, label: "Total", numFmt: VALUE_FMT, right: true, width: 15 },
+        { label: "Leader", width: 22 },
+      ],
+      note: index === 0
+        ? `${grid.note} Every grid on this sheet adds up to the SAME month total the Closing Matrix publishes — `
+          + "money that reaches no product, rep, area or brick is given a named row rather than dropped, so the "
+          + "four TOTAL rows agree with each other. The three channel columns are values (the channel comes from "
+          + `the customer's name, which the hidden Calc sheet does not carry); Total and the TOTAL row are live formulas. ${scopeNote}`
+        : grid.note,
+      rows: rows.map((entry, rowIndex) => {
+        const excelRow = firstDataRow + rowIndex;
+        const leader = breakdownLeader(entry);
+        return [
+          resolveBreakdownLabel(grid.dimension, entry, maps),
+          entry.hospital,
+          entry.store,
+          entry.pharmacy,
+          F(`SUM(B${excelRow}:D${excelRow})`, entry.total),
+          leaderText(leader ? { distributorName: leader.label, share: leader.share } : null),
+        ];
+      }),
+      title: grid.title,
+      totals: rows.length > 0
+        ? [
+          "TOTAL",
+          F(`SUM(B${firstDataRow}:B${lastDataRow})`, totals.hospital),
+          F(`SUM(C${firstDataRow}:C${lastDataRow})`, totals.store),
+          F(`SUM(D${firstDataRow}:D${lastDataRow})`, totals.pharmacy),
+          F(`SUM(E${firstDataRow}:E${lastDataRow})`, totals.total),
+          null,
+        ]
+        : undefined,
+    });
   });
 }
 
@@ -2192,6 +2657,14 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     ar: "مقارنة الموزعين: حصة كل موزع بالمنتج والمنطقة والمنطقة الفرعية، وتغطيته.",
     en: "Each distributor's share by product, region and area, plus how much of the map they cover.",
   },
+  "Channel Comparison": {
+    ar: "المستشفيات والمخازن والصيدليات شهرًا بشهر: القيمة والكميات وعدد العملاء ونسبة كل قناة، ثم إجمالي الشهر مقابل التارجت.",
+    en: "Hospitals, wholesalers and pharmacies month by month: value, units, customers and each channel's share, then the month total against target.",
+  },
+  "Channel Breakdown": {
+    ar: "نفس تقسيم القنوات لهذا الشهر فقط، موزعًا على المنتج والمندوب والمنطقة والبريك، مع صف باسمه لكل مبيعات لم تصل لمندوب أو منطقة أو بريك.",
+    en: "The same channel split for this month only, cut by product, medical rep, area and brick — with a named row for any sales that reached no rep, area or brick.",
+  },
   "Rankings & Mix": {
     ar: "الترتيب: أعلى المنتجات والمناطق والبريكات والعملاء، وتوزيع المبيعات بينهم.",
     en: "Top products, areas, regions, bricks and customers, and how the sales mix is distributed.",
@@ -2324,6 +2797,20 @@ export async function buildMonthlyClosingWorkbook(
      * and the direct channel has no equivalent slice.
      */
     channels?: { retail: MonthlyClosingMatrix; directCells: MonthlyClosingDirectCell[] } | null;
+    /**
+     * Hospitals / Stores / Pharmacies across every month of the line, for the Channel Comparison
+     * sheet. Loaded by the caller (it is the one sheet that reaches outside the exported month)
+     * and omitted rather than empty when unavailable — a missing sheet is honest, a sheet of
+     * zeroes is not. Also omitted under a row-level filter, where the rest of the workbook covers
+     * a slice this whole-line, whole-history comparison could not be narrowed to.
+     */
+    channelComparison?: ChannelComparison | null;
+    /**
+     * The SAME channel split cut by product, rep, area and brick for the exported month only.
+     * Loaded by the caller alongside `channelComparison` and omitted on the same terms — a grid of
+     * whole-line figures beside a filtered workbook would describe a different population.
+     */
+    channelBreakdown?: ChannelBreakdown | null;
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -2407,6 +2894,16 @@ export async function buildMonthlyClosingWorkbook(
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
+  // Straight after "who sold it" comes "who bought it" — the same money split by customer channel,
+  // and the only sheet in the book that looks at the months either side of this one.
+  if (options?.channelComparison) {
+    writeChannelComparisonSheet(workbook, options.channelComparison, matrix.period);
+  }
+  // Then the same month cut four ways. Its own sheet: the brick grid alone runs to hundreds of rows
+  // and would bury the month-by-month blocks above.
+  if (options?.channelBreakdown) {
+    writeChannelBreakdownSheet(workbook, options.channelBreakdown, matrix, comparison);
+  }
   writeRankingsSheet(workbook, comparison, ref);
   writeGapsSheet(workbook, comparison, ref);
   writeSummarySheet(workbook, comparison, ref);
