@@ -20,23 +20,27 @@ import { createClient } from "@supabase/supabase-js";
 
 // Tables legitimately without a primary key. Add here ONLY after confirming the table
 // is a transient backup/scratch artifact -- a real domain table without a primary key
-// is a defect, not an exception. Every entry below is a dated ad-hoc backup and is a
-// candidate for dropping outright.
-const NO_PRIMARY_KEY_ALLOWED = new Set<string>([
-  // email_backfill_backup_20260730 was removed 2026-08-01 when the table itself was
-  // dropped (20260801100000). An allowlist that names tables which no longer exist
-  // quietly stops being a guard — retire entries with the table, not later.
-  "geo_locations_brick_centroid_backup2_20260728",
-  "geo_locations_brick_centroid_backup_20260728",
-  // Added 2026-08-01: rollback records for the CRM re-attribution. Their exposure was
-  // closed by 20260801110000 (RLS enabled); these entries only silence the missing-PK
-  // check, which is what this allowlist is for. Retire BOTH entries when the tables are
-  // dropped — this is the third such pair in three days, so the standing fix is to stop
-  // creating ad-hoc backups in `public` with default grants, not to keep extending this
-  // list.
-  "crm_restamp_backup_20260801",
-  "crm_restamp_checkins_backup_20260801",
-]);
+// is a defect, not an exception.
+//
+// EMPTY as of 2026-08-05, and it should stay that way. The four entries that lived here
+// (two geo brick-centroid snapshots, two CRM re-stamp rollback tables) were retired by
+// 20260805204502_move_adhoc_snapshots_out_of_public, which moved them into
+// `geo_backup_20260728` and `crm_backup_20260801`. All four still exist and still have
+// no primary key -- they are simply no longer in `public`, and phx_ci_schema_shape()
+// only reports on `public`, so naming them here would now silence nothing. This list's
+// own rule was to retire an entry WITH its table rather than later, because an allowlist
+// naming tables the check can no longer see quietly stops being a guard; that applies
+// just as much to tables it can no longer see because they moved.
+//
+// The note left here on 2026-08-01 said the standing fix was "to stop creating ad-hoc
+// backups in `public` with default grants, not to keep extending this list". Both halves
+// of that are now in place: scripts/check-sql-backup-placement.ts fails a snapshot table
+// created in `public` at review time, and the four that already existed have been
+// relocated out of it.
+//
+// So a new name appearing here means a snapshot was created in `public` again. The fix
+// is to move it into a dated schema, not to add it to this list.
+const NO_PRIMARY_KEY_ALLOWED = new Set<string>([]);
 
 // Tables allowed to be reachable by anon/authenticated while RLS is DISABLED.
 //
