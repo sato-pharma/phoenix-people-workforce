@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   DIRECT_ORDER_REPORT_COLUMNS,
+  HELD_ORDER_LIFETIME_DAYS,
   directOrderReportColumnIndex,
+  heldClockCells,
   directOrderReportRowCells,
   summariseDirectOrderReport,
 } from "../src/lib/direct-orders/report-columns.ts";
@@ -75,8 +78,44 @@ export function runDirectOrderReportColumnsTests() {
     `the row builder emitted ${cells.length} cells for ${DIRECT_ORDER_REPORT_COLUMNS.length} columns — the two are positional twins and must match`,
   );
 
-  // The owner's rule is "do not minus even one field". 39 is that promise, pinned.
-  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 39, "the Direct Orders report is a 39-column report");
+  // The owner's rule is "do not minus even one field". The count is that promise, pinned — it went
+  // 39 -> 43 on 2026-08-05 when the held clock arrived. Adding is fine and expected; this assertion
+  // exists to make a REMOVAL impossible to do quietly, so update it deliberately or not at all.
+  assert.equal(DIRECT_ORDER_REPORT_COLUMNS.length, 43, "the Direct Orders report is a 43-column report");
+  for (const promised of ["Status", "Sales value (EGP)", "Pharmacy name", "Held at", "Days to expiry"]) {
+    assert.ok(
+      directOrderReportColumnIndex(promised) >= 0,
+      `"${promised}" must still be a column — the count alone would let a swap slip through`,
+    );
+  }
+
+  // ── The held fuse is duplicated on purpose; it must not drift ────────────────────────────
+  // report-columns.ts cannot import from service.ts (no Supabase in the feed's hot path), and
+  // moving the constant the other way would mean editing the expiry sweep's own default — a line
+  // spec B6 pins. So there are two 14s, and this is what stops them diverging: change one and the
+  // report starts promising an expiry date the sweep does not honour.
+  {
+    const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
+    const declared = /const HELD_ORDER_LIFETIME_DAYS = (\d+);/.exec(serviceSource);
+    assert.ok(declared, "service.ts must still declare HELD_ORDER_LIFETIME_DAYS");
+    assert.equal(
+      Number(declared[1]),
+      HELD_ORDER_LIFETIME_DAYS,
+      `service.ts holds a held order for ${declared[1]} days but the report computes its expiry from ${HELD_ORDER_LIFETIME_DAYS} — the sheet would show a deadline that is not the real one`,
+    );
+  }
+
+  // The clock is blank for anything not held. A countdown on an approved order reads as a deadline
+  // that does not exist, which is worse than no column at all.
+  assert.deepEqual(heldClockCells(null), ["", null, "", null]);
+  {
+    const now = new Date("2026-08-10T00:00:00Z");
+    const [heldAt, daysHeld, expires, daysLeft] = heldClockCells("2026-08-04T00:00:00Z", now);
+    assert.equal(heldAt, "2026-08-04T00:00:00Z");
+    assert.equal(daysHeld, 6, "held on the 4th, read on the 10th, is 6 days");
+    assert.equal(String(expires).slice(0, 10), "2026-08-18", "14 days from the 4th is the 18th");
+    assert.equal(daysLeft, 8, "and 8 of those days are left");
+  }
 
   // Values must land under their own header, not merely be present somewhere.
   const at = (label: string) => cells[directOrderReportColumnIndex(label)];

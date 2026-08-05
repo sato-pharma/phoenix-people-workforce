@@ -44,6 +44,7 @@ function directOrder(overrides: Partial<DirectOrderReportRow> & { id: string }):
     activeStepOrder: 1,
     areaCode: "A-01",
     areaName: "Nasr City",
+    heldAt: null,
     bonus: 0,
     bonusOverrideReason: null,
     brickId: "B-01",

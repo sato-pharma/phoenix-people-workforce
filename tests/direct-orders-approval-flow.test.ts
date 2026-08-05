@@ -16,7 +16,8 @@ import {
   validateBonus,
   validateDiscount,
 } from "../src/lib/direct-orders/approval-flow.ts";
-import type { DirectOrderStepState } from "../src/lib/direct-orders/types.ts";
+import { directOrderReportRowCells } from "../src/lib/direct-orders/report-columns.ts";
+import type { DirectOrderReportRow, DirectOrderStepState } from "../src/lib/direct-orders/types.ts";
 
 function steps(...defs: Array<Partial<DirectOrderStepState> & { order: number; status: DirectOrderStepState["status"] }>): DirectOrderStepState[] {
   return defs.map((d) => ({
@@ -306,8 +307,17 @@ export function runDirectOrdersApprovalFlowTests() {
       workbookSource.indexOf("export function directOrderReportRowCells"),
       workbookSource.indexOf("export function directOrderReportColumnIndex"),
     );
+    // Counted by EXECUTING the pair, not by matching `row.` lines in the source.
+    //
+    // The old heuristic counted one source line per cell, which silently under-counted the moment a
+    // builder emitted several cells from one line — `...heldClockCells(row.heldAt)` returns four.
+    // It then reported a mismatch that did not exist, which is the worst kind of guard: it fails on
+    // correct code and teaches whoever hits it to edit the test until it goes quiet.
     const columnCount = (columnsBlock.match(/\{ label: "/g) ?? []).length;
-    const cellCount = (rowsBlock.match(/^\s{4}row\./gm) ?? []).length;
+    // An empty row is enough: this asserts the LENGTH of the emitted array, which does not
+    // depend on any field's value. Building a full 43-field fixture here would duplicate the
+    // one in direct-orders-report-columns.test.ts and rot the moment a field is renamed.
+    const cellCount = directOrderReportRowCells({} as DirectOrderReportRow).length;
     assert.equal(
       columnCount,
       cellCount,

@@ -28,6 +28,44 @@ import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 const UNITS_FMT = "#,##0";
 const VALUE_FMT = "#,##0.00";
 
+/**
+ * The held fuse, in days (spec B6).
+ *
+ * Deliberately a SECOND copy of service.ts's `HELD_ORDER_LIFETIME_DAYS`, not a shared import. This
+ * file must stay free of Supabase and ExcelJS (see the header), so it cannot import from
+ * service.ts — and moving the constant here instead would have meant editing the expiry sweep's
+ * own default, a line the owner's spec B6 pins and a test asserts literally. Rewriting a
+ * money-expiring default to tidy up a report is the wrong trade.
+ *
+ * `tests/direct-orders-report-columns.test.ts` asserts the two stay equal, so the copy cannot
+ * drift silently — which is the only thing that made duplication dangerous in the first place.
+ */
+export const HELD_ORDER_LIFETIME_DAYS = 14;
+
+const MS_PER_DAY = 86_400_000;
+
+/** Whole-tenths of a day between two instants, or null when either end is missing. */
+function daysBetween(from: string | null | undefined, to: Date): number | null {
+  if (!from) return null;
+  const start = new Date(from).getTime();
+  if (Number.isNaN(start)) return null;
+  return Math.round(((to.getTime() - start) / MS_PER_DAY) * 10) / 10;
+}
+
+/**
+ * The held clock for one order: when it was held, how long it has sat, when the sweep takes it, and
+ * how long is left. All four are blank for an order that is not held — a countdown on an approved
+ * order would read as a deadline that does not exist.
+ */
+export function heldClockCells(heldAt: string | null | undefined, now: Date = new Date()): DirectOrderReportCell[] {
+  const daysHeld = daysBetween(heldAt, now);
+  if (!heldAt || daysHeld === null) return ["", null, "", null];
+
+  const expiresAt = new Date(new Date(heldAt).getTime() + HELD_ORDER_LIFETIME_DAYS * MS_PER_DAY);
+  const daysLeft = Math.round(((expiresAt.getTime() - now.getTime()) / MS_PER_DAY) * 10) / 10;
+  return [heldAt, daysHeld, expiresAt.toISOString(), daysLeft];
+}
+
 export type DirectOrderReportColumn = {
   label: string;
   right?: boolean;
@@ -78,6 +116,13 @@ export const DIRECT_ORDER_REPORT_COLUMNS: DirectOrderReportColumn[] = [
   { label: "Request ID", width: 20 },
   { label: "Created at" },
   { label: "Decided at" },
+  // The held clock. A held order is not parked — it is on a 14-day fuse (spec B6,
+  // expireStaleHeldDirectOrders). "Status: held" says nothing about how much of that fuse is left,
+  // and on 2026-08-05 that gap covered 11 orders worth 509,736 EGP all due to expire the same day.
+  { label: "Held at" },
+  { label: "Days held", right: true, numFmt: "#,##0.0" },
+  { label: "Held expires" },
+  { label: "Days to expiry", right: true, numFmt: "#,##0.0" },
 ];
 
 export function directOrderReportRowCells(row: DirectOrderReportRow): DirectOrderReportCell[] {
@@ -121,6 +166,7 @@ export function directOrderReportRowCells(row: DirectOrderReportRow): DirectOrde
     row.id,
     row.createdAt,
     row.decidedAt ?? "",
+    ...heldClockCells(row.heldAt),
   ];
 }
 
