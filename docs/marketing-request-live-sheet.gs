@@ -56,7 +56,8 @@
  * SETUP (once)
  *   1. Extensions -> Apps Script
  *   2. Delete the placeholder code, paste this file, Save
- *   3. Put your feed token in FEED_URL below
+ *   3. Project Settings -> Script Properties -> add FEED_TOKEN with the token Phoenix minted.
+ *      The token is NOT written in this file — see the note above feedToken().
  *   4. Choose `installTrigger` in the function dropdown, click Run, authorise when Google asks
  *      (it is asking about YOUR OWN script)
  *   5. For instant refresh: Deploy -> New deployment -> Web app -> Execute as ME, Access ANYONE.
@@ -68,10 +69,13 @@
  * Phoenix menu. A normal refresh will NOT pick them up — by design.
  *
  * SECURITY
- *   FEED_URL contains a bearer token: anyone holding it can read every marketing request this
+ *   The feed token is a bearer credential: anyone holding it can read every marketing request this
  *   link's scope covers, and open the evidence photographs. Keep the SHEET private and share the
  *   SHEET, never the URL. The token can be revoked server-side at any time, which instantly kills
  *   this script's access and every file link inside the sheet with it.
+ *
+ *   Phoenix rotates it automatically — see doPost's rotateToken branch. The live value lives in a
+ *   Script Property that is committed nowhere, so nothing in this file opens anything.
  *
  * FAIL-SAFE
  *   Nothing is cleared until a good response has been fetched AND parsed. A network blip, an
@@ -81,10 +85,35 @@
  */
 
 // ── Configuration ────────────────────────────────────────────────────────────────
-var FEED_URL =
-  "https://phoenix-hr.satopharma.com/api/share/marketing-requests/" +
-  "PASTE_YOUR_FEED_TOKEN_HERE" +
-  "/feed";
+var FEED_BASE = "https://phoenix-hr.satopharma.com/api/share/marketing-requests/";
+
+/**
+ * The feed token, read from a Script Property — deliberately NOT a slot in this file.
+ *
+ * A token committed here lives in git history for good. Even a revoked one still reads to the next
+ * person as live, and it invites the next setup to paste a live one beside it. On 2026-08-05 this
+ * table was found readable by `anon`, so the then-current token had to be rotated by hand; keeping
+ * the value out of the file is half of making sure that is never needed again.
+ *
+ * Set it once per sheet: Project Settings -> Script Properties -> FEED_TOKEN.
+ * After that Phoenix rotates it automatically — see doPost's rotateToken branch. Nobody has to
+ * open this editor again.
+ */
+function feedToken() {
+  return String(PropertiesService.getScriptProperties().getProperty("FEED_TOKEN") || "").trim();
+}
+
+/**
+ * Built per call, never cached — a rotation must take effect on the very next refresh.
+ *
+ * Returns "" when no token is configured. The caller treats that exactly like an unreachable feed:
+ * leave the sheet alone. Returning a URL with an empty token would fetch a 404 and look like a
+ * revoked link, sending whoever debugs it to the wrong place entirely.
+ */
+function feedUrl() {
+  var token = feedToken();
+  return token ? FEED_BASE + token + "/feed?bundle=1" : "";
+}
 
 var TZ = "Africa/Cairo";
 
@@ -311,6 +340,41 @@ function doPost(e) {
   if (supplied !== expected) {
     return ContentService.createTextOutput("denied").setMimeType(ContentService.MimeType.TEXT);
   }
+
+  // ── Token rotation ───────────────────────────────────────────────────────────────────────
+  // Phoenix mints a new share token and hands it over HERE, authorised by the webhook secret
+  // currently in force. Storing it in a Script Property — committed nowhere — is what lets an
+  // exposed token be replaced without anyone opening this editor.
+  //
+  // Phoenix only revokes the old token AFTER observing that this script has READ with the new one,
+  // so a rotation that fails to arrive leaves the sheet working on the old token rather than dead.
+  //
+  // Note WEBHOOK_SECRET is never touched here, unlike the direct-orders script which has to pin it
+  // first. That script falls back to using its feed token as the webhook secret, so rotating the
+  // token would move the secret with it; this one has always required an explicit WEBHOOK_SECRET
+  // (see the fail-closed check above), so "may trigger a refresh" and "may read the data" are
+  // already separate. Only the feed token rotates.
+  var payload = {};
+  try {
+    payload = JSON.parse(e && e.postData ? e.postData.contents : "{}");
+  } catch (err) {
+    payload = {};
+  }
+  var rotate = String(payload.rotateToken || "").trim();
+  if (rotate) {
+    if (!/^[A-Za-z0-9_-]{20,}$/.test(rotate)) {
+      // Refuse anything that is not a plausible token rather than storing rubbish that would
+      // silently break every refresh from here on.
+      return ContentService.createTextOutput("bad token").setMimeType(ContentService.MimeType.TEXT);
+    }
+    PropertiesService.getScriptProperties().setProperty("FEED_TOKEN", rotate);
+    // Read immediately: this fetch is what proves to Phoenix that the token was stored, because it
+    // bumps the new link's access_count on Phoenix's own side of the wire. A reply cannot prove it
+    // — Apps Script answers a POST with a 302 that the caller follows as a GET.
+    refreshMarketingRequests();
+    return ContentService.createTextOutput("rotated").setMimeType(ContentService.MimeType.TEXT);
+  }
+
   refreshMarketingRequests();
   return ContentService.createTextOutput("ok").setMimeType(ContentService.MimeType.TEXT);
 }
@@ -326,9 +390,15 @@ function onOpen() {
 // ── The refresh ─────────────────────────────────────────────────────────────────
 
 function refreshMarketingRequests() {
+  var url = feedUrl();
+  if (!url) {
+    // No FEED_TOKEN configured. Treated exactly like an unreachable feed — leave the sheet alone.
+    console.error("No FEED_TOKEN script property is set — nothing to fetch. Project Settings -> Script Properties -> FEED_TOKEN.");
+    return;
+  }
   var response;
   try {
-    response = UrlFetchApp.fetch(FEED_URL + "?bundle=1", { muteHttpExceptions: true });
+    response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   } catch (err) {
     return; // network blip — last good data stays on screen
   }
