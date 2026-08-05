@@ -54,12 +54,32 @@ function daysBetween(from: string | null | undefined, to: Date): number | null {
 
 /**
  * The held clock for one order: when it was held, how long it has sat, when the sweep takes it, and
- * how long is left. All four are blank for an order that is not held — a countdown on an approved
- * order would read as a deadline that does not exist.
+ * how long is left.
+ *
+ * Two halves with different rules. `Held at` and `Days held` are HISTORY and render wherever a
+ * `held_at` exists, including on an order that has since been rejected. `Held expires` and `Days to
+ * expiry` are a CLAIM ABOUT THE FUTURE and render only while the order is still held — a countdown
+ * on a rejected order is a deadline that will never fire.
+ *
+ * All four are blank when the order was never held at all.
  */
-export function heldClockCells(heldAt: string | null | undefined, now: Date = new Date()): DirectOrderReportCell[] {
+export function heldClockCells(
+  heldAt: string | null | undefined,
+  status: string | null | undefined,
+  now: Date = new Date(),
+): DirectOrderReportCell[] {
   const daysHeld = daysBetween(heldAt, now);
   if (!heldAt || daysHeld === null) return ["", null, "", null];
+
+  // `held_at` is never cleared when an order leaves the held lane, so 12 of 14 rejected orders
+  // still carry one. The first version keyed the whole clock off that timestamp and showed
+  // "13 days to expiry" on orders that had already been rejected — a deadline that will never
+  // fire, which is precisely what this file's own comment said not to do.
+  //
+  // The split: WHEN it was held and HOW LONG it sat are historical facts and stay on every row
+  // that has them. The COUNTDOWN is a live claim about the future, so it appears only while the
+  // order is still in the lane the 14-day sweep actually looks at.
+  if (String(status ?? "").toLowerCase() !== "held") return [heldAt, daysHeld, "", null];
 
   const expiresAt = new Date(new Date(heldAt).getTime() + HELD_ORDER_LIFETIME_DAYS * MS_PER_DAY);
   const daysLeft = Math.round(((expiresAt.getTime() - now.getTime()) / MS_PER_DAY) * 10) / 10;
@@ -183,7 +203,7 @@ export function directOrderReportRowCells(
     row.id,
     row.createdAt,
     row.decidedAt ?? "",
-    ...heldClockCells(row.heldAt),
+    ...heldClockCells(row.heldAt, row.status),
     links.evidence,
   ];
 }

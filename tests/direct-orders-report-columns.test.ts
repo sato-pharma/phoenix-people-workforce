@@ -108,14 +108,33 @@ export function runDirectOrderReportColumnsTests() {
 
   // The clock is blank for anything not held. A countdown on an approved order reads as a deadline
   // that does not exist, which is worse than no column at all.
-  assert.deepEqual(heldClockCells(null), ["", null, "", null]);
+  assert.deepEqual(heldClockCells(null, "held"), ["", null, "", null]);
   {
     const now = new Date("2026-08-10T00:00:00Z");
-    const [heldAt, daysHeld, expires, daysLeft] = heldClockCells("2026-08-04T00:00:00Z", now);
+    const [heldAt, daysHeld, expires, daysLeft] = heldClockCells("2026-08-04T00:00:00Z", "held", now);
     assert.equal(heldAt, "2026-08-04T00:00:00Z");
     assert.equal(daysHeld, 6, "held on the 4th, read on the 10th, is 6 days");
     assert.equal(String(expires).slice(0, 10), "2026-08-18", "14 days from the 4th is the 18th");
     assert.equal(daysLeft, 8, "and 8 of those days are left");
+  }
+
+  // `held_at` is never cleared when an order leaves the held lane. On 2026-08-05 that meant 12 of
+  // 14 REJECTED orders still carried one, and the first version of this clock cheerfully printed
+  // "13 days to expiry" against them — a deadline that will never fire, on a report the owner reads
+  // to decide what needs chasing. History stays; the countdown goes.
+  {
+    const now = new Date("2026-08-10T00:00:00Z");
+    for (const settled of ["rejected", "approved", "expired", "reversed"]) {
+      const [heldAt, daysHeld, expires, daysLeft] = heldClockCells("2026-08-04T00:00:00Z", settled, now);
+      assert.equal(heldAt, "2026-08-04T00:00:00Z", `${settled}: when it was held is history and must survive`);
+      assert.equal(daysHeld, 6, `${settled}: how long it sat is history and must survive`);
+      assert.equal(expires, "", `${settled}: must NOT claim an expiry date the sweep will never act on`);
+      assert.equal(daysLeft, null, `${settled}: must NOT count down to a deadline that cannot fire`);
+    }
+    // Case must not decide it: a feed that ever sends "Held" must behave like "held".
+    assert.equal(heldClockCells("2026-08-04T00:00:00Z", "Held", now)[3], 8, "the status match must be case-insensitive");
+    // A missing status is not a held order.
+    assert.equal(heldClockCells("2026-08-04T00:00:00Z", null, now)[3], null);
   }
 
   // ── Clickable evidence ───────────────────────────────────────────────────────────────────
