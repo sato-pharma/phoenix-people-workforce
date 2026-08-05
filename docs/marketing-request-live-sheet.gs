@@ -165,11 +165,47 @@ var LINK_LABELS = {
 /** Which columns get a total, per tab. Money and quantity only — a total of "Days to approve" or a
  *  GPS coordinate is noise dressed up as a figure. */
 var TOTALLED = {
+  "Key Data": ["Amount", "Estimated ROI", "Required ROI"],
   "Requests": ["Amount", "Estimated ROI", "Required ROI", "Actual sales value", "Coverage gap"],
   "Products": ["Forecast quantity", "Expected value"],
   "Approval trail": [],
   "Pharmacies": []
 };
+
+var KEY_TAB = "Key Data";
+
+/**
+ * The decision-grade columns, in reading order.
+ *
+ * Requests carries all 109 fields and stays that way — when a number is questioned, the answer has
+ * to be somewhere. But 109 columns is not a thing anyone reads; it is a thing people search. This
+ * tab is the version you actually look at: who asked, for whom, how much, what it must return,
+ * whether it is on track, and where it is stuck. Everything else is one click away on Requests.
+ *
+ * It is a PROJECTION of the same feed rows, not a second query, so the two tabs cannot disagree.
+ * A label that the feed ever stops sending is skipped rather than left as an empty column.
+ */
+var KEY_COLUMNS = [
+  "Serial",
+  "Month",
+  "Week",
+  "Line",
+  "Type",
+  "Account/Dr.Name",
+  "Region",
+  "Requester",
+  "Amount",
+  "Estimated ROI",
+  "Required ROI",
+  "ROI coverage",
+  "ROI status",
+  "Status",
+  "Current step",
+  "Money transfer Date",
+  "Days to approve",
+  "Evidence photo link",
+  "Request Preview"
+];
 
 /** Every column that carries a state word, wherever it appears. */
 var STATUS_COLUMNS = [
@@ -203,7 +239,7 @@ var EXEC_TAB = "Executive Summary";
 /** What that panel was called before. Kept so an existing sheet is RENAMED, not duplicated. */
 var LEGACY_EXEC_TAB = "God Mode";
 
-var TAB_ORDER = [EXEC_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover"];
+var TAB_ORDER = [EXEC_TAB, KEY_TAB, "Requests", "Products", "Approval trail", "Pharmacies", "Cover"];
 
 // ── Entry points ────────────────────────────────────────────────────────────────
 
@@ -296,6 +332,20 @@ function refreshMarketingRequests() {
     writeGridSheet(ss, SECTIONS[i], grid, stamp, rebuild);
   }
 
+  // Key Data rides the same pipeline as every other tab — same banding, borders, totals, status
+  // colours and filter — because it IS the Requests rows, narrowed. Giving it its own writer would
+  // have meant two code paths that had to be kept looking alike by hand.
+  var keyGrid = projectGrid(bundle.REQUESTS, KEY_COLUMNS);
+  if (keyGrid.length > 0) {
+    writeGridSheet(
+      ss,
+      { tab: KEY_TAB, subtitle: "The columns a decision actually needs — the other " + (bundle.REQUESTS[0].length - keyGrid[0].length) + " are on Requests" },
+      keyGrid,
+      stamp,
+      rebuild,
+    );
+  }
+
   if (rebuild) {
     buildExecutiveSummarySheet(ss, bundle.REQUESTS[0], stamp);
     buildCoverSheet(ss, bundle.SUMMARY || [], stamp);
@@ -315,7 +365,38 @@ function buildLayoutSignature(bundle) {
     var grid = bundle[SECTIONS[i].key];
     parts.push(SECTIONS[i].tab + ":" + (grid && grid.length > 0 ? grid[0].join("|") : ""));
   }
+  // KEY_COLUMNS is part of the signature too, so editing that list and running Rebuild layout is
+  // not even necessary — changing which columns matter is itself a layout change.
+  parts.push(KEY_TAB + ":" + KEY_COLUMNS.join("|"));
   return parts.join("‖");
+}
+
+/**
+ * Narrow a grid to the named columns, in the order named.
+ *
+ * Skips a label the feed does not send rather than emitting an empty column: a header standing over
+ * nothing reads as "this data is missing", when the truth is that this build of Phoenix never had
+ * that field.
+ */
+function projectGrid(grid, labels) {
+  if (!grid || grid.length === 0) return [];
+  var header = grid[0];
+  var picks = [];
+  for (var i = 0; i < labels.length; i++) {
+    var index = header.indexOf(labels[i]);
+    if (index >= 0) picks.push(index);
+  }
+  if (picks.length === 0) return [];
+
+  var out = [];
+  for (var r = 0; r < grid.length; r++) {
+    var row = [];
+    for (var p = 0; p < picks.length; p++) {
+      row.push(grid[r][picks[p]] === undefined ? "" : grid[r][picks[p]]);
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 /**
