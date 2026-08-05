@@ -603,6 +603,7 @@ import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
+import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test.ts";
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
@@ -1363,6 +1364,11 @@ await runTest(
 await runTest(
   "closing excludes Head Office (unreachable on every closing surface; the published-everything email gate still counts it)",
   runClosingExcludesHeadOfficeTests,
+);
+
+await runTest(
+  "store split detail report (mirrors the split exactly; shares add back to the sale; pharmacies and direct never appear)",
+  runStoreSplitDetailReportTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
