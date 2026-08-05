@@ -1,0 +1,114 @@
+name: Synthetic Journeys (production smoke)
+
+# WHY THIS EXISTS. The GCP alerting layer died with the billing account on 2026-08-01 and was not
+# replaced: errors still land in app_error_events, but nothing pages anyone (see
+# docs/observability.md). The Healthchecks.io dead-man's-switch survived, but it answers exactly one
+# question — "did a cron job run at all?" — and says nothing about whether a page renders.
+#
+# This suite is the cheapest route back to an automated "is production actually working?" signal,
+# and it runs on GitHub's infrastructure rather than Railway's. That matters: a monitor hosted
+# inside the thing it monitors cannot report that the thing is down. Same reasoning that kept the
+# dead-man's-switch alive while everything inside GCP went with it.
+#
+# SAFETY. tests/synthetic/ is read-only by construction — it navigates and asserts, and never
+# creates, edits, approves, rejects, deletes, uploads or sends. Its global-setup refuses to touch
+# production at all unless SYNTHETIC_ALLOW_PRODUCTION=true, and any future mutating journey has to
+# declare `mutates: true` and is gated behind SYNTHETIC_ALLOW_MUTATION, which this workflow never
+# sets. See tests/synthetic/README.md.
+#
+# COST. Each run performs one real Super Admin login against production, so it writes one row to
+# auth_login_attempts per run. Hourly during Cairo working hours keeps that noise bounded; a
+# 15-minute cadence would put ~96 admin logins a day into production audit data for little extra
+# signal.
+
+on:
+  schedule:
+    # Hourly at :17 past, 02:00-18:00 UTC = 05:00-21:00 Africa/Cairo. Overnight is deliberately
+    # skipped: nobody is using the app, and a failure at 03:00 Cairo is not actionable until
+    # morning anyway. The :17 offset keeps it off the shared firing minute of the other jobs.
+    - cron: "17 2-18 * * *"
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Environment to smoke-test"
+        required: false
+        default: "https://phoenix-hr.satopharma.com"
+
+permissions:
+  contents: read
+
+env:
+  # Matches ci.yml — kept in step with it rather than pinned separately.
+  CI_NODE_VERSION: "24"
+
+# Never let two runs overlap — they share one Super Admin account, and a second login would
+# invalidate the first run's session mid-journey and report a false failure.
+concurrency:
+  group: synthetic-journeys
+  cancel-in-progress: false
+
+jobs:
+  synthetic:
+    name: synthetic
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Fail LOUDLY on a missing secret rather than skipping. docs/observability.md records the
+      # exact trap: a skipped step and a passing step look identical at a glance, which is the
+      # silent-green failure this workflow exists to prevent. The suite's own global-setup also
+      # aborts before opening a browser, but failing here gives a one-line reason in the run
+      # summary instead of a Playwright stack trace.
+      - name: Verify required secrets are present
+        env:
+          HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
+          PASSWORD: ${{ secrets.SYNTHETIC_ADMIN_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$HR_ID" ] && missing="$missing SYNTHETIC_ADMIN_HR_ID"
+          [ -z "$PASSWORD" ] && missing="$missing SYNTHETIC_ADMIN_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing — create a dedicated read-only Super Admin account and add them under Settings → Secrets and variables → Actions. See tests/synthetic/README.md."
+            exit 1
+          fi
+          echo "Both synthetic credentials are present."
+
+      # corepack must be enabled BEFORE setup-node runs: with `cache: pnpm`, setup-node resolves
+      # the pnpm binary while configuring the cache. Same ordering as ci.yml.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run synthetic journeys
+        env:
+          SYNTHETIC_BASE_URL: ${{ inputs.base_url || 'https://phoenix-hr.satopharma.com' }}
+          SYNTHETIC_ADMIN_HR_ID: ${{ secrets.SYNTHETIC_ADMIN_HR_ID }}
+          SYNTHETIC_ADMIN_PASSWORD: ${{ secrets.SYNTHETIC_ADMIN_PASSWORD }}
+          # Required for the suite to accept a production base URL at all. Journeys stay read-only
+          # regardless; SYNTHETIC_ALLOW_MUTATION is deliberately never set here.
+          SYNTHETIC_ALLOW_PRODUCTION: "true"
+        run: pnpm run synthetic:test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: synthetic-report
+          path: |
+            tests/synthetic/report/html
+            output/playwright-synthetic
+          retention-days: 14
+          if-no-files-found: ignore
