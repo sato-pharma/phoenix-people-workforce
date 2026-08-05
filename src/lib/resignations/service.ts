@@ -897,6 +897,8 @@ async function updateEmployeeLifecycleFallback(
     "organogram_visible",
     "payroll_eligible",
     "resignation_date",
+    "crm_id",
+    "crm_username",
   ];
   const payload: Record<string, unknown> = {
     employment_status: input.employeeStatus,
@@ -906,6 +908,14 @@ async function updateEmployeeLifecycleFallback(
     organogram_visible: false,
     payroll_eligible: false,
     resignation_date: input.submittedDate,
+    // A leaver releases their CRM identity so the replacement hire can inherit it (owner
+    // rule, 2026-08-05). employees_crm_id_unique_idx / employees_crm_username_unique_idx are
+    // unique across ALL employees regardless of employment_status, and the employee-import
+    // validator maps crm_id -> hr_id with no active-only filter (unlike the org-seat map
+    // beside it), so a leaver who kept these blocked their own successor's master import
+    // with "CRM ID 1399 is already assigned to HR_ID B-97". 30 leavers were holding one.
+    crm_id: null,
+    crm_username: null,
     updated_at: new Date().toISOString(),
   };
 
