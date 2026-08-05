@@ -218,7 +218,11 @@ export async function runSosMonthlyClosingReportCheck(): Promise<SosMonthlyRepor
 
   try {
     const [activeLines, publishedClosings] = await Promise.all([
-      listMonthlyClosingLines(),
+      // Head Office INCLUDED on purpose, unlike every closing surface: this asks "is every active
+      // line published for the period", not "which lines can be closed". Dropping it here would
+      // relax the gate and start firing an email on a condition it has never fired on — a
+      // behaviour change this module never asked for. See listMonthlyClosingLines' own note.
+      listMonthlyClosingLines({ includeHeadOffice: true }),
       listAllPublishedClosings(),
     ]);
     const fullyPublishedPeriods = computeFullyPublishedPeriods(activeLines, publishedClosings);

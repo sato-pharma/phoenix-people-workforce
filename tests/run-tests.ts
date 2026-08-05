@@ -620,6 +620,7 @@ import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.te
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
 import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
+import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-office.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1357,6 +1358,11 @@ await runTest(
 await runTest(
   "vacancy seat linkage (seat_id FK, one open vacancy per seat, hire resolves by seat before text matching)",
   runVacancySeatLinkageTests,
+);
+
+await runTest(
+  "closing excludes Head Office (unreachable on every closing surface; the published-everything email gate still counts it)",
+  runClosingExcludesHeadOfficeTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
