@@ -26,6 +26,11 @@ export function runDirectOrdersShareLinkControlsTests() {
     new URL("../app/api/share/direct-orders/[token]/feed/route.ts", import.meta.url),
     "utf8",
   );
+  const sharePage = readFileSync(
+    new URL("../app/share/direct-orders/[token]/page.tsx", import.meta.url),
+    "utf8",
+  );
+  const registry = readFileSync(new URL("../src/lib/security/access-registry.ts", import.meta.url), "utf8");
 
   // ── D5d: publishing is gated on EXPORT, not on read ────────────────────────
   // Publishing the report outside the login wall is the strongest form of export. Gating on read
@@ -179,15 +184,34 @@ export function runDirectOrdersShareLinkControlsTests() {
   // whole design rests on.
   {
     for (const [name, route] of [["live", liveRoute], ["feed", feedRoute]] as const) {
+      // Counted against the number of responses, not matched once anywhere in the file. A single
+      // `assert.match` is satisfied by the FIRST response that carries the header while a second
+      // one leaks — verified by deleting no-store from the live route's JSON response, which a
+      // bare match did not notice.
+      const responses = route.match(/return new NextResponse\(|return NextResponse\.json\(/g) ?? [];
+      const noStore = route.match(/"Cache-Control": "no-store, max-age=0"/g) ?? [];
+      assert.ok(
+        noStore.length >= responses.length - 1,
+        `the ${name} route must send no-store on every data response: a cached copy outlives both ` +
+          `the expiry and the revoke button (${responses.length} responses, ${noStore.length} no-store)`,
+      );
+
+      // The ERROR path is asserted on its OWN body. A whole-file match for the success header
+      // ("noindex, nofollow, noarchive") stays green after the error path's header is deleted,
+      // because the error path sends the shorter "noindex, nofollow" — so the one response most
+      // likely to be reached by a crawler probing tokens was the one nothing checked.
+      const catchStart = route.indexOf("} catch (error) {");
+      assert.notEqual(catchStart, -1, `the ${name} route must still handle its errors`);
       assert.match(
-        route,
-        /"Cache-Control": "no-store, max-age=0"/,
-        `the ${name} route must send no-store: a cached copy outlives both the expiry and the revoke button`,
+        route.slice(catchStart),
+        /"X-Robots-Tag": "noindex/,
+        `the ${name} route must send noindex on its ERROR response too: a crawled copy is a ` +
+          "permanent public copy, and a 404 still tells a crawler the URL exists",
       );
       assert.match(
         route,
         /"X-Robots-Tag": "noindex, nofollow, noarchive"/,
-        `the ${name} route must send noindex: a crawled copy is a permanent public copy`,
+        `the ${name} route must send noindex on its data response: a crawled copy is a permanent public copy`,
       );
     }
   }
@@ -198,6 +222,80 @@ export function runDirectOrdersShareLinkControlsTests() {
       source,
       /randomBytes\(32\)\.toString\("base64url"\)/,
       "the token must stay 32 random bytes — it is the entire credential",
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Merged in from #1831, which locked the same spec items independently. These five rules were
+  // in that version and not in this one, and they are kept because each covers something the
+  // rest of this file does not reach. The two efforts were written in parallel by different
+  // sessions; the union is what ships.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── D5c: every open is stamped and counted ─────────────────────────────────
+  // The controls above decide who MAY read. This is the record of who DID. Without it, the
+  // honest answer to "who else has published our numbers" is that nobody knows.
+  {
+    const resolveIdx = source.indexOf("export async function resolveDirectOrderReportShareLink(");
+    assert.ok(resolveIdx > -1, "resolveDirectOrderReportShareLink must still exist");
+    const resolveBody = source.slice(resolveIdx, resolveIdx + 2400);
+    assert.match(resolveBody, /last_accessed_at:/, "every open must be stamped");
+    assert.match(
+      resolveBody,
+      /access_count: Number\(link\.access_count \?\? 0\) \+ 1/,
+      "every open must be counted",
+    );
+  }
+
+  // ── D5c: the management table answers "who else has published our numbers" ─
+  // A creator sees their own links so they can revoke them; a Super Admin sees every one, because
+  // the question the table exists to answer is company-wide and cannot be asked one account at a
+  // time.
+  {
+    assert.match(
+      source,
+      /if \(!isAdmin\) query = query\.eq\("created_by_hr_id"/,
+      "a non-admin sees only their own links; a Super Admin sees every one",
+    );
+  }
+
+  // ── D5d: the route registry must agree with the domain ─────────────────────
+  // The domain function asserting `export` is only half the gate. If the registry declared the
+  // management route at a lower bar, the two would disagree and the weaker one would be the one
+  // an access sweep reported as correct.
+  {
+    assert.match(
+      registry,
+      /pattern: "\/api\/direct-orders\/report\/share-links", permission: \{ resource: "direct_orders", action: "export" \}/,
+      "the registry must gate the management route on export too, so the route and the domain agree",
+    );
+  }
+
+  // ── The public surfaces are unauthenticated BY DESIGN, and must say so ─────
+  // An undeclared public route is indistinguishable from a forgotten one. Declaring them means a
+  // future access sweep reads them as a decision rather than as an oversight to be "fixed" by
+  // putting them behind the login wall the whole feature exists to bypass.
+  {
+    assert.match(
+      registry,
+      /authMode: "public-token", methods: \["POST"\], pattern: "\/api\/share\/direct-orders\/:token\/live"/,
+      "the live surface must be registered as a declared public-token route",
+    );
+    assert.match(
+      registry,
+      /authMode: "public-token"[^\n]*pattern: "\/api\/share\/direct-orders\/:token\/feed"/,
+      "the feed surface must be registered as a declared public-token route",
+    );
+  }
+
+  // ── The PAGE, not only the API, must refuse indexing ───────────────────────
+  // The routes above send the header. The page is a separate surface with its own metadata, and
+  // it is the one a crawler actually follows a pasted link to.
+  {
+    assert.match(
+      sharePage,
+      /robots:\s*\{\s*index:\s*false/,
+      "the public page itself must declare noindex — a crawled copy would outlive the revoke switch",
     );
   }
 }
