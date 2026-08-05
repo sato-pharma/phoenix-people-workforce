@@ -83,6 +83,45 @@ function periodFrom(value: unknown, dayFirst?: boolean): string | null {
   return Number.isNaN(parsed.getTime()) ? null : ym(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1);
 }
 
+/**
+ * Timezone-safe YYYY-MM-DD — the invoice's REAL date, not just its month.
+ *
+ * periodFrom above keeps only the month, and for a long time that was all this path persisted:
+ * `invoice_date` went in as null on every normalizer import, so 96% of production rows carry no
+ * date at all and the closing's Data sheet prints an empty Invoice Date column. It also cost a
+ * week of wrong numbers — a distributor folder labelled April held May's invoices, and with the
+ * real dates stored that would have been visible the moment it landed rather than after an audit.
+ *
+ * Day/month disambiguation is deliberately identical to periodFrom: the two must never disagree
+ * about which month a row belongs to.
+ */
+function dateFrom(value: unknown, dayFirst?: boolean): string | null {
+  const ymd = (y: number, m: number, d: number) =>
+    (Number.isInteger(y) && y >= 1900 && m >= 1 && m <= 12 && d >= 1 && d <= 31
+      ? `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+      : null);
+  if (value instanceof Date) return ymd(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const iso = text.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return ymd(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  const dmy = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (dmy) {
+    const a = Number(dmy[1]); const b = Number(dmy[2]); let y = Number(dmy[3]); if (y < 100) y += 2000;
+    let month: number;
+    let day: number;
+    if (dayFirst === true) { month = b >= 1 && b <= 12 ? b : a; day = month === b ? a : b; }
+    else if (dayFirst === false) { month = a >= 1 && a <= 12 ? a : b; day = month === a ? b : a; }
+    else if (a > 12 && b <= 12) { month = b; day = a; }
+    else { month = a; day = b; }
+    return ymd(y, month, day);
+  }
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : ymd(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+}
+
 // Decide if a sheet's date column is day-first (DD-MM) or month-first (MM-DD) by scanning its values.
 // A value whose FIRST part is > 12 can only be a day -> DD-MM (decisive). A value whose SECOND part is
 // > 12 (first <= 12) can only be a day there -> MM-DD. undefined when every value is ambiguous.
@@ -467,6 +506,9 @@ export function normalizeRows(
       discount,
       distributorCode: profile.distributorCode,
       invoiceDate: periodFrom(firstValue(row, header, profile.dateColumns), dayFirst) ?? "",
+      // The exact date the sheet carries, kept alongside the month so a mislabelled file is visible
+      // in the data rather than only after someone reconciles it against the source workbook.
+      invoiceDay: dateFrom(firstValue(row, header, profile.dateColumns), dayFirst),
       invoiceNumber: null,
       isDirect: profile.valueSource === "sheet",
       officialLine: product?.line || "Unknown",

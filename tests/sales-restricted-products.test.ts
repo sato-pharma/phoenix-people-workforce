@@ -267,7 +267,7 @@ export async function runSalesRestrictedProductsTests() {
     return {
       areaCode: "A1", areaName: "Area 1", brickId: "B1", brickName: "Brick 1", bonusQty: 0,
       clientCode: "C1", clientName: "Client One", clientAddress: null, discount: 0,
-      distributorCode: "SF", invoiceDate: "2026-07-01", invoiceNumber: null, isDirect: false,
+      distributorCode: "SF", invoiceDate: "2026-07-01", invoiceDay: null, invoiceNumber: null, isDirect: false,
       officialLine: "CNS", productCode: "LA001", productName: "Lacto Advanced 1", qty: 10,
       rawRow: {}, rawRowNumber: 1, regionCode: "R1", regionName: "Region 1", value: 1000,
       ...overrides,

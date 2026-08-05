@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import ExcelJS from "exceljs";
 
+import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "../src/lib/sales/july-2026-direct-orders.ts";
 import {
   buildMonthlyClosingMatrix,
   injectDirectIntoMatrix,
@@ -109,4 +110,65 @@ export async function runDirectChannelTests() {
   assert.equal(none.directNational, null);
   assert.equal(none.companyTotal, null);
   assert.equal(none.regions.find((r) => r.regionCode === "CA")?.areas.length, 1);
+
+  // ── July 2026: direct money whose AREA is not in the matrix must still be counted ──
+  // July merges hand-mapped direct into the real area rows, but only where `areaCode|productCode`
+  // matches an existing row — anything matching nothing used to be discarded with no warning. No
+  // live month hits that today, so this guards a latent trap rather than a past incident: a mapping
+  // naming an area the matrix does not carry would delete real money from a published headline.
+  // The fixture deliberately omits one mapped area from the grid to reproduce exactly that.
+  const julyPedia = JULY_2026_DIRECT_ROWS.filter((row) => row.line.trim().toLowerCase() === "pedia");
+  assert.ok(julyPedia.length > 0, "fixture sanity: the July hand-map must carry Pedia rows");
+
+  const orphanArea = julyPedia[0]!.areaCode;
+  const keptAreaCodes = [...new Set(julyPedia.map((row) => row.areaCode))].filter((code) => code !== orphanArea);
+  const julyAreas = keptAreaCodes.map((areaCode) => {
+    const row = julyPedia.find((entry) => entry.areaCode === areaCode)!;
+    return { areaCode, areaName: row.areaName, regionCode: row.regionCode, regionName: row.regionCode };
+  });
+
+  const julyMatrix = buildMonthlyClosingMatrix({
+    areas: julyAreas,
+    availableLines: ["Pedia"],
+    availablePeriods: [JULY_2026_DIRECT_PERIOD],
+    cells: [],
+    line: "Pedia",
+    period: JULY_2026_DIRECT_PERIOD,
+    products: [...new Set(julyPedia.map((row) => row.productCode))].map((productCode) => ({
+      factoryPrice: 1, family: "Pedia", familyCode: "PED", line: "Pedia",
+      productCode, productName: productCode, source: "",
+    })),
+  });
+
+  // The direct RPC's view of the SAME money, grouped region × product the way it returns it — so
+  // resolveJulyDirectByArea's value reconciliation passes and the July merge path actually runs.
+  const byRegionProduct = new Map<string, MonthlyClosingDirectCell>();
+  julyPedia.forEach((row) => {
+    const key = `${row.regionCode}|${row.productCode}`;
+    const cell = byRegionProduct.get(key)
+      ?? { productCode: row.productCode, regionCode: row.regionCode, salesUnits: 0, salesValue: 0 };
+    cell.salesUnits += row.qty;
+    cell.salesValue += row.value;
+    byRegionProduct.set(key, cell);
+  });
+
+  const julyInjected = injectDirectIntoMatrix(julyMatrix, [...byRegionProduct.values()]);
+  const sumRegions = (pick: (cell: { salesUnits: number; salesValue: number }) => number) =>
+    julyInjected.regions.reduce(
+      (sum, region) => sum + region.areas.reduce((inner, area) => inner + pick(area.rowTotal), 0),
+      0,
+    );
+  const placedValue = sumRegions((cell) => cell.salesValue) + (julyInjected.directNational?.rowTotal.salesValue ?? 0);
+  const placedUnits = sumRegions((cell) => cell.salesUnits) + (julyInjected.directNational?.rowTotal.salesUnits ?? 0);
+
+  assert.equal(
+    Number(placedValue.toFixed(2)),
+    Number(julyPedia.reduce((sum, row) => sum + row.value, 0).toFixed(2)),
+    "every EGP of July direct must reach the matrix — an area missing from the grid must never delete its money",
+  );
+  assert.equal(
+    Number(placedUnits.toFixed(6)),
+    julyPedia.reduce((sum, row) => sum + row.qty, 0),
+    "every UNIT of July direct must reach the matrix too",
+  );
 }

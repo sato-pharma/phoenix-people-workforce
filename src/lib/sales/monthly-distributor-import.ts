@@ -3439,6 +3439,11 @@ type JulyDirectByArea = {
   byAreaProduct: Map<string, { salesUnits: number; salesValue: number }>;
   /** Direct that belongs to no area (the National Sales Manager's own orders), by product code. */
   areaLessByProduct: Map<string, { salesUnits: number; salesValue: number }>;
+  /**
+   * `areaCode` → the region the mapping put it in. Needed to place direct whose area is absent from
+   * the matrix: without it such money has no home and was silently dropped.
+   */
+  regionByArea: Map<string, string>;
 };
 
 /**
@@ -3493,14 +3498,19 @@ function resolveJulyDirectByArea(
     target.set(key, entry);
   };
 
+  const regionByArea = new Map<string, string>();
   inScope.forEach((row) => {
     const productCode = normalizeCode(row.productCode);
     const areaCode = normalizeCode(row.areaCode);
-    if (areaCode) add(byAreaProduct, `${areaCode}|${productCode}`, row.qty, row.value);
-    else add(areaLessByProduct, productCode, row.qty, row.value);
+    if (areaCode) {
+      add(byAreaProduct, `${areaCode}|${productCode}`, row.qty, row.value);
+      if (!regionByArea.has(areaCode)) regionByArea.set(areaCode, normalizeCode(row.regionCode));
+    } else {
+      add(areaLessByProduct, productCode, row.qty, row.value);
+    }
   });
 
-  return { areaLessByProduct, byAreaProduct };
+  return { areaLessByProduct, byAreaProduct, regionByArea };
 }
 
 /**
@@ -3581,6 +3591,17 @@ export function injectDirectIntoMatrix(
     // `isDirect` is set on any area that absorbed direct, because the export writes such rows as
     // static cached values — an area row containing direct must NOT be rendered as a SUMIFS over
     // the Calc sheet, which holds distributor invoice lines only and would silently undercount it.
+    // LATENT-DROP GUARD. The merge below only places direct where `areaCode|productCode` matches an
+    // existing area row; anything matching nothing used to be discarded with no warning. No live
+    // month hits that today (verified 2026-08-05 on all three lines: output is byte-identical with
+    // and without this guard), but a mapping that names an area the matrix does not carry would
+    // otherwise delete real money from a published headline. Such money now becomes a Direct row.
+    //
+    // Track the mapping keys the merge actually consumed. Comparing per-region SUMS instead would
+    // double-count whenever a direct cell's region differs from the region the matrix files that
+    // area under — which is exactly what happens on a line whose regions come from the organogram.
+    const consumed = new Set<string>();
+
     regions = matrix.regions.map((region) => {
       let regionTouched = false;
       const areas = region.areas.map((area) => {
@@ -3590,9 +3611,11 @@ export function injectDirectIntoMatrix(
         let areaTouched = false;
         const areaCode = normalizeCode(area.areaCode);
         const cells = area.cells.map((cell, index) => {
-          const direct = julyByArea.byAreaProduct.get(`${areaCode}|${normalizeCode(columns[index].productCode)}`);
+          const key = `${areaCode}|${normalizeCode(columns[index].productCode)}`;
+          const direct = julyByArea.byAreaProduct.get(key);
           if (!direct) return cell;
           areaTouched = true;
+          consumed.add(key);
           const merged = { ...cell };
           merged.salesUnits += direct.salesUnits;
           merged.salesValue += direct.salesValue;
@@ -3604,6 +3627,35 @@ export function injectDirectIntoMatrix(
       });
       if (!regionTouched) return region;
       return { ...region, areas, subtotal: subtotalOf(region.regionCode, region.regionName, areas) };
+    });
+
+    // Emit whatever the merge could not place as a Direct row in the region the mapping named,
+    // exactly as every other month already does. Empty on every current month — this exists so a
+    // future mapping cannot silently delete money by naming an area the matrix does not carry.
+    const leftoverRegions = new Map<string, MonthlyClosingCell[]>();
+    julyByArea.byAreaProduct.forEach((direct, key) => {
+      if (consumed.has(key)) return;
+      const [areaCode, productCode] = key.split("|");
+      const index = colIndex.get(normalizeCode(productCode ?? ""));
+      if (index === undefined) return;
+      const regionCode = julyByArea.regionByArea.get(normalizeCode(areaCode ?? "")) ?? NATIONAL;
+      let cells = leftoverRegions.get(regionCode);
+      if (!cells) { cells = columns.map(() => emptyClosingCell()); leftoverRegions.set(regionCode, cells); }
+      cells[index]!.salesUnits += direct.salesUnits;
+      cells[index]!.salesValue += direct.salesValue;
+    });
+
+    leftoverRegions.forEach((cells, regionCode) => {
+      const index = regions.findIndex((region) => region.regionCode === regionCode);
+      if (index >= 0) {
+        const region = regions[index]!;
+        const areas = [...region.areas, makeDirectArea(regionCode, cells)];
+        regions[index] = { ...region, areas, subtotal: subtotalOf(regionCode, region.regionName, areas) };
+        return;
+      }
+      const regionName = regionNameByCode.get(regionCode) ?? regionCode;
+      const areas = [makeDirectArea(regionCode, cells)];
+      regions.push({ areas, regionCode, regionName, subtotal: subtotalOf(regionCode, regionName, areas) });
     });
   } else {
     // Every other month: unchanged. Direct has no area to merge into, so it stays its own row.

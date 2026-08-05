@@ -250,7 +250,54 @@ async function readImportRows(batchIds: string[], line: string): Promise<Array<R
     if (!Number.isFinite(last)) break; // no usable cursor — stop rather than loop forever
     cursor = last;
   }
+  await fillMissingAddresses(rows);
   return rows;
+}
+
+/**
+ * Fill `client_address` from the customer master wherever the sales row itself carries none.
+ *
+ * Every distributor file has a Customer Address column, ~100% populated, but the normalizer's
+ * persist path wrote a literal null for a long time — so all 294,445 existing rows are blank and
+ * the closing's Data sheet printed an empty Address column. The import defect is fixed, but that
+ * only helps months imported from now on; this fills every month already in the database.
+ *
+ * Deliberately keyed on (distributor_code, customer_code), which is unique among active master
+ * rows, so a customer trading under two distributors keeps two addresses and no row is duplicated.
+ * Chunked because PostgREST caps a single `in` list, and a failure here must never take the closing
+ * down: an address is a nicety, the numbers are the point.
+ */
+async function fillMissingAddresses(rows: Array<Record<string, unknown>>): Promise<void> {
+  const needed = rows.filter((row) => !text(row.client_address) && text(row.client_code));
+  if (needed.length === 0) return;
+
+  const codes = [...new Set(needed.map((row) => text(row.client_code)))];
+  const byKey = new Map<string, string>();
+  const supabase = getSupabaseAdmin();
+  const CHUNK = 400;
+  try {
+    for (let index = 0; index < codes.length; index += CHUNK) {
+      const { data, error } = await supabase
+        .from("source_of_sales_customer_map")
+        .select("distributor_code,customer_code,address")
+        .eq("active", true)
+        .in("customer_code", codes.slice(index, index + CHUNK));
+      if (error) throw error;
+      (data ?? []).forEach((entry) => {
+        const address = text((entry as Record<string, unknown>).address);
+        if (!address) return;
+        const key = `${text((entry as Record<string, unknown>).distributor_code)}|${text((entry as Record<string, unknown>).customer_code)}`;
+        byKey.set(key, address);
+      });
+    }
+  } catch {
+    return; // master unavailable — leave the column blank rather than fail the closing
+  }
+
+  needed.forEach((row) => {
+    const address = byKey.get(`${text(row.distributor_code)}|${text(row.client_code)}`);
+    if (address) row.client_address = address;
+  });
 }
 
 export type LoadClosingDetailsInput = {

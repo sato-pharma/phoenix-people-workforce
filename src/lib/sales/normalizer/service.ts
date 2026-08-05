@@ -235,12 +235,20 @@ export function buildNormalizedImportRows(rows: CodedRow[], batchId: string) {
     // a literal null, which discarded it — and made client_address null on 100% of 294,445 rows for
     // all 15 distributors, while client_name (one line down, same mechanism) was 100% populated.
     // The emptiness read as "the distributors do not send an address"; it was never stored.
+    //
+    // This branch fixed the same bug independently, as `r.clientAddress ?? null`. Resolved to main's
+    // form: CodedRow.clientAddress is `string | null` and never undefined, so the two are identical
+    // in behaviour, and this spelling is the one insertSourceOfSalesRows in
+    // monthly-distributor-import.ts already uses — the two persist paths must agree.
     client_address: r.clientAddress,
     client_code: r.clientCode,
     client_name: r.clientName,
     row_number: index + 1,
     distributor_code: r.distributorCode,
     invoice_period: r.invoiceDate,
+    // The real date, not just the month. Omitting it left 96% of production rows dateless and made
+    // a mislabelled source file (an "April" folder holding May invoices) invisible in the data.
+    invoice_date: r.invoiceDay ?? null,
     region_name: r.regionName,
     region_code: r.regionCode,
     product_name: r.productName,

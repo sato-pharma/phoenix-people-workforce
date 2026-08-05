@@ -318,6 +318,17 @@ function writeTotalSheet(
   // raw sell-in, the matrix has them re-allocated across each store's city, and part of that
   // allocation belongs to areas the filter excluded. Stating it is what keeps Difference at zero.
   storeSplitApplied: { qty: number; value: number } = { qty: 0, value: 0 },
+  // Direct money the Closing Matrix counts but the Data sheet cannot show. Direct orders reach the
+  // closing from the Direct Orders module, never as a distributor invoice line, so they are absent
+  // from Data by construction — `details.reconciliation.excludedDirect` is therefore ALWAYS zero
+  // and cannot explain the gap. Stating the real figures here is what turns an unexplained
+  // Difference into a bridge that lands on zero. `placed` is the direct inside the grand total
+  // (the per-region Direct rows / July's merged area rows); `national` is the Direct – National
+  // row, which sits ABOVE the grand total and is counted only in the company total.
+  directInMatrix: { national: { units: number; value: number }; placed: { units: number; value: number } } = {
+    national: { units: 0, value: 0 },
+    placed: { units: 0, value: 0 },
+  },
 ) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Total"), {
     views: [{ state: "frozen", ySplit: 5 }],
@@ -426,16 +437,40 @@ function writeTotalSheet(
   // reduces to exactly the arithmetic that was here before.
   const applied = storeSplitApplied.value;
   const appliedUnits = storeSplitApplied.qty;
-  const dataPlusSplit = recon.includedInClosing.salesValue + applied;
+  // Direct belongs on the left of the comparison for the same reason the store split does: it is
+  // real money the headline counts, and leaving it out measures the channel rather than an error.
+  const directPlaced = directInMatrix.placed.value;
+  const directPlacedUnits = directInMatrix.placed.units;
+  const dataPlusSplit = recon.includedInClosing.salesValue + applied + directPlaced;
   const signed = (value: number) => `${value < 0 ? "-" : "+"}${Math.abs(value)}`;
   const differenceRef: CellValue = !headline
     ? null
     : rows.length > 0
       ? F(
-        `${columnLetter(10)}${row - 3}${signed(applied)}-${headline.salesValue}`,
+        `${columnLetter(10)}${row - 3}${signed(applied)}${signed(directPlaced)}-${headline.salesValue}`,
         dataPlusSplit - headline.salesValue,
       )
       : dataPlusSplit - headline.salesValue;
+
+  // Named only when it exists — a zero row in a reconciliation reads as a defect, not reassurance.
+  const directRows: CellValue[][] = directPlaced !== 0 || directPlacedUnits !== 0
+    ? [[
+      "+ Direct orders counted in the matrix",
+      directPlacedUnits,
+      directPlaced,
+      "Company direct orders. They reach the closing from the Direct Orders module, never as a "
+        + "distributor invoice line, so no row for them exists on the Data sheet.",
+    ]]
+    : [];
+
+  const nationalRows: CellValue[][] = directInMatrix.national.value !== 0 || directInMatrix.national.units !== 0
+    ? [[
+      "Direct – National (above the grand total)",
+      directInMatrix.national.units,
+      directInMatrix.national.value,
+      "Direct orders that belong to no area. The company total is the grand total plus this row.",
+    ]]
+    : [];
 
   // Only shown when it is not zero — a whole-month export has nothing to explain, and a row of
   // zeroes in a reconciliation reads as a defect rather than as reassurance.
@@ -465,12 +500,11 @@ function writeTotalSheet(
       ],
       [
         "Difference",
-        recon.includedInClosing.units + appliedUnits - headline.salesUnits,
+        recon.includedInClosing.units + appliedUnits + directPlacedUnits - headline.salesUnits,
         differenceRef,
-        applied === 0
-          ? "Zero means the audit sheet reproduces the headline exactly."
-          : "Zero means the audit sheet reproduces the headline exactly, once the store split above is counted.",
+        "Zero means the lines above add up to the headline exactly.",
       ],
+      ...nationalRows,
     ]
     : [];
 
@@ -485,25 +519,25 @@ function writeTotalSheet(
       ? (filtered
         ? "This workbook is a FILTERED slice — every sheet, including the Closing Matrix, was built " +
           "from the same filtered rows (the filter is named on the Closing Matrix sheet). "
-        : "The closing matrix counts every imported row except Direct orders and confidential products. ") +
-        "The two Excluded lines below are real sales the headline does not include; the Data-quality " +
-        "lines ARE included in the headline but point at rows worth fixing."
+        : "The Data sheet holds distributor invoice lines only. Direct orders are added on the line "
+          + "that names them, because they never arrive as an invoice. ") +
+        "The Excluded line is real sales the headline does not include; the Data-quality lines ARE " +
+        "included in the headline but point at rows worth fixing."
       : "This export is scoped to your access and has no company-wide Closing Matrix to compare " +
         "against — the totals below are internal to this Data sheet only.",
     rows: [
       [
-        headline ? "Data sheet — rows feeding the closing" : "Data sheet — rows feeding the closing (in scope)",
+        headline
+          ? "Data sheet — distributor rows feeding the closing"
+          : "Data sheet — rows feeding the closing (in scope)",
         recon.includedInClosing.units,
         totalValueRef,
-        headline ? "Should equal the Closing Matrix grand total." : "Sum of every in-scope row below marked \"In Closing\".",
+        headline
+          ? "Every Data row marked \"In Closing\". Distributor sell-out only."
+          : "Sum of every in-scope row below marked \"In Closing\".",
       ],
+      ...directRows,
       ...headlineRows,
-      [
-        "Excluded — Direct orders",
-        recon.excludedDirect.units,
-        recon.excludedDirect.salesValue,
-        "Reported separately by the Direct rows on the Closing Matrix.",
-      ],
       [
         "Excluded — confidential products",
         recon.excludedConfidential.units,
@@ -1984,7 +2018,14 @@ function writeDirectChannelSheet(
   const sheet = workbook.addWorksheet(sanitizeSheetName("Direct Sales (no retail)"), {
     views: [{ state: "frozen", xSplit: 2, ySplit: 5 }],
   });
-  const products = matrix.columns;
+  // Only the products this line actually SOLD direct get a column. Showing the line's whole
+  // catalogue meant CNS — which has no direct channel at all — printed ~30 product headers with
+  // nothing beneath them, so a reader had to scroll a wall of blank columns to reach the one line
+  // that mattered: "No direct orders reached this line and month." With nothing sold direct there
+  // are no product columns at all, and that sentence is the first thing on the sheet.
+  const soldDirect = new Set(directCells.filter((cell) => cell.salesUnits !== 0 || cell.salesValue !== 0)
+    .map((cell) => normalizeCode(cell.productCode)));
+  const products = matrix.columns.filter((column) => soldDirect.has(normalizeCode(column.productCode)));
   const columns = channelColumns(products, "Region Code", "Region");
   bandHeader(sheet, matrix.line, matrix.period, "Direct Sales only — company direct orders, distributor sales excluded", columns.length);
 
@@ -2390,6 +2431,22 @@ export async function buildMonthlyClosingWorkbook(
       salesUnits: matrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
       salesValue: matrix.grandTotal.rowTotal.salesValue,
     };
+    // The direct money the headline already contains. `placed` is every Direct row inside the grand
+    // total (and, in July, the direct merged into the area rows themselves — which is why it is
+    // derived as grand total minus the retail matrix rather than by walking the Direct rows).
+    // `national` sits above the grand total and is counted only in the company total.
+    const retailValue = options?.channels?.retail?.grandTotal.rowTotal.salesValue;
+    const retailUnits = options?.channels?.retail?.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
+    const directInMatrix = {
+      national: {
+        units: matrix.directNational?.rowTotal.salesUnits ?? 0,
+        value: matrix.directNational?.rowTotal.salesValue ?? 0,
+      },
+      placed: {
+        units: retailUnits === undefined ? 0 : Number((headline.salesUnits - retailUnits).toFixed(6)),
+        value: retailValue === undefined ? 0 : Number((headline.salesValue - retailValue).toFixed(2)),
+      },
+    };
     writeTotalSheet(
       workbook,
       headline,
@@ -2397,6 +2454,7 @@ export async function buildMonthlyClosingWorkbook(
       "Data",
       Boolean(options?.filterNote),
       options?.storeSplitApplied,
+      directInMatrix,
     );
     if (confidential.length > 0) {
       writeRawDataSheet(

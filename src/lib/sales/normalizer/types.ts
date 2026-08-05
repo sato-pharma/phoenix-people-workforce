@@ -99,7 +99,10 @@ export type CodedRow = {
   clientAddress: string | null;
   discount: number;
   distributorCode: string;
+  /** The row's PERIOD, "YYYY-MM" — what the closing groups by. */
   invoiceDate: string;
+  /** The row's real invoice date, "YYYY-MM-DD", or null when the sheet carries none. */
+  invoiceDay: string | null;
   invoiceNumber: string | null;
   isDirect: boolean;
   officialLine: string;

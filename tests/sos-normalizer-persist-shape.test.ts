@@ -41,6 +41,7 @@ const VALID_IMPORT_ROW_COLUMNS = new Set([
   "client_address",
   "client_address_source",
   "is_direct",
+  "invoice_date",
 ]);
 
 // A source row as the file had it, keyed by the file's own headings — deliberately including a
@@ -67,6 +68,7 @@ function codedRow(overrides: Partial<CodedRow> = {}): CodedRow {
     discount: 0.1,
     distributorCode: "IS",
     invoiceDate: "2026-04",
+    invoiceDay: "2026-04-17",
     invoiceNumber: null,
     isDirect: false,
     officialLine: "CNS",
@@ -115,6 +117,33 @@ export async function runSosNormalizerPersistShapeTests() {
   assert.equal(first!.area_code, "A1");
   assert.equal(first!.region_code, "CA");
   assert.equal(first!.client_code, "C123");
+  // The address the profile read from the sheet must actually persist. This was a literal `null`,
+  // which blanked client_address on all 294,445 production rows — every distributor file carries a
+  // Customer Address column ~100% populated, so the Customer Directory and its exports downloaded
+  // an empty Address column while the data sat unread in the file.
+  assert.equal(
+    first!.client_address,
+    "10 Nile St",
+    "the coded row's address must be persisted, not replaced with null",
+  );
+  // The REAL invoice date, not just the month. Persisting only invoice_period left 282,215 of
+  // 294,445 production rows dateless, so an "April" folder holding May's invoices was invisible in
+  // the data and only surfaced after a full reconciliation against the source workbooks.
+  assert.equal(first!.invoice_period, "2026-04", "the period the closing groups by is unchanged");
+  assert.equal(
+    first!.invoice_date,
+    "2026-04-17",
+    "the row's real invoice date must persist — a month alone cannot expose a mislabelled file",
+  );
+  const [noDay] = buildNormalizedImportRows([codedRow({ invoiceDay: null })], "batch-4");
+  assert.equal(noDay!.invoice_date, null, "a sheet with no usable date stores null, never a guess");
+
+  const [blankAddress] = buildNormalizedImportRows([codedRow({ clientAddress: null })], "batch-3");
+  assert.equal(
+    blankAddress!.client_address,
+    null,
+    "a genuinely absent address stays null rather than becoming an empty string",
+  );
   assert.equal(first!.discount, 0.1);
   assert.equal(first!.is_direct, false);
   assert.equal(second!.brick_id, "B2");
