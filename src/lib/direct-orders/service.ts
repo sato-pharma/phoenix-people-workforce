@@ -898,11 +898,15 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
   const failures: Array<{ requestId: string; error: unknown }> = [];
   for (const request of requests) {
     try {
+    // The row's REAL status, not a constant (audit F6). The query above filters on
+    // `.eq("status","held")`, so a literal would only re-state what that filter already guaranteed
+    // — two checks with one buckle. Reading the row means the gate can still catch a request whose
+    // status moved between the fetch and this loop, which is exactly the anomaly it exists for.
     await assertDirectOrderWorkflowTransition({
       access,
       actionKey: "revive_held",
       expectedNextStatus: "pending_approval",
-      status: "held",
+      status: request.status,
     });
 
     const chain = await buildApprovalChain({
@@ -1013,11 +1017,14 @@ export async function expireStaleHeldDirectOrders(
   const resolveName = await nameLookup();
   let expired = 0;
   for (const request of requests) {
+    // The row's REAL status (audit F6). The sweep fetches on `.eq("status","held")` and then
+    // iterates; a request revived by a validation in between must be refused here rather than
+    // expired against a constant that says "held" because the code assumed it.
     await assertDirectOrderWorkflowTransition({
       access,
       actionKey: "expire_held",
       expectedNextStatus: "expired",
-      status: "held",
+      status: request.status,
     });
     const { error: updateError } = await supabase
       .from("direct_order_requests")
@@ -2322,11 +2329,14 @@ export async function decideDirectOrder(
   }
 
   const action = directOrderDecisionAction({ decision: input.decision, isFinal: evaluation.isFinal });
+  // The row's REAL status (audit F6). decideDirectOrder checks the status itself further up, so a
+  // literal here made the registry gate a copy of that check rather than an independent one — if
+  // the service's own guard were ever removed, this would not have caught it.
   await assertDirectOrderWorkflowTransition({
     access,
     actionKey: action.actionKey,
     expectedNextStatus: action.expectedNextStatus,
-    status: "pending_approval",
+    status: request.status,
   });
 
   const now = new Date();
@@ -2900,6 +2910,10 @@ function toApprovalListItem(
     dealType: request.dealType,
     discountPct: request.discountPct,
     salesValue: request.salesValue,
+    // Carried straight off the mapped request — both queries feeding this use select("*"), so the
+    // column is already in hand and this costs nothing. Without it, every surface showing an
+    // approval list item can only say "Approved" (spec C2).
+    salesMonth: request.salesMonth,
     pharmacyName: pharmacy?.pharmacyName ?? "—",
     pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
     // Names, never codes — but fall back to the code rather than showing nothing when the

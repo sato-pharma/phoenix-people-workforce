@@ -11,6 +11,7 @@ import {
   PortalResponsiveDataList,
   PortalSection,
 } from "@/components/employee-portal/portal-primitives";
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { dealFieldLabel, formatDealValue, formatDealValueLabelled } from "@/lib/direct-orders/approval-fields";
 import type { DirectOrderApprovalListItem, DirectOrderWorkspaceData } from "@/lib/direct-orders/types";
 
@@ -20,27 +21,9 @@ const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) 
 // The mobile card can label per field (dealFieldLabel); the desktop table has one fixed
 // header, so its cell carries its own kind (formatDealValueLabelled).
 
-const STATUS_TONE: Record<string, string> = {
-  pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
-  approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  rejected: "bg-rose-50 text-rose-700 ring-rose-200",
-  returned: "bg-sky-50 text-sky-700 ring-sky-200",
-  reversed: "bg-slate-100 text-slate-600 ring-slate-200",
-  draft: "bg-slate-50 text-slate-500 ring-slate-200",
-  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
-  held: "bg-orange-50 text-orange-700 ring-orange-200",
-  expired: "bg-slate-200 text-slate-500 ring-slate-300",
-  // Cancelled = withdrawn by its requester while held (audit F3).
-  cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-300",
-};
-
-function StatusPill({ status }: { status: DirectOrderApprovalListItem["status"] }) {
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ring-1 ${STATUS_TONE[status] ?? "bg-slate-50 text-slate-500 ring-slate-200"}`}>
-      {status.replace(/_/g, " ")}
-    </span>
-  );
-}
+// The tone map and the pill moved to @/components/direct-orders/direct-order-status-pill, which
+// keeps the portal's rounded ring look under variant="ring". Four copies of this existed; that is
+// why "Approved" could not be made to say "awaiting Finance month" in one edit (spec C2).
 
 function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[]; base: string; showWaiting: boolean }) {
   if (rows.length === 0) {
@@ -73,7 +56,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
             </Link>
           }
         >
-          <div className="mb-2">{showWaiting ? null : <StatusPill status={row.status} />}</div>
+          <div className="mb-2">{showWaiting ? null : <DirectOrderStatusPill status={row.status} salesMonth={row.salesMonth} variant="ring" />}</div>
           <PortalRecordFields
             fields={[
               { label: "Line", value: row.line },
@@ -134,7 +117,7 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
                 <td className="whitespace-nowrap px-3 py-2 text-slate-700">
                   {row.medicalRepVacant ? "Vacant" : row.medicalRepName || "-"}
                 </td>
-                <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "-" : <StatusPill status={row.status} />}</td>
+                <td className="whitespace-nowrap px-3 py-2">{showWaiting ? row.activeStepLabel || "-" : <DirectOrderStatusPill status={row.status} salesMonth={row.salesMonth} variant="ring" />}</td>
                 <td className="px-3 py-2 text-slate-600">{shortDate(row.createdAt)}</td>
                 <td className="px-3 py-2 text-right">
                   <Link href={`${base}/${encodeURIComponent(row.id)}`} className="font-bold text-orange-600 hover:text-orange-700">

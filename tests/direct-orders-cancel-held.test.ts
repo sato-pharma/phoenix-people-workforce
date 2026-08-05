@@ -156,15 +156,20 @@ export function runDirectOrderCancelHeldTests() {
     );
   }
 
-  // The status→colour maps are Record<string, string>, so adding a status compiles clean and renders
-  // with no styling. TypeScript will not catch it; this sweep is what does.
+  // Every status must have a colour wherever colours are DEFINED.
+  //
+  // This list was six files until 2026-08-05, when four of them (the two approvals lists and the two
+  // submit forms) stopped owning a tone map and moved to the shared DirectOrderStatusPill. Sweeping
+  // them now would assert that files contain maps they deliberately no longer have — the rule is
+  // unchanged, but it has to be pointed at where the colours actually live.
+  //
+  // The shared pill's own maps ARE typed `Record<DirectOrderStatus, string>`, so tsc would catch a
+  // missing status there. The two report workspaces still use `Record<string, string>`, where it
+  // would not, and those are the ones this sweep genuinely protects.
   const toneFiles = [
-    "../src/components/approvals-hub/direct-order-approvals-body.tsx",
+    "../src/components/direct-orders/direct-order-status-pill.tsx",
     "../src/components/direct-orders/direct-order-report-workspace.tsx",
-    "../src/components/direct-orders/direct-order-submit-form.tsx",
-    "../src/components/employee-portal/direct-order-portal-approvals.tsx",
     "../src/components/employee-portal/direct-order-portal-report.tsx",
-    "../src/components/employee-portal/direct-order-portal-submit.tsx",
   ];
   for (const file of toneFiles) {
     const text = readFileSync(new URL(file, import.meta.url), "utf8");
