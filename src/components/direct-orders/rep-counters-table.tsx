@@ -64,8 +64,19 @@ export function RepCountersTable({ data }: Props) {
       heldValue: acc.heldValue + r.heldValue,
       expired: acc.expired + r.expired,
       matchedExisting: acc.matchedExisting + r.matchedExisting,
+      refusedAsFalse: acc.refusedAsFalse + r.refusedAsFalse,
+      refusedAsFalseValue: acc.refusedAsFalseValue + r.refusedAsFalseValue,
+      falsePharmacies: acc.falsePharmacies + r.falsePharmacies,
     }),
-    { held: 0, heldValue: 0, expired: 0, matchedExisting: 0 },
+    {
+      held: 0,
+      heldValue: 0,
+      expired: 0,
+      matchedExisting: 0,
+      refusedAsFalse: 0,
+      refusedAsFalseValue: 0,
+      falsePharmacies: 0,
+    },
   );
 
   return (
@@ -76,6 +87,7 @@ export function RepCountersTable({ data }: Props) {
         </h3>
         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
           {companyWide ? "Company-wide" : "Your team"} · {money(totals.heldValue)} held
+          {totals.refusedAsFalseValue > 0 ? ` · ${money(totals.refusedAsFalseValue)} refused as false` : ""}
         </span>
       </header>
 
@@ -89,6 +101,10 @@ export function RepCountersTable({ data }: Props) {
               <th className="px-3 py-2">Held</th>
               <th className="px-3 py-2">Held value</th>
               <th className="px-3 py-2">Expired</th>
+              {/* The proven outcome, next to the pending ones. Before this existed, a module that
+                  had been cleaned up read as a module where nothing had ever happened. */}
+              <th className="px-3 py-2">False pharmacies</th>
+              <th className="px-3 py-2">Refused as false</th>
               <th className="px-3 py-2">Evidence sent</th>
               <th className="px-3 py-2">Existed after all</th>
               <th className="px-3 py-2">Refused a match</th>
@@ -107,6 +123,13 @@ export function RepCountersTable({ data }: Props) {
                 <td className="px-3 py-2">{count(row.held)}</td>
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.heldValue)}</td>
                 <td className="px-3 py-2">{count(row.expired)}</td>
+                <td className="px-3 py-2">{count(row.falsePharmacies, "signal")}</td>
+                <td className="px-3 py-2">
+                  {count(row.refusedAsFalse, "signal")}
+                  {row.refusedAsFalseValue > 0 ? (
+                    <span className="ml-1 text-[11px] text-slate-500">{money(row.refusedAsFalseValue)}</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
                 <td className="px-3 py-2">{count(row.matchedExisting, "signal")}</td>
                 <td className="px-3 py-2">{count(row.suggestionsRefused, "signal")}</td>
@@ -121,6 +144,13 @@ export function RepCountersTable({ data }: Props) {
               <td className="px-3 py-2">{totals.held}</td>
               <td className="px-3 py-2">{money(totals.heldValue)}</td>
               <td className="px-3 py-2">{totals.expired}</td>
+              <td className="px-3 py-2">{totals.falsePharmacies}</td>
+              <td className="px-3 py-2">
+                {totals.refusedAsFalse}
+                {totals.refusedAsFalseValue > 0 ? (
+                  <span className="ml-1 font-bold">{money(totals.refusedAsFalseValue)}</span>
+                ) : null}
+              </td>
               <td className="px-3 py-2" />
               <td className="px-3 py-2">{totals.matchedExisting}</td>
               <td className="px-3 py-2" />
@@ -142,6 +172,17 @@ export function RepCountersTable({ data }: Props) {
             <p className="mt-2 text-sm font-bold text-slate-900">
               {row.held} held · {money(row.heldValue)}
             </p>
+            {/* Rose, not amber: refused-as-false is a proven outcome, not a signal to look into.
+                Given its own line rather than a chip, because on a cleaned-up module it is the only
+                thing on the card with a number on it. */}
+            {row.refusedAsFalse > 0 ? (
+              <p className="mt-1 bg-rose-100 px-1.5 py-0.5 text-[12px] font-black text-rose-900">
+                {row.refusedAsFalse} refused as false · {money(row.refusedAsFalseValue)}
+                {row.falsePharmacies > 0
+                  ? ` · ${row.falsePharmacies} false ${row.falsePharmacies === 1 ? "pharmacy" : "pharmacies"}`
+                  : ""}
+              </p>
+            ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
               {row.expired > 0 ? <span>{row.expired} expired</span> : null}
               {row.validationsSubmitted > 0 ? <span>{row.validationsSubmitted} evidence sent</span> : null}

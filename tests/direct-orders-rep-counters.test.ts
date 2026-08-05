@@ -63,10 +63,20 @@ export function runDirectOrderRepCountersTests() {
   }
 
   // ── Sorted by money, not alphabet ────────────────────────────────────────────────────────
+  //
+  // This used to pin `b.heldValue - a.heldValue`. On 2026-08-05 twelve false pharmacies were
+  // rejected and every held value went to zero, so that sort silently degraded to alphabetical at
+  // exactly the moment the table was most worth reading. "Money at risk" now means parked PLUS
+  // proven false, and the second assertion below stops that definition quietly narrowing again.
   assert.match(
     source,
-    /b\.heldValue - a\.heldValue \|\|[\s\S]{0,120}?b\.matchedExisting - a\.matchedExisting/,
-    "worst first: value parked, then matched-existing. Alphabetical order buries what this table exists to surface",
+    /atRisk\(b\) - atRisk\(a\) \|\|[\s\S]{0,180}?b\.matchedExisting - a\.matchedExisting/,
+    "worst first: value at risk, then matched-existing. Alphabetical order buries what this table exists to surface",
+  );
+  assert.match(
+    source,
+    /const atRisk = \(r: DirectOrderRepCounters\) => r\.heldValue \+ r\.refusedAsFalseValue;/,
+    "money at risk must include refused-as-false, or a fully cleaned-up module sorts as if nothing ever happened",
   );
 
   // ── Empty must speak ─────────────────────────────────────────────────────────────────────
