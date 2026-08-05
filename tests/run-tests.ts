@@ -527,6 +527,7 @@ import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotatio
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
+import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
 import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.ts";
 import { runDirectOrderInvoicePrefillTests } from "./direct-orders-invoice-prefill.test.ts";
 import { runDirectOrderValidationRegistryGateTests } from "./direct-orders-validation-registry-gate.test.ts";
@@ -1234,6 +1235,7 @@ await runTest("direct orders rotation confirmation (evidence of use, never the r
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
+await runTest("direct orders storefront evidence (unknown is never a pass, a failed read never blocks filing, and it never gates the decision)", runDirectOrderEvidenceCheckTests);
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders invoice prefill (an unconfirmed code prefills nothing, unmatched lines are named not dropped, the reader is never announced, mounted on BOTH forms)", runDirectOrderInvoicePrefillTests);
 await runTest("direct orders validation registry gate (both declared actions are actually invoked, request passes the row's real status, decide is NOT coupled to it)", runDirectOrderValidationRegistryGateTests);
