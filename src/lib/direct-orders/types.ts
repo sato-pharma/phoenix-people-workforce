@@ -48,10 +48,20 @@ export type DirectOrderStatus =
   | "returned"
   | "reversed"
   | "held"
-  | "expired";
+  | "expired"
+  // Withdrawn by its requester while held — deliberately NOT `rejected`. A duplicate the requester
+  // tidied up is not an order an approver turned down, and folding the two together would inflate
+  // every rejection rate and per-rep counter that groups by status (audit F3).
+  | "cancelled";
 
 export function isTerminalDirectOrderStatus(status: DirectOrderStatus): boolean {
-  return status === "approved" || status === "rejected" || status === "reversed" || status === "expired";
+  return (
+    status === "approved" ||
+    status === "rejected" ||
+    status === "reversed" ||
+    status === "expired" ||
+    status === "cancelled"
+  );
 }
 
 /** The three actions an approver can take at their rung. */

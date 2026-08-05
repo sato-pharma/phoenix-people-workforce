@@ -17,7 +17,16 @@ export type DirectOrderReportFilters = {
   statuses: string[];
 };
 
-/** The status chips, in the order both screens render them. */
+/**
+ * The status chips, in the order both screens render them.
+ *
+ * Every member of DirectOrderStatus appears here, and the exhaustiveness is asserted in
+ * tests/direct-orders-cancel-held.test.ts rather than left to whoever adds the next status. The
+ * three held-lane states were missing until 2026-08-05: `held` and `expired` had existed since the
+ * lane was built (spec B6) but had no chip, so the report could not be filtered to the orders the
+ * whole held/validation/cancel apparatus exists to manage. You could not list them, which is a
+ * large part of why 11 held orders worth 509,736 EGP sat unnoticed.
+ */
 export const DIRECT_ORDER_REPORT_STATUS_OPTIONS: Array<{ key: DirectOrderStatus; label: string }> = [
   { key: "pending_approval", label: "Pending" },
   { key: "approved", label: "Approved" },
@@ -25,6 +34,9 @@ export const DIRECT_ORDER_REPORT_STATUS_OPTIONS: Array<{ key: DirectOrderStatus;
   { key: "rejected", label: "Rejected" },
   { key: "reversed", label: "Reversed" },
   { key: "draft", label: "Draft" },
+  { key: "held", label: "Held" },
+  { key: "expired", label: "Expired" },
+  { key: "cancelled", label: "Cancelled" },
 ];
 
 /** The columns the search box matches, in the order the screens list them. */

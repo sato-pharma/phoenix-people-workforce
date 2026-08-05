@@ -65,6 +65,8 @@ const STATUS_TONE: Record<string, string> = {
   // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
   held: "bg-orange-100 text-orange-800",
   expired: "bg-slate-300 text-slate-600",
+  // Cancelled = withdrawn by its requester while held (audit F3).
+  cancelled: "bg-zinc-200 text-zinc-700",
 };
 
 function labelClass() {

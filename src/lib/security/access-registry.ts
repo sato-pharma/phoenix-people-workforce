@@ -345,6 +345,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/submit", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/decision", permission: { resource: "direct_orders", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/reverse", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
+  // restricted to the requester of that specific held order (or a Super Admin) by
+  // canCancelHeldDirectOrder inside the service. The coarse permission alone would let any
+  // create-holder cancel anyone's order — the mistake `reverse` shipped with (audit F5).
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/cancel", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   // Sales month is Finance-owned: the registry permission is only `read` because the real gate
   // is an identity check inside setDirectOrderSalesMonth (Ahmed El Maraghy / Super Admin), not a
   // role action — the CEO holds direct_orders:approve but must NOT be able to move a month.

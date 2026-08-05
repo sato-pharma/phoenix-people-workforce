@@ -16,6 +16,7 @@ import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/m
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
+import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 
 import {
   computeDirectOrderSalesValue,
@@ -969,6 +970,121 @@ export async function expireStaleHeldDirectOrders(
   }
   if (expired > 0) pingDirectOrderSheet("held_expired");
   return { expired };
+}
+
+/**
+ * Cancel a HELD direct order — the requester withdrawing a duplicate, or one raised in error
+ * (deep workflow audit, finding F3).
+ *
+ * `held` used to have exactly two exits: the pharmacy passing validation, and the 14-day clock.
+ * A requester who submitted the same order twice — which is what happens when the first attempt
+ * cannot find a valid pharmacy code, and did happen on 2026-08-04, 22 minutes apart — had no way to
+ * retire the duplicate. Retiring one required raw SQL against production, which bypassed the
+ * registry precisely because the registry had no word for it.
+ *
+ * The result is `cancelled`, never `rejected`. A duplicate its author tidied up is not an order an
+ * approver turned down, and merging the two would inflate every rejection rate and per-rep counter
+ * that groups by status.
+ */
+export async function cancelHeldDirectOrder(
+  access: AccessContext,
+  input: { requestId: string; reason: string },
+): Promise<{ requestId: string; status: "cancelled" }> {
+  await assertPermission(access, "direct_orders", "create");
+  const actorHrId = requireActorHrId(access);
+  const reason = input.reason?.trim();
+  if (!reason) badRequest("A reason is required to cancel a held direct order.");
+
+  // Read through getDirectOrderRequest, never a raw admin query. The scope guard lives at that
+  // choke point, and it returns null for out-of-scope as well as for missing — so an id cannot be
+  // used to probe which requests exist. Reading the row directly is the exact hole that let any
+  // `direct_orders:create` holder reverse any approved order in the company (F5).
+  const detail = await getDirectOrderRequest(access, input.requestId);
+  if (!detail) badRequest("Direct order request not found.");
+
+  // Wrong STATE and wrong PERSON are different answers and must not collapse into one. Telling a
+  // requester "forbidden" when the real problem is that their order already left the held lane
+  // sends them to ask for permissions they already have.
+  if (detail.request.status !== "held") {
+    badRequest(
+      `Only a held direct order can be cancelled — this one is ${detail.request.status}. ` +
+        "An order already in the approval chain is withdrawn by an approver returning or rejecting it.",
+    );
+  }
+  // Narrower than "can view": viewing is granted to chain members and managers, cancelling is not.
+  // Same predicate the two pages call, so the button and the server cannot drift apart.
+  if (!canCancelHeldDirectOrder({ hrId: access.hrId, role: access.role }, detail)) {
+    throw new Error(
+      "Forbidden: only the requester of a held direct order, or a Super Admin, can cancel it.",
+    );
+  }
+
+  // The row's ACTUAL status, not a literal. The other gate sites pass a constant, which makes the
+  // registry check validate what the code expects rather than what the database holds — so it can
+  // never catch an anomaly (F6). Passing the real value keeps the two checks independent.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "cancel_held",
+    expectedNextStatus: "cancelled",
+    status: detail.request.status,
+  });
+
+  const supabase = getSupabaseAdmin();
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_requests")
+    .update({ status: "cancelled" })
+    .eq("id", detail.request.id)
+    .eq("status", "held")
+    .select("id");
+  if (updateError) throw updateError;
+  // The `.eq("status","held")` guard is a real race, not a formality: a pharmacy validating at this
+  // moment revives the order to `pending_approval`, and this update then matches NOTHING. Reporting
+  // success there would tell the requester their duplicate was withdrawn while it actually sat in
+  // an approver's queue — so an empty result is an error, not a no-op.
+  if (!updated || updated.length === 0) {
+    badRequest(
+      "This request is no longer held — it was revived or expired a moment ago. Reload it and check its current state.",
+    );
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: detail.request.id,
+    oldValues: { status: "held" },
+    newValues: { status: "cancelled" },
+    summary: `Direct order cancelled while held by ${actorHrId} — ${reason}`,
+  });
+  await insertEvent({
+    requestId: detail.request.id,
+    actorHrId,
+    eventType: "cancelled",
+    message: `Withdrawn while held: ${reason}`,
+  });
+
+  // The requester is told even when they cancelled it themselves — a Super Admin tidying up on
+  // their behalf is the case that matters, and one rule covers both. One To + CC, never two copies.
+  const resolveName = await nameLookup();
+  const requesterDisplayName = resolveName(detail.request.requesterHrId) ?? detail.request.requesterHrId;
+  // getDirectOrderRequest returns { request, steps } — it does not carry the pharmacy, so it is
+  // loaded here the same way every other notification in this file does it.
+  const pharmacy =
+    (await loadPharmaciesByIds([detail.request.pharmacyId])).get(detail.request.pharmacyId) ?? null;
+  const notifyContext = await buildNotifyContext(detail.request, requesterDisplayName, pharmacy);
+  await notifyDirectOrder({
+    recipients: [detail.request.requesterHrId, ...(await ccRecipients())],
+    title: "Direct order cancelled while held",
+    message:
+      `${buildDirectOrderNotificationLine(notifyContext)} ` +
+      `It was withdrawn from the held lane by ${resolveName(actorHrId) ?? actorHrId}. Reason: ${reason}`,
+    metrics: buildDirectOrderNotificationMetrics(notifyContext),
+    eventType: "cancelled",
+    requestId: detail.request.id,
+    subjectHrId: detail.request.requesterHrId,
+  });
+
+  pingDirectOrderSheet("held_cancelled");
+  return { requestId: detail.request.id, status: "cancelled" };
 }
 
 // ── The Held Desk (spec C3) ───────────────────────────────────────────────────

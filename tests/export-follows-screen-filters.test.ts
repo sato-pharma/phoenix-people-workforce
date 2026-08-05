@@ -184,8 +184,18 @@ export function runExportFollowsScreenFiltersTests() {
   );
   assert.deepEqual(
     DIRECT_ORDER_REPORT_STATUS_OPTIONS.map((option) => option.key),
-    ["pending_approval", "approved", "returned", "rejected", "reversed", "draft"],
+    ["pending_approval", "approved", "returned", "rejected", "reversed", "draft", "held", "expired", "cancelled"],
     "both report screens render these chips from this one list, so it fixes the stamp's ordering too",
+  );
+  // The three held-lane statuses were absent from this list until 2026-08-05, and
+  // describeDirectOrderReportFilters falls back to the RAW key for a status it does not recognise.
+  // So filtering the report by Held used to stamp the literal "held" into a workbook the owner
+  // reads — the exact raw-code leak the assertion above this one exists to prevent. Naming them
+  // here means the fallback branch can never quietly start covering a real status again.
+  assert.equal(
+    describeDirectOrderReportFilters({ search: "", statuses: ["held", "expired", "cancelled"] }),
+    "Filtered export — this workbook covers only: Status: Held, Expired, Cancelled.",
+    "every real status must stamp its human-readable label; hitting the unknown-status fallback means a raw code reached the owner's file",
   );
 
   // ── Company Vacation Report: every on-screen filter must reach the workbook ───────────────
