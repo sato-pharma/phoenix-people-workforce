@@ -357,6 +357,7 @@ import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
 import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
+import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
@@ -1053,6 +1054,7 @@ await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
+await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);
