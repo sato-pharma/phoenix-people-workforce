@@ -350,3 +350,163 @@ export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?:
     };
   });
 }
+
+// ── The detailed report: WHICH store, WHICH product, and where each share went ───────────────
+//
+// `summariseStoreSplitByArea` above answers "what did this area gain or lose". It cannot answer
+// the question the owner actually asks of a moved number — "which shop caused this, on what
+// product, and who received it" — because by then every store of a city has been folded together.
+// This section keeps the store's own identity all the way through (owner request, 2026-08-05).
+
+/** One store's sales of one product, and the shares the city's areas each received. */
+export type StoreSplitDetailRow = {
+  clientCode: string;
+  clientName: string;
+  /** The area the store physically sits in — where the sale was booked before the split. */
+  originAreaCode: string;
+  originAreaName: string;
+  city: string;
+  line: string;
+  productCode: string;
+  productName: string;
+  /** Exactly as imported, before anything moved. */
+  units: number;
+  value: number;
+  /** The areas of the city this was divided across, in a stable order. */
+  sharedWithAreaCodes: readonly string[];
+  /** units / value each area received. The last share absorbs the rounding remainder. */
+  shareUnits: number;
+  shareValue: number;
+  /** What the origin area keeps of its own sale — its single share, not the whole. */
+  originKeepsValue: number;
+};
+
+/** One store, all its products folded together — the "which stores are split" headline. */
+export type StoreSplitCustomerSummary = {
+  clientCode: string;
+  clientName: string;
+  originAreaCode: string;
+  originAreaName: string;
+  city: string;
+  line: string;
+  products: number;
+  units: number;
+  value: number;
+  areasSharedWith: number;
+};
+
+function round2(value: number): number {
+  return Number(value.toFixed(2));
+}
+
+/**
+ * Every store sale the split moved, at store × product grain, with the share each area received.
+ *
+ * Built from the SAME eligibility rule the split itself uses (`isSplitEligible`), so a row appears
+ * here if and only if it actually moved — the report can never claim a split that did not happen,
+ * nor miss one that did.
+ */
+export function detailStoreSplitByCustomer<
+  T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
+>(rows: readonly T[]): StoreSplitDetailRow[] {
+  const areaNames = new Map<string, string>();
+  for (const row of rows) {
+    const area = normalizeArea(row.areaCode);
+    const name = typeof row.areaName === "string" ? row.areaName.trim() : "";
+    if (area && name && !areaNames.has(area)) areaNames.set(area, name);
+  }
+
+  const byKey = new Map<string, StoreSplitDetailRow>();
+  for (const row of rows) {
+    if (!isSplitEligible(row)) continue;
+    const origin = normalizeArea(row.areaCode);
+    const city = cityOfArea(origin);
+    const areas = city ? CITY_AREAS.get(city) : undefined;
+    if (!city || !areas || areas.length === 0) continue;
+
+    const productCode = String(row.productCode ?? "").trim().toUpperCase();
+    const clientCode = String(row.clientCode ?? "").trim();
+    const clientName = String(row.clientName ?? "").trim();
+    // Keyed on the customer AND the origin area: the same chain trading in two areas is two
+    // different splits, and folding them together would misreport where the money came from.
+    const key = `${clientCode || clientName}|${origin}|${row.officialLine}|${productCode}`;
+
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.units += Number(row.qty) || 0;
+      existing.value += Number(row.salesValue) || 0;
+      continue;
+    }
+    byKey.set(key, {
+      city,
+      clientCode: clientCode || "—",
+      clientName: clientName || "(no customer name)",
+      line: String(row.officialLine ?? "").trim(),
+      originAreaCode: origin,
+      originAreaName: areaNames.get(origin) ?? origin,
+      originKeepsValue: 0,
+      productCode,
+      productName: String(row.productName ?? "").trim() || productCode,
+      shareUnits: 0,
+      shareValue: 0,
+      sharedWithAreaCodes: areas,
+      units: Number(row.qty) || 0,
+      value: Number(row.salesValue) || 0,
+    });
+  }
+
+  // Shares are derived AFTER the products of a store are summed, so they describe the sale as the
+  // split actually divides it rather than per invoice line.
+  return [...byKey.values()]
+    .map((entry) => {
+      const parts = entry.sharedWithAreaCodes.length;
+      const share = parts > 0 ? entry.value / parts : 0;
+      return {
+        ...entry,
+        originKeepsValue: round2(share),
+        shareUnits: parts > 0 ? Number((entry.units / parts).toFixed(3)) : 0,
+        shareValue: round2(share),
+        units: round2(entry.units),
+        value: round2(entry.value),
+      };
+    })
+    .sort(
+      (left, right) => right.value - left.value
+        || left.clientName.localeCompare(right.clientName)
+        || left.productName.localeCompare(right.productName),
+    );
+}
+
+/** The same movement folded to one row per store — which stores are split, and by how much. */
+export function summariseStoreSplitByCustomer<
+  T extends StoreSplitRow & { areaName?: string; clientCode?: string; productName?: string },
+>(rows: readonly T[]): StoreSplitCustomerSummary[] {
+  const byStore = new Map<string, StoreSplitCustomerSummary & { productCodes: Set<string> }>();
+  for (const detail of detailStoreSplitByCustomer(rows)) {
+    const key = `${detail.clientCode}|${detail.clientName}|${detail.originAreaCode}|${detail.line}`;
+    const existing = byStore.get(key);
+    if (existing) {
+      existing.units = round2(existing.units + detail.units);
+      existing.value = round2(existing.value + detail.value);
+      existing.productCodes.add(detail.productCode);
+      existing.products = existing.productCodes.size;
+      continue;
+    }
+    byStore.set(key, {
+      areasSharedWith: detail.sharedWithAreaCodes.length,
+      city: detail.city,
+      clientCode: detail.clientCode,
+      clientName: detail.clientName,
+      line: detail.line,
+      originAreaCode: detail.originAreaCode,
+      originAreaName: detail.originAreaName,
+      productCodes: new Set([detail.productCode]),
+      products: 1,
+      units: detail.units,
+      value: detail.value,
+    });
+  }
+  return [...byStore.values()]
+    .map(({ productCodes: _productCodes, ...summary }) => summary)
+    .sort((left, right) => right.value - left.value || left.clientName.localeCompare(right.clientName));
+}

@@ -6,6 +6,7 @@ import type { ClosingExportData, MonthlyClosingComparison } from "../src/lib/sal
 import type { ClosingDetailRow } from "../src/lib/sales/monthly-closing-details.ts";
 import { buildMonthlyClosingWorkbook } from "../src/lib/sales/monthly-closing-export.ts";
 import {
+  filterMonthlyClosingMatrix,
   injectDirectIntoMatrix,
   type MonthlyClosingCell,
   type MonthlyClosingDirectCell,
@@ -345,6 +346,50 @@ export async function runClosingChannelTabsTests() {
   assert.ok(
     identitylessText.includes("carries no customer identity"),
     "direct money with no customer identity on the sheet still says so — that IS a real gap worth naming",
+  );
+
+  // ── The Direct tab must FOLLOW THE FILTER ───────────────────────────────────────────────────
+  // Reported live: an export filtered to Delta 1 still listed Giza, Upper Egypt, D2 and Others on
+  // this tab, while every other sheet correctly showed Delta only. The direct RPC has no notion of
+  // the reader's filter, so the sheet has to take its scope from the matrix it sits beside.
+  const filtered = filterMonthlyClosingMatrix(master, { regionCodes: ["D1"] });
+  const filteredRetail = filterMonthlyClosingMatrix(retail, { regionCodes: ["D1"] });
+  const filteredBuffer = await buildMonthlyClosingWorkbook(filtered, buildComparison(), undefined, {
+    channels: { directCells: DIRECT_CELLS, retail: filteredRetail },
+    filterNote: "Filtered export — this workbook covers only: Region: Delta (1).",
+  });
+  const filteredWorkbook = new ExcelJS.Workbook();
+  await filteredWorkbook.xlsx.load(filteredBuffer as unknown as ArrayBuffer);
+  const filteredDirect = sheetValues(filteredWorkbook.getWorksheet("Direct Sales (no retail)")!);
+  const directText = filteredDirect.flat().filter((value): value is string => typeof value === "string");
+
+  assert.ok(
+    directText.some((value) => value === "D1"),
+    "the region the reader filtered to is on the Direct tab",
+  );
+  assert.ok(
+    !directText.some((value) => value === "UE"),
+    "a region the filter excluded must NOT appear on the Direct tab — that was the reported bug",
+  );
+  assert.ok(
+    !filteredDirect.some((row) => row.some((value) => value === 5_000)),
+    "…and neither may its money",
+  );
+  // Here the filter drops Upper Egypt's synthetic Direct row from the master as well, so nothing is
+  // left over and no "outside" line is needed — the tie is exact on its own. (The case where the
+  // master DOES keep excluded direct is July's area-less orders, which live in its "Direct –
+  // National" row: verified live on Pedia 2026-07 filtered to Delta 1, where the sheet names
+  // 13,732 EGP as outside the filter and the Difference still reads zero. Reproducing that here
+  // would mean rebuilding the July hand-map path, which this fixture deliberately does not model.)
+  assert.ok(
+    !filteredDirect.some((row) =>
+      row.some((value) => typeof value === "string" && value.startsWith("Direct outside this filter"))),
+    "nothing is claimed to be outside the filter when the master dropped it too",
+  );
+  const filteredDifference = rowLabelled(filteredDirect, "Difference");
+  assert.ok(
+    filteredDifference?.some((value) => value === 0),
+    "so the filtered tab still reconciles to the master at zero",
   );
 
   // 3. The store split is a retail-only redistribution: applying it to the retail half and to the

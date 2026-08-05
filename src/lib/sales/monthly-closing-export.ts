@@ -13,7 +13,14 @@ import {
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS, type JulyDirectRow } from "@/lib/sales/july-2026-direct-orders";
-import { summariseStoreSplitByArea, type StoreSplitAreaSummary } from "@/lib/sales/store-sales-city-split";
+import {
+  detailStoreSplitByCustomer,
+  summariseStoreSplitByArea,
+  summariseStoreSplitByCustomer,
+  type StoreSplitAreaSummary,
+  type StoreSplitCustomerSummary,
+  type StoreSplitDetailRow,
+} from "@/lib/sales/store-sales-city-split";
 import type { MonthlySourceCoverage, SourceCoverageEntry } from "@/lib/sales/source-coverage";
 
 // Phoenix-branded Monthly Closing workbook. A hidden "Calc" sheet holds the pre-aggregated facts;
@@ -1401,6 +1408,115 @@ function writeJulyDirectSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosing
  * a reader can always see exactly why a rep's number moved. `Net` sums to zero across the areas of
  * any city — the split moves money between areas, it never creates or destroys any.
  */
+/**
+ * Store Split Detail — which SHOP caused a moved number, on which product, and who received it.
+ *
+ * The Store Split sheet answers "what did this area gain or lose". By the time it is built every
+ * store of a city has been folded together, so it cannot answer the question a reader actually asks
+ * of a number that moved: which wholesaler is this, what did they buy, and where did it go. This
+ * sheet keeps the store's own identity — code, name, its own area, its city — all the way through
+ * (owner request, 2026-08-05).
+ *
+ * Two sections: one row per store (the headline "which stores are split"), then one row per store
+ * AND product with the units, the value, how many areas it was divided across and what each area
+ * received. Both are derived from the same eligibility rule the split itself uses, so this sheet
+ * can never claim a split that did not happen, nor miss one that did.
+ */
+function writeStoreSplitDetailSheet(
+  workbook: ExcelJS.Workbook,
+  line: string | null,
+  period: string | null,
+  stores: StoreSplitCustomerSummary[],
+  details: StoreSplitDetailRow[],
+) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Store Split Detail"), {
+    views: [{ state: "frozen", ySplit: 5 }],
+  });
+  const columns: TableColumn[] = [
+    { label: "Customer Code", width: 15 },
+    { label: "Store (wholesaler)", width: 38 },
+    { label: "Its own area", width: 24 },
+    { label: "City", width: 18 },
+    { label: "Line", width: 16 },
+    { label: "Products split", numFmt: UNITS_FMT, right: true, width: 13 },
+    { label: "Units", numFmt: UNITS_FMT, right: true },
+    { dataBar: true, label: "Value (EGP)", numFmt: VALUE_FMT, right: true, width: 17 },
+    { label: "Shared across areas", numFmt: UNITS_FMT, right: true, width: 16 },
+  ];
+  bandHeader(sheet, line, period, "Store Split Detail — every store that was split, and what it sent out", columns.length);
+
+  const storeValue = stores.reduce((sum, entry) => sum + entry.value, 0);
+  const storeUnits = stores.reduce((sum, entry) => sum + entry.units, 0);
+  const row = writeTable(sheet, 4, {
+    columns,
+    note: stores.length === 0
+      ? "No store customers in this line and month — nothing was split, so there is nothing to detail."
+      : `${stores.length} stores were split. "Its own area" is where the shop physically sits — the area that `
+        + "booked the sale before the split; the value is then divided evenly across every area of its city. "
+        + "Pharmacies are never split, and neither is the Head Office line.",
+    rows: stores.map((entry) => [
+      entry.clientCode,
+      entry.clientName,
+      `${entry.originAreaName} (${entry.originAreaCode})`,
+      entry.city,
+      entry.line,
+      entry.products,
+      entry.units,
+      entry.value,
+      entry.areasSharedWith,
+    ]),
+    title: "Stores that were split",
+    totals: stores.length === 0
+      ? undefined
+      : ["", "TOTAL — all stores", "", "", "", stores.length, Number(storeUnits.toFixed(2)), Number(storeValue.toFixed(2)), ""],
+  });
+
+  const detailColumns: TableColumn[] = [
+    { label: "Customer Code", width: 15 },
+    { label: "Store (wholesaler)", width: 38 },
+    { label: "Its own area", width: 24 },
+    { label: "City", width: 18 },
+    { label: "Line", width: 16 },
+    { label: "Product Code", width: 13 },
+    { label: "Product", width: 26 },
+    { label: "Units", numFmt: UNITS_FMT, right: true },
+    { dataBar: true, label: "Value (EGP)", numFmt: VALUE_FMT, right: true, width: 17 },
+    { label: "Areas", numFmt: UNITS_FMT, right: true, width: 9 },
+    { label: "Units per area", numFmt: VALUE_FMT, right: true, width: 14 },
+    { label: "Value per area", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "Shared with", width: 46 },
+  ];
+  const detailUnits = details.reduce((sum, entry) => sum + entry.units, 0);
+  const detailValue = details.reduce((sum, entry) => sum + entry.value, 0);
+  writeTable(sheet, row, {
+    columns: detailColumns,
+    note: details.length === 0
+      ? "Nothing to detail."
+      : "One row per store and product. \"Value per area\" is what EACH area of the city receives, including "
+        + "the store's own area — it keeps one share, not the whole sale. The shares add back to the value on "
+        + "the same row, so nothing is created or lost; the last share carries any rounding remainder.",
+    rows: details.map((entry) => [
+      entry.clientCode,
+      entry.clientName,
+      `${entry.originAreaName} (${entry.originAreaCode})`,
+      entry.city,
+      entry.line,
+      entry.productCode,
+      entry.productName,
+      entry.units,
+      entry.value,
+      entry.sharedWithAreaCodes.length,
+      entry.shareUnits,
+      entry.shareValue,
+      entry.sharedWithAreaCodes.join(", "),
+    ]),
+    title: "Store × product — what moved, and each area's share",
+    totals: details.length === 0
+      ? undefined
+      : ["", "TOTAL", "", "", "", "", "", Number(detailUnits.toFixed(2)), Number(detailValue.toFixed(2)), "", "", "", ""],
+  });
+}
+
 function writeStoreSplitSheet(
   workbook: ExcelJS.Workbook,
   line: string | null,
@@ -1710,6 +1826,18 @@ function channelReconciliation(
   otherValue: number,
   masterValue: number,
 ) {
+  // On a FILTERED export the master can still carry direct money the filter excluded from this
+  // sheet — July's area-less orders live in the master's "Direct – National" row, which
+  // filterMonthlyClosingMatrix deliberately carries through. Naming that remainder is what keeps
+  // the Difference at zero instead of leaving the reader an unexplained gap.
+  const outside = Number((masterValue - thisValue - otherValue).toFixed(2));
+  const outsideRows: CellValue[][] = Math.abs(outside) < 0.005
+    ? []
+    : [[
+      "Direct outside this filter, still counted in the master",
+      outside,
+      "Orders the master carries that belong to no area on show — mostly the National row.",
+    ]];
   writeTable(sheet, row, {
     columns: [
       { label: "Reconciliation", width: 44 },
@@ -1722,6 +1850,7 @@ function channelReconciliation(
     rows: [
       [thisLabel, thisValue, "This sheet."],
       [otherLabel, otherValue, "The other channel tab."],
+      ...outsideRows,
       [
         "Closing Matrix (master, total sales)",
         masterValue,
@@ -1729,7 +1858,7 @@ function channelReconciliation(
       ],
       [
         "Difference",
-        thisValue + otherValue - masterValue,
+        Number((thisValue + otherValue + outside - masterValue).toFixed(2)),
         "Zero means every EGP on the master is on exactly one of the two channel tabs.",
       ],
     ],
@@ -1864,11 +1993,18 @@ function writeDirectChannelSheet(
   // recompute, because a direct deal carries its own negotiated discount or bonus.
   const columnIndex = new Map(products.map((product, index) => [normalizeCode(product.productCode), index]));
   const regionNameByCode = new Map(matrix.regions.map((region) => [region.regionCode, region.regionName]));
+  // FOLLOW THE FILTER. `directCells` is the whole month's direct, because the direct RPC has no
+  // notion of the reader's on-screen filter. The matrix arriving here has already been narrowed,
+  // so its surviving regions ARE the slice this workbook covers — anything else would put Giza and
+  // Upper Egypt on a sheet the reader filtered to Delta. (Reported live: a Delta-1 export listed
+  // every other region on this tab while every other sheet correctly showed only Delta.)
+  const keptRegions = new Set(matrix.regions.map((region) => region.regionCode));
   const byRegion = new Map<string, MonthlyClosingCell[]>();
   directCells.forEach((cell) => {
     const index = columnIndex.get(normalizeCode(cell.productCode));
     if (index === undefined) return; // product outside this workbook's columns
     const regionCode = normalizeCode(cell.regionCode) || "NATIONAL";
+    if (regionCode !== "NATIONAL" && !keptRegions.has(regionCode)) return;
     let cells = byRegion.get(regionCode);
     if (!cells) {
       cells = products.map(() => emptyClosingCell());
@@ -1967,6 +2103,140 @@ function writeDirectChannelSheet(
   channelReconciliation(sheet, row, "Direct sales (this sheet)", channel.value, "Retail sales", retailValue, masterValue);
 }
 
+// ── Dashboard — the first tab: what is in this file, in Arabic and English ───────────────────
+/**
+ * A workbook of fourteen tabs is only useful if a reader knows which one answers their question.
+ * This is the index (owner request, 2026-08-05): one clickable button per tab, with a one-line
+ * description in English AND Arabic, because the people reading this file work in both.
+ *
+ * Built LAST but created FIRST. Sheet order in a workbook is creation order, so the empty sheet is
+ * added before everything else to make it tab 1; its rows are then written from the sheets that
+ * were ACTUALLY produced. That way the index can never advertise a tab this particular export did
+ * not include — a filtered export, a month with no direct orders and a scoped one all differ.
+ */
+const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
+  "Closing Matrix": {
+    ar: "الشيت الرئيسي: إجمالي المبيعات (موزعين + أوردرات مباشرة) لكل منطقة ومنتج، مع التارجت ونسبة التحقيق.",
+    en: "The master sheet: total sales (distributors + direct) per area and product, with target and achievement.",
+  },
+  "Retail Sales (no direct)": {
+    ar: "مبيعات الموزعين فقط، بدون أي أوردر مباشر — نفس المناطق والمنتجات.",
+    en: "Distributor sell-out only, with every direct order excluded — same areas and products.",
+  },
+  "Direct Sales (no retail)": {
+    ar: "الأوردرات المباشرة فقط لكل منطقة، ومعها كل عميل بالاسم والمنطقة والمندوب.",
+    en: "Direct orders only, by region, plus every customer by name, area and medical rep.",
+  },
+  "Source Coverage": {
+    ar: "أي ملفات موردين وصلت هذا الشهر مقارنة بالشهر السابق، وما الذي ما زال ناقصًا وبكم.",
+    en: "Which source files fed this month versus last month, and what is still missing and how big it was.",
+  },
+  "Target vs Achievement": {
+    ar: "المبيعات مقابل التارجت لكل منطقة، ونسبة كل منطقة من تارجت الخط.",
+    en: "Sales against target per area, and each area's share of the line's total target.",
+  },
+  "Direct Orders (July)": {
+    ar: "أوردرات يوليو المباشرة موزعة على المناطق يدويًا، مع اسم الصيدلية والمندوب.",
+    en: "July's hand-mapped direct orders by area, with the pharmacy and the medical rep named.",
+  },
+  "Store Split": {
+    ar: "تقسيم مبيعات المخازن على مناطق نفس المدينة: ماذا خرج من كل منطقة وماذا دخلها.",
+    en: "Wholesaler sales shared across the areas of their city: what each area sent out and received.",
+  },
+  "Store Split Detail": {
+    ar: "تفصيل كامل: أي مخزن تم تقسيمه، وأي منتج، والكميات والقيم، ونصيب كل منطقة.",
+    en: "The full detail: which store was split, which product, the units and values, and each area's share.",
+  },
+  "Distributor Comparison": {
+    ar: "مقارنة الموزعين: حصة كل موزع بالمنتج والمنطقة والمنطقة الفرعية، وتغطيته.",
+    en: "Each distributor's share by product, region and area, plus how much of the map they cover.",
+  },
+  "Rankings & Mix": {
+    ar: "الترتيب: أعلى المنتجات والمناطق والبريكات والعملاء، وتوزيع المبيعات بينهم.",
+    en: "Top products, areas, regions, bricks and customers, and how the sales mix is distributed.",
+  },
+  "Gaps & White-Space": {
+    ar: "الفرص الضائعة: مناطق وبريكات بدون أي مبيعات، ومنتجات غائبة عن مناطق كاملة.",
+    en: "Areas and bricks with no sales at all, and products missing from whole regions.",
+  },
+  "Summary & Insights": {
+    ar: "ملخص الشهر في أرقام قليلة، مع ملاحظات تلقائية على الأداء.",
+    en: "The month in a few headline numbers, with automatic notes on what stands out.",
+  },
+  Data: {
+    ar: "كل سطر فاتورة كما تم استيراده، مع البريك والمنطقة، وسبب استبعاد أي سطر.",
+    en: "Every imported invoice line with its brick and area, and why any excluded line was excluded.",
+  },
+  Total: {
+    ar: "شبكة المنطقة×المنتج محسوبة بالمعادلات من شيت Data — لإثبات أن الأرقام تطابق الرئيسي.",
+    en: "An area × product grid recomputed by formula from Data — the proof it ties to the master.",
+  },
+  Confidential: {
+    ar: "منتجات سرية (LA003 / LA004 / SS001) — تظهر فقط عند طلب إظهارها.",
+    en: "Confidential products (LA003 / LA004 / SS001) — present only when explicitly revealed.",
+  },
+};
+
+function writeDashboardSheet(
+  sheet: ExcelJS.Worksheet,
+  workbook: ExcelJS.Workbook,
+  line: string | null,
+  period: string | null,
+) {
+  const columns: TableColumn[] = [
+    { label: "#", right: true, width: 5 },
+    { label: "Open tab  ·  افتح الشيت", width: 30 },
+    { label: "What you will find here", width: 74 },
+    { label: "ماذا ستجد هنا", width: 74 },
+  ];
+  bandHeader(sheet, line, period, "Dashboard — what is in this file  ·  لوحة المحتويات", columns.length);
+
+  // Only the sheets this export actually produced, in the order the reader will see them. The
+  // hidden Calc sheet is machinery, not a report, and the Dashboard does not list itself.
+  const listed = workbook.worksheets.filter(
+    (candidate) => candidate.id !== sheet.id && candidate.name !== CALC_SHEET && candidate.state !== "hidden",
+  );
+
+  const startRow = 4;
+  writeTable(sheet, startRow, {
+    columns,
+    note:
+      "Click a tab name to jump straight to it. Every number in this workbook comes from the same month and line "
+      + "named at the top of each sheet.  ·  اضغط على اسم الشيت للانتقال إليه مباشرة. كل الأرقام في هذا الملف من نفس الشهر والخط.",
+    rows: listed.map((candidate, index) => {
+      const guide = SHEET_GUIDE[candidate.name];
+      return [
+        index + 1,
+        candidate.name,
+        guide?.en ?? "—",
+        guide?.ar ?? "—",
+      ];
+    }),
+    title: "Tabs in this workbook  ·  الشيتات الموجودة في هذا الملف",
+  });
+
+  // Turn the name cells into real buttons: an internal hyperlink, styled so it reads as clickable.
+  // Written after writeTable so the table's own styling cannot overwrite them.
+  const firstDataRow = startRow + 2;
+  listed.forEach((candidate, index) => {
+    const cell = sheet.getCell(firstDataRow + index, 2);
+    cell.value = {
+      hyperlink: `#'${candidate.name.replace(/'/g, "''")}'!A1`,
+      text: candidate.name,
+      tooltip: `Go to ${candidate.name}`,
+    };
+    cell.font = { bold: true, color: { argb: DIRECT_TEXT }, name: "Calibri", size: 11, underline: true };
+    cell.fill = { fgColor: { argb: DIRECT_FILL }, pattern: "solid", type: "pattern" };
+    cell.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+    cell.border = gridBorder();
+    sheet.getRow(firstDataRow + index).height = 30;
+  });
+
+  // Arabic reads right-to-left; the column is otherwise indistinguishable from the English one.
+  sheet.getColumn(4).alignment = { horizontal: "right", readingOrder: "rtl", vertical: "middle", wrapText: true };
+  sheet.getColumn(3).alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -2019,6 +2289,10 @@ export async function buildMonthlyClosingWorkbook(
   workbook.creator = systemIdentity.appName;
   workbook.created = new Date();
 
+  // The Dashboard is created FIRST so it is tab 1 — sheet order is creation order — but it is
+  // written LAST, from the sheets that actually got produced. See writeDashboardSheet.
+  const dashboard = workbook.addWorksheet(sanitizeSheetName("Dashboard"), { views: [{ showGridLines: false }] });
+
   // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
@@ -2030,7 +2304,18 @@ export async function buildMonthlyClosingWorkbook(
       ? matrix.companyTotal
       : matrix.grandTotal).rowTotal.salesValue;
     const retailValue = options.channels.retail.grandTotal.rowTotal.salesValue;
-    const directValue = options.channels.directCells.reduce((sum, cell) => sum + cell.salesValue, 0);
+    // The direct BOTH tabs quote must be the direct the Direct tab actually shows — i.e. the
+    // regions that survived the reader's filter. Summing every cell here while that sheet lists
+    // only the filtered ones would make the Retail tab cite a number nothing on the Direct tab adds
+    // up to. Same rule, stated once.
+    const keptRegions = new Set(matrix.regions.map((region) => region.regionCode));
+    const directValue = options.channels.directCells.reduce(
+      (sum, cell) => {
+        const region = normalizeCode(cell.regionCode) || "NATIONAL";
+        return region === "NATIONAL" || keptRegions.has(region) ? sum + cell.salesValue : sum;
+      },
+      0,
+    );
     writeRetailChannelSheet(workbook, options.channels.retail, directValue, masterValue);
     writeDirectChannelSheet(
       workbook,
@@ -2062,12 +2347,22 @@ export async function buildMonthlyClosingWorkbook(
   // Right after the matrix and its targets: why a rep's number differs from the raw area total.
   // Built from the SAME detail rows the Data sheet shows, so the two can never disagree.
   if (details) {
+    const splitSourceRows = options?.storeSplitRows ?? details.rows;
     writeStoreSplitSheet(
       workbook,
       matrix.line,
       matrix.period,
       summariseStoreSplitByArea(options?.storeSplitRows ?? details.rows),
       options?.storeSplitScopeAreaCodes ?? [],
+    );
+    // Straight after it: which shop caused each moved number, on which product — the detail the
+    // area summary cannot hold, because by then every store of a city is folded together.
+    writeStoreSplitDetailSheet(
+      workbook,
+      matrix.line,
+      matrix.period,
+      summariseStoreSplitByCustomer(splitSourceRows),
+      detailStoreSplitByCustomer(splitSourceRows),
     );
   }
   writeComparisonSheet(workbook, comparison, ref);
@@ -2116,6 +2411,9 @@ export async function buildMonthlyClosingWorkbook(
   }
 
   writeDataSheet(workbook, blocks);
+
+  // Last, now that every sheet exists: fill tab 1 with what this particular export contains.
+  writeDashboardSheet(dashboard, workbook, matrix.line, matrix.period);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
