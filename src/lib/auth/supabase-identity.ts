@@ -1,4 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import { resolveStoredHrId } from "@/lib/hr-id";
 import { getSupabaseAdmin, getSupabaseAuthBridgeClient } from "@/lib/supabase/server";
 
 export const phoenixSupabaseAccessTokenCookieName = "phoenix_supabase_access_token";
@@ -265,7 +266,10 @@ export async function persistSupabaseAuthIdentityLink(
     .from("user_access_profiles")
     .upsert({
       auth_user_id: input.authUserId,
-      hr_id: input.hrId ?? input.loginId,
+      // Case-sensitive FK to employees.hr_id (stored uppercase) — see the matching note in
+      // src/lib/admin/access-control.ts. Normalising here too keeps the two writers of this
+      // column from disagreeing about spelling for the same person.
+      hr_id: resolveStoredHrId(input.hrId) ?? resolveStoredHrId(input.loginId) ?? input.loginId,
       is_active: input.isActive,
       line: input.line ?? null,
       login_id: input.loginId,
