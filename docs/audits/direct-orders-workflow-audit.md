@@ -92,7 +92,79 @@ the validation capture.
 
 ## C6.2 — Status/transition matrix and `expectedNextStatus` couplings
 
-*In progress.*
+The registry gate is called from exactly **four** sites in `service.ts`:
+
+| Line | Action | expectedNextStatus | status passed |
+|---|---|---|---|
+| 810 | `revive_held` | `pending_approval` | `"held"` |
+| 925 | `expire_held` | `expired` | `"held"` |
+| 1924 | `submit` / `submit_held` | `pending_approval` / `held` | `"draft"` |
+| 2118 | decision (4 actions) | from `directOrderDecisionAction` | `"pending_approval"` |
+
+Every `expectedNextStatus` matches the registry's `to` for that action. **No coupling mismatch.**
+
+### F4 — `reverse` never reaches the registry gate (medium)
+
+`reverseDirectOrder` is the one declared action with no `assertDirectOrderWorkflowTransition` call.
+It gates on `assertPermission(access, "direct_orders", "create")` instead.
+
+That is not the same rule, and the difference is not academic:
+
+| Role | Holds `direct_orders:create` | Registry lists for `reverse` |
+|---|---|---|
+| District / Regional / National Sales Manager | yes | yes |
+| Product Manager / Group Product Manager | yes | yes |
+| Super Admin | yes | yes |
+| **Financial Advisor** | **yes** | **no** |
+| **Medical Rep** | **yes** | **no** |
+
+Two roles can reverse an approved direct order that the registry never intended to allow. Reversing
+retires the order's Source-of-Sales injection — it removes booked sales.
+
+### F5 — `reverse` has no ownership or scope check (medium-high)
+
+Worse than the role list. `reverseDirectOrder` reads the original through `getSupabaseAdmin()` — the
+service-role client, so no RLS applies — and then checks only:
+
+```ts
+if (original.status !== "approved") badRequest(...)
+if (original.reversedByRequestId) badRequest(...)
+```
+
+It never verifies the caller raised the order, sits in its approval chain, or works its area. **Any
+holder of `direct_orders:create` can reverse any approved direct order in the company**, given its
+id.
+
+Bounding it honestly: the reversal is created as `pending_approval`, so it does not retire sales by
+itself — it must pass SFE Manager and CEO first. The immediate damage is that it stamps
+`reversed_by_request_id` on the original (blocking a legitimate reversal) and injects work into
+senior approvers' queues. The real risk is an approver assuming a reversal in their queue is
+legitimate because it exists.
+
+Note also that the reversal's chain is built from the REVERSER's role, not the original requester's
+(`buildApprovalChain({ requesterHrId: actorHrId, requesterRole: access.role })`), so a Medical Rep's
+reversal of a District Manager's order is reviewed as if the rep had raised it.
+
+**Fix:** call the registry gate for `reverse`, and add a scope check — requester, chain member, or
+Super Admin.
+
+### F6 — The gate is told a constant, not the row (low-medium, defence-in-depth)
+
+All four call sites pass a **literal** status string rather than the request's actual status. The
+gate's `action.from.includes(status)` check is therefore validating what the code expects, not what
+the database holds, and can never detect a status anomaly.
+
+In fairness this is not currently a live bug: each service verifies the real status independently
+just above the call (`decideDirectOrder` rejects anything that is not `pending_approval`;
+`reverseDirectOrder` requires `approved`). But the registry gate exists as belts-and-suspenders, and
+right now both belts are the same buckle — if a service's own check were ever removed, the gate
+would not catch it.
+
+**Fix:** pass the row's real status. It costs nothing and makes the second check independent.
+
+## C6.3 — Role gates including denial paths
+
+*Not started.*
 
 ## C6.3 — Role gates including denial paths
 
