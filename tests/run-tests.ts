@@ -519,6 +519,7 @@ import { runDirectOrderReportColumnsTests } from "./direct-orders-report-columns
 import { runDirectOrderValidationCaptureReachableTests } from "./direct-orders-validation-capture-reachable.test.ts";
 import { runDirectOrderSheetWebhookTests } from "./direct-orders-sheet-webhook.test.ts";
 import { runDirectOrderReverseAuthorizationTests } from "./direct-orders-reverse-authorization.test.ts";
+import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
 import { runDirectOrdersPharmacyValidationTests } from "./direct-orders-pharmacy-validation.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
@@ -1211,6 +1212,7 @@ await runTest("direct orders report columns (39-column twins, Arabic intact, nul
 await runTest("direct orders validation capture is reachable from BOTH the admin and portal routes (requester-only, held-only)", runDirectOrderValidationCaptureReachableTests);
 await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed)", runDirectOrderSheetWebhookTests);
 await runTest("direct orders reverse authorization (scope guard inherited, registry-gated, real status passed)", runDirectOrderReverseAuthorizationTests);
+await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
 await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation and the 14-day clock are the only doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
 await runTest("direct orders pharmacy validation (live-capture evidence only, server-side GPS verdict, probation can fail an approved pharmacy, suggestions are reproducible evidence)", runDirectOrdersPharmacyValidationTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);
