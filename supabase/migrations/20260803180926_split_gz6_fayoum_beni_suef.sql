@@ -1,5 +1,17 @@
 -- Split the area "Fayoum-Beni Suef" (GZ6) into two: GZ6 "Fayoum" and a new UE9 "Beni Suef".
 --
+-- EDITED AFTER APPLY (2026-08-05, owner-approved). The four `effective_from` values below were
+-- written as bare `current_date`. Production Postgres runs on UTC, so between Cairo 00:00 and 03:00
+-- an unzoned `current_date` resolves to YESTERDAY — the exact drift the Cairo date guard
+-- (tests/migrations-cairo-date-guard.test.ts) exists to prevent, and how a wrong hire date and
+-- nightly SoS credit drift shipped before.
+--
+-- The applied production rows are CORRECT and were not touched: this migration ran at Cairo 15:09,
+-- far outside that window, so UTC and Cairo agreed on the date. The edit removes the REPLAY risk —
+-- a staging rebuild re-running this file after Cairo midnight would have seeded every date a day
+-- early. The file now differs from the exact text that ran once in production; that is deliberate,
+-- and the difference is strictly a correction.
+--
 -- WHY. GZ6 is one area holding 16 bricks that span two governorates, and on Anti Infective the two
 -- halves belong to different district managers: Fayoum to the Giza DM, Beni Suef to Upper Egypt 2.
 -- One area cannot sit in two territories, so the area itself has to split. The owner classified all
@@ -167,7 +179,7 @@ insert into au.seats
    is_other_pseudo_dm, seat_label, is_active, effective_from)
 values
   ('SEAT-AIF-REP-UE9', 'REP', 'anti_infective', 'UE-2', 'UE9', 'SEAT-AIF-DM-UE-2',
-   false, 'AIF Beni Suef rep', true, current_date);
+   false, 'AIF Beni Suef rep', true, (now() at time zone 'Africa/Cairo')::date);
 -- On Pedia the two halves stay ONE territory, so no new seat there — UE9 reuses SEAT-PED-REP-GZ6.
 -- On CNS the area has no rep at all and sits under SEAT-CNS-OTHERS.
 
@@ -185,11 +197,11 @@ insert into au.line_area_map
    other_type, staffed_in_line_code, effective_from, notes)
 values
   ('anti_infective', 'UE9', 'UE-2', 'vacant_will_hire', 'SEAT-AIF-DM-UE-2', 'SEAT-AIF-REP-UE9',
-   null, null, current_date, 'Split out of GZ6 on 2026-08-03'),
+   null, null, (now() at time zone 'Africa/Cairo')::date, 'Split out of GZ6 on 2026-08-03'),
   ('cns', 'UE9', 'OT', 'other_line_specific', 'SEAT-CNS-OTHERS', null,
-   null, null, current_date, 'Split out of GZ6 on 2026-08-03'),
+   null, null, (now() at time zone 'Africa/Cairo')::date, 'Split out of GZ6 on 2026-08-03'),
   ('pedia', 'UE9', 'GZ', 'occupied', 'SEAT-PED-DM-GZ', 'SEAT-PED-REP-GZ6',
-   null, null, current_date, 'Split out of GZ6 on 2026-08-03; one rep covers both halves');
+   null, null, (now() at time zone 'Africa/Cairo')::date, 'Split out of GZ6 on 2026-08-03; one rep covers both halves');
 
 -- ── 7. Targets ──
 -- The owner put July's Anti Infective targets entirely on Beni Suef.

@@ -139,16 +139,35 @@ export function runAuSeatOccupantResolverTests() {
   // the person is absent, which is the honest answer when nobody holds the seat and nobody did.
   const resolver = latest.get("au.f_seat_occupant_asof")!;
   const normalized = resolver.body.replace(/\s+/g, " ");
+
+  // "Today" must be Cairo's today, not the server's. `latest` lowercases every body, hence the
+  // lowercased zone name here.
+  //
+  // CHANGED 2026-08-01 (20260801180000_cairo_date_in_lifecycle_and_seat_functions.sql): the today-arm
+  // used a bare `current_date`. Production Postgres runs TimeZone = UTC, while this function's WRITER
+  // (20260728010000_au_wire_hire_into_seat_on_vacancy_fill.sql:130) stamps effective_from in Cairo.
+  // Writer-Cairo against reader-UTC means that between Cairo 00:00 and 03:00 — UTC 21:00-24:00 of the
+  // previous day — a span opened today is invisible to arm 1. Arm 1 misses, arm 2 answers, and SoS
+  // credit silently moves to a different person for those three hours every night. The assertions
+  // below therefore pin the ZONED expression: the arm order below is the owner's credit rule, and
+  // this is the clock it must read.
+  const TODAY_CAIRO = "(now() at time zone 'africa/cairo')::date";
   assert.ok(
-    normalized.includes("oh.effective_from <= current_date"),
-    "arm 1: au.f_seat_occupant_asof must resolve today's occupant first (today's wiring wins)",
+    normalized.includes(`oh.effective_from <= ${TODAY_CAIRO}`),
+    "arm 1: au.f_seat_occupant_asof must resolve today's occupant first (today's wiring wins), " +
+      "and today must be Cairo's today — a bare current_date is the server's UTC day",
+  );
+  assert.ok(
+    !normalized.includes("current_date"),
+    "no arm may read an unzoned current_date: the DB is on UTC and the writer stamps Cairo, so an " +
+      "unzoned read moves seat credit between people for three hours every night",
   );
   assert.ok(
     normalized.includes("oh.effective_from <= p_asof"),
     "arm 2: it must fall back to the occupant at p_asof, so a departed rep keeps historical credit",
   );
   assert.ok(
-    normalized.indexOf("oh.effective_from <= current_date") < normalized.indexOf("oh.effective_from <= p_asof"),
+    normalized.indexOf(`oh.effective_from <= ${TODAY_CAIRO}`) < normalized.indexOf("oh.effective_from <= p_asof"),
     "today's wiring must be the FIRST coalesce arm — reversed, a transfer would never re-point history",
   );
   assert.ok(
@@ -156,7 +175,7 @@ export function runAuSeatOccupantResolverTests() {
     "the earliest-ever fallback must stay gone: it invented an owner who never held the seat that period",
   );
   assert.ok(
-    normalized.includes("(oh.effective_to is null or oh.effective_to > current_date)") &&
+    normalized.includes(`(oh.effective_to is null or oh.effective_to > ${TODAY_CAIRO})`) &&
       normalized.includes("(oh.effective_to is null or oh.effective_to > p_asof)"),
     "both arms keep the half-open [effective_from, effective_to) window",
   );
