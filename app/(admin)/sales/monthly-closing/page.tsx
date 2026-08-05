@@ -18,10 +18,16 @@ export default async function MonthlyClosingPage() {
     redirect("/employee-portals/source-of-sales");
   }
 
-  // The admin upload + publish workspace is reserved for the admin account (Super Admin /
-  // system scope). Sales managers and product managers consume the published closing through
-  // the employee-portal Monthly Closing tab instead. Server-side enforcement.
-  if (access.role !== "Super Admin" && access.scope !== "system") {
+  // The admin upload + publish workspace. Super Admin gets full read/write/publish. SFE Manager
+  // gets view + download only (owner decision, 2026-08-05): he already holds sales:import for
+  // Upload/Import Advanced and asked to see the matrix -- including pre-publish/draft state --
+  // without ever being able to publish it himself. Everyone else still consumes the published
+  // closing through the employee-portal Monthly Closing tab. Publish/unpublish stay hard-gated to
+  // Super Admin independently in app/api/sales/monthly-closing/publish/route.ts's own
+  // forbidNonAdmin check -- this check only controls page access and canPublish below, never the
+  // publish action itself.
+  const isSystemAdministratorViewer = access.role === "Super Admin" || access.scope === "system";
+  if (!isSystemAdministratorViewer && access.role !== "SFE Manager") {
     redirect(resolveLandingPathForRole(access.role));
   }
 
@@ -40,7 +46,7 @@ export default async function MonthlyClosingPage() {
 
   return (
     <MonthlyClosingWorkspace
-      canPublish
+      canPublish={isSystemAdministratorViewer}
       initialCoverage={initialCoverage}
       initialError={initialError}
       initialMatrix={initialMatrix}

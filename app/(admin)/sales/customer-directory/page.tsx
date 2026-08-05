@@ -17,7 +17,11 @@ export default async function CustomerDirectoryPage() {
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
   }
-  if (access.role !== "Super Admin" && access.scope !== "system") {
+  // Super Admin gets full access; SFE Manager gets the same view + export (owner decision,
+  // 2026-08-05). Confidential products are already stripped server-side for any non-CEO /
+  // non-Super-Admin caller (see excludeCodesFor in the export route and canViewRestrictedProducts
+  // in access-scope.ts), so opening this to SFE Manager cannot leak them.
+  if (access.role !== "Super Admin" && access.role !== "SFE Manager" && access.scope !== "system") {
     redirect(resolveLandingPathForRole(access.role));
   }
 

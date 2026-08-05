@@ -1088,11 +1088,9 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartColumnBig,
     label: "Monthly Closing",
     description: "Enter and manage monthly closing sales data.",
-    // Super-Admin/system-scope-only workspace (app/(admin)/sales/monthly-closing/page.tsx) — SFE
-    // Manager holds sales:import for Upload/Import Advanced, but has no route into this one and
-    // was landing on his own overview every time he clicked it. Mirrors the SoS Mapping / Master
-    // Database exclusions below.
-    excludedRoles: ["SFE Manager"],
+    // Super Admin gets the full upload/publish workspace; SFE Manager reaches the same page but
+    // view + download only, never publish (owner decision, 2026-08-05) -- see the page's own
+    // canPublish gate. No excludedRoles here on purpose: both roles must see this card.
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1519,9 +1517,8 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     icon: UsersRound,
     label: "Customer Directory",
     description: "Browse and filter every customer across all distributors.",
-    // Super-Admin/system-scope-only workspace (app/(admin)/sales/customer-directory/page.tsx) —
-    // same dead-end-for-SFE-Manager issue as Monthly Closing; mirrors Customer Mapping below.
-    excludedRoles: ["SFE Manager"],
+    // Super Admin and SFE Manager both reach this page (owner decision, 2026-08-05) -- see the
+    // page's own role gate. No excludedRoles here on purpose.
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
