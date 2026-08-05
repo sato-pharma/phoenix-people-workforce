@@ -361,6 +361,8 @@ export type DirectOrderReportRow = {
   sosBatchId: string | null;
   createdAt: string;
   decidedAt: string | null;
+  /** When the order entered `held`. Drives the 14-day expiry clock shown on the report. */
+  heldAt: string | null;
   activeStepLabel: string;
   activeStepOrder: number | null;
   // pharmacy (from the registry)

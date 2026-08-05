@@ -1089,6 +1089,7 @@ export async function cancelHeldDirectOrder(
 
 // ── The Held Desk (spec C3) ───────────────────────────────────────────────────
 
+
 const HELD_ORDER_LIFETIME_DAYS = 14;
 
 export type HeldDirectOrderRow = {
@@ -3442,6 +3443,7 @@ export async function getDirectOrderReport(
       sosBatchId: request.sosBatchId,
       createdAt: request.createdAt,
       decidedAt: request.decidedAt,
+      heldAt: request.heldAt,
       activeStepLabel: active?.label ?? "",
       activeStepOrder: active?.order ?? null,
       pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "",
