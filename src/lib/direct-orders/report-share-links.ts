@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   DIRECT_ORDER_REPORT_COLUMNS,
   directOrderReportRowCells,
+  directOrderShareFileUrl,
   summariseDirectOrderReport,
 } from "@/lib/direct-orders/report-columns";
 import {
@@ -184,20 +185,20 @@ export type ResolvedShareLink = {
   label: string | null;
   scope: string;
   generatedAt: string;
+  allowFiles: boolean;
 };
 
 /**
- * Serve a link. Returns the rows the link is entitled to, or throws.
+ * Resolve a token WITHOUT loading the report — the cheap half, used by the file route, where
+ * loading every order to serve one photograph would be absurd.
  *
- * Called from an UNAUTHENTICATED route, so this function is the entire security boundary: it
- * checks existence, revocation, expiry and passcode before it reads a single row, and it loads
- * the report as the CREATOR (frozen scope) rather than as the anonymous caller.
+ * Returns the raw link row. Throws for anything that is not a live, unexpired, unrevoked link.
  */
-export async function resolveDirectOrderReportShareLink(input: {
-  token: string;
-  passcode?: string | null;
+export async function assertDirectOrderShareToken(input: {
+  requireFiles?: boolean;
   surface: "live" | "feed";
-}): Promise<ResolvedShareLink> {
+  token: string;
+}): Promise<Record<string, unknown>> {
   const token = String(input.token ?? "").trim();
   if (!token) throw notFoundError("Link not found.");
 
@@ -214,6 +215,28 @@ export async function resolveDirectOrderReportShareLink(input: {
   if (String(link.surface) !== input.surface) throw notFoundError("Link not found.");
   if (link.revoked_at) throw forbiddenError("This link has been revoked.");
   if (new Date(String(link.expires_at)).getTime() < Date.now()) throw forbiddenError("This link has expired.");
+  // Files are a SEPARATE grant from the table. A token minted to feed a spreadsheet must not become
+  // a key to photographs of real shop fronts just because someone guessed the file route exists.
+  if (input.requireFiles && !link.allow_files) throw forbiddenError("This link does not carry file access.");
+  return link;
+}
+
+/**
+ * Serve a link. Returns the rows the link is entitled to, or throws.
+ *
+ * Called from an UNAUTHENTICATED route, so this function is the entire security boundary: it
+ * checks existence, revocation, expiry and passcode before it reads a single row, and it loads
+ * the report as the CREATOR (frozen scope) rather than as the anonymous caller.
+ */
+export async function resolveDirectOrderReportShareLink(input: {
+  token: string;
+  passcode?: string | null;
+  surface: "live" | "feed";
+}): Promise<ResolvedShareLink> {
+  const token = String(input.token ?? "").trim();
+  // Existence, surface, revocation and expiry all live in assertDirectOrderShareToken, so the file
+  // route and this one can never drift apart on what counts as a live link.
+  const link = await assertDirectOrderShareToken({ surface: input.surface, token });
 
   if (link.passcode_hash) {
     const supplied = String(input.passcode ?? "");
@@ -225,6 +248,7 @@ export async function resolveDirectOrderReportShareLink(input: {
   // Load as the CREATOR. `systemAccessContext` reads everything, so the frozen scope is applied
   // here explicitly — this is what stops a District Manager's link from serving company-wide data.
   const creatorHrId = String(link.scope_hr_id ?? "");
+  const supabase = getSupabaseAdmin();
   const scope = String(link.scope ?? "own");
   const all = await getDirectOrderReport({
     ...systemAccessContext,
@@ -247,6 +271,7 @@ export async function resolveDirectOrderReportShareLink(input: {
     .then(undefined, () => undefined);
 
   return {
+    allowFiles: Boolean(link.allow_files),
     rows,
     label: link.label ? String(link.label) : null,
     scope,
@@ -287,7 +312,11 @@ export function buildDirectOrderReportCsv(rows: DirectOrderReportRow[]): string 
  * not promise that, and a cover row reading "14 orders" above a table listing 15 is exactly the
  * kind of quiet inconsistency that destroys trust in a number.
  */
-export function buildDirectOrderReportBundleCsv(rows: DirectOrderReportRow[], scope: string): string {
+export function buildDirectOrderReportBundleCsv(
+  rows: DirectOrderReportRow[],
+  scope: string,
+  files?: { allowFiles: boolean; baseUrl: string; token: string },
+): string {
   const { totalValue, approvedValue, totalUnits, byStatus } = summariseDirectOrderReport(rows);
   const out: string[] = [];
 
@@ -310,7 +339,14 @@ export function buildDirectOrderReportBundleCsv(rows: DirectOrderReportRow[], sc
 
   out.push("#ORDERS");
   out.push(DIRECT_ORDER_REPORT_COLUMNS.map((column) => csvCell(column.label)).join(","));
-  for (const row of rows) out.push(directOrderReportRowCells(row).map(csvCell).join(","));
+  for (const row of rows) {
+    // A link is emitted only when the link carries the file grant. Without it the cell stays blank
+    // rather than offering a door the caller cannot open.
+    const links = files?.allowFiles
+      ? { evidence: directOrderShareFileUrl(files.baseUrl, files.token, row.id) }
+      : { evidence: null };
+    out.push(directOrderReportRowCells(row, links).map(csvCell).join(","));
+  }
 
   return `﻿${out.join("\r\n")}\r\n`;
 }

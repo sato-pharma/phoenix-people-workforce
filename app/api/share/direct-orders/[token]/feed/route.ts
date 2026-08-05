@@ -7,6 +7,7 @@ import {
 } from "@/lib/direct-orders/report-share-links";
 import { isForbiddenError } from "@/lib/auth/server";
 import { toApiError } from "@/lib/http/api-errors";
+import { systemDeployment } from "@/config/system-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ toke
     // single-table CSV, because an IMPORTDATA formula cannot skip section markers.
     const wantsBundle = new URL(request.url).searchParams.get("bundle") === "1";
     const csv = wantsBundle
-      ? buildDirectOrderReportBundleCsv(resolved.rows, resolved.scope)
+      // The CONFIGURED public URL, never the request's own origin. Behind Railway's proxy that
+      // origin is the container's internal bind address, which is how the marketing sheet ended up
+      // rendering every photo link as https://0.0.0.0:8080/… and opening nothing.
+      ? buildDirectOrderReportBundleCsv(resolved.rows, resolved.scope, {
+        allowFiles: resolved.allowFiles,
+        baseUrl: systemDeployment.productionUrl,
+        token,
+      })
       : buildDirectOrderReportCsv(resolved.rows);
     return new NextResponse(csv, {
       status: 200,

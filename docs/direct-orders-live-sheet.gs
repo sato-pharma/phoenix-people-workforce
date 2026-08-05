@@ -155,6 +155,18 @@ var EXPIRY_COLUMN = "Days to expiry";
 var EXPIRY_RED_WITHIN_DAYS = 4;
 var EXPIRY_AMBER_WITHIN_DAYS = 8;
 
+/**
+ * Columns whose value is a URL and must render as a CLICKABLE cell.
+ *
+ * A blank stays blank — deliberately. Writing "Open photo" over an empty URL produces a link that
+ * goes nowhere, and a reader who clicks a dead link concludes the system lost the photograph rather
+ * than that none was ever taken. Most orders legitimately have none: a storefront photo exists only
+ * where a pharmacy had to be validated by capture.
+ */
+var LINK_LABELS = {
+  "Evidence photo link": "📷 Open photo"
+};
+
 var EXEC_TAB = "Executive Summary";
 var TAB_ORDER = [EXEC_TAB, "Direct Orders", "By Status", "Cover", "Backup"];
 
@@ -452,7 +464,14 @@ function buildOrdersSheet(ss, grid, stamp, created) {
     for (var r = 0; r < body.length && r < MAX_DATA_ROWS; r++) {
       var row = [];
       for (var c = 0; c < cols; c++) {
-        row.push(coerce(header[c], c < body[r].length ? body[r][c] : ""));
+        var raw = c < body[r].length ? body[r][c] : "";
+        if (LINK_LABELS[header[c]]) {
+          // A HYPERLINK formula is the only cell type that both shows a friendly label and
+          // navigates on a single click.
+          row.push(raw ? '=HYPERLINK("' + String(raw).replace(/"/g, '""') + '","' + LINK_LABELS[header[c]] + '")' : "");
+        } else {
+          row.push(coerce(header[c], raw));
+        }
       }
       values.push(row);
     }
