@@ -157,13 +157,26 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Adds a column to public.deductions_decisions. Confirmed by attempting the apply on staging
   // 2026-08-05: Postgres refused with 42P01 relation "public.deductions_decisions" does not exist.
   "20260802094500_deductions_decisions_applied_dates.sql",
-  // DELIBERATELY NOT LISTED: 20260725180000_analytics_dim_products_exclude_head_office.sql.
-  // That one is REAL production drift, found by this check's first production run on
-  // 2026-07-30 (merged 110h earlier, applied to staging, never to production). Confirmed
-  // live: pg_get_viewdef('analytics.dim_products') on production still has no Head Office
-  // exclusion, so Head-Office-line products remain visible to non-CEO analytics consumers.
-  // Applying it to production needs explicit owner approval per AGENTS.md — leave it
-  // failing here until that happens. Do not silence it.
+  // RESOLVED 2026-08-05 — 20260725180000_analytics_dim_products_exclude_head_office.sql is
+  // APPLIED. It needs no entry in this list: it is genuinely applied AND recorded in
+  // schema_migrations under its own version, so the check matches it and passes.
+  //
+  // Kept as a record rather than deleted, because the history is the point. This was the one
+  // REAL production drift this check ever found — caught by its first production run on
+  // 2026-07-30, 110h after merge, applied to staging and never to production. It was
+  // deliberately left FAILING here for six days rather than silenced, because failing was the
+  // only thing that would keep it visible until an owner approved the apply.
+  //
+  // Verified live on production 2026-08-05, by reading the view rather than the ledger:
+  // pg_get_viewdef('analytics.dim_products') now carries the line exclusion character-for-
+  // character as this migration writes it, and the boundary holds — 0 Head-Office-line rows and
+  // 0 restricted product codes visible through dim_products (22 products), against 26 in the
+  // CEO/Super-Admin dim_products_all. The four-row gap is exactly the confidential set.
+  //
+  // A caution for whoever checks this next: `position('head office' in viewdef) > 0` is NOT a
+  // sufficient test — it answered "excluded" while a second query still counted a product that
+  // would disappear, because that one read the SOURCE table. Only reading the full view
+  // definition settled it. Do not re-open this on the strength of a substring match.
 ]);
 
 type LocalMigration = { fileName: string; version: string; name: string; commitTimeMs: number | null };
