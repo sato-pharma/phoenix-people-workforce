@@ -15,27 +15,31 @@ import { evaluateSchemaShape, type SchemaShape } from "../scripts/check-schema-s
 //   keys, 105/282 primary keys, 138/1096 indexes.
 
 const HEALTHY: SchemaShape = {
-  // Production, measured 2026-08-01 via phx_ci_schema_shape() — after
-  // email_backfill_backup_20260730 was dropped (285 -> 284 tables), which also emptied
-  // tables_rls_disabled. Real numbers, not invented ones: if this fixture drifts from
-  // production the test stops meaning anything.
-  tables_total: 284,
-  tables_rls_enabled: 284,
+  // Production, measured 2026-08-05 via phx_ci_schema_shape() — after
+  // 20260805195425 dropped four spent snapshots and 20260805204502 moved the last four
+  // out of `public` into dated backup schemas (284 -> 294 tables across the week; the
+  // net is up because real tables were added meanwhile). Real numbers, not invented
+  // ones: if this fixture drifts from production the test stops meaning anything.
+  tables_total: 294,
+  tables_rls_enabled: 294,
   tables_force_rls: 26,
-  policies_total: 359,
-  primary_keys_total: 282,
-  unique_total: 98,
-  foreign_keys_total: 278,
-  check_total: 492,
-  indexes_total: 1096,
-  triggers_total: 33,
+  policies_total: 378,
+  primary_keys_total: 294,
+  unique_total: 103,
+  foreign_keys_total: 292,
+  check_total: 535,
+  indexes_total: 1148,
+  triggers_total: 39,
   schema_usage: { anon: true, authenticated: true, service_role: true },
   tables_exposed_without_rls: [],
   tables_rls_disabled: [],
-  tables_without_primary_key: [
-    "geo_locations_brick_centroid_backup2_20260728",
-    "geo_locations_brick_centroid_backup_20260728",
-  ],
+  // Empty, and now genuinely so: every one of the 294 tables in `public` has a primary
+  // key. The two geo brick-centroid snapshots that used to sit here were the last
+  // holdouts, and they were not given primary keys — they were moved out of `public`
+  // altogether by 20260805204502, which is why NO_PRIMARY_KEY_ALLOWED in
+  // check-schema-shape.ts is now empty too. A name reappearing in either place means a
+  // snapshot was created in `public` again.
+  tables_without_primary_key: [],
   // Production actually has 61 of these; deliberately empty here so the "healthy schema
   // raises nothing" assertion below stays meaningful. The deny-all warning has its own
   // dedicated case at the bottom of this file.
@@ -55,9 +59,10 @@ export function runSchemaShapeCheckTests() {
   // ---------------------------------------------------------------------------
   assert.deepEqual(codes(HEALTHY, "error"), [], "a healthy production-shaped schema must raise no errors");
 
-  // The three known backup tables are allowlisted, so their missing primary keys and
-  // the one RLS-disabled table must not trip anything.
-  assert.deepEqual(codes(HEALTHY, "warning"), [], "allowlisted backup tables must not produce warnings either");
+  // Nothing is allowlisted any more and nothing needs to be: the ad-hoc snapshots that
+  // used to require an exemption now live outside `public`, where this check does not
+  // look. A healthy schema is silent on its own merits rather than by exemption.
+  assert.deepEqual(codes(HEALTHY, "warning"), [], "a healthy production-shaped schema must raise no warnings either");
 
   // ---------------------------------------------------------------------------
   // Fault 2, as it actually stood 2026-07-11 .. 2026-07-30: grants present, RLS off.
