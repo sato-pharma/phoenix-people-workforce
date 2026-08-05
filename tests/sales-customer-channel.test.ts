@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 
 import {
   classifyCustomerChannel,
+  HOSPITAL_NAME_KEYWORDS,
+  isStoreCustomer,
+  matchedChannelKeywords,
+  matchedHospitalKeywords,
   matchedStoreKeywords,
   normalizeCustomerName,
   splitByCustomerChannel,
@@ -62,6 +66,63 @@ export function runSalesCustomerChannelTests() {
     assert.equal(classifyCustomerChannel(name), "pharmacy", `"${name}" carries no store keyword`);
   }
 
+  // ---------------------------------------------------------------- hospitals
+  // Real production spellings. مستشف is the shared prefix, so both ى and ي endings must land.
+  const realHospitalNames: ReadonlyArray<readonly [string, string]> = [
+    ["مستشفى دارالفؤاد مدينة نصر", "مستشفى / مستشفي"],
+    ["مستشفي راشد", "مستشفى / مستشفي"],
+    ["مستشفىالانبا تكلا", "مستشفى / مستشفي"],
+    ["المستشفى الروماني", "مستشفى / مستشفي"],
+    ["صيدلية خاصة تابعة لمستشفى دار السلام", "مستشفى / مستشفي"],
+    ["Cleopatra Hospital", "hospital"],
+  ];
+  for (const [name, expectedWord] of realHospitalNames) {
+    assert.equal(classifyCustomerChannel(name), "hospital", `"${name}" carries a hospital keyword`);
+    assert.ok(
+      matchedHospitalKeywords(name).includes(expectedWord),
+      `"${name}" must report ${expectedWord} as the reason it is a hospital`,
+    );
+  }
+  for (const keyword of HOSPITAL_NAME_KEYWORDS) {
+    assert.equal(
+      classifyCustomerChannel(`عميل ${keyword.stem} تجريبي`),
+      "hospital",
+      `keyword ${keyword.label} must actually match its own stem`,
+    );
+  }
+  // A pharmacy INSIDE a hospital is a hospital customer — the name says مستشفى, so it lands there
+  // rather than being buried among 49,000 ordinary pharmacies.
+  assert.equal(classifyCustomerChannel("صيدلية مستشفى النيل – ملوى"), "hospital");
+  // …but صيدلية on its own never makes a hospital.
+  assert.equal(classifyCustomerChannel("صيدلية النيل"), "pharmacy");
+  assert.deepEqual(matchedHospitalKeywords(null), [], "a null name reports no hospital keywords");
+
+  // THE headline invariant for this channel. Six real production names carry BOTH a hospital word
+  // and a store word — this is one of them (the Saudi-German hospital, run by a company whose name
+  // starts الشركه). Two things must both hold:
+  const overlap = "الشركه المصريه السعوديه للرعايه الصحيه -مستشفى السعودى الالمانى";
+  assert.equal(
+    classifyCustomerChannel(overlap),
+    "hospital",
+    "a name carrying BOTH a hospital and a store word is a hospital — hospital wins the overlap",
+  );
+  assert.equal(
+    isStoreCustomer(overlap),
+    true,
+    "…but it must STILL be a store customer for the Monthly Closing's city split. isStoreCustomer is "
+      + "keyword-based on purpose: routing it through the classifier would silently stop splitting "
+      + "this customer's sales across its city, moving money between areas in the closing.",
+  );
+  // A second real one, carrying مخزن rather than الشركه.
+  const overlapStore = "هيئه الشراء الموحد - مستشفى المنزله العام-مخزن نفقه الدوله";
+  assert.equal(classifyCustomerChannel(overlapStore), "hospital");
+  assert.equal(isStoreCustomer(overlapStore), true, "a مخزن that is also a hospital still splits");
+
+  // matchedChannelKeywords explains the channel the customer actually landed in.
+  assert.deepEqual(matchedChannelKeywords(overlap), ["مستشفى / مستشفي"]);
+  assert.deepEqual(matchedChannelKeywords("مخزن الحجاز"), ["مخزن"]);
+  assert.deepEqual(matchedChannelKeywords("صيدلية النور"), []);
+
   // THE headline invariant. Egyptian data entry writes ة and ه interchangeably; without folding,
   // searching الشركة finds NONE of the real customers, which reads as "there are none".
   assert.equal(
@@ -107,10 +168,11 @@ export function runSalesCustomerChannelTests() {
 
   // The generic splitter keeps incoming order within each side.
   const split = splitByCustomerChannel(
-    [{ n: "صيدلية النور" }, { n: "مخزن الحجاز" }, { n: "صيدلية الشفاء" }],
+    [{ n: "صيدلية النور" }, { n: "مخزن الحجاز" }, { n: "مستشفى الصفوة" }, { n: "صيدلية الشفاء" }],
     (row) => row.n,
   );
   assert.deepEqual(split.stores.map((row) => row.n), ["مخزن الحجاز"]);
+  assert.deepEqual(split.hospitals.map((row) => row.n), ["مستشفى الصفوة"]);
   assert.deepEqual(split.pharmacies.map((row) => row.n), ["صيدلية النور", "صيدلية الشفاء"]);
 
   // The directory row carries the channel, so the UI never re-derives the rule itself.
@@ -119,11 +181,18 @@ export function runSalesCustomerChannelTests() {
       directoryRow("مخزن الحجاز فارما لتجارة وتوزيع", 1_000, "C1"),
       directoryRow("صيدلية النور", 250, "C2"),
       directoryRow("الجمعية التعاونية - قنا", 750, "C3"),
+      directoryRow("مستشفى دارالفؤاد", 500, "C4"),
     ],
     emptyMaps,
   );
   assert.equal(mapped[0]?.channel, "store");
   assert.equal(mapped[1]?.channel, "pharmacy");
+  assert.equal(mapped[3]?.channel, "hospital");
+  assert.deepEqual(
+    mapped[3]?.matchedKeywords,
+    ["مستشفى / مستشفي"],
+    "a hospital reports the hospital word, not an empty list — the reason must stay visible",
+  );
   assert.deepEqual(mapped[1]?.matchedKeywords, [], "a pharmacy reports no matched keywords");
   assert.deepEqual(
     mapped[0]?.matchedKeywords,
@@ -134,15 +203,17 @@ export function runSalesCustomerChannelTests() {
   // Totals must cover EVERY row on that side, not just the ones the display cap kept — a channel
   // total that silently means "the first page" is the same defect as rendering missing data as 0.
   const grouped = splitDirectoryByChannel(mapped);
-  assert.equal(grouped.stores.totalCustomers, 2, "both keyword-carrying customers land in stores");
+  assert.equal(grouped.stores.totalCustomers, 2, "both store-keyword customers land in stores");
   assert.equal(grouped.pharmacies.totalCustomers, 1);
+  assert.equal(grouped.hospitals.totalCustomers, 1);
   assert.equal(grouped.stores.totalValue, 1_750, "store value sums every store row");
   assert.equal(grouped.pharmacies.totalValue, 250, "pharmacy value sums every pharmacy row");
+  assert.equal(grouped.hospitals.totalValue, 500, "hospital value sums every hospital row");
   assert.equal(grouped.stores.totalUnits, 20);
   assert.equal(
-    grouped.stores.totalValue + grouped.pharmacies.totalValue,
-    2_000,
-    "the two channels partition the directory — no customer is counted twice or dropped",
+    grouped.stores.totalValue + grouped.pharmacies.totalValue + grouped.hospitals.totalValue,
+    2_500,
+    "the three channels partition the directory — no customer is counted twice or dropped",
   );
   assert.equal(grouped.stores.truncated, false, "three rows are far below the display cap");
   assert.equal(

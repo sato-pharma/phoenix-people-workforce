@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Download, Loader2, Pill, Store } from "lucide-react";
+import { AlertTriangle, Download, Loader2, HeartPulse, Pill, Store } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -16,11 +16,11 @@ import type {
   CustomerDirectoryRow,
 } from "@/lib/sales/customer-directory";
 
-// Customers tab — the Source-of-Sales customer base split into the two channels the owner
-// cares about: PHARMACIES (normal customers) and STORES (wholesalers / warehouses / trading
-// companies, identified by the six keywords in src/lib/sales/customer-channel.ts). The split is
-// derived from the customer's name on every read, so historical uploads and every future upload
-// land on the correct side with no backfill.
+// Customers tab — the Source-of-Sales customer base split into the three channels the owner
+// cares about: PHARMACIES (normal customers), STORES (wholesalers / warehouses / trading
+// companies, identified by the six keywords in src/lib/sales/customer-channel.ts) and HOSPITALS
+// (names carrying مستشف or "hosp"). The split is derived from the customer's name on every read,
+// so historical uploads and every future upload land on the correct side with no backfill.
 
 type ChannelResponse = {
   data?: CustomerDirectoryChannelResult;
@@ -37,20 +37,42 @@ const CHANNELS: ReadonlyArray<{
   icon: typeof Pill;
   key: CustomerChannel;
   label: string;
+  plural: string;
 }> = [
   {
-    blurb: "Customers whose name carries none of the store keywords.",
+    blurb: "Customers whose name carries none of the store or hospital keywords.",
     icon: Pill,
     key: "pharmacy",
     label: "Pharmacies",
+    plural: "pharmacies",
   },
   {
     blurb: "Customers whose name contains مخزن, فارما / فارم, تريد, الشركة, الجمعيه or للتجارة.",
     icon: Store,
     key: "store",
     label: "Stores",
+    plural: "stores",
+  },
+  {
+    blurb: "Customers whose name contains مستشفى / مستشفي or hospital — the hospital itself and its in-house pharmacy both land here.",
+    icon: HeartPulse,
+    key: "hospital",
+    label: "Hospitals",
+    plural: "hospitals",
   },
 ];
+
+// One place that maps a channel to its side of the payload, so a new channel cannot be added to
+// CHANNELS without the compiler demanding its group here.
+function groupFor(result: CustomerDirectoryChannelResult, channel: CustomerChannel): CustomerChannelGroup {
+  if (channel === "hospital") return result.hospitals;
+  if (channel === "store") return result.stores;
+  return result.pharmacies;
+}
+
+function pluralFor(channel: CustomerChannel): string {
+  return CHANNELS.find((entry) => entry.key === channel)?.plural ?? "customers";
+}
 
 export function CustomersChannelTab() {
   const [result, setResult] = useState<CustomerDirectoryChannelResult | null>(null);
@@ -90,14 +112,14 @@ export function CustomersChannelTab() {
   }, [refreshKey]);
 
   const active = CHANNELS.find((entry) => entry.key === channel) ?? CHANNELS[0];
-  const group = result ? (channel === "store" ? result.stores : result.pharmacies) : null;
+  const group = result ? groupFor(result, channel) : null;
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-2 rounded-2xl border border-[#D8E0EA] bg-white/90 p-2 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
         {CHANNELS.map((entry) => {
           const Icon = entry.icon;
-          const side = result ? (entry.key === "store" ? result.stores : result.pharmacies) : null;
+          const side = result ? groupFor(result, entry.key) : null;
           return (
             <Button
               className={cn(
@@ -118,12 +140,12 @@ export function CustomersChannelTab() {
         })}
       </div>
 
-      {/* Both sides side by side, so "how much comes from stores vs pharmacies" is answered
-          without switching tabs. Rendered only once the data is real — never as a zero. */}
+      {/* Every side at once, so "how much comes from stores vs pharmacies vs hospitals" is
+          answered without switching tabs. Rendered only once the data is real — never as a zero. */}
       {result ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {CHANNELS.map((entry) => {
-            const side = entry.key === "store" ? result.stores : result.pharmacies;
+            const side = groupFor(result, entry.key);
             const Icon = entry.icon;
             const isActive = entry.key === channel;
             return (
@@ -200,7 +222,7 @@ function ExportButton({ channel, disabled }: { channel: CustomerChannel; disable
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = channel === "store" ? "phoenix-customers-stores.xlsx" : "phoenix-customers-pharmacies.xlsx";
+      anchor.download = `phoenix-customers-${pluralFor(channel)}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -226,7 +248,10 @@ function ExportButton({ channel, disabled }: { channel: CustomerChannel; disable
 }
 
 function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: CustomerChannelGroup }) {
-  const isStore = channel === "store";
+  // Stores and hospitals were both placed by a keyword, so both must show WHICH word did it.
+  // Pharmacies are the residue — there is no word to show.
+  const showsKeywords = channel !== "pharmacy";
+  const plural = pluralFor(channel);
   const table = useSortableTable(group.customers, {
     columns: [
       { key: "clientName", accessor: (row) => row.clientName, type: "string" },
@@ -253,14 +278,14 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
     initialSort: null,
   });
 
-  const columnCount = isStore ? 11 : 10;
+  const columnCount = showsKeywords ? 11 : 10;
 
   return (
     <div className="p-4 md:p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <AdminInsightChip tone={isStore ? "orange" : "slate"}>
-            {formatNumber(group.totalCustomers)} {isStore ? "stores" : "pharmacies"} · {formatCurrency(group.totalValue)}
+          <AdminInsightChip tone={showsKeywords ? "orange" : "slate"}>
+            {formatNumber(group.totalCustomers)} {plural} · {formatCurrency(group.totalValue)}
           </AdminInsightChip>
           {group.truncated ? (
             <span className="whitespace-nowrap text-xs font-semibold text-[#92400E]">
@@ -294,7 +319,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
             <thead className="bg-[#0B0B0B] text-slate-100">
               <tr>
                 <SortableTh className="text-xs tracking-[0.12em]" label="Customer" onSort={table.toggleSort} sort={table.sort} sortKey="clientName" variant="dark" />
-                {isStore ? (
+                {showsKeywords ? (
                   <SortableTh className="text-xs tracking-[0.12em]" label="Matched Word" onSort={table.toggleSort} sort={table.sort} sortKey="matchedKeywords" variant="dark" />
                 ) : null}
                 <SortableTh className="text-xs tracking-[0.12em]" label="Address" onSort={table.toggleSort} sort={table.sort} sortKey="clientAddress" variant="dark" />
@@ -313,11 +338,11 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                 group.customers.length === 0 ? (
                   <tr>
                     <td className="px-3 py-6 text-center text-slate-400" colSpan={columnCount}>
-                      No {isStore ? "stores" : "pharmacies"} in the uploaded sales.
+                      No {plural} in the uploaded sales.
                     </td>
                   </tr>
                 ) : (
-                  <TableNoResults colSpan={columnCount} filtered label={isStore ? "stores" : "pharmacies"} />
+                  <TableNoResults colSpan={columnCount} filtered label={plural} />
                 )
               ) : (
                 table.rows.map((row) => (
@@ -328,7 +353,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                         <span className="block text-xs text-slate-400">{row.clientCode}</span>
                       </Link>
                     </td>
-                    {isStore ? (
+                    {showsKeywords ? (
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <span className="border border-[#FDBA74] bg-orange-50 px-2 py-0.5 text-[11px] font-bold text-[#9A3412]">
                           {row.matchedKeywords.join(" + ") || "—"}
@@ -363,8 +388,8 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
         {table.rows.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-400">
             {group.customers.length === 0
-              ? `No ${isStore ? "stores" : "pharmacies"} in the uploaded sales.`
-              : `No ${isStore ? "stores" : "pharmacies"} match this filter.`}
+              ? `No ${plural} in the uploaded sales.`
+              : `No ${plural} match this filter.`}
           </p>
         ) : (
           table.rows.map((row) => (
@@ -377,7 +402,7 @@ function ChannelPanel({ channel, group }: { channel: CustomerChannel; group: Cus
                 <p className="text-sm font-bold text-slate-900">{row.clientName || "—"}</p>
                 <span className="shrink-0 text-xs font-bold text-slate-500">{row.clientCode}</span>
               </div>
-              {isStore && row.matchedKeywords.length > 0 ? (
+              {showsKeywords && row.matchedKeywords.length > 0 ? (
                 <span className="mt-1 inline-block border border-[#FDBA74] bg-orange-50 px-2 py-0.5 text-[11px] font-bold text-[#9A3412]">
                   {row.matchedKeywords.join(" + ")}
                 </span>
