@@ -1,0 +1,84 @@
+name: SonarQube Cloud
+
+# Static code-quality/security analysis via SonarQube Cloud. Read-only: it runs
+# static analysis and imports test coverage, and does not change application
+# behavior. Scan configuration (sources, exclusions, SQL dialect, Quality Gate)
+# lives in sonar-project.properties at the repo root.
+#
+# Setup docs: https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/ci-based-analysis/github-actions-for-sonarcloud
+#
+# One-time manual step required in the SonarQube Cloud UI: this project was
+# imported with "Automatic Analysis" on (its Analysis Method page URL contains
+# "AutoScan"), which is mutually exclusive with the CI-based analysis this
+# workflow performs - running both raises "You are running CI analysis while
+# Automatic Analysis is enabled." Turn Automatic Analysis off under the
+# project's Administration -> Analysis Method before relying on this workflow.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# PR pushes: cancel the superseded run for the same ref. Pushes to main: keyed by
+# commit so two merges landing close together don't cancel each other's analysis.
+concurrency:
+  group: sonarqube-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CI_NODE_VERSION: "24"
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # SonarQube Cloud needs full history for accurate blame / new-code
+          # detection - the default shallow clone undercounts "new" issues on
+          # every PR.
+          fetch-depth: 0
+
+      # corepack must be enabled BEFORE setup-node runs - see the same note in
+      # ci.yml. corepack then reads the exact pnpm version from package.json's
+      # packageManager field.
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: ${{ env.CI_NODE_VERSION }}
+          cache: pnpm
+
+      # --ignore-scripts: this job never needs a dependency's install/postinstall
+      # lifecycle script (no native builds, no browser downloads happen here) - so
+      # there is no reason to let arbitrary third-party install-time code run at
+      # all. Closes SonarQube Cloud rule githubactions:S6505.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Runs this repo's own test runner (tests/run-tests.ts, same flags as the
+      # "test" package.json script) through c8 with an lcov reporter added, so
+      # SonarQube Cloud has coverage to import (sonar.javascript.lcov.reportPaths
+      # in sonar-project.properties). --env-file-if-exists=.env.local is a no-op
+      # here: that file is gitignored and never checked out in CI, so this step
+      # never touches the production Supabase credentials it points to locally.
+      - name: Test with coverage
+        run: pnpm exec c8 --reporter=lcov --reporter=text -o coverage node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs tests/run-tests.ts
+
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
