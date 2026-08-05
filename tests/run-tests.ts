@@ -631,6 +631,7 @@ import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
 import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-office.test.ts";
 import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
 import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
+import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1395,6 +1396,11 @@ await runTest(
 await runTest(
   "payroll fractional deduction days (a 0.13-day late arrival charges 377.42 EGP, never a whole day at 2,903.23)",
   runPayrollFractionalDeductionDayScalingTests,
+);
+
+await runTest(
+  "deductions CRM single month scan (one shared company-wide visit scan, never one per leaver — a wider window cannot change a leaver's charge)",
+  runDeductionsCrmSingleMonthScanTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

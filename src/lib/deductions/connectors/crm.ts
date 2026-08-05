@@ -275,7 +275,7 @@ type LeaverVisitRow = {
  * category; see the Vacation connectors instead). Bounded to
  * [max(hireDate, periodStart), lastWorkingDate], not the whole month.
  */
-async function collectLeaverCrmCandidate(input: {
+export function collectLeaverCrmCandidate(input: {
   hrId: string;
   crmId: string | null;
   jobTitle: string | null;
@@ -284,7 +284,29 @@ async function collectLeaverCrmCandidate(input: {
   month: number;
   year: number;
   baseSalary: number | null;
-}): Promise<DeductionsCandidateDraft | null> {
+  /**
+   * The month's visits, scanned ONCE by the caller and shared by every leaver.
+   *
+   * This used to be a per-leaver `scanVisitsForRangeIncludingDeparted` inside this
+   * function — and that scan is NOT employee-filtered, so each leaver pulled the
+   * whole company's visits for their span and then threw all but their own away in
+   * the `isMine` filter below. July 2026's 10 leavers therefore cost 10 sequential
+   * company-wide paginated scans, on top of the byte-identical one
+   * `loadZeroCrmSignalHrIdKeys` already ran. See collectCrmCandidates.
+   *
+   * A WIDER window than this leaver's settlement span is safe by construction: the
+   * only consumer of `byDay` is the `eachDateInclusive(loopStart, loopEnd)` loop
+   * below, so a day outside the span is never looked up.
+   */
+  monthVisits: readonly LeaverVisitRow[];
+  /**
+   * Confirmed national-holiday dates for the month. The caller has already refused a
+   * degraded calendar — see assertHolidayCalendarUsable, which is where the
+   * fail-closed guard that used to live here now sits, so it is evaluated once
+   * instead of once per leaver.
+   */
+  holidayDates: ReadonlySet<string>;
+}): DeductionsCandidateDraft | null {
   if (!isFieldWorkforceComplianceEligibleTitle(input.jobTitle)) return null;
 
   const monthStr = String(input.month).padStart(2, "0");
@@ -298,17 +320,8 @@ async function collectLeaverCrmCandidate(input: {
   const hrKey = canonicalHrIdKey(input.hrId) ?? "";
   const crmIdText = input.crmId != null ? String(input.crmId).trim() : "";
 
-  const [visits, holidayResult] = await Promise.all([
-    scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
-      dateFrom: loopStart,
-      dateTo: loopEnd,
-      columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
-    }),
-    getConfirmedNationalHolidays({ month: input.month, year: input.year }),
-  ]);
-
   const byDay = new Map<string, LeaverVisitRow[]>();
-  for (const visit of visits) {
+  for (const visit of input.monthVisits) {
     const agentKey = canonicalHrIdKey(visit.agent_hr_id ?? "") ?? "";
     const doubleKey = canonicalHrIdKey(visit.double_hr_id ?? "") ?? "";
     const isMine =
@@ -324,38 +337,10 @@ async function collectLeaverCrmCandidate(input: {
     byDay.set(dateIso, list);
   }
 
-  // FAIL CLOSED on a degraded holiday calendar — the same stance getSuspectDatesForMonth and
-  // assertBaseSalaryMapLoaded already take in this connector.
-  //
-  // The Google Egypt calendar is the only source of MOVING Islamic and Coptic holidays (Eid
-  // al-Fitr, Eid al-Adha, Islamic New Year, the Prophet's Birthday, Coptic Christmas). When it
-  // cannot be read, getConfirmedNationalHolidays degrades to company + FIXED-date holidays only
-  // and says so via calendarReachable:false — every moving holiday silently becomes an ordinary
-  // working day, and a rep who correctly took Eid off is charged a no-activity deduction for it.
-  // The degraded result is also cached for 10 minutes, so one transient outage poisons every run
-  // in that window. The continuing-employee path inherits the equivalent guard from Field
-  // Workforce Compliance (isHolidaySourceDegraded); this leaver path had none, and a leaver's
-  // final settlement is the worst place to over-deduct because it is the hardest to correct.
-  if (holidayResult.calendarReachable === false || holidayResult.connected === false) {
-    throw new Error(
-      `CRM connector: the national-holiday calendar is degraded for ${input.year}-${monthStr}` +
-        ` (${holidayResult.message ?? "no detail reported"}).` +
-        " Refusing to compute leaver CRM no-activity deductions: moving Islamic/Coptic holidays" +
-        " would be missing and charged as working days.",
-    );
-  }
-
-  const holidayDates = new Set<string>();
-  for (const holiday of holidayResult.holidays) {
-    for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
-      holidayDates.add(date);
-    }
-  }
-
   const noActivityDates: string[] = [];
   for (const dateIso of eachDateInclusive(loopStart, loopEnd)) {
     if (isFieldWorkforceWeeklyOff({ dateIso, title: input.jobTitle })) continue;
-    if (holidayDates.has(dateIso)) continue;
+    if (input.holidayDates.has(dateIso)) continue;
     const dayVisits = byDay.get(dateIso) ?? [];
     // A day with ANY recorded visit is never "no activity" — matches
     // computeLeaverCrmDates exactly.
@@ -422,20 +407,18 @@ async function collectLeaverCrmCandidate(input: {
  * usable signal and stays in scope.
  */
 async function loadZeroCrmSignalHrIdKeys(input: {
-  dateFrom: string;
-  dateTo: string;
+  /**
+   * The month's visits, from collectCrmCandidates' single shared scan. This used to
+   * run its own `scanVisitsForRangeIncludingDeparted` over exactly the same range
+   * with exactly the same projection as every leaver's — see collectCrmCandidates.
+   */
+  visits: readonly LeaverVisitRow[];
 }): Promise<Set<string>> {
   const zeroSignal = new Set<string>();
   try {
     const supabase = getSupabaseAdmin();
-    const [{ data: employeeRows, error }, visits] = await Promise.all([
-      supabase.from("employees").select("hr_id,job_title,crm_id"),
-      scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
-        dateFrom: input.dateFrom,
-        dateTo: input.dateTo,
-        columns: "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id",
-      }),
-    ]);
+    const { data: employeeRows, error } = await supabase.from("employees").select("hr_id,job_title,crm_id");
+    const visits = input.visits;
     // Defensive, matching loadCrmIdentityUnresolvedHrIdKeys: if this check
     // cannot run, exclude nobody rather than silently suppressing real findings.
     if (error) return zeroSignal;
@@ -481,6 +464,8 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   year: number;
   leaverHrIdKeys: Set<string>;
   baseSalaryByCompact: Map<string, number>;
+  /** The month's visits, from collectCrmCandidates' single shared scan. */
+  monthVisits: readonly LeaverVisitRow[];
 }): Promise<DeductionsCandidateDraft[]> {
   const todayIso = new Date().toISOString().slice(0, 10);
   const preview = await buildFieldWorkforceCompliancePreviewFromVisitsReport({
@@ -491,11 +476,7 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   const monthKey = `${input.year}-${String(input.month).padStart(2, "0")}`;
   const report = await buildFieldWorkforceRecommendationsReportForLiveMonth({ monthKey, preview });
 
-  const monthStr = String(input.month).padStart(2, "0");
-  const zeroCrmSignalKeys = await loadZeroCrmSignalHrIdKeys({
-    dateFrom: `${input.year}-${monthStr}-01`,
-    dateTo: `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`,
-  });
+  const zeroCrmSignalKeys = await loadZeroCrmSignalHrIdKeys({ visits: input.monthVisits });
 
   // Job titles from the roster, NOT recommendation.roleName. The day weight depends on the title
   // (Saturday is a working day for Medical Reps / District Sales Managers and a weekly off for
@@ -573,16 +554,78 @@ async function collectContinuingEmployeeCrmCandidates(input: {
   return drafts;
 }
 
+/** The projection every `IncludingDeparted` read in this connector shares. */
+const LEAVER_VISIT_COLUMNS = "visit_date,visit_type,agent_hr_id,double_hr_id,agent_crm_id,double_crm_id";
+
+/**
+ * The month's confirmed national-holiday dates, refusing a degraded calendar.
+ *
+ * FAIL CLOSED — the same stance getSuspectDatesForMonth and assertBaseSalaryMapLoaded
+ * already take in this connector.
+ *
+ * The Google Egypt calendar is the only source of MOVING Islamic and Coptic holidays (Eid
+ * al-Fitr, Eid al-Adha, Islamic New Year, the Prophet's Birthday, Coptic Christmas). When it
+ * cannot be read, getConfirmedNationalHolidays degrades to company + FIXED-date holidays only
+ * and says so via calendarReachable:false — every moving holiday silently becomes an ordinary
+ * working day, and a rep who correctly took Eid off is charged a no-activity deduction for it.
+ * The degraded result is also cached for 10 minutes, so one transient outage poisons every run
+ * in that window. The continuing-employee path inherits the equivalent guard from Field
+ * Workforce Compliance (isHolidaySourceDegraded); this leaver path had none, and a leaver's
+ * final settlement is the worst place to over-deduct because it is the hardest to correct.
+ *
+ * Lifted out of collectLeaverCrmCandidate so it is fetched and checked ONCE per run rather
+ * than once per leaver. Still called only when the month actually has leavers to settle, so a
+ * month with none keeps acquiring no holiday-calendar dependency at all — exactly as before.
+ */
+async function loadLeaverHolidayDates(month: number, year: number): Promise<Set<string>> {
+  const holidayResult = await getConfirmedNationalHolidays({ month, year });
+  if (holidayResult.calendarReachable === false || holidayResult.connected === false) {
+    throw new Error(
+      `CRM connector: the national-holiday calendar is degraded for ${year}-${String(month).padStart(2, "0")}` +
+        ` (${holidayResult.message ?? "no detail reported"}).` +
+        " Refusing to compute leaver CRM no-activity deductions: moving Islamic/Coptic holidays" +
+        " would be missing and charged as working days.",
+    );
+  }
+  const holidayDates = new Set<string>();
+  for (const holiday of holidayResult.holidays) {
+    for (const date of eachDateInclusive(holiday.startDate, holiday.endDate ?? holiday.startDate)) {
+      holidayDates.add(date);
+    }
+  }
+  return holidayDates;
+}
+
 export async function collectCrmCandidates(input: {
   month: number;
   year: number;
 }): Promise<DeductionsCandidateDraft[]> {
-  const [leaverRoster, baseSalaryByCompact, suspectDates] = await Promise.all([
+  const monthStr = String(input.month).padStart(2, "0");
+  const periodStart = `${input.year}-${monthStr}-01`;
+  const periodEnd = `${input.year}-${monthStr}-${String(lastDayOfMonth(input.year, input.month)).padStart(2, "0")}`;
+
+  const [leaverRoster, baseSalaryByCompact, suspectDates, monthVisits] = await Promise.all([
     loadLeaversInPeriod(input.month, input.year),
     getBaseSalaryMap(),
     // Throws on a CRM outage rather than silently returning "no anomalies" —
     // see getSuspectDatesForMonth's own note.
     getSuspectDatesForMonth(input.month, input.year),
+    // ONE company-wide scan of the whole month, shared by every consumer below.
+    //
+    // This connector used to run this exact query, with this exact projection, once per
+    // leaver PLUS once inside loadZeroCrmSignalHrIdKeys — and none of those reads was
+    // employee-filtered, so each pulled the entire company's visits and discarded all but
+    // one person's. July 2026: 18,544 visit rows, keyset-paginated 1,000 at a time = 19
+    // sequential round trips per scan, 11 scans (10 leavers + the zero-signal check) =
+    // ~209 round trips, every one of them crossing the Atlantic (Railway runs in `sfo`,
+    // Supabase in `eu-central-1`). Postgres answers the month in 61 ms; the cost was
+    // entirely latency x round trips. That is what ran past the gateway and reported the
+    // connector as failed with no warning attached. Now: 19 round trips, once.
+    scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({
+      dateFrom: periodStart,
+      dateTo: periodEnd,
+      columns: LEAVER_VISIT_COLUMNS,
+    }),
   ]);
   // Fail closed: without salaries every amount resolves to null, and the old
   // publish path turned that into a 0.00 EGP deduction that looked successful.
@@ -591,6 +634,8 @@ export async function collectCrmCandidates(input: {
 
   const leaverDrafts: DeductionsCandidateDraft[] = [];
   if (leaverRoster.size > 0) {
+    // Once per run, and only when there are leavers — see loadLeaverHolidayDates.
+    const holidayDates = await loadLeaverHolidayDates(input.month, input.year);
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from("employees")
@@ -603,7 +648,9 @@ export async function collectCrmCandidates(input: {
       const roster = key ? leaverRoster.get(key) : undefined;
       if (!roster) continue;
       const compactKey = compactDeductionsHrId(employeeRow.hr_id);
-      const draft = await collectLeaverCrmCandidate({
+      // No I/O left in here: pure computation over the shared scan, so the loop that
+      // used to serialise 10 company-wide scans now costs nothing per leaver.
+      const draft = collectLeaverCrmCandidate({
         hrId: roster.hrId,
         crmId: employeeRow.crm_id,
         jobTitle: employeeRow.job_title,
@@ -612,6 +659,8 @@ export async function collectCrmCandidates(input: {
         month: input.month,
         year: input.year,
         baseSalary: compactKey ? (baseSalaryByCompact.get(compactKey) ?? null) : null,
+        monthVisits,
+        holidayDates,
       });
       if (draft) leaverDrafts.push(draft);
     }
@@ -622,6 +671,7 @@ export async function collectCrmCandidates(input: {
     year: input.year,
     leaverHrIdKeys,
     baseSalaryByCompact,
+    monthVisits,
   });
 
   const collected: DeductionsCandidateDraft[] = [];
