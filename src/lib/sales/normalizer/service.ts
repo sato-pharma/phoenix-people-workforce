@@ -231,7 +231,11 @@ export function buildNormalizedImportRows(rows: CodedRow[], batchId: string) {
     batch_id: batchId,
     block_code: "",
     brick_id: r.brickId,
-    client_address: null,
+    // The engine already resolved this from the profile's address columns. It used to be written as
+    // a literal null, which discarded it — and made client_address null on 100% of 294,445 rows for
+    // all 15 distributors, while client_name (one line down, same mechanism) was 100% populated.
+    // The emptiness read as "the distributors do not send an address"; it was never stored.
+    client_address: r.clientAddress,
     client_code: r.clientCode,
     client_name: r.clientName,
     row_number: index + 1,
@@ -249,7 +253,12 @@ export function buildNormalizedImportRows(rows: CodedRow[], batchId: string) {
     is_direct: r.isDirect,
     validation_state: "valid",
     validation_issues: [],
-    raw_row: {},
+    // The source row, keyed by the file's own headings — the audit trail this column exists for.
+    // It was a literal {} here while the other import path (insertSourceOfSalesRows) stored the real
+    // thing, so 282,215 of 294,445 rows carry no record of what their distributor actually sent.
+    // Kept tolerant of a row built before rawRow existed rather than writing undefined, which
+    // PostgREST would reject for a NOT NULL jsonb column and fail the whole batch.
+    raw_row: r.rawRow ?? {},
   }));
 }
 

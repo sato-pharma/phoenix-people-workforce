@@ -11,7 +11,7 @@ function row(over: Partial<CodedRow> = {}): CodedRow {
     bonusQty: 0, clientCode: "C1", clientName: "Client 1", clientAddress: null,
     discount: 0, distributorCode: "PS", invoiceDate: "2026-05", invoiceNumber: null, isDirect: false,
     officialLine: "Line A", productCode: "P1", productName: "Product 1",
-    qty: 10, rawRowNumber: 2, regionCode: "R1", regionName: "Region 1", value: 100,
+    qty: 10, rawRow: {}, rawRowNumber: 2, regionCode: "R1", regionName: "Region 1", value: 100,
     ...over,
   };
 }
