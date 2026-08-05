@@ -24,8 +24,20 @@ export function runProbationFeedbackSecurityTests() {
     /Forbidden: you are not authorized to view probation feedback for this employee\./,
   );
 
+  // The point of this loop is that assertPermission is AWAITED in every feedback route — an
+  // un-awaited call returns a promise and gates nothing. The action each route asserts is pinned
+  // alongside it so a silent widening is caught.
+  //
+  // The submit route moved update -> read on 2026-08-05 (owner-approved). That is a deliberate
+  // narrowing of the COARSE gate only: no role that is shown the Feedback button holds
+  // probation:update (all 8 hold probation:["read"], and update is Super Admin-only, which is not
+  // shown the button), so the route rejected every real submitter and the feature had never
+  // recorded a single row. Authorization now rests on the fine boundary in feedback-service.ts —
+  // checkFeedbackEligibility -> resolveSubmitterRole admits a caller only as that specific
+  // employee's own direct manager, or as NSM / TM / PM-GPM / Talent Acquisition, and enforces the
+  // per-cycle / once-only limit. dv-checkbox deliberately stays on `update` (Super Admin only).
   const routeFiles: Array<[string, string]> = [
-    ["app/api/probation/feedback/route.ts", "update"],
+    ["app/api/probation/feedback/route.ts", "read"],
     ["app/api/probation/feedback/dv-checkbox/route.ts", "update"],
     ["app/api/probation/feedback/[submissionId]/comment/route.ts", "read"],
     ["app/api/probation/feedback/employee/[hrId]/route.ts", "read"],

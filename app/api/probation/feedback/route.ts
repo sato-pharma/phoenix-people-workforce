@@ -14,7 +14,19 @@ export async function POST(request: Request) {
     if (csrfError) return csrfError;
 
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "probation", "update");
+    // Coarse gate only. The fine boundary is submitFeedback -> checkFeedbackEligibility ->
+    // resolveSubmitterRole, which admits a caller only as this employee's own direct manager
+    // or as NSM / TM / PM-GPM / Talent Acquisition, and enforces the per-cycle / once-only
+    // limit. Same split the SFE assessment uses (see the probation grant comments in
+    // src/lib/auth/permissions.ts).
+    //
+    // This asserted `probation:update` until 2026-08-05, which NO role holding the Feedback
+    // button actually has — the button renders for 8 roles, all of which hold probation:["read"],
+    // while `update` is Super Admin-only and Super Admin is not shown the button. The feature
+    // had therefore never recorded a single submission. Widening this to `update` for those 8
+    // roles would also have handed them probation config, backfill and DV-checkbox writes, which
+    // is why the coarse gate moved down instead of the grant moving up (owner-approved).
+    await assertPermission(access, "probation", "read");
 
     const body = await request.json();
     const { employeeHrId, feedbackText, recommendation } = body as {

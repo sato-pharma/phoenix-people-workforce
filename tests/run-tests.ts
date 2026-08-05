@@ -359,6 +359,7 @@ import { runResignationsDashboardScopeTests } from "./resignations-dashboard-sco
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
 import { runResignationClearsCrmIdentityTests } from "./resignation-clears-crm-identity.test.ts";
+import { runProbationFeedbackRevivalTests } from "./probation-feedback-revival.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
@@ -1062,6 +1063,7 @@ await runTest("resignations dashboard scope (unscoped-read fix)", runResignation
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
 await runTest("resignation clears CRM identity (a leaver releases crm_id/crm_username so the replacement hire's import is not blocked)", runResignationClearsCrmIdentityTests);
+await runTest("probation feedback revival (coarse gate is probation:read, FK columns take the stored hr_id, Talent Acquisition resolves and is visible)", runProbationFeedbackRevivalTests);
 await runTest("access governance hardening", runAccessGovernanceHardeningTests);
 await runTest("RLS authenticated-read revoke (M3)", runRlsAuthenticatedReadRevokeTests);
 await runTest("access registry coverage", runAccessRegistryCoverageTests);

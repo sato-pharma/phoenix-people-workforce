@@ -8,7 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type FeedbackSubmitterRole = "dm" | "nsm" | "tm" | "pm_gpm";
+export type FeedbackSubmitterRole = "dm" | "nsm" | "tm" | "pm_gpm" | "ta";
 
 export type FeedbackRecommendation =
   | "recommend_pass"
@@ -145,6 +145,26 @@ async function resolveProbationRecord(employeeHrId: string): Promise<{
   return data as { id: number; pm_gpm_dv_done: boolean | null } | null;
 }
 
+// employees.hr_id is stored in the employee master's own casing (uppercase for 171 of 172
+// rows) and is the target of a case-sensitive FK from every *_hr_id column written below.
+// normalizeHrId lowercases, so the lowercased value must NEVER be written to one of those
+// columns — that is exactly what killed resignations (see resolveSubmittedByHrId in
+// src/lib/resignations/service.ts). Reads stay on `.ilike`, which is case-insensitive and
+// therefore unaffected; only writes need the stored spelling.
+async function resolveStoredHrId(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  value: string | null | undefined,
+): Promise<string | null> {
+  const normalized = normalizeHrId(value);
+  if (!normalized) return null;
+  const { data } = await db
+    .from("employees")
+    .select("hr_id")
+    .ilike("hr_id", normalized)
+    .limit(1);
+  return (data?.[0] as { hr_id?: string } | undefined)?.hr_id ?? null;
+}
+
 async function resolveSubmitterRole(
   access: AccessContext,
   employeeHrId: string,
@@ -180,6 +200,11 @@ async function resolveSubmitterRole(
 
   if (appRole === "National Sales Manager") return { role: "nsm", isOnceOnly: false };
   if (appRole === "Training Manager") return { role: "tm", isOnceOnly: true };
+  // Talent Acquisition submits feedback alongside HR (owner-approved 2026-08-05). Once-only
+  // like TM/PM-GPM rather than per-cycle like the DM: hers is a single HR-side perspective on
+  // the probation, not a running line-manager assessment. The pass/terminate case decision is
+  // unaffected and stays isProbationAdministrator-only.
+  if (appRole === "Talent Acquisition") return { role: "ta", isOnceOnly: true };
   if (appRole === "Product Manager" || appRole === "Group Product Manager") {
     // Skip PM/GPM for CNS line employees
     const lineName = (emp as { line_name?: string | null } | null)?.line_name ?? "";
@@ -256,6 +281,7 @@ const SUBMITTER_ROLE_LABELS: Record<FeedbackSubmitterRole, string> = {
   nsm: "National Sales Manager",
   tm: "Training Manager",
   pm_gpm: "PM / GPM",
+  ta: "Talent Acquisition",
 };
 
 const RECOMMENDATION_LABELS_NOTIFY: Record<FeedbackRecommendation, string> = {
@@ -342,17 +368,32 @@ export async function submitFeedback(
     throw new Error("Forbidden: you are not eligible to submit feedback for this employee at this time.");
   }
 
-  const callerHrId = normalizeHrId(access.hrId) ?? "";
+  const db = getSupabaseAdmin();
   const now = new Date().toISOString();
 
-  const { data, error } = await getSupabaseAdmin()
+  // Both columns are NOT NULL FKs to employees.hr_id, so resolve the stored spelling and fail
+  // loudly rather than writing a lowercased value the FK will reject (23503) or a null the
+  // NOT NULL will reject. The caller always resolves here in practice — checkFeedbackEligibility
+  // above already required them to match an employee via resolveSubmitterRole.
+  const [storedEmployeeHrId, storedSubmitterHrId] = await Promise.all([
+    resolveStoredHrId(db, input.employeeHrId),
+    resolveStoredHrId(db, access.hrId),
+  ]);
+  if (!storedEmployeeHrId) {
+    throw new Error(`Employee ${input.employeeHrId} was not found in the employee master.`);
+  }
+  if (!storedSubmitterHrId) {
+    throw new Error("Your account is not linked to an employee record, so feedback cannot be attributed.");
+  }
+
+  const { data, error } = await db
     .from("probation_feedback_submissions")
     .insert({
       probation_id: eligibility.probationId,
-      employee_hr_id: normalizeHrId(input.employeeHrId),
+      employee_hr_id: storedEmployeeHrId,
       cycle_number: eligibility.currentCycleNumber,
       cycle_key: eligibility.currentCycleKey ?? CYCLE_KEYS[0],
-      submitter_hr_id: callerHrId,
+      submitter_hr_id: storedSubmitterHrId,
       submitter_role: eligibility.submitterRole,
       feedback_text: input.feedbackText.trim(),
       recommendation: input.recommendation,
@@ -393,12 +434,20 @@ export async function addFollowUpComment(
   const isHrOrCeo = access.role === "Super Admin" || access.role === "CEO";
   if (!isOwn && !isHrOrCeo) throw new Error("Forbidden: you may not comment on this submission.");
 
+  // commenter_hr_id is a NOT NULL FK to employees.hr_id. callerHrId above is lowercased and is
+  // correct for the isOwn comparison on line 433 (both sides normalized), but must not be the
+  // value written here — resolve the stored spelling instead.
+  const storedCommenterHrId = await resolveStoredHrId(db, access.hrId);
+  if (!storedCommenterHrId) {
+    throw new Error("Your account is not linked to an employee record, so the comment cannot be attributed.");
+  }
+
   const now = new Date().toISOString();
   const { data, error } = await db
     .from("probation_feedback_comments")
     .insert({
       submission_id: submissionId,
-      commenter_hr_id: callerHrId,
+      commenter_hr_id: storedCommenterHrId,
       comment_text: commentText.trim(),
       created_at: now,
     })
