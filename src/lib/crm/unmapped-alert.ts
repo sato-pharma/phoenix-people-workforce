@@ -25,7 +25,11 @@ export type UnmappedAgentAlertKind =
   | "reused_resigned_slot"
   /** The account is "mapped" but current visits carry a different label than the mapping was made
    * against, so the label-scoped override no longer applies — the slot changed hands again. */
-  | "mapped_label_drift";
+  | "mapped_label_drift"
+  /** The account is "mapped" and its target hr_id no longer matches ANY current employee row —
+   * the override was correct once, but that roster row was since renamed, replaced, or removed.
+   * See {@link selectOrphanedMappedIdentities}. */
+  | "orphaned_mapped_hr_id";
 
 export type UnmappedAgentAlert = {
   agentCrmId: number;
@@ -33,6 +37,9 @@ export type UnmappedAgentAlert = {
   firstDay: string;
   kind: UnmappedAgentAlertKind;
   lastDay: string;
+  /** Only set for "orphaned_mapped_hr_id" — the resolution's current (now-invalid) target hr_id,
+   * needed in the notification so an admin knows what to look up and re-map. */
+  staleHrId?: string;
   visitCount: number;
 };
 
@@ -111,4 +118,48 @@ export function selectUnmappedAgentAlerts(input: {
   }
 
   return alerts.sort((a, b) => b.visitCount - a.visitCount || a.agentCrmId - b.agentCrmId);
+}
+
+/**
+ * Finds every "mapped" resolution whose stored target hr_id does not match any CURRENT employee
+ * row — an override that was correct once but now points nowhere. Deliberately separate from
+ * {@link selectUnmappedAgentAlerts}: that function groups currently-UNRESOLVED visit rows
+ * (`agent_hr_id IS NULL`), which by definition excludes this case entirely — a "mapped" account
+ * resolves every fresh visit to its (now-wrong) target, so no row is ever unresolved and nothing
+ * else in this module would ever see it. This is exactly how Gannatallah.Amer's account (CRM
+ * 1102) stayed invisible from 2026-08-03 to 2026-08-05: the override pointed at hr_id "B-165",
+ * set one day before her real employee row ("PD-0008") was created, then never revisited even
+ * after "B-165" left the roster entirely.
+ *
+ * `validHrIds` must be every `employees.hr_id` currently in the roster, lowercased, regardless of
+ * employment status — the failure this catches is the target row being GONE, not merely inactive.
+ * A manual override intentionally pointing at a resigned employee is a separate, already-
+ * understood admin decision and must not be flagged here.
+ *
+ * Pure — unit-tested without I/O, same as {@link selectUnmappedAgentAlerts}. `asOfIso` stands in
+ * for "today" so the caller controls it rather than this function calling Date.now() itself; the
+ * visit stats an alert would normally carry are deliberately left at zero because computing them
+ * accurately would need an extra DB scan for a condition expected to be rare (a manual override
+ * going stale) — the message this powers describes the mapping itself, not a visit count.
+ */
+export function selectOrphanedMappedIdentities(input: {
+  asOfIso: string;
+  resolutions: readonly CrmResolutionRow[];
+  validHrIds: ReadonlySet<string>;
+}): UnmappedAgentAlert[] {
+  const alerts: UnmappedAgentAlert[] = [];
+  for (const resolution of input.resolutions) {
+    if (resolution.status !== "mapped" || !resolution.mappedHrId) continue;
+    if (input.validHrIds.has(resolution.mappedHrId.toLowerCase())) continue;
+    alerts.push({
+      agentCrmId: resolution.crmId,
+      agentName: resolution.crmName ?? null,
+      firstDay: input.asOfIso,
+      kind: "orphaned_mapped_hr_id",
+      lastDay: input.asOfIso,
+      staleHrId: resolution.mappedHrId,
+      visitCount: 0,
+    });
+  }
+  return alerts.sort((a, b) => a.agentCrmId - b.agentCrmId);
 }
