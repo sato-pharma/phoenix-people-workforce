@@ -16,8 +16,13 @@ database ever touches approvals, sales, achievement, or incentives.
 
 ## A. Master data & trust
 
-- [ ] **A1. Single source of truth.** Only distributor sales sheets create trusted customers
+- [x] **A1. Single source of truth.** Only distributor sales sheets create trusted customers
       (`source_of_sales_customer_map`). The order form NEVER creates a pharmacy record.
+      **Closed — already locked, never credited.** `tests/direct-orders-approval-detail-names.test.ts`
+      asserts *"the order form must never mint a confirmed pharmacy"* and *"a hand-registered
+      pharmacy must be flagged"*. Trust comes from the distributor sheets; every other route
+      produces a pharmacy marked for review. A1 is enforced by A2+A3+B6 together — there is no
+      separate thing to build.
 - [x] **A2. Pharmacy Validation flow** (modeled on Marketing Customer Validation, familiar to all
       staff): requester initiates from a held order → evidence required — **live camera storefront
       photo, GPS pinned inside the requester's own area** (no gallery uploads) + pharmacy details
@@ -54,15 +59,29 @@ database ever touches approvals, sales, achievement, or incentives.
       `tests/direct-orders-pharmacy-rejected.test.ts`.
 ## B. Submission experience
 
-- [ ] **B1. Combo box** over the live union of the customer directory + validated Phoenix
+- [x] **B1. Combo box** over the live union of the customer directory + validated Phoenix
       pharmacies. No cached list — a pharmacy added by any route is findable immediately.
-- [ ] **B2. Arabic-safe search**: normalized matching (ta-marbuta/ha, alef forms, ya/alef-maqsura,
+      **Closed — already locked, never credited.** `tests/direct-orders-approval-detail-names.test.ts`:
+      *"the customer search must exist"*, *"changing distributor must clear the chosen customer"*,
+      *"a stale type-ahead response must not overwrite a newer one"*, *"manual entry must always
+      remain available"*.
+- [x] **B2. Arabic-safe search**: normalized matching (ta-marbuta/ha, alef forms, ya/alef-maqsura,
       harakat stripped) on BOTH sides + **code search** (prefix, then contains). Unnamed customers
       (6,089) appear as `code — (no name on file)`, never hidden. (SQL migration
       `20260804183000_direct_order_customer_directory_search.sql` shipped in #1738 and **is applied
       in production** — `phx_normalize_arabic` and `phx_search_direct_order_customers` both confirmed
       live 2026-08-06. Box stays open: no test locks this search path. See H.)
-- [ ] **B3. Area auto-fills from the chosen customer** (by AREA, per owner — not brick) and locks.
+      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      `tests/direct-orders-arabic-search.test.ts`. The rule lives in SQL, so the test locks the
+      migration: one assertion per letter family, and a guard on the harakat strip class —
+      widening it to swallow the Arabic LETTERS at 0621..063A emptied the probe, and an empty
+      probe `ilike '%%'` matched **all 51,192 rows while looking like a working search**.
+- [x] **B3. Area auto-fills from the chosen customer** (by AREA, per owner — not brick) and locks.
+      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      `tests/direct-orders-area-autofill.test.ts`. The real rule is stronger than "auto-fills":
+      the request body carries **pointers only**. If the client could send an area, a rep could
+      file any pharmacy in the country under their own geography and every downstream number —
+      counters, attribution, the chain built from the requester's line — would agree with them.
 - [x] **B4. Did-you-mean (AI v1):** before a "new pharmacy" claim is accepted, show closest
       directory matches; **record shown-and-refused** on the request.
       **Closed by** [#1748](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1748) ·
@@ -119,9 +138,15 @@ database ever touches approvals, sales, achievement, or incentives.
       `tests/direct-orders-held-lane.test.ts` — locks "the held notice must lead with the requester
       (the email's To) and CC SFE, direct manager, CEO"; the suite is registered in
       `tests/run-tests.ts` under "…one To/Cc email per event".
-- [ ] **C5. Visibility from creation.** CEO, SFE, Super Admin, and every person in the request's
+- [x] **C5. Visibility from creation.** CEO, SFE, Super Admin, and every person in the request's
       chain can open it read-only from the moment it exists, with live step tracking. Action
       buttons appear only on your turn.
+      **Closed — already locked, never credited.** `tests/direct-orders-approval-flow.test.ts`:
+      *"a per-request scope guard must exist"*, *"an assigned approver must always be able to open
+      the request"*, *"company-tier roles keep full read"*, *"subtree tier must reuse the report's
+      visible-requester set"*. Verified live 2026-08-06: every request in production carries its
+      full chain **0.17s** after creation. Three requests showed a 9–10h gap; all three are held
+      requests, which have no chain until release — the design working, not a hole.
 - [x] **C6. Deep workflow audit.** TS chain vs DB registry (both directions), every
       status/transition, `expectedNextStatus` couplings, notification fan-out, role gates incl.
       denial paths, held/returned/reversed edges, Finance gate. Deliverable: findings + fixes.
@@ -131,11 +156,15 @@ database ever touches approvals, sales, achievement, or incentives.
       production outage). Each fix carries its own test; see the audit for the table.
 ## D. The approval window (premium)
 
-- [ ] **D1. Comprehensive detail on one screen:** requester (name/role/area) · pharmacy (name,
+- [x] **D1. Comprehensive detail on one screen:** requester (name/role/area) · pharmacy (name,
       Phoenix code, all distributor codes, address, map pin, verification/probation state,
       validation evidence photos) · order lines (qty, bonus, discount, pharmacy price, value per
       the LOCKED pricing rule) · full chain history (who, when, wrote what) · collection date +
       payment state · Finance-month badge.
+      **Closed — already locked, never credited.** `tests/direct-orders-approval-detail-names.test.ts`:
+      *"the pharmacy NAME must reach the approver"*, *"the DISTRIBUTOR must reach the approver"*,
+      *"the detail payload must resolve the area's medical rep"*, *"brick and area must be separate
+      fields"*, *"an unset price must read as a dash, never as 0 EGP"*.
 - [x] **D2. Pharmacy sales history** from SoS shown to approvers (distributors, recent months,
       products, values). Provisional pharmacy → "no history — new pharmacy, probation day X/90"
       in words. An empty table must never read as zero.
@@ -146,6 +175,10 @@ database ever touches approvals, sales, achievement, or incentives.
       zero — it is no clock at all", "an established pharmacy with no sales must read as not having
       bought, never as unverified", and that the window renders the domain's sentence rather than
       inferring anything from `retailHistory.length`.
+      The 2026-08-06 audit recorded D2 as never built; that was **wrong** — it grepped
+      `src/components/direct-orders/` and the file is at
+      `src/components/approvals-hub/direct-order-request-detail.tsx`. The table was real; what
+      #1829 added is the part that was genuinely missing — why it is empty.
 - [ ] **D3. Premium, polished design** matching the module's design identity. Desktop = full
       tables; mobile = cards. No truncation, no wrapping. Owner emphasis (twice): the manager-
       facing approval experience is the face of the system — it must feel premium, complete, and
@@ -164,20 +197,37 @@ database ever touches approvals, sales, achievement, or incentives.
       evidence reading in `tests/direct-orders-evidence-check.test.ts`.
 ## D5. Live report sharing (owner request, 2026-08-05 — added after Stage 1)
 
-- [ ] **D5a. Google Sheets feed.** A tokenized CSV endpoint a Google Sheet pulls with
+- [x] **D5a. Google Sheets feed.** A tokenized CSV endpoint a Google Sheet pulls with
       `=IMPORTDATA(...)`, so the sheet refreshes itself and can be shared with people who have no
       Phoenix account. Google's own sheet-sharing is the access control. Refresh is Google's
       cadence (~hourly), NOT instant.
-- [ ] **D5b. Live web link.** Same data as a read-only page for a person with no account.
+      **Closed** · `tests/direct-orders-report-columns.test.ts` (column parity with the .xlsx —
+      the first cut carried its own 25-column subset, so the live sheet and the export were two
+      different reports on the day they shipped) + `tests/direct-orders-share-link-controls.test.ts`.
+- [x] **D5b. Live web link.** Same data as a read-only page for a person with no account.
       **Passcode required**, carried in the POST body — never the query string, where it would
       land in browser history, referrer headers and proxy logs and look protected while leaking.
-- [ ] **D5c. Controls, on by default.** 32-byte token · MANDATORY expiry (30d default, 180 max) ·
+      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      `tests/direct-orders-share-link-controls.test.ts`. Before it, the word *passcode* appeared
+      **nowhere in the suite**. Locks: POST only (a passcode in a query string leaks to history,
+      referrers and proxy logs — protected-looking while leaking), min 4 chars on the human
+      surface, token-salted hash, constant-time compare.
+- [x] **D5c. Controls, on by default.** 32-byte token · MANDATORY expiry (30d default, 180 max) ·
       one-click revoke · scope FROZEN to the creator at creation (a link cannot widen when its
       creator is promoted) · every open counted and stamped · `no-store` + `noindex` so a cached
       or crawled copy cannot outlive a revoke · Super Admin sees every link that exists.
-- [ ] **D5d. Gated on EXPORT, not read.** Publishing the report outside the login wall is the
+      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      `tests/direct-orders-share-link-controls.test.ts` — 32-byte token, expiry clamped to
+      [1, 180] with 30 default and **no branch that writes a null**, revoke and expiry both
+      refused, wrong-surface answers *not found* identically to missing, file access a separate
+      grant, scope frozen at creation and never re-resolved, `no-store` + `noindex` on both
+      routes (a cached or crawled copy outlives the expiry and the revoke button).
+- [x] **D5d. Gated on EXPORT, not read.** Publishing the report outside the login wall is the
       strongest form of export; a reader who may not download the file must not be able to
       publish it instead.
+      **Closed by** [#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830) ·
+      `tests/direct-orders-share-link-controls.test.ts` — all three entry points gated on
+      `export`, and the gate asserted to run **before** the first database call.
 - [ ] ~~**D5e. Push into the Sheet** via the Google Sheets API~~ — **BLOCKED, and the outcome is
       already delivered another way.** The GCP org policy `iam.disableServiceAccountKeyCreation`
       forbids the key this needs, and GCP billing is closed besides (AGENTS §3). #1765 delivers the
@@ -232,48 +282,51 @@ database ever touches approvals, sales, achievement, or incentives.
 | G3 | Held expiry | confirm 14 days |
 | G4 | Probation window | confirm 90 days |
 
-## H. Why the remaining boxes are still open (audited 2026-08-06, revised same day)
+## H. What is actually left (audited 2026-08-06, closed out same day)
 
-Almost all of these are **built and live in production** but cannot close, because rule 2 in
-section F is that a box needs a named regression test wired into `tests/run-tests.ts`. Code shipping
-is not the bar; a test that fails with the rule's name in it is. **An unticked box below is not a
-missing feature — read the middle column before building anything.**
+**One box: D3.** It needs a browser pass at desktop and mobile, not a unit test — a test cannot
+judge whether a screen looks right. Everything else is closed. D5e and E3 are struck through above:
+one blocked with its outcome already delivered another way, one declined by the owner.
 
-| Item | Code shipped? | What is missing |
+### The audit that got this wrong, and how
+
+An audit earlier the same day put 21 boxes open and read as a long backlog. It was measuring the
+wrong thing. It reconstructed coverage by reading **PR diffs**, so it saw which files a PR touched
+but never saw the test suite that already guarded them. Six boxes were closed the whole time:
+
+| Box | Was already locked by | Nobody had credited it |
 |---|---|---|
-| A1 single source of truth | Structural — A2/A3/B6 enforce it | Nothing names A1 itself; it is the sum of the three, not a separate build |
-| B1 combo box | Yes, #1738 (`pharmacy-combo-box.tsx`, `/api/direct-orders/pharmacy-search`) | No test references either file |
-| B2 Arabic-safe search | Yes, #1738; migration applied in prod | No test covers this search path (`customer-normalize`/`pharmacy-matching` are SoS-side) |
-| B3 area auto-fill | Yes, #1738 (`/api/direct-orders/pharmacies/from-directory`) | No test |
-| C5 visibility from creation | Partly, #1738 (registry grants) | `direct-orders-registry-chain-grants.test.ts` predates it (#1701) and locks SFE decision grants, not read-only-from-creation |
-| D1 detail on one screen | Yes, #1738 (`direct-order-request-detail.tsx`, +142) | The test changed alongside it locks chain/pharmacy-verification rules, not D1's field inventory |
-| ~~D2 pharmacy sales history~~ | **Yes** — the 2026-08-06 audit said "No"; that was **wrong**, it grepped `src/components/direct-orders/` and the file is at `src/components/approvals-hub/direct-order-request-detail.tsx`. Both halves ship: `loadPharmacyRetailHistory` (SoS distributor sales) and `loadPharmacyOrderHistory` (prior direct orders, this request excluded) | **Now closed** by [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829), which added the missing half — the probation wording, so a provisional pharmacy no longer reads like an established one that merely had a quiet quarter — plus the test |
-| D3 premium design | Yes, #1738 | Needs browser verification at desktop + mobile, not a unit test |
-| D5a Sheets feed | Yes, #1748 | Its tests arrived in #1754 and lock CSV **column parity** only |
-| D5b live web link | Yes, #1748 | Nothing tests the passcode-in-POST-body rule |
-| D5c controls | Yes, #1748 (`report-share-links.ts`) | Nothing tests expiry, revoke, scope-freeze, `no-store`/`noindex` |
-| D5d gated on EXPORT | Yes, #1748 | No test asserts publish is gated on export, not read |
-| ~~D5e Sheets push~~ | **Blocked** — org policy forbids the key | Nothing. #1765's webhook already delivers the outcome; see the item |
-| ~~E3 Monday brief~~ | **Declined by the owner** | Nothing. Do not build it |
+| A1 | `direct-orders-approval-detail-names` | *"the order form must never mint a confirmed pharmacy"* |
+| B1 | same | *"a stale type-ahead response must not overwrite a newer one"* |
+| C5 | `direct-orders-approval-flow` | *"an assigned approver must always be able to open the request"* |
+| D1 | `direct-orders-approval-detail-names` | *"the detail payload must resolve the area's medical rep"* |
+| D2 | same | *"retail history must have its own loader, separate from direct orders"* — the table was real since #1665; [#1829](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1829) then added the part that genuinely was missing, the probation wording |
+| D5a | `direct-orders-report-columns` | column parity with the .xlsx |
 
-### Closed since that audit ran (same day)
+It also recorded **D2 as never built**, which was false — it grepped `src/components/direct-orders/`
+and the file is at `src/components/approvals-hub/direct-order-request-detail.tsx`.
 
-The audit above was written before this session's work landed. These six moved from open to closed,
-each with the named test rule F.2 requires:
+**The lesson is about the method, not the auditor.** A diff shows what changed; it cannot show what
+is already protected. Coverage is a property of the suite, so read the suite. The cost of getting
+this backwards is not a wrong number in a document — it is a future session rebuilding working code
+because a box looked empty.
 
-| Item | PR | Test that locks it |
-|---|---|---|
-| A4 cleanup of the 2026-08-04 data | [#1804](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1804) | `direct-orders-pharmacy-rejected.test.ts` |
-| B5 invoice-photo prefill | [#1795](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1795) | `direct-orders-invoice-prefill.test.ts` |
-| C2 finance-month gate badge | [#1820](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1820) | `direct-orders-finance-month-badge.test.ts` |
-| C6 deep workflow audit | [#1820](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1820) | `docs/audits/direct-orders-workflow-audit.md` — 7 findings, all fixed |
-| D4 invisible AI | [#1795](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1795) | `direct-orders-invoice-prefill.test.ts` — an executable source sweep |
-| E1 per-rep counters | [#1780](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1780) | `direct-orders-rep-counters.test.ts` + `direct-orders-counters-refused.test.ts` |
+### The five that genuinely had nothing
 
-**The one thing worth carrying forward.** The C6 audit's worst finding (F1) was a workflow-registry
-module that failed validation and was **silently skipped** by `listWorkflowRegistryModules` — the
-approval chain simply vanished in production and nothing logged an error. Three of this session's
-other bugs had the same shape: a capture button no rep could reach, counters that blanked the moment
-the problem they measured was solved, and a status mapper that would have rendered a *rejected*
-pharmacy as *verified*. **TypeScript and the suite were green through every one.** When reviewing
-this module, distrust anything that reports success by rendering nothing.
+B2, B3, D5b, D5c and D5d were real gaps, closed by
+[#1830](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1830). The share-link three are
+worth naming: the word *passcode* appeared **nowhere in the suite**, and nothing asserted the expiry
+clamp, revocation, or the frozen scope — on bearer credentials that serve pharmacy names, doctors,
+quantities, prices and sales values to a reader with no Phoenix account.
+
+### The one thing worth carrying forward
+
+Every serious failure in this module has had the same shape: **something reporting success while
+doing nothing.** A workflow-registry module that failed validation and was silently skipped, taking
+the approval chain down in production with nothing logged. A capture button no rep could reach.
+Counters that went blank the moment the problem they measured was solved. A status mapper that would
+have rendered a *rejected* pharmacy as *verified*. An Arabic search whose probe normalized to the
+empty string, so `ilike '%%'` matched all 51,192 rows and filled the screen with results.
+
+TypeScript was green through every one of them. When reviewing this module, distrust anything that
+reports success by rendering nothing — and distrust a full page of results as much as an empty one.
