@@ -124,10 +124,14 @@ export function RepCountersTable({ data }: Props) {
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.heldValue)}</td>
                 <td className="px-3 py-2">{count(row.expired)}</td>
                 <td className="px-3 py-2">{count(row.falsePharmacies, "signal")}</td>
-                <td className="px-3 py-2">
+                <td className="whitespace-nowrap px-3 py-2">
                   {count(row.refusedAsFalse, "signal")}
+                  {/* An explicit separator, not just a margin. `ml-1` is 4px, and between an amber
+                      count badge and grey money that reads as one number — "2266,112 EGP" — which
+                      is precisely the wrong impression for the column that names what somebody did.
+                      The mobile card already used "·"; this makes the two agree. */}
                   {row.refusedAsFalseValue > 0 ? (
-                    <span className="ml-1 text-[11px] text-slate-500">{money(row.refusedAsFalseValue)}</span>
+                    <span className="ml-2 text-[11px] text-slate-500">· {money(row.refusedAsFalseValue)}</span>
                   ) : null}
                 </td>
                 <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
@@ -145,10 +149,10 @@ export function RepCountersTable({ data }: Props) {
               <td className="px-3 py-2">{money(totals.heldValue)}</td>
               <td className="px-3 py-2">{totals.expired}</td>
               <td className="px-3 py-2">{totals.falsePharmacies}</td>
-              <td className="px-3 py-2">
+              <td className="whitespace-nowrap px-3 py-2">
                 {totals.refusedAsFalse}
                 {totals.refusedAsFalseValue > 0 ? (
-                  <span className="ml-1 font-bold">{money(totals.refusedAsFalseValue)}</span>
+                  <span className="ml-2 font-bold">· {money(totals.refusedAsFalseValue)}</span>
                 ) : null}
               </td>
               <td className="px-3 py-2" />
