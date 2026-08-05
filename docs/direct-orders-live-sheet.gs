@@ -87,6 +87,48 @@ function installTrigger() {
   refreshDirectOrders();
 }
 
+/**
+ * Push endpoint (spec D5e). Phoenix POSTs here the moment a direct order changes, so the sheet
+ * updates immediately instead of waiting up to 60 seconds for the next timer tick.
+ *
+ * WHY THIS AND NOT THE SHEETS API
+ * The original design used a Google service-account key. Google's `iam.disableServiceAccountKeyCreation`
+ * org policy blocks creating one — correctly, because long-lived JSON keys leak. This script already
+ * runs as the sheet's owner, so a Web App deployment needs no key, no GCP project, and no policy
+ * exemption.
+ *
+ * SECURITY
+ * The deployment must be reachable by "Anyone" because Phoenix calls it unauthenticated — so the
+ * URL alone must not be enough. WEBHOOK_SECRET is what actually authorises; set it to the same
+ * value as SHEET_REFRESH_WEBHOOK_SECRET in Railway. A leaked URL without the secret can do nothing.
+ *
+ * Store the secret in Script Properties, not here:
+ *   Apps Script editor -> Project Settings -> Script Properties -> Add
+ *   Property: WEBHOOK_SECRET     Value: <the same long random string you put in Railway>
+ */
+function doPost(e) {
+  var expected = PropertiesService.getScriptProperties().getProperty("WEBHOOK_SECRET");
+  if (!expected) {
+    // Refuse rather than accept everything. An unset secret must fail CLOSED — the opposite would
+    // mean a fresh deployment silently accepts any caller on the internet.
+    return ContentService.createTextOutput("not configured").setMimeType(ContentService.MimeType.TEXT);
+  }
+
+  var supplied = "";
+  try {
+    supplied = String(JSON.parse(e && e.postData ? e.postData.contents : "{}").secret || "");
+  } catch (err) {
+    supplied = "";
+  }
+  // Deliberately vague: a caller learns whether they are authorised, never why not.
+  if (supplied !== expected) {
+    return ContentService.createTextOutput("denied").setMimeType(ContentService.MimeType.TEXT);
+  }
+
+  refreshDirectOrders();
+  return ContentService.createTextOutput("ok").setMimeType(ContentService.MimeType.TEXT);
+}
+
 /** Adds a Phoenix menu so a refresh can also be forced by hand. */
 function onOpen() {
   SpreadsheetApp.getUi()

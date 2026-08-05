@@ -15,6 +15,7 @@ import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/acc
 import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 
 import {
   computeDirectOrderSalesValue,
@@ -719,6 +720,7 @@ export async function acknowledgeDirectOrderPharmacy(
     throw new Error("Forbidden: only a System Admin can acknowledge a pharmacy.");
   }
   await markDirectOrderPharmacyVerified(access, input);
+  pingDirectOrderSheet("pharmacy_verified");
 }
 
 /**
@@ -965,6 +967,7 @@ export async function expireStaleHeldDirectOrders(
       subjectHrId: request.requesterHrId,
     });
   }
+  if (expired > 0) pingDirectOrderSheet("held_expired");
   return { expired };
 }
 
@@ -2042,6 +2045,7 @@ export async function submitDirectOrder(
     subjectHrId: actorHrId,
   });
 
+  pingDirectOrderSheet("order_submitted");
   return request;
 }
 
@@ -2270,6 +2274,9 @@ export async function decideDirectOrder(
   // This is the money-critical path: it feeds au.f_monthly_attribution Branch B1 and
   // credits the pharmacy-area rep in au.f_monthly_achievement.
 
+  // The decision has already committed by here, so the ping cannot affect it. Deliberately after
+  // the injection comment above: a sheet refresh must never sit between the decision and the money.
+  pingDirectOrderSheet("order_decided");
   return result;
 }
 
@@ -2513,6 +2520,7 @@ export async function reverseDirectOrder(
     subjectHrId: actorHrId,
   });
 
+  pingDirectOrderSheet("order_reversed");
   return reversal;
 }
 
@@ -3577,6 +3585,7 @@ export async function setDirectOrderSalesMonth(
     metadata: { previousMonth, nextMonth, rebuiltPeriods: periods },
   });
 
+  pingDirectOrderSheet("sales_month_set");
   return after;
 }
 
