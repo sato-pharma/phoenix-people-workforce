@@ -615,6 +615,8 @@ import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.te
 
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
+import { runVacancySeatLinkageTests } from "./vacancy-seat-linkage.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1342,6 +1344,11 @@ await runTest(
 await runTest(
   "closing channel tabs (retail + direct partition the master exactly, survive the store split, and say Contr%)",
   runClosingChannelTabsTests,
+);
+
+await runTest(
+  "vacancy seat linkage (seat_id FK, one open vacancy per seat, hire resolves by seat before text matching)",
+  runVacancySeatLinkageTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
