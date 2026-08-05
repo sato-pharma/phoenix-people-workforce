@@ -26,25 +26,27 @@ export const maxDuration = 60;
  * Every response is no-store and noindex: a cached or crawled copy of this data would outlive the
  * revocation switch, which would defeat the point of having one.
  */
-export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }) {
+// `_request` is deliberately unused: the response depends only on the token in the path and the
+// configured public URL. Nothing the caller sends may influence what this route serves.
+export async function GET(_request: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
     const { token } = await params;
     const resolved = await resolveMarketingReportShareLink({ surface: "feed", token });
 
-    // File links must be absolute — the sheet renders them as HYPERLINK targets, and a relative
-    // path there resolves against docs.google.com. Prefer the request's own origin so a preview
-    // deployment links to itself, falling back to the production domain.
-    const origin = (() => {
-      try {
-        return new URL(request.url).origin;
-      } catch {
-        return systemDeployment.productionUrl;
-      }
-    })();
-
     const csv = buildMarketingReportBundleCsv({
       allowFiles: resolved.allowFiles,
-      baseUrl: origin,
+      // The CONFIGURED public URL, never the request's own origin.
+      //
+      // This first shipped as `new URL(request.url).origin`, which behind Railway's proxy is the
+      // container's internal bind address: every photo link in the owner's sheet came out as
+      // https://0.0.0.0:8080/… and opened nothing. Reading x-forwarded-host instead would fix the
+      // address and introduce a worse problem — a caller-controlled header deciding where the
+      // sheet's links point, which is a link-poisoning primitive aimed at the one person who
+      // trusts this report most.
+      //
+      // There is exactly one consumer, the owner's Google Sheet, and it can only ever reach the
+      // public domain. A constant is both correct and unspoofable.
+      baseUrl: systemDeployment.productionUrl,
       requests: resolved.requests,
       scope: resolved.scope,
       token,
