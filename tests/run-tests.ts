@@ -520,6 +520,7 @@ import { runMarketingRequestReportColumnsTests } from "./marketing-request-repor
 import { runDirectOrderValidationCaptureReachableTests } from "./direct-orders-validation-capture-reachable.test.ts";
 import { runDirectOrderSheetWebhookTests } from "./direct-orders-sheet-webhook.test.ts";
 import { runDirectOrderReverseAuthorizationTests } from "./direct-orders-reverse-authorization.test.ts";
+import { runDirectOrderErrorClassificationTests } from "./direct-orders-error-classification.test.ts";
 import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
@@ -1216,6 +1217,7 @@ await runTest("marketing request report columns (positional twins, owner's 16 he
 await runTest("direct orders validation capture is reachable from BOTH the admin and portal routes (requester-only, held-only)", runDirectOrderValidationCaptureReachableTests);
 await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed)", runDirectOrderSheetWebhookTests);
 await runTest("direct orders reverse authorization (scope guard inherited, registry-gated, real status passed)", runDirectOrderReverseAuthorizationTests);
+await runTest("direct orders error classification (every bare refusal reaches the caller as the right status, not 500)", runDirectOrderErrorClassificationTests);
 await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation and the 14-day clock are the only doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
