@@ -1104,7 +1104,12 @@ function StandardCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
           <div className="h-1.5 w-12 bg-orange-500" />
         </div>
         <div className="grid grid-cols-1 gap-px bg-slate-200 sm:grid-cols-2">
-          <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
+          {/* Talent Acquisition holds no `coaching` grant, so this tile landed her on the
+              "not authorized to view coaching reports" dead end. Guarded like its two
+              neighbours below, which were already hidden from her. */}
+          {!isTalentAcquisition && (
+            <PremiumNavTile href="/employee-portals/coaching" icon={ClipboardCheck} label="My Coaching" description="Field coaching reports and history" />
+          )}
           {!isTalentAcquisition && (
             <PremiumNavTile href="/employee-portals/plans" icon={CalendarDays} label="My Plans" description="Weekly and monthly field activity" />
           )}
