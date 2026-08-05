@@ -202,3 +202,61 @@ export async function loadMarketingEvidencePhoto(params: {
 
   return { capturedAt: row.captured_at ?? null, signedUrl };
 }
+
+/**
+ * Signed photo URLs for MANY entities at once, keyed by entity id.
+ *
+ * The per-entity `loadMarketingEvidencePhoto` would be an N+1 on a request targeting several
+ * pharmacies — one index read and one signing round-trip each. This does one index read and one
+ * batch signing call instead. Entities with no retained photo are simply absent from the map, so a
+ * caller reading `map.get(id)` gets `undefined` and renders the honest "no image" branch.
+ *
+ * Degrades to an empty map on any failure: an approval screen must open regardless.
+ */
+export async function loadMarketingEvidencePhotosByEntityIds(params: {
+  entityIds: string[];
+  entityType: MarketingEvidenceEntityType;
+  supabase?: SupabaseClient;
+}): Promise<Map<string, { capturedAt: string | null; signedUrl: string }>> {
+  const found = new Map<string, { capturedAt: string | null; signedUrl: string }>();
+  const entityIds = [...new Set(params.entityIds.filter(Boolean))];
+  if (entityIds.length === 0) return found;
+
+  const client = params.supabase ?? getSupabaseAdmin();
+  const { data, error } = await client
+    .from("marketing_evidence_files")
+    .select("entity_id, storage_path, captured_at")
+    .eq("entity_type", params.entityType)
+    .eq("evidence_type", "location_photo")
+    .in("entity_id", entityIds)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return found;
+
+  type Row = { captured_at?: string | null; entity_id?: string | null; storage_path?: string | null };
+  // Newest-first ordering above means the FIRST row seen per entity is the one to keep; a
+  // re-validated record can legitimately have more than one file row.
+  const newestByEntity = new Map<string, Row>();
+  for (const row of data as Row[]) {
+    const entityId = row.entity_id ? String(row.entity_id) : "";
+    if (entityId && row.storage_path && !newestByEntity.has(entityId)) {
+      newestByEntity.set(entityId, row);
+    }
+  }
+  if (newestByEntity.size === 0) return found;
+
+  const entries = [...newestByEntity.entries()];
+  const signed = await client.storage
+    .from(MARKETING_EVIDENCE_BUCKET)
+    .createSignedUrls(entries.map(([, row]) => String(row.storage_path)), MARKETING_EVIDENCE_SIGNED_URL_TTL_SECONDS);
+
+  if (signed.error || !signed.data) return found;
+
+  signed.data.forEach((result, index) => {
+    const entry = entries[index];
+    if (!entry || !result?.signedUrl || result.error) return;
+    found.set(entry[0], { capturedAt: entry[1].captured_at ?? null, signedUrl: result.signedUrl });
+  });
+
+  return found;
+}

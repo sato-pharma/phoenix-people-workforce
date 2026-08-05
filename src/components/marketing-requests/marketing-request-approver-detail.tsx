@@ -274,7 +274,7 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
           <ul className="space-y-1">
             {detail.targetPharmacies.map((pharmacy, index) => (
               <li
-                className="flex flex-wrap items-baseline gap-x-2 rounded-sm border border-slate-200 px-2 py-1"
+                className="rounded-sm border border-slate-200 px-2 py-1"
                 // Index is part of the key on purpose. buildTargetPharmacies defaults BOTH
                 // pharmacyCode and distributorPharmacyCode to "-" when the lookup fails
                 // (service.ts), so two unresolved pharmacies on one request would otherwise share
@@ -282,15 +282,26 @@ export function MarketingRequestApproverDetail({ requestId }: { requestId: strin
                 // server-ordered and never reordered client-side, so the index is stable.
                 key={`${pharmacy.pharmacyCode}-${pharmacy.distributorPharmacyCode}-${index}`}
               >
-                <Store className="h-3 w-3 shrink-0 text-slate-400" />
-                <span className="text-[12px] font-bold text-slate-900">{pharmacy.pharmacyName}</span>
-                <span className="text-[10px] font-medium text-slate-500">
-                  {pharmacy.distributorName} · {pharmacy.distributorPharmacyCode || "no distributor code"}
-                </span>
-                {pharmacy.referenceStatus !== "matched" ? (
-                  <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-amber-900">
-                    {pharmacy.referenceStatus}
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <Store className="h-3 w-3 shrink-0 text-slate-400" />
+                  <span className="text-[12px] font-bold text-slate-900">{pharmacy.pharmacyName}</span>
+                  <span className="text-[10px] font-medium text-slate-500">
+                    {pharmacy.distributorName} · {pharmacy.distributorPharmacyCode || "no distributor code"}
                   </span>
+                  {pharmacy.referenceStatus !== "matched" ? (
+                    <span className="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.08em] text-amber-900">
+                      {pharmacy.referenceStatus}
+                    </span>
+                  ) : null}
+                </div>
+                {/* The pharmacy's own retained shop front, on the same rule as the customer's. */}
+                {pharmacy.evidencePhotoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    alt={`Live capture of ${pharmacy.pharmacyName}`}
+                    className="mt-1 h-36 w-full border border-slate-200 bg-slate-50 object-contain"
+                    src={pharmacy.evidencePhotoUrl}
+                  />
                 ) : null}
               </li>
             ))}

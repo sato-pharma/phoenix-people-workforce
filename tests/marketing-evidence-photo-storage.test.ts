@@ -4,6 +4,7 @@ import {
   buildMarketingEvidencePhotoPath,
   createMarketingEvidencePhotoSignedUrl,
   loadMarketingEvidencePhoto,
+  loadMarketingEvidencePhotosByEntityIds,
   MARKETING_EVIDENCE_BUCKET,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
@@ -64,6 +65,8 @@ function capturedInput(overrides: {
 /** Records every storage and table call so each assertion can read what was actually attempted. */
 function fakeSupabase(options: {
   evidenceRow?: Record<string, unknown> | null;
+  /** Multi-row result for the batched `loadMarketingEvidencePhotosByEntityIds` read. */
+  evidenceRows?: Array<Record<string, unknown>>;
   failInsert?: boolean;
   failUpload?: boolean;
 } = {}) {
@@ -71,6 +74,7 @@ function fakeSupabase(options: {
     inserted: [] as Array<Record<string, unknown>>,
     removed: [] as string[][],
     signed: [] as Array<{ path: string; ttl: number }>,
+    signedBatches: [] as Array<{ paths: string[]; ttl: number }>,
     uploaded: [] as Array<{ bucket: string; contentType: string; path: string; size: number }>,
   };
 
@@ -79,6 +83,9 @@ function fakeSupabase(options: {
       const builder: Record<string, unknown> = {
         delete: () => ({ in: async () => ({ error: null }) }),
         eq: () => builder,
+        // The batched read ends on `.in(...)` + `.order(...)` and awaits the builder itself, so the
+        // builder has to be thenable — that is what makes `await client.from(...)...` resolve.
+        in: () => builder,
         insert: async (row: Record<string, unknown>) => {
           if (table === "marketing_evidence_files") calls.inserted.push(row);
           return { error: options.failInsert ? { message: "index write refused" } : null };
@@ -87,6 +94,8 @@ function fakeSupabase(options: {
         maybeSingle: async () => ({ data: options.evidenceRow ?? null, error: null }),
         order: () => builder,
         select: () => builder,
+        then: (resolve: (value: { data: unknown; error: null }) => unknown) =>
+          resolve({ data: options.evidenceRows ?? [], error: null }),
       };
       return builder;
     },
@@ -96,6 +105,17 @@ function fakeSupabase(options: {
           async createSignedUrl(path: string, ttl: number) {
             calls.signed.push({ path, ttl });
             return { data: { signedUrl: `https://signed.example/${bucket}/${path}?ttl=${ttl}` }, error: null };
+          },
+          async createSignedUrls(paths: string[], ttl: number) {
+            calls.signedBatches.push({ paths, ttl });
+            return {
+              data: paths.map((path) => ({
+                error: null,
+                path,
+                signedUrl: `https://signed.example/${bucket}/${path}?ttl=${ttl}`,
+              })),
+              error: null,
+            };
           },
           async remove(paths: string[]) {
             calls.removed.push(paths);
@@ -335,4 +355,41 @@ export async function runMarketingEvidencePhotoStorageTests() {
     null,
   );
   assert.equal(await createMarketingEvidencePhotoSignedUrl(null, empty.client), null);
+
+  // ── Batch read for a request's target pharmacies ──
+  // A pharmacy's shop front is stored on the same rule as its customer's, so it has to be viewable
+  // on the same rule — evidence no approver can look at is the defect this file exists to end.
+  // Batched because the per-entity read would be an index hit plus a signing round-trip per
+  // pharmacy on every approval screen.
+  const batch = fakeSupabase({
+    evidenceRows: [
+      // Newest first, matching the `order("created_at", desc)` the loader asks for. Two rows for
+      // ph-1: a re-validated pharmacy legitimately has more than one file row, and the NEWEST must
+      // win rather than whichever happens to come back first.
+      { captured_at: timestamp, entity_id: "ph-1", storage_path: "pharmacy/ph-1-new.jpg" },
+      { captured_at: "2026-01-01T00:00:00.000Z", entity_id: "ph-1", storage_path: "pharmacy/ph-1-old.jpg" },
+      { captured_at: timestamp, entity_id: "ph-2", storage_path: "pharmacy/ph-2.jpg" },
+    ],
+  });
+  const photos = await loadMarketingEvidencePhotosByEntityIds({
+    entityIds: ["ph-1", "ph-2", "ph-3-no-photo"],
+    entityType: "pharmacy",
+    supabase: batch.client,
+  });
+
+  assert.equal(batch.calls.signedBatches.length, 1, "every target pharmacy must be signed in ONE batch call, not one call each");
+  assert.equal(photos.size, 2, "only pharmacies with a retained image appear");
+  assert.match(photos.get("ph-1")!.signedUrl, /ph-1-new\.jpg/, "the NEWEST file row must win for a re-validated pharmacy");
+  assert.ok(!photos.get("ph-1")!.signedUrl.includes("ph-1-old"), "the superseded photo must not be served");
+  assert.equal(photos.get("ph-2")?.capturedAt, timestamp);
+  assert.equal(
+    photos.get("ph-3-no-photo"),
+    undefined,
+    "a pharmacy with no stored image must be ABSENT, so the caller renders 'no image' instead of a broken img",
+  );
+  assert.equal(
+    (await loadMarketingEvidencePhotosByEntityIds({ entityIds: [], entityType: "pharmacy", supabase: batch.client })).size,
+    0,
+    "no pharmacies means no query at all",
+  );
 }
