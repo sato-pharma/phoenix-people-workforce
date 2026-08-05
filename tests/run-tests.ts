@@ -521,6 +521,7 @@ import { runDirectOrderValidationCaptureReachableTests } from "./direct-orders-v
 import { runDirectOrderSheetWebhookTests } from "./direct-orders-sheet-webhook.test.ts";
 import { runDirectOrderReverseAuthorizationTests } from "./direct-orders-reverse-authorization.test.ts";
 import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotation-confirmation.test.ts";
+import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
 import { runDirectOrdersPharmacyValidationTests } from "./direct-orders-pharmacy-validation.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
@@ -1216,6 +1217,7 @@ await runTest("direct orders validation capture is reachable from BOTH the admin
 await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed)", runDirectOrderSheetWebhookTests);
 await runTest("direct orders reverse authorization (scope guard inherited, registry-gated, real status passed)", runDirectOrderReverseAuthorizationTests);
 await runTest("direct orders rotation confirmation (evidence of use, never the reply body; unproven revokes nothing)", runDirectOrderRotationConfirmationTests);
+await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation and the 14-day clock are the only doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
 await runTest("direct orders pharmacy validation (live-capture evidence only, server-side GPS verdict, probation can fail an approved pharmacy, suggestions are reproducible evidence)", runDirectOrdersPharmacyValidationTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);

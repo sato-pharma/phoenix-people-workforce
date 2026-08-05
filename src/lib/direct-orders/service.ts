@@ -3224,7 +3224,12 @@ export function resolveDirectOrderReportScope(access: AccessContext): DirectOrde
  * mid-replacement — the orders would silently vanish from the RM's report. Both edges are followed,
  * matching `isWithinManagerHierarchy` in src/lib/workforce/hierarchy-resolver.ts.
  */
-async function resolveVisibleRequesterHrIds(access: AccessContext): Promise<Set<string>> {
+/**
+ * Exported so the per-rep counters (spec E1) can scope themselves with the SAME subtree rule the
+ * report uses. A second copy of a visibility rule is exactly how `reverse` ended up reachable by
+ * every rep in the company (audit C6.2 / F5) — one definition, many callers.
+ */
+export async function resolveVisibleRequesterHrIds(access: AccessContext): Promise<Set<string>> {
   const directory = await getEmployeeDirectory();
   const children = new Map<string, string[]>();
   const addEdge = (parentKey: string | null, childKey: string | null) => {

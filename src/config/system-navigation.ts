@@ -2240,6 +2240,18 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/direct-orders/rep-counters",
+    icon: Gauge,
+    label: "Per-rep Counters",
+    description: "Who parks orders on unknown pharmacies, who lets them expire, and who files it as new after being shown the match.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // Deliberately WIDER than the Held Desk and Pharmacy Validation. Those gate on Super Admin
+    // because their ACTIONS do; this page only reads, and it is SCOPED — a manager sees their own
+    // subtree, which is exactly who the counters are for. Restricting it to Super Admin would
+    // leave the people who can act on the numbers unable to see them.
+    roles: ["Super Admin", "CEO", "SFE Manager", "National Sales Manager", "Regional Manager", "District Manager"],
+  },
+  {
     href: "/admin/direct-orders/pharmacy-variances",
     icon: MapPinned,
     label: "Pharmacy Variances",
