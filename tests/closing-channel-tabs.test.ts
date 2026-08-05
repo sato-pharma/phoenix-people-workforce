@@ -315,6 +315,38 @@ export async function runClosingChannelTabsTests() {
     );
   }
 
+  // ── An empty section must give the RIGHT reason ─────────────────────────────────────────────
+  // Two different emptinesses, and naming the wrong one is its own defect: a line with no direct
+  // business at all was being told its direct sheet had arrived without customer identity, which
+  // reads as a data-quality problem where none exists (found on CNS 2026-07, live).
+  const noDirectBuffer = await buildMonthlyClosingWorkbook(retail, buildComparison(), undefined, {
+    channels: { directCells: [], retail },
+  });
+  const noDirectWorkbook = new ExcelJS.Workbook();
+  await noDirectWorkbook.xlsx.load(noDirectBuffer as unknown as ArrayBuffer);
+  const noDirectRows = sheetValues(noDirectWorkbook.getWorksheet("Direct Sales (no retail)")!);
+  const noDirectText = noDirectRows.flat().filter((value): value is string => typeof value === "string").join(" ");
+  assert.ok(
+    noDirectText.includes("No direct orders reached this line and month, so there is no customer to name"),
+    "a line with NO direct orders is told exactly that — nothing is missing, the channel simply had no business",
+  );
+  assert.ok(
+    !noDirectText.includes("carries no customer identity"),
+    "…and is NOT blamed for a blank-customer sheet it never received",
+  );
+  // The opposite case still says the opposite thing: direct money exists, identity does not.
+  const identitylessBuffer = await buildMonthlyClosingWorkbook(master, buildComparison(), undefined, {
+    channels: { directCells: DIRECT_CELLS, retail },
+  });
+  const identitylessWorkbook = new ExcelJS.Workbook();
+  await identitylessWorkbook.xlsx.load(identitylessBuffer as unknown as ArrayBuffer);
+  const identitylessText = sheetValues(identitylessWorkbook.getWorksheet("Direct Sales (no retail)")!)
+    .flat().filter((value): value is string => typeof value === "string").join(" ");
+  assert.ok(
+    identitylessText.includes("carries no customer identity"),
+    "direct money with no customer identity on the sheet still says so — that IS a real gap worth naming",
+  );
+
   // 3. The store split is a retail-only redistribution: applying it to the retail half and to the
   // master must leave both totals untouched, so the tie survives it.
   const net = new Map([
