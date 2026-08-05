@@ -117,6 +117,46 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // reconcile_visits_effective_view_vstar and exists only to make the definition
   // reproducible on a fresh reset.
   "20260728000000_refresh_visits_effective_view.sql",
+  // ── Added 2026-08-05, after this check had been failing on every scheduled run for days and
+  // nobody was reading it. Each was verified by direct schema inspection on the target project,
+  // never from schema_migrations. Five SIBLING files flagged in the same run were NOT listed —
+  // they were genuinely missing and have been applied to staging instead (revoke_anon_on_crm_
+  // visits_effective, outstation_expenses_approved_amount, app_auth_biometric_credentials,
+  // automated_payroll_part2_non_employees_and_manual_expenses).
+  //
+  // Applied on BOTH projects, recorded under a drifted version (the MCP apply_migration clock,
+  // not the filename). Verified live on production AND staging: au.f_monthly_achievement carries
+  // the Direct fix — two `is not distinct from k.area_code` joins, with the lam join deliberately
+  // left as strict `=` exactly as this file specifies, and anon/authenticated revoked with
+  // service_role granted.
+  "20260801150100_au_direct_counts_toward_achievement.sql",
+  // Applied: verified 0 tables matching `email_backfill_backup%` remain on staging, which is this
+  // file's own end state.
+  "20260801100000_drop_email_backfill_backup.sql",
+  // Not applicable: this hardens the very table that 20260801100000 (above) DROPS. With the table
+  // gone from staging there is nothing to enable RLS on, and re-running it would fail rather than
+  // protect anything.
+  "20260801090000_secure_email_backfill_backup_rls.sql",
+  // Not applicable: self-guarding by design — it loops over crm_restamp_backup_20260801 /
+  // crm_restamp_checkins_backup_20260801 and no-ops via to_regclass when absent. Verified 0 of
+  // those tables exist on staging, so the file is already a no-op there.
+  "20260801110000_secure_crm_restamp_backups_rls.sql",
+  // Not applicable: production-only guarded data remediation for 5 named vacancy ids whose exact
+  // phantom-filled state existed only on production. The file's own header states it is "a safe
+  // no-op on staging / any environment where the state differs" — the UPDATE matches on both id
+  // and the specific wrong filler, so nothing on staging can match.
+  "20260801160000_reopen_cross_area_misfill_vacancies.sql",
+  // ── The two below are blocked by a STRUCTURAL gap, not a missed apply: staging has NO
+  // deductions module at all. Verified: 0 tables matching `deductions_%` on staging, against a
+  // production module that is fully present. Revisit both if staging ever gains the module.
+  //
+  // Pins search_path on three deductions trigger functions. Verified 0 of the 3 exist on staging
+  // (deductions_candidates_guard_locked, deductions_decisions_touch_updated_at,
+  // deductions_publication_lines_guard_day_overlap), so there is nothing to pin.
+  "20260801140000_deductions_module_pin_trigger_search_path.sql",
+  // Adds a column to public.deductions_decisions. Confirmed by attempting the apply on staging
+  // 2026-08-05: Postgres refused with 42P01 relation "public.deductions_decisions" does not exist.
+  "20260802094500_deductions_decisions_applied_dates.sql",
   // DELIBERATELY NOT LISTED: 20260725180000_analytics_dim_products_exclude_head_office.sql.
   // That one is REAL production drift, found by this check's first production run on
   // 2026-07-30 (merged 110h earlier, applied to staging, never to production). Confirmed
