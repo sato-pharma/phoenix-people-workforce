@@ -49,6 +49,52 @@ export function runOutstationCarEvidenceValidationTests() {
   });
   assert.equal(missingGps.isValid, false);
 
+  // ── Owner change (2026-08-05): a NON-CAR trip may upload the arrival photo ──────────────
+  // Car is deliberately excluded and must stay excluded. These two assertions are the whole
+  // asymmetry: the same metadata, the same `upload` source, opposite verdicts by transport.
+  const uploadedOnCar = validateLiveArrivalEvidence({
+    carEvidenceMetadata: { ...validMetadata, source: "upload" },
+    transportationType: "car",
+  });
+  assert.equal(
+    uploadedOnCar.isValid,
+    false,
+    "a car trip still accepts nothing but a live in-app capture — the upload route was never extended to it",
+  );
+
+  for (const transportationType of ["train", "bus", "other"] as const) {
+    assert.equal(
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: { ...validMetadata, source: "upload" },
+        transportationType,
+      }).isValid,
+      true,
+      `a ${transportationType} trip may satisfy the arrival photo with an upload`,
+    );
+
+    // The relaxation is about the SOURCE only. Everything else the gate demands still applies,
+    // or "upload" would become a way to submit evidence with no GPS and no capture time at all.
+    assert.equal(
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: { ...validMetadata, capturedLatitude: Number.NaN, source: "upload" },
+        transportationType,
+      }).isValid,
+      false,
+      `an uploaded ${transportationType} photo still needs complete metadata — upload relaxes the source, not the rest`,
+    );
+
+    // An unrecognized source is still refused everywhere. "not live_camera" must not be read
+    // as "therefore acceptable on a train".
+    assert.equal(
+      validateLiveArrivalEvidence({
+        carEvidenceMetadata: { ...validMetadata, source: "gallery" } as unknown as OutstationCarEvidenceMetadata,
+        transportationType,
+      }).isValid,
+      false,
+      `an unknown source is refused on a ${transportationType} trip — only live_camera and upload are accepted`,
+    );
+  }
+
   // ── Owner change (2026-08-04): the arrival photo is required for EVERY transport type ──
   // This assertion is INVERTED from what it pinned before. A train/bus claim used to be exempt,
   // which meant it could reach payroll carrying no photograph at all — 5 of the 12 requests in

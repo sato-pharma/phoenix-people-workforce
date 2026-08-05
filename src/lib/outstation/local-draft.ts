@@ -1,5 +1,6 @@
 import type {
   OutstationCaptureResult,
+  OutstationCarEvidenceSource,
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
@@ -12,6 +13,10 @@ export type OutstationLocalDraft = {
   carEvidenceLocationLabel: string | null;
   carEvidenceLongitude: number | null;
   carEvidenceRequestId: string | null;
+  // Optional because drafts written before 2026-08-05 predate the upload route and carry no
+  // source. A draft with no source is a live capture — that was the only kind that existed —
+  // so readers must default to "live_camera" rather than treating the absence as unknown.
+  carEvidenceSource?: OutstationCarEvidenceSource;
   expenseType: OutstationExpenseType;
   goTicketAmount: string;
   hasTicketAttachments: boolean;

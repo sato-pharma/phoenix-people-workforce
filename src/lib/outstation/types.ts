@@ -20,7 +20,13 @@ export type OutstationApprovalRecommendation =
   | "hr_review"
   | "reject";
 
-export type OutstationCarEvidenceSource = "live_camera";
+// `upload` was added on 2026-08-05 (owner request) for NON-CAR trips only — see
+// validateLiveArrivalEvidence, which still refuses anything but `live_camera` on a car trip.
+// The two are NOT equivalent evidence: a live capture is taken in-app, at a known time, at GPS
+// the browser reported, whereas an upload is a file of unknown provenance whose GPS is copied
+// from the trip's destination capture. Anything weighing this evidence must read this field
+// rather than assume every arrival photo was taken live.
+export type OutstationCarEvidenceSource = "live_camera" | "upload";
 
 export type OutstationCarEvidenceMetadata = {
   capturedAt: string;
