@@ -205,11 +205,16 @@ function normalizeLastWorkingDate(input: CreateResignationInput) {
   );
 }
 
+// Returns the matched employee's STORED hr_id, never the raw actor string.
+// submitted_by_hr_id is a foreign key to employees.hr_id, which is exact/case-sensitive,
+// but `actor` arrives lowercased (resolveEmployeeIdentityId -> canonicalHrIdKey) and
+// hrIdsMatch is deliberately fuzzy (case, punctuation, aliases). Returning the actor
+// therefore wrote "a-16" against a stored "A-16" and every resignation failed the FK.
 function resolveSubmittedByHrId(
   actor: string,
   directory: Awaited<ReturnType<typeof getEmployeeDirectory>>,
 ) {
-  return directory.employees.some((employee) => hrIdsMatch(employee.hrId, actor)) ? actor : null;
+  return directory.employees.find((employee) => hrIdsMatch(employee.hrId, actor))?.hrId ?? null;
 }
 
 function appendWorkflowNote(
@@ -438,15 +443,14 @@ export function resignationErrorMessage(error: unknown) {
   return String(error);
 }
 
+// Only a genuinely absent table/column/function counts as "schema missing". This used to
+// also return true for ANY message merely MENTIONING employee_resignations /
+// payroll_resignation_candidates / position_vacancies / the RPC — so a constraint or FK
+// violation on those tables was reported to the user as "Resignations schema is not ready",
+// pointing at a missing migration that was never missing. A real absent object still matches
+// isMissingSchemaMessage ("could not find the table", "relation ... does not exist").
 export function isResignationsSchemaMissing(error: unknown) {
-  const message = resignationErrorMessage(error).toLowerCase();
-  return (
-    message.includes("employee_resignations") ||
-    message.includes("payroll_resignation_candidates") ||
-    message.includes("position_vacancies") ||
-    message.includes("phx_resign_employee_and_open_vacancy") ||
-    isMissingSchemaMessage(error)
-  );
+  return isMissingSchemaMessage(error);
 }
 
 function periodSortValue(month: number, year: number) {
