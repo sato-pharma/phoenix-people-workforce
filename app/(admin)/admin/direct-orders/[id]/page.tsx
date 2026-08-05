@@ -3,9 +3,9 @@ import { redirect } from "next/navigation";
 import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
+import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
-import { canonicalHrIdKey } from "@/lib/hr-id";
 
 export const dynamic = "force-dynamic";
 
@@ -31,18 +31,10 @@ export default async function AdminMyDirectOrderDetailPage({ params }: { params:
   }
   const detail = await getDirectOrderApprovalDetail(access, id);
 
-  // The validation door, shown exactly where the rep meets the problem (spec A2): on their OWN
-  // held order, and only while the pharmacy is still unconfirmed. Offering it to an approver
-  // reading the same page would be wrong — the evidence has to come from the person who stood in
-  // front of the pharmacy, and the GPS check is against THEIR area.
-  const isRequester =
-    Boolean(detail) &&
-    canonicalHrIdKey(access.hrId ?? "") === canonicalHrIdKey(detail!.request.requesterHrId ?? "");
-  const showValidation =
-    Boolean(detail) &&
-    isRequester &&
-    detail!.request.status === "held" &&
-    detail!.pharmacy?.verificationStatus === "pending_review";
+  // The validation door, shown exactly where the rep meets the problem (spec A2). The rule lives in
+  // canCaptureDirectOrderValidation so this page and its portal twin cannot disagree — they already
+  // did once, and the portal (the only route a rep can reach) was the one left without a door.
+  const showValidation = canCaptureDirectOrderValidation(access.hrId, detail);
 
   return (
     <div className="space-y-5">

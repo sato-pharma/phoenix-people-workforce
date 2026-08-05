@@ -3,6 +3,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { acknowledgeDirectOrderPharmacy } from "@/lib/direct-orders/service";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +186,26 @@ export async function requestDirectOrderPharmacyValidation(
   // The reason is mandatory on purpose: "why is this not in the master database" is the question
   // the admin has to answer, and making the rep answer it first is most of the review.
   if (!reason) badRequest("Say why this pharmacy is not in the master database.");
+
+  // The evidence must come from the person whose order is stuck. `direct_orders:create` alone is
+  // not enough: it admits every rep in the company, so without this any of them could file a
+  // storefront photo for a pharmacy in someone else's territory. The UI only offers the capture to
+  // the requester (canCaptureDirectOrderValidation), but a hidden button is UX, not access control
+  // — the check has to exist on this side of the wire too.
+  const linkedRequestId = input.requestId ? String(input.requestId).trim() : "";
+  if (linkedRequestId) {
+    const supabaseForOwnership = getSupabaseAdmin();
+    const { data: linked } = await supabaseForOwnership
+      .from("direct_order_requests")
+      .select("id, requester_hr_id")
+      .eq("id", linkedRequestId)
+      .maybeSingle();
+    if (!linked) throw notFoundError("That direct order was not found.");
+    const owner = canonicalHrIdKey(String((linked as { requester_hr_id?: string }).requester_hr_id ?? ""));
+    if (!owner || owner !== canonicalHrIdKey(access.hrId ?? "")) {
+      throw forbiddenError("You can only submit evidence for your own direct order.");
+    }
+  }
 
   const { bytes } = parseDirectOrderEvidencePhotoDataUrl(input.photoDataUrl);
 
