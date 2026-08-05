@@ -90,13 +90,74 @@ export function runDirectOrderSheetWebhookTests() {
   );
   assert.match(
     scriptSource,
-    /if \(supplied !== expected\)/,
+    /if \(String\(payload\.secret \|\| ""\) !== expected\) \{/,
     "the script must compare the supplied secret against the configured one before refreshing",
+  );
+  // The comparison must come BEFORE anything that acts — rotation included. A rotation branch
+  // placed above the check would let an unauthenticated caller replace the sheet's feed token.
+  const doPostBody = scriptSource.slice(
+    scriptSource.indexOf("function doPost(e)"),
+    scriptSource.indexOf("function resolveWebhookSecret()"),
+  );
+  assert.ok(
+    doPostBody.indexOf('!== expected') < doPostBody.indexOf("rotateToken"),
+    "SECRET CHECK MUST PRECEDE THE ROTATION BRANCH: otherwise an unauthenticated caller could replace the sheet's feed token",
+  );
+  assert.match(
+    doPostBody,
+    /if \(!props\.getProperty\("WEBHOOK_SECRET"\)\) props\.setProperty\("WEBHOOK_SECRET", expected\);\s*\n\s*props\.setProperty\("FEED_TOKEN", rotate\);/,
+    "the webhook secret must be PINNED before FEED_TOKEN is rotated — otherwise the default secret moves with the token while Phoenix still sends the old one, and every later push is denied silently",
+  );
+  assert.match(
+    doPostBody,
+    /if \(!\/\^\[A-Za-z0-9_-\]\{20,\}\$\/\.test\(rotate\)\)/,
+    "a rotation token must be validated before it is stored — storing rubbish would break every refresh from then on",
   );
   // The secret belongs in Script Properties, never in the file that gets shared and committed.
   assert.doesNotMatch(
     scriptSource,
     /WEBHOOK_SECRET\s*=\s*["'][^"']+["']/,
     "HARDCODED SECRET IN THE SCRIPT: it must come from Script Properties",
+  );
+
+  // ── The zero-configuration fallback ──────────────────────────────────────────────────────
+  // A Script Property still wins, but with none set the script authorises against the feed token it
+  // already holds — so the push endpoint works the moment the script is pasted, with nothing else to
+  // configure. That grants nothing extra: doPost can only make the sheet re-read the feed, and
+  // anyone holding the feed token can already read that feed directly and in full.
+  assert.match(
+    scriptSource,
+    /function resolveWebhookSecret\(\)/,
+    "the script must resolve its secret through resolveWebhookSecret, not read the property inline",
+  );
+  assert.match(
+    scriptSource,
+    /var explicit = PropertiesService\.getScriptProperties\(\)\.getProperty\("WEBHOOK_SECRET"\);[\s\S]{0,120}?if \(explicit\) return explicit;/,
+    "an explicitly configured WEBHOOK_SECRET must take precedence over the fallback",
+  );
+  assert.match(
+    scriptSource,
+    /if \(explicit\) return explicit;\s*\n\s*return feedToken\(\);/,
+    "with no explicit property the fallback must be the feed token currently in force",
+  );
+
+  // ── The token itself must be rotatable ───────────────────────────────────────────────────
+  // The bootstrap token is committed to this repository, so it lives in git history permanently.
+  // What makes that harmless is that it is only a BOOTSTRAP: once Phoenix rotates, the live token
+  // sits in a Script Property committed nowhere, and the bootstrap is revoked server-side.
+  assert.match(
+    scriptSource,
+    /function feedToken\(\) \{\s*\n\s*var stored = PropertiesService\.getScriptProperties\(\)\.getProperty\("FEED_TOKEN"\);\s*\n\s*return stored \|\| BOOTSTRAP_FEED_TOKEN;/,
+    "a rotated FEED_TOKEN must win over the committed bootstrap — otherwise rotation cannot make the committed token worthless",
+  );
+  assert.match(
+    scriptSource,
+    /function feedUrl\(\) \{\s*\n\s*return FEED_BASE \+ feedToken\(\)/,
+    "the feed URL must be built per call from the CURRENT token — a cached URL would keep using a rotated-away token",
+  );
+  assert.match(
+    scriptSource,
+    /UrlFetchApp\.fetch\(feedUrl\(\)/,
+    "the refresh must fetch through feedUrl(), not a constant, or rotation never takes effect",
   );
 }
