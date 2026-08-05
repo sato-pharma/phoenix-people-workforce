@@ -349,6 +349,7 @@ import { runLoginPageServerRenderTests } from "./login-page-server-render.test.t
 import { runAuthAuditHardeningTests } from "./auth-audit-hardening.test.ts";
 import { runEmployeeDisplayNameTests } from "./employee-display-name.test.ts";
 import { runEmployeeImportHrIdAliasResolutionTests } from "./employee-import-hrid-alias-resolution.test.ts";
+import { runEmployeeImportNicknameGuardTests } from "./employee-import-nickname-guard.test.ts";
 import { runEmployeeImportSeatValidationTests } from "./employee-import-seat-validation.test.ts";
 import { runEmployeeImportLifecycleTests } from "./employee-import-lifecycle.test.ts";
 import { runEmployeeRegionResolverTests } from "./employee-region-resolver.test.ts";
@@ -1065,6 +1066,7 @@ await runTest("login page server-renders its form (no ssr:false, lazy webauthn)"
 await runTest("auth audit hardening", runAuthAuditHardeningTests);
 await runTest("employee display name", runEmployeeDisplayNameTests);
 await runTest("employee import HR_ID alias resolution", runEmployeeImportHrIdAliasResolutionTests);
+await runTest("employee import nickname guard (an import must never rename a person)", runEmployeeImportNicknameGuardTests);
 await runTest("employee import seat validation", runEmployeeImportSeatValidationTests);
 await runTest("employee import lifecycle (active payroll-ineligible execs not terminal; resigned stay protected)", runEmployeeImportLifecycleTests);
 await runTest("employee region resolver (au line-area-region crosswalk derivation)", runEmployeeRegionResolverTests);

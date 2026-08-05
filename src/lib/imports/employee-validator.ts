@@ -4,6 +4,10 @@ import {
   createEmployeeColumnLookup,
   requiredEmployeeImportFields,
 } from "@/lib/imports/employee-column-map";
+import {
+  buildPersonNameIndex,
+  findNicknameOwners,
+} from "@/lib/imports/employee-name-collision";
 import type {
   DetectedEmployeeColumn,
   EmployeeImportField,
@@ -717,6 +721,13 @@ export function validateEmployeeImportRows(
   // its resolved (line, area) — the authoritative sales geography — instead of the free-text column.
   const regionCrosswalk = options.existingState?.regionCrosswalk;
 
+  // Backs the nickname guard below: name -> the HR_IDs carrying it, across this file and the live
+  // directory. See employee-name-collision.ts for why an import is allowed to rename nobody.
+  const personNameIndex = buildPersonNameIndex({
+    existingHrIdsByFullNameKey: options.existingState?.employeeHrIdsByFullNameKey,
+    records,
+  });
+
   for (const record of records) {
     if (record.rowType === "employee" && !record.hrId) {
       validationErrors.push({
@@ -768,6 +779,26 @@ export function validateEmployeeImportRows(
         code: "invalid_email",
         message: `Work email is invalid: ${record.workEmail}.`,
       });
+    }
+
+    // A nickname must never be a DIFFERENT employee's real name. This fails the WHOLE row rather
+    // than just blanking the cell: a shifted column is a property of the file, and the same
+    // 2026-08-05 run also carried manager_hr_id — importing "the rest" of a row already known to
+    // be shifted is exactly what flattened the organogram in that import.
+    if (record.rowType === "employee") {
+      const nicknameOwners = findNicknameOwners({
+        hrId: record.hrId,
+        index: personNameIndex,
+        nickname: record.nickname,
+      });
+      if (nicknameOwners) {
+        validationErrors.push({
+          rowNumber: record.rowNumber,
+          field: "nickname",
+          code: "nickname_is_another_employees_name",
+          message: `Nickname "${record.nickname}" is ${nicknameOwners.join(", ")}'s real name, not ${record.hrId}'s. A nickname is the name every screen shows, so importing this would rename someone. This normally means a column in the file is shifted by a row — fix the file, or clear this nickname cell if the two people genuinely share a name.`,
+        });
+      }
     }
 
     const departmentError = resolveGlobalDepartment(record, options);
