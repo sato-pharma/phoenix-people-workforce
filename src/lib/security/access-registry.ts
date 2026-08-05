@@ -368,6 +368,10 @@ export const accessRegistry = [
   // The submit form's pharmacy combo box (spec B1/B2): read-only type-ahead over the UNION of the
   // distributor customer directory and Phoenix pharmacies; area scope enforced in the service.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-search", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // Reads a photographed invoice to prefill the order form (spec B5). POST because the payload is
+  // an image, but it writes NOTHING — hence no audit classification. `create` rather than `read`:
+  // prefilling a submission is only useful to someone who may submit one.
+  sessionApi({ methods: ["POST"], pattern: "/api/direct-orders/invoice-extract", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   // Materialize/reuse a pharmacy from a combo selection (spec B1/B3). Body carries pointers only;
   // every stored field is copied server-side from the trusted catalogue row.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/from-directory", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
