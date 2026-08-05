@@ -140,6 +140,7 @@ export function AggregateFeedbackReport() {
                 "NSM",
                 "PM / GPM",
                 "TM",
+                "TA",
               ].map((col) => (
                 <th
                   className="px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.14em] text-[#64748B]"
@@ -200,6 +201,9 @@ export function AggregateFeedbackReport() {
                   </td>
                   <td className="px-2.5 py-2">
                     <RoleCell role="tm" submissions={row.submissions} />
+                  </td>
+                  <td className="px-2.5 py-2">
+                    <RoleCell role="ta" submissions={row.submissions} />
                   </td>
                 </tr>
               ))
