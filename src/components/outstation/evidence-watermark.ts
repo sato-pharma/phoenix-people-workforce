@@ -103,9 +103,16 @@ export function drawWatermarkText(
   return currentY + lineHeight;
 }
 
-export function getCompressedEvidenceCanvasSize(video: HTMLVideoElement) {
-  const sourceWidth = video.videoWidth || 1280;
-  const sourceHeight = video.videoHeight || 720;
+/**
+ * Accepts a live camera frame OR an uploaded image, because both routes now feed the same
+ * arrival-photo slot. The two elements report their intrinsic size under different property
+ * names — reading `videoWidth` off an image yields `undefined` and would silently fall through
+ * to the 1280x720 default, stretching every uploaded photo to 16:9.
+ */
+export function getCompressedEvidenceCanvasSize(source: HTMLVideoElement | HTMLImageElement) {
+  const sourceWidth = ("videoWidth" in source ? source.videoWidth : source.naturalWidth) || 1280;
+  const sourceHeight =
+    ("videoHeight" in source ? source.videoHeight : source.naturalHeight) || 720;
   const maxDimension = 1280;
   const scale = Math.min(1, maxDimension / Math.max(sourceWidth, sourceHeight));
 

@@ -8,7 +8,11 @@ export function parseCarEvidenceMetadata(body: Record<string, unknown>) {
   const raw = body.carEvidenceMetadata;
   if (!isRecord(raw)) return undefined;
 
-  const source = raw.source === "live_camera" ? raw.source : null;
+  // Parsed permissively, authorized strictly. This accepts both sources; whether `upload` is
+  // ALLOWED for the trip in hand is validateLiveArrivalEvidence's call, and it still refuses
+  // anything but `live_camera` on a car trip. Widening the parser is not widening the rule.
+  const source =
+    raw.source === "live_camera" || raw.source === "upload" ? raw.source : null;
   const capturedAt = typeof raw.capturedAt === "string" ? raw.capturedAt : null;
   const capturedLatitude = Number(raw.capturedLatitude);
   const capturedLocationLabel =

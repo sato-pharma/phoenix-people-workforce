@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, MapPin } from "lucide-react";
+import { Camera, MapPin, Upload } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 
 import { ApprovalRecommendationBadge } from "@/components/outstation/approval-recommendation-badge";
@@ -32,6 +32,7 @@ import type {
   OutstationCalculationResult,
   OutstationCaptureResult,
   OutstationCarEvidenceMetadata,
+  OutstationCarEvidenceSource,
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
@@ -58,6 +59,10 @@ type CarEvidenceState = {
   imageDataUrl: string;
   requestDraftId: string;
   requestId: string | null;
+  // Which of the two routes produced this photo. Carried through to the server verbatim —
+  // never inferred there from the transport type, because that would let an upload on a
+  // train trip be recorded as if it had been captured live.
+  source: OutstationCarEvidenceSource;
 };
 
 type PermissionPromptKind =
@@ -358,20 +363,35 @@ export function MobileOutstationWizard({
   // the page that could satisfy a rule the server was already enforcing, so every train and bus
   // submission died on a 400 that the mobile layout pushed off-screen below the sticky footer.
   const arrivalPhotoBadge = transportationType === "car" ? "Car live photo" : "Arrival photo";
+  // Owner request 2026-08-05: a non-car trip may satisfy the arrival photo by UPLOADING one
+  // instead of capturing it live. Car is deliberately excluded — validateLiveArrivalEvidence
+  // still refuses anything but a live capture there, and offering an upload button that the
+  // server would then reject is exactly the dead-end this whole page just got fixed for.
+  const canUploadArrivalPhoto = transportationType !== "car";
+  const arrivalPhotoHeading = canUploadArrivalPhoto
+    ? "Add one arrival photo — take it live or upload it"
+    : "Capture one live photo from device camera";
   const arrivalPhotoHint =
     transportationType === "car"
       ? "Car requests require one in-app camera photo with GPS and app-generated timestamp."
       : transportationType === "other"
-        ? "This trip requires one in-app arrival photo with GPS and app-generated timestamp."
-        : `A ${transportationType} trip requires one in-app arrival photo with GPS and app-generated timestamp.`;
+        ? "This trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded."
+        : `A ${transportationType} trip requires one arrival photo. Take it live, or upload one — an uploaded photo is stamped as uploaded.`;
   const arrivalPhotoMissingMessage =
     transportationType === "car"
       ? "Capture the live car photo before submitting this car request."
-      : "Capture the live arrival photo before submitting this request.";
+      : "Add the arrival photo before submitting — take it live or upload one.";
   // Kept deliberately short: this one renders inside the narrow mobile action bar and
   // must stay on a single line without wrapping.
   const arrivalPhotoMissingShort =
-    transportationType === "car" ? "Capture the car photo first" : "Capture the arrival photo first";
+    transportationType === "car" ? "Capture the car photo first" : "Add the arrival photo first";
+  // Derived from `carEvidence` directly rather than from `hasCarEvidence`, which is declared
+  // further down the component — a const cannot be read above its own declaration.
+  const arrivalPhotoStatusLabel = !carEvidence?.imageDataUrl
+    ? "No arrival photo yet"
+    : carEvidence.source === "upload"
+      ? "One uploaded arrival photo"
+      : "One live camera photo captured";
   const durationSummary = calculation
     ? calculation.sameDayTrip
       ? "Return the same day"
@@ -474,6 +494,9 @@ export function MobileOutstationWizard({
         imageDataUrl: restore.carEvidenceImageDataUrl ?? "",
         requestDraftId: draftId,
         requestId: null,
+        // A restored draft with no stored source predates the upload route, so it can only
+        // have been a live capture. Never guess this from the transport type.
+        source: restore.carEvidenceSource ?? "live_camera",
       });
     }
     setExpenseType(restore.expenseType);
@@ -524,6 +547,7 @@ export function MobileOutstationWizard({
       carEvidenceLocationLabel: carEvidence?.capturedLocationLabel ?? null,
       carEvidenceLongitude: carEvidence?.capturedLongitude ?? null,
       carEvidenceRequestId: carEvidenceDraftId,
+      carEvidenceSource: carEvidence?.source,
       expenseType,
       goTicketAmount,
       hasTicketAttachments: ticketFiles.length > 0,
@@ -578,13 +602,15 @@ export function MobileOutstationWizard({
           !draft.captured ||
           !draft.tripStartDate ||
           !draft.tripEndDate ||
-          (draft.transportationType === "car" &&
-            (!draft.carEvidenceRequestId ||
-              !draft.carEvidenceCapturedAt ||
-              !draft.carEvidenceImageDataUrl ||
-              draft.carEvidenceLatitude == null ||
-              !draft.carEvidenceLocationLabel ||
-              draft.carEvidenceLongitude == null)) ||
+          // Applies to EVERY transport type, not just car: the server refuses any request
+          // without arrival evidence, so replaying an evidence-less train draft would burn the
+          // one sync attempt (syncAttemptedRef) on a request that cannot succeed.
+          !draft.carEvidenceRequestId ||
+          !draft.carEvidenceCapturedAt ||
+          !draft.carEvidenceImageDataUrl ||
+          draft.carEvidenceLatitude == null ||
+          !draft.carEvidenceLocationLabel ||
+          draft.carEvidenceLongitude == null ||
           syncAttemptedRef.current
         ) {
           return;
@@ -603,21 +629,23 @@ export function MobileOutstationWizard({
               expenseType: draft.expenseType,
               goTicketAmount: Number(draft.goTicketAmount || 0),
               amWorkload: Number(draft.amWorkload || 0),
-              carEvidenceMetadata:
-                draft.transportationType === "car" && draft.carEvidenceRequestId
-                  ? {
-                      capturedAt: draft.carEvidenceCapturedAt ?? "",
-                      capturedLatitude: Number(draft.carEvidenceLatitude),
-                      capturedLocationLabel: draft.carEvidenceLocationLabel,
-                      capturedLongitude: Number(draft.carEvidenceLongitude),
-                      employeeHrId,
-                      requestDraftId: draft.carEvidenceRequestId,
-                      requestId: null,
-                      source: "live_camera",
-                    }
-                  : undefined,
-              carEvidenceImageDataUrl:
-                draft.transportationType === "car" ? draft.carEvidenceImageDataUrl : undefined,
+              // NOT gated on car. The arrival photo is required for every transport type, so
+              // stripping the evidence here for a train or bus draft guaranteed the sync would
+              // be refused — the same defect that broke the online path, in its offline twin.
+              carEvidenceMetadata: draft.carEvidenceRequestId
+                ? {
+                    capturedAt: draft.carEvidenceCapturedAt ?? "",
+                    capturedLatitude: Number(draft.carEvidenceLatitude),
+                    capturedLocationLabel: draft.carEvidenceLocationLabel,
+                    capturedLongitude: Number(draft.carEvidenceLongitude),
+                    employeeHrId,
+                    requestDraftId: draft.carEvidenceRequestId,
+                    requestId: null,
+                    // Pre-2026-08-05 drafts carry no source; those are all live captures.
+                    source: draft.carEvidenceSource ?? "live_camera",
+                  }
+                : undefined,
+              carEvidenceImageDataUrl: draft.carEvidenceImageDataUrl ?? undefined,
               hasTicketAttachments: draft.hasTicketAttachments,
               kilometerReading: Number(draft.kilometerReading || 0),
               meetingAmount: Number(draft.meetingAmount || 0),
@@ -676,7 +704,7 @@ export function MobileOutstationWizard({
       employeeHrId,
       requestDraftId: carEvidence.requestDraftId,
       requestId: carEvidence.requestId,
-      source: "live_camera",
+      source: carEvidence.source,
     };
   }, [carEvidence, employeeHrId]);
 
@@ -1023,6 +1051,7 @@ export function MobileOutstationWizard({
         imageDataUrl,
         requestDraftId: carEvidenceDraftId,
         requestId: carEvidence?.requestId ?? null,
+        source: "live_camera",
       });
       stopCarEvidenceCamera();
       setMessage("Live car photo captured. This photo is attached to this request.");
@@ -1037,6 +1066,90 @@ export function MobileOutstationWizard({
         typedError instanceof Error ? typedError.message : "Unable to capture the live car photo.",
       );
     } finally {
+      setIsCapturingCarEvidence(false);
+    }
+  }
+
+  /**
+   * The upload route to the SAME arrival-photo slot, for non-car trips only.
+   *
+   * It deliberately re-encodes the chosen file through the identical canvas path the camera
+   * uses, rather than shipping the raw file: the server accepts only a compressed JPEG under
+   * 2MB, and a phone photo is neither. Re-encoding also lets the same watermark be burned in,
+   * so an uploaded photo is self-describing in the image itself and an approver can see at a
+   * glance that it was uploaded rather than captured.
+   *
+   * The GPS written here is the TRIP's destination capture, not the photo's own — an uploaded
+   * file carries no trustworthy location. `source: "upload"` is what keeps that distinction
+   * legible downstream; nothing here may claim the photo was taken live.
+   */
+  async function uploadArrivalEvidence(file: File) {
+    setMessage(null);
+    if (!captured) {
+      setMessage("Tap the To field to capture your destination before adding the arrival photo.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setMessage("The arrival photo must be an image file.");
+      return;
+    }
+
+    setIsCapturingCarEvidence(true);
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error("Unable to read the selected image."));
+        element.src = objectUrl;
+      });
+
+      const canvas = document.createElement("canvas");
+      const canvasSize = getCompressedEvidenceCanvasSize(image);
+      canvas.width = canvasSize.width;
+      canvas.height = canvasSize.height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        throw new Error("Unable to process the selected image.");
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const capturedAt = new Date().toISOString();
+      const capturedLocationLabel = await resolveReadableLocation(
+        captured.capturedLatitude,
+        captured.capturedLongitude,
+      );
+
+      await drawEvidenceWatermark(context, canvas, {
+        capturedAt,
+        capturedLatitude: captured.capturedLatitude,
+        capturedLocationLabel,
+        capturedLongitude: captured.capturedLongitude,
+        employeeHrId,
+        // Says "uploaded" on the face of the image. An approver reading the photo alone must not
+        // mistake it for a live capture, and the burned-in panel is the one part of the evidence
+        // that survives being screenshotted out of the app.
+        label: "Arrival photo (uploaded)",
+        reference: `Draft: ${carEvidenceDraftId}`,
+      });
+
+      setCarEvidence({
+        capturedAt,
+        capturedLatitude: captured.capturedLatitude,
+        capturedLocationLabel,
+        capturedLongitude: captured.capturedLongitude,
+        imageDataUrl: canvas.toDataURL("image/jpeg", 0.74),
+        requestDraftId: carEvidenceDraftId,
+        requestId: carEvidence?.requestId ?? null,
+        source: "upload",
+      });
+      setMessage("Arrival photo uploaded. It is marked as uploaded, not captured live.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Unable to upload the arrival photo.",
+      );
+    } finally {
+      URL.revokeObjectURL(objectUrl);
       setIsCapturingCarEvidence(false);
     }
   }
@@ -1607,7 +1720,7 @@ export function MobileOutstationWizard({
             {arrivalPhotoBadge}
           </span>
           <h2 className="mt-2 text-base font-bold text-slate-800 sm:text-lg">
-            Capture one live photo from device camera
+            {arrivalPhotoHeading}
           </h2>
           <p className="mt-2 max-w-2xl text-[13px] leading-relaxed text-slate-500">
             {arrivalPhotoHint}
@@ -1639,13 +1752,37 @@ export function MobileOutstationWizard({
                   </>
                 )}
               </button>
+              {canUploadArrivalPhoto ? (
+                <>
+                  <span className="mt-3 mb-1 block text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    Or upload a photo
+                  </span>
+                  <label className="flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-orange-300 bg-orange-50/50 px-4 text-[13px] font-semibold text-orange-700 transition hover:bg-orange-50">
+                    <Upload className="h-4 w-4" />
+                    {carEvidence?.source === "upload" ? "Replace uploaded photo" : "Upload Photo"}
+                    <input
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isCapturingCarEvidence}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        // Cleared so re-picking the SAME file fires change again; without this a
+                        // failed upload cannot be retried with the identical photo.
+                        event.target.value = "";
+                        if (file) void uploadArrivalEvidence(file);
+                      }}
+                      type="file"
+                    />
+                  </label>
+                </>
+              ) : null}
             </label>
             <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                 Photo status
               </p>
               <p className="mt-2 text-sm font-semibold text-slate-900">
-                {hasCarEvidence ? "One live camera photo captured" : "No live camera photo captured"}
+                {arrivalPhotoStatusLabel}
               </p>
               {carEvidence ? (
                 <p className="mt-2 text-sm text-slate-700">

@@ -107,6 +107,33 @@ export function runOutstationArrivalPhotoCaptureReachableTests() {
     "on mobile the message must be pinned above the sticky action bar; in normal flow it rendered below the fixed footer and off-screen, which is why a real 400 looked like no response at all",
   );
 
+  // ── The upload route exists for non-car, and ONLY for non-car ───────────────
+  // Owner request 2026-08-05. The asymmetry is the point: an upload button on a car trip would
+  // recreate this file's original defect in mirror image — a control the employee can use that
+  // the server then refuses.
+  assert.ok(
+    wizard.includes('const canUploadArrivalPhoto = transportationType !== "car"'),
+    "the upload route must be offered to every non-car type and withheld from car, matching exactly what validateLiveArrivalEvidence accepts",
+  );
+  assert.ok(
+    wizard.includes("{canUploadArrivalPhoto ? (") && wizard.includes("void uploadArrivalEvidence(file)"),
+    "the upload control must actually render behind that flag and be wired to the handler",
+  );
+  assert.ok(
+    wizard.includes('source: "upload"') && wizard.includes('source: "live_camera"'),
+    "each route stamps its own source — an uploaded photo recorded as live_camera would launder weak evidence into strong",
+  );
+  assert.ok(
+    wizard.includes("source: carEvidence.source,"),
+    "the submitted metadata carries the source the capture actually had, rather than a hardcoded one",
+  );
+
+  // The offline replay is the online path's twin, and had regressed the same way.
+  assert.ok(
+    !wizard.includes('carEvidenceImageDataUrl: draft.transportationType === "car" ? draft.carEvidenceImageDataUrl : undefined'),
+    "the offline replay must send arrival evidence for every transport type — gated on car, a queued train draft could never sync",
+  );
+
   // ── The server persists the photo for every type ────────────────────────────
   assert.ok(
     !service.includes('const storedCarEvidenceMetadata = calculation.transportationType === "car" && input.carEvidenceMetadata'),
