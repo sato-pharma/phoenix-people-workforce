@@ -394,6 +394,10 @@ export const accessRegistry = [
   // gate is a Super-Admin identity check inside acknowledgeDirectOrderPharmacy — an approver
   // holds direct_orders:approve but must NOT be able to self-clear an unverified pharmacy.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/:id/acknowledge", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // The counterpart to acknowledge: record that a pharmacy is FALSE. `read` matches its sibling and
+  // is not the real gate — rejectDirectOrderPharmacy requires Super Admin or the system context,
+  // and refuses without a written reason.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacies/:id/reject", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["POST"], pattern: "/api/direct-orders/report/export", permission: { resource: "direct_orders", action: "export" }, guard: "domain-helper", csrfExemptReason: "read-only report export; request body carries no mutation" }),
   // Minting and revoking the live links above. Gated on `export` — publishing the report outside
   // the login wall is the export permission's strongest form, not a lesser read.

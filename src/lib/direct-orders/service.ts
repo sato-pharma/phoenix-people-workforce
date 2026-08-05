@@ -52,6 +52,7 @@ import { resolveAreaRep, resolveAreaRepsForLineAreas, areaRepKey, type AreaRepAs
 import {
   DIRECT_ORDER_REQUESTER_ROLES,
   isDirectOrderRequesterRole,
+  normalizePharmacyVerificationStatus,
   type DirectOrderApprovalDetail,
   type DirectOrderAreaRep,
   type DirectOrderPharmacyGeo,
@@ -409,7 +410,7 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     pharmacyAddress: row.pharmacy_address ? String(row.pharmacy_address) : null,
     distributorCodes: [],
     geoVarianceResolved: row.geo_variance_resolved === true,
-    verificationStatus: String(row.verification_status ?? "verified") === "pending_review" ? "pending_review" : "verified",
+    verificationStatus: normalizePharmacyVerificationStatus(row.verification_status),
     entrySource: String(row.entry_source ?? "catalogue") === "manual" ? "manual" : "catalogue",
     verifiedByHrId: row.verified_by_hr_id ? String(row.verified_by_hr_id) : null,
     verifiedAt: row.verified_at ? String(row.verified_at) : null,
@@ -725,6 +726,86 @@ export async function acknowledgeDirectOrderPharmacy(
 }
 
 /**
+ * Mark a pharmacy REJECTED — examined and found not to be real.
+ *
+ * A separate, deliberate act, and specifically NOT a consequence of rejecting a validation.
+ * `decideDirectOrderPharmacyValidation("reject")` says "this evidence does not convince me" and
+ * deliberately leaves the door open for the rep to try again; that comment is in the code and the
+ * behaviour is correct. This says something much stronger and final: the pharmacy does not exist.
+ *
+ * Until 2026-08-05 there was no way to say it. Ten pharmacies the owner ruled false could only be
+ * recorded as `pending_review` — "awaiting a look" — because the schema had no other word, and the
+ * work had to be done in raw SQL against production.
+ *
+ * Rejecting also refuses every order still open on the pharmacy. Leaving them behind would strand
+ * orders on a pharmacy nobody can ever confirm: `held` has no exit but the 14-day clock once
+ * validation is impossible, and `pending_approval` would keep asking approvers to judge an order
+ * whose customer has already been ruled fictional.
+ */
+export async function rejectDirectOrderPharmacy(
+  access: AccessContext,
+  input: { pharmacyId: string; reason: string },
+): Promise<{ pharmacyId: string; ordersRejected: number }> {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: only a System Admin can reject a pharmacy as false.");
+  }
+  const reason = input.reason?.trim();
+  if (!reason) badRequest("Say why this pharmacy is being rejected — the reason is the record.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: before } = await supabase
+    .from("direct_order_pharmacies")
+    .select("id, pharmacy_name, phoenix_pharmacy_code, verification_status, active")
+    .eq("id", input.pharmacyId)
+    .maybeSingle();
+  if (!before) badRequest("Pharmacy not found.");
+  const previous = String((before as { verification_status?: string }).verification_status ?? "");
+  if (previous === "rejected") badRequest("This pharmacy is already rejected.");
+
+  // Deactivating is what actually removes it from the picker, the directory search and the
+  // probation sweep — twelve query sites filter on `active` and none filter on verification_status.
+  // A rejected-but-active row would be a refusal the rest of the module ignores, so the database
+  // carries a CHECK constraint enforcing the pair; this write simply honours it.
+  const { error: updateError } = await supabase
+    .from("direct_order_pharmacies")
+    .update({ verification_status: "rejected", active: false, updated_at: new Date().toISOString() })
+    .eq("id", input.pharmacyId);
+  if (updateError) throw updateError;
+
+  const { data: openOrders, error: ordersError } = await supabase
+    .from("direct_order_requests")
+    .update({ status: "rejected" })
+    .eq("pharmacy_id", input.pharmacyId)
+    .in("status", ["held", "pending_approval", "returned", "draft", "approved"])
+    .select("id");
+  if (ordersError) throw ordersError;
+  const affected = (openOrders ?? []) as Array<{ id: string }>;
+
+  for (const order of affected) {
+    await insertEvent({
+      requestId: order.id,
+      actorHrId: access.hrId,
+      eventType: "rejected",
+      message: `Pharmacy rejected as false: ${reason}`,
+    });
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    oldValues: { verificationStatus: previous, active: true },
+    newValues: { verificationStatus: "rejected", active: false, ordersRejected: affected.length },
+    summary:
+      `Direct-order pharmacy ${String((before as { phoenix_pharmacy_code?: string }).phoenix_pharmacy_code ?? "")} ` +
+      `rejected as FALSE by ${access.hrId ?? "unknown"} — ${reason}. ${affected.length} order(s) refused with it.`,
+  });
+
+  pingDirectOrderSheet("pharmacy_rejected");
+  return { pharmacyId: input.pharmacyId, ordersRejected: affected.length };
+}
+
+/**
  * The pharmacy write itself, with NO role check of its own.
  *
  * Two callers, authorized two different ways, which is exactly why the check cannot live in here:
@@ -746,6 +827,15 @@ async function markDirectOrderPharmacyVerified(
     .eq("id", input.pharmacyId)
     .maybeSingle();
   if (!before) badRequest("Pharmacy not found.");
+
+  // A pharmacy that was examined and found false cannot be confirmed back into existence. Without
+  // this, acknowledging one would flip it to `verified` AND revive every order parked on it —
+  // undoing a refusal in a single click, from a screen whose button says only "confirm".
+  if (String((before as { verification_status?: string }).verification_status ?? "") === "rejected") {
+    badRequest(
+      "This pharmacy was rejected as false and cannot be confirmed. If that decision was wrong, it has to be reversed deliberately, not by confirming.",
+    );
+  }
 
   const { error } = await supabase
     .from("direct_order_pharmacies")
