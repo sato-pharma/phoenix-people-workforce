@@ -15,6 +15,11 @@ export type DirectOrderWorkflowActionKey =
   | "revive_held"
   | "expire_held"
   | "cancel_held"
+  // The two doors out of the held lane. Both were DECLARED in the registry from the start and
+  // neither could be gated, because this union did not list them — the type was quietly the reason
+  // the module's governance layer did not cover its own most important flow (audit F2).
+  | "request_pharmacy_validation"
+  | "decide_pharmacy_validation"
   | "approve_intermediate"
   | "approve_final"
   | "reject"

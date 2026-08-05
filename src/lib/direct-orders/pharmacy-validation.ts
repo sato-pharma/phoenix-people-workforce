@@ -3,6 +3,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { forbiddenError, notFoundError, validationError } from "@/lib/http/api-errors";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { acknowledgeDirectOrderPharmacy } from "@/lib/direct-orders/service";
+import { assertDirectOrderWorkflowTransition } from "@/lib/direct-orders/workflow";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -193,11 +194,15 @@ export async function requestDirectOrderPharmacyValidation(
   // the requester (canCaptureDirectOrderValidation), but a hidden button is UX, not access control
   // — the check has to exist on this side of the wire too.
   const linkedRequestId = input.requestId ? String(input.requestId).trim() : "";
+  let linkedRequestStatus: string | null = null;
   if (linkedRequestId) {
     const supabaseForOwnership = getSupabaseAdmin();
     const { data: linked } = await supabaseForOwnership
       .from("direct_order_requests")
-      .select("id, requester_hr_id")
+      // `status` rides along on the query that was already being made. Every round trip here
+      // crosses the Atlantic (Railway sfo -> Supabase eu-central-1), so the registry gate below
+      // costs nothing rather than doubling the latency of filing evidence.
+      .select("id, requester_hr_id, status")
       .eq("id", linkedRequestId)
       .maybeSingle();
     if (!linked) throw notFoundError("That direct order was not found.");
@@ -205,7 +210,44 @@ export async function requestDirectOrderPharmacyValidation(
     if (!owner || owner !== canonicalHrIdKey(access.hrId ?? "")) {
       throw forbiddenError("You can only submit evidence for your own direct order.");
     }
+    linkedRequestStatus = String((linked as { status?: string }).status ?? "") || null;
+
+    // Said in words BEFORE the registry gate below, which would otherwise refuse this with the
+    // registry's own generic sentence — the same kind of text that reached a user this morning as
+    // "module is missing or inactive" and told them nothing they could act on.
+    //
+    // The client already hides the capture unless the order is held (canCaptureDirectOrderValidation),
+    // but a hidden button is UX, not access control: until now the SERVER accepted evidence against
+    // an order that had already been revived or had expired while the rep stood at the pharmacy.
+    if (linkedRequestStatus !== "held") {
+      badRequest(
+        `This order is no longer waiting on a pharmacy — it is ${linkedRequestStatus ?? "in an unknown state"}. ` +
+          "Reload it to see where it stands; evidence is only needed while an order is held.",
+      );
+    }
   }
+
+  // The registry gate (audit F2). Until now this action was DECLARED in the registry and invoked by
+  // nothing: the entire door out of the held lane sat outside the module's governance layer, which
+  // therefore claimed a coverage it did not have.
+  //
+  // It refuses no one who could legitimately be here. `direct_orders:create` above admits Medical
+  // Rep and Financial Advisor; the registry lists only the five requester roles plus Super Admin —
+  // and since DIRECT_ORDER_REQUESTER_ROLES is exactly those five, and only the REQUESTER may
+  // capture evidence, neither of those two can ever be the person filing. The coarse permission was
+  // simply wider than the truth.
+  //
+  // The row's REAL status, never a literal (audit F6): a held order that was revived or expired
+  // while the rep stood in front of the pharmacy must be refused here, not accepted against a
+  // constant that says "held" because the code assumed so.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "request_pharmacy_validation",
+    expectedNextStatus: "held",
+    // No linked order means there is no status to read. The registry's `from: [held]` describes an
+    // order, so this branch can only be checked on role — which is the half F2 was actually about.
+    status: linkedRequestStatus ?? "held",
+  });
 
   const { bytes } = parseDirectOrderEvidencePhotoDataUrl(input.photoDataUrl);
 
@@ -444,6 +486,29 @@ export async function decideDirectOrderPharmacyValidation(
   if (String((row as { status?: string }).status ?? "") !== "pending") {
     badRequest("This validation has already been decided.");
   }
+
+  // The registry gate (audit F2). `assertValidationDeskAccess` above already restricts this to a
+  // System Admin and the registry lists exactly "Super Admin", so this adds no new refusal today.
+  // It is here because the registry is the module's declared governance layer, and a door out of
+  // the held lane that no registry action guards is coverage the registry claims but cannot honour.
+  // If the desk rule is ever loosened, this stops the two drifting apart silently.
+  //
+  // Deliberately gated on ROLE and not on the linked order's status, unlike the request side.
+  // Passing the order's real status here was written first and then removed, because it introduces
+  // a bug: approving one validation revives every held order of that pharmacy, so a SECOND pending
+  // validation for the same pharmacy would find its linked order already `pending_approval` and be
+  // refused — blocking a decision the admin still legitimately has to make (if only to reject it).
+  //
+  // The real precondition for deciding is the VALIDATION being `pending`, which is checked above.
+  // The registry's `from: [held]` describes where the orders sit in the normal case, not a
+  // condition this action may enforce. Said plainly rather than dressed up as an F6-style check.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "decide_pharmacy_validation",
+    expectedNextStatus: "held",
+    status: "held",
+  });
+
   const pharmacyId = String((row as { pharmacy_id: string }).pharmacy_id);
   const notes = input.notes?.trim() || null;
   const now = new Date().toISOString();
