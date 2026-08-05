@@ -58,9 +58,11 @@ function scopeLabel(filters: CustomerDirectoryFilters) {
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    if (access.role !== "Super Admin" && access.scope !== "system") {
+    // Mirrors the page gate (app/(admin)/sales/customer-directory/page.tsx) -- Super Admin and
+    // SFE Manager both reach the workspace, so both must be able to export what it shows them.
+    if (access.role !== "Super Admin" && access.role !== "SFE Manager" && access.scope !== "system") {
       return NextResponse.json(
-        { success: false, error: "Forbidden: Customer Directory export is restricted to the admin account." },
+        { success: false, error: "Forbidden: Customer Directory export is restricted to Super Admin and SFE Manager." },
         { status: 403 },
       );
     }
