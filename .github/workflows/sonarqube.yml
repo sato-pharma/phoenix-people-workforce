@@ -7,24 +7,33 @@ name: SonarQube Cloud
 #
 # Setup docs: https://docs.sonarsource.com/sonarqube-cloud/analyzing-source-code/ci-based-analysis/github-actions-for-sonarcloud
 #
-# One-time manual step required in the SonarQube Cloud UI: this project was
-# imported with "Automatic Analysis" on (its Analysis Method page URL contains
-# "AutoScan"), which is mutually exclusive with the CI-based analysis this
-# workflow performs - running both raises "You are running CI analysis while
-# Automatic Analysis is enabled." Turn Automatic Analysis off under the
-# project's Administration -> Analysis Method before relying on this workflow.
+# Deliberately PR-only, no push-to-main trigger. A push-to-main run does a full
+# whole-codebase baseline scan (not a diff), and on this org's free SonarQube
+# Cloud plan that consistently fails server-side after upload - confirmed
+# reproducible twice on 2026-08-05 ("CE Task finished abnormally with status:
+# FAILED"), most likely the plan's lines-of-code cap. PR analysis stays scoped
+# to the diff and is unaffected - that's the actual value (gating incoming
+# changes), so there's no point re-running a scan on every main push that is
+# guaranteed to fail until/unless the plan changes. Re-add
+# `push: {branches: [main]}` under `on:` if the org ever upgrades off the free
+# plan.
+#
+# Separately: this project was imported with SonarQube Cloud's "Automatic
+# Analysis" on (its Analysis Method page URL contained "AutoScan" at setup
+# time), which is mutually exclusive with CI-based analysis and raises "You are
+# running CI analysis while Automatic Analysis is enabled" if both run. Confirm
+# it's off under the project's Administration -> Analysis Method if issues
+# other than the one above show up.
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
-# PR pushes: cancel the superseded run for the same ref. Pushes to main: keyed by
-# commit so two merges landing close together don't cancel each other's analysis.
+# Cancel a PR's superseded run when it's pushed again - a fixup shouldn't pay
+# for analysis on the commit it just replaced. workflow_dispatch runs (keyed by
+# commit) are left to finish since there's no "superseding" push to race.
 concurrency:
   group: sonarqube-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
