@@ -13,6 +13,7 @@ import {
 import {
   allocateDirectToOperationalRegions,
   applyOperationalRegions,
+  usesOrganogramRegions,
   loadDirectSubmitters,
   loadLineOperationalRegions,
   loadRegionBySubmitter,
@@ -4077,14 +4078,18 @@ export async function loadMonthlyClosingParts(input?: {
   // Without a line or a validated month there is nothing to aggregate — still return the
   // area skeleton + product columns so the UI renders an empty (zeroed) matrix cleanly.
   if (!selectedLine || !selectedPeriod) {
+    const skeletonLineCode = resolveTargetLineCode(selectedLine);
     const [areas, products, operationalRegions] = await Promise.all([
       listActiveSalesAreas(),
       selectedLine ? listLineProductsForClosing(selectedLine) : Promise.resolve<SalesProductReference[]>([]),
-      loadLineOperationalRegions(resolveTargetLineCode(selectedLine)),
+      // Only fetched for a line that actually groups by the organogram — see the gate's own note.
+      usesOrganogramRegions(skeletonLineCode)
+        ? loadLineOperationalRegions(skeletonLineCode)
+        : Promise.resolve(null),
     ]);
     const skeleton = buildMonthlyClosingMatrix({
-      // Even the empty skeleton groups by the organogram, so the region filter offers the same
-      // regions before and after a month is picked.
+      // The empty skeleton groups exactly as the loaded month will, so the region filter offers the
+      // same regions before and after a month is picked.
       areas: applyOperationalRegions(areas, operationalRegions),
       availableLines,
       availablePeriods,
@@ -4113,9 +4118,15 @@ export async function loadMonthlyClosingParts(input?: {
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
-    // Which DM territory owns each area on THIS line. Null (Head Office, or an org-chart outage)
-    // keeps the geographic grouping the matrix has always used.
-    loadLineOperationalRegions(targetLineCode),
+    // Which DM territory owns each area on THIS line — fetched ONLY for a line whose closing
+    // groups by the organogram (Anti Infective's UE-1 / UE-2 districts). Null for every other line,
+    // which keeps the geographic grouping the owner reads those regions as. Null is also the right
+    // answer for Head Office and for an org-chart outage: a closing must never fail to render, and
+    // it must never quietly re-home an area. See CLOSING_ORGANOGRAM_REGION_LINES for the numbers
+    // this gate is worth.
+    usesOrganogramRegions(targetLineCode)
+      ? loadLineOperationalRegions(targetLineCode)
+      : Promise.resolve(null),
     // Who booked each Direct sale, and which territory that manager runs — so a Direct row tagged
     // with a region the line has split is credited to its real owner rather than estimated.
     loadDirectSubmitters(selectedLine, selectedPeriod),
