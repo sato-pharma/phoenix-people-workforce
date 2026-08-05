@@ -526,6 +526,7 @@ import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotatio
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrderCancelHeldTests } from "./direct-orders-cancel-held.test.ts";
 import { runDirectOrderInvoicePrefillTests } from "./direct-orders-invoice-prefill.test.ts";
+import { runDirectOrderValidationRegistryGateTests } from "./direct-orders-validation-registry-gate.test.ts";
 import { runDirectOrdersHeldLaneTests } from "./direct-orders-held-lane.test.ts";
 import { runDirectOrdersPharmacyValidationTests } from "./direct-orders-pharmacy-validation.test.ts";
 import { runPayrollResignationCandidateVisibilityTests } from "./payroll-resignation-candidate-visibility.test.ts";
@@ -1226,6 +1227,7 @@ await runTest("direct orders rotation confirmation (evidence of use, never the r
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders invoice prefill (an unconfirmed code prefills nothing, unmatched lines are named not dropped, the reader is never announced, mounted on BOTH forms)", runDirectOrderInvoicePrefillTests);
+await runTest("direct orders validation registry gate (both declared actions are actually invoked, request passes the row's real status, decide is NOT coupled to it)", runDirectOrderValidationRegistryGateTests);
 await runTest("direct orders held lane (unknown pharmacy submits HELD outside the chain; validation, the 14-day clock and a requester withdrawal are the doors out; one To/Cc email per event)", runDirectOrdersHeldLaneTests);
 await runTest("direct orders pharmacy validation (live-capture evidence only, server-side GPS verdict, probation can fail an approved pharmacy, suggestions are reproducible evidence)", runDirectOrdersPharmacyValidationTests);
 await runTest("analytics confidential product_code normalize (sos_fact/weekly_fact/dim_products case-insensitive exclusion)", runAnalyticsConfidentialProductCodeNormalizeTests);

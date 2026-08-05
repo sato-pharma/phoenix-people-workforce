@@ -69,7 +69,7 @@ loader already refuses to load such a module, so the resolver check is redundant
 but it would have turned this into a clear error at the transition instead of a module that quietly
 ceased to exist.
 
-### F2 — The pharmacy-validation flow bypasses the registry entirely (medium)
+### F2 — The pharmacy-validation flow bypasses the registry entirely (medium — FIXED 2026-08-05)
 
 The registry declares two actions that **no code path invokes**:
 
@@ -86,8 +86,32 @@ decide side; `assertPermission` plus the requester-ownership check on the reques
 registry is the module's governance layer, and the entire door out of the held lane sits outside it.
 The registry currently claims coverage it does not have.
 
-**Fix:** add both keys to `DirectOrderWorkflowActionKey` and call the gate in both services, so the
-coarse role/status check applies to the validation flow like every other transition.
+**Fixed.** Both keys added to `DirectOrderWorkflowActionKey` and the gate called in both services.
+
+**It locks nobody out, and that was checked before the change, not assumed.**
+`DIRECT_ORDER_REQUESTER_ROLES` is exactly the five roles the registry lists, only the REQUESTER may
+capture evidence (`canCaptureDirectOrderValidation`), and production held **zero** validations. So
+the two roles the gate newly refuses — Medical Rep and Financial Advisor, admitted by
+`direct_orders:create` — can never legitimately be the person filing. The coarse permission was
+simply wider than the truth.
+
+**The two sides are gated differently, on purpose.**
+
+- `request_pharmacy_validation` receives the linked order's **real status**, carried on the
+  ownership query that was already being made, so it costs no extra Atlantic round trip.
+- `decide_pharmacy_validation` is gated on **role only**. Passing the linked order's status here was
+  written first and then removed: approving one validation revives *every* held order of that
+  pharmacy, so a second pending validation for the same pharmacy would find its order already
+  `pending_approval` and become permanently undecidable — the admin could not even reject it. The
+  real precondition for deciding is the VALIDATION being `pending`, which is checked separately. A
+  regression test asserts this coupling stays out, because re-adding it looks like a consistency
+  improvement.
+
+**A real hole closed on the way.** The server accepted validation evidence for an order that had
+already been revived or expired. The client hid the capture, but a hidden button is UX, not access
+control. It now refuses in words a rep can act on, rather than leaving the registry to answer with
+a sentence nobody can use — the same failure mode that surfaced as "module is missing or inactive"
+in F1.
 
 ### F3 — There is no way to retire a held duplicate (medium, operationally real)
 
