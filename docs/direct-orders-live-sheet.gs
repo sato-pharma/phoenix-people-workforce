@@ -178,7 +178,15 @@ function refreshDirectOrders() {
   buildByStatusSheet(ss, bundle.byStatus, created);
   buildCoverSheet(ss, bundle.summary, bundle.orders.length - 1, stamp, created);
 
-  if (created.length) orderTabs(ss, ["Cover", "Direct Orders", "By Status"]);
+  // Last, and inside its own try: the backup is a safety net, so a fault in it must never take
+  // down the refresh that feeds the live tabs.
+  try {
+    appendBackup(ss, bundle.orders, stamp, created);
+  } catch (err) {
+    console.error("Backup append failed (live tabs are unaffected): " + err);
+  }
+
+  if (created.length) orderTabs(ss, ["Cover", "Direct Orders", "By Status", "Backup"]);
 }
 
 // ── Feed parsing ────────────────────────────────────────────────────────────────
@@ -540,6 +548,106 @@ function buildCoverSheet(ss, summary, rowCount, stamp, created) {
       }
     }
   }
+}
+
+// ── Backup ──────────────────────────────────────────────────────────────────────
+
+/**
+ * An append-only archive of every order state this sheet has ever seen.
+ *
+ * The three live tabs are a MIRROR: they show what the feed says right now, so anything the feed
+ * stops sending disappears from them. That is correct for a live report and useless as a record.
+ * This tab is the opposite — nothing is ever cleared, so it survives:
+ *
+ *   · an order deleted, reversed or expired upstream       (its last known state stays here)
+ *   · someone editing or deleting rows by hand
+ *   · the share link being revoked or the feed going down  (the last good copy stays here)
+ *   · a bad refresh
+ *
+ * Rows are appended ONLY when an order is new or its values actually changed, so a sheet that sits
+ * idle for a week adds nothing. Comparison is by a cheap hash held in its own column, so the cost
+ * does not grow with the archive: only two columns are read back each cycle, never all 39.
+ */
+function appendBackup(ss, grid, stamp, created) {
+  var header = grid[0];
+  var body = grid.slice(1);
+  if (!body.length) return;
+
+  var sheet = getOrCreateSheet(ss, "Backup", created);
+  var META = ["Captured (Cairo)", "Change", "Request ID", "Row hash"];
+
+  // Build the header once, on first use.
+  if (sheet.getLastRow() < 1) {
+    var head = META.concat(header);
+    sheet.getRange(1, 1, 1, head.length)
+      .setValues([head])
+      .setBackground(BLACK)
+      .setFontColor(WHITE)
+      .setFontWeight("bold")
+      .setFontFamily(FONT)
+      .setFontSize(10.5);
+    sheet.setFrozenRows(1);
+    sheet.setColumnWidth(1, 150);
+    sheet.setColumnWidth(2, 90);
+    sheet.setColumnWidth(3, 300);
+    sheet.setColumnWidth(4, 110);
+  }
+
+  // Read back only Request ID + hash. Keeping this to two columns is what stops the archive
+  // slowing the 60-second cycle as it grows.
+  var lastRow = sheet.getLastRow();
+  var seen = {};
+  if (lastRow > 1) {
+    var known = sheet.getRange(2, 3, lastRow - 1, 2).getValues();
+    for (var k = 0; k < known.length; k++) {
+      // Later rows overwrite earlier ones, so this ends up holding the MOST RECENT hash per order.
+      if (known[k][0]) seen[String(known[k][0])] = String(known[k][1]);
+    }
+  }
+
+  var idIndex = findCol(header, ["Request ID"]);
+  var pending = [];
+  for (var r = 0; r < body.length; r++) {
+    var row = body[r];
+    var id = idIndex === -1 ? "" : String(row[idIndex] || "");
+    if (!id) continue;
+    var hash = hashRow(row);
+    var previous = seen[id];
+    if (previous === hash) continue;                      // unchanged — nothing to record
+    pending.push([stamp, previous === undefined ? "new" : "updated", id, hash].concat(row));
+  }
+  if (!pending.length) return;
+
+  var width = META.length + header.length;
+  // Normalise width: a short row would otherwise shift every later column.
+  for (var p = 0; p < pending.length; p++) {
+    while (pending[p].length < width) pending[p].push("");
+    pending[p] = pending[p].slice(0, width);
+  }
+
+  sheet.getRange(sheet.getLastRow() + 1, 1, pending.length, width)
+    .setValues(pending)
+    .setFontFamily(FONT)
+    .setFontSize(10)
+    .setFontColor(SLATE);
+
+  console.log("Backup: appended " + pending.length + " row(s).");
+}
+
+/**
+ * A short, stable fingerprint of a row.
+ *
+ * Only used to answer "did this change since last time", so collision resistance is irrelevant and
+ * a fast checksum beats a cryptographic digest. The unit separator cannot appear in the feed's CSV
+ * values, so adjacent fields can never blur into one another and hide a change.
+ */
+function hashRow(row) {
+  var text = row.join("\u001f");
+  var h = 0;
+  for (var i = 0; i < text.length; i++) {
+    h = ((h << 5) - h + text.charCodeAt(i)) | 0;
+  }
+  return String(h);
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────────────────
