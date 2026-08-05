@@ -1,3 +1,4 @@
+import { systemClock, type ReconciliationClock, type ReconciliationTimer } from "@/lib/reconciliation/clock";
 import { classifyReconciliationOutcome, shouldAlert, summarizeReconciliationResults } from "@/lib/reconciliation/compare";
 import { mapWithConcurrency } from "@/lib/reconciliation/concurrency";
 import type {
@@ -41,15 +42,21 @@ export type RunReconciliationOptions = {
   concurrency?: number;
   timeoutMs?: number;
   runBudgetMs?: number;
+  /**
+   * Both ceilings below are rules about elapsed time, and a test that proves them against real
+   * timers is racing the machine rather than asserting the rule. Overriding this lets the test
+   * advance time by hand; production leaves it alone and gets the system clock.
+   */
+  clock?: ReconciliationClock;
 };
 
 /** Every time the owner reads is Cairo local time — a raw UTC stamp makes him do the arithmetic. */
-function cairoNowLabel(): string {
+function cairoNowLabel(nowMs: number): string {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Africa/Cairo",
-  }).format(new Date());
+  }).format(new Date(nowMs));
 }
 
 function errorMessage(error: unknown): string {
@@ -69,8 +76,9 @@ async function runOne(
   check: ReconciliationCheck,
   timeoutMs: number,
   deadline: number,
+  clock: ReconciliationClock,
 ): Promise<ReconciliationCheckResult> {
-  const startedAt = Date.now();
+  const startedAt = clock.now();
   const base = {
     id: check.id,
     title: check.title,
@@ -98,15 +106,17 @@ async function runOne(
 
   try {
     const budget = Math.min(timeoutMs, remaining);
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let timer: ReconciliationTimer | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(`Check exceeded ${Math.round(budget / 1000)}s and was abandoned.`)), budget);
+      timer = clock.setTimeout(() => reject(new Error(`Check exceeded ${Math.round(budget / 1000)}s and was abandoned.`)), budget);
     });
     let outcome: ReconciliationOutcome;
     try {
       outcome = await Promise.race([check.run(), timeout]);
     } finally {
-      if (timer) clearTimeout(timer);
+      // Cancelling matters beyond tidiness: a timer left armed behind a check that already answered
+      // would reject a race nobody is listening to any more.
+      if (timer) timer.cancel();
     }
 
     return {
@@ -119,7 +129,7 @@ async function runOne(
         outcome.holds || check.expectation !== "known-open"
           ? outcome.detail
           : `${outcome.detail} — known open defect: ${check.openDefect ?? "documented on the check"}`,
-      durationMs: Date.now() - startedAt,
+      durationMs: clock.now() - startedAt,
       error: null,
     };
   } catch (error) {
@@ -130,7 +140,7 @@ async function runOne(
       left: null,
       right: null,
       detail: `This check could not be answered, so nothing about it is confirmed: ${errorMessage(error)}`,
-      durationMs: Date.now() - startedAt,
+      durationMs: clock.now() - startedAt,
       error: errorMessage(error),
     };
   }
@@ -146,15 +156,16 @@ export async function runReconciliationCheckList(
 ): Promise<ReconciliationReport> {
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   const timeoutMs = Math.max(1_000, options.timeoutMs ?? DEFAULT_CHECK_TIMEOUT_MS);
-  const startedAt = Date.now();
+  const clock = options.clock ?? systemClock;
+  const startedAt = clock.now();
   const deadline = startedAt + Math.max(1_000, options.runBudgetMs ?? DEFAULT_RUN_BUDGET_MS);
 
-  const results = await mapWithConcurrency(checks, concurrency, (check) => runOne(check, timeoutMs, deadline));
+  const results = await mapWithConcurrency(checks, concurrency, (check) => runOne(check, timeoutMs, deadline, clock));
 
   const counts = summarizeReconciliationResults(results);
   return {
-    generatedAt: cairoNowLabel(),
-    durationMs: Date.now() - startedAt,
+    generatedAt: cairoNowLabel(clock.now()),
+    durationMs: clock.now() - startedAt,
     counts,
     alerting: shouldAlert(counts),
     results,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { systemClock, type ReconciliationClock } from "../src/lib/reconciliation/clock.ts";
 import {
   classifyReconciliationOutcome,
   diffSets,
@@ -68,6 +69,80 @@ function result(overrides: Partial<ReconciliationCheckResult>): ReconciliationCh
     durationMs: 0,
     error: null,
     ...overrides,
+  };
+}
+
+type ManualClock = ReconciliationClock & {
+  /** Drives a run to completion, bringing its timers due one at a time. */
+  settle: (run: Promise<unknown>) => Promise<void>;
+};
+
+/**
+ * A clock the test moves by hand.
+ *
+ * The per-check ceiling and the run budget are both rules about elapsed time, and proving them
+ * against real timers races two different clocks: the runner sizes a timer against a `Date.now()`
+ * deadline, then the event loop fires it off its own monotonic clock. On 2026-08-04 a loaded
+ * machine won that race — the second check below started inside a budget the run had already spent
+ * and reported `holds` where the test demands `errored`.
+ *
+ * Here time only moves when `settle` moves it, so the assertions describe the rule rather than the
+ * machine's mood, and neither run costs the suite a real second.
+ */
+function createManualClock(startMs = Date.parse("2026-01-15T09:00:00Z")): ManualClock {
+  let currentMs = startMs;
+  let nextId = 0;
+  const pending = new Map<number, { dueAt: number; onDue: () => void }>();
+
+  /** One real macrotask turn — enough to flush every microtask the run has queued. */
+  const drain = () =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+  return {
+    now: () => currentMs,
+    setTimeout: (onDue, delayMs) => {
+      const id = nextId;
+      nextId += 1;
+      pending.set(id, { dueAt: currentMs + delayMs, onDue });
+      return {
+        cancel: () => {
+          pending.delete(id);
+        },
+      };
+    },
+    settle: async (run) => {
+      let finished = false;
+      const settled = run.then(
+        () => {
+          finished = true;
+        },
+        () => {
+          finished = true;
+        },
+      );
+
+      // A ceiling so a run that never converges ends with a sentence rather than stalling the suite.
+      for (let step = 0; step < 1_000; step += 1) {
+        await Promise.race([settled, drain()]);
+        if (finished) return;
+
+        let due: { id: number; dueAt: number; onDue: () => void } | null = null;
+        for (const [id, timer] of pending) {
+          if (due === null || timer.dueAt < due.dueAt) due = { id, dueAt: timer.dueAt, onDue: timer.onDue };
+        }
+        if (due === null) {
+          throw new Error("The run is still waiting and no timer is left to fire — nothing on this clock can release it.");
+        }
+
+        pending.delete(due.id);
+        currentMs = Math.max(currentMs, due.dueAt);
+        due.onDue();
+      }
+
+      throw new Error("The run did not settle within 1,000 timer steps.");
+    },
   };
 }
 
@@ -202,35 +277,91 @@ export async function runReconciliationHarnessTests() {
   assert.match(report.generatedAt, /\d{4}/, "the report is stamped in Cairo local time, never raw UTC");
 
   // ── A hung check is abandoned rather than taking the cron with it ────────────────────────────
-  const timedOut = await runReconciliationCheckList(
+  const timeoutClock = createManualClock();
+  const timedOutRun = runReconciliationCheckList(
     [
       check({ id: "hangs", run: () => new Promise<ReconciliationOutcome>(() => {}) }),
       check({ id: "fine", run: async () => outcome(true) }),
     ],
-    { timeoutMs: 1_000 },
+    { timeoutMs: 1_000, clock: timeoutClock },
   );
+  await timeoutClock.settle(timedOutRun);
+  const timedOut = await timedOutRun;
   assert.equal(timedOut.results[0].status, "errored", "a check that never settles must be recorded as unanswerable");
   assert.equal(timedOut.results[1].status, "holds", "and the checks behind it must still run");
+  assert.match(
+    timedOut.results[0].error ?? "",
+    /exceeded 1s and was abandoned/,
+    "the per-check ceiling is what ended this one, and the reader must be able to tell that from the whole run running out of time",
+  );
+  assert.equal(
+    timedOut.results[0].durationMs,
+    1_000,
+    "it is abandoned at its ceiling exactly, not at whatever the machine's timers happened to deliver",
+  );
 
   // ── The run has a budget of its own, below the route's maxDuration ───────────────────────────
-  const overBudget = await runReconciliationCheckList(
+  let neverReachedRuns = 0;
+  const budgetClock = createManualClock();
+  const overBudgetRun = runReconciliationCheckList(
     [
       check({ id: "eats-the-budget", run: () => new Promise<ReconciliationOutcome>(() => {}) }),
-      check({ id: "never-reached", run: async () => outcome(true) }),
+      check({
+        id: "never-reached",
+        run: async () => {
+          neverReachedRuns += 1;
+          return outcome(true);
+        },
+      }),
     ],
-    { concurrency: 1, timeoutMs: 60_000, runBudgetMs: 1_000 },
+    { concurrency: 1, timeoutMs: 60_000, runBudgetMs: 1_000, clock: budgetClock },
   );
+  await budgetClock.settle(overBudgetRun);
+  const overBudget = await overBudgetRun;
   assert.equal(overBudget.results[0].status, "errored", "the check that consumed the budget is still recorded");
   assert.equal(
     overBudget.results[1].status,
     "errored",
     "a check the run never reached must be reported as unanswered — without a run budget the request dies at maxDuration and the night produces no report at all",
   );
+  assert.equal(
+    neverReachedRuns,
+    0,
+    "and it must genuinely never have been started — a check that ran and was then relabelled would be throwing away an answer the run actually had",
+  );
   assert.equal(overBudget.results[1].holds, null, "a check that never ran must never report a boolean verdict");
   assert.equal(overBudget.alerting, true, "running out of time is an alert, never a silent pass");
-  assert.ok(
-    overBudget.durationMs < 30_000,
+  assert.equal(
+    overBudget.durationMs,
+    1_000,
     "the run must stop at its own budget rather than at the far larger per-check ceiling",
+  );
+  assert.match(
+    overBudget.generatedAt,
+    /15 Jan 2026/,
+    "the report is stamped from the same clock its budget is measured on, so a run and its own timestamp can never disagree",
+  );
+
+  // ── The seam's production side is the real clock ─────────────────────────────────────────────
+  // The two runs above assert the rules on a clock the test controls; these assert the clock the
+  // nightly cron actually runs on, so a broken default can never hide behind a passing manual one.
+  const beforeReading = Date.now();
+  const systemReading = systemClock.now();
+  assert.ok(
+    systemReading >= beforeReading && systemReading <= Date.now(),
+    "the production clock reads real wall time — the manual clock is a test seam and must never become the default",
+  );
+  let cancelledTimerFired = false;
+  systemClock.setTimeout(() => {
+    cancelledTimerFired = true;
+  }, 1).cancel();
+  await new Promise<void>((resolve) => {
+    systemClock.setTimeout(resolve, 20);
+  });
+  assert.equal(
+    cancelledTimerFired,
+    false,
+    "cancelling must really stop a timer — one left armed behind a check that already answered rejects a race nobody is listening to",
   );
 
   // ── Every check runs even when several fail ──────────────────────────────────────────────────
