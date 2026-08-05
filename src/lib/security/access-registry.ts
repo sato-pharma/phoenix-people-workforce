@@ -369,6 +369,7 @@ export const accessRegistry = [
   // The Held Desk (spec C3). Registry permission is only `read` because the real gate is the
   // Super-Admin identity check inside the service (same idiom as the acknowledge route above).
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/held", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/rep-counters", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   // Pharmacy Validation (spec A2). GET is the Super Admin desk and POST is a rep submitting
   // evidence, so the registry permission is the module's `create`/`read` while the REAL gate is
   // the identity check inside the service — same idiom as the acknowledge route.
