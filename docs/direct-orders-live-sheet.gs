@@ -22,8 +22,10 @@
  * SETUP (once)
  *   1. Extensions -> Apps Script
  *   2. Delete the placeholder code, paste this file, Save
- *   3. Choose `installTrigger` in the function dropdown, click Run
- *   4. Authorise when Google asks (it is asking about YOUR OWN script)
+ *   3. Project Settings -> Script Properties -> add FEED_TOKEN with the token Phoenix minted.
+ *      It is deliberately not in this file: see feedToken() below.
+ *   4. Choose `installTrigger` in the function dropdown, click Run
+ *   5. Authorise when Google asks (it is asking about YOUR OWN script)
  *   Refreshes every minute from then on, including while the sheet is closed.
  *
  * SECURITY
@@ -43,26 +45,32 @@
 var FEED_BASE = "https://phoenix-hr.satopharma.com/api/share/direct-orders/";
 
 /**
- * BOOTSTRAP ONLY — the token used until Phoenix hands over a rotated one.
+ * The feed token lives in a Script Property, and NOWHERE in this file.
  *
- * This file is committed to the repository, so anything written here is a permanent credential in
- * git history. That is why it is a bootstrap and not the real answer: the moment Phoenix rotates,
- * the live token lives in a Script Property (which is NOT committed anywhere) and this value is
- * revoked server-side, making the copy in git worthless.
+ * It used to ship here as a "bootstrap" value, on the reasoning that rotating would revoke it and
+ * make the committed copy worthless. Rotation did happen and the old token is revoked — but a dead
+ * credential in a file is still a credential in a file. It reads to the next person as a live one,
+ * it invites the next setup to paste a live one beside it, and git keeps whatever is written here
+ * for good. So the slot is gone rather than emptied.
  *
- * Rotation is automatic — see doPost's rotateToken branch. Nobody has to open this editor for it.
+ * Set it once per sheet: Project Settings -> Script Properties -> FEED_TOKEN.
+ * After that Phoenix rotates it automatically — see doPost's rotateToken branch. Nobody has to
+ * open this editor again.
  */
-var BOOTSTRAP_FEED_TOKEN = "pgn0W2b6jES7op9t7bChvrdzI95xoZbuygXb35Gu--w";
-
-/** The token in force right now: a rotated one if Phoenix has sent it, else the bootstrap. */
 function feedToken() {
-  var stored = PropertiesService.getScriptProperties().getProperty("FEED_TOKEN");
-  return stored || BOOTSTRAP_FEED_TOKEN;
+  return String(PropertiesService.getScriptProperties().getProperty("FEED_TOKEN") || "").trim();
 }
 
-/** Built per call, never cached — a rotation must take effect on the very next refresh. */
+/**
+ * Built per call, never cached — a rotation must take effect on the very next refresh.
+ *
+ * Returns "" when no token is configured. The caller treats that exactly like an unreachable feed:
+ * leave the sheet alone. Returning a URL with an empty token would fetch a 404 and look like a
+ * revoked link, sending whoever debugs it to the wrong place entirely.
+ */
 function feedUrl() {
-  return FEED_BASE + feedToken() + "/feed?bundle=1";
+  var token = feedToken();
+  return token ? FEED_BASE + token + "/feed?bundle=1" : "";
 }
 
 var TZ = "Africa/Cairo";
@@ -213,9 +221,16 @@ function onOpen() {
 
 /** The trigger target. Fetch, parse, then rebuild all three tabs. */
 function refreshDirectOrders() {
+  var url = feedUrl();
+  if (!url) {
+    // Say which of the two failures this is. "No token configured" and "the feed refused us" look
+    // identical from the sheet, and confusing them costs an hour.
+    console.error("No FEED_TOKEN script property is set — nothing to fetch. Project Settings -> Script Properties -> FEED_TOKEN.");
+    return; // keep whatever is on screen
+  }
   var response;
   try {
-    response = UrlFetchApp.fetch(feedUrl(), { muteHttpExceptions: true });
+    response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
   } catch (err) {
     console.error("Feed unreachable: " + err);
     return; // keep whatever is on screen
