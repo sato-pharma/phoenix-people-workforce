@@ -64,18 +64,18 @@ export function RepCountersTable({ data }: Props) {
       heldValue: acc.heldValue + r.heldValue,
       expired: acc.expired + r.expired,
       matchedExisting: acc.matchedExisting + r.matchedExisting,
-      refusedAsFalse: acc.refusedAsFalse + r.refusedAsFalse,
-      refusedAsFalseValue: acc.refusedAsFalseValue + r.refusedAsFalseValue,
-      falsePharmacies: acc.falsePharmacies + r.falsePharmacies,
+      ordersRejected: acc.ordersRejected + r.ordersRejected,
+      ordersRejectedValue: acc.ordersRejectedValue + r.ordersRejectedValue,
+      rejectedPharmacies: acc.rejectedPharmacies + r.rejectedPharmacies,
     }),
     {
       held: 0,
       heldValue: 0,
       expired: 0,
       matchedExisting: 0,
-      refusedAsFalse: 0,
-      refusedAsFalseValue: 0,
-      falsePharmacies: 0,
+      ordersRejected: 0,
+      ordersRejectedValue: 0,
+      rejectedPharmacies: 0,
     },
   );
 
@@ -87,7 +87,7 @@ export function RepCountersTable({ data }: Props) {
         </h3>
         <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
           {companyWide ? "Company-wide" : "Your team"} · {money(totals.heldValue)} held
-          {totals.refusedAsFalseValue > 0 ? ` · ${money(totals.refusedAsFalseValue)} refused as false` : ""}
+          {totals.ordersRejectedValue > 0 ? ` · ${money(totals.ordersRejectedValue)} on rejected pharmacies` : ""}
         </span>
       </header>
 
@@ -103,8 +103,8 @@ export function RepCountersTable({ data }: Props) {
               <th className="px-3 py-2">Expired</th>
               {/* The proven outcome, next to the pending ones. Before this existed, a module that
                   had been cleaned up read as a module where nothing had ever happened. */}
-              <th className="px-3 py-2">False pharmacies</th>
-              <th className="px-3 py-2">Refused as false</th>
+              <th className="px-3 py-2">Rejected pharmacies</th>
+              <th className="px-3 py-2">Orders rejected</th>
               <th className="px-3 py-2">Evidence sent</th>
               <th className="px-3 py-2">Existed after all</th>
               <th className="px-3 py-2">Refused a match</th>
@@ -123,15 +123,15 @@ export function RepCountersTable({ data }: Props) {
                 <td className="px-3 py-2">{count(row.held)}</td>
                 <td className="px-3 py-2 font-bold text-slate-900">{money(row.heldValue)}</td>
                 <td className="px-3 py-2">{count(row.expired)}</td>
-                <td className="px-3 py-2">{count(row.falsePharmacies, "signal")}</td>
+                <td className="px-3 py-2">{count(row.rejectedPharmacies, "signal")}</td>
                 <td className="whitespace-nowrap px-3 py-2">
-                  {count(row.refusedAsFalse, "signal")}
+                  {count(row.ordersRejected, "signal")}
                   {/* An explicit separator, not just a margin. `ml-1` is 4px, and between an amber
                       count badge and grey money that reads as one number — "2266,112 EGP" — which
                       is precisely the wrong impression for the column that names what somebody did.
                       The mobile card already used "·"; this makes the two agree. */}
-                  {row.refusedAsFalseValue > 0 ? (
-                    <span className="ml-2 text-[11px] text-slate-500">· {money(row.refusedAsFalseValue)}</span>
+                  {row.ordersRejectedValue > 0 ? (
+                    <span className="ml-2 text-[11px] text-slate-500">· {money(row.ordersRejectedValue)}</span>
                   ) : null}
                 </td>
                 <td className="px-3 py-2">{count(row.validationsSubmitted)}</td>
@@ -148,11 +148,11 @@ export function RepCountersTable({ data }: Props) {
               <td className="px-3 py-2">{totals.held}</td>
               <td className="px-3 py-2">{money(totals.heldValue)}</td>
               <td className="px-3 py-2">{totals.expired}</td>
-              <td className="px-3 py-2">{totals.falsePharmacies}</td>
+              <td className="px-3 py-2">{totals.rejectedPharmacies}</td>
               <td className="whitespace-nowrap px-3 py-2">
-                {totals.refusedAsFalse}
-                {totals.refusedAsFalseValue > 0 ? (
-                  <span className="ml-2 font-bold">· {money(totals.refusedAsFalseValue)}</span>
+                {totals.ordersRejected}
+                {totals.ordersRejectedValue > 0 ? (
+                  <span className="ml-2 font-bold">· {money(totals.ordersRejectedValue)}</span>
                 ) : null}
               </td>
               <td className="px-3 py-2" />
@@ -176,14 +176,14 @@ export function RepCountersTable({ data }: Props) {
             <p className="mt-2 text-sm font-bold text-slate-900">
               {row.held} held · {money(row.heldValue)}
             </p>
-            {/* Rose, not amber: refused-as-false is a proven outcome, not a signal to look into.
+            {/* Rose, not amber: a rejection is a settled outcome, not a signal to look into.
                 Given its own line rather than a chip, because on a cleaned-up module it is the only
                 thing on the card with a number on it. */}
-            {row.refusedAsFalse > 0 ? (
+            {row.ordersRejected > 0 ? (
               <p className="mt-1 bg-rose-100 px-1.5 py-0.5 text-[12px] font-black text-rose-900">
-                {row.refusedAsFalse} refused as false · {money(row.refusedAsFalseValue)}
-                {row.falsePharmacies > 0
-                  ? ` · ${row.falsePharmacies} false ${row.falsePharmacies === 1 ? "pharmacy" : "pharmacies"}`
+                {row.ordersRejected} rejected · {money(row.ordersRejectedValue)}
+                {row.rejectedPharmacies > 0
+                  ? ` · ${row.rejectedPharmacies} rejected ${row.rejectedPharmacies === 1 ? "pharmacy" : "pharmacies"}`
                   : ""}
               </p>
             ) : null}

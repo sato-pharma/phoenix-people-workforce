@@ -36,22 +36,22 @@ export type DirectOrderRepCounters = {
   expired: number;
   expiredValue: number;
   /**
-   * Orders refused because the PHARMACY they stood on was ruled false.
+   * Orders refused because the PHARMACY behind them was rejected.
    *
    * The strongest signal in this table, and it was invisible until 2026-08-05: the query fetched
-   * only `held` and `expired`, so the moment twelve false pharmacies were rejected and their
+   * only `held` and `expired`, so the moment twelve pharmacies were rejected and their
    * fourteen orders refused, every counter went to zero and the page reported that there was
-   * nothing to count. The cleanest possible outcome — the fraud found and closed — erased the
+   * nothing to count. The cleanest possible outcome — the matter reviewed and closed — erased the
    * record of it.
    *
    * Counts ONLY orders whose pharmacy carries `verification_status = 'rejected'`. An ordinary
-   * rejected order is an approver declining a deal on a real pharmacy and says nothing about the
-   * requester; conflating the two would accuse people of something they did not do.
+   * rejected order is an approver declining a deal on a confirmed pharmacy and says nothing about
+   * the requester; conflating the two would attribute something to people that did not happen.
    */
-  refusedAsFalse: number;
-  refusedAsFalseValue: number;
-  /** Distinct false pharmacies they created — four small ones is a different story from one large. */
-  falsePharmacies: number;
+  ordersRejected: number;
+  ordersRejectedValue: number;
+  /** Distinct rejected pharmacies behind their orders — four small ones reads differently from one large. */
+  rejectedPharmacies: number;
   /** Validation evidence submitted: the rep did use the door. */
   validationsSubmitted: number;
   /** Claimed new, and the Super Admin found it already existed. THE deterrence signal. */
@@ -152,9 +152,9 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       heldValue: 0,
       expired: 0,
       expiredValue: 0,
-      refusedAsFalse: 0,
-      refusedAsFalseValue: 0,
-      falsePharmacies: 0,
+      ordersRejected: 0,
+      ordersRejectedValue: 0,
+      rejectedPharmacies: 0,
       validationsSubmitted: 0,
       matchedExisting: 0,
       validationsRejected: 0,
@@ -165,11 +165,11 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
     return fresh;
   };
 
-  const falsePharmacyIds = new Set(
+  const rejectedPharmacyIds = new Set(
     ((rejectedPharmacyRows ?? []) as Row[]).map((row) => String(row.id ?? "")).filter(Boolean),
   );
-  /** Distinct false pharmacies per rep — counted as a set so two orders on one do not read as two. */
-  const falsePharmaciesByRep = new Map<string, Set<string>>();
+  /** Distinct rejected pharmacies per rep — a set, so two orders on one do not read as two. */
+  const rejectedPharmaciesByRep = new Map<string, Set<string>>();
 
   for (const row of (requestRows ?? []) as Row[]) {
     const hrId = String(row.requester_hr_id ?? "");
@@ -180,7 +180,7 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
     // Decided BEFORE ensure(), on purpose. An ordinary rejected order — an approver declining a
     // deal on a perfectly real pharmacy — must not create a row here at all, or every requester who
     // has ever had an order turned down would appear in a table about phantom pharmacies.
-    if (status === "rejected" && !falsePharmacyIds.has(pharmacyId)) continue;
+    if (status === "rejected" && !rejectedPharmacyIds.has(pharmacyId)) continue;
 
     const rep = ensure(hrId, String(row.requester_role ?? ""));
     const value = num(row.sales_value);
@@ -193,18 +193,18 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       rep.expired += 1;
       rep.expiredValue += value;
     } else {
-      rep.refusedAsFalse += 1;
-      rep.refusedAsFalseValue += value;
+      rep.ordersRejected += 1;
+      rep.ordersRejectedValue += value;
       const key = canonicalHrIdKey(hrId) ?? hrId;
-      const seen = falsePharmaciesByRep.get(key) ?? new Set<string>();
+      const seen = rejectedPharmaciesByRep.get(key) ?? new Set<string>();
       seen.add(pharmacyId);
-      falsePharmaciesByRep.set(key, seen);
+      rejectedPharmaciesByRep.set(key, seen);
     }
   }
 
-  for (const [key, pharmacies] of falsePharmaciesByRep) {
+  for (const [key, pharmacies] of rejectedPharmaciesByRep) {
     const rep = byRep.get(key);
-    if (rep) rep.falsePharmacies = pharmacies.size;
+    if (rep) rep.rejectedPharmacies = pharmacies.size;
   }
 
   for (const row of (validationRows ?? []) as Row[]) {
@@ -218,14 +218,14 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
   }
 
   // Worst first, by money claimed on a pharmacy that was not right — parked now (`held`) plus proven
-  // false (`refusedAsFalse`). Sorting on heldValue alone put every rep at zero the moment the false
+  // rejected (`ordersRejected`). Sorting on heldValue alone put every rep at zero the moment those
   // pharmacies were rejected, which sorted the table alphabetically at exactly the point it was
   // most worth reading.
-  const atRisk = (r: DirectOrderRepCounters) => r.heldValue + r.refusedAsFalseValue;
+  const atRisk = (r: DirectOrderRepCounters) => r.heldValue + r.ordersRejectedValue;
   const rows = Array.from(byRep.values()).sort(
     (a, b) =>
       atRisk(b) - atRisk(a) ||
-      b.refusedAsFalse - a.refusedAsFalse ||
+      b.ordersRejected - a.ordersRejected ||
       b.matchedExisting - a.matchedExisting ||
       b.held - a.held ||
       a.name.localeCompare(b.name),
@@ -235,8 +235,8 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
   if (rows.length === 0) {
     // Now genuinely means "nothing has ever gone wrong", not "the problem was cleaned up".
     emptyReason = companyWide
-      ? "No direct order has been held, expired, or refused on a false pharmacy — nothing to count."
-      : "Nobody in your team has a held or expired direct order, or one refused on a false pharmacy.";
+      ? "No direct order has been held, expired, or rejected on an unconfirmed pharmacy — nothing to count."
+      : "Nobody in your team has a held or expired direct order, or one rejected on an unconfirmed pharmacy.";
   }
 
   return { rows, companyWide, emptyReason };
