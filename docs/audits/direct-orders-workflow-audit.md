@@ -24,7 +24,7 @@ Declares **6 statuses** and **11 actions**.
 The last two were live suspicions. Both were wrong, and finding that out cost less than reporting
 them would have.
 
-### F1 — The registry does not declare `held` or `expired` (medium)
+### F1 — The registry does not declare `held` or `expired` (CRITICAL — caused a production outage)
 
 `direct_order_requests_status_check` permits **8** statuses. The registry declares **6**. Missing:
 `held`, `expired`.
@@ -36,18 +36,38 @@ submit_held  -> held
 expire_held  -> expired
 ```
 
-Nothing breaks at runtime, and the reason is worth recording: `resolveWorkflowRegistryTransition`
-validates `action.from` and `action.allowedRoles`, but **never validates `action.to` against
-`module.statuses`**. So a transition can legally target a status the registry has never heard of.
+**This assessment was wrong, and it cost an outage. Corrected 2026-08-05.**
 
-Why it still matters: the registry exists to *be* the description of the workflow. Anything reading
-`statuses` — a governance report, an admin UI, a future validator — sees a Direct Orders workflow
-with no held lane at all. `expired` is also genuinely terminal but has no `terminal: true` flag, so
-any consumer reasoning about terminality gets it wrong.
+The original note read: *"Nothing breaks at runtime… `resolveWorkflowRegistryTransition` validates
+`action.from` and `action.allowedRoles`, but never validates `action.to` against
+`module.statuses`."*
 
-**Fix:** add both statuses to the registry definition, `expired` with `terminal: true`, `held` with
-`terminal: false`. Optionally make the resolver reject a transition whose `to` is undeclared, which
-would have caught this on the day it was introduced.
+That is true of the RESOLVER — and I stopped there. I checked the layer I expected the check to be
+in, found it absent, and downgraded a fatal defect to a documentation nit. The **LOADER** runs first
+and does validate: `normalizeActions(row.actions, statusKeys)` throws
+`Action N target status "held" is not defined`. `listWorkflowRegistryModules` catches that, logs it,
+**skips the module**, and carries on.
+
+So the module was not merely mis-described — it was **absent from the loaded set entirely**. Every
+`direct_orders` transition returned `workflow_module_not_found`, surfacing to users as
+*"Workflow Registry blocked direct_orders.submit: module is missing or inactive."* Including plain
+`submit`, which has nothing to do with held orders. Reps could not raise a direct order at all.
+
+Nothing errored, nothing paged. The single trace was a log line. It surfaced when a user complained.
+
+**Fixed in production** by declaring both statuses (`expired` marked terminal): 8 statuses, 11
+actions, zero undeclared references, verified by simulating the loader. A sweep of all 13 modules
+confirmed `direct_orders` was the only one affected.
+
+**The lesson is the skip-and-log design.** Not skipping is worse — one bad row would take down
+payroll, resignations, probation and the rest. But it converts "this row is invalid" into "this
+module does not exist", which is a lie in the direction that hides the cause. `/api/readyz` now
+reports skipped modules by name and reason so the next one is a one-request diagnosis.
+
+**Still worth doing:** make the RESOLVER reject a transition whose `to` is undeclared too. The
+loader already refuses to load such a module, so the resolver check is redundant for correctness —
+but it would have turned this into a clear error at the transition instead of a module that quietly
+ceased to exist.
 
 ### F2 — The pharmacy-validation flow bypasses the registry entirely (medium)
 

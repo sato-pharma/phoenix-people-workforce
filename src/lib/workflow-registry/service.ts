@@ -343,6 +343,48 @@ export async function listWorkflowRegistryModules() {
   return modules;
 }
 
+/**
+ * Which modules are in the table, and which of them the loader CANNOT load.
+ *
+ * listWorkflowRegistryModules skips an invalid row, logs, and carries on — deliberately, so one bad
+ * module cannot take down every other module's transitions. But that turns "this row is invalid"
+ * into "this module does not exist", and the only trace is a log line nobody reads.
+ *
+ * On 2026-08-05 that cost a production outage: the direct_orders row declared 6 statuses while 5 of
+ * its actions referenced `held` and `expired`, so the module was skipped and every rep trying to
+ * submit an order was told "module is missing or inactive" — including plain `submit`, which has
+ * nothing to do with held orders. Nothing errored. It surfaced only when a user complained.
+ *
+ * This exists so the readiness probe can say it out loud instead.
+ */
+export async function auditWorkflowRegistryModules(): Promise<{
+  loaded: string[];
+  skipped: Array<{ moduleKey: string; reason: string }>;
+}> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("workflow_registry_modules")
+    .select("id,module_key,module_name,description,statuses,actions,is_active,version,created_by,updated_by,created_at,updated_at")
+    .order("module_key", { ascending: true });
+  if (error) throw error;
+
+  const loaded: string[] = [];
+  const skipped: Array<{ moduleKey: string; reason: string }> = [];
+  for (const row of (data ?? []) as WorkflowRegistryDbRow[]) {
+    try {
+      toModule(row);
+      loaded.push(row.module_key);
+    } catch (validationError) {
+      skipped.push({
+        moduleKey: row.module_key,
+        // The validator's message names the offending action and status, which is the whole
+        // diagnosis — "target status \"held\" is not defined" tells you what to fix.
+        reason: validationError instanceof Error ? validationError.message : "failed validation",
+      });
+    }
+  }
+  return { loaded, skipped };
+}
+
 export async function getWorkflowRegistryDashboard(): Promise<WorkflowRegistryDashboard> {
   const [modules, auditLogs] = await Promise.all([
     listWorkflowRegistryModules(),
