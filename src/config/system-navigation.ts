@@ -1088,6 +1088,11 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: ChartColumnBig,
     label: "Monthly Closing",
     description: "Enter and manage monthly closing sales data.",
+    // Super-Admin/system-scope-only workspace (app/(admin)/sales/monthly-closing/page.tsx) — SFE
+    // Manager holds sales:import for Upload/Import Advanced, but has no route into this one and
+    // was landing on his own overview every time he clicked it. Mirrors the SoS Mapping / Master
+    // Database exclusions below.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1095,6 +1100,9 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: Undo2,
     label: "Closing Corrections",
     description: "Reversals, oversized returns, and late returns that make a month read wrong.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above — SFE Manager sees
+    // this card via sales:import but always gets redirected to his own overview.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1136,6 +1144,8 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: Tags,
     label: "Distributor Profiles",
     description: "Manage distributor profile records.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1143,6 +1153,8 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: TriangleAlert,
     label: "Missing Data",
     description: "Review sales rows with missing or unresolved data.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1150,6 +1162,8 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: Sparkles,
     label: "SoS Magic",
     description: "AI-assisted sales data normalization.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
@@ -1157,6 +1171,8 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     icon: Stethoscope,
     label: "Sales Diagnostics",
     description: "Diagnose Source of Sales pipeline issues.",
+    // Same Super-Admin/system-scope-only boundary as Monthly Closing above.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
@@ -1478,6 +1494,9 @@ export const weeklySalesToolsPageItems: readonly AdminToolsPageItem[] = [
     icon: Columns3,
     label: "Weekly Distributor Column Editor",
     description: "Edit distributor column layouts used during weekly import.",
+    // Super-Admin/system-scope-only workspace (app/(admin)/sales/weekly/distributor-editor/page.tsx)
+    // — SFE Manager holds weekly_sales:import broadly but has no route into this one.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "weekly_sales" }],
   },
   {
@@ -1500,6 +1519,9 @@ export const customersDatabasePageItems: readonly AdminToolsPageItem[] = [
     icon: UsersRound,
     label: "Customer Directory",
     description: "Browse and filter every customer across all distributors.",
+    // Super-Admin/system-scope-only workspace (app/(admin)/sales/customer-directory/page.tsx) —
+    // same dead-end-for-SFE-Manager issue as Monthly Closing; mirrors Customer Mapping below.
+    excludedRoles: ["SFE Manager"],
     permissions: [{ action: "import", resource: "sales" }],
   },
   {
