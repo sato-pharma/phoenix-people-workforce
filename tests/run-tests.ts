@@ -584,6 +584,7 @@ import { runOutstationApprovalStateTests } from "./outstation-approval-state.tes
 import { runOutstationExpenseApprovalFiltersTests } from "./outstation-expense-approval-filters.test.ts";
 import { runOutstationExpenseApprovalSummaryTests } from "./outstation-expense-approval-summary.test.ts";
 import { runOutstationExpenseApprovalExportTests } from "./outstation-expense-approval-export.test.ts";
+import { runOutstationExpenseApprovalDecisionsTests } from "./outstation-expense-approval-decisions.test.ts";
 import { runApiSessionExpiredResponseTests } from "./api-session-expired-response.test.ts";
 import { runOutstationWorkloadEvidenceTests } from "./outstation-workload-evidence.test.ts";
 
@@ -1279,6 +1280,7 @@ await runTest("field workforce Thursday half day (Thu costs 0.5; Sat title-depen
 await runTest("deductions no-records scope (crm owns the field workforce; Head Office keeps its only coverage; SFE Manager never deducted)", runDeductionsModuleNoRecordsScopeTests);
 await runTest("outstation approved amount (payroll pays HR's approved figure, not the claim; null still pays the claim)", runOutstationApprovedAmountTests);
 await runTest("outstation approval state (3-state queues partition exactly; approval beats a stale rejected status)", runOutstationApprovalStateTests);
+await runTest("outstation expense approval decisions (an app-submitted request is decided through the outstation workflow, not the expense upsert; a trimmed figure survives the reload)", runOutstationExpenseApprovalDecisionsTests);
 await runTest("outstation expense approval filters (trip months bucket in Cairo, not UTC; one employee is one option even when their HR ID never mapped)", runOutstationExpenseApprovalFiltersTests);
 await runTest("api session-expired response (an expired session answers 401 sign-in, not a 403 permissions denial; a signed-in caller still gets their own 403)", runApiSessionExpiredResponseTests);
 await runTest("outstation expense approval summary (per-employee roll-up buckets every trip once; approved money is HR's figure, rejected money is the claim)", runOutstationExpenseApprovalSummaryTests);

@@ -66,6 +66,8 @@ import {
   mapOutstationRequestToPayrollExpenseRecord,
   outstationPayrollTripId,
 } from "@/lib/outstation/payroll-expense-mapping";
+import { isAdjustedAmount } from "@/lib/outstation/approval-state";
+import { planOutstationRequestDecision } from "@/lib/outstation/expense-approval-decisions";
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import {
   validateMedicalRepSimpleExpenseInput,
@@ -2264,6 +2266,7 @@ export async function submitMedicalRepSimpleExpenseRequest(
 }
 
 type LinkedOutstationPayrollExpense = {
+  approvedAmount: number | null;
   id: string;
   importedPayrollBatchId: string | null;
   importedToPayrollAt: string | null;
@@ -2289,7 +2292,12 @@ async function getLinkedOutstationPayrollExpense(
 
   if (!data) return null;
 
+  const approvedAmount = Number(data.approved_amount);
+
   return {
+    // Already in the select (EXPENSE_DECISION_SELECT carries it) — surfaced so the approvals queue
+    // can tell "HR trimmed this trip" from "nobody has touched the claim".
+    approvedAmount: data.approved_amount == null || !Number.isFinite(approvedAmount) ? null : approvedAmount,
     id: String(data.id),
     importedPayrollBatchId: data.imported_payroll_batch_id
       ? String(data.imported_payroll_batch_id)
@@ -3207,6 +3215,161 @@ export async function rejectOutstationRequestAsAdmin(
 
   await notifyOutstationDecision({ comment, decision: "reject", request: rejected });
   return rejected;
+}
+
+/** One queue row's decision, narrowed to the fields the outstation workflow actually needs. */
+export type OutstationRequestExpenseDecisionInput = {
+  approvedAmount?: number | null;
+  hrApproved?: boolean;
+  hrComment?: string;
+  status?: string | null;
+  total: number;
+  tripId: string;
+};
+
+export type OutstationRequestExpenseDecisionResult = {
+  applied: number;
+  /** Rows deliberately not written, each with a reason the reviewer can act on. */
+  skipped: Array<{ reason: string; tripId: string }>;
+};
+
+/**
+ * Writes HR's adjusted payable figure onto the request's linked payroll row.
+ *
+ * Goes through `savePayrollExpenseApprovals` rather than a bare UPDATE for one reason: that is
+ * what re-syncs an already-confirmed payroll Expenses step. A direct write would leave a confirmed
+ * step still reimbursing the figure it was confirmed with — the exact failure the July 2026 resync
+ * was built for.
+ *
+ * Returns false when the request has no linked payroll row at all, which happens when the evidence
+ * gate is holding an accepted trip out of payroll. There is nothing to carry the figure, so the
+ * caller reports that instead of pretending the amount was stored.
+ */
+async function writeOutstationRequestPayableAmount(input: {
+  access: AccessContext;
+  approvedAmount: number | null;
+  hrComment: string;
+  request: OutstationExpenseRequest;
+}): Promise<boolean> {
+  const linked = await getLinkedOutstationPayrollExpense(input.request.id);
+  if (!linked) return false;
+
+  const record = mapOutstationRequestToPayrollExpenseRecord(input.request, {
+    hrComment: input.hrComment.trim() || null,
+    reportId: linked.reportId,
+  });
+
+  await savePayrollExpenseApprovals(
+    {
+      fileName: `outstation-request-${input.request.id}.workflow`,
+      records: [{ ...record, approvedAmount: input.approvedAmount }],
+      reportId: linked.reportId,
+    },
+    input.access,
+  );
+
+  return true;
+}
+
+/**
+ * Applies Expense Approvals decisions to Phoenix-submitted outstation requests.
+ *
+ * The screen submits its whole visible record set on every Save, so most rows arriving here are
+ * unchanged — `planOutstationRequestDecision` filters those to "skip" and they never reach the
+ * workflow, never re-push payroll and never write an audit row. Only a genuine state change or a
+ * moved payable figure does anything.
+ *
+ * Each row is decided independently: one refusal does not abandon the rest of the batch, and every
+ * refusal comes back named so the queue can say which trip was not written and why. Approve and
+ * reject delegate wholesale to the same two functions the Queue tab calls, so the evidence gate,
+ * the in-payroll lock, audit logging and the employee notification are inherited, not re-created.
+ */
+export async function applyOutstationRequestExpenseDecisions(input: {
+  access: AccessContext;
+  entries: ReadonlyArray<{ record: OutstationRequestExpenseDecisionInput; requestId: number }>;
+}): Promise<OutstationRequestExpenseDecisionResult> {
+  let applied = 0;
+  const skipped: Array<{ reason: string; tripId: string }> = [];
+
+  for (const { record, requestId } of input.entries) {
+    const hrComment = String(record.hrComment ?? "");
+    const requestedAmount = Number(record.approvedAmount ?? record.total);
+
+    // The figure that belongs in `approved_amount`: null unless HR moved it off the claim, so an
+    // untouched trip is never rewritten with a redundant copy of its own total.
+    const payableAmount = isAdjustedAmount(requestedAmount, record.total) ? requestedAmount : null;
+
+    // Everything for one row sits inside the try, lookups included: a single unreadable request
+    // must cost that row and nothing else. The imported expense rows in the same Save are written
+    // after this returns, and one bad request row must not take them down with it.
+    try {
+      const existing = await getOutstationRequestById(requestId);
+      if (!existing) {
+        skipped.push({ reason: "the request no longer exists", tripId: record.tripId });
+        continue;
+      }
+
+      const linked = await getLinkedOutstationPayrollExpense(requestId);
+      const plan = planOutstationRequestDecision({
+        claimedTotal: record.total,
+        currentStatus: existing.status,
+        decision: {
+          approvedAmount: requestedAmount,
+          hrApproved: Boolean(record.hrApproved),
+          hrComment,
+          status: record.status,
+        },
+        storedApprovedAmount: linked?.approvedAmount ?? null,
+      });
+
+      if (plan.action === "skip") continue;
+      if (plan.action === "blocked") {
+        skipped.push({ reason: plan.reason ?? "this decision is not supported here", tripId: record.tripId });
+        continue;
+      }
+
+      if (plan.action === "reject") {
+        await rejectOutstationRequestAsAdmin(requestId, input.access, { comment: hrComment });
+        applied += 1;
+        continue;
+      }
+
+      const request =
+        plan.action === "approve"
+          ? (await approveOutstationRequestForPayroll(requestId, input.access, { comment: hrComment || null }))
+              .request
+          : existing;
+
+      applied += 1;
+
+      // A plain approve needs no second write: accepting the request already pushed its payroll
+      // row, and the reason is stored on the request itself. Only a payable figure that moved off
+      // the claim (or one being cleared back onto it) has anything left to write.
+      if (plan.action !== "amount" && payableAmount === null) continue;
+
+      const stored = await writeOutstationRequestPayableAmount({
+        access: input.access,
+        approvedAmount: payableAmount,
+        hrComment,
+        request,
+      });
+
+      if (!stored) {
+        skipped.push({
+          reason:
+            "the decision was saved, but the adjusted amount was not — this trip is held out of payroll until its photos and workload land",
+          tripId: record.tripId,
+        });
+      }
+    } catch (error) {
+      skipped.push({
+        reason: error instanceof Error ? error.message : "the decision could not be applied",
+        tripId: record.tripId,
+      });
+    }
+  }
+
+  return { applied, skipped };
 }
 
 export async function deleteOutstationRequestAsAdmin(

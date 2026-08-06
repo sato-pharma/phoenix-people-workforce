@@ -6,11 +6,14 @@ import {
   listPayrollExpenseReports,
   savePayrollExpenseApprovals,
 } from "@/lib/outstation/expenses";
+import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
+import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import type { ExpenseTripRecord } from "@/lib/payroll/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,7 +97,18 @@ export async function POST(request: Request) {
     const body = await request.json();
     const fileName = String(body.fileName ?? "expenses-upload.xls");
     const reportId = typeof body.reportId === "string" ? body.reportId : null;
-    const records = Array.isArray(body.records) ? body.records : [];
+    // Annotated, not inferred: `body` is `any`, and an unannotated `records` makes the generic in
+    // `partitionExpenseApprovalRecords` resolve to its own `{ tripId }` constraint — which then
+    // fails to satisfy either write path. `savePayrollExpenseApprovals` re-validates the contents.
+    const records: Array<
+      ExpenseTripRecord & {
+        approvedAmount?: number | null;
+        hrApproved?: boolean;
+        hrComment?: string;
+        hrId?: string | null;
+        reportId?: string | null;
+      }
+    > = Array.isArray(body.records) ? body.records : [];
 
     if (records.length === 0) {
       return NextResponse.json(
@@ -103,9 +117,30 @@ export async function POST(request: Request) {
       );
     }
 
-    const expenses = await savePayrollExpenseApprovals({ fileName, records, reportId }, access);
+    // The approvals queue shows imported expense rows and Phoenix-submitted requests in one list,
+    // and Save posts them together. They are not written the same way: a request's decision belongs
+    // to the outstation workflow (status, evidence gate, notification), not to an upsert into
+    // `outstation_expenses` that the next page load would drop.
+    const { payrollRecords, requestRecords } = partitionExpenseApprovalRecords(records);
 
-    return NextResponse.json({ expenses, saved: expenses.length });
+    const requestDecisions =
+      requestRecords.length > 0
+        ? await applyOutstationRequestExpenseDecisions({ access, entries: requestRecords })
+        : { applied: 0, skipped: [] };
+
+    // Nothing left for the payroll path → do not call it at all. It mints an
+    // `outstation_expense_reports` row for every save with no report id, so a Save that only
+    // decided requests used to leave an empty report behind on each click.
+    const expenses =
+      payrollRecords.length > 0
+        ? await savePayrollExpenseApprovals({ fileName, records: payrollRecords, reportId }, access)
+        : [];
+
+    return NextResponse.json({
+      expenses,
+      requestDecisions,
+      saved: expenses.length + requestDecisions.applied,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to save expense approvals.";
     if (isForbiddenError(error)) {
