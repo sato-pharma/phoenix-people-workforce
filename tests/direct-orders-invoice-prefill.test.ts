@@ -248,6 +248,62 @@ export function runDirectOrderInvoicePrefillTests() {
     "every app/api route must be declared in the access registry",
   );
 
+  // ── Two ways in: the camera, or a photo they already have ─────────────────────────────────
+  // One input carrying `capture="environment"` opens the camera on most phones and never offers
+  // the gallery. A rep whose invoice arrived on WhatsApp — which is how a great many of them
+  // arrive — had no route at all. The fix is two inputs, because that single attribute IS the
+  // difference and toggling it before a click is unreliable across mobile browsers.
+  {
+    const capture = read(CAPTURE);
+    assert.match(capture, /ref=\{cameraRef\}/, "the camera route must exist");
+    assert.match(capture, /ref=\{uploadRef\}/, "the upload route must exist");
+
+    // The camera input carries `capture`; the upload input must NOT.
+    const inputs = [...capture.matchAll(/<input\b[\s\S]*?\/>/g)].map((m) => m[0]);
+    const cameraInput = inputs.find((tag) => tag.includes("cameraRef"));
+    const uploadInput = inputs.find((tag) => tag.includes("uploadRef"));
+    assert.ok(cameraInput && uploadInput, "both file inputs must be present");
+    assert.match(cameraInput!, /capture="environment"/, "the camera route must ask for the rear lens");
+    assert.ok(
+      !/capture=/.test(uploadInput!),
+      "THE UPLOAD ROUTE MUST NOT CARRY `capture`: that one attribute makes a phone open the camera " +
+        "and never offer the files, which is exactly the dead end this second button exists to remove",
+    );
+
+    assert.match(
+      capture,
+      /void read\(file, "camera"\)/,
+      "the camera route must record itself as the camera",
+    );
+    assert.match(capture, /void read\(file, "upload"\)/, "the upload route must record itself as an upload");
+    assert.match(
+      capture,
+      /Choose a photo/,
+      "the second route needs a visible button — an input nobody can reach is not a route",
+    );
+  }
+
+  // ── The source is recorded, and never used to refuse ──────────────────────────────────────
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /source: input\.source \?\? "upload"/,
+      "which route was used must reach the outcome record, or 'do forwarded photos read worse' cannot be answered",
+    );
+    assert.ok(
+      !/input\.source === "upload"[\s\S]{0,200}(throw|badRequest|return null)/.test(extractor),
+      "THE SOURCE MUST NEVER GATE THE READ: a rep whose invoice arrived on WhatsApp has no camera " +
+        "shot to offer, and refusing them sends them back to typing codes by hand",
+    );
+    const route = read(ROUTE);
+    assert.match(
+      route,
+      /body\.source === "camera" \? "camera" : "upload"/,
+      "the source must be normalised at the boundary, not trusted from the client — it lands in an audit row",
+    );
+  }
+
   // ── A misread number must be CORRECTABLE, not a reason to start over ──────────────────────
   // The reading was accept-as-printed or nothing. A quantity that came back 240 against a printed
   // 249 therefore sent the submitter to type the entire order by hand — and hand-typing codes is

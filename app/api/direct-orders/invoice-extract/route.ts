@@ -27,10 +27,18 @@ export async function POST(request: Request) {
     const csrf = assertSameOriginMutation(request);
     if (csrf) return csrf;
     const access = await resolveAccessContext(request);
-    const body = (await request.json().catch(() => ({}))) as { imageBase64?: string; mimeType?: string };
+    const body = (await request.json().catch(() => ({}))) as {
+      imageBase64?: string;
+      mimeType?: string;
+      source?: string;
+    };
     const result = await extractDirectOrderInvoice(access, {
       imageBase64: String(body.imageBase64 ?? ""),
       mimeType: String(body.mimeType ?? ""),
+      // Normalised HERE, not trusted from the client, because it lands in an audit row. Anything
+      // that is not the one word we expect is recorded as "upload" rather than as itself — a
+      // measurement column must never become a place to write arbitrary text.
+      source: body.source === "camera" ? "camera" : "upload",
     });
     return NextResponse.json({ result, success: true });
   } catch (error) {
