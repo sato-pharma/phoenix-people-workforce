@@ -84,26 +84,39 @@ export class InvoiceExtractionError extends Error {
   }
 }
 
-// An Egyptian distributor invoice is DENSE with long numbers, and only one of them identifies the
-// pharmacy. A real PharmaOverseas page (owner-supplied, 2026-08-06) carries at least five:
+// An Egyptian distributor invoice is DENSE with long numbers, and only one identifies the pharmacy.
+// A real PharmaOverseas page carries the barcode, the location code الكود المكاني, the sales order
+// number رقم أمر البيع, the GLN, and the account number — five candidates for one field. A
+// plausible WRONG one is the most damaging thing this reader can produce, because it resolves
+// against master data as some OTHER real pharmacy and the order is filed against a customer who
+// never placed it.
 //
-//   8817791…          the barcode across the top
-//   85959             beside اسم الحساب
-//   1573270           كود العميل — the ONLY one that is the customer code
-//   6221388348964     الكود المكاني, the location code
-//   1014159891        رقم أمر البيع, the sales order number
+// Two corrections here, both paid for by real invoices rather than reasoning.
 //
-// "Report the distributor's customer/account code" does not distinguish between those, and a
-// plausible wrong one is the single most damaging thing this reader can produce: it resolves
-// against master data as some OTHER pharmacy, and the order is filed against a real customer who
-// never placed it. Naming the printed label is what makes the right number identifiable; naming
-// the decoys is what makes the wrong ones refusable.
+// The label was wrong. An earlier version of this rule named كود العميل and told the reader to
+// return null if it could not find it — generalised from one photograph whose header was partly
+// obscured. Four further invoices all print كود الحساب; اسم العميل is the NAME row. Naming a label
+// that is not there, and refusing without it, is worse than the vague instruction it replaced.
+//
+// And the field is often a PAIR: "812702 / 1573334", a branch code and a customer code sharing one
+// box. Across five invoices the left half matched nothing in master data and the right half matched
+// exactly one pharmacy, every time. The reader is told to report the WHOLE printed value rather
+// than choose — choosing is `codeCandidates`' job, where a wrong guess is recoverable and a
+// unique-match rule can arbitrate. A reader that picks the wrong half looks certain.
+//
+// So the rule describes the FIELD (the distributor's account number for this pharmacy, in the
+// customer header block) and lists labels as hints, not as the definition. The Ibnsina invoice —
+// Latin product names, a different layout, neither Arabic label — is why.
 const CUSTOMER_CODE_RULE =
-  "The pharmacy's code is the value printed beside the label كود العميل (customer code). " +
-  "An Egyptian distributor invoice carries several other long numbers and NONE of them is it: " +
-  "the barcode, the account number beside اسم الحساب, the location code الكود المكاني, the sales " +
-  "order number رقم أمر البيع, the tax number, and the GLN. If you cannot find a value beside " +
-  "كود العميل specifically, return null — do NOT substitute another number from the page.";
+  "The pharmacy's code is the distributor's ACCOUNT NUMBER for this pharmacy. It sits in the " +
+  "customer header block, commonly labelled كود الحساب or كود العميل on an Arabic invoice and " +
+  "'Customer' or 'Account' on a Latin one. It is frequently printed as TWO numbers separated by a " +
+  "slash, for example '812702 / 1573334' — when it is, report the WHOLE printed value including " +
+  "the slash and both numbers, exactly as printed, and do not choose between them. " +
+  "Several other long numbers share the page and none of them is it: the barcode, the location " +
+  "code الكود المكاني, the sales order number رقم أمر البيع, the invoice number, the tax number, " +
+  "and the GLN. If no account number is printed, return null — do NOT substitute another number " +
+  "from the page.";
 
 const INSTRUCTIONS =
   "You are reading a photographed pharmaceutical distributor invoice from Egypt. Invoices may be " +
@@ -181,6 +194,50 @@ function count(value: unknown): number | null {
 /** Codes differ across sheets only by case and padding noise; compare them the way humans read them. */
 function codeKey(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
+/**
+ * The same account number, written the two ways a distributor and an invoice each write it.
+ *
+ * Measured in production, 2026-08-06: SIX invoice reads, six codes read off the paper, and
+ * ZERO resolved. The reader was never the problem. Two things stood between a correct read and
+ * its pharmacy:
+ *
+ *   PADDING — `source_of_sales_customer_map` stores PharmaOverseas (`PS`) codes zero-padded to
+ *   ten digits, 28,576 of 28,577 rows. The printed invoice carries `1573270`; the map holds
+ *   `0001573270`. An exact compare rejects every PharmaOverseas invoice there is.
+ *
+ *   PAIRS — the header prints `812702 / 1573334`, a branch code and a customer code sharing one
+ *   field. Across five real invoices the LEFT half matched nothing and the RIGHT half matched
+ *   exactly one pharmacy, every time. Nothing here knew the value could be compound.
+ *
+ * So: try what is printed, then the same without its leading zeros, then each half of a
+ * separated pair. Widest form last.
+ */
+export function codeCandidates(value: string | null | undefined): string[] {
+  const raw = codeKey(value);
+  if (!raw) return [];
+  const out = [raw];
+  const push = (candidate: string) => {
+    const key = codeKey(candidate);
+    // A bare run of zeros normalizes to the empty string, which would match nothing and cost a
+    // lookup to find that out.
+    if (key && !out.includes(key)) out.push(key);
+  };
+  const unpad = (candidate: string) => candidate.replace(/^0+(?=\d)/, "");
+  // The loop below covers the un-separated case too — a string with no separator splits to itself,
+  // and each part is pushed both as-is and unpadded. An explicit `push(unpad(raw))` above it was
+  // redundant, and provably so: removing it changed no candidate list, which is exactly why
+  // prove-it-fails could not make its assertion fire.
+  //
+  // `/` is what PharmaOverseas prints; the others cost nothing and cover the neighbours.
+  for (const part of raw.split(/[/\-–—|\\]/)) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    push(trimmed);
+    push(unpad(trimmed));
+  }
+  return out;
 }
 
 /**
@@ -351,12 +408,51 @@ async function resolveCustomer(
     return null;
   }
 
-  const hits = await searchDirectOrderPharmacyDirectory(access, {
-    query: read.customerCode,
-    distributorCode: read.distributorCode,
-    limit: 20,
-  });
-  const exact = hits.find((hit) => codeKey(hit.customerCode) === codeKey(read.customerCode));
+  // Each candidate is SEARCHED, not merely filtered out of one result set. Filtering alone was the
+  // trap: the directory search is a substring match, so a printed pair like "812702 / 1573334"
+  // queries for that whole string, matches nothing, and leaves nothing to filter. The pair only
+  // ever resolves if its halves are searched in their own right.
+  //
+  // Candidates run strongest-first — exactly what is printed, the same without leading zeros, then
+  // each half of a pair — and the FIRST form that matches wins, so a genuine exact hit can never be
+  // displaced by a looser reading of the same string.
+  //
+  // A form is accepted ONLY when it identifies exactly one pharmacy. That guard is load-bearing
+  // rather than cautious: 89 codes in the customer map become ambiguous once leading zeros are
+  // stripped, so taking "the first row that looks close" would file an order against the wrong real
+  // pharmacy — the precise failure this module exists to stop, arriving with better handwriting.
+  // Two candidates for one code is not a near miss; it is unanswerable from the paper alone, and
+  // the submitter must be the one to pick.
+  const unpad = (value: string) => value.replace(/^0+(?=\d)/, "");
+  let exact: Awaited<ReturnType<typeof searchDirectOrderPharmacyDirectory>>[number] | undefined;
+  let ambiguous: string | null = null;
+
+  for (const candidate of codeCandidates(read.customerCode)) {
+    const hits = await searchDirectOrderPharmacyDirectory(access, {
+      query: candidate,
+      distributorCode: read.distributorCode,
+      limit: 20,
+    });
+    const matches = hits.filter(
+      (hit) => codeKey(hit.customerCode) === candidate || unpad(codeKey(hit.customerCode)) === candidate,
+    );
+    if (matches.length === 1) {
+      exact = matches[0];
+      break;
+    }
+    if (matches.length > 1) {
+      ambiguous = candidate;
+      break;
+    }
+  }
+
+  if (!exact && ambiguous) {
+    problems.push(
+      `Code ${read.customerCode} on this invoice matches more than one pharmacy in the master ` +
+        "database, so Phoenix cannot tell which one it is. Pick the pharmacy from the list yourself.",
+    );
+    return null;
+  }
 
   if (!exact) {
     // Deliberately does NOT fall back to the closest name match. The whole module exists because a
