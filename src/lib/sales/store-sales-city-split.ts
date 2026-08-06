@@ -98,6 +98,47 @@ export type StoreSplitRow = {
   salesValue: number;
 };
 
+/**
+ * Customers whose rows ALREADY sit in more than one area — someone distributed them on purpose, so
+ * the city split must not distribute them again.
+ *
+ * The case that forced this (owner, 2026-08-06): client 441164 ريونيون للتجارة والاستثمار returned
+ * its whole June purchase in July, -400 units / -34,380.00, and the owner ruled that return splits
+ * evenly between Dakahlia 2 and Port Said - Domiat. Its sales rows were split accordingly. But the
+ * name marks it a wholesaler, so the city split then took the WHOLE -34,380.00 back out of its
+ * customer-map area (Dakahlia 1) and shared it three ways across Dakahlia 1, 2 and 3 — handing a
+ * third of a return to Dakahlia 3, which had nothing to do with it, and dropping Port Said entirely
+ * because it is a different city. The workbook's Closing Matrix showed fractional units
+ * (182.333333) while the frontend, which never runs this split, correctly showed 29.
+ *
+ * A deliberate distribution beats a rule-of-thumb one. The even city share is an ESTIMATE for a
+ * wholesaler nobody has apportioned; once a human has said where the sales go, that answer wins.
+ *
+ * Measured on live data 2026-08-06: only 3 of 153,046 (period, line, client, distributor) groups
+ * span more than one area, so this exempts almost nothing while making those few correct.
+ */
+export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[]): ReadonlySet<string> {
+  const areasByCustomer = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.isDirect || !row.includedInClosing) continue;
+    const code = String(row.clientCode ?? "").trim();
+    if (!code) continue;
+    const area = normalizeArea(row.areaCode);
+    if (!area) continue;
+    let seen = areasByCustomer.get(code);
+    if (!seen) {
+      seen = new Set<string>();
+      areasByCustomer.set(code, seen);
+    }
+    seen.add(area);
+  }
+  const exempt = new Set<string>();
+  areasByCustomer.forEach((areas, code) => {
+    if (areas.size > 1) exempt.add(code);
+  });
+  return exempt;
+}
+
 /** A row is only moved when it is a store, on a split line, has a city, and feeds the closing. */
 export function isSplitEligible(row: StoreSplitRow): boolean {
   if (row.isDirect) return false;
@@ -168,6 +209,10 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
 ): StoreSplitResult<T> {
   const out: T[] = [];
+
+  // A customer already distributed across areas by hand is never redistributed by the city rule.
+  // See customersAlreadySplitAcrossAreas for the case that forced this.
+  const exemptCustomers = customersAlreadySplitAcrossAreas(rows);
   const movements = new Map<string, StoreSplitAreaMovement>();
   let splitRowCount = 0;
 
@@ -190,7 +235,7 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   };
 
   for (const row of rows) {
-    if (!isSplitEligible(row)) {
+    if (!isSplitEligible(row) || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
       out.push(row);
       continue;
     }
@@ -421,9 +466,13 @@ export function detailStoreSplitByCustomer<
     if (area && name && !areaNames.has(area)) areaNames.set(area, name);
   }
 
+  // Same exemption as the split itself, or the detail sheet would report a store as "split" that
+  // the matrix left alone — the two tabs must describe the same operation.
+  const detailExempt = customersAlreadySplitAcrossAreas(rows);
+
   const byKey = new Map<string, StoreSplitDetailRow>();
   for (const row of rows) {
-    if (!isSplitEligible(row)) continue;
+    if (!isSplitEligible(row) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
     const origin = normalizeArea(row.areaCode);
     const city = cityOfArea(origin);
     const areas = city ? CITY_AREAS.get(city) : undefined;
