@@ -228,4 +228,100 @@ export function runDirectOrderInvoicePrefillTests() {
     /pattern: "\/api\/direct-orders\/invoice-extract"/,
     "every app/api route must be declared in the access registry",
   );
+
+  // ── A misread number must be CORRECTABLE, not a reason to start over ──────────────────────
+  // The reading was accept-as-printed or nothing. A quantity that came back 240 against a printed
+  // 249 therefore sent the submitter to type the entire order by hand — and hand-typing codes is
+  // the behaviour this whole feature exists to remove. Refusing a one-digit correction was quietly
+  // reinstating it, so the numbers are inputs seeded from the reading.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /onChange=\{\(event\) => setField\(index, "qty", event\.target\.value, line\.read\)\}/,
+      "THE QUANTITY MUST BE CORRECTABLE: accept-as-printed or nothing sends a submitter with one wrong digit back to typing the whole order by hand, which is the behaviour invoice prefill exists to remove",
+    );
+    assert.match(
+      capture,
+      /onChange=\{\(event\) => setField\(index, "bonus", event\.target\.value, line\.read\)\}/,
+      "the bonus must be correctable for the same reason as the quantity",
+    );
+    assert.match(
+      capture,
+      /placeholder=\{line\.read\.qty == null \? "not read — type it" : undefined\}/,
+      "a quantity that did not read must be TYPEABLE, not a dead line: the product matched, so only one number is missing and the rest of the reading is still worth having",
+    );
+    assert.match(
+      capture,
+      /setAppliedIndex\(\(current\) => \(current === index \? null : current\)\)/,
+      "EDITING MUST UN-USE THE LINE: the form still holds the old numbers, and a button still reading 'Used' would tell the submitter their correction had been applied when it had not",
+    );
+  }
+
+  // ── The product stays un-editable — the rule that predates all of this ────────────────────
+  // Making the numbers editable must not quietly extend to the identity of the thing being
+  // ordered. A line the master database could not confirm still has no button; that is what stops
+  // a code nobody has checked from entering at speed.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /\{line\.product \? \(\s*<button/,
+      "AN UNCONFIRMED PRODUCT MUST STILL HAVE NO BUTTON: editable quantities must not become an editable product code — the master database confirming the line is the gate this module was built around",
+    );
+    assert.ok(
+      !/setField\(index, "productCode"/.test(capture),
+      "the product code must never become a free-text field: that is the exact hole the pharmacy combo box was built to close",
+    );
+  }
+
+  // ── A thin reading advises a retake; it never blocks ──────────────────────────────────────
+  // Same rule as AREA_PROXIMITY_FLAG_KM in the validation service: a hard gate rejects real work
+  // and produces the "the new system blocked everything" complaint the design exists to avoid. A
+  // rep in a dim pharmacy with a creased invoice must still be able to file the order by hand.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /Retake the photo/,
+      "a thin reading must offer a retake while the submitter is still standing in front of the invoice — ten seconds there against an approval cycle later",
+    );
+    assert.match(
+      capture,
+      /nothing here stops you submitting/,
+      "THE RETAKE MUST NEVER BE A GATE: refusing the submission would send the rep back to typing codes by hand, which is what created the false pharmacies",
+    );
+    assert.ok(
+      !/disabled=\{!result\b/.test(capture) && !/return null;[\s\S]{0,80}could not be read/i.test(capture),
+      "no branch may make submission conditional on a successful reading",
+    );
+  }
+
+  // ── The reading records how well it went, and can never fail because of it ────────────────
+  // Whether to preprocess the photograph before reading it costs a multi-megabyte library on the
+  // phone of a rep paying for mobile data. That decision needs counts, not an impression.
+  {
+    const extractor = read(EXTRACTOR);
+    // ONE capture drives both checks. Written as two independent assertions first, which made the
+    // second unreachable: `writeRequiredAuditLog` does not contain the substring `writeAuditLog`,
+    // so swapping to the unforgiving write tripped the "must record its outcome" assertion instead
+    // and the forgiving-write rule never ran. Capturing the function NAME beside the payload is
+    // what makes the swap fire the assertion that is actually about it.
+    const outcome = /await (write\w*AuditLog)\(\{[\s\S]{0,500}?codeRead/.exec(extractor);
+    assert.ok(
+      outcome,
+      "the reading must record its own outcome, or the question 'is the photograph the bottleneck' can only be answered by opinion",
+    );
+    assert.equal(
+      outcome[1],
+      "writeAuditLog",
+      "THE OUTCOME RECORD MUST USE THE FORGIVING AUDIT WRITE: writeRequiredAuditLog re-throws, which would make a measurement the reason a rep standing in a pharmacy cannot read their invoice — the tail wagging the dog",
+    );
+    for (const field of ["codeRead", "codeResolved", "linesRead", "linesMatched"]) {
+      assert.ok(
+        extractor.includes(`${field}:`),
+        `the outcome must record ${field} — read-rate and match-rate are the two numbers that decide whether preprocessing is worth its bundle`,
+      );
+    }
+  }
 }
