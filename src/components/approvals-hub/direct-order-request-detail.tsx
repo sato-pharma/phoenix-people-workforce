@@ -85,6 +85,22 @@ export function DirectOrderRequestDetail({
   const gridFields = allFields.filter((field) => field.layout !== "full");
   const fullFields = allFields.filter((field) => field.layout === "full" && field.label !== "Distributor codes");
 
+  // Computed ONCE and read by BOTH renderings. #1833 gave the phone its own totals cards, which
+  // left the same seven sums written twice — the desktop totals row and the mobile card each
+  // reducing the same array. Two expressions that can drift, on the two screens that must agree
+  // about what a pharmacy is worth.
+  const retailTotals = {
+    qty: retailHistory.reduce((sum, row) => sum + row.qty, 0),
+    bonus: retailHistory.reduce((sum, row) => sum + row.bonus, 0),
+    salesValue: retailHistory.reduce((sum, row) => sum + row.salesValue, 0),
+  };
+  const directTotals = {
+    orders: pharmacyHistory.reduce((sum, row) => sum + row.orders, 0),
+    qty: pharmacyHistory.reduce((sum, row) => sum + row.qty, 0),
+    bonus: pharmacyHistory.reduce((sum, row) => sum + row.bonus, 0),
+    salesValue: pharmacyHistory.reduce((sum, row) => sum + row.salesValue, 0),
+  };
+
   return (
     <div className="space-y-5">
       <Link href={backHref} className="text-sm font-bold text-orange-600 hover:text-orange-700">
@@ -377,13 +393,13 @@ export function DirectOrderRequestDetail({
                     Total — {retailHistory.length.toLocaleString("en-US")} row{retailHistory.length === 1 ? "" : "s"}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {retailHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")}
+                    {retailTotals.qty.toLocaleString("en-US")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
-                    {retailHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")}
+                    {retailTotals.bonus.toLocaleString("en-US")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {money(retailHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                    {money(retailTotals.salesValue)}
                   </td>
                 </tr>
               </tfoot>
@@ -421,14 +437,22 @@ export function DirectOrderRequestDetail({
                 {retailHistory.length === 1 ? "" : "s"}
               </p>
               <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
-                {retailHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")} qty
+                {retailTotals.qty.toLocaleString("en-US")} qty
                 <span className="ml-2 font-bold text-slate-600">
-                  {retailHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")} bonus
+                  {retailTotals.bonus.toLocaleString("en-US")} bonus
                 </span>
                 <span className="ml-2">
-                  {money(retailHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                  {money(retailTotals.salesValue)}
                 </span>
               </p>
+              {/* The line most likely to catch a phantom, and pure arithmetic on numbers already
+                  on this page. An order worth more than everything the pharmacy has ever bought is
+                  not necessarily wrong — it is never routine. */}
+              {request.salesValue > retailTotals.salesValue ? (
+                <p className="mt-2 text-[12px] font-bold text-amber-700">
+                  This single order is larger than everything this pharmacy has ever bought.
+                </p>
+              ) : null}
             </article>
           </div>
           </>
@@ -503,16 +527,16 @@ export function DirectOrderRequestDetail({
                     Total
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
-                    {pharmacyHistory.reduce((sum, row) => sum + row.orders, 0).toLocaleString("en-US")}
+                    {directTotals.orders.toLocaleString("en-US")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {pharmacyHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")}
+                    {directTotals.qty.toLocaleString("en-US")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
-                    {pharmacyHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")}
+                    {directTotals.bonus.toLocaleString("en-US")}
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {money(pharmacyHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                    {money(directTotals.salesValue)}
                   </td>
                 </tr>
               </tfoot>
@@ -555,15 +579,15 @@ export function DirectOrderRequestDetail({
             <article className="block border border-slate-300 bg-slate-50 p-3">
               <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total</p>
               <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
-                {pharmacyHistory.reduce((sum, row) => sum + row.orders, 0).toLocaleString("en-US")} orders
+                {directTotals.orders.toLocaleString("en-US")} orders
                 <span className="ml-2">
-                  {pharmacyHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")} qty
+                  {directTotals.qty.toLocaleString("en-US")} qty
                 </span>
                 <span className="ml-2 font-bold text-slate-600">
-                  {pharmacyHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")} bonus
+                  {directTotals.bonus.toLocaleString("en-US")} bonus
                 </span>
                 <span className="ml-2">
-                  {money(pharmacyHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                  {money(directTotals.salesValue)}
                 </span>
               </p>
             </article>
@@ -589,23 +613,31 @@ export function DirectOrderRequestDetail({
                 <div className="flex items-center gap-3">
                   <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STEP_TONE[step.status] ?? "bg-slate-300"}`} />
                   <span className="w-6 shrink-0 text-xs font-bold text-slate-400">{step.order}</span>
-                  <span className="flex-1 text-sm font-semibold text-slate-800">
+                  {/* min-w-0 so a long approver name shrinks instead of shoving the status off the
+                      screen, and the rung label drops to its own line on a phone rather than
+                      fighting the name for the same one. */}
+                  <span dir="auto" className="min-w-0 flex-1 text-sm font-semibold text-slate-800">
                     {step.approverName ?? step.label}
-                    <span className="ml-2 text-[11px] font-normal text-slate-400">{step.label}</span>
+                    <span className="block text-[11px] font-normal text-slate-400 md:ml-2 md:inline">{step.label}</span>
                   </span>
-                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">{step.status}</span>
+                  <span className="shrink-0 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    {step.status}
+                  </span>
                 </div>
                 {/* The decision record (spec D1): who, when — Cairo — and what they wrote. A rung
                     decided by someone other than its named approver (a role rung, or an override)
                     credits the actual decider, never the label. */}
                 {step.decidedAt || step.decidedByName || step.decisionComment ? (
-                  <div className="mt-1 pl-[42px]">
+                  // The 42px gutter aligns to nothing (dot 10 + gap 12 + w-6 24 + gap 12 = 58) and
+                  // eats 12% of a 390px screen in the one block that holds free Arabic text, so it
+                  // is desktop-only; the comment's own border-l quote rule is the real visual tie.
+                  <div className="mt-1 pl-0 md:pl-[42px]">
                     <p className="text-[11px] text-slate-500">
                       {step.decidedByName ? <span className="font-bold text-slate-600">{step.decidedByName}</span> : null}
                       {step.decidedAt ? <span>{step.decidedByName ? " · " : ""}{cairoStamp(step.decidedAt)}</span> : null}
                     </p>
                     {step.decisionComment ? (
-                      <p className="mt-0.5 border-l-2 border-slate-200 pl-2 text-[12px] italic text-slate-600" dir="auto">
+                      <p className="mt-0.5 break-words border-l-2 border-slate-200 pl-2 text-[12px] italic text-slate-600" dir="auto">
                         “{step.decisionComment}”
                       </p>
                     ) : null}
