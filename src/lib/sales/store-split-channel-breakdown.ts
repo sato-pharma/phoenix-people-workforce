@@ -100,6 +100,16 @@ function round(value: number): number {
 export function planChannelBreakdownStoreSplit(
   breakdown: ChannelBreakdown,
   movements: readonly StoreSplitAreaMovement[],
+  /**
+   * Store money at a (brick, area) pair that belongs to a HAND-APPORTIONED customer, from
+   * splitStoreSalesAcrossCityAreas — key `${brickId}|${areaCode}`, both uppercase, matching this
+   * module's own `entry.areaKey`/`entry.brickKey`. The brick side is read off the grid, which pools
+   * every customer sharing a (brick, area) pair into one figure and cannot tell whose money it is
+   * looking at — so without this, that whole pooled figure is debited whenever the area gave money
+   * up, including the part belonging to a customer the Closing Matrix deliberately left alone.
+   * Optional: a caller that omits it gets the previous behaviour.
+   */
+  exemptStoreValueByBrick?: ReadonlyMap<string, number>,
 ): ChannelBreakdownStoreSplit {
   if (!isSplitEligibleLine(breakdown.line) || movements.length === 0) {
     return emptyChannelBreakdownStoreSplit();
@@ -119,13 +129,33 @@ export function planChannelBreakdownStoreSplit(
   // The brick side, read off the grid's own figures rather than off the rows — see the header. Only
   // bricks whose store money sits in an area that actually gave money up move; a brick in a
   // single-area city keeps everything, because nothing left that area.
+  //
+  // The exempt hold-back happens INSIDE this same per-(brick, area) pass, not as a second pass over
+  // a brick-only total. The grid's `entry.store` for one (brick, area) pair can already be several
+  // customers pooled together — an exempt hand-split customer sharing a brick with an unrelated
+  // eligible wholesaler is exactly the case this exists for. Subtracting per-brick (summed across
+  // every area the exempt customer touches) would remove money from a pair it never sat in, wrongly
+  // shrinking a genuinely eligible neighbour's debit. Subtracting at the SAME (brick, area) grain the
+  // grid itself uses is the only way to cancel exactly the exempt portion and nothing else.
+  //
+  // PLAIN SUBTRACTION, not a positive-only clamp. A hand-split customer is often a RETURN — 441164
+  // itself is -34,380.00 — so `entry.store` and the exempt amount are routinely both negative, and a
+  // clamp written for "take money off a positive figure" silently no-ops on a negative one. The only
+  // guard needed is a sign one: subtracting the exempt share must not push the result PAST zero in
+  // the direction opposite the pair's own figure — that would turn "this pair gave X up" into "this
+  // pair took money from the pool", which the split never produces.
   const outByBrick = new Map<string, number>();
   for (const entry of breakdown.brickArea) {
     if (entry.store === 0) continue;
     const area = upper(entry.areaKey);
     if (area.startsWith(BREAKDOWN_BUCKET_PREFIX)) continue;
     if (!outByArea.has(area)) continue;
-    bump(outByBrick, upper(entry.brickKey), entry.store);
+    const brickKey = upper(entry.brickKey);
+    const exempt = exemptStoreValueByBrick?.get(`${brickKey}|${area}`) ?? 0;
+    const adjusted = entry.store - exempt;
+    const contribution = entry.store >= 0 ? Math.max(0, adjusted) : Math.min(0, adjusted);
+    if (contribution === 0) continue;
+    bump(outByBrick, brickKey, contribution);
   }
 
   return {

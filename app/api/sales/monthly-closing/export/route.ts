@@ -231,6 +231,7 @@ export async function POST(request: Request) {
       // it lives in the domain module, not here — see closing-store-split-export.ts.
       const {
         details,
+        exemptStoreValueByBrick: storeSplitExemptByBrick,
         movements: storeSplitMovements,
         net: storeSplitNet,
       } = prepareClosingStoreSplit(monthRows, scopedAreaCodes);
@@ -340,7 +341,10 @@ export async function POST(request: Request) {
       const channelBreakdown = seatedBreakdown
         ? applyStoreSplitToChannelBreakdown(
           seatedBreakdown,
-          planChannelBreakdownStoreSplit(seatedBreakdown, storeSplitMovements),
+          // The exempt-by-brick map travels with the movements: the brick grid reads its own figures
+          // and cannot otherwise tell that part of a brick's store money belongs to a customer the
+          // Matrix deliberately left alone.
+          planChannelBreakdownStoreSplit(seatedBreakdown, storeSplitMovements, storeSplitExemptByBrick),
         )
         : null;
 

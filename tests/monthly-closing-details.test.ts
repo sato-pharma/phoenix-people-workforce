@@ -28,6 +28,13 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
   const discount = overrides.discount ?? 0;
   const factoryPrice = overrides.factoryPrice ?? 100;
   const effectiveUnits = qty * (1 - discount);
+  // The sheet area TRACKS whatever areaCode override the caller passed, unless the caller ALSO
+  // overrides sheetAreaCode explicitly — that is how a test deliberately models a re-booked row
+  // (fact area != brick-resolved area) rather than an ordinary one. Without this, a caller that
+  // sets only `areaCode: "AR02"` to mean "this row is in a different area" got a row that looked
+  // re-booked by accident (sheetAreaCode stuck at the "AR01" default), which is exactly what
+  // closingAreaOf now reads first — see closing-row-area.ts.
+  const sheetAreaCode = overrides.sheetAreaCode ?? overrides.areaCode ?? "AR01";
   const base: ClosingDetailRow = {
     id: 1,
     rowNumber: 1,
@@ -35,7 +42,7 @@ function row(overrides: Partial<ClosingDetailRow> = {}): ClosingDetailRow {
     invoicePeriod: "2026-06",
     invoiceDate: "2026-06-15",
     officialLine: "Pedia",
-    sheetAreaCode: "AR01",
+    sheetAreaCode,
     sheetAreaName: "Qena",
     sheetRegionCode: "UE",
     sheetRegionName: "Upper Egypt",

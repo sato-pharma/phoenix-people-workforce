@@ -8,6 +8,7 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { JULY_2026_DIRECT_PERIOD } from "@/lib/sales/july-2026-direct-orders";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -404,14 +405,20 @@ export function applyDetailFilters(
 
   return rows.filter((row) => {
     if (regions && !regions.has(row.regionCode.toUpperCase())) return false;
-    if (areas && !areas.has(row.areaCode.toUpperCase())) return false;
+    // The CLOSING area — see closing-row-area.ts. Matching on the resolved `areaCode` made the
+    // Details tab disagree with the Closing Matrix beside it for a hand-apportioned customer:
+    // filtering to Dakahlia 2 hid rows the Matrix books there, and filtering to Dakahlia 1 showed
+    // rows it does not. Identical on every row in production except those four.
+    if (areas && !areas.has(closingAreaOf(row))) return false;
     if (products && !products.has(row.productCode.toUpperCase())) return false;
     if (distributors && !distributors.has(row.distributorCode.toUpperCase())) return false;
     if (inclusion === "included" && !row.includedInClosing) return false;
     if (inclusion === "excluded" && row.includedInClosing) return false;
     if (search) {
       const haystack = [
-        row.brickId, row.brickName, row.areaCode, row.areaName, row.regionName,
+        // Both areas are searchable: a re-booked row is booked in one and physically sits in the
+        // other, and a reader typing either code expects to find it.
+        row.brickId, row.brickName, row.areaCode, row.sheetAreaCode, row.areaName, row.sheetAreaName, row.regionName,
         row.clientCode, row.clientName, row.clientAddress, row.productCode, row.productName,
         row.distributorCode,
       ]
@@ -677,6 +684,11 @@ export async function loadMonthlyClosingDetails(
  * choosing one area never removes the other areas from the dropdown.
  *
  * An empty `areaCodes` means "every area", matching applyDetailFilters' own convention.
+ *
+ * Selection goes through applyDetailFilters, so it matches on `closingAreaOf` — the area the Closing
+ * Matrix books the row in — rather than on the brick-resolved `areaCode`. That is what keeps a
+ * filtered workbook's Data sheet holding exactly the rows its own Matrix does; see
+ * closing-row-area.ts for the -34,380.00 / +17,190.00 mismatch it closes.
  */
 export function narrowClosingDetailsToAreas(
   details: ClosingDetailsResult,
@@ -710,12 +722,14 @@ export function buildFilterOptions(rows: ClosingDetailRow[]): ClosingDetailsResu
 
   for (const row of rows) {
     if (row.regionCode) regions.set(row.regionCode, row.regionName || row.regionCode);
-    if (row.areaCode && !areas.has(row.areaCode)) {
-      areas.set(row.areaCode, {
-        code: row.areaCode,
-        name: row.areaName || row.areaCode,
-        regionCode: row.regionCode,
-      });
+    // Keyed on the CLOSING area, because that is what the area filter now matches — offering the
+    // resolved area instead would list a choice that selects none of this row's own money.
+    const areaCode = closingAreaOf(row);
+    if (areaCode && !areas.has(areaCode)) {
+      // `areaName` describes the BRICK's area, so a re-booked row names its closing area from the
+      // sheet instead; otherwise Port Said would be labelled "Dakahlia 1".
+      const areaName = (isRebookedRow(row) ? text(row.sheetAreaName) : "") || row.areaName || areaCode;
+      areas.set(areaCode, { code: areaCode, name: areaName, regionCode: row.regionCode });
     }
     if (row.productCode) products.set(row.productCode, row.productName || row.productCode);
     if (row.distributorCode) distributors.add(row.distributorCode);

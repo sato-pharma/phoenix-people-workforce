@@ -50,6 +50,12 @@ export type ClosingStoreSplitExport = {
    * computation, handed to both write-backs.
    */
   movements: StoreSplitAreaMovement[];
+  /**
+   * Per brick, the store money of a hand-apportioned customer — money the split deliberately did
+   * NOT move. Handed to planChannelBreakdownStoreSplit, whose brick grid reads its own figures and
+   * would otherwise debit a brick for a customer the Closing Matrix left alone.
+   */
+  exemptStoreValueByBrick: ReadonlyMap<string, number>;
 };
 
 /**
@@ -65,9 +71,10 @@ export function prepareClosingStoreSplit(
 ): ClosingStoreSplitExport {
   // Split ONCE. Both write-backs — the matrix's and the channel grids' — read this one result, so
   // the two sheets cannot describe different movements of the same money.
-  const { movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
+  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
   return {
     details: narrowClosingDetailsToAreas(monthRows, scopeAreaCodes),
+    exemptStoreValueByBrick,
     movements,
     net: netStoreSplitByAreaProduct(movements),
   };
