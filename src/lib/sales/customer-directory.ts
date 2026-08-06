@@ -175,7 +175,7 @@ export function mapDirectoryRowsToNames(rows: DirectoryRpcRow[], maps: NameMaps)
       brickName: maps.brickName.get(normalizeCode(brickId)) ?? brickId,
       // Derived from the name on every read, so a newly uploaded sheet is classified the moment
       // it lands — no backfill, no stored column to drift.
-      channel: classifyCustomerChannel(clientName),
+      channel: classifyCustomerChannel(clientName, String(row.client_code ?? "")),
       clientAddress: String(row.client_address ?? ""),
       clientCode: String(row.client_code ?? ""),
       clientName,

@@ -359,9 +359,11 @@ export async function runMonthlyClosingChannelsTests() {
 // occupant. Drop any of those and the grid quietly reports less than the month — which is exactly
 // the thing that gets questioned.
 //
-// The fixture mirrors the real Anti Infective 2026-07 shape (direct = 93,554 with no area/brick/rep,
-// 10 distributor rows with no brick, an area off the seat model, and a vacant seat) with round
-// numbers so the arithmetic is readable.
+// The fixture mirrors the real Anti Infective 2026-07 SHAPE (direct with no area/brick/rep, 10
+// distributor rows with no brick, an area off the seat model, and a vacant seat) with round numbers
+// so the arithmetic is readable. The amounts are deliberately NOT that month's real ones — its
+// direct total is 149,288.50 (restated 2026-08-06), pinned where it is load-bearing, in
+// closing-channel-nothing-dropped.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MONTH_TOTAL = 100_000;

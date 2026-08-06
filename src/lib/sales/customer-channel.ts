@@ -105,14 +105,54 @@ export function matchedChannelKeywords(name: string | null | undefined): string[
 }
 
 /**
+ * Customers the owner has ruled are PHARMACIES even though their name carries a store word.
+ *
+ * THE SINGLE EDIT POINT for the exceptions. Keyed by CUSTOMER CODE, not name: the same shop is
+ * spelled differently in each distributor's file, so a name-keyed exception silently stops applying
+ * the first time a distributor writes it another way — while the code stays put.
+ *
+ * The owner reviewed all 22 store-classified Anti Infective customers on 2026-08-06 and ruled every
+ * one a genuine store except the two below. Kept as an explicit list rather than by weakening the
+ * keywords, because he also ruled the keyword list must stay exactly as it is.
+ */
+export const PHARMACY_OVERRIDE_CLIENT_CODES: ReadonlySet<string> = new Set([
+  // المتحدةشركة صيدليات عابدين فارما — a pharmacy chain, not a warehouse. Matched on فارم.
+  "421516",
+  // مخزن الطرشوبى للادويه — a pharmacy despite the name. Matched on مخزن, the one keyword that
+  // looked safe, which is exactly why these exceptions are keyed by code and not by weakening a
+  // word: no keyword survives contact with how shops actually name themselves.
+  "1577318",
+]);
+
+/** Codes arrive with distributor-specific zero padding, so compare on the digits alone. */
+function normalizeClientCode(value: string | null | undefined): string {
+  const trimmed = String(value ?? "").trim();
+  return trimmed.replace(/^0+/, "") || trimmed;
+}
+
+/** True when the owner has ruled this customer a pharmacy despite a store word in its name. */
+export function isPharmacyOverride(clientCode: string | null | undefined): boolean {
+  const code = normalizeClientCode(clientCode);
+  return code !== "" && PHARMACY_OVERRIDE_CLIENT_CODES.has(code);
+}
+
+/**
  * A customer is a HOSPITAL when its name carries a hospital word, else a STORE when it carries one
  * of the six store words, else a PHARMACY. Hospital wins the overlap because a name like
  * "جمعيه ... (ص مستشفى)" carries both, and it is the hospital that identifies the customer.
  * A blank name is evidence of nothing, so it falls to pharmacy — the same side an un-keyworded
  * name lands on.
+ *
+ * `clientCode` is optional so every existing caller keeps working, but pass it wherever it is to
+ * hand: it is the only way an owner override can be honoured, and a caller that omits it silently
+ * gets the keyword answer.
  */
-export function classifyCustomerChannel(name: string | null | undefined): CustomerChannel {
+export function classifyCustomerChannel(
+  name: string | null | undefined,
+  clientCode?: string | null,
+): CustomerChannel {
   if (matchedHospitalKeywords(name).length > 0) return "hospital";
+  if (isPharmacyOverride(clientCode)) return "pharmacy";
   if (matchedStoreKeywords(name).length > 0) return "store";
   return "pharmacy";
 }
@@ -126,7 +166,15 @@ export function classifyCustomerChannel(name: string | null | undefined): Custom
  * adding the hospital channel silently stopped splitting every store whose name also mentions a
  * hospital — a UI change quietly moving money between areas in the closing. Keep it keyword-based.
  */
-export function isStoreCustomer(name: string | null | undefined): boolean {
+export function isStoreCustomer(
+  name: string | null | undefined,
+  clientCode?: string | null,
+): boolean {
+  // The owner's override DOES apply here, unlike the hospital rule above. The reason they differ:
+  // the hospital carve-out is a classification nuance, while an override says "this is not a
+  // warehouse at all". Splitting an overridden customer's sales across its city would move a
+  // pharmacy's money onto other reps — the exact error the override exists to stop.
+  if (isPharmacyOverride(clientCode)) return false;
   return matchedStoreKeywords(name).length > 0;
 }
 

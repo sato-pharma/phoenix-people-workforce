@@ -86,6 +86,9 @@ export function cityOfArea(areaCode: string | null | undefined): string | null {
 /** The minimum a row needs for the split. Matches ClosingDetailRow's shape structurally. */
 export type StoreSplitRow = {
   areaCode: string;
+  /** Required, not optional: it is the key an owner override is matched on, and a caller that
+   *  omits it would silently split a customer the owner has ruled is a pharmacy. */
+  clientCode: string;
   clientName: string;
   includedInClosing: boolean;
   isDirect: boolean;
@@ -100,7 +103,9 @@ export function isSplitEligible(row: StoreSplitRow): boolean {
   if (row.isDirect) return false;
   if (!row.includedInClosing) return false;
   if (!isSplitEligibleLine(row.officialLine)) return false;
-  if (!isStoreCustomer(row.clientName)) return false;
+  // The client code is passed so an owner override can be honoured. Without it the override is
+  // inert here and an overridden pharmacy's sales would still be scattered across its city.
+  if (!isStoreCustomer(row.clientName, row.clientCode)) return false;
   const city = cityOfArea(row.areaCode);
   if (!city) return false;
   // A city of one area splits to itself — nothing moves, so skip the work entirely.

@@ -1,6 +1,7 @@
 import {
   HOSPITAL_NAME_KEYWORDS,
   normalizeCustomerName,
+  PHARMACY_OVERRIDE_CLIENT_CODES,
   STORE_NAME_KEYWORDS,
   type CustomerChannel,
 } from "@/lib/sales/customer-channel";
@@ -380,6 +381,10 @@ export async function loadMonthlyClosingChannelComparison(
     p_exclude_codes: includeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES],
     p_hospital_stems: HOSPITAL_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
     p_line: line,
+    // The owner's per-customer rulings, sent from the same list the TypeScript classifier and the
+    // store city split already read. Without this the workbook would call an overridden pharmacy a
+    // store while the Customers tab called it a pharmacy — one customer, two answers, two screens.
+    p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_periods: wanted,
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });
@@ -742,6 +747,10 @@ export async function loadMonthlyClosingChannelBreakdown(
     p_exclude_codes: includeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES],
     p_hospital_stems: HOSPITAL_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
     p_line: line,
+    // The owner's per-customer rulings, sent from the same list the TypeScript classifier and the
+    // store city split already read. Without this the workbook would call an overridden pharmacy a
+    // store while the Customers tab called it a pharmacy — one customer, two answers, two screens.
+    p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_period: period,
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });

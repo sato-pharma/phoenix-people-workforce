@@ -40,7 +40,9 @@ import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts"
 //   2. UNNAMED DIRECT ORDERS BECAME PHARMACIES. The direct key was 'name:' || fold(client_name),
 //      never null, so the channel CASE fell through to `else 'pharmacy'`. Anti Infective 2026-07
 //      printed Pharmacies 450,035.45 against a true 356,481.45 — overstated 26.2% — with 93,554.00
-//      of unnamed direct money inside it, counted as ONE customer.
+//      of unnamed direct money inside it, counted as ONE customer. (That direct figure is HISTORIC:
+//      the owner restated July Anti Infective direct to 149,288.50 later the same day — see
+//      AI_DIRECT_UNNAMED. The defect and its 26.2% are unchanged; only the direct total moved.)
 //   3. THE GRIDS IGNORED THE STORE CITY SPLIT. The Closing Matrix halves a Gharbia wholesaler's
 //      sell-in across D14 and D15; the Area × Channel grid kept all of it on D15. Two sheets, one
 //      workbook, two different numbers for one area.
@@ -58,8 +60,14 @@ const MIGRATION = path.join(
 const AI_PHARMACY = 356_481.45;
 const AI_STORE = 99_694.35;
 const AI_HOSPITAL = 6_729.75;
-const AI_DIRECT_UNNAMED = 93_554.00;
-const AI_MONTH = AI_PHARMACY + AI_STORE + AI_HOSPITAL + AI_DIRECT_UNNAMED; // 556,459.55
+// RESTATED 2026-08-06 (#1857) and re-measured live the same day. The owner replaced the line's 14
+// region-only direct rows with his own 16-row area distribution — 1,150 units / 93,554.00 becomes
+// 2,120 units / 149,288.50 — and ruled that figure "accurate 100%". 93,554.00 is now the
+// PRE-restatement number and must not reappear here: production returns 149,288.50 at every layer
+// (import_rows.value, fact_rollup.direct_value, phx_monthly_closing_direct,
+// phx_closing_channel_totals, phx_closing_channel_breakdown — all checked 2026-08-06).
+const AI_DIRECT_UNNAMED = 149_288.50;
+const AI_MONTH = AI_PHARMACY + AI_STORE + AI_HOSPITAL + AI_DIRECT_UNNAMED; // 612,194.05
 
 // The real CNS shortfall, month by month, as production returns it.
 const CNS_NO_CODE: Record<string, number> = {
@@ -173,7 +181,8 @@ function runUnnamedDirectTests() {
   assert.ok(
     unnamed,
     "DEFECT 2: direct orders with no customer name must have their own labelled row rather than being "
-    + "assigned to Pharmacies — they are 93,554.00 EGP on Anti Infective July and 534,713.65 on Pedia July",
+    + "assigned to Pharmacies — they are 149,288.50 EGP on Anti Infective July (restated 2026-08-06) "
+    + "and 534,713.65 on Pedia July",
   );
   assert.equal(unnamed?.byPeriod["2026-07"]?.value, AI_DIRECT_UNNAMED, "DEFECT 2: the row carries the whole amount");
   assert.equal(
@@ -244,7 +253,7 @@ function runStoreSplitOnGridsTests() {
 
   // The SAME movements the Closing Matrix is given, exactly as the export route hands them to both.
   const rows: (StoreSplitRow & { brickId: string })[] = [{
-    areaCode: "D15", brickId: "BR-15", clientName: "مخزن الغربية", includedInClosing: true,
+    areaCode: "D15", brickId: "BR-15", clientCode: "TEST-CODE", clientName: "مخزن الغربية", includedInClosing: true,
     isDirect: false, officialLine: "Anti Infective", productCode: "RO001", qty: 100, salesValue: STORE_VALUE,
   }];
   const { movements } = splitStoreSalesAcrossCityAreas(rows);
@@ -335,13 +344,19 @@ function runStoreSplitOnGridsTests() {
 // ── Defect 3, second cause — July 2026's hand-mapped direct orders ───────────
 //
 // Found while proving the store-split fix: after it, Anti Infective still had six areas and Pedia
-// eleven disagreeing with the Closing Matrix, by 93,554.00 and 534,713.65 — the exact direct totals.
-// The cause is separate from the split. Those orders carry NO area in the database (verified in
-// production: 46 rows, 0 with an area); the Matrix places them from the owner's hand-mapping of
-// 2026-08-03 and the grids did not. CNS has no direct orders, which is why the one line anybody
-// checked could never show it.
+// eleven disagreeing with the Closing Matrix, by the exact direct totals. The cause is separate from
+// the split. Those orders carry NO area in the database (verified in production: 46 rows, 0 with an
+// area); the Matrix places them from the owner's hand-mapping and the grids did not. CNS has no
+// direct orders, which is why the one line anybody checked could never show it.
+//
+// THE MERGE ONLY RUNS WHEN THE MAPPING AND THE RPC DESCRIBE THE SAME MONEY, so this fixture's direct
+// total is not a free choice — it must be what production's direct RPC actually returns, or the
+// reconciliation refuses and the whole re-attribution silently stops. Anti Infective's July direct
+// was restated on 2026-08-06 (#1857) from 93,554.00 to 149,288.50 and the owner ruled that figure
+// "accurate 100%"; leaving the old number here is what failed this test, because it asked the merge
+// to reconcile 149,288.50 of mapping against 93,554.00 of sales.
 function runJulyDirectAreaTests() {
-  const DIRECT = 93_554;
+  const DIRECT = 149_288.50;
   const rows = [
     { dimension: "product", hospital: 0, key: "RO001", label: "Royafloxacin", pharmacy: 100, store: 0, total: 100 },
     { dimension: "product", hospital: 0, key: "SA001", label: "Saginkgo", pharmacy: 0, store: 0, total: 0 },
@@ -368,9 +383,10 @@ function runJulyDirectAreaTests() {
     merged.breakdown.byDimension.area.find((row) => row.key.toUpperCase() === key)?.total ?? 0;
   assert.equal(
     Number(areaValue("CA4").toFixed(2)),
-    10_680,
-    "DEFECT 3 (July direct): CA4 must carry its own 100.00 of distributor sales PLUS the 10,580.00 of direct "
-    + "money the owner mapped to it — which is exactly what the Closing Matrix shows for CA4",
+    11_140,
+    "DEFECT 3 (July direct): CA4 must carry its own 100.00 of distributor sales PLUS the 11,040.00 of direct "
+    + "money the owner mapped to it (Royafloxacin, 200 units, restated 2026-08-06) — which is exactly what "
+    + "the Closing Matrix shows for CA4",
   );
   assert.equal(
     merged.breakdown.byDimension.area.some((row) => row.key === "__DIRECT__"),

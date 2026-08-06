@@ -254,6 +254,7 @@ import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
+import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
@@ -603,6 +604,7 @@ import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.t
 
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
+import { runJuly2026DirectValueIsStoredTests } from "./july-2026-direct-value-is-stored.test.ts";
 
 import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-summary-outage.test.ts";
 
@@ -1347,7 +1349,14 @@ await runTest(
   runPayrollDeductionGateComposesWithPublishRuleTests,
 );
 
-await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4,271 units; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
+await runTest("July 2026 direct orders (closed month still totals 684,002.15 / 5,241 units after the 2026-08-06 Anti Infective restatement; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
+
+await runTest(
+  "July 2026 direct value is taken AS STORED (owner's ruling 2026-08-06: Anti Infective direct is "
+  + "149,288.50, never the 157,518.00 a factory-price recompute gives; July only; the mapping and "
+  + "the month's direct sales stay one number)",
+  runJuly2026DirectValueIsStoredTests,
+);
 
 await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
 
@@ -1503,6 +1512,11 @@ await runTest(
 await runTest(
   "direct orders sheet editable columns (the team's notes are keyed to the Request ID, captured before the sheet is wiped or reordered, live outside every range the refresh rewrites, and the real sales month stays Phoenix's alone)",
   runDirectOrdersSheetEditableColumnsTests,
+);
+
+await runTest(
+  "sales pharmacy override (owner ruling beats the keyword, split stops moving their money)",
+  runSalesPharmacyOverrideTests,
 );
 
 await runTest(
