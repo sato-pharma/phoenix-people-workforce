@@ -222,7 +222,6 @@ export function DeparturePhotoCard({
 
               {isActive && state.kind === "live" ? (
                 <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-black">
-                  {/* eslint-disable-next-line jsx-a11y/media-has-caption -- a live camera preview has no audio track to caption. */}
                   <video className="max-h-[320px] w-full object-contain" playsInline ref={videoRef} />
                 </div>
               ) : null}
