@@ -163,6 +163,7 @@ import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
+import { runCrmSyncIdentityPreservationTests } from "./crm-sync-identity-preservation.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
@@ -884,6 +885,7 @@ await runTest("crm checkin page boundary (.gte cursor + id de-dupe across duplic
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
+await runTest("crm sync identity preservation (a SILENT null never overwrites a resolved agent_hr_id; a BLOCKED null still does)", runCrmSyncIdentityPreservationTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
