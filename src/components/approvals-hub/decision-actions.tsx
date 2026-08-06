@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 export type DecisionActionsProps = {
@@ -44,6 +45,16 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The sticky mobile bar portals to document.body, so it must not render on the server.
+  const [mounted, setMounted] = useState(false);
+  const panelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    // The one legitimate use of this pattern: a portal target only exists in the browser, so the
+    // flag must flip exactly once after hydration. Same disable the portal twin already carries
+    // for the same reason (direct-order-portal-detail.tsx:57).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true);
+  }, []);
 
   const available = (
     [
@@ -58,6 +69,9 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
 
   function start(action: Exclude<Pending, null>) {
     setError(null);
+    // Tapping the sticky bar must not strand the confirm prompt (and the mandatory reason box)
+    // above the fold — the bar is pinned to the bottom, the panel is in the page.
+    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setReason("");
     setPending(action);
   }
@@ -99,7 +113,8 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
   };
 
   return (
-    <section className="border border-[#e4e9ec] bg-white">
+    <>
+    <section ref={panelRef} className="border border-[#e4e9ec] bg-white">
       <header className="border-b border-[#e4e9ec] bg-slate-900 px-4 py-2.5">
         <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-white">Your response</h3>
       </header>
@@ -112,7 +127,9 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
                 key={action}
                 type="button"
                 onClick={() => start(action)}
-                className={`px-4 py-2 text-sm font-bold transition-colors ${toneClass[action]}`}
+                // h-11 is the 44px accessibility floor. This is the screen where money
+                // moves, reached after eight sections of evidence, often on a phone.
+                className={`h-11 flex-1 px-4 text-sm font-bold transition-colors md:flex-none ${toneClass[action]}`}
               >
                 {LABEL[action]}
               </button>
@@ -132,7 +149,7 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
                 rows={3}
                 autoFocus
                 placeholder="Type the reason the employee will see…"
-                className="w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                className="w-full border border-slate-300 px-3 py-2 text-base focus:border-orange-500 focus:outline-none md:text-sm"
               />
             ) : null}
             {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
@@ -141,7 +158,7 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
                 type="button"
                 onClick={confirm}
                 disabled={busy}
-                className="bg-orange-500 px-4 py-2 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60"
+                className="h-11 flex-1 bg-orange-500 px-4 text-sm font-bold text-white hover:bg-orange-600 disabled:opacity-60 md:flex-none"
               >
                 {busy ? "Submitting…" : `Confirm ${LABEL[pending].split(" ")[0]}`}
               </button>
@@ -152,7 +169,7 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
                   setError(null);
                 }}
                 disabled={busy}
-                className="border border-slate-300 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                className="h-11 flex-1 border border-slate-300 px-4 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-60 md:flex-none"
               >
                 Cancel
               </button>
@@ -162,5 +179,34 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
         {error && pending === null ? <p className="mt-3 text-sm font-semibold text-rose-600">{error}</p> : null}
       </div>
     </section>
+
+    {/* The thumb bar. A decision reached after eight sections of evidence should not require
+        scrolling back to find the buttons. Hidden once a decision is pending, because the confirm
+        prompt and its mandatory reason box live in the panel above.
+
+        `bottom: env(safe-area-inset-bottom)` with NO extra offset: the portal twin adds 56px to
+        clear the employee bottom nav, and the admin shell has no bottom nav — copying that number
+        would float this bar above nothing. */}
+    {mounted && pending === null
+      ? createPortal(
+          <div
+            className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+            style={{ bottom: "env(safe-area-inset-bottom)" }}
+          >
+            {available.map(([action]) => (
+              <button
+                key={`bar-${action}`}
+                type="button"
+                onClick={() => start(action)}
+                className={`h-12 flex-1 text-sm font-bold transition-colors ${toneClass[action]}`}
+              >
+                {LABEL[action]}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )
+      : null}
+    </>
   );
 }

@@ -157,4 +157,84 @@ export function runDirectOrdersApprovalWindowMobileTests() {
       "the desktop grid must still be four columns — nothing about the mobile fix may narrow the desktop view",
     );
   }
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Added after #1833/#1836: four things the mobile layout left behind.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  // ── One source of truth for the money ─────────────────────────────────────
+  // #1833 gave the phone its own totals cards, which left the same seven sums written twice — the
+  // desktop totals row and the mobile card each reducing the same array. Sliced per totals row and
+  // per mobile card rather than counted file-wide, because a file-wide `.reduce(` ban would also
+  // forbid the hoisted declarations this rewards.
+  assert.match(source, /const retailTotals = \{/, "retail totals must be computed once");
+  assert.match(source, /const directTotals = \{/, "direct totals must be computed once");
+  for (const [index, block] of source.split("<tfoot>").slice(1).entries()) {
+    const row = block.slice(0, block.indexOf("</tfoot>"));
+    assert.ok(
+      !row.includes(".reduce("),
+      `totals row ${index + 1} must read the hoisted totals, never recompute them inline`,
+    );
+  }
+  // Anchored AFTER the hoisted declarations, not at the first `return (` — the first one belongs
+  // to the Field primitive near the top of the file, so slicing there swallowed the very
+  // declarations this rewards and the assertion failed against correct code.
+  const declEnd = source.indexOf("};", source.indexOf("const directTotals = {"));
+  assert.notEqual(declEnd, -1, "the hoisted totals declarations must exist");
+  assert.ok(
+    !source.slice(declEnd).includes(".reduce((sum"),
+    "no renderer may recompute a total inline — two reduce expressions on the two screens that " +
+      "must agree about what a pharmacy is worth is how they quietly disagree",
+  );
+
+  // ── The phantom check ─────────────────────────────────────────────────────
+  assert.match(
+    source,
+    /request\.salesValue > retailTotals\.salesValue/,
+    "the retail totals must flag an order larger than everything the pharmacy has ever bought — " +
+      "the one line most likely to catch a phantom, from numbers already on the page",
+  );
+
+  // ── The chain row cannot squeeze ──────────────────────────────────────────
+  assert.match(
+    source,
+    /min-w-0 flex-1 text-sm font-semibold/,
+    "the approver name must be allowed to shrink, or a long name shoves the status off a phone",
+  );
+  assert.match(
+    source,
+    /pl-0 md:pl-\[42px\]/,
+    "the 42px decorative gutter must be desktop-only — it costs 12% of a 390px screen in the one " +
+      "block that holds free Arabic text",
+  );
+
+  // ── Touch targets on the shared decision component ────────────────────────
+  const actions = readFileSync(
+    new URL("../src/components/approvals-hub/decision-actions.tsx", import.meta.url),
+    "utf8",
+  );
+  const countIn = (haystack: string, needle: string) => haystack.split(needle).length - 1;
+  assert.ok(
+    countIn(actions, "h-11") >= 3,
+    "every decision button must clear the 44px touch floor — this is the screen where money moves, " +
+      "reached after eight sections of evidence",
+  );
+  assert.match(actions, /h-12 flex-1/, "the sticky mobile bar's buttons must be thumb-sized");
+  assert.match(actions, /createPortal\(/, "the sticky bar must portal to the body to escape overflow contexts");
+  assert.match(
+    actions,
+    /style=\{\{ bottom: "env\(safe-area-inset-bottom\)" \}\}/,
+    "the admin bar sits on the safe area itself",
+  );
+  assert.doesNotMatch(
+    actions,
+    /calc\(56px/,
+    "the portal twin's 56px offset clears the EMPLOYEE bottom nav; the admin shell has none, so " +
+      "copying that number would float this bar above nothing",
+  );
+  assert.match(
+    actions,
+    /text-base focus:border-orange-500 focus:outline-none md:text-sm/,
+    "the reason box must be 16px on mobile, or iOS Safari zooms the viewport when it is focused",
+  );
 }
