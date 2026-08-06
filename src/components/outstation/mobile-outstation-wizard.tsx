@@ -570,6 +570,7 @@ export function MobileOutstationWizard({
   }, [
     captured,
     carEvidence?.capturedAt,
+    carEvidence?.source,
     carEvidence?.imageDataUrl,
     carEvidence?.capturedLatitude,
     carEvidence?.capturedLocationLabel,

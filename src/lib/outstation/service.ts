@@ -34,7 +34,7 @@ import {
   outstationTicketEvidenceRejection,
 } from "@/lib/outstation/decision";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { formatDateValue, formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
+import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
   attachOutstationCapturedLocations,
   resolveOutstationCapturedLocation,
