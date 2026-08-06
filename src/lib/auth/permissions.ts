@@ -643,12 +643,15 @@ const defaultPermissionMatrix: PermissionMap = {
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
     overview: [],
-    // The portal Deductions page already shows a Regional Manager their whole management subtree
-    // (collectPortalDeductionScope in deductions-governance/service.ts has an explicit RM branch), so
-    // the grant is declared here to match: the access was real but undeclared, which meant the matrix
-    // — the thing an admin reads to reason about who can see what — was wrong. Read-only: every
-    // deduction WRITE surface stays gated on the admin resource (Super Admin / CEO / Finance Manager).
-    deductions: ["read"],
+    // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
+    // only"). This previously read `["read"]`, declared to match a portal page that widened a
+    // Regional Manager to their whole management subtree. That widening is gone —
+    // collectPortalDeductionScope is now self-only for every role — so the grant has no remaining
+    // justification, and while it stood it also opened the company-wide admin endpoints
+    // (/api/admin/deductions/*), whose only check was this same `deductions:read`. That let a
+    // read-only role download every employee's deduction amounts for any month.
+    // A Regional Manager still sees their OWN deductions: the portal page and its nav entry both
+    // gate on `employee_profile`, not on this resource.
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

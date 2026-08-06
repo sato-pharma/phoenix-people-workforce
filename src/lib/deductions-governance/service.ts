@@ -1806,76 +1806,20 @@ export function collectPortalDeductionScope(input: {
 }) {
   if (input.access.scope === "system") return { all: true, compactHrIds: new Set<string>() };
   const root = compactHrId(input.access.hrId ?? input.access.loginId);
-  // Marketing Manager (Head of Department) keeps broad analytics oversight elsewhere, but
-  // portal Deductions are intentionally SELF-only: a marketing lead must not read other line
-  // employees' financial/disciplinary deduction PII. Return the viewer's own record only,
-  // before any line/hierarchy widening below.
-  if (input.access.role === "Marketing Manager") {
-    return { all: false, compactHrIds: new Set<string>(root ? [root] : []) };
-  }
-  const compactHrIds = new Set<string>();
-  if (root) compactHrIds.add(root);
-  const byManager = new Map<string, EmployeeScopeRow[]>();
-  const rootRows = input.employees.filter((employee) => compactHrId(employee.hr_id) === root);
-  const rootLineIds = new Set(rootRows.map((row) => row.line_id).filter((value): value is number => typeof value === "number"));
-  const rootLineNames = new Set(rootRows.map((row) => String(row.line_name ?? "").trim().toLowerCase()).filter(Boolean));
-
-  for (const employee of input.employees) {
-    const manager = compactHrId(employee.manager_hr_id);
-    if (!manager) continue;
-    const list = byManager.get(manager) ?? [];
-    list.push(employee);
-    byManager.set(manager, list);
-  }
-
-  const addDirect = (managerId: string) => {
-    for (const child of byManager.get(managerId) ?? []) {
-      const childId = compactHrId(child.hr_id);
-      if (childId) compactHrIds.add(childId);
-    }
-  };
-
-  const addHierarchy = (managerId: string) => {
-    const queue = [managerId];
-    const visited = new Set<string>();
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current || visited.has(current)) continue;
-      visited.add(current);
-      for (const child of byManager.get(current) ?? []) {
-        const childId = compactHrId(child.hr_id);
-        if (!childId || compactHrIds.has(childId)) continue;
-        compactHrIds.add(childId);
-        queue.push(childId);
-      }
-    }
-  };
-
-  if (root) {
-    if (input.access.scope === "team") addDirect(root);
-    if (
-      input.access.scope === "hierarchy" ||
-      input.access.scope === "line" ||
-      input.access.scope === "company" ||
-      input.access.role === "National Sales Manager" ||
-      input.access.role === "Regional Manager"
-    ) {
-      addHierarchy(root);
-    }
-  }
-
-  if (input.access.scope === "line" || input.access.role === "National Sales Manager") {
-    for (const employee of input.employees) {
-      const normalizedLineName = String(employee.line_name ?? "").trim().toLowerCase();
-      const inLine =
-        (typeof employee.line_id === "number" && rootLineIds.has(employee.line_id)) ||
-        (normalizedLineName && rootLineNames.has(normalizedLineName));
-      const employeeId = compactHrId(employee.hr_id);
-      if (inLine && employeeId) compactHrIds.add(employeeId);
-    }
-  }
-
-  return { all: false, compactHrIds };
+  // PORTAL DEDUCTIONS ARE SELF-ONLY FOR EVERY ROLE (owner instruction, 2026-08-06:
+  // "everyone can only see his deductions only").
+  //
+  // This used to widen by management subtree and by line, so a Regional Manager, a National
+  // Sales Manager, a District Manager or any "team"/"hierarchy"/"line"-scoped viewer read the
+  // deduction amounts of everyone beneath them. A deduction is financial AND disciplinary PII —
+  // the amount is derived directly from the person's base salary, so seeing the row tells you
+  // roughly what a colleague earns. Marketing Manager was already carved out as self-only for
+  // exactly this reason; that carve-out is now the rule rather than the exception.
+  //
+  // Company-wide review did NOT live here and is unaffected: it is the admin Deductions module,
+  // gated on assertDeductionsReadActor (Super Admin / CEO / Finance Manager). `scope === "system"`
+  // above keeps that audience whole. A manager who needs a subordinate's figure asks HR.
+  return { all: false, compactHrIds: new Set<string>(root ? [root] : []) };
 }
 
 export async function listPublishedDeductionsForPortal(input: {

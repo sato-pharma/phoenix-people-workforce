@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 import { buildDeductionsCategoryWorkbook } from "@/lib/deductions/exports/category-workbook.ts";
@@ -14,7 +15,15 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "deductions", "read");
+    // This endpoint returns EVERY employee's deduction amounts for the month, company-wide.
+    // Two gates, deliberately, because the first one alone was not enough:
+    //   - "export", not "read": a role granted read-only (Regional Manager) must not be able to
+    //     take the whole company's payroll data out of the system as a file.
+    //   - assertDeductionsReadActor: the module's own stated audience (Super Admin / CEO /
+    //     Finance Manager). The RBAC grant `deductions: ["read"]` exists on Regional Manager to
+    //     describe their PORTAL subtree view, so the matrix alone is one role too wide here.
+    await assertPermission(access, "deductions", "export");
+    assertDeductionsReadActor(access);
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:deductions:category" });
 
     const url = new URL(request.url);
