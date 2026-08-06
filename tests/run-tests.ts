@@ -657,6 +657,8 @@ import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-h
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
+import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1469,6 +1471,11 @@ await runTest(
 await runTest(
   "direct orders pharmacy standing (spec D2: an empty sales table explains itself in words; a null probation clock is never day zero; the footprint query names the column SoS actually has)",
   runDirectOrdersPharmacyStandingTests,
+);
+
+await runTest(
+  "direct orders pharmacy combo box opens where there is room (measured against visualViewport, flips up, never a fixed 320px)",
+  runDirectOrdersPharmacyComboboxPlacementTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
