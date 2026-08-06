@@ -20,6 +20,7 @@ import {
   getCrmIdentityResolutions,
   resolveEmployeeAttribution,
   resolveEmployeeHrId,
+  type CrmAttribution,
   type CrmIdentityMaps,
 } from "@/lib/crm/identity";
 import { CRM_CHECKINS_TABLE, CRM_SYNC_RUNS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -184,7 +185,149 @@ function rowFromCheckin(checkin: IReports360Checkin, maps: CrmIdentityMaps) {
   };
 }
 
+export type VisitDraftRow = ReturnType<typeof rowFromVisit>;
 export type CheckinDraftRow = ReturnType<typeof rowFromCheckin>;
+
+/**
+ * TWO DIFFERENT NULLS, AND ONLY ONE OF THEM MAY BE WRITTEN.
+ *
+ * `resolveEmployeeAttribution` returns a null `hrId` for two opposite reasons:
+ *
+ *   SILENT  — no tier matched at all (crm_id absent from the roster, no manual override, no unique
+ *             crm_username). We simply do not know who this is. `blockedHrId` is null too.
+ *   BLOCKED — a tier DID match, and the post-exit guard refused it because the CRM slot was handed
+ *             to a replacement. `blockedHrId` names the employee who was refused.
+ *
+ * A BLOCKED null is a decision and must be written: it is what stopped a leaver's hr id being
+ * stamped onto the new rep's work, the bug that made 190 live visits invisible. A SILENT null is
+ * an absence of information, and writing it over an identity the mirror already resolved is pure
+ * data loss — the upsert overwrites every column, exactly as it used to destroy check-in addresses
+ * (see backfillMissingCheckinAddresses).
+ *
+ * That destruction is not hypothetical. Measured on production 2026-08-06: `agent_hr_id` was NULL
+ * on 0% of visit rows for 2026-07-01..07-05 and on 5-9% every day from 07-06 onward, because the
+ * rolling 10-day sync re-resolved identities that `employees.crm_id` no longer carried and wrote
+ * the silent nulls back. Seven medical reps were then charged 14,629.01 EGP of "no CRM activity"
+ * deductions for days on which they logged 8-22 real visits, because the deduction connectors match
+ * on `agent_hr_id`.
+ *
+ * This is also why the tempting `coalesce(new.agent_hr_id, old.agent_hr_id)` DB trigger is WRONG:
+ * Postgres cannot tell the two nulls apart, so it would permanently pin a handed-over slot's work
+ * onto the leaver and silently undo the post-exit guard.
+ */
+export function isSilentAttribution(attribution: CrmAttribution): boolean {
+  return attribution.hrId === null && attribution.blockedHrId === null;
+}
+
+/**
+ * Pure decision core of the identity-preservation step — split out so it is unit-testable without
+ * mocking Supabase, the same reasoning as selectCheckinsToGeocode above.
+ *
+ * Returns the key of every row that needs its stored identity looked up: one whose freshly-resolved
+ * attribution is SILENT on at least one of its two identity columns. A row the resolver answered
+ * (either with an hr id or with a deliberate block) needs nothing — the fresh answer is the truth.
+ */
+export function selectIdentitiesToPreserve<TRow>(
+  rows: readonly TRow[],
+  keyOf: (row: TRow) => number,
+  attributionsOf: (row: TRow) => ReadonlyArray<CrmAttribution | null>,
+): number[] {
+  const keys: number[] = [];
+  for (const row of rows) {
+    if (attributionsOf(row).some((attribution) => attribution != null && isSilentAttribution(attribution))) {
+      keys.push(keyOf(row));
+    }
+  }
+  return keys;
+}
+
+/**
+ * Restores an identity the mirror already resolved onto a draft row whose fresh attribution came
+ * back SILENT, so the upsert cannot null it out. See isSilentAttribution for why only the silent
+ * case qualifies.
+ *
+ * Best-effort in the same shape as the address backfill: if the lookup fails we log and let the
+ * upsert proceed, because refusing to sync at all would be a worse outcome than the sync we have
+ * been running for weeks. The reconciliation check and assertCrmIdentityCoverage are what turn a
+ * lookup outage into something a human hears about.
+ */
+async function preserveResolvedIdentities<TRow extends Record<string, unknown>>(input: {
+  /** `of` returns null when the column does not apply to this row at all — a visit with no
+   * `double_crm_id` has no second person, so its null `double_hr_id` is correct and must be kept. */
+  attributions: ReadonlyArray<{ column: "agent_hr_id" | "double_hr_id"; of: (row: TRow) => CrmAttribution | null }>;
+  keyColumn: string;
+  keyOf: (row: TRow) => number;
+  rows: TRow[];
+  supabase: ReturnType<typeof getSupabaseAdmin>;
+  table: string;
+}): Promise<number> {
+  const keys = selectIdentitiesToPreserve(input.rows, input.keyOf, (row) =>
+    input.attributions.map((entry) => entry.of(row)),
+  );
+  if (keys.length === 0) return 0;
+
+  const columns = input.attributions.map((entry) => entry.column);
+  const storedByKey = new Map<number, Record<string, string | null>>();
+  try {
+    for (let from = 0; from < keys.length; from += 500) {
+      const chunk = keys.slice(from, from + 500);
+      const { data, error } = await input.supabase
+        .from(input.table)
+        .select([input.keyColumn, ...columns].join(", "))
+        .in(input.keyColumn, chunk);
+      if (error) throw new Error(error.message);
+      // The select list is built at runtime from `columns`, so supabase-js cannot type the row —
+      // it degrades to GenericStringError[]. Cast through unknown; the field reads below are all
+      // defensive (Number.isFinite / typeof string) and never trust the shape.
+      for (const stored of (data ?? []) as unknown as Array<Record<string, unknown>>) {
+        const key = Number(stored[input.keyColumn]);
+        if (!Number.isFinite(key)) continue;
+        const entry: Record<string, string | null> = {};
+        for (const column of columns) {
+          const value = stored[column];
+          entry[column] = typeof value === "string" && value.trim() ? value : null;
+        }
+        storedByKey.set(key, entry);
+      }
+    }
+  } catch (error) {
+    logError("CRM sync could not read stored visit identities; a resolved agent_hr_id may be overwritten", {
+      labels: { event: "crm_sync_identity_preserve_lookup_failed" },
+      error,
+    });
+    return 0;
+  }
+
+  return applyPreservedIdentities(input.rows, storedByKey, input.keyOf, input.attributions);
+}
+
+/**
+ * Pure restore step — mutates the draft rows in place and returns how many columns were rescued.
+ * Split from the I/O above so the three cases that matter are unit-testable without Supabase:
+ * a SILENT null is replaced by the stored identity, a BLOCKED null is left alone, and a freshly
+ * resolved hr id always wins over whatever is stored.
+ */
+export function applyPreservedIdentities<TRow>(
+  rows: readonly TRow[],
+  storedByKey: ReadonlyMap<number, Record<string, string | null>>,
+  keyOf: (row: TRow) => number,
+  attributions: ReadonlyArray<{ column: "agent_hr_id" | "double_hr_id"; of: (row: TRow) => CrmAttribution | null }>,
+): number {
+  let restored = 0;
+  for (const row of rows) {
+    const stored = storedByKey.get(keyOf(row));
+    if (!stored) continue;
+    for (const entry of attributions) {
+      const attribution = entry.of(row);
+      if (attribution == null || !isSilentAttribution(attribution)) continue;
+      const known = stored[entry.column];
+      if (!known) continue;
+      (row as Record<string, unknown>)[entry.column] = known;
+      restored += 1;
+    }
+  }
+  return restored;
+}
 
 /** True when a row has no usable address yet but has real coordinates to geocode from. */
 function checkinNeedsAddress(row: CheckinDraftRow): boolean {
@@ -339,6 +482,11 @@ export async function syncIReports360Visits(input: {
   checkinsFailed: boolean;
   checkinsFetched: number;
   checkinsUpserted: number;
+  /** Identity columns this run restored from the mirror because the fresh attribution came back
+   * SILENT. A steady non-zero count means the roster has stopped carrying someone's crm_id and the
+   * sync is now the only thing holding their history together — repair the mapping rather than
+   * relying on this. It is a rescue, not a resting state. */
+  identitiesPreserved: number;
   rowsDeleted: number;
   rowsFetched: number;
   rowsSkippedInvalidDate: number;
@@ -434,6 +582,30 @@ export async function syncIReports360Visits(input: {
       (row) => row.crm_visit_id,
       input.onlyUpsertIds?.visitIds,
     );
+    // Preserve identities the mirror already resolved, on the rows actually being written this run.
+    // Without this the upsert writes a SILENT null over a good agent_hr_id every time the roster
+    // stops carrying that person's crm_id — see isSilentAttribution.
+    const visitIdentitiesRestored = await preserveResolvedIdentities({
+      attributions: [
+        {
+          column: "agent_hr_id",
+          of: (row) => resolveEmployeeAttribution(row.agent_crm_id, row.agent_name, maps, row.visit_date || null),
+        },
+        {
+          column: "double_hr_id",
+          of: (row) =>
+            row.double_crm_id == null
+              ? null
+              : resolveEmployeeAttribution(row.double_crm_id, row.double_name, maps, row.visit_date || null),
+        },
+      ],
+      keyColumn: "crm_visit_id",
+      keyOf: (row) => row.crm_visit_id,
+      rows: visitRowsForUpsert,
+      supabase,
+      table: visitsTable,
+    });
+
     const visitsUpserted = await upsertRowsConcurrently(
       supabase,
       visitsTable,
@@ -452,6 +624,23 @@ export async function syncIReports360Visits(input: {
     );
     // Address backfill only needs to consider rows actually being written this run.
     await backfillMissingCheckinAddresses(supabase, checkinRowsForUpsert);
+    // Same preservation for check-ins. They carry no display name, so tier 3 can never rescue them
+    // and a missing employees.crm_id is the ONLY thing standing between a resolved identity and a
+    // silent null — which makes them the more fragile of the two tables, not the less.
+    const checkinIdentitiesRestored = await preserveResolvedIdentities({
+      attributions: [
+        {
+          column: "agent_hr_id",
+          of: (row) =>
+            resolveEmployeeAttribution(row.agent_crm_id, null, maps, (row.check_date ?? "").slice(0, 10) || null),
+        },
+      ],
+      keyColumn: "crm_checkin_id",
+      keyOf: (row) => row.crm_checkin_id,
+      rows: checkinRowsForUpsert,
+      supabase,
+      table: checkinsTable,
+    });
     const checkinsUpserted = await upsertRowsConcurrently(
       supabase,
       checkinsTable,
@@ -655,6 +844,7 @@ export async function syncIReports360Visits(input: {
       checkinsFailed,
       checkinsFetched: checkins.length,
       checkinsUpserted,
+      identitiesPreserved: visitIdentitiesRestored + checkinIdentitiesRestored,
       rowsDeleted,
       rowsFetched: visits.length,
       rowsSkippedInvalidDate,
