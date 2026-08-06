@@ -77,6 +77,56 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
     return () => clearTimeout(timer);
   }, [query, distributorCode]);
 
+  // ── Where the list can actually fit ─────────────────────────────────────────
+  // It used to open downward at a fixed 320px, always. This input sits low in a long form, so on
+  // a phone the list rendered entirely behind the on-screen keyboard: measured on production, with
+  // the keyboard up there were ZERO visible pixels of it and no way to scroll to it, because an
+  // absolutely-positioned list is not something the page can scroll to reveal when the space
+  // simply is not there.
+  //
+  // `visualViewport` is the load-bearing part. `window.innerHeight` does NOT shrink when a mobile
+  // keyboard opens, so measuring against it would compute plenty of room below and place the list
+  // straight back under the keyboard — the bug, reproduced by the fix meant to cure it.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<{ dropUp: boolean; maxHeight: number }>({
+    dropUp: false,
+    maxHeight: 320,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    // Same rule as the search effect above: the setState lives in the scheduled callback, never
+    // in the effect body.
+    const measure = () => {
+      const el = wrapRef.current;
+      if (!el) return;
+      const box = el.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const below = viewportTop + viewportHeight - box.bottom - 8;
+      const above = box.top - viewportTop - 8;
+      // Flip up only when it genuinely helps: below is too tight AND above is roomier. A list that
+      // flips on every keystroke is worse than one that is merely short.
+      const dropUp = below < 176 && above > below;
+      const room = dropUp ? above : below;
+      setPlacement({ dropUp, maxHeight: Math.max(120, Math.min(320, Math.floor(room))) });
+    };
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    // Capture phase: the form may sit inside a scrolling container, whose scroll does not bubble.
+    window.addEventListener("scroll", measure, true);
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("scroll", measure);
+    };
+  }, [open, hits.length]);
+
   function pick(hit: PharmacySearchHit) {
     setOpen(false);
     setQuery("");
@@ -87,7 +137,7 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
   const nameOf = (hit: PharmacySearchHit) => hit.customerName ?? `${hit.customerCode ?? "?"} — (no name on file)`;
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <input
         className={inputClassName}
         value={query}
@@ -121,7 +171,14 @@ export function PharmacyComboBox({ onSelect, inputClassName, distributorCode }: 
       ) : null}
 
       {open && query.trim().length >= 2 ? (
-        <div className="absolute z-30 mt-1 max-h-80 w-full overflow-y-auto border border-slate-300 bg-white shadow-lg">
+        <div
+          // Height comes from the measurement, never from a fixed max-h class — the whole point is
+          // that it fits the room that actually exists. `bottom-full` flips it above the input.
+          style={{ maxHeight: `${placement.maxHeight}px` }}
+          className={`absolute z-30 w-full overflow-y-auto overscroll-contain border border-slate-300 bg-white shadow-lg ${
+            placement.dropUp ? "bottom-full mb-1" : "mt-1"
+          }`}
+        >
           {hits.length === 0 && !busy ? (
             <p className="px-3 py-3 text-[12px] font-semibold text-slate-500">
               No match in the master database. Check the customer code on the distributor invoice —
