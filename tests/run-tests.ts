@@ -136,6 +136,7 @@ import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guard
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
+import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
@@ -844,6 +845,7 @@ await runTest("deductions module CRM guards (suspect-date sync-gap detection + e
 await runTest("deductions module portal read path (dual-read-by-month merge + legacy shape mapping)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
+await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending)", runDeductionsSupersedeCarriesDecisionTests);
 await runTest(
   "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
   runDeductionsModuleAppliedDaysTests,
