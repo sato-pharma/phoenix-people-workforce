@@ -28,6 +28,17 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // channels. phx_closing_channel_totals exists to answer this one question properly, and it is a
 // single round trip for the whole sheet rather than one per month.
 //
+// A ROW WITH NO CLIENT CODE IS NOT DROPPED, AND IS NOT A PHARMACY. Both RPCs used to filter
+// `client_code is not null` on their retail half, inherited from phx_closing_customers where it is
+// correct (that function lists CUSTOMERS, and a row with no customer cannot be one). Here it made
+// the sheets sum to LESS than the month beside them — CNS 2026-05 was short 4,363,635.38 EGP of
+// 8,354,429.79, and five other CNS months were short too, while Anti Infective, Pedia and Head
+// Office are clean in every 2026 month, which is exactly why it survived review. Deleting the
+// filter alone would have been worse than the bug: with no client code there is no name, and the
+// channel CASE ends in `else 'pharmacy'`, so 4.36M EGP would have been reported as pharmacy sales.
+// Those rows now get their own bucket, `unidentified` — visible, counted, and never claimed to be
+// a channel. It carries 0 customers on purpose: there is no identity there to count.
+//
 // TARGETS ARE NOT SPLIT PER CHANNEL. They are keyed (month, line, area, product) and carry no
 // channel dimension, so a per-channel target would be a number Phoenix invented. The sheet shows
 // the MONTH TOTAL target beside the channel split instead — a real figure that happens not to
@@ -41,8 +52,22 @@ export type ChannelCell = {
   value: number;
 };
 
+/**
+ * This sheet's row vocabulary: the three real channels, plus a bucket for rows the distributor
+ * sent with NO client code.
+ *
+ * Deliberately NOT a fourth member of `CustomerChannel`. That type is the CLASSIFIER's output —
+ * a verdict about a customer's name — and the Monthly Closing city split keys on its "store"
+ * member. "unidentified" is the opposite of a verdict: there is no name to judge, so the sheet
+ * needs a place to put the money without pretending to have classified it.
+ */
+export type ChannelComparisonChannel = CustomerChannel | "unidentified";
+
+/** The channel value the RPCs emit for a row carrying no client code. */
+export const UNIDENTIFIED_CHANNEL = "unidentified" as const;
+
 export type ChannelComparisonRow = {
-  channel: CustomerChannel;
+  channel: ChannelComparisonChannel;
   /** Human-readable, never a code — the owner's standing rule for every surface. */
   label: string;
   byPeriod: Record<string, ChannelCell>;
@@ -74,11 +99,19 @@ export type ChannelComparison = {
   restrictedProductsIncluded: boolean;
 };
 
-/** Fixed display order: the two channels a decision usually turns on first, then the bulk. */
-export const CHANNEL_ORDER: ReadonlyArray<{ channel: CustomerChannel; label: string }> = [
+/**
+ * Fixed display order: the two channels a decision usually turns on first, then the bulk, then
+ * the money nobody can attribute.
+ *
+ * The unidentified row is LAST and is dropped entirely when it is zero (see
+ * assembleChannelComparison), so the three lines that have a real customer behind them stay the
+ * shape of the sheet and a clean line never grows a row of zeroes.
+ */
+export const CHANNEL_ORDER: ReadonlyArray<{ channel: ChannelComparisonChannel; label: string }> = [
   { channel: "hospital", label: "Hospitals" },
   { channel: "store", label: "Stores (wholesalers)" },
   { channel: "pharmacy", label: "Pharmacies" },
+  { channel: UNIDENTIFIED_CHANNEL, label: "Unidentified — no client code" },
 ];
 
 export function emptyChannelCell(): ChannelCell {
@@ -162,7 +195,14 @@ export function assembleChannelComparison(input: {
       label: entry.label,
       total: addAcrossPeriods(periods.map((period) => byPeriod[period])),
     };
-  });
+  })
+    // The three real channels are the sheet's fixed shape and always appear, even at zero — a line
+    // that sold no hospitals this month is information. The unidentified bucket is different: it is
+    // an exception report, so it appears only when there is something to report. On Anti Infective,
+    // Pedia and Head Office it is empty in every 2026 month and the sheet is unchanged; on CNS it
+    // carries millions and its absence was the bug.
+    .filter((row) =>
+      row.channel !== UNIDENTIFIED_CHANNEL || row.total.units !== 0 || row.total.value !== 0);
 
   const totalsByPeriod: Record<string, ChannelCell> = {};
   for (const period of periods) {
@@ -285,6 +325,13 @@ export type ChannelBreakdownRow = {
   hospital: number;
   store: number;
   pharmacy: number;
+  /**
+   * Money on rows the distributor sent with no client code, so no channel can be inferred. Its own
+   * column rather than a share of Pharmacies, which is where it would otherwise land: the channel
+   * CASE ends in `else 'pharmacy'`, and on CNS 2026-05 that would have reported 4.36M EGP of
+   * unattributable money as pharmacy sales. hospital + store + pharmacy + unidentified = total.
+   */
+  unidentified: number;
   total: number;
 };
 
@@ -359,13 +406,20 @@ export function resolveBreakdownLabel(
   return fromMaster || row.label.trim() || key;
 }
 
-/** The dominant channel of a row and its share, for the Leader column the sibling grids use. */
+/**
+ * The dominant channel of a row and its share, for the Leader column the sibling grids use.
+ *
+ * The unidentified bucket COMPETES here rather than being skipped. If most of a row has no client
+ * code, "Pharmacies 30%" is a claim the data does not support — naming the bucket as the leader is
+ * the honest reading and points straight at the rows worth fixing.
+ */
 export function breakdownLeader(row: ChannelBreakdownRow): { label: string; share: number } | null {
   if (row.total <= 0) return null;
   const candidates: ReadonlyArray<{ label: string; value: number }> = [
     { label: "Hospitals", value: row.hospital },
     { label: "Stores", value: row.store },
     { label: "Pharmacies", value: row.pharmacy },
+    { label: "Unidentified", value: row.unidentified },
   ];
   const best = candidates.reduce((top, entry) => (entry.value > top.value ? entry : top), candidates[0]);
   if (best.value <= 0) return null;
@@ -379,6 +433,9 @@ type BreakdownRpcRow = {
   hospital: number;
   store: number;
   pharmacy: number;
+  /** Optional so the app keeps working against a database where the RPC has not been migrated
+   *  yet — it simply reads 0 and the grids behave exactly as they did before. */
+  unidentified?: number;
   total: number;
 };
 
@@ -406,6 +463,7 @@ export function assembleChannelBreakdown(input: {
       pharmacy: Number(raw.pharmacy ?? 0),
       store: Number(raw.store ?? 0),
       total: Number(raw.total ?? 0),
+      unidentified: Number(raw.unidentified ?? 0),
     });
   }
   // Biggest first inside each grid. The RPC already orders this way; re-sorting here means the
@@ -432,8 +490,9 @@ export function sumBreakdownRows(rows: readonly ChannelBreakdownRow[]): ChannelB
       pharmacy: total.pharmacy + row.pharmacy,
       store: total.store + row.store,
       total: total.total + row.total,
+      unidentified: total.unidentified + row.unidentified,
     }),
-    { hospital: 0, key: "TOTAL", label: "TOTAL", pharmacy: 0, store: 0, total: 0 },
+    { hospital: 0, key: "TOTAL", label: "TOTAL", pharmacy: 0, store: 0, total: 0, unidentified: 0 },
   );
 }
 

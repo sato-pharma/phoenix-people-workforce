@@ -643,6 +643,7 @@ import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-vis
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
+import { runClosingChannelTiesToDataTabTests } from "./closing-channel-ties-to-data-tab.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1423,6 +1424,11 @@ await runTest(
 await runTest(
   "monthly closing Channel Comparison sheet (owner-reviewed Anti Infective split; customers peak not summed; target is month-total only)",
   runMonthlyClosingChannelsTests,
+);
+
+await runTest(
+  "closing channel sheets tie to the Data tab (direct orders keep their own money, never factory price; no-client-code rows are counted in their own bucket, not as pharmacies)",
+  runClosingChannelTiesToDataTabTests,
 );
 
 await runTest(

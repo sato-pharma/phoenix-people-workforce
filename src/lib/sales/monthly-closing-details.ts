@@ -89,7 +89,13 @@ export type ClosingDetailRow = {
   discount: number;
   /** qty x (1 - discount) — the base the matrix values (mirrors fact_rollup.effective_units). */
   effectiveUnits: number;
-  /** effectiveUnits x factoryPrice — the matrix's sales_value contribution. */
+  /**
+   * The money this row contributes to the closing.
+   *
+   * Distributor row: effectiveUnits x factoryPrice — the matrix's sales_value contribution.
+   * DIRECT row: the direct order's own negotiated value, untouched. Factory price is banned for
+   * direct orders, so the two are deliberately different formulas on the same column.
+   */
   salesValue: number;
   /** The value column as it appeared on the distributor sheet, untouched. */
   sheetValue: number;
@@ -173,6 +179,36 @@ function text(value: unknown): string {
 function num(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * What ONE row contributes to the closing, in money.
+ *
+ * Two formulas on one column, and which one applies is decided here rather than at the call site,
+ * because getting it wrong is silent — the sheet still adds up, it just adds up to the wrong
+ * number, and it did for exactly that reason.
+ *
+ *   DISTRIBUTOR row: effectiveUnits x factoryPrice. The Closing Matrix's own formula, and the same
+ *                    one phx_closing_channel_totals uses for its retail half.
+ *   DIRECT row:      the value the order itself states, untouched. The owner's direct-order pricing
+ *                    rule is LOCKED — discount qty x PUBLIC x (1 - disc%), bonus qty x PHARMACY —
+ *                    and it BANS factory price for direct orders. Re-deriving it here is what made
+ *                    the Data sheet print 87,502.50 for the 14 Anti Infective 2026-07 direct rows
+ *                    that phx_monthly_closing_direct, the fact rollup's direct_value, the Direct
+ *                    Orders sheet and both channel RPCs all publish as 93,554.00.
+ *
+ * Exported so the rule can be tested on its own: it is the single point where a direct order could
+ * silently be re-priced at a banned price again.
+ */
+export function closingRowSalesValue(input: {
+  isDirect: boolean;
+  effectiveUnits: number;
+  factoryPrice: number;
+  /** The row's own stated value, as imported. Authoritative for a direct order. */
+  sheetValue: number;
+}): number {
+  const value = input.isDirect ? input.sheetValue : input.effectiveUnits * input.factoryPrice;
+  return Number(value.toFixed(6));
 }
 
 function emptyTotals(): ClosingDetailsTotals {
@@ -529,7 +565,15 @@ export async function loadMonthlyClosingDetails(
       bonusQty: num(raw.bonus_qty),
       discount,
       effectiveUnits: Number(effectiveUnits.toFixed(6)),
-      salesValue: Number((effectiveUnits * factoryPrice).toFixed(6)),
+      // Which of the two money formulas applies is closingRowSalesValue's decision, not this
+      // mapper's — see that function for why a direct order must never be re-priced at factory
+      // price, and what it cost when it was.
+      salesValue: closingRowSalesValue({
+        effectiveUnits,
+        factoryPrice,
+        isDirect,
+        sheetValue: num(raw.value),
+      }),
       sheetValue: num(raw.value),
 
       isDirect,

@@ -13,7 +13,7 @@ import {
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import {
   breakdownLeader,
-  CHANNEL_ORDER,
+  BREAKDOWN_DIMENSIONS,
   channelShare,
   resolveBreakdownLabel,
   sumBreakdownRows,
@@ -469,8 +469,11 @@ function writeTotalSheet(
       "+ Direct orders counted in the matrix",
       directPlacedUnits,
       directPlaced,
-      "Company direct orders. They reach the closing from the Direct Orders module, never as a "
-        + "distributor invoice line, so no row for them exists on the Data sheet.",
+      "Company direct orders. They reach the closing from the Direct Orders module rather than as a "
+        + "distributor invoice line, so the Data sheet lists them marked In Closing = \"No\" and the "
+        + "line above does not contain them. Their Sales Value on the Data sheet is the money the "
+        + "order itself states, which is what this line adds — a direct deal is never re-priced at "
+        + "factory price.",
     ]]
     : [];
 
@@ -530,8 +533,9 @@ function writeTotalSheet(
       ? (filtered
         ? "This workbook is a FILTERED slice — every sheet, including the Closing Matrix, was built " +
           "from the same filtered rows (the filter is named on the Closing Matrix sheet). "
-        : "The Data sheet holds distributor invoice lines only. Direct orders are added on the line "
-          + "that names them, because they never arrive as an invoice. ") +
+        : "The first line below is the Data sheet's In Closing = \"Yes\" rows only. Direct orders are "
+          + "on the Data sheet too, marked In Closing = \"No\", and are added back on the line that "
+          + "names them rather than being counted twice. ") +
         "The Excluded line is real sales the headline does not include; the Data-quality lines ARE " +
         "included in the headline but point at rows worth fixing."
       : "This export is scoped to your access and has no company-wide Closing Matrix to compare " +
@@ -1112,7 +1116,14 @@ function monthLabel(period: string): string {
  * (month, line, area, product) and carry no channel dimension, so a per-channel target would be a
  * number Phoenix invented rather than one anybody set.
  */
-function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelComparison, period: string | null) {
+function writeChannelComparisonSheet(
+  workbook: ExcelJS.Workbook,
+  c: ChannelComparison,
+  period: string | null,
+  /** The Data sheet's own totals for the exported month, for the tie-back block. Null when this
+   *  export carries no Data sheet, in which case the block is omitted rather than tied to nothing. */
+  dataSheet: { units: number; value: number } | null,
+) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Channel Comparison"), {
     views: [{ state: "frozen", xSplit: 1, ySplit: 5 }],
   });
@@ -1140,8 +1151,13 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
   }
 
   // writeTable puts the title on `start`, the header on start+1 and the first data row on start+2.
-  // Three channel rows then a TOTAL row, so every cross-block reference below is deterministic.
-  const CHANNEL_ROWS = CHANNEL_ORDER.length;
+  // The channel rows then a TOTAL row, so every cross-block reference below is deterministic.
+  //
+  // Counted off `c.rows`, NOT off CHANNEL_ORDER: the unidentified bucket is dropped when a line has
+  // no identity-less money, so the two differ on every clean line. Using the constant would leave
+  // every SUM range in this sheet one row too long — reaching into the TOTAL row and double-counting
+  // the month.
+  const CHANNEL_ROWS = c.rows.length;
   const blockFirstRow = (start: number) => start + 2;
   const blockTotalRow = (start: number) => start + 2 + CHANNEL_ROWS;
 
@@ -1331,7 +1347,7 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
   const hasAnyTarget = months.some(
     (month) => c.targetsByPeriod[month]?.targetValue != null || c.targetsByPeriod[month]?.targetUnits != null,
   );
-  writeTable(sheet, targetStart, {
+  row = writeTable(sheet, targetStart, {
     columns: [
       { label: "Month", width: 24 },
       { dataBar: true, label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 16 },
@@ -1399,6 +1415,64 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
       ];
     })(),
   });
+
+  // ── Block 6 — Ties back to the Data sheet ──────────────────────────────────
+  // The owner reconciles against the Data sheet. This sheet counts the same money a DIFFERENT way
+  // (by who bought it, not by which distributor invoiced it), and the two definitions of a direct
+  // order's value used to disagree — so the sheet now proves the tie on itself instead of asking
+  // the reader to take it on trust. The exported month only: that is the month the rest of the
+  // workbook covers, and the other months have no Data sheet in this file to tie to.
+  const exportedIndex = period ? months.indexOf(period) : -1;
+  if (dataSheet && exportedIndex >= 0) {
+    const tieStart = row;
+    const tieFirstRow = blockFirstRow(tieStart);
+    const exportedTotals = c.totalsByPeriod[months[exportedIndex]] ?? { customers: 0, units: 0, value: 0 };
+    const channelCell = `${colOf(exportedIndex)}${valueTotalRow}`;
+    const channelUnitsCell = `${colOf(exportedIndex)}${unitsTotalRow}`;
+    writeTable(sheet, tieStart, {
+      columns: [
+        { label: "Tie-back", width: 46 },
+        { label: "Units", numFmt: UNITS_FMT, right: true, width: 13 },
+        { label: "Value (EGP)", numFmt: VALUE_FMT, right: true, width: 16 },
+        { label: "Note", width: 62 },
+      ],
+      note:
+        "WHICH DEFINITION THIS SHEET USES, stated because the two halves are priced differently and always "
+        + "were. A DISTRIBUTOR line is valued at effective units x factory price — the Closing Matrix's own "
+        + "formula. A DIRECT order is valued at the money the order itself states, never re-priced at factory "
+        + "price, because a direct deal carries its own negotiated discount and bonus pricing. Both halves are "
+        + "the same figures the Data sheet's Sales Value column now prints row by row, so the two add up to the "
+        + "same total and the difference below is zero. Every month before the exported one is built the same "
+        + "way, but only the exported month has a Data sheet in this workbook to check it against.",
+      rows: [
+        [
+          `This sheet — ${monthLabel(months[exportedIndex])} TOTAL`,
+          F(channelUnitsCell, exportedTotals.units),
+          F(channelCell, exportedTotals.value),
+          // Names the rows that are actually on the sheet. A line with identity-less money has a
+          // fourth row, and a note claiming three would be wrong on exactly the sheets that need
+          // the reader's trust most.
+          `The TOTAL cell of the exported month in blocks 1 and 2 above — ${
+            c.rows.map((channelRow) => channelRow.label).join(" + ")
+          }.`,
+        ],
+        [
+          "Data sheet — Sales Value column, EVERY row",
+          dataSheet.units,
+          dataSheet.value,
+          "Every row of the Data sheet, In Closing = \"Yes\" and \"No\" alike. The \"No\" rows are the direct "
+            + "orders, which this sheet counts too — they are real sales to a real customer.",
+        ],
+        [
+          "Difference",
+          F(`B${tieFirstRow}-B${tieFirstRow + 1}`, exportedTotals.units - dataSheet.units),
+          F(`C${tieFirstRow}-C${tieFirstRow + 1}`, exportedTotals.value - dataSheet.value),
+          "Zero means this sheet and the Data sheet are the same money, counted two ways.",
+        ],
+      ],
+      title: `6 · Ties to the Data sheet — ${monthLabel(months[exportedIndex])}`,
+    });
+  }
 }
 
 /**
@@ -1485,6 +1559,18 @@ function writeChannelBreakdownSheet(
     },
   ];
 
+  // Does ANY grid carry money on rows with no client code? Decided once, for the whole sheet, so
+  // all four grids keep identical geometry — a reader scrolling between them must not find the
+  // Total column in a different place each time. A clean line shows no such column at all rather
+  // than four columns of zeroes.
+  const hasUnidentified = BREAKDOWN_DIMENSIONS.some(
+    (dimension) => sumBreakdownRows(breakdown.byDimension[dimension]).unidentified !== 0,
+  );
+  // Column letters follow that decision. B..D or B..E are the channel columns; the next letter is
+  // Total. Derived rather than typed so the SUM ranges below cannot drift from the headers above.
+  const lastChannelLetter = hasUnidentified ? "E" : "D";
+  const totalLetter = hasUnidentified ? "F" : "E";
+
   let row = 4;
   grids.forEach((grid, index) => {
     const rows = breakdown.byDimension[grid.dimension];
@@ -1500,14 +1586,23 @@ function writeChannelBreakdownSheet(
         { label: "Hospitals", numFmt: VALUE_FMT, right: true, width: 14 },
         { label: "Stores", numFmt: VALUE_FMT, right: true, width: 14 },
         { label: "Pharmacies", numFmt: VALUE_FMT, right: true, width: 14 },
+        ...(hasUnidentified
+          ? [{ label: "Unidentified", numFmt: VALUE_FMT, right: true, width: 14 } as TableColumn]
+          : []),
         { dataBar: true, label: "Total", numFmt: VALUE_FMT, right: true, width: 15 },
         { label: "Leader", width: 22 },
       ],
       note: index === 0
         ? `${grid.note} Every grid on this sheet adds up to the SAME month total the Closing Matrix publishes — `
           + "money that reaches no product, rep, area or brick is given a named row rather than dropped, so the "
-          + "four TOTAL rows agree with each other. The three channel columns are values (the channel comes from "
-          + `the customer's name, which the hidden Calc sheet does not carry); Total and the TOTAL row are live formulas. ${scopeNote}`
+          + "four TOTAL rows agree with each other. The channel columns are values (the channel comes from "
+          + "the customer's name, which the hidden Calc sheet does not carry); Total and the TOTAL row are live formulas. "
+          + (hasUnidentified
+            ? "The Unidentified column is money whose invoice line carried no client code, so no customer name "
+              + "exists to read a channel from. It is shown separately rather than folded into Pharmacies, which "
+              + "is where an unnamed customer would otherwise land. "
+            : "")
+          + scopeNote
         : grid.note,
       rows: rows.map((entry, rowIndex) => {
         const excelRow = firstDataRow + rowIndex;
@@ -1517,7 +1612,8 @@ function writeChannelBreakdownSheet(
           entry.hospital,
           entry.store,
           entry.pharmacy,
-          F(`SUM(B${excelRow}:D${excelRow})`, entry.total),
+          ...(hasUnidentified ? [entry.unidentified] : []),
+          F(`SUM(B${excelRow}:${lastChannelLetter}${excelRow})`, entry.total),
           leaderText(leader ? { distributorName: leader.label, share: leader.share } : null),
         ];
       }),
@@ -1528,7 +1624,10 @@ function writeChannelBreakdownSheet(
           F(`SUM(B${firstDataRow}:B${lastDataRow})`, totals.hospital),
           F(`SUM(C${firstDataRow}:C${lastDataRow})`, totals.store),
           F(`SUM(D${firstDataRow}:D${lastDataRow})`, totals.pharmacy),
-          F(`SUM(E${firstDataRow}:E${lastDataRow})`, totals.total),
+          ...(hasUnidentified
+            ? [F(`SUM(E${firstDataRow}:E${lastDataRow})`, totals.unidentified)]
+            : []),
+          F(`SUM(${totalLetter}${firstDataRow}:${totalLetter}${lastDataRow})`, totals.total),
           null,
         ]
         : undefined,
@@ -2658,8 +2757,8 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     en: "Each distributor's share by product, region and area, plus how much of the map they cover.",
   },
   "Channel Comparison": {
-    ar: "المستشفيات والمخازن والصيدليات شهرًا بشهر: القيمة والكميات وعدد العملاء ونسبة كل قناة، ثم إجمالي الشهر مقابل التارجت.",
-    en: "Hospitals, wholesalers and pharmacies month by month: value, units, customers and each channel's share, then the month total against target.",
+    ar: "المستشفيات والمخازن والصيدليات شهرًا بشهر: القيمة والكميات وعدد العملاء ونسبة كل قناة، ثم إجمالي الشهر مقابل التارجت، وأخيرًا سطر يثبت أن الشهر المصدَّر يساوي إجمالي صفحة Data بالجنيه.",
+    en: "Hospitals, wholesalers and pharmacies month by month: value, units, customers and each channel's share, the month total against target, and a last block proving the exported month equals the Data sheet's own total.",
   },
   "Channel Breakdown": {
     ar: "نفس تقسيم القنوات لهذا الشهر فقط، موزعًا على المنتج والمندوب والمنطقة والبريك، مع صف باسمه لكل مبيعات لم تصل لمندوب أو منطقة أو بريك.",
@@ -2897,7 +2996,26 @@ export async function buildMonthlyClosingWorkbook(
   // Straight after "who sold it" comes "who bought it" — the same money split by customer channel,
   // and the only sheet in the book that looks at the months either side of this one.
   if (options?.channelComparison) {
-    writeChannelComparisonSheet(workbook, options.channelComparison, matrix.period);
+    // The Data sheet's own totals, computed exactly the way that sheet is built: confidential rows
+    // are written to their own sheet, and the channel RPCs always exclude the restricted products,
+    // so both sides of the tie-back cover the same population. Summed from the detail rows rather
+    // than from details.totals, which also counts the confidential rows when a CEO reveals them.
+    const dataSheetTotals = details
+      ? details.rows.reduce(
+        (sum, detailRow) => (detailRow.isConfidential
+          ? sum
+          : { units: sum.units + detailRow.qty, value: sum.value + detailRow.salesValue }),
+        { units: 0, value: 0 },
+      )
+      : null;
+    writeChannelComparisonSheet(
+      workbook,
+      options.channelComparison,
+      matrix.period,
+      dataSheetTotals
+        ? { units: Number(dataSheetTotals.units.toFixed(6)), value: Number(dataSheetTotals.value.toFixed(6)) }
+        : null,
+    );
   }
   // Then the same month cut four ways. Its own sheet: the brick grid alone runs to hundreds of rows
   // and would bury the month-by-month blocks above.

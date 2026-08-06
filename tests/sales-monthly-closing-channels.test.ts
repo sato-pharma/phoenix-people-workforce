@@ -478,9 +478,16 @@ async function runChannelBreakdownTests() {
     `the leader's share is its own value over the row total (expected 0.667, got ${leader?.share})`,
   );
   assert.equal(
-    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 0, store: 0, total: 0 }),
+    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 0, store: 0, total: 0, unidentified: 0 }),
     null,
     "a row that sold nothing claims no leader rather than a fake 100%",
+  );
+  // A row that is mostly unattributable must not claim a channel leads it. "Pharmacies 30%" reads
+  // as a finding; the honest answer is that 70% of the row has no customer to classify.
+  assert.equal(
+    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 300, store: 0, total: 1000, unidentified: 700 })?.label,
+    "Unidentified",
+    "when most of a row carries no client code, the Leader column says so instead of naming a channel",
   );
 
   // ── 5. The rendered sheet ties, cell by cell ───────────────────────────────
