@@ -182,6 +182,15 @@ export type DirectOrderPharmacyStanding = {
   windowDays: number;
   /** Approver-facing prose for an empty history. Never a count. */
   noHistoryNote: string;
+  /**
+   * The same, for a pharmacy with NO distributor code at all.
+   *
+   * Separate from `noHistoryNote` because the two absences have different remedies — one needs a
+   * code registered, the other needs the pharmacy to trade — but both must still name the trust
+   * state. Without this, half the provisional pharmacies were told only that a code was missing,
+   * which is the less alarming of the two facts and reads like paperwork.
+   */
+  noCodeNote: string;
 };
 
 export type DirectOrderPharmacy = {

@@ -303,9 +303,19 @@ export function DirectOrderRequestDetail({
           <span className="text-[11px] font-bold text-slate-500">all months on record</span>
         </header>
         {retailUnmatchable ? (
-          <p className="px-4 py-4 text-sm text-slate-500">
-            This pharmacy has no distributor customer code on file, so its retail sales cannot be
-            matched. Register it against the distributor that actually supplies it to see them here.
+          /* Spec D2. This branch is checked FIRST, so before it carried the trust state it hid it:
+             a provisional pharmacy with no distributor code was told only that paperwork was
+             missing, never that it had not been proved to exist. Five of the ten live provisional
+             pharmacies landed here and read as routine. */
+          <p
+            className={`px-4 py-4 text-sm ${
+              pharmacyStanding && pharmacyStanding.trustState !== "trusted"
+                ? "font-semibold text-amber-700"
+                : "text-slate-500"
+            }`}
+          >
+            {pharmacyStanding?.noCodeNote ??
+              "This pharmacy has no distributor customer code on file, so its retail sales cannot be matched."}
           </p>
         ) : retailHistory.length === 0 ? (
           /* Spec D2: WHY it is empty, not just that it is. A provisional pharmacy and an
