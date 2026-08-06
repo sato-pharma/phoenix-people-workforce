@@ -183,15 +183,43 @@ database ever touches approvals, sales, achievement, or incentives.
       tables; mobile = cards. No truncation, no wrapping. Owner emphasis (twice): the manager-
       facing approval experience is the face of the system — it must feel premium, complete, and
       never embarrassing.
-      **Closed by** [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) ·
-      `tests/direct-orders-approval-window-mobile.test.ts`. Desktop was already right — three full
-      tables, zero truncation, 50 `whitespace-nowrap`. **Mobile did not exist**: no `md:hidden`
-      anywhere in the file, so a phone got three tables, two of them 820px and 760px wide behind a
-      horizontal scroll. Backwards, too — `held-desk`, `pharmacy-registry-manager`,
-      `rep-counters-table` and the employee-portal copy of THIS screen all split correctly, so the
-      rep got cards and the approver got the scrolling table. The test locks it **per table**, not
-      by counting breakpoint classes file-wide: a count stays green when a fourth table arrives
-      with no wrapper, which is how it regressed the first time.
+      **Closed by TWO PRs, and #1833 alone was not enough** ·
+      `tests/direct-orders-approval-window-mobile.test.ts`.
+
+      [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) — the tables.
+      Desktop was already right: three full tables, zero truncation, 50 `whitespace-nowrap`.
+      **Mobile did not exist** — no `md:hidden` anywhere in the file, so a phone got three tables,
+      two of them 820px and 760px wide behind a horizontal scroll. Backwards, too:
+      `held-desk`, `pharmacy-registry-manager`, `rep-counters-table` and the employee-portal copy
+      of THIS screen all split correctly, so the rep got cards and the approver got the scrolling
+      table. The test locks it **per table**, not by counting breakpoint classes file-wide — a
+      file-wide count stays green when a fourth table arrives with no wrapper.
+
+      [#1836](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1836) — the field grid,
+      which #1833 left alone on the reasoning that it already carried a breakpoint
+      (`grid-cols-2 md:grid-cols-4`). That reasoning was wrong. Measured live at 375px: two columns
+      give each value 150px while **eight values need up to 287px** — the request id, the
+      requester's "name · code · role", a price carrying its "(on file, not used — discount deal)"
+      note. Every value is `whitespace-nowrap` by the owner's standing rule, so they did not wrap;
+      they **ran into the next column and printed on top of it**. Two columns of overlapping text
+      is worse than the horizontal scroll #1833 had just removed. Fixed to
+      `grid-cols-1 sm:grid-cols-2 md:grid-cols-4`: one column gives 317px against a widest value of
+      287px, so all eight fit.
+
+      **Why this box was ticked once before it was true, which is the part worth keeping.** After
+      #1833 every source-level check passed at 375px: three tables provably desktop-only, cards
+      rendering, `scrollWidth === clientWidth` so no horizontal page scroll, zero `text-overflow:
+      ellipsis`, zero wrapped table cells. All true. All green. The screen was unreadable. Nothing
+      in the markup was wrong — a two-column grid is an ordinary thing to write — so **no
+      source-text test on this file could have found it.** The collision only exists once real
+      values have real widths at a real viewport. That is the honest limit of the source-text
+      testing the rest of this module relies on, and D3 is the box where it bites hardest, because
+      D3 is the only requirement here that is fundamentally about what a screen LOOKS like.
+
+      **Not yet verified:** the post-#1836 render has not been seen. The defect was measured in a
+      browser and the fix is live (`09b8c0f6`, an ancestor of production), but the Browser pane was
+      hidden when the re-check was attempted, so it timed out. Anyone re-opening this box should
+      load a real order at 375px and re-measure the field overflow before trusting the tick.
 - [x] **D4. AI is INVISIBLE (standing owner rule, 2026-08-04).** AI assists heavily but is never
       announced: no "AI" labels, no sparkle icons, no "suggested by AI" copy, no model names —
       anywhere (UI, emails, exports, tooltips). Features present as Phoenix itself being smart:
@@ -298,11 +326,22 @@ not backlog: **D5e** is blocked by a GCP org policy and its outcome is already d
 webhook, and **E3** was declined by the owner outright. Neither should be rebuilt; re-open only if
 the OUTCOME is missing, never because a checkbox looks empty.
 
-D3 was the last one, and it failed on exactly half the rule. Desktop was already correct — three
-full tables, zero truncation, 50 `whitespace-nowrap`. Mobile did not exist at all, so the manager's
-phone showed two tables 820px and 760px wide behind a horizontal scroll, while four siblings in the
-same module — including the employee-portal copy of that same screen — already rendered cards.
-Closed by [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833).
+D3 was the last one, and it took **two** PRs — worth stating, because the first one closed the box
+before it was true. Desktop was already correct: three full tables, zero truncation, 50
+`whitespace-nowrap`. Mobile did not exist at all, so the manager's phone showed two tables 820px and
+760px wide behind a horizontal scroll, while four siblings in the same module — including the
+employee-portal copy of that same screen — already rendered cards.
+[#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) fixed the tables and
+**left the field grid at two columns**, on the reasoning that it already carried a breakpoint. At
+375px that gave each value 150px while eight of them ran to 287px, and because every value is
+`whitespace-nowrap` they did not wrap — they printed on top of the next column.
+[#1836](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1836) fixed that.
+
+**Only a browser could have caught it**, and that is the one thing to carry out of this box. After
+#1833 the tables were provably desktop-only, the cards rendered, the page did not scroll sideways,
+and nothing carried an ellipsis or wrapped. Every check true, every check green, screen unreadable.
+Nothing in the markup was wrong, so no source-text test on that file could have found it. **Where a
+requirement is about what a screen LOOKS like, a green suite is not evidence — open it at 375px.**
 
 ### The audit that got this wrong, and how
 
