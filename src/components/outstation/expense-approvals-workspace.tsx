@@ -43,6 +43,7 @@ import {
   isRejectedStatus,
   planBulkApproval,
 } from "@/lib/outstation/approval-state";
+import { outstationRequestIdFromTripId } from "@/lib/outstation/expense-approval-decisions";
 import {
   buildExpenseApprovalFilterOptions,
   countActiveExpenseApprovalFilters,
@@ -78,6 +79,9 @@ type LoadedRecord = ExpenseTripRecord & {
 };
 
 type Decision = { approvedAmount: number; hrApproved: boolean; hrComment: string; status: string };
+
+/** A row the server declined to write, and why (see the POST route's `requestDecisions`). */
+type SkippedDecision = { reason: string; tripId: string };
 
 function savedDecision(record: LoadedRecord): Decision {
   return {
@@ -157,6 +161,7 @@ export function ExpenseApprovalsWorkspace() {
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveSkipped, setSaveSkipped] = useState<SkippedDecision[]>([]);
   const [selectedTripIds, setSelectedTripIds] = useState<Set<string>>(() => new Set());
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [view, setView] = useState<"queue" | "employees">("queue");
@@ -508,9 +513,17 @@ export function ExpenseApprovalsWorkspace() {
     );
   }
 
+  // Names the trip the way the rest of the page does — the reviewer knows "Ahmed Salah", not
+  // "OUTSTATION-48".
+  function employeeForTrip(tripId: string) {
+    return records.find((record) => record.tripId === tripId)?.specialist || tripId;
+  }
+
   async function save() {
     setSaving(true);
     setSaveMessage(null);
+    setSaveSkipped([]);
+    const notWritten: SkippedDecision[] = [];
     try {
       const changedReportIds = new Set<string | null>();
       for (const record of records) {
@@ -528,7 +541,13 @@ export function ExpenseApprovalsWorkspace() {
       // recompute correctly (the API upserts by trip_id and re-stamps report_id/source_file_name).
       for (const reportId of changedReportIds) {
         const reportRecords = records.filter((record) => (record.reportId ?? null) === reportId);
-        const fileName = reportRecords.find((record) => record.sourceFileName)?.sourceFileName || "outstation-expenses";
+        // Only an imported row may name the batch. App-submitted requests sit in the no-report
+        // group too, and their "Outstation Requests" label would otherwise be stamped onto the
+        // `source_file_name` of every genuinely imported row saved alongside them.
+        const fileName =
+          reportRecords.find(
+            (record) => record.sourceFileName && outstationRequestIdFromTripId(record.tripId) === null,
+          )?.sourceFileName || "outstation-expenses";
         const body = {
           fileName,
           records: reportRecords.map((record) => {
@@ -552,11 +571,24 @@ export function ExpenseApprovalsWorkspace() {
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload?.message || "Unable to save approvals.");
+        const skipped = payload?.requestDecisions?.skipped;
+        if (Array.isArray(skipped)) notWritten.push(...(skipped as SkippedDecision[]));
       }
 
       setDecisions({});
       await load();
-      setSaveMessage("Approvals saved.");
+      // A partial save must say so. App-submitted requests go down a different write path (the
+      // outstation workflow), and it can refuse a row the queue was willing to show — a trip
+      // already in a paid payroll batch, or a decided request being sent back to pending. Reporting
+      // "Approvals saved." over that is how a reviewer walks away believing money moved.
+      setSaveSkipped(notWritten);
+      setSaveMessage(
+        notWritten.length === 0
+          ? "Approvals saved."
+          : `Approvals saved, except ${formatNumberValue(notWritten.length)}: ${notWritten
+              .map((entry) => `${employeeForTrip(entry.tripId)} — ${entry.reason}`)
+              .join(" · ")}`,
+      );
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Unable to save approvals.");
     } finally {
@@ -632,8 +664,17 @@ export function ExpenseApprovalsWorkspace() {
       </div>
 
       {saveMessage ? (
-        <AdminCallout tone={/unable|failed/i.test(saveMessage) ? "danger" : "success"}>
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+        // A partial save is neither a success nor a failure, and must not wear a green tick: some
+        // decisions landed and some did not, and the reviewer has to see which. `saveSkipped` is
+        // the fact, so the tone is read from that rather than sniffed back out of the message text.
+        <AdminCallout
+          tone={/unable|failed/i.test(saveMessage) ? "danger" : saveSkipped.length > 0 ? "warning" : "success"}
+        >
+          {/unable|failed/i.test(saveMessage) || saveSkipped.length > 0 ? (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
           <p className="text-sm font-semibold">{saveMessage}</p>
         </AdminCallout>
       ) : null}

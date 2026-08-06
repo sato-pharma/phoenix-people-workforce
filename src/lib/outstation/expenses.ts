@@ -684,6 +684,37 @@ export function dedupeHistoricalExpensesByTrip<T extends { tripId: string }>(
   return historical.filter((expense) => !liveTripIds.has(expense.tripId));
 }
 
+/**
+ * Carries HR's stored decision back onto the request row that shadows it.
+ *
+ * `outstation_expense_requests` has no `approved_amount` column — a Phoenix-submitted request keeps
+ * HR's trimmed figure on its LINKED `outstation_expenses` row instead. That linked row is exactly
+ * the one `dedupeHistoricalExpensesByTrip` is about to drop, so without this the queue reloads
+ * showing the employee's full claim again and the deduction silently disappears from the screen
+ * (it stays in the database and still reaches payroll, which is the worse half of the bug).
+ *
+ * The request row stays authoritative for everything else — status above all. Only the two fields
+ * it cannot store itself are taken, and `hrComment` only when the request has none of its own, so a
+ * rejection reason written on the request is never overwritten by an older expense-row comment.
+ */
+export function carryStoredDecisionOntoRequestExpenses<
+  T extends { approvedAmount: number | null; hrComment: string; tripId: string },
+>(
+  live: T[],
+  historical: ReadonlyArray<{ approvedAmount: number | null; hrComment: string; tripId: string }>,
+): T[] {
+  const storedByTrip = new Map(historical.map((expense) => [expense.tripId, expense]));
+  return live.map((expense) => {
+    const stored = storedByTrip.get(expense.tripId);
+    if (!stored) return expense;
+    return {
+      ...expense,
+      approvedAmount: expense.approvedAmount ?? stored.approvedAmount,
+      hrComment: expense.hrComment?.trim() ? expense.hrComment : stored.hrComment,
+    };
+  });
+}
+
 export async function listUnifiedOutstationExpenses(
   month: number | undefined,
   year: number | undefined,
@@ -699,12 +730,17 @@ export async function listUnifiedOutstationExpenses(
     : month && year
     ? requestExpenses.filter((expense) => expense.payoutMonth === month && expense.payoutYear === year)
     : requestExpenses;
+  // Enrich BEFORE the dedup: the row being read from is the row about to be dropped.
+  const enrichedRequestExpenses = carryStoredDecisionOntoRequestExpenses(
+    filteredRequestExpenses,
+    historicalExpenses,
+  );
   const dedupedHistoricalExpenses = dedupeHistoricalExpensesByTrip(
     historicalExpenses,
-    filteredRequestExpenses,
+    enrichedRequestExpenses,
   );
 
-  return [...filteredRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {
+  return [...enrichedRequestExpenses, ...dedupedHistoricalExpenses].sort((left, right) => {
     const leftTime = left.date ? new Date(left.date).getTime() : 0;
     const rightTime = right.date ? new Date(right.date).getTime() : 0;
     return rightTime - leftTime;
