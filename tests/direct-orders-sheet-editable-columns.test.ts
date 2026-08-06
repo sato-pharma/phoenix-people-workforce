@@ -122,6 +122,40 @@ export function runDirectOrdersSheetEditableColumnsTests() {
       "to typing in a Phoenix column, where it is erased within the minute",
   );
 
+  // ── The frame must actually RUN, not merely exist ─────────────────────────
+  // The first version shipped with a builder that was never called on a real sheet: it hung off
+  // `rebuild`, and rebuild is false whenever Phoenix's own columns are unchanged — which is every
+  // existing sheet. The owner pasted the script and got seven unstyled, unlabelled columns. The
+  // original test asserted the builder EXISTED and was called from buildOrdersFrame; it never
+  // asserted the path taken when nothing about Phoenix's layout changed.
+  assert.match(
+    source,
+    /else if \(!editableFrameReady\(sheet, cols\)\) buildEditableFrame\(sheet, cols\);/,
+    "the team's block must be painted on the NOT-rebuilding path too — on a sheet whose Phoenix " +
+      "columns are unchanged, buildOrdersFrame never runs and the block would stay unstyled forever",
+  );
+  assert.match(
+    source,
+    /function editableFrameReady\(sheet, cols\)/,
+    "a readiness check must exist so the frame heals itself instead of depending on a rebuild",
+  );
+
+  // ── headerMatches must not see the team's block ───────────────────────────
+  // Comparing getLastColumn() to Phoenix's width made the answer depend on anything to the RIGHT
+  // of the table. Empty, the widths matched and the frame was never built; populated, they stopped
+  // matching and the entire layout rebuilt every minute — flicker and mid-read column resizing.
+  const matcher = source.slice(source.indexOf("function headerMatches"));
+  assert.ok(
+    !matcher.slice(0, 900).includes("sheet.getLastColumn()"),
+    "headerMatches must not measure the sheet's full width: the team's block sits to the right of " +
+      "Phoenix's columns, so getLastColumn() makes a note the trigger for a full layout rebuild",
+  );
+  assert.match(
+    matcher.slice(0, 900),
+    /sheet\.getRange\(at, 1, 1, header\.length\)/,
+    "the header comparison must be bounded by Phoenix's own column count",
+  );
+
   // ── Findable, because nothing is locked ───────────────────────────────────
   // The owner chose not to protect the Phoenix columns, so the only thing telling someone which
   // block keeps their typing is that it looks different.

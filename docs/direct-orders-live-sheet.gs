@@ -548,6 +548,11 @@ function buildOrdersSheet(ss, grid, stamp, created) {
 
   var rebuild = !headerMatches(sheet, header, ROW_HEADER);
   if (rebuild) buildOrdersFrame(sheet, header, cols);
+  // Painted independently of Phoenix's header, because on a sheet whose own columns have not
+  // changed — which is every existing sheet — `rebuild` is false and buildOrdersFrame never runs.
+  // The block would sit there unstyled and unlabelled forever, which is exactly what happened the
+  // first time this shipped.
+  else if (!editableFrameReady(sheet, cols)) buildEditableFrame(sheet, cols);
   ensureRows(sheet, LAST_ROW);
 
   // ── the only part that runs every minute ──
@@ -691,6 +696,19 @@ function paintEditable(sheet, cols, orderedIds, store) {
  * the only thing stopping someone typing where it will be erased within the minute is being able
  * to SEE which block is theirs. A different colour and the word "yours" does that work.
  */
+/** Is the team's block already labelled? Cheap enough to ask on every refresh. */
+function editableFrameReady(sheet, cols) {
+  var start = editableStartCol(cols);
+  var width = EDITABLE_COLUMNS.length;
+  if (sheet.getMaxColumns() < start + width - 1) return false;
+  if (sheet.getMaxRows() < ROW_HEADER) return false;
+  var current = sheet.getRange(ROW_HEADER, start, 1, width).getValues()[0];
+  for (var i = 0; i < width; i++) {
+    if (String(current[i]) !== String(EDITABLE_COLUMNS[i].label)) return false;
+  }
+  return true;
+}
+
 function buildEditableFrame(sheet, cols) {
   var start = editableStartCol(cols);
   var width = EDITABLE_COLUMNS.length;
@@ -1634,9 +1652,16 @@ function resetSheet(sheet) {
 function headerMatches(sheet, header, headerRow) {
   var at = headerRow || 2;
   if (sheet.getLastRow() < at) return false;
-  var width = sheet.getLastColumn();
-  if (width !== header.length) return false;
-  var current = sheet.getRange(at, 1, 1, width).getValues()[0];
+  // Judge PHOENIX's own columns, not the sheet's full width.
+  //
+  // This compared getLastColumn() to header.length, which made the answer depend on anything
+  // sitting to the RIGHT of the table — and the team's block sits exactly there. Two failures came
+  // out of that one line: while the block was empty the widths matched, so the frame was never
+  // built and the columns had no header, no colour and no dropdown; and the moment a note was
+  // typed the widths stopped matching, so the whole layout rebuilt EVERY MINUTE — the flicker and
+  // the columns resizing mid-read that this design exists to avoid.
+  if (sheet.getMaxColumns() < header.length) return false;
+  var current = sheet.getRange(at, 1, 1, header.length).getValues()[0];
   for (var i = 0; i < header.length; i++) {
     if (String(current[i]) !== String(header[i])) return false;
   }
