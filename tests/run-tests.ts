@@ -647,6 +647,7 @@ import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-vis
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
+import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1431,6 +1432,12 @@ await runTest(
 await runTest(
   "closing channel tabs (retail + direct partition the master exactly, survive the store split, and say Contr%)",
   runClosingChannelTabsTests,
+);
+
+await runTest(
+  "closing channel sheets drop nothing (no-client-code bucket, unnamed direct is not a pharmacy, "
+  + "grids carry the Matrix's store split, self-check covers every month)",
+  runClosingChannelNothingDroppedTests,
 );
 
 await runTest(

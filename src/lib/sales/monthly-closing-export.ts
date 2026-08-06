@@ -12,14 +12,16 @@ import {
 } from "@/lib/sales/monthly-distributor-import";
 import type { ClosingExportData, MonthlyClosingComparison } from "@/lib/sales/monthly-closing-comparison";
 import {
+  BREAKDOWN_DIMENSIONS,
   breakdownLeader,
-  CHANNEL_ORDER,
+  breakdownSelfCheck,
   channelShare,
   resolveBreakdownLabel,
   sumBreakdownRows,
   type BreakdownNameMaps,
   type ChannelBreakdown,
   type ChannelBreakdownDimension,
+  type ChannelBreakdownRow,
   type ChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import type { ClosingDetailRow, ClosingDetailsResult } from "@/lib/sales/monthly-closing-details";
@@ -96,10 +98,15 @@ function sanitizeSheetName(name: string) {
 
 // ── Formula helpers ──────────────────────────────────────────────────────────
 
-type Formula = { formula: string; result: number };
+// `result` is the value Excel SHOWS until the sheet is recalculated, so it is whatever the formula
+// evaluates to — a number almost everywhere, and a string for the self-check verdicts, which are
+// IF()s that produce wording ("OK — whole month present" / "MISMATCH — 4,363,635.38 EGP MISSING").
+// Those have to be live rather than typed in: a reader who edits a channel figure must see the
+// verdict move with it, which is the whole point of a self-check on an editable sheet.
+type Formula = { formula: string; result: number | string };
 const isFormula = (value: unknown): value is Formula =>
   typeof value === "object" && value !== null && "formula" in (value as Record<string, unknown>);
-const F = (formula: string, result: number): Formula => ({ formula, result });
+const F = (formula: string, result: number | string): Formula => ({ formula, result });
 
 const quote = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 const sumifs = (sumRange: string, criteria: [string, string | number][]) =>
@@ -1112,7 +1119,14 @@ function monthLabel(period: string): string {
  * (month, line, area, product) and carry no channel dimension, so a per-channel target would be a
  * number Phoenix invented rather than one anybody set.
  */
-function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelComparison, period: string | null) {
+function writeChannelComparisonSheet(
+  workbook: ExcelJS.Workbook,
+  c: ChannelComparison,
+  period: string | null,
+  /** This workbook's own Closing Matrix headline, for the exported month's extra tie. Null when
+   *  there is no matrix to tie to, in which case that one row is omitted rather than faked. */
+  matrixValue: number | null,
+) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Channel Comparison"), {
     views: [{ state: "frozen", xSplit: 1, ySplit: 5 }],
   });
@@ -1140,8 +1154,13 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
   }
 
   // writeTable puts the title on `start`, the header on start+1 and the first data row on start+2.
-  // Three channel rows then a TOTAL row, so every cross-block reference below is deterministic.
-  const CHANNEL_ROWS = CHANNEL_ORDER.length;
+  // The channel rows then a TOTAL row, so every cross-block reference below is deterministic.
+  //
+  // Counted off `c.rows`, NOT off CHANNEL_ORDER: the three unattributed rows are dropped on a line
+  // that has no unattributed money, so the two differ on every clean line. Using the constant would
+  // leave every SUM range in this sheet three rows too long — reaching into the TOTAL row and
+  // double-counting the month.
+  const CHANNEL_ROWS = c.rows.length;
   const blockFirstRow = (start: number) => start + 2;
   const blockTotalRow = (start: number) => start + 2 + CHANNEL_ROWS;
 
@@ -1331,7 +1350,7 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
   const hasAnyTarget = months.some(
     (month) => c.targetsByPeriod[month]?.targetValue != null || c.targetsByPeriod[month]?.targetUnits != null,
   );
-  writeTable(sheet, targetStart, {
+  row = writeTable(sheet, targetStart, {
     columns: [
       { label: "Month", width: 24 },
       { dataBar: true, label: "Sales Value", numFmt: VALUE_FMT, right: true, width: 16 },
@@ -1399,6 +1418,109 @@ function writeChannelComparisonSheet(workbook: ExcelJS.Workbook, c: ChannelCompa
       ];
     })(),
   });
+
+  // ── Block 6 — Self-check, EVERY month ──────────────────────────────────────
+  //
+  // The old version of this block checked the exported month alone. CNS 2026-07 happens to have no
+  // unattributable money, so a CNS July export printed "Difference 0.00 — this sheet and the Data
+  // sheet are the same money" while the six month blocks ABOVE it were short by as much as
+  // 4,363,635.38 each. A check that covers one of seven months is not a check; it is a reassurance.
+  //
+  // WHAT IT CHECKS AGAINST. Not the other blocks of this sheet — they are the same query added up a
+  // second way and would agree with themselves whatever the query did. `phx_closing_channel_totals`
+  // re-aggregates each month straight from source_of_sales_fact_rollup and
+  // source_of_sales_import_rows, with the guards WRITTEN OUT AGAIN rather than reused, and returns
+  // it as its own row. So a filter added to the channel query moves the left column and not the
+  // right one, and this block goes red.
+  const selfStart = row;
+  const selfFirstRow = blockFirstRow(selfStart);
+  const failures = c.selfCheck.filter((check) => !check.ok);
+  const verdictFormula = (excelRow: number) =>
+    `IF(ROUND(D${excelRow},2)=0,"OK — whole month present",`
+    + `"MISMATCH — "&TEXT(ABS(D${excelRow}),"#,##0.00")&" EGP "&IF(D${excelRow}<0,"MISSING","EXTRA"))`;
+  const verdictText = (difference: number) =>
+    Math.abs(Number(difference.toFixed(2))) < 0.005
+      ? "OK — whole month present"
+      : `MISMATCH — ${Math.abs(difference).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} EGP ${difference < 0 ? "MISSING" : "EXTRA"}`;
+  // A month the database could not supply an independent total for is NOT checked, and says so.
+  // Letting it fall back to the sheet's own figure would print a difference of 0.00 and an OK —
+  // which is the exact behaviour that made a CNS July export look reconciled while six months
+  // behind it were short.
+  const NOT_CHECKED = "NOT CHECKED — no independent total from the database";
+
+  const selfRows: CellValue[][] = c.selfCheck.map((check, index) => {
+    const excelRow = selfFirstRow + index;
+    const monthIndex = months.indexOf(check.period);
+    return [
+      monthLabel(check.period),
+      // Live: the TOTAL cell of block 1 for this month. Edit a channel figure above and this check
+      // re-runs against it, which is the only way a self-check on an editable sheet stays true.
+      monthIndex >= 0 ? F(`${colOf(monthIndex)}${valueTotalRow}`, check.sheetValue) : check.sheetValue,
+      check.populationAvailable ? check.populationValue : null,
+      check.populationAvailable ? F(`B${excelRow}-C${excelRow}`, check.differenceValue) : null,
+      check.populationAvailable ? check.differenceUnits : null,
+      check.populationAvailable ? F(verdictFormula(excelRow), verdictText(check.differenceValue)) : NOT_CHECKED,
+    ];
+  });
+
+  // The exported month gets one extra line: this workbook's OWN Closing Matrix. The two are built
+  // from different queries and meet only if the whole chain agrees, so it is the strongest single
+  // check in the file — and the one a reader can verify by looking at sheet 1.
+  const exportedCheck = period ? c.selfCheck.find((check) => check.period === period) : undefined;
+  if (matrixValue != null && exportedCheck) {
+    const excelRow = selfFirstRow + selfRows.length;
+    selfRows.push([
+      `${monthLabel(exportedCheck.period)} — against the Closing Matrix in this workbook`,
+      exportedCheck.sheetValue,
+      matrixValue,
+      F(`B${excelRow}-C${excelRow}`, exportedCheck.sheetValue - matrixValue),
+      null,
+      F(verdictFormula(excelRow), verdictText(exportedCheck.sheetValue - matrixValue)),
+    ]);
+  }
+
+  const totalSheetValue = c.selfCheck.reduce((sum, check) => sum + check.sheetValue, 0);
+  const totalPopulation = c.selfCheck.reduce((sum, check) => sum + check.populationValue, 0);
+  writeTable(sheet, selfStart, {
+    columns: [
+      { label: "Month", width: 52 },
+      { label: "This sheet (EGP)", numFmt: VALUE_FMT, right: true, width: 18 },
+      { label: "Source tables (EGP)", numFmt: VALUE_FMT, right: true, width: 18 },
+      { label: "Difference", numFmt: VALUE_FMT, right: true, width: 15 },
+      { label: "Units diff.", numFmt: UNITS_FMT, right: true, width: 12 },
+      { label: "Verdict", width: 44 },
+    ],
+    note: c.selfCheck.every((check) => !check.populationAvailable)
+      ? "NOT CHECKED. This database returned no independent month total, so nothing on this sheet has been "
+        + "verified against the source tables. A blank Difference is honest; a 0.00 would not be. Apply "
+        + "migration 20260806160000 and re-export to get a real check."
+      : failures.length > 0
+      ? `THIS SHEET IS NOT THE WHOLE LINE. ${failures.length} of ${c.selfCheck.length} months do not tie, `
+        + `the worst by ${Math.abs(c.worstSelfCheck?.differenceValue ?? 0).toFixed(2)} EGP in `
+        + `${monthLabel(c.worstSelfCheck?.period ?? "")}. Every month above is checked, not only the exported `
+        + "one. A negative difference means money exists in the source tables that no row on this sheet "
+        + "carries — do not publish these figures until the Verdict column reads OK on every line."
+      : "Every month this sheet displays is checked here, not only the exported one — a check that covers "
+        + "one month of seven is a reassurance, not a check, and that is exactly how six short CNS months "
+        + "went out. The right-hand figure is the month re-added from the source tables inside "
+        + "phx_closing_channel_totals, with its guards written out a second time rather than reused, so a "
+        + "filter added to the channel query would move the left column and not the right one. Difference "
+        + "and Verdict are live formulas over this block's own cells.",
+    rows: selfRows,
+    title: `6 · Self-check — all ${c.selfCheck.length} month${c.selfCheck.length === 1 ? "" : "s"} on this sheet`,
+    totals: [
+      "ALL MONTHS",
+      F(`SUM(B${selfFirstRow}:B${selfFirstRow + c.selfCheck.length - 1})`, totalSheetValue),
+      F(`SUM(C${selfFirstRow}:C${selfFirstRow + c.selfCheck.length - 1})`, totalPopulation),
+      F(`SUM(D${selfFirstRow}:D${selfFirstRow + c.selfCheck.length - 1})`, totalSheetValue - totalPopulation),
+      c.selfCheck.reduce((sum, check) => sum + check.differenceUnits, 0),
+      c.selfCheck.every((check) => !check.populationAvailable)
+        ? "NOT CHECKED — no independent total from the database"
+        : failures.length === 0
+          ? "OK — every month ties"
+          : `${failures.length} of ${c.selfCheck.length} MONTHS DO NOT TIE`,
+    ],
+  });
 }
 
 /**
@@ -1443,13 +1565,63 @@ function writeChannelBreakdownSheet(
     productName: new Map(matrix.columns.map((product) => [upperKey(product.productCode), product.productName])),
   };
 
-  // Channel | Hospitals | Stores | Pharmacies | Total | Leader
-  const COLS = 6;
+  // Row label | the channel columns | Total | Leader. The channel columns are three when every
+  // customer on the sheet could be identified, and up to six when they could not — decided ONCE
+  // below for all four grids, so a reader scrolling between them never finds Total in a new place.
+  const gridTotals = BREAKDOWN_DIMENSIONS.map((dimension) => sumBreakdownRows(breakdown.byDimension[dimension]));
+  type BucketColumn = { label: string; pick: (row: ChannelBreakdownRow) => number };
+  // Annotated before `.filter`, not after: the filter's input literal has no contextual type of its
+  // own, so annotating only the result leaves every `row` parameter an implicit any.
+  const allBucketColumns: readonly BucketColumn[] = [
+    { label: "No client code", pick: (row) => row.unidentifiedNoCode },
+    { label: "No customer name", pick: (row) => row.unidentifiedNoName },
+    { label: "Direct, unnamed", pick: (row) => row.directUnnamed },
+  ];
+  const bucketColumns = allBucketColumns.filter(
+    (column) => gridTotals.some((totals) => column.pick(totals) !== 0),
+  );
+
+  const channelColumnCount = 3 + bucketColumns.length;
+  // B is the first channel column. Derived rather than typed so the SUM ranges cannot drift from
+  // the headers above them when a bucket column appears or disappears.
+  const firstChannelLetter = columnLetter(2);
+  const lastChannelLetter = columnLetter(1 + channelColumnCount);
+  const totalLetter = columnLetter(2 + channelColumnCount);
+  const COLS = channelColumnCount + 3;
   bandHeader(sheet, breakdown.line, breakdown.period, "Channel by Product / Rep / Area / Brick", COLS);
 
   const scopeNote = breakdown.restrictedProductsIncluded
     ? "Figures INCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim) because this export was taken with them revealed."
     : "Figures EXCLUDE the restricted products (Lacto Basic 1 & 2, Satoslim), which is the default view for every role.";
+
+  // The store city split moved money between the areas of a city BEFORE these grids were written —
+  // the same movement the Closing Matrix and Total sheets carry. Said out loud on the three grids
+  // it touches, because an area figure here that differs from a pre-split number elsewhere is the
+  // first thing a reader will question.
+  const splitApplied = breakdown.storeSplit?.applied === true;
+  const splitMoved = breakdown.storeSplit?.movedValue ?? 0;
+  const splitNote = splitApplied
+    ? (splitMoved > 0
+      ? `The store city split IS applied to this grid: ${splitMoved.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} EGP `
+        + "of wholesaler sell-in was shared evenly across the areas of each store's city before these figures "
+        + "were written, exactly as on the Closing Matrix and Total sheets. Both sheets therefore publish the "
+        + "same number for the same area."
+      : "The store city split is applied to this grid and moved nothing this month — no wholesaler sold in a "
+        + "city that has more than one area. These figures and the Closing Matrix's are the same either way.")
+    : "WARNING: the store city split was NOT applied to this grid, so its area figures do not match the "
+      + "Closing Matrix sheet in this workbook. Do not reconcile the two until this is fixed.";
+
+  // July 2026 only: the owner hand-mapped that month's direct orders to areas and reps, and the
+  // Closing Matrix uses that mapping. Said out loud because in every OTHER month a direct order
+  // correctly has no area and sits in its own row — a reader who knows that rule needs to be told
+  // where the exception applies, and how much money it moved.
+  const julyDirectNote = breakdown.julyDirect?.applied
+    ? ` July 2026's direct orders are on their mapped AREAS AND REPS here, not in a Direct row: the owner mapped `
+      + `${(breakdown.julyDirect.value).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} EGP `
+      + "of them on 2026-08-03 and the Closing Matrix places them the same way, so the two sheets agree area by "
+      + "area. This is a one-off for this month; in every other month a direct order has no area and keeps its "
+      + "own row."
+    : "";
 
   const grids: ReadonlyArray<{ dimension: ChannelBreakdownDimension; first: string; note: string; title: string }> = [
     {
@@ -1465,7 +1637,9 @@ function writeChannelBreakdownSheet(
       note: "A sale reaches a rep through its area: sales area → canonical area → this line's active REP seat → "
         + "that seat's current occupant. Sales that reach no rep are NOT hidden — an area that is not on the seat "
         + "model, a seat nobody occupies today, and the direct orders (which no seat owns) each get their own row. "
-        + "Those rows are the interesting part, not an error to look past.",
+        + "Those rows are the interesting part, not an error to look past. " + splitNote
+        + " That is what stops a wholesaler's whole sell-in being credited to the one rep whose area the shop "
+        + "stands in." + julyDirectNote,
       title: "2 · Medical Rep × Channel",
     },
     {
@@ -1473,14 +1647,17 @@ function writeChannelBreakdownSheet(
       first: "Area",
       note: "Direct orders carry no area on the row at all — they reach the closing from the Direct Orders module "
         + "rather than a distributor invoice line — so they appear as their own named row rather than being spread "
-        + "over areas they were never tagged with, or dropped.",
+        + "over areas they were never tagged with, or dropped. " + splitNote + julyDirectNote,
       title: "3 · Area × Channel",
     },
     {
       dimension: "brick",
       first: "Brick",
-      note: "The finest cut, and the longest grid. Two kinds of row carry no brick and are named as such: direct "
-        + "orders, and distributor lines whose brick did not map to the master.",
+      note: "The finest cut, and the longest grid. Three kinds of row carry no brick and are named as such: direct "
+        + "orders, distributor lines whose brick did not map to the master, and — because a wholesaler supplies its "
+        + "whole city rather than the street it stands on — the store sales the city split shared out. That last "
+        + "row is the brick-side of the same movement the Area grid above shows: once a store's sell-in belongs to "
+        + "every area of its city, it belongs to no single brick, including the shop's own.",
       title: "4 · Brick × Channel",
     },
   ];
@@ -1488,26 +1665,31 @@ function writeChannelBreakdownSheet(
   let row = 4;
   grids.forEach((grid, index) => {
     const rows = breakdown.byDimension[grid.dimension];
-    const totals = sumBreakdownRows(rows);
+    const totals = gridTotals[BREAKDOWN_DIMENSIONS.indexOf(grid.dimension)] ?? sumBreakdownRows(rows);
     const firstDataRow = row + 2;
     const lastDataRow = firstDataRow + rows.length - 1;
 
     row = writeTable(sheet, row, {
       columns: [
-        // Wide enough for the longest bucket wording ("Direct orders (company) — no rep seat owns
-        // them", 46 characters) so no row label is clipped by the number column beside it.
-        { label: grid.first, width: 48 },
+        // Wide enough for the longest bucket wording ("Store sales shared across the city — no
+        // single brick", 52 characters) so no row label is clipped by the number column beside it.
+        { label: grid.first, width: 54 },
         { label: "Hospitals", numFmt: VALUE_FMT, right: true, width: 14 },
         { label: "Stores", numFmt: VALUE_FMT, right: true, width: 14 },
         { label: "Pharmacies", numFmt: VALUE_FMT, right: true, width: 14 },
+        ...bucketColumns.map((column) => (
+          { label: column.label, numFmt: VALUE_FMT, right: true, width: 16 } satisfies TableColumn
+        )),
         { dataBar: true, label: "Total", numFmt: VALUE_FMT, right: true, width: 15 },
-        { label: "Leader", width: 22 },
+        { label: "Leader", width: 24 },
       ],
       note: index === 0
         ? `${grid.note} Every grid on this sheet adds up to the SAME month total the Closing Matrix publishes — `
-          + "money that reaches no product, rep, area or brick is given a named row rather than dropped, so the "
-          + "four TOTAL rows agree with each other. The three channel columns are values (the channel comes from "
-          + `the customer's name, which the hidden Calc sheet does not carry); Total and the TOTAL row are live formulas. ${scopeNote}`
+          + "money that reaches no product, rep, area or brick is given a named row rather than dropped, and money "
+          + "that reaches no CUSTOMER gets its own column rather than falling into Pharmacies, so the four TOTAL "
+          + "rows agree with each other and with block 5 below. The channel columns are values (the channel comes "
+          + "from the customer's name, which the hidden Calc sheet does not carry); Total and the TOTAL row are "
+          + `live formulas. ${scopeNote}`
         : grid.note,
       rows: rows.map((entry, rowIndex) => {
         const excelRow = firstDataRow + rowIndex;
@@ -1517,7 +1699,8 @@ function writeChannelBreakdownSheet(
           entry.hospital,
           entry.store,
           entry.pharmacy,
-          F(`SUM(B${excelRow}:D${excelRow})`, entry.total),
+          ...bucketColumns.map((column) => column.pick(entry)),
+          F(`SUM(${firstChannelLetter}${excelRow}:${lastChannelLetter}${excelRow})`, entry.total),
           leaderText(leader ? { distributorName: leader.label, share: leader.share } : null),
         ];
       }),
@@ -1528,11 +1711,66 @@ function writeChannelBreakdownSheet(
           F(`SUM(B${firstDataRow}:B${lastDataRow})`, totals.hospital),
           F(`SUM(C${firstDataRow}:C${lastDataRow})`, totals.store),
           F(`SUM(D${firstDataRow}:D${lastDataRow})`, totals.pharmacy),
-          F(`SUM(E${firstDataRow}:E${lastDataRow})`, totals.total),
+          ...bucketColumns.map((column, bucketIndex) => {
+            const letter = columnLetter(5 + bucketIndex);
+            return F(`SUM(${letter}${firstDataRow}:${letter}${lastDataRow})`, column.pick(totals));
+          }),
+          F(`SUM(${totalLetter}${firstDataRow}:${totalLetter}${lastDataRow})`, totals.total),
           null,
         ]
         : undefined,
     });
+  });
+
+  // ── Block 5 — Self-check, every grid ───────────────────────────────────────
+  //
+  // Deliberately NOT "do the four grids agree with each other". They are four cuts of ONE query, so
+  // they agree with each other whether or not that query holds the month — which is precisely how a
+  // missing 4.36M went unnoticed on CNS. `phx_closing_channel_breakdown` re-adds the month straight
+  // from the source tables, with its guards written out a second time rather than reused, and
+  // returns it as its own row. That is what these four are measured against.
+  const checks = breakdownSelfCheck(breakdown);
+  const failed = checks.filter((check) => !check.ok);
+  const checkFirstRow = row + 2;
+  writeTable(sheet, row, {
+    columns: [
+      { label: "Grid", width: 54 },
+      { label: "Grid TOTAL (EGP)", numFmt: VALUE_FMT, right: true, width: 18 },
+      { label: "Source tables (EGP)", numFmt: VALUE_FMT, right: true, width: 18 },
+      { label: "Difference", numFmt: VALUE_FMT, right: true, width: 15 },
+      { label: "Verdict", width: 44 },
+    ],
+    note: checks.every((check) => !check.available)
+      ? "NOT CHECKED. This database returned no independent month total, so the four grids could only have "
+        + "been compared with each other — and four cuts of one query agree with each other whether or not "
+        + "that query holds the month. Apply migration 20260806160000 and re-export to get a real check."
+      : failed.length > 0
+      ? `THIS SHEET IS NOT THE WHOLE MONTH. ${failed.length} of ${checks.length} grids do not tie to the source `
+        + "tables. Do not reconcile against these grids until the Verdict column reads OK on every line."
+      : "Each grid is checked against the month re-added from source_of_sales_fact_rollup and "
+        + "source_of_sales_import_rows inside the RPC, not against the other grids — four cuts of one query "
+        + "agree with each other whether or not that query is right. Difference and Verdict are live formulas.",
+    rows: checks.map((check, index) => {
+      const excelRow = checkFirstRow + index;
+      const grid = grids.find((entry) => entry.dimension === check.dimension);
+      return [
+        `${grid?.title ?? check.dimension} — TOTAL row`,
+        check.gridValue,
+        check.available ? check.population : null,
+        check.available ? F(`B${excelRow}-C${excelRow}`, check.difference) : null,
+        check.available
+          ? F(
+            `IF(ROUND(D${excelRow},2)=0,"OK — whole month present",`
+            + `"MISMATCH — "&TEXT(ABS(D${excelRow}),"#,##0.00")&" EGP "&IF(D${excelRow}<0,"MISSING","EXTRA"))`,
+            check.ok
+              ? "OK — whole month present"
+              : `MISMATCH — ${Math.abs(check.difference).toFixed(2)} EGP ${check.difference < 0 ? "MISSING" : "EXTRA"}`,
+          )
+          // Never an OK it did not earn — see the Channel Comparison sheet's block 6 for why.
+          : "NOT CHECKED — no independent total from the database",
+      ];
+    }),
+    title: "5 · Self-check — does each grid hold the whole month?",
   });
 }
 
@@ -2897,7 +3135,21 @@ export async function buildMonthlyClosingWorkbook(
   // Straight after "who sold it" comes "who bought it" — the same money split by customer channel,
   // and the only sheet in the book that looks at the months either side of this one.
   if (options?.channelComparison) {
-    writeChannelComparisonSheet(workbook, options.channelComparison, matrix.period);
+    // The workbook's OWN headline, so the exported month's extra tie-back line compares the channel
+    // sheet to the Closing Matrix a reader can see on sheet 1 — the same figure the Total sheet
+    // reconciles to, not a second derivation of it.
+    //
+    // companyTotal, NOT grandTotal, whenever the month has one. grandTotal is the area grid; the
+    // Direct National row sits OUTSIDE it and companyTotal is the "Grand Total (incl. Direct)" row
+    // the Matrix sheet actually prints. Tying to grandTotal made Pedia 2026-07 read a 13,732.00
+    // MISMATCH against a cell nobody publishes — that is direct money belonging to no area, which
+    // is real and is on the sheet, just not in the grid.
+    writeChannelComparisonSheet(
+      workbook,
+      options.channelComparison,
+      matrix.period,
+      (matrix.companyTotal ?? matrix.grandTotal).rowTotal.salesValue,
+    );
   }
   // Then the same month cut four ways. Its own sheet: the brick grid alone runs to hundreds of rows
   // and would bury the month-by-month blocks above.

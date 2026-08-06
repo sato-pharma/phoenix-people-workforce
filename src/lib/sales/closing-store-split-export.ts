@@ -25,6 +25,7 @@ import {
 import {
   netStoreSplitByAreaProduct,
   splitStoreSalesAcrossCityAreas,
+  type StoreSplitAreaMovement,
 } from "@/lib/sales/store-sales-city-split";
 
 export type ClosingStoreSplitExport = {
@@ -39,6 +40,16 @@ export type ClosingStoreSplitExport = {
    * the amount, which is what lets the workbook name it instead of losing it.
    */
   net: ReturnType<typeof netStoreSplitByAreaProduct>;
+  /**
+   * The movements `net` was folded from, per area, line and product.
+   *
+   * Exposed because the Channel Breakdown grids need the SAME movement the Closing Matrix gets, at
+   * area grain rather than area×product. Deriving it a second time from the breakdown's own figures
+   * looked equivalent and was not — the two disagreed about which customers are wholesalers and put
+   * six Anti Infective areas and eleven Pedia areas out of step with the Matrix on 2026-07. One
+   * computation, handed to both write-backs.
+   */
+  movements: StoreSplitAreaMovement[];
 };
 
 /**
@@ -52,8 +63,12 @@ export function prepareClosingStoreSplit(
   monthRows: ClosingDetailsResult,
   scopeAreaCodes: readonly string[],
 ): ClosingStoreSplitExport {
+  // Split ONCE. Both write-backs — the matrix's and the channel grids' — read this one result, so
+  // the two sheets cannot describe different movements of the same money.
+  const { movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
   return {
     details: narrowClosingDetailsToAreas(monthRows, scopeAreaCodes),
-    net: netStoreSplitByAreaProduct(splitStoreSalesAcrossCityAreas(monthRows.rows).movements),
+    movements,
+    net: netStoreSplitByAreaProduct(movements),
   };
 }
