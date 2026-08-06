@@ -1,4 +1,6 @@
 import { writeAuditLog } from "@/lib/admin/audit";
+import type { PreparedInvoice } from "@/lib/direct-orders/invoice-scan";
+import { prepareInvoicePhoto } from "@/lib/direct-orders/invoice-scan";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import {
@@ -277,6 +279,33 @@ export async function extractDirectOrderInvoice(
     );
   }
 
+  // ── Make the photograph legible before anyone tries to read it ─────────────
+  // The scanner-app step: orientation, tone and contrast, done on the SERVER because the image is
+  // already here. A rep on mobile data downloads nothing and their phone does no work — which is
+  // the only reason this is affordable at all.
+  //
+  // `prepareInvoicePhoto` cannot refuse: every failure path inside it returns the original bytes.
+  // If it somehow throws anyway, this catch keeps that promise, because an enhancement that can
+  // stop a readable invoice from being read is worse than no enhancement.
+  const originalBytes = Buffer.from(base64, "base64");
+  // Typed as PreparedInvoice rather than inferred from the literal: `Buffer.from` returns the
+  // narrow `Buffer<ArrayBuffer>`, so an inferred shape rejects the wider `Buffer` the module
+  // returns. Typecheck caught that; the test suite did not, because type-stripping never sees it.
+  let scan: PreparedInvoice = {
+    bytes: originalBytes,
+    mimeType,
+    prepared: false,
+    originalBytes: originalBytes.length,
+    preparedBytes: originalBytes.length,
+  };
+  try {
+    scan = await prepareInvoicePhoto({ bytes: originalBytes, mimeType });
+  } catch {
+    // The original stands.
+  }
+  const readableBase64 = scan.prepared ? scan.bytes.toString("base64") : base64;
+  const readableMimeType = scan.prepared ? scan.mimeType : mimeType;
+
   async function ask(instructions: string, prompt: string, purpose: string) {
     const response = await createOpenAiResponseText({
       input: [
@@ -284,7 +313,11 @@ export async function extractDirectOrderInvoice(
           content: [
             { text: prompt, type: "input_text" as const },
             // "high" detail: an invoice is small dense print, and downsampling turns a 6 into an 8.
-            { detail: "high" as const, image_url: `data:${mimeType};base64,${base64}`, type: "input_image" as const },
+            {
+              detail: "high" as const,
+              image_url: `data:${readableMimeType};base64,${readableBase64}`,
+              type: "input_image" as const,
+            },
           ],
           role: "user" as const,
         },
@@ -380,6 +413,11 @@ export async function extractDirectOrderInvoice(
       // grounds that it sounds sensible.
       retried,
       rescuedByRetry,
+      // The scanner step costs CPU on every single read. These decide whether it earns that:
+      // if `prepared` is true and codeRead does not improve, it is doing nothing but spending.
+      prepared: scan.prepared,
+      bytesBefore: scan.originalBytes,
+      bytesAfter: scan.preparedBytes,
     },
     summary:
       `Invoice read: customer code ${read.customerCode ? "read" : "not read"}` +
