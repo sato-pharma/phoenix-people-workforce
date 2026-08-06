@@ -660,6 +660,8 @@ import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-s
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
 
+import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1478,6 +1480,11 @@ await runTest(
 await runTest(
   "direct orders pharmacy combo box opens where there is room (measured against visualViewport, flips up, never a fixed 320px)",
   runDirectOrdersPharmacyComboboxPlacementTests,
+);
+
+await runTest(
+  "direct orders sheet editable columns (the team's notes are keyed to the Request ID, captured before the sheet is wiped or reordered, live outside every range the refresh rewrites, and the real sales month stays Phoenix's alone)",
+  runDirectOrdersSheetEditableColumnsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
