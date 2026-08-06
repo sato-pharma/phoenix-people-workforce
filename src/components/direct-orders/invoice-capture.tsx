@@ -43,12 +43,41 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InvoiceExtractionResult | null>(null);
   const [appliedIndex, setAppliedIndex] = useState<number | null>(null);
+  // What is CURRENTLY in each line's boxes, keyed by line index. Seeded from the reading and then
+  // owned by the submitter. Held separately from `result` so the reading stays intact underneath —
+  // comparing the two is what tells us a value was corrected.
+  const [edits, setEdits] = useState<Record<number, { qty: string; bonus: string }>>({});
+
+  function fieldValue(index: number, field: "qty" | "bonus", fallback: number | null | undefined): string {
+    const edited = edits[index]?.[field];
+    if (edited !== undefined) return edited;
+    return fallback == null ? "" : String(fallback);
+  }
+
+  function setField(
+    index: number,
+    field: "qty" | "bonus",
+    value: string,
+    printed: InvoiceExtractionResult["resolved"]["lines"][number]["read"],
+  ) {
+    setEdits((prev) => ({
+      ...prev,
+      [index]: {
+        bonus: field === "bonus" ? value : (prev[index]?.bonus ?? (printed.bonus == null ? "" : String(printed.bonus))),
+        qty: field === "qty" ? value : (prev[index]?.qty ?? (printed.qty == null ? "" : String(printed.qty))),
+      },
+    }));
+    // Editing a line un-uses it: the form now holds the OLD numbers, and leaving the button
+    // reading "Used" would tell the submitter their correction had been applied when it had not.
+    setAppliedIndex((current) => (current === index ? null : current));
+  }
 
   async function read(file: File) {
     setBusy(true);
     setError(null);
     setResult(null);
     setAppliedIndex(null);
+    setEdits({});
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -125,6 +154,35 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
 
         {result ? (
           <div className="space-y-3">
+            {/* A thin reading is almost always the PHOTOGRAPH, and the submitter is standing in
+                front of the invoice right now — retaking costs ten seconds here and an approval
+                cycle later. So say it plainly and put the button next to the sentence.
+
+                It never blocks. `AREA_PROXIMITY_FLAG_KM` in the validation service states the rule
+                this follows: a hard gate rejects real work and produces exactly the "the new system
+                blocked everything" complaint the design exists to avoid. A rep in a dim pharmacy at
+                six in the evening with a creased invoice must still be able to file the order — by
+                hand if that is what it takes. Refusing them would send them back to typing codes,
+                which is the behaviour that created the false pharmacies in the first place. */}
+            {!result.resolved.customer || result.resolved.lines.every((line) => !line.product) ? (
+              <div className="border border-amber-300 bg-amber-50 px-3 py-2">
+                <p className="text-[12px] font-bold text-amber-900">
+                  Not much came off this photo. If the invoice is still in front of you, a second
+                  shot usually fixes it — get closer, keep the page flat, and avoid the glare.
+                </p>
+                <button
+                  type="button"
+                  className="mt-2 border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Retake the photo
+                </button>
+                <p className="mt-1.5 text-[11px] text-amber-800">
+                  Or carry on and fill the rest in yourself — nothing here stops you submitting.
+                </p>
+              </div>
+            ) : null}
+
             {/* The pharmacy, and only if the master database confirmed it. */}
             <div className="border border-[#e4e9ec] px-3 py-2">
               <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">Pharmacy on the invoice</p>
@@ -149,39 +207,90 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
             </div>
 
             {/* One row per printed line. A line that could not be matched keeps its place and says
-                why: dropping it would turn a five-line invoice into four with nobody the wiser. */}
+                why: dropping it would turn a five-line invoice into four with nobody the wiser.
+
+                The numbers are EDITABLE, seeded from the reading. Before this, a line was
+                use-as-read or nothing — so a quantity that came back 240 against a printed 249 sent
+                the submitter to type the whole order by hand. Hand-typing is the behaviour this
+                whole feature exists to remove, and refusing a one-digit correction was quietly
+                reinstating it. A quantity that did not read at all is now typeable for the same
+                reason.
+
+                The PRODUCT is deliberately not editable. A line the master database could not
+                confirm still has no button — that rule predates this and is the one that stops a
+                code nobody has checked from entering at speed. */}
             <div className="space-y-2">
-              {result.resolved.lines.map((line, index) => (
-                <div key={`${line.read.productCode ?? "?"}-${index}`} className="flex flex-wrap items-center justify-between gap-2 border border-[#e4e9ec] px-3 py-2">
-                  <div className="min-w-0">
+              {result.resolved.lines.map((line, index) => {
+                const qty = fieldValue(index, "qty", line.read.qty);
+                const bonus = fieldValue(index, "bonus", line.read.bonus);
+                const qtyNumber = Number(qty);
+                const usable = Boolean(line.product) && qty.trim() !== "" && Number.isFinite(qtyNumber) && qtyNumber > 0;
+                const corrected =
+                  qty !== (line.read.qty == null ? "" : String(line.read.qty)) ||
+                  bonus !== (line.read.bonus == null ? "" : String(line.read.bonus));
+                return (
+                  <div key={`${line.read.productCode ?? "?"}-${index}`} className="border border-[#e4e9ec] px-3 py-2">
                     <p className="text-sm font-bold text-slate-900" dir="auto">
                       {line.product?.productName ?? line.read.productName ?? line.read.productCode ?? "Unreadable line"}
                     </p>
-                    <p className="text-[11px] text-slate-500">
-                      {line.read.qty != null ? `${line.read.qty.toLocaleString("en-US")} units` : "no quantity read"}
-                      {line.read.bonus ? ` · ${line.read.bonus.toLocaleString("en-US")} bonus` : ""}
-                    </p>
                     {line.problem ? <p className="text-[11px] font-semibold text-amber-800">{line.problem}</p> : null}
+
+                    <div className="mt-2 flex flex-wrap items-end gap-3">
+                      <label className="block">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          Quantity
+                        </span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={qty}
+                          placeholder={line.read.qty == null ? "not read — type it" : undefined}
+                          onChange={(event) => setField(index, "qty", event.target.value, line.read)}
+                          className="mt-0.5 w-28 border border-[#e4e9ec] px-2 py-1 text-sm font-semibold text-slate-900"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
+                          Bonus
+                        </span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={bonus}
+                          onChange={(event) => setField(index, "bonus", event.target.value, line.read)}
+                          className="mt-0.5 w-24 border border-[#e4e9ec] px-2 py-1 text-sm font-semibold text-slate-900"
+                        />
+                      </label>
+                      {line.product ? (
+                        <button
+                          type="button"
+                          disabled={!usable}
+                          className="border border-slate-900 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                          onClick={() => {
+                            onApply({
+                              bonus: bonus.trim(),
+                              customer: result.resolved.customer,
+                              productCode: line.product?.productCode ?? "",
+                              qty: qty.trim(),
+                            });
+                            setAppliedIndex(index);
+                          }}
+                        >
+                          {appliedIndex === index ? "Used" : "Use this line"}
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {corrected ? (
+                      <p className="mt-1.5 text-[11px] text-slate-500">
+                        Changed from what the invoice printed — your number is the one that will be used.
+                      </p>
+                    ) : null}
                   </div>
-                  {line.product && line.read.qty != null && line.read.qty > 0 ? (
-                    <button
-                      type="button"
-                      className="border border-slate-900 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white"
-                      onClick={() => {
-                        onApply({
-                          bonus: line.read.bonus ? String(line.read.bonus) : "",
-                          customer: result.resolved.customer,
-                          productCode: line.product?.productCode ?? "",
-                          qty: String(line.read.qty ?? ""),
-                        });
-                        setAppliedIndex(index);
-                      }}
-                    >
-                      {appliedIndex === index ? "Used" : "Use this line"}
-                    </button>
-                  ) : null}
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {result.problems.length > 0 ? (

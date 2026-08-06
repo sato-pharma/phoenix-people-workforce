@@ -1,3 +1,4 @@
+import { writeAuditLog } from "@/lib/admin/audit";
 import type { AccessContext } from "@/lib/auth/permissions";
 import { assertPermission } from "@/lib/auth/permissions";
 import {
@@ -217,14 +218,39 @@ export async function extractDirectOrderInvoice(
   };
 
   const problems: string[] = [];
-  return {
-    read,
-    resolved: {
-      customer: await resolveCustomer(access, read, problems),
-      lines: await resolveLines(read.lines, problems),
-    },
-    problems,
+  const resolved = {
+    customer: await resolveCustomer(access, read, problems),
+    lines: await resolveLines(read.lines, problems),
   };
+
+  // ── How well did that actually go? ─────────────────────────────────────────
+  // Recorded because the next decision about this feature — whether to preprocess the photograph
+  // before reading it, which costs a multi-megabyte library on the phone of a rep paying for mobile
+  // data — should be answered with counts rather than with an impression. Two numbers decide it:
+  // how often a customer code comes off the paper at all, and how often the printed lines match
+  // real products.
+  //
+  // `writeAuditLog` swallows its own failures by design, and this is deliberately the version that
+  // does: a measurement must never be the reason a rep cannot read their invoice. Nothing here is
+  // user-visible, so spec D4 is untouched.
+  await writeAuditLog({
+    actorLoginId: access.loginId ?? access.hrId ?? "unknown",
+    entityType: "direct_order_request",
+    entityId: "invoice-read",
+    newValues: {
+      codeRead: read.customerCode != null,
+      codeResolved: resolved.customer != null,
+      linesRead: read.lines.length,
+      linesMatched: resolved.lines.filter((line) => line.product != null).length,
+      qtyMissing: read.lines.filter((line) => line.qty == null).length,
+    },
+    summary:
+      `Invoice read: customer code ${read.customerCode ? "read" : "not read"}` +
+      `${read.customerCode && !resolved.customer ? " but not in master data" : ""}, ` +
+      `${resolved.lines.filter((line) => line.product != null).length} of ${read.lines.length} lines matched.`,
+  });
+
+  return { read, resolved, problems };
 }
 
 /**
