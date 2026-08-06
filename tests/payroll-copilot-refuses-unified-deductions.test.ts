@@ -34,12 +34,23 @@ export function runPayrollCopilotUnifiedDeductionsGuardTests() {
 
   // 2. Ordering: the guard must run before the expensive draft assembly, so the cheapest exit wins
   //    and no partial work is done for a run that cannot legally produce a sheet.
+  //
+  //    Scoped to materializeRun's own body on purpose. assembleDraft is called from more than one
+  //    function in this file (getRunView reaches it too, earlier in the source), so a whole-file
+  //    indexOf compares against the WRONG call site and fails on correct code — which is exactly
+  //    what this assertion did on its first CI run.
   {
-    const guardAt = copilot.indexOf("describeUnifiedDeductionsConflict({");
-    const assembleAt = copilot.indexOf("await assembleDraft(period");
-    assert.ok(guardAt > 0, "the guard call must exist");
-    assert.ok(assembleAt > 0, "assembleDraft must still be called");
-    assert.ok(guardAt < assembleAt, "the guard must run BEFORE assembleDraft");
+    const start = copilot.indexOf("export async function materializeRun");
+    assert.ok(start > 0, "materializeRun must exist");
+    const rest = copilot.slice(start);
+    const end = rest.indexOf("\nexport async function ", 1);
+    const body = end > 0 ? rest.slice(0, end) : rest;
+
+    const guardAt = body.indexOf("describeUnifiedDeductionsConflict({");
+    const assembleAt = body.indexOf("await assembleDraft(period");
+    assert.ok(guardAt > 0, "materializeRun must call the guard");
+    assert.ok(assembleAt > 0, "materializeRun must still call assembleDraft");
+    assert.ok(guardAt < assembleAt, "the guard must run BEFORE assembleDraft inside materializeRun");
   }
 
   // 3. The guard's own rule: live candidates in the unified module mean it owns the month.
