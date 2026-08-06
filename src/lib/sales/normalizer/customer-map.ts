@@ -178,7 +178,7 @@ export type CustomerMapImportResult = {
   backfillSkipped: boolean;
 };
 
-type BrickRef = { areaCode: string; brickId: string; regionCode: string };
+export type BrickRef = { areaCode: string; brickId: string; regionCode: string };
 export type CustomerMapClassifyContext = {
   brickById: Map<string, BrickRef>; // key = normalizeCodeKey(brickId)
   distributorCodes: Set<string>; // normalizeCodeKey(distributor code)
@@ -484,35 +484,21 @@ export async function addCustomerMapRow(input: {
 export async function applyCustomerBrickCorrections(
   corrections: CustomerBrickCorrection[],
   options: { actorLoginId: string },
-): Promise<{ applied: number; skipped: number }> {
-  if (corrections.length === 0) return { applied: 0, skipped: 0 };
+): Promise<{ applied: number; skipped: number; skippedOwnerVerified: number }> {
+  if (corrections.length === 0) return { applied: 0, skipped: 0, skippedOwnerVerified: 0 };
 
   const refs = await loadSalesReferenceData({ includeCustomerBricks: false });
   const brickById = new Map<string, BrickRef>(
     (refs.bricks ?? []).map((b) => [normalizeCodeKey(b.brickId), { areaCode: b.areaCode, brickId: b.brickId, regionCode: b.regionCode }]),
   );
 
-  const rows: Record<string, unknown>[] = [];
-  let skipped = 0;
-  for (const c of corrections) {
-    const brick = brickById.get(normalizeCodeKey(c.brickId));
-    const customerCode = String(c.customerCode ?? "").trim();
-    const distributorCode = normalizeCodeKey(c.distributorCode);
-    if (!brick || !customerCode || !distributorCode) { skipped += 1; continue; }
-    rows.push({
-      active: true,
-      area_code: brick.areaCode,
-      brick_id: brick.brickId,
-      customer_code: customerCode,
-      distributor_code: distributorCode,
-      mapped_by: options.actorLoginId,
-      region_code: brick.regionCode,
-      source: "sheet-verified",
-    });
-  }
-  if (rows.length === 0) return { applied: 0, skipped };
-
   const supabase = getSupabaseAdmin();
+  const ownerVerifiedKeys = await loadOwnerVerifiedMapKeys(supabase, corrections);
+
+  const { rows, skipped, skippedOwnerVerified } =
+    selectCorrectionRows(corrections, brickById, ownerVerifiedKeys, options.actorLoginId);
+  if (rows.length === 0) return { applied: 0, skipped, skippedOwnerVerified };
+
   const stamp = new Date().toISOString();
   let { error } = await supabase
     .from("source_of_sales_customer_map")
@@ -540,13 +526,20 @@ export async function applyCustomerBrickCorrections(
         previousBrick: c.previousBrickId,
       })),
     },
-    summary: `Sheet-verified brick correction — ${rows.length} customer${rows.length === 1 ? "" : "s"} updated from live upload data.`,
+    summary: `Sheet-verified brick correction — ${rows.length} customer${rows.length === 1 ? "" : "s"} updated from live upload data`
+      + (skippedOwnerVerified > 0 ? `; ${skippedOwnerVerified} left untouched (owner-verified, confidence=100).` : "."),
   });
+  // Audit only what was actually written. A correction skipped as owner-verified changed nothing,
+  // so recording an "edit" for it would put a change in the history that never happened.
+  const writtenKeys = new Set(rows.map((r) => `${String(r.distributor_code)} ${String(r.customer_code)}`));
   for (const c of corrections) {
+    const distributorCode = normalizeCodeKey(c.distributorCode);
+    const customerCode = String(c.customerCode ?? "").trim();
+    if (!writtenKeys.has(`${distributorCode} ${customerCode}`)) continue;
     await writeMappingAudit({
       entityType: "customer_map",
-      distributorCode: normalizeCodeKey(c.distributorCode),
-      entityKey: String(c.customerCode ?? "").trim(),
+      distributorCode,
+      entityKey: customerCode,
       action: "edit",
       before: c.previousBrickId ? { brick_id: c.previousBrickId } : null,
       after: { brick_id: c.brickId },
@@ -554,7 +547,75 @@ export async function applyCustomerBrickCorrections(
     });
   }
 
-  return { applied: rows.length, skipped };
+  return { applied: rows.length, skipped, skippedOwnerVerified };
+}
+
+// Decide which self-heal corrections actually get written. Pure, so the guard below is testable
+// without a database: given the resolved bricks and the set of owner-verified keys, it returns the
+// upsert payload plus why anything was left out.
+export function selectCorrectionRows(
+  corrections: CustomerBrickCorrection[],
+  brickById: Map<string, BrickRef>,
+  ownerVerifiedKeys: ReadonlySet<string>,
+  actorLoginId: string,
+): { rows: Record<string, unknown>[]; skipped: number; skippedOwnerVerified: number } {
+  const rows: Record<string, unknown>[] = [];
+  let skipped = 0;
+  let skippedOwnerVerified = 0;
+  for (const c of corrections) {
+    const brick = brickById.get(normalizeCodeKey(c.brickId));
+    const customerCode = String(c.customerCode ?? "").trim();
+    const distributorCode = normalizeCodeKey(c.distributorCode);
+    if (!brick || !customerCode || !distributorCode) { skipped += 1; continue; }
+    // An owner ruling (confidence=100) is absolute and must outlive the monthly upload.
+    // resolvers.ts already lets such a mapping win at RESOLVE time, but this self-heal writes
+    // straight to the crosswalk, and its upsert payload carries brick/area/region but NOT
+    // confidence — so it would swap the owner's brick for the sheet's while LEAVING confidence=100
+    // in place: a row that still claims to be owner-verified but no longer is. Skip those outright.
+    if (ownerVerifiedKeys.has(`${distributorCode} ${customerCode}`)) { skippedOwnerVerified += 1; continue; }
+    rows.push({
+      active: true,
+      area_code: brick.areaCode,
+      brick_id: brick.brickId,
+      customer_code: customerCode,
+      distributor_code: distributorCode,
+      mapped_by: actorLoginId,
+      region_code: brick.regionCode,
+      source: "sheet-verified",
+    });
+  }
+  return { rows, skipped, skippedOwnerVerified };
+}
+
+// Which (distributor, customer) pairs among these corrections are owner-verified (confidence=100)?
+// Keyed exactly as the upsert keys them, so the guard and the write agree on identity. A deployment
+// whose customer_map has no `confidence` column yet resolves to an EMPTY set, which restores the old
+// behaviour rather than failing the upload — the same degradation the upsert itself already allows.
+async function loadOwnerVerifiedMapKeys(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  corrections: CustomerBrickCorrection[],
+): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const customerCodes = [...new Set(
+    corrections.map((c) => String(c.customerCode ?? "").trim()).filter(Boolean),
+  )];
+  if (customerCodes.length === 0) return keys;
+
+  // Chunked: the correction list can be in the thousands and PostgREST puts the `in` list in the URL.
+  const CHUNK = 200;
+  for (let i = 0; i < customerCodes.length; i += CHUNK) {
+    const { data, error } = await supabase
+      .from("source_of_sales_customer_map")
+      .select("distributor_code,customer_code,confidence")
+      .eq("active", true)
+      .eq("confidence", 100)
+      .in("customer_code", customerCodes.slice(i, i + CHUNK));
+    if (error) return new Set<string>();
+    for (const row of (data ?? []) as { distributor_code?: unknown; customer_code?: unknown }[]) {
+      keys.add(`${normalizeCodeKey(String(row.distributor_code ?? ""))} ${String(row.customer_code ?? "").trim()}`);
+    }
+  }
+  return keys;
 }
 
 // ── Historical reconciliation (explicit, admin-triggered — never automatic) ──

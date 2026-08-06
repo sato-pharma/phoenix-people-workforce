@@ -665,6 +665,8 @@ import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-p
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
+import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
+
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
 async function runTest(name: string, execute: () => void | Promise<void>) {
@@ -1491,6 +1493,11 @@ await runTest(
 await runTest(
   "direct orders sheet editable columns (the team's notes are keyed to the Request ID, captured before the sheet is wiped or reordered, live outside every range the refresh rewrites, and the real sales month stays Phoenix's alone)",
   runDirectOrdersSheetEditableColumnsTests,
+);
+
+await runTest(
+  "SoS self-heal never overwrites an owner-verified (confidence=100) customer mapping, and the guard is keyed on (distributor, customer) exactly as the upsert is",
+  runSosSelfHealOwnerVerifiedGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
