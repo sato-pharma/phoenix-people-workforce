@@ -84,15 +84,53 @@ export class InvoiceExtractionError extends Error {
   }
 }
 
+// An Egyptian distributor invoice is DENSE with long numbers, and only one of them identifies the
+// pharmacy. A real PharmaOverseas page (owner-supplied, 2026-08-06) carries at least five:
+//
+//   8817791…          the barcode across the top
+//   85959             beside اسم الحساب
+//   1573270           كود العميل — the ONLY one that is the customer code
+//   6221388348964     الكود المكاني, the location code
+//   1014159891        رقم أمر البيع, the sales order number
+//
+// "Report the distributor's customer/account code" does not distinguish between those, and a
+// plausible wrong one is the single most damaging thing this reader can produce: it resolves
+// against master data as some OTHER pharmacy, and the order is filed against a real customer who
+// never placed it. Naming the printed label is what makes the right number identifiable; naming
+// the decoys is what makes the wrong ones refusable.
+const CUSTOMER_CODE_RULE =
+  "The pharmacy's code is the value printed beside the label كود العميل (customer code). " +
+  "An Egyptian distributor invoice carries several other long numbers and NONE of them is it: " +
+  "the barcode, the account number beside اسم الحساب, the location code الكود المكاني, the sales " +
+  "order number رقم أمر البيع, the tax number, and the GLN. If you cannot find a value beside " +
+  "كود العميل specifically, return null — do NOT substitute another number from the page.";
+
 const INSTRUCTIONS =
   "You are reading a photographed pharmaceutical distributor invoice from Egypt. Invoices may be " +
   "in Arabic, English, or both, and are often photographed at an angle with glare. " +
-  "Transcribe ONLY what is printed. Report the distributor's customer/account code for the " +
+  "Transcribe ONLY what is printed. Report the distributor's customer code for the " +
   "pharmacy, the pharmacy name as printed, the invoice date, and one entry per product line with " +
   "its code, name, ordered quantity and any bonus/free quantity. " +
-  "If a value is missing, unreadable, or you are unsure, return null for it. " +
+  CUSTOMER_CODE_RULE +
+  " If a value is missing, unreadable, or you are unsure, return null for it. " +
   "NEVER guess, complete, correct or infer a code — a wrong code is far worse than a null one, " +
   "because it will be treated as a real pharmacy. Do not invent lines that are not printed.";
+
+/**
+ * Asked ONLY when the first pass came back with no customer code.
+ *
+ * Same photograph, narrower question. The first pass is transcribing an entire invoice — the header
+ * block, every product line, dates and quantities — and the one field that matters most for
+ * identifying the pharmacy is a single label in a corner. Asking again for just that field is the
+ * cheapest thing that can rescue a read, and it costs nothing on the normal path because it only
+ * runs when the answer was already null.
+ */
+const HEADER_ONLY_INSTRUCTIONS =
+  "You are looking at a photographed Egyptian pharmaceutical distributor invoice. " +
+  "Ignore the product table entirely. Read ONLY the customer/account header block — on a " +
+  "right-to-left Arabic invoice this is the upper RIGHT corner, near اسم الحساب and اسم العميل. " +
+  CUSTOMER_CODE_RULE +
+  " Return the customer code and the pharmacy name as printed, and null for everything else.";
 
 const TEXT_FORMAT = {
   format: {
@@ -182,27 +220,64 @@ export async function extractDirectOrderInvoice(
     );
   }
 
-  const response = await createOpenAiResponseText({
-    input: [
-      {
-        content: [
-          { text: "Read this distributor invoice.", type: "input_text" as const },
-          // "high" detail: an invoice is small dense print, and downsampling turns a 6 into an 8.
-          { detail: "high" as const, image_url: `data:${mimeType};base64,${base64}`, type: "input_image" as const },
-        ],
-        role: "user" as const,
-      },
-    ],
-    instructions: INSTRUCTIONS,
-    maxOutputTokens: 2_048,
-    purpose: "direct-orders-invoice-extraction",
-    reasoning: { effort: "low" },
-    text: TEXT_FORMAT,
-    timeoutMs: OPENAI_ROUTE_BUDGET_MS,
-  });
+  async function ask(instructions: string, prompt: string, purpose: string) {
+    const response = await createOpenAiResponseText({
+      input: [
+        {
+          content: [
+            { text: prompt, type: "input_text" as const },
+            // "high" detail: an invoice is small dense print, and downsampling turns a 6 into an 8.
+            { detail: "high" as const, image_url: `data:${mimeType};base64,${base64}`, type: "input_image" as const },
+          ],
+          role: "user" as const,
+        },
+      ],
+      instructions,
+      maxOutputTokens: 2_048,
+      purpose,
+      reasoning: { effort: "low" },
+      text: TEXT_FORMAT,
+      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
+    });
+    return parseAiJson(response.outputText);
+  }
 
-  const parsed = parseAiJson(response.outputText);
+  const parsed = await ask(INSTRUCTIONS, "Read this distributor invoice.", "direct-orders-invoice-extraction");
   const rawLines = Array.isArray(parsed.lines) ? (parsed.lines as Array<Record<string, unknown>>) : [];
+
+  // ── One focused retry, and only when the code is the thing that is missing ─
+  // The first pass transcribes an entire invoice; the customer code is one label in one corner of
+  // it, and it is the field that decides WHICH PHARMACY this order belongs to. When it comes back
+  // null, asking again for just that field is the cheapest thing that can rescue the read.
+  //
+  // Three deliberate bounds. It fires ONLY on a miss, so the normal path pays nothing. It runs
+  // EXACTLY once — a loop here would turn a dark photograph into a stack of identical calls and a
+  // rep watching a spinner. And a failed retry is swallowed: the first read is still worth
+  // returning, and a rescue attempt must never be the reason an otherwise usable read turns into
+  // an error the submitter sees.
+  let retried = false;
+  let rescuedByRetry = false;
+  if (text(parsed.customer_code) == null) {
+    retried = true;
+    try {
+      const second = await ask(
+        HEADER_ONLY_INSTRUCTIONS,
+        "Read only the customer header block of this invoice.",
+        "direct-orders-invoice-extraction-header",
+      );
+      const code = text(second.customer_code);
+      if (code != null) {
+        parsed.customer_code = code;
+        // The name only rides along with a code. On its own it is a fuzzy string that resolves to
+        // nothing, and carrying it without its code would put a pharmacy name on screen that
+        // nothing downstream can act on.
+        parsed.customer_name = text(second.customer_name) ?? parsed.customer_name;
+        rescuedByRetry = true;
+      }
+    } catch {
+      // Swallowed on purpose — see above. The first read stands.
+    }
+  }
 
   const read = {
     customerCode: text(parsed.customer_code),
@@ -243,9 +318,15 @@ export async function extractDirectOrderInvoice(
       linesRead: read.lines.length,
       linesMatched: resolved.lines.filter((line) => line.product != null).length,
       qtyMissing: read.lines.filter((line) => line.qty == null).length,
+      // The second pass costs a whole extra call on every miss. These two columns are what decide
+      // whether it earns that — kept so it can be removed on evidence rather than defended on the
+      // grounds that it sounds sensible.
+      retried,
+      rescuedByRetry,
     },
     summary:
       `Invoice read: customer code ${read.customerCode ? "read" : "not read"}` +
+      `${rescuedByRetry ? " on the second pass" : retried ? " even on the second pass" : ""}` +
       `${read.customerCode && !resolved.customer ? " but not in master data" : ""}, ` +
       `${resolved.lines.filter((line) => line.product != null).length} of ${read.lines.length} lines matched.`,
   });
