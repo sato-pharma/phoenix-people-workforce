@@ -10,6 +10,7 @@ import {
   isEligibleForPublish,
   normalizeAppliedDeductionDates,
   resolveAppliedDeductionDates,
+  resolveCarriedDecision,
   scaleDeductionAmountToDays,
 } from "./calculations.ts";
 import { findDayCollisions } from "./conflict.ts";
@@ -19,6 +20,7 @@ import { assertDeductionsDecisionActor } from "./permissions.ts";
 import {
   buildDeductionsCandidateKey,
   compactDeductionsHrId,
+  deductionsCandidateIdentityKey,
   normalizeDates,
   normalizeMonthKey,
 } from "./candidate-key.ts";
@@ -217,8 +219,17 @@ export function prepareCandidateInsertPayload(
 
 export type CandidateDraftInsertResult = {
   created: number;
+  /** Newly inserted candidate ids keyed by IDENTITY (the candidate key without its dates hash), so
+   * a reconcile pass can pair a retired row with the row that replaced it. Absent on the
+   * fail-closed early returns, where nothing was inserted. */
+  insertedByIdentity?: ReadonlyMap<string, string>;
   skippedExisting: number;
   superseded?: number;
+  /** Decisions carried onto a replacement candidate by a reconcile pass. */
+  decisionsCarried?: number;
+  /** Decisions a reconcile pass reset to Pending because the replacement covered days the
+   * approver had never seen. */
+  decisionsReset?: number;
   warnings: string[];
 };
 
@@ -571,7 +582,15 @@ export async function insertCandidateDrafts(input: {
     }
   }
 
-  return { created, skippedExisting, warnings };
+  // Keyed by IDENTITY (the candidate key minus its dates hash) so a caller can pair a row it is
+  // about to retire with the row that replaced it. See deductionsCandidateIdentityKey.
+  const insertedByIdentity = new Map<string, string>();
+  for (const [key, id] of insertedByKey) {
+    const candidateKey = key.slice(key.indexOf("\u0000") + 1);
+    insertedByIdentity.set(deductionsCandidateIdentityKey(candidateKey), id);
+  }
+
+  return { created, insertedByIdentity, skippedExisting, warnings };
 }
 
 /**
@@ -598,8 +617,19 @@ export async function reconcileCandidateDrafts(input: {
   drafts: DeductionsCandidateDraft[];
   sourceLabel: string;
   /** Category + month this run authoritatively covers. Anything live in this
-   *  scope that the fresh drafts no longer contain is considered retracted. */
-  scope: { category: DeductionsCandidate["category"]; monthKey: string };
+   *  scope that the fresh drafts no longer contain is considered retracted.
+   *
+   *  `sourceSystems` narrows that authority to the sources this collector actually writes. Without
+   *  it a category with more than one writer could not reconcile at all: `crm` is fed by both
+   *  `crm_visits_mirror` and `dsm_no_record`, and `other` by both `holiday_bridge` and `manual_hr`,
+   *  so a whole-category pass would retire the other writer's rows on every run. That is why four
+   *  of six collectors were left insert-only — and being insert-only is why a corrected re-collect
+   *  adds a SECOND live row beside the wrong one instead of replacing it. */
+  scope: {
+    category: DeductionsCandidate["category"];
+    monthKey: string;
+    sourceSystems?: readonly string[];
+  };
   autoDecideStatus?: DeductionsDecisionStatus;
   autoDecideReason?: string;
 }): Promise<CandidateDraftInsertResult> {
@@ -612,7 +642,10 @@ export async function reconcileCandidateDrafts(input: {
   });
 
   const warnings = [...insertResult.warnings];
+  const supabase = getSupabaseAdmin();
   let superseded = 0;
+  let decisionsCarried = 0;
+  let decisionsReset = 0;
 
   try {
     const live = await listCandidatesForMonth({
@@ -620,17 +653,26 @@ export async function reconcileCandidateDrafts(input: {
       category: input.scope.category,
     });
 
-    // Fresh drafts, keyed the same deterministic way the ledger keys them.
+    // Fresh drafts, keyed the same deterministic way the ledger keys them. `datesByIdentity` is
+    // what lets a retired row find the days its replacement now covers, which is the input the
+    // carry-forward rule needs.
     const freshKeys = new Set<string>();
+    const datesByIdentity = new Map<string, string[]>();
     for (const draft of input.drafts) {
       try {
-        freshKeys.add(prepareCandidateInsertPayload(draft, { createdBy: input.createdBy }).candidate_key);
+        const payload = prepareCandidateInsertPayload(draft, { createdBy: input.createdBy });
+        freshKeys.add(payload.candidate_key);
+        datesByIdentity.set(deductionsCandidateIdentityKey(payload.candidate_key), payload.dates);
       } catch {
         // Invalid drafts are already reported by insertCandidateDrafts.
       }
     }
 
-    for (const candidate of live) {
+    const scoped = input.scope.sourceSystems
+      ? live.filter((candidate) => input.scope.sourceSystems!.includes(candidate.sourceSystem))
+      : live;
+
+    for (const candidate of scoped) {
       if (freshKeys.has(candidate.candidateKey)) continue;
       // Published numbers are immutable by design — never silently retract one.
       if (candidate.lockedAt) {
@@ -639,12 +681,76 @@ export async function reconcileCandidateDrafts(input: {
         );
         continue;
       }
+      // Pair the row being retired with the row that replaced it. The candidate_key changes
+      // whenever the day set changes, so the pairing has to be on the IDENTITY underneath it —
+      // otherwise a recalculation is indistinguishable from a brand-new finding, which is exactly
+      // why superseded_by_candidate_id was NULL on every row and 21 approvals were lost.
+      const identity = deductionsCandidateIdentityKey(candidate.candidateKey);
+      const replacementCandidateId = insertResult.insertedByIdentity?.get(identity) ?? null;
+
       await supersedeCandidate({
         candidateId: candidate.id,
-        reason: `Source data no longer supports this candidate (re-collected by ${input.sourceLabel})`,
+        reason: replacementCandidateId
+          ? `Re-calculated by ${input.sourceLabel} (replaced by a fresh candidate)`
+          : `Source data no longer supports this candidate (re-collected by ${input.sourceLabel})`,
         actorHrId: input.createdBy,
+        replacementCandidateId,
       });
       superseded += 1;
+
+      const previous = candidate.decision;
+      const previousStatus = previous?.decisionStatus ?? "Pending";
+      if (previousStatus === "Pending") continue;
+
+      // A decided row is being retired. Either carry that decision onto its replacement, or — if
+      // there is no replacement — say so loudly, because silently dropping an approval is how
+      // 9,306.42 EGP of review work disappeared and had to be re-entered by hand.
+      if (!replacementCandidateId) {
+        warnings.push(
+          `${input.sourceLabel}: ${candidate.employeeName ?? candidate.employeeHrId} had a "${previousStatus}" decision that the source no longer supports — it was retired, not carried. Re-review if that is wrong.`,
+        );
+        continue;
+      }
+
+      const carried = resolveCarriedDecision({
+        previousAppliedDates: previous?.appliedDates ?? null,
+        previousDates: candidate.dates,
+        previousReason: previous?.decisionReason ?? "",
+        previousStatus,
+        replacementDates: datesByIdentity.get(identity) ?? [],
+      });
+      if (!carried) continue;
+
+      const { error: carryError } = await supabase
+        .from("deductions_decisions")
+        .update({
+          applied_dates: carried.appliedDates,
+          // The amount is deliberately NOT carried: it was derived from the old day set. Clearing
+          // it makes the replacement re-derive from its own estimate, which is the only figure
+          // that matches what the reviewer will now see on screen.
+          applied_amount: null,
+          applied_value: null,
+          decision_reason: carried.decisionReason,
+          decision_status: carried.decisionStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("candidate_id", replacementCandidateId);
+
+      if (carryError) {
+        warnings.push(
+          `${input.sourceLabel}: could not carry the "${previousStatus}" decision for ${candidate.employeeName ?? candidate.employeeHrId} onto the re-calculated candidate: ${carryError.message}`,
+        );
+        continue;
+      }
+
+      if (carried.droppedToPending) {
+        decisionsReset += 1;
+        warnings.push(
+          `${input.sourceLabel}: ${candidate.employeeName ?? candidate.employeeHrId} was "${previousStatus}", but the re-calculated deduction now covers days that decision never saw — reset to Pending for re-review.`,
+        );
+      } else {
+        decisionsCarried += 1;
+      }
     }
   } catch (error) {
     warnings.push(
@@ -652,7 +758,7 @@ export async function reconcileCandidateDrafts(input: {
     );
   }
 
-  return { ...insertResult, superseded, warnings };
+  return { ...insertResult, decisionsCarried, decisionsReset, superseded, warnings };
 }
 
 function mapCandidateRow(row: Record<string, unknown>): DeductionsCandidate {
@@ -737,6 +843,41 @@ export async function countCandidatesForMonth(input: {
   const { count, error } = await query;
   if (error) throw new Error(`Failed to count deduction candidates: ${error.message}`);
   return count ?? 0;
+}
+
+/**
+ * Guard for a payroll path that does NOT read this module.
+ *
+ * WHY. Two deduction systems shipped side by side with table names one letter apart —
+ * `deductions_candidates`/`deductions_decisions` (this module, where HR actually decides) and
+ * `deduction_candidates`/`deduction_decisions` (the older governance flow). The Payroll Copilot's
+ * sheet generation still reads the SECOND. Measured on production 2026-08-06 for 2026-07: it would
+ * charge ~224,216.71 EGP of CRM deductions off legacy rows nobody approved, against 28,233.87 EGP
+ * HR actually approved here. `startRun` refuses once a salary batch exists for the period — but no
+ * July batch exists, so today nothing refuses.
+ *
+ * Returns a human-readable refusal when this module holds live candidates for the period (HR is
+ * working here, so this module is the system of record for that month), or null when there is
+ * nothing to conflict with.
+ *
+ * DELIBERATELY NOT APPLIED to Automated Payroll's own publish path: that one already reads this
+ * module through `loadConfirmedDeductions`, and it never reads `deductions_publications` at all —
+ * so gating it on "a publication exists" would deadlock it permanently, since publishing deductions
+ * has never been a prerequisite for paying anyone. Its problem is a stale latched figure, which is a
+ * different fix.
+ */
+export async function describeUnifiedDeductionsConflict(input: {
+  month: number;
+  year: number;
+}): Promise<string | null> {
+  const monthKey = normalizeMonthKey(`${input.year}-${String(input.month).padStart(2, "0")}`);
+  const liveCandidates = await countCandidatesForMonth({ monthKey });
+  if (liveCandidates === 0) return null;
+  return (
+    `The Deductions module holds ${liveCandidates} live deduction candidate(s) for ${monthKey}. ` +
+    "This screen reads the older deductions tables, so generating a sheet here would charge figures " +
+    "that were never reviewed in the Deductions workspace. Use Automated Payroll for this month."
+  );
 }
 
 /**

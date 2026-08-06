@@ -2,6 +2,7 @@ import {
   getEmployeeDirectory,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
+import { describeUnifiedDeductionsConflict } from "@/lib/deductions/service.ts";
 import { logError } from "@/lib/observability/log";
 import { isPayrollIneligibleEmployee } from "@/lib/payroll/eligibility";
 import { payrollPaymentModeLabel } from "@/lib/payroll/policy";
@@ -714,6 +715,18 @@ export async function materializeRun(
   }
   if (run.status === "cancelled") {
     throw new CopilotError("This run was cancelled.", 409);
+  }
+
+  // This path prices deductions from the LEGACY deduction_* tables, not from the Deductions module
+  // HR actually works in. Refuse rather than write a sheet nobody reviewed — see
+  // describeUnifiedDeductionsConflict for the measured exposure. Checked before assembleDraft so the
+  // cheapest exit wins and no partial work is done.
+  const unifiedDeductionsConflict = await describeUnifiedDeductionsConflict({
+    month: run.month,
+    year: run.year,
+  });
+  if (unifiedDeductionsConflict) {
+    throw new CopilotError(unifiedDeductionsConflict, 409);
   }
 
   const period = { month: run.month, year: run.year };

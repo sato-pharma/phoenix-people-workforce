@@ -282,3 +282,81 @@ export function resolveDayBasedDeductionAmount(input: {
     year: input.year,
   });
 }
+
+export type CarriedDeductionDecision = {
+  decisionStatus: string;
+  decisionReason: string;
+  /** The reviewer's day selection, re-expressed against the replacement's days. `null` keeps the
+   * "never narrowed" meaning — see resolveAppliedDeductionDates for why null and [] differ. */
+  appliedDates: string[] | null;
+  /** True when the approval could NOT be carried and the replacement must be reviewed again. */
+  droppedToPending: boolean;
+};
+
+/**
+ * What a re-collect should do with a decision the Super Admin already made, when the candidate it
+ * was made against is superseded by a recalculated one.
+ *
+ * THE DEFECT THIS FIXES. Nothing carried a decision forward, so a re-collect silently discarded it:
+ * 21 candidates worth 9,306.42 EGP were approved and then retired with no successor, and HR had to
+ * re-enter them by hand. But carrying one forward blindly is worse than losing it — it would charge
+ * days nobody ever approved.
+ *
+ * OWNER'S RULE (2026-08-06). Carry the status and the reason. Re-express the day selection against
+ * the replacement's days. Re-derive the amount from the replacement rather than reusing the old one.
+ * And if the replacement introduces ANY day the approver never saw, drop the whole thing back to
+ * Pending so a human looks again — an approval is consent to charge specific days, not a standing
+ * licence over whatever that finding later becomes.
+ *
+ * Pure and total: no clock, no DB, no I/O. The asymmetry is deliberate — a replacement that charges
+ * FEWER days keeps the approval (it can only ever charge less than was consented to), while one that
+ * charges MORE loses it.
+ */
+export function resolveCarriedDecision(input: {
+  previousStatus: string;
+  previousReason: string;
+  previousAppliedDates: readonly string[] | null | undefined;
+  /** Days the SUPERSEDED candidate detected — the days the approver was actually looking at. */
+  previousDates: readonly string[];
+  /** Days the REPLACEMENT detects. */
+  replacementDates: readonly string[];
+}): CarriedDeductionDecision | null {
+  const status = String(input.previousStatus ?? "").trim();
+  // Pending is the default state, not a decision — there is nothing to carry, and saying so lets
+  // the caller skip the write entirely.
+  if (!status || status === "Pending") return null;
+
+  const previousDays = new Set(input.previousDates.map((date) => String(date).trim()).filter(Boolean));
+  const replacementDays = input.replacementDates.map((date) => String(date).trim()).filter(Boolean);
+
+  const unseenDays = replacementDays.filter((date) => !previousDays.has(date)).sort();
+  if (unseenDays.length > 0) {
+    return {
+      appliedDates: null,
+      decisionReason:
+        `Reset to Pending automatically: this deduction was re-calculated and now also covers ` +
+        `${unseenDays.length} day(s) the previous decision never saw (${unseenDays.slice(0, 5).join(", ")}` +
+        `${unseenDays.length > 5 ? ", …" : ""}). The earlier decision was "${status}".`,
+      decisionStatus: "Pending",
+      droppedToPending: true,
+    };
+  }
+
+  // Every replacement day was already in front of the approver, so the decision still applies.
+  // A null selection stays null: it means "charge whatever this candidate found", and since the
+  // replacement's days are a subset of what was approved, that can only ever charge less.
+  const previousSelection = input.previousAppliedDates;
+  const appliedDates =
+    previousSelection == null
+      ? null
+      : replacementDays
+          .filter((date) => previousSelection.map((value) => String(value).trim()).includes(date))
+          .sort();
+
+  return {
+    appliedDates,
+    decisionReason: input.previousReason,
+    decisionStatus: status,
+    droppedToPending: false,
+  };
+}

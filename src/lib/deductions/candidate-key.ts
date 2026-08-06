@@ -121,3 +121,29 @@ export function buildDeductionsCandidateKey(input: {
     datesHash,
   ].join(":");
 }
+
+/**
+ * A candidate's identity WITHOUT its day set — everything the key joins except the trailing
+ * dates hash.
+ *
+ * WHY THIS EXISTS. The dates hash means a re-collect whose day set changed produces a DIFFERENT
+ * candidate_key, so the ledger cannot tell "this is the same finding, recalculated" from "this is a
+ * brand new finding". That is why superseded rows carry a NULL superseded_by_candidate_id, and why
+ * 21 Super-Admin approvals worth 9,306.42 EGP were retired on a re-collect with no successor:
+ * nothing could pair the old row to the new one.
+ *
+ * Everything before the hash IS stable across re-collects, because `source_record_id` is
+ * deterministic in every connector (`vacation:{requestId}:{category}`,
+ * `holiday-bridge:{hrId}:{date}`, `{hrId}:{dateIso}` for fingerprint). This is the join that lets a
+ * correction be recognised as a correction rather than as a second charge.
+ *
+ * Splitting on the LAST colon is safe: the hash is always exactly 8 hex characters (hashStable
+ * pads), and sanitizeSourceRecordId has already stripped every colon out of the one free-text
+ * segment.
+ */
+export function deductionsCandidateIdentityKey(candidateKey: string): string {
+  const key = String(candidateKey ?? "");
+  const lastColon = key.lastIndexOf(":");
+  if (lastColon <= 0) return key;
+  return key.slice(0, lastColon);
+}

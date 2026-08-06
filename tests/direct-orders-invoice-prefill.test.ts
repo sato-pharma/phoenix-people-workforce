@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { codeCandidates } from "../src/lib/direct-orders/invoice-extraction.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Invoice-photo prefill (spec B5).
 //
@@ -35,10 +37,27 @@ export function runDirectOrderInvoicePrefillTests() {
   const route = read(ROUTE);
 
   // ── Rule 1: an unresolved code prefills NOTHING ──────────────────────────────────────────
+  // The RULE is unchanged and load-bearing; only its implementation moved. It used to pin one
+  // literal `hits.find(...)` expression, which broke the moment padding and printed pairs had to be
+  // tolerated — the old exact-only compare resolved 0 of 6 real invoices. What must never return is
+  // a FIRST-HIT or nearest-name match, so that is what is asserted now: the code is compared, the
+  // comparison is on the code key, and a candidate is taken only when it is unique.
   assert.match(
     extractor,
-    /const exact = hits\.find\(\(hit\) => codeKey\(hit\.customerCode\) === codeKey\(read\.customerCode\)\)/,
-    "THE CUSTOMER CODE MUST BE CONFIRMED BY AN EXACT DIRECTORY MATCH: a fuzzy or first-hit match would prefill the nearest-looking pharmacy, which is worse than no prefill because it looks deliberate",
+    /matches\.length === 1/,
+    "THE CUSTOMER CODE MUST BE CONFIRMED BY A UNIQUE DIRECTORY MATCH: a fuzzy or first-hit match would prefill the nearest-looking pharmacy, which is worse than no prefill because it looks deliberate",
+  );
+  // `matches[0]` is fine and is what the code does — it is the sole element of an array already
+  // proven to have length 1. What must never appear is `hits[0]`: taking the first row the
+  // DIRECTORY SEARCH returned, with no uniqueness check at all.
+  assert.ok(
+    !/\bhits\[0\]/.test(extractor),
+    "nothing may take the first search hit: with 89 codes colliding once leading zeros are stripped, first-hit resolution files the order against the wrong real pharmacy",
+  );
+  assert.match(
+    extractor,
+    /codeKey\(hit\.customerCode\)/,
+    "the comparison must still be on the normalized CODE, never on the name — a name compare is how the nearest-looking pharmacy gets prefilled",
   );
   assert.match(
     extractor,
@@ -228,4 +247,325 @@ export function runDirectOrderInvoicePrefillTests() {
     /pattern: "\/api\/direct-orders\/invoice-extract"/,
     "every app/api route must be declared in the access registry",
   );
+
+  // ── Two ways in: the camera, or a photo they already have ─────────────────────────────────
+  // One input carrying `capture="environment"` opens the camera on most phones and never offers
+  // the gallery. A rep whose invoice arrived on WhatsApp — which is how a great many of them
+  // arrive — had no route at all. The fix is two inputs, because that single attribute IS the
+  // difference and toggling it before a click is unreliable across mobile browsers.
+  {
+    const capture = read(CAPTURE);
+    assert.match(capture, /ref=\{cameraRef\}/, "the camera route must exist");
+    assert.match(capture, /ref=\{uploadRef\}/, "the upload route must exist");
+
+    // The camera input carries `capture`; the upload input must NOT.
+    const inputs = [...capture.matchAll(/<input\b[\s\S]*?\/>/g)].map((m) => m[0]);
+    const cameraInput = inputs.find((tag) => tag.includes("cameraRef"));
+    const uploadInput = inputs.find((tag) => tag.includes("uploadRef"));
+    assert.ok(cameraInput && uploadInput, "both file inputs must be present");
+    assert.match(cameraInput!, /capture="environment"/, "the camera route must ask for the rear lens");
+    assert.ok(
+      !/capture=/.test(uploadInput!),
+      "THE UPLOAD ROUTE MUST NOT CARRY `capture`: that one attribute makes a phone open the camera " +
+        "and never offer the files, which is exactly the dead end this second button exists to remove",
+    );
+
+    assert.match(
+      capture,
+      /void read\(file, "camera"\)/,
+      "the camera route must record itself as the camera",
+    );
+    assert.match(capture, /void read\(file, "upload"\)/, "the upload route must record itself as an upload");
+    assert.match(
+      capture,
+      /Choose a photo/,
+      "the second route needs a visible button — an input nobody can reach is not a route",
+    );
+  }
+
+  // ── The source is recorded, and never used to refuse ──────────────────────────────────────
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /source: input\.source \?\? "upload"/,
+      "which route was used must reach the outcome record, or 'do forwarded photos read worse' cannot be answered",
+    );
+    assert.ok(
+      !/input\.source === "upload"[\s\S]{0,200}(throw|badRequest|return null)/.test(extractor),
+      "THE SOURCE MUST NEVER GATE THE READ: a rep whose invoice arrived on WhatsApp has no camera " +
+        "shot to offer, and refusing them sends them back to typing codes by hand",
+    );
+    const route = read(ROUTE);
+    assert.match(
+      route,
+      /body\.source === "camera" \? "camera" : "upload"/,
+      "the source must be normalised at the boundary, not trusted from the client — it lands in an audit row",
+    );
+  }
+
+  // ── A misread number must be CORRECTABLE, not a reason to start over ──────────────────────
+  // The reading was accept-as-printed or nothing. A quantity that came back 240 against a printed
+  // 249 therefore sent the submitter to type the entire order by hand — and hand-typing codes is
+  // the behaviour this whole feature exists to remove. Refusing a one-digit correction was quietly
+  // reinstating it, so the numbers are inputs seeded from the reading.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /onChange=\{\(event\) => setField\(index, "qty", event\.target\.value, line\.read\)\}/,
+      "THE QUANTITY MUST BE CORRECTABLE: accept-as-printed or nothing sends a submitter with one wrong digit back to typing the whole order by hand, which is the behaviour invoice prefill exists to remove",
+    );
+    assert.match(
+      capture,
+      /onChange=\{\(event\) => setField\(index, "bonus", event\.target\.value, line\.read\)\}/,
+      "the bonus must be correctable for the same reason as the quantity",
+    );
+    assert.match(
+      capture,
+      /placeholder=\{line\.read\.qty == null \? "not read — type it" : undefined\}/,
+      "a quantity that did not read must be TYPEABLE, not a dead line: the product matched, so only one number is missing and the rest of the reading is still worth having",
+    );
+    assert.match(
+      capture,
+      /setAppliedIndex\(\(current\) => \(current === index \? null : current\)\)/,
+      "EDITING MUST UN-USE THE LINE: the form still holds the old numbers, and a button still reading 'Used' would tell the submitter their correction had been applied when it had not",
+    );
+  }
+
+  // ── The product stays un-editable — the rule that predates all of this ────────────────────
+  // Making the numbers editable must not quietly extend to the identity of the thing being
+  // ordered. A line the master database could not confirm still has no button; that is what stops
+  // a code nobody has checked from entering at speed.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /\{line\.product \? \(\s*<button/,
+      "AN UNCONFIRMED PRODUCT MUST STILL HAVE NO BUTTON: editable quantities must not become an editable product code — the master database confirming the line is the gate this module was built around",
+    );
+    assert.ok(
+      !/setField\(index, "productCode"/.test(capture),
+      "the product code must never become a free-text field: that is the exact hole the pharmacy combo box was built to close",
+    );
+  }
+
+  // ── A thin reading advises a retake; it never blocks ──────────────────────────────────────
+  // Same rule as AREA_PROXIMITY_FLAG_KM in the validation service: a hard gate rejects real work
+  // and produces the "the new system blocked everything" complaint the design exists to avoid. A
+  // rep in a dim pharmacy with a creased invoice must still be able to file the order by hand.
+  {
+    const capture = read(CAPTURE);
+    assert.match(
+      capture,
+      /Retake the photo/,
+      "a thin reading must offer a retake while the submitter is still standing in front of the invoice — ten seconds there against an approval cycle later",
+    );
+    assert.match(
+      capture,
+      /nothing here stops you submitting/,
+      "THE RETAKE MUST NEVER BE A GATE: refusing the submission would send the rep back to typing codes by hand, which is what created the false pharmacies",
+    );
+    assert.ok(
+      !/disabled=\{!result\b/.test(capture) && !/return null;[\s\S]{0,80}could not be read/i.test(capture),
+      "no branch may make submission conditional on a successful reading",
+    );
+  }
+
+  // ── The reading records how well it went, and can never fail because of it ────────────────
+  // Whether to preprocess the photograph before reading it costs a multi-megabyte library on the
+  // phone of a rep paying for mobile data. That decision needs counts, not an impression.
+  {
+    const extractor = read(EXTRACTOR);
+    // ONE capture drives both checks. Written as two independent assertions first, which made the
+    // second unreachable: `writeRequiredAuditLog` does not contain the substring `writeAuditLog`,
+    // so swapping to the unforgiving write tripped the "must record its outcome" assertion instead
+    // and the forgiving-write rule never ran. Capturing the function NAME beside the payload is
+    // what makes the swap fire the assertion that is actually about it.
+    const outcome = /await (write\w*AuditLog)\(\{[\s\S]{0,500}?codeRead/.exec(extractor);
+    assert.ok(
+      outcome,
+      "the reading must record its own outcome, or the question 'is the photograph the bottleneck' can only be answered by opinion",
+    );
+    assert.equal(
+      outcome[1],
+      "writeAuditLog",
+      "THE OUTCOME RECORD MUST USE THE FORGIVING AUDIT WRITE: writeRequiredAuditLog re-throws, which would make a measurement the reason a rep standing in a pharmacy cannot read their invoice — the tail wagging the dog",
+    );
+  }
+
+  // ── The customer code is anchored on its printed label, not on "a long number" ─────────────
+  // The owner's real PharmaOverseas page carries at least five long numbers and only one is the
+  // pharmacy: the barcode, the account number beside اسم الحساب, كود العميل, the location code
+  // الكود المكاني, and the sales order number رقم أمر البيع. A plausible WRONG one is the most
+  // damaging thing this reader can produce — it resolves against master data as some other real
+  // pharmacy, and the order is filed against a customer who never placed it. A null is recoverable;
+  // a confident mismatch is not.
+  {
+    const extractor = read(EXTRACTOR);
+    // Scoped to the RULE STRING, not the file. Checked file-wide first, which was worthless: the
+    // comment above the constant documents the same five Arabic labels, so deleting the anchor from
+    // the instruction actually sent to the reader left the comment behind and every assertion
+    // stayed green. A test that a comment can satisfy is not a test of the instruction.
+    const rule = /const CUSTOMER_CODE_RULE =([\s\S]*?);\n/.exec(extractor);
+    assert.ok(rule, "CUSTOMER_CODE_RULE must remain a single named constant, so it can be asserted on and reused by both passes");
+    const ruleText = rule[1];
+
+    assert.match(
+      ruleText,
+      /كود الحساب/,
+      "THE RULE MUST NAME THE LABEL THAT IS ACTUALLY PRINTED: four real PharmaOverseas invoices read كود الحساب, not كود العميل — an earlier version named the wrong one and told the reader to return null without it, which is worse than the vague instruction it replaced",
+    );
+    assert.match(
+      ruleText,
+      /ACCOUNT NUMBER/,
+      "the rule must describe the FIELD, not just a label: the Ibnsina invoice carries neither Arabic label, so a label-only definition cannot generalise past one distributor",
+    );
+    assert.match(
+      ruleText,
+      /report the WHOLE printed value/,
+      "A PAIR MUST BE REPORTED WHOLE: the field is often '812702 / 1573334', and a reader that picks a half looks certain while being wrong half the time — choosing belongs in codeCandidates, where a unique-match rule can arbitrate",
+    );
+    for (const decoy of ["الكود المكاني", "رقم أمر البيع"]) {
+      assert.ok(
+        ruleText.includes(decoy),
+        `the decoy ${decoy} must be named and refused IN THE INSTRUCTION — naming the field identifies the number, naming the wrong ones is what makes them rejectable`,
+      );
+    }
+    // Fragment chosen to sit inside ONE string literal. The full sentence spans a `" +` line break,
+    // so matching it against source text fails on formatting rather than on meaning.
+    assert.match(
+      ruleText,
+      /do NOT substitute another number/,
+      "a missing code must return null rather than the nearest long number: a wrong code is worse than no code, because it will be treated as a real pharmacy",
+    );
+    // Both passes must carry the same rule, or the rescue could accept a number the first pass
+    // was told to refuse — and the rescue is the one running on the worst photographs.
+    for (const constant of ["INSTRUCTIONS", "HEADER_ONLY_INSTRUCTIONS"]) {
+      const body = new RegExp(`const ${constant} =([\\s\\S]*?);\\n`).exec(extractor);
+      assert.ok(body, `${constant} must remain a named constant`);
+      assert.match(
+        body[1],
+        /CUSTOMER_CODE_RULE/,
+        `${constant} must include CUSTOMER_CODE_RULE: if the rescue pass does not carry the same rule, it can accept on the worst photographs a number the first pass was told to refuse`,
+      );
+    }
+  }
+
+  // ── The printed code must reach its pharmacy: padding, and pairs ──────────────────────────
+  // Measured in production on 2026-08-06: SIX invoice reads, six codes read off the paper,
+  // ZERO resolved. The reader was never the problem — matching was, for two reasons, and every
+  // case below is a real invoice the owner photographed.
+  //
+  //   PADDING  `source_of_sales_customer_map` stores PharmaOverseas (PS) codes zero-padded to ten
+  //            digits — 28,576 of 28,577 rows. The paper prints 1573270; the map holds 0001573270.
+  //   PAIRS    The header prints "812702 / 1573334". Across five invoices the LEFT half matched
+  //            nothing and the RIGHT half matched exactly one pharmacy, every time.
+  {
+    // Every one of these is a real header, with the code that is actually in master data.
+    const invoices: Array<{ printed: string; inMasterData: string; pharmacy: string }> = [
+      { printed: "812702 / 1573334", inMasterData: "0001573334", pharmacy: "لمياء * عمرو هريدي" },
+      { printed: "850254 / 1558852", inMasterData: "0001558852", pharmacy: "ابتسام بلال كفر البطيخ" },
+      { printed: "802714 / 1504289", inMasterData: "0001504289", pharmacy: "الشريف - مغاغه" },
+      { printed: "836397 / 1556836", inMasterData: "0001556836", pharmacy: "السيد ابوالفتوح ج كفر شكر" },
+      { printed: "1573270", inMasterData: "0001573270", pharmacy: "محمود احمد صالح الجديدة" },
+    ];
+    for (const invoice of invoices) {
+      const candidates = codeCandidates(invoice.printed);
+      const unpadded = invoice.inMasterData.replace(/^0+(?=\d)/, "");
+      assert.ok(
+        candidates.includes(unpadded),
+        `"${invoice.printed}" must produce the candidate ${unpadded} so it can reach ${invoice.pharmacy} ` +
+          `(stored as ${invoice.inMasterData}). Got: ${candidates.join(", ")}`,
+      );
+    }
+  }
+
+  // The printed form is tried FIRST, so a genuine exact hit can never be displaced by a looser
+  // reading of the same string.
+  {
+    assert.equal(
+      codeCandidates("0001573270")[0],
+      "0001573270",
+      "the code exactly as printed must be the first candidate — a looser form must never outrank an exact one",
+    );
+    // Padding travels BOTH ways. The five real invoices all print the short form against a padded
+    // master record, and the split loop happens to cover those — so this direction (a padded code
+    // printed on the paper, a short one in master data) was left unasserted, and the line that
+    // implements it could be deleted with the suite still green. Caught by prove-it-fails.
+    assert.ok(
+      codeCandidates("0001573270").includes("1573270"),
+      "a code printed WITH padding must also be tried without it — padding differs between the paper and master data in both directions, and only one of them is covered by splitting a pair",
+    );
+    assert.deepEqual(codeCandidates(""), [], "an empty code must produce no candidates rather than one empty query");
+    // The invariant is that no candidate is EMPTY — an empty query is a substring of every code in
+    // the directory. ("000" legitimately yields "0" as well; the search refuses anything under two
+    // characters, and the uniqueness rule refuses the rest.)
+    for (const probe of ["000", "0", "812702 / 1573334", "  0001573270  ", "//", "0-0"]) {
+      const candidates = codeCandidates(probe);
+      assert.ok(
+        candidates.every((candidate) => candidate.length > 0),
+        `no candidate may be the empty string — it is a substring of every code in the directory. "${probe}" gave: ${JSON.stringify(candidates)}`,
+      );
+      assert.equal(
+        new Set(candidates).size,
+        candidates.length,
+        `candidates must be unique — a repeated form is a wasted directory query. "${probe}" gave: ${JSON.stringify(candidates)}`,
+      );
+    }
+  }
+
+  // ── An ambiguous code REFUSES rather than guessing ────────────────────────────────────────
+  // 89 codes in the live customer map become ambiguous once leading zeros are stripped. Taking the
+  // first close-looking row would file an order against the wrong REAL pharmacy — the exact failure
+  // this module exists to stop, arriving with better handwriting.
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /if \(matches\.length > 1\) \{/,
+      "AN AMBIGUOUS CODE MUST REFUSE: 89 codes collide once leading zeros are stripped, and picking one would file the order against the wrong real pharmacy",
+    );
+    assert.match(
+      extractor,
+      /matches more than one pharmacy in the master/,
+      "the refusal must say WHY in words the submitter can act on, not fall back to the generic not-found sentence",
+    );
+    assert.match(
+      extractor,
+      /for \(const candidate of codeCandidates\(read\.customerCode\)\) \{[\s\S]{0,300}?await searchDirectOrderPharmacyDirectory/,
+      "EACH CANDIDATE MUST BE SEARCHED, NOT JUST FILTERED: the directory search is a substring match, so a printed pair queries for the whole string, matches nothing, and leaves nothing to filter — the pair only resolves if its halves are searched in their own right",
+    );
+  }
+
+  // ── The retry is bounded, conditional, and cannot turn a read into an error ────────────────
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /if \(text\(parsed\.customer_code\) == null\) \{/,
+      "THE SECOND PASS MUST FIRE ONLY ON A MISS: running it every time doubles the wait for every rep to rescue the minority of photographs that needed it",
+    );
+    assert.ok(
+      !/while\s*\(|for\s*\([^)]*retr/i.test(extractor),
+      "THE RETRY MUST RUN EXACTLY ONCE: a loop turns a dark photograph into a stack of identical calls and a rep watching a spinner",
+    );
+    const retryBlock = extractor.slice(extractor.indexOf("if (text(parsed.customer_code) == null)"));
+    assert.match(
+      retryBlock.slice(0, 1400),
+      /\} catch \{/,
+      "A FAILED RESCUE MUST BE SWALLOWED: the first read is still worth returning, and an attempt to improve it must never be the reason an otherwise usable read becomes an error the submitter sees",
+    );
+    assert.match(
+      extractor,
+      /retried,\s*\n\s*rescuedByRetry,/,
+      "the retry must record whether it actually rescued anything — an extra call per miss is only justified if it recovers codes, and that is a number, not an opinion",
+    );
+    for (const field of ["codeRead", "codeResolved", "linesRead", "linesMatched"]) {
+      assert.ok(
+        extractor.includes(`${field}:`),
+        `the outcome must record ${field} — read-rate and match-rate are the two numbers that decide whether preprocessing is worth its bundle`,
+      );
+    }
+  }
 }

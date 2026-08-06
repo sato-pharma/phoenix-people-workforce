@@ -136,6 +136,7 @@ import { runDeductionsModuleCrmGuardsTests } from "./deductions-module-crm-guard
 import { runDeductionsModulePortalTests } from "./deductions-module-portal.test.ts";
 import { runDeductionsModuleSafetyTests } from "./deductions-module-safety.test.ts";
 import { runDeductionsReadGateTests } from "./deductions-read-gate.test.ts";
+import { runDeductionsSupersedeCarriesDecisionTests } from "./deductions-supersede-carries-decision.test.ts";
 import { runDeductionsModuleAppliedDaysTests } from "./deductions-module-applied-days.test.ts";
 import { runDeductionsHolidayBridgeTests } from "./deductions-holiday-bridge.test.ts";
 import { runDeductionsCurrentMonthGuardTests } from "./deductions-current-month-guard.test.ts";
@@ -163,6 +164,7 @@ import { runCrmCheckinPageBoundaryTests } from "./crm-checkin-page-boundary.test
 import { runCrmVacationDurationTests } from "./crm-vacation-duration.test.ts";
 import { runCrmIntegrityCorrelationTests } from "./crm-integrity-correlation.test.ts";
 import { runCrmSingleSourceTests } from "./crm-single-source.test.ts";
+import { runCrmSyncIdentityPreservationTests } from "./crm-sync-identity-preservation.test.ts";
 import { runCrmVisitTimeTests } from "./crm-visit-time.test.ts";
 import { runCrmReadsHrIdCasingTests } from "./crm-reads-hrid-casing.test.ts";
 import { runCrmVisitsSelfScopeTests } from "./crm-visits-self-scope.test.ts";
@@ -252,6 +254,7 @@ import { runSalesAiExplainTests } from "./sales-ai-explain.test.ts";
 import { runSalesLinkageTests } from "./sales-linkage.test.ts";
 import { runSosCustomerKeyTests } from "./sos-customer-key.test.ts";
 import { runSosCodeCanonicalTests } from "./sos-code-canonical.test.ts";
+import { runSalesPharmacyOverrideTests } from "./sales-pharmacy-override.test.ts";
 import { runSalesChannelsByRepTests } from "./sales-channels-by-rep.test.ts";
 import { runSosNormalizerPersistShapeTests } from "./sos-normalizer-persist-shape.test.ts";
 import { runSosImportTemplateTests } from "./sos-import-template.test.ts";
@@ -510,6 +513,7 @@ import { runPayrollCopilotTests } from "./payroll-copilot.test.ts";
 import { runPayrollStatutoryTests } from "./payroll-statutory.test.ts";
 import { runPayrollCopilotProrationTests } from "./payroll-copilot-proration.test.ts";
 import { runPayrollCopilotDeductionsReviewTests } from "./payroll-copilot-deductions-review.test.ts";
+import { runPayrollCopilotUnifiedDeductionsGuardTests } from "./payroll-copilot-refuses-unified-deductions.test.ts";
 import { runPayrollInsuranceWageImportTests } from "./payroll-insurance-wage-import.test.ts";
 import { runPayrollExportsTests } from "./payroll-exports.test.ts";
 import { runPayrollCopilotReportExportsTests } from "./payroll-copilot-report-exports.test.ts";
@@ -530,6 +534,7 @@ import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-ref
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
+import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
@@ -599,6 +604,7 @@ import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.t
 
 import { runPayrollDeductionGateComposesWithPublishRuleTests } from "./payroll-deduction-gate-composes-with-publish-rule.test.ts";
 import { runJuly2026DirectOrdersTabTests } from "./july-2026-direct-orders-tab.test.ts";
+import { runJuly2026DirectValueIsStoredTests } from "./july-2026-direct-value-is-stored.test.ts";
 
 import { runAttendanceMonthlySummaryOutageTests } from "./attendance-monthly-summary-outage.test.ts";
 
@@ -643,7 +649,7 @@ import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-vis
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
-import { runClosingChannelTiesToDataTabTests } from "./closing-channel-ties-to-data-tab.test.ts";
+import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -660,6 +666,11 @@ import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arr
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
+
+import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
+
+import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
+import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -841,6 +852,7 @@ await runTest("deductions module CRM guards (suspect-date sync-gap detection + e
 await runTest("deductions module portal read path (dual-read-by-month merge + legacy shape mapping)", runDeductionsModulePortalTests);
 await runTest("deductions module safety guards (the 9 PR-1 defects — including that each guard is WIRED IN)", runDeductionsModuleSafetyTests);
 await runTest("deductions read gate (company-wide reads are admin-only; portal deductions are self-only for every role)", runDeductionsReadGateTests);
+await runTest("deductions supersede carries the decision (identity survives a changed day set; a grown day set resets to Pending)", runDeductionsSupersedeCarriesDecisionTests);
 await runTest(
   "deductions module applied days (per-day selection drives the quantity, the amount, publish, and the collision gate)",
   runDeductionsModuleAppliedDaysTests,
@@ -883,6 +895,7 @@ await runTest("crm checkin page boundary (.gte cursor + id de-dupe across duplic
 await runTest("crm vacation duration (per-date collapse: AM+PM = 1 day, duplicated AM+AM = 0.5)", runCrmVacationDurationTests);
 await runTest("crm integrity correlation (contact match, save-lag, speed feasibility)", runCrmIntegrityCorrelationTests);
 await runTest("crm single-source door (no module outside src/lib/crm queries the mirror directly)", runCrmSingleSourceTests);
+await runTest("crm sync identity preservation (a SILENT null never overwrites a resolved agent_hr_id; a BLOCKED null still does)", runCrmSyncIdentityPreservationTests);
 await runTest("crm visit time (GPS check-in → save time → none; never visit_date_time)", runCrmVisitTimeTests);
 await runTest("crm reads hr-id casing (door matches agent/double hr ids case-insensitively)", runCrmReadsHrIdCasingTests);
 await runTest("crm visits self-scope (My Visits portal module: exact agent/double hrId scoping, no searchParams override)", runCrmVisitsSelfScopeTests);
@@ -1228,6 +1241,7 @@ await runTest("payroll copilot (assemble + flags + validator + parser)", runPayr
 await runTest("payroll statutory (Egypt tax + social insurance)", runPayrollStatutoryTests);
 await runTest("payroll copilot proration (resignation/joiner/unpaid-leave day-rate rules)", runPayrollCopilotProrationTests);
 await runTest("payroll copilot deductions review (cycle window + month-key resolution)", runPayrollCopilotDeductionsReviewTests);
+await runTest("payroll copilot refuses a sheet while the unified Deductions module owns the month (and Automated Payroll stays ungated)", runPayrollCopilotUnifiedDeductionsGuardTests);
 await runTest("payroll insurance-wage import (parser)", runPayrollInsuranceWageImportTests);
 await runTest("payroll exports (bank file + statutory summary)", runPayrollExportsTests);
 await runTest("payroll copilot report exports (deduction/vacation/expense xlsx)", runPayrollCopilotReportExportsTests);
@@ -1250,6 +1264,7 @@ await runTest("direct orders finance-month badge (approved never shows alone, on
 await runTest("direct orders storefront evidence (unknown is never a pass, a failed read never blocks filing, and it never gates the decision)", runDirectOrderEvidenceCheckTests);
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
+await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
 await runTest("direct orders share-link controls (export-gated not read-gated, passcode in the body never the URL, expiry mandatory and capped, scope frozen at creation, nothing cached or indexed)", runDirectOrdersShareLinkControlsTests);
@@ -1334,7 +1349,14 @@ await runTest(
   runPayrollDeductionGateComposesWithPublishRuleTests,
 );
 
-await runTest("July 2026 direct orders (closed month still totals 628,267.65 / 4,271 units; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
+await runTest("July 2026 direct orders (closed month still totals 684,002.15 / 5,241 units after the 2026-08-06 Anti Infective restatement; value is carried per-deal, never units × factory price)", runJuly2026DirectOrdersTabTests);
+
+await runTest(
+  "July 2026 direct value is taken AS STORED (owner's ruling 2026-08-06: Anti Infective direct is "
+  + "149,288.50, never the 157,518.00 a factory-price recompute gives; July only; the mapping and "
+  + "the month's direct sales stay one number)",
+  runJuly2026DirectValueIsStoredTests,
+);
 
 await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
 
@@ -1422,13 +1444,14 @@ await runTest(
 );
 
 await runTest(
-  "monthly closing Channel Comparison sheet (owner-reviewed Anti Infective split; customers peak not summed; target is month-total only)",
-  runMonthlyClosingChannelsTests,
+  "closing channel sheets drop nothing (no-client-code bucket, unnamed direct is not a pharmacy, "
+  + "grids carry the Matrix's store split, self-check covers every month)",
+  runClosingChannelNothingDroppedTests,
 );
 
 await runTest(
-  "closing channel sheets tie to the Data tab (direct orders keep their own money, never factory price; no-client-code rows are counted in their own bucket, not as pharmacies)",
-  runClosingChannelTiesToDataTabTests,
+  "monthly closing Channel Comparison sheet (owner-reviewed Anti Infective split; customers peak not summed; target is month-total only)",
+  runMonthlyClosingChannelsTests,
 );
 
 await runTest(
@@ -1484,6 +1507,25 @@ await runTest(
 await runTest(
   "direct orders pharmacy combo box opens where there is room (measured against visualViewport, flips up, never a fixed 320px)",
   runDirectOrdersPharmacyComboboxPlacementTests,
+);
+
+await runTest(
+  "direct orders sheet editable columns (the team's notes are keyed to the Request ID, captured before the sheet is wiped or reordered, live outside every range the refresh rewrites, and the real sales month stays Phoenix's alone)",
+  runDirectOrdersSheetEditableColumnsTests,
+);
+
+await runTest(
+  "sales pharmacy override (owner ruling beats the keyword, split stops moving their money)",
+  runSalesPharmacyOverrideTests,
+);
+
+await runTest(
+  "SoS self-heal never overwrites an owner-verified (confidence=100) customer mapping, and the guard is keyed on (distributor, customer) exactly as the upsert is",
+  runSosSelfHealOwnerVerifiedGuardTests,
+);
+await runTest(
+  "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
+  runOutstationManualExpenseTicketPlusAllowanceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

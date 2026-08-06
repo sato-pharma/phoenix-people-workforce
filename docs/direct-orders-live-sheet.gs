@@ -120,6 +120,55 @@ var ROW_DATA = 5;
 var MAX_DATA_ROWS = 2000;
 var LAST_ROW = ROW_DATA + MAX_DATA_ROWS - 1;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The team's own columns (owner request, 2026-08-06).
+//
+// Phoenix owns columns 1..cols and rewrites them every minute. These sit AFTER that block, so the
+// refresh never touches them — `setValues` and the tail `clearContent` are both bounded by `cols`.
+//
+// THE PART THAT MATTERS: a note must belong to an ORDER, not to a row. Rows move on every refresh
+// — an order is approved, a new one arrives, and row 12 is now a different request. A note left at
+// row 12 would silently re-attach to somebody else's order, which in a report about money is worse
+// than losing it. So notes are keyed by Request ID: read before the rewrite, written back to
+// whatever row that id landed on.
+//
+// They are also mirrored into a hidden sheet, because an order can leave this report entirely
+// (approved, expired, filtered out) and come back later. Without the store its note would be gone
+// for good the moment it dropped off the visible list.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Bumped whenever the LOOK changes. Styling lives in buildOrdersFrame, which only runs when the
+// column set changes — so a pure restyle alters no header, no rebuild fires, and a sheet that has
+// already been built keeps the old look forever. Pasting a new script would appear to do nothing,
+// which is exactly how the editable block shipped invisible. The stamp is the trigger.
+var STYLE_VERSION = "2026-08-06-centred";
+var STYLE_STAMP_KEY = "phoenixOrdersStyleVersion";
+
+var NOTES_TAB = "_Phoenix notes (do not delete)";
+var NOTES_KEY_HEADER = "Request ID";
+
+var EDITABLE_COLUMNS = [
+  // PROPOSED, not booked — and the distance between those two words is the whole reason this
+  // column is here rather than making Phoenix's own "Sales month" typeable.
+  //
+  // Setting the real sales month is what INJECTS THE SALES (spec C2, the golden rule), and only
+  // the Finance Manager or a Super Admin may do it. Two ways to get that wrong, both worse than a
+  // second column: made editable in place, a month typed here is erased within the minute while
+  // the person walks away believing the order is booked — a false belief about whether money
+  // moved. Made to write back, anyone holding the share link could inject sales, and the link is
+  // deliberately shared with people who have no Phoenix account at all.
+  //
+  // So the team writes what they think, Phoenix keeps what is true, and the two sit side by side
+  // where the gap is visible. Finance still books it in Phoenix.
+  { label: "Month proposed (team)", width: 18 },
+  { label: "Note", width: 40 },
+  { label: "Follow-up owner", width: 18 },
+  { label: "Follow-up date", width: 14 },
+  { label: "Status (team)", width: 16, choices: ["", "Chasing", "Promised", "Paid", "Disputed", "Escalated", "Done"] },
+  { label: "Collection / payment note", width: 34 },
+  { label: "Extra", width: 22 },
+];
+
 var INK = "#0F172A";
 var HAIRLINE = "#E2E8F0";
 var TILE_BG = "#FFF7ED";
@@ -492,8 +541,30 @@ function buildOrdersSheet(ss, grid, stamp, created) {
   // Rebuild the STRUCTURE only when it is actually wrong — first run, or the column set changed
   // (e.g. the 39-to-43 held-clock upgrade). On every other refresh only the values are rewritten,
   // which is what stops the sheet flickering, jumping and resizing itself once a minute.
-  var rebuild = !headerMatches(sheet, header, ROW_HEADER);
-  if (rebuild) buildOrdersFrame(sheet, header, cols);
+  // The team's own columns, captured BEFORE anything else touches the sheet.
+  //
+  // Ordering is load-bearing twice over. The pairing of row to Request ID is only true until the
+  // rewrite below reorders everything — and buildOrdersFrame calls resetSheet, which would wipe
+  // the block before it could be read. So this runs first, ahead of both.
+  var keyCol = requestIdCol(header);
+  var store = readNotesStore(ss);
+  var captured = captureEditableByRequestId(sheet, header, cols);
+  for (var capturedId in captured) {
+    if (captured.hasOwnProperty(capturedId)) store[capturedId] = captured[capturedId];
+  }
+
+  // A restyle changes no header, so headerMatches alone would never repaint an existing sheet.
+  var restyled = PropertiesService.getDocumentProperties().getProperty(STYLE_STAMP_KEY) !== STYLE_VERSION;
+  var rebuild = restyled || !headerMatches(sheet, header, ROW_HEADER);
+  if (rebuild) {
+    buildOrdersFrame(sheet, header, cols);
+    PropertiesService.getDocumentProperties().setProperty(STYLE_STAMP_KEY, STYLE_VERSION);
+  }
+  // Painted independently of Phoenix's header, because on a sheet whose own columns have not
+  // changed — which is every existing sheet — `rebuild` is false and buildOrdersFrame never runs.
+  // The block would sit there unstyled and unlabelled forever, which is exactly what happened the
+  // first time this shipped.
+  else if (!editableFrameReady(sheet, cols)) buildEditableFrame(sheet, cols);
   ensureRows(sheet, LAST_ROW);
 
   // ── the only part that runs every minute ──
@@ -518,9 +589,21 @@ function buildOrdersSheet(ss, grid, stamp, created) {
     // so those rows keep their banding and are ready for the next, longer refresh.
     var tail = LAST_ROW - (ROW_DATA + values.length) + 1;
     if (tail > 0) sheet.getRange(ROW_DATA + values.length, 1, tail, cols).clearContent();
+
+    // Repaint the team's notes against the row each order now occupies. Both ranges above are
+    // bounded by `cols`, so neither the write nor the tail clear ever reached this block.
+    var orderedIds = [];
+    for (var i = 0; i < values.length; i++) {
+      orderedIds.push(keyCol ? String(body[i][keyCol - 1] || "").trim() : "");
+    }
+    paintEditable(sheet, cols, orderedIds, store);
   } else {
     sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols).clearContent();
+    paintEditable(sheet, cols, [], store);
   }
+  // Written AFTER the repaint, so a mid-refresh failure leaves the store as it was rather than
+  // half-updated.
+  writeNotesStore(ss, store);
 
   sheet.getRange(ROW_SUBTITLE, 1).setValue("Every direct order, live — updated " + stamp + " (Cairo)");
 }
@@ -528,6 +611,160 @@ function buildOrdersSheet(ss, grid, stamp, created) {
 /**
  * Everything that is NOT data. First build, or when the column set changes — never on a refresh.
  */
+/** Where the team's block starts, and how wide it is. Always immediately after Phoenix's columns. */
+function editableStartCol(cols) {
+  return cols + 1;
+}
+
+/** The Request ID column index (1-based) within Phoenix's own block. */
+function requestIdCol(header) {
+  for (var i = 0; i < header.length; i++) {
+    if (String(header[i]).trim() === NOTES_KEY_HEADER) return i + 1;
+  }
+  return 0;
+}
+
+function notesSheet(ss) {
+  var sheet = ss.getSheetByName(NOTES_TAB);
+  if (!sheet) {
+    sheet = ss.insertSheet(NOTES_TAB);
+    sheet.getRange(1, 1, 1, 1 + EDITABLE_COLUMNS.length)
+      .setValues([[NOTES_KEY_HEADER].concat(EDITABLE_COLUMNS.map(function (c) { return c.label; }))]);
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+/** id -> [note, owner, date, status, payNote, extra], from the durable store. */
+function readNotesStore(ss) {
+  var sheet = notesSheet(ss);
+  var last = sheet.getLastRow();
+  var out = {};
+  if (last < 2) return out;
+  var rows = sheet.getRange(2, 1, last - 1, 1 + EDITABLE_COLUMNS.length).getValues();
+  for (var r = 0; r < rows.length; r++) {
+    var id = String(rows[r][0] || "").trim();
+    if (id) out[id] = rows[r].slice(1);
+  }
+  return out;
+}
+
+function writeNotesStore(ss, store) {
+  var sheet = notesSheet(ss);
+  var ids = Object.keys(store);
+  var values = [];
+  for (var i = 0; i < ids.length; i++) values.push([ids[i]].concat(store[ids[i]]));
+  var last = sheet.getLastRow();
+  if (last > 1) sheet.getRange(2, 1, last - 1, 1 + EDITABLE_COLUMNS.length).clearContent();
+  if (values.length) sheet.getRange(2, 1, values.length, 1 + EDITABLE_COLUMNS.length).setValues(values);
+}
+
+/**
+ * Read what people have typed on the CURRENT sheet, before the rewrite moves every row.
+ *
+ * Keyed off the ids as they are on the sheet right now — not off the incoming data — because that
+ * is the only pairing that is still true at this moment.
+ */
+function captureEditableByRequestId(sheet, header, cols) {
+  var keyCol = requestIdCol(header);
+  var out = {};
+  if (!keyCol) return out;
+  // A first run, or a sheet narrower than the block, has nothing to read yet — and getRange past
+  // the sheet's own bounds throws, which would abort the whole refresh over an empty note.
+  var needRows = ROW_DATA + MAX_DATA_ROWS - 1;
+  var needCols = editableStartCol(cols) + EDITABLE_COLUMNS.length - 1;
+  if (sheet.getMaxRows() < needRows || sheet.getMaxColumns() < needCols) return out;
+  var ids = sheet.getRange(ROW_DATA, keyCol, MAX_DATA_ROWS, 1).getValues();
+  var block = sheet.getRange(ROW_DATA, editableStartCol(cols), MAX_DATA_ROWS, EDITABLE_COLUMNS.length).getValues();
+  for (var r = 0; r < ids.length; r++) {
+    var id = String(ids[r][0] || "").trim();
+    if (!id) continue;
+    var row = block[r];
+    var hasAny = false;
+    for (var c = 0; c < row.length; c++) if (String(row[c] || "").trim() !== "") { hasAny = true; break; }
+    if (hasAny) out[id] = row;
+  }
+  return out;
+}
+
+/** Lay the team's notes back out in the NEW row order. */
+function paintEditable(sheet, cols, orderedIds, store) {
+  var startCol = editableStartCol(cols);
+  ensureColumns(sheet, startCol + EDITABLE_COLUMNS.length - 1);
+  var values = [];
+  for (var r = 0; r < orderedIds.length; r++) {
+    var saved = store[orderedIds[r]];
+    values.push(saved ? saved.slice(0, EDITABLE_COLUMNS.length) : new Array(EDITABLE_COLUMNS.length).fill(""));
+  }
+  if (values.length) sheet.getRange(ROW_DATA, startCol, values.length, EDITABLE_COLUMNS.length).setValues(values);
+  var tail = LAST_ROW - (ROW_DATA + values.length) + 1;
+  if (tail > 0) sheet.getRange(ROW_DATA + values.length, startCol, tail, EDITABLE_COLUMNS.length).clearContent();
+}
+
+/**
+ * The team's block: its own header, its own colour, and a dropdown on the status column.
+ *
+ * Deliberately styled UNLIKE Phoenix's header. The owner chose not to lock the Phoenix columns, so
+ * the only thing stopping someone typing where it will be erased within the minute is being able
+ * to SEE which block is theirs. A different colour and the word "yours" does that work.
+ */
+/** Is the team's block already labelled? Cheap enough to ask on every refresh. */
+function editableFrameReady(sheet, cols) {
+  var start = editableStartCol(cols);
+  var width = EDITABLE_COLUMNS.length;
+  if (sheet.getMaxColumns() < start + width - 1) return false;
+  if (sheet.getMaxRows() < ROW_HEADER) return false;
+  var current = sheet.getRange(ROW_HEADER, start, 1, width).getValues()[0];
+  for (var i = 0; i < width; i++) {
+    if (String(current[i]) !== String(EDITABLE_COLUMNS[i].label)) return false;
+  }
+  return true;
+}
+
+function buildEditableFrame(sheet, cols) {
+  var start = editableStartCol(cols);
+  var width = EDITABLE_COLUMNS.length;
+  ensureColumns(sheet, start + width - 1);
+  ensureRows(sheet, LAST_ROW);
+
+  // The house palette, not a near-miss of it. This shipped with three raw hex values that appear
+  // nowhere else in the workbook — a muddy orange beside ORANGE, an off-white beside TILE_BG — and
+  // that is precisely what reads as bolted on rather than built in.
+  sheet.getRange(ROW_TOTAL, start, 1, width)
+    .setBackground(AMBER).setFontColor(AMBER_TEXT).setFontFamily(FONT)
+    .setFontWeight("bold").setFontSize(9)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center")
+    .setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  sheet.getRange(ROW_TOTAL, start).setValue("YOURS ▸ kept on refresh");
+
+  sheet.getRange(ROW_HEADER, start, 1, width)
+    .setValues([EDITABLE_COLUMNS.map(function (c) { return c.label; })])
+    .setBackground(ORANGE).setFontColor(WHITE).setFontWeight("bold")
+    .setFontFamily(FONT).setFontSize(9.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center").setWrap(true)
+    .setBorder(true, true, true, true, true, true, WHITE, SpreadsheetApp.BorderStyle.SOLID);
+
+  for (var i = 0; i < width; i++) {
+    sheet.setColumnWidth(start + i, (EDITABLE_COLUMNS[i].width || 18) * 7);
+    var body = sheet.getRange(ROW_DATA, start + i, MAX_DATA_ROWS, 1);
+    body.setBackground(TILE_BG).setFontFamily(FONT).setFontSize(10).setFontColor(SLATE)
+      .setVerticalAlignment("middle").setHorizontalAlignment("center")
+      .setBorder(true, true, true, true, true, true, GRID, SpreadsheetApp.BorderStyle.SOLID);
+    if (EDITABLE_COLUMNS[i].choices) {
+      body.setDataValidation(
+        SpreadsheetApp.newDataValidation()
+          .requireValueInList(EDITABLE_COLUMNS[i].choices, true)
+          // Not rejected: a value the list has not caught up with is a fact about the work, and
+          // refusing it would send the person back to typing in a Phoenix column where it is lost.
+          .setAllowInvalid(true)
+          .build(),
+      );
+    } else {
+      body.setWrap(true);
+    }
+  }
+}
+
 function buildOrdersFrame(sheet, header, cols) {
   resetSheet(sheet);
   ensureRows(sheet, LAST_ROW);
@@ -536,8 +773,10 @@ function buildOrdersFrame(sheet, header, cols) {
   // ── the sticky TOTAL bar, ABOVE the data so it never moves ──
   var totalRange = sheet.getRange(ROW_TOTAL, 1, 1, cols);
   totalRange.setBackground(TOTAL_BG).setFontColor(WHITE).setFontFamily(FONT)
-    .setFontWeight("bold").setFontSize(10.5).setVerticalAlignment("middle");
-  sheet.setRowHeight(ROW_TOTAL, 28);
+    .setFontWeight("bold").setFontSize(10.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center")
+    .setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  sheet.setRowHeight(ROW_TOTAL, 30);
   sheet.getRange(ROW_TOTAL, 1).setValue("TOTAL ▸");
   for (var t = 0; t < cols; t++) {
     if (TOTALLED.indexOf(header[t]) === -1) continue;
@@ -548,16 +787,19 @@ function buildOrdersFrame(sheet, header, cols) {
     sheet.getRange(ROW_TOTAL, t + 1)
       .setFormula("=SUBTOTAL(109," + letter + ROW_DATA + ":" + letter + LAST_ROW + ")")
       .setNumberFormat(NUMERIC[header[t]] || VALUE_FMT)
-      .setHorizontalAlignment("right");
+      .setHorizontalAlignment("center");
   }
+
+  buildEditableFrame(sheet, cols);
 
   // ── header ──
   sheet.getRange(ROW_HEADER, 1, 1, cols)
     .setValues([header])
     .setBackground(INK).setFontColor(WHITE).setFontWeight("bold")
-    .setFontFamily(FONT).setFontSize(10.5).setVerticalAlignment("middle").setWrap(true)
+    .setFontFamily(FONT).setFontSize(10.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center").setWrap(true)
     .setBorder(true, true, true, true, true, true, ORANGE, SpreadsheetApp.BorderStyle.SOLID);
-  sheet.setRowHeight(ROW_HEADER, 36);
+  sheet.setRowHeight(ROW_HEADER, 38);
 
   // Band, total and header all stay on screen; the first column stays on screen sideways. The
   // frozen column is only possible because bandTitle PAINTS the band instead of merging it.
@@ -568,13 +810,17 @@ function buildOrdersFrame(sheet, header, cols) {
   var body = sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols);
   body.setFontFamily(FONT).setFontSize(10).setFontColor(SLATE)
     .setVerticalAlignment("middle")
+    // Every cell centred (owner's rule, 2026-08-06). The one cost worth knowing: centred money no
+    // longer lines up digit-under-digit, so a column is scanned rather than compared at a glance.
+    // The number FORMATS below are what keep the figures readable instead.
+    .setHorizontalAlignment("center")
     .setWrap(false) // owner's rule: never wrap, never truncate with an ellipsis
     .setBorder(true, true, true, true, true, true, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
 
   for (var n = 0; n < cols; n++) {
     var fmt = NUMERIC[header[n]];
     if (fmt) {
-      sheet.getRange(ROW_DATA, n + 1, MAX_DATA_ROWS, 1).setNumberFormat(fmt).setHorizontalAlignment("right");
+      sheet.getRange(ROW_DATA, n + 1, MAX_DATA_ROWS, 1).setNumberFormat(fmt).setHorizontalAlignment("center");
     }
   }
 
@@ -1434,9 +1680,16 @@ function resetSheet(sheet) {
 function headerMatches(sheet, header, headerRow) {
   var at = headerRow || 2;
   if (sheet.getLastRow() < at) return false;
-  var width = sheet.getLastColumn();
-  if (width !== header.length) return false;
-  var current = sheet.getRange(at, 1, 1, width).getValues()[0];
+  // Judge PHOENIX's own columns, not the sheet's full width.
+  //
+  // This compared getLastColumn() to header.length, which made the answer depend on anything
+  // sitting to the RIGHT of the table — and the team's block sits exactly there. Two failures came
+  // out of that one line: while the block was empty the widths matched, so the frame was never
+  // built and the columns had no header, no colour and no dropdown; and the moment a note was
+  // typed the widths stopped matching, so the whole layout rebuilt EVERY MINUTE — the flicker and
+  // the columns resizing mid-read that this design exists to avoid.
+  if (sheet.getMaxColumns() < header.length) return false;
+  var current = sheet.getRange(at, 1, 1, header.length).getValues()[0];
   for (var i = 0; i < header.length; i++) {
     if (String(current[i]) !== String(header[i])) return false;
   }
@@ -1470,6 +1723,15 @@ function migrateLegacyTabNames(ss) {
 function ensureRows(sheet, needed) {
   var have = sheet.getMaxRows();
   if (have < needed) sheet.insertRowsAfter(have, needed - have);
+}
+
+/**
+ * A new sheet is 26 columns wide; Phoenix's 45 plus the team's 6 need 51. Without this every
+ * getRange past the edge throws, and the refresh dies on a sheet that has never been built.
+ */
+function ensureColumns(sheet, needed) {
+  var have = sheet.getMaxColumns();
+  if (have < needed) sheet.insertColumnsAfter(have, needed - have);
 }
 
 /** The Phoenix two-row brand band: black bar, orange title, muted subtitle. */

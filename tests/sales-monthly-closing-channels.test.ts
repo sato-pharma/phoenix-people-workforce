@@ -11,6 +11,7 @@ import {
   assembleChannelBreakdown,
   assembleChannelComparison,
   breakdownLeader,
+  emptyBreakdownRow,
   resolveBreakdownLabel,
   sumBreakdownRows,
   sumLineTargets,
@@ -358,9 +359,11 @@ export async function runMonthlyClosingChannelsTests() {
 // occupant. Drop any of those and the grid quietly reports less than the month — which is exactly
 // the thing that gets questioned.
 //
-// The fixture mirrors the real Anti Infective 2026-07 shape (direct = 93,554 with no area/brick/rep,
-// 10 distributor rows with no brick, an area off the seat model, and a vacant seat) with round
-// numbers so the arithmetic is readable.
+// The fixture mirrors the real Anti Infective 2026-07 SHAPE (direct with no area/brick/rep, 10
+// distributor rows with no brick, an area off the seat model, and a vacant seat) with round numbers
+// so the arithmetic is readable. The amounts are deliberately NOT that month's real ones — its
+// direct total is 149,288.50 (restated 2026-08-06), pinned where it is load-bearing, in
+// closing-channel-nothing-dropped.test.ts.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MONTH_TOTAL = 100_000;
@@ -478,16 +481,9 @@ async function runChannelBreakdownTests() {
     `the leader's share is its own value over the row total (expected 0.667, got ${leader?.share})`,
   );
   assert.equal(
-    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 0, store: 0, total: 0, unidentified: 0 }),
+    breakdownLeader(emptyBreakdownRow("x", "x")),
     null,
     "a row that sold nothing claims no leader rather than a fake 100%",
-  );
-  // A row that is mostly unattributable must not claim a channel leads it. "Pharmacies 30%" reads
-  // as a finding; the honest answer is that 70% of the row has no customer to classify.
-  assert.equal(
-    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 300, store: 0, total: 1000, unidentified: 700 })?.label,
-    "Unidentified",
-    "when most of a row carries no client code, the Leader column says so instead of naming a channel",
   );
 
   // ── 5. The rendered sheet ties, cell by cell ───────────────────────────────

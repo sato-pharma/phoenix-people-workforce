@@ -63,8 +63,12 @@ type CalcPreview = {
   expectedTotalAmount: number;
   fuelAmount: number;
   fuelRatePerKm: number;
+  meetingAmount: number;
+  otherAmount: number;
   overnightDays: number;
   sameDayTrip: boolean;
+  ticketAmount: number;
+  travelCost: number;
 };
 
 function formatEgp(value: number) {
@@ -136,6 +140,13 @@ export function AdminManagerExpenseModal({
     "car" | "train" | "bus" | "other"
   >(request?.transportationType ?? "car");
   const [notes, setNotes] = useState(request?.notes ?? "");
+  // Records created before the ticket field existed carry the price only in
+  // reportTravelCost, so fall back to it rather than showing an empty box.
+  const [ticketCost, setTicketCost] = useState(() => {
+    if (!request || request.transportationType === "car") return "";
+    const existing = request.ticketAmount || request.reportTravelCost || 0;
+    return existing > 0 ? String(existing) : "";
+  });
   const [claimedAmount, setClaimedAmount] = useState(
     request?.claimedTotalAmount ? String(request.claimedTotalAmount) : "",
   );
@@ -204,6 +215,11 @@ export function AdminManagerExpenseModal({
   const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hrIdForDistance = employeeHrId || request?.employeeHrId;
+
+  // Car trips are paid from the fuel formula (km x 2 x rate); every other mode is
+  // paid from the ticket the admin types in. Either way it is ADDED to the allowance.
+  const isTicketBased = transportationType !== "car";
+  const travelCostForSubmit = isTicketBased && ticketCost ? Number(ticketCost) : null;
 
   async function lookupEmployee(hrId: string) {
     if (!hrId.trim()) {
@@ -377,7 +393,10 @@ export function AdminManagerExpenseModal({
           claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
           distanceKm: distance,
           employeeHrId: hrId,
+          meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
+          otherAmount: otherAmount ? Number(otherAmount) : 0,
           transportationType,
+          travelCostAmount: travelCostForSubmit,
           tripEndDate,
           tripStartDate,
         }),
@@ -407,7 +426,17 @@ export function AdminManagerExpenseModal({
       if (previewDebounceRef.current) clearTimeout(previewDebounceRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hrIdForDistance, manualDistanceKm, tripStartDate, tripEndDate, transportationType, claimedAmount]);
+  }, [
+    hrIdForDistance,
+    manualDistanceKm,
+    tripStartDate,
+    tripEndDate,
+    transportationType,
+    claimedAmount,
+    ticketCost,
+    meetingAmount,
+    otherAmount,
+  ]);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -431,6 +460,7 @@ export function AdminManagerExpenseModal({
       pmWorkload: pmWorkload ? Number(pmWorkload) : 0,
       routePolyline: distanceResult?.routePolyline ?? null,
       transportationType,
+      travelCostAmount: travelCostForSubmit,
       tripEndDate,
       tripStartDate,
     };
@@ -754,6 +784,24 @@ export function AdminManagerExpenseModal({
             </div>
           </div>
 
+          {/* Ticket cost — non-car transport is paid from the ticket, not the fuel formula */}
+          {isTicketBased ? (
+            <div>
+              <FieldLabel>Ticket cost (EGP) &mdash; go + return</FieldLabel>
+              <InputField
+                min="0"
+                onChange={(e) => setTicketCost(e.target.value)}
+                placeholder="e.g. 450"
+                step="0.01"
+                type="number"
+                value={ticketCost}
+              />
+              <p className="mt-1 text-xs text-[#64748B]">
+                The allowance is added on top of this ticket cost.
+              </p>
+            </div>
+          ) : null}
+
           {/* Meeting / Other amount — conditional on expense type */}
           {expenseType === "meeting" ? (
             <div>
@@ -808,7 +856,7 @@ export function AdminManagerExpenseModal({
 
           {/* Claimed amount */}
           <div>
-            <FieldLabel>Claimed amount (EGP) &mdash; optional</FieldLabel>
+            <FieldLabel>Claimed amount (EGP) &mdash; optional override</FieldLabel>
             <InputField
               min="0"
               onChange={(e) => setClaimedAmount(e.target.value)}
@@ -817,6 +865,11 @@ export function AdminManagerExpenseModal({
               type="number"
               value={claimedAmount}
             />
+            <p className="mt-1 text-xs text-[#64748B]">
+              Leave this blank unless you are overriding the payout. Anything typed here{" "}
+              <span className="font-black text-[#9A3412]">replaces</span> the calculated total &mdash;
+              it is not added to it.
+            </p>
           </div>
 
           {/* Calculation preview — fuel + allowance breakdown */}
@@ -835,10 +888,10 @@ export function AdminManagerExpenseModal({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
                   <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#64748B]">
-                    Fuel (round trip)
+                    {isTicketBased ? "Ticket cost" : "Fuel (round trip)"}
                   </p>
                   <p className="mt-0.5 text-sm font-black text-[#0F172A]">
-                    {formatEgp(calcPreview.fuelAmount)}
+                    {formatEgp(isTicketBased ? calcPreview.ticketAmount : calcPreview.fuelAmount)}
                   </p>
                 </div>
                 <div className="rounded-md bg-[#F8FAFC] px-3 py-2.5">
@@ -849,6 +902,14 @@ export function AdminManagerExpenseModal({
                     {formatEgp(calcPreview.allowanceAmount)}
                   </p>
                 </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-md bg-[#FFF7ED] px-3 py-2.5">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#EA580C]">
+                  {isTicketBased ? "Ticket + allowance" : "Fuel + allowance"} = total
+                </p>
+                <p className="text-sm font-black text-[#EA580C]">
+                  {formatEgp(calcPreview.expectedTotalAmount)}
+                </p>
               </div>
               {calcPreview.allowanceBreakdown.rows.length > 0 ? (
                 <ul className="mt-3 space-y-1 border-t border-[#E2E8F0] pt-3">

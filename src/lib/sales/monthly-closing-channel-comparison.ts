@@ -1,6 +1,7 @@
 import {
   HOSPITAL_NAME_KEYWORDS,
   normalizeCustomerName,
+  PHARMACY_OVERRIDE_CLIENT_CODES,
   STORE_NAME_KEYWORDS,
   type CustomerChannel,
 } from "@/lib/sales/customer-channel";
@@ -28,16 +29,22 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 // channels. phx_closing_channel_totals exists to answer this one question properly, and it is a
 // single round trip for the whole sheet rather than one per month.
 //
-// A ROW WITH NO CLIENT CODE IS NOT DROPPED, AND IS NOT A PHARMACY. Both RPCs used to filter
-// `client_code is not null` on their retail half, inherited from phx_closing_customers where it is
-// correct (that function lists CUSTOMERS, and a row with no customer cannot be one). Here it made
-// the sheets sum to LESS than the month beside them — CNS 2026-05 was short 4,363,635.38 EGP of
-// 8,354,429.79, and five other CNS months were short too, while Anti Infective, Pedia and Head
-// Office are clean in every 2026 month, which is exactly why it survived review. Deleting the
-// filter alone would have been worse than the bug: with no client code there is no name, and the
-// channel CASE ends in `else 'pharmacy'`, so 4.36M EGP would have been reported as pharmacy sales.
-// Those rows now get their own bucket, `unidentified` — visible, counted, and never claimed to be
-// a channel. It carries 0 customers on purpose: there is no identity there to count.
+// NOTHING IS DROPPED AND NOTHING IS GUESSED (2026-08-06). Two silent misattributions shipped with
+// the first version of these sheets and are closed by migration
+// 20260806160000_closing_channel_unattributed_buckets.sql, which carries the measured cost of each:
+//
+//   * a `client_code is not null` filter on the retail half DROPPED money outright — CNS was short
+//     4,363,635.38 of 8,354,429.79 in 2026-05 and short in five other months, while Anti Infective
+//     and Pedia were clean in every 2026 month, which is why it survived review; and
+//   * a direct order with no customer name was keyed 'name:' || fold(''), which is never null, so
+//     the channel CASE fell through to `else 'pharmacy'` and filed it as retail pharmacy business.
+//     Anti Infective 2026-07 printed Pharmacies 450,035.45 against a true 356,481.45 — overstated
+//     26.2% — and Pedia 2026-07 carried 534,713.65 that way, 38% of the month.
+//
+// Both now land in named buckets (see CHANNEL_ORDER). The rule this file keeps: a channel is a
+// VERDICT about a customer, so money with no customer to judge never gets one. It gets a row that
+// says what is missing, and the sheet's own self-check ties every month to an independently
+// re-aggregated population so the next silent filter cannot hide either.
 //
 // TARGETS ARE NOT SPLIT PER CHANNEL. They are keyed (month, line, area, product) and carry no
 // channel dimension, so a per-channel target would be a number Phoenix invented. The sheet shows
@@ -53,18 +60,30 @@ export type ChannelCell = {
 };
 
 /**
- * This sheet's row vocabulary: the three real channels, plus a bucket for rows the distributor
- * sent with NO client code.
+ * This sheet's row vocabulary: the three real channels, plus the three reasons a row can carry no
+ * channel at all.
  *
- * Deliberately NOT a fourth member of `CustomerChannel`. That type is the CLASSIFIER's output —
- * a verdict about a customer's name — and the Monthly Closing city split keys on its "store"
- * member. "unidentified" is the opposite of a verdict: there is no name to judge, so the sheet
- * needs a place to put the money without pretending to have classified it.
+ * Deliberately NOT extra members of `CustomerChannel`. That type is the CLASSIFIER's output — a
+ * verdict about a customer's name — and the store city split keys on its "store" member. These
+ * three are the opposite of a verdict: there is nothing to judge, so the sheet needs somewhere to
+ * put the money without pretending to have classified it.
  */
-export type ChannelComparisonChannel = CustomerChannel | "unidentified";
+export type ChannelComparisonChannel =
+  | CustomerChannel
+  | "unidentified_no_code"
+  | "unidentified_no_name"
+  | "direct_unnamed";
 
-/** The channel value the RPCs emit for a row carrying no client code. */
-export const UNIDENTIFIED_CHANNEL = "unidentified" as const;
+/** The channel values the RPCs emit for money that reaches no customer. Order matters: display. */
+export const UNATTRIBUTED_CHANNELS = [
+  "unidentified_no_code",
+  "unidentified_no_name",
+  "direct_unnamed",
+] as const satisfies ReadonlyArray<ChannelComparisonChannel>;
+
+export function isUnattributedChannel(channel: string): boolean {
+  return (UNATTRIBUTED_CHANNELS as readonly string[]).includes(channel);
+}
 
 export type ChannelComparisonRow = {
   channel: ChannelComparisonChannel;
@@ -81,6 +100,39 @@ export type ChannelPeriodTarget = {
   targetValue: number | null;
 };
 
+/**
+ * One month's answer to "does this sheet hold the whole month".
+ *
+ * `population` is re-aggregated inside the RPC from the source tables with the guards WRITTEN OUT
+ * AGAIN rather than reused, so it does not move when the channel query does. `difference` is what
+ * the sheet prints, and it is the number the old sheet could not have printed: its self-check tied
+ * only the exported month, and a CNS July export read "Difference 0.00" while the six month blocks
+ * above it were short by up to 4.36M each.
+ */
+export type ChannelSelfCheck = {
+  period: string;
+  /** The month as this sheet's own channel rows add up. */
+  sheetUnits: number;
+  sheetValue: number;
+  /** The month as the source tables add up, counted a second and independent time. */
+  populationUnits: number;
+  populationValue: number;
+  /** sheet − population. Anything but zero means this sheet is not the whole month. */
+  differenceUnits: number;
+  differenceValue: number;
+  /** True when both differences round to zero at 2dp — the money the sheet actually displays. */
+  ok: boolean;
+  /**
+   * False when the database has not been migrated and the RPC returned no independent total, so
+   * there was nothing to check against.
+   *
+   * Kept as its own flag rather than letting a missing figure default to the sheet's own — that
+   * would make the difference zero and print OK, which is precisely the "0.00 and it is a lie"
+   * behaviour this whole block exists to remove. The sheet says NOT CHECKED instead.
+   */
+  populationAvailable: boolean;
+};
+
 export type ChannelComparison = {
   line: string | null;
   /** Oldest to newest. A calendar order, never the order the loader happened to return. */
@@ -88,6 +140,13 @@ export type ChannelComparison = {
   rows: ChannelComparisonRow[];
   totalsByPeriod: Record<string, ChannelCell>;
   targetsByPeriod: Record<string, ChannelPeriodTarget>;
+  /**
+   * EVERY month this sheet displays, checked — not only the exported one. Same order as `periods`.
+   * Empty only when the sheet has no months at all.
+   */
+  selfCheck: ChannelSelfCheck[];
+  /** The worst month, so the sheet can lead with the failure rather than bury it. Null when clean. */
+  worstSelfCheck: ChannelSelfCheck | null;
   /** Every channel, every month — the bottom-right corner of the value block. */
   grandTotal: ChannelCell;
   /**
@@ -100,18 +159,23 @@ export type ChannelComparison = {
 };
 
 /**
- * Fixed display order: the two channels a decision usually turns on first, then the bulk, then
- * the money nobody can attribute.
+ * Fixed display order: the two channels a decision usually turns on first, then the bulk, then the
+ * money that reaches no customer at all.
  *
- * The unidentified row is LAST and is dropped entirely when it is zero (see
- * assembleChannelComparison), so the three lines that have a real customer behind them stay the
- * shape of the sheet and a clean line never grows a row of zeroes.
+ * The three unattributed rows are LAST and are dropped entirely when they carry nothing (see
+ * assembleChannelComparison), so the three lines with a real customer behind them stay the shape of
+ * the sheet and a clean line never grows a row of zeroes. Each names its own CAUSE rather than
+ * shrugging "Other", because the cause is the fix: a missing client code is a distributor file
+ * problem, a missing name is a directory problem, and an unnamed direct order is a Direct Orders
+ * module problem. One bucket would have hidden which.
  */
 export const CHANNEL_ORDER: ReadonlyArray<{ channel: ChannelComparisonChannel; label: string }> = [
   { channel: "hospital", label: "Hospitals" },
   { channel: "store", label: "Stores (wholesalers)" },
   { channel: "pharmacy", label: "Pharmacies" },
-  { channel: UNIDENTIFIED_CHANNEL, label: "Unidentified — no client code" },
+  { channel: "unidentified_no_code", label: "Unidentified — no client code on the line" },
+  { channel: "unidentified_no_name", label: "Unidentified — client code with no name" },
+  { channel: "direct_unnamed", label: "Direct orders — no customer name" },
 ];
 
 export function emptyChannelCell(): ChannelCell {
@@ -169,6 +233,17 @@ export type ChannelTotalsRow = {
  * right as a trend and a month out of order silently turns a rise into a fall. `YYYY-MM` sorts
  * correctly as a string, which is exactly why the format is used throughout.
  */
+/**
+ * The pseudo-channel the RPC uses for its independent re-aggregation of a month. Never displayed as
+ * a channel — it is what the sheet checks ITSELF against.
+ */
+export const POPULATION_CHANNEL = "__population__";
+
+/** Money rounds to the piastre for display; a difference smaller than that is not a difference. */
+function tiesAtDisplayPrecision(difference: number): boolean {
+  return Math.abs(Number(difference.toFixed(2))) < 0.005;
+}
+
 export function assembleChannelComparison(input: {
   line: string | null;
   rows: readonly ChannelTotalsRow[];
@@ -177,14 +252,21 @@ export function assembleChannelComparison(input: {
 }): ChannelComparison {
   const { line, rows, restrictedProductsIncluded } = input;
 
+  const channelRows = rows.filter((row) => row.channel !== POPULATION_CHANNEL);
+  const populationRows = rows.filter((row) => row.channel === POPULATION_CHANNEL);
+
   // Only months the line actually traded in. A month with no import batch for this line is "no
-  // data", not "sold nothing", and a zero column would read as the second.
-  const periods = [...new Set(rows.map((row) => row.period).filter((period) => period.trim() !== ""))].sort();
+  // data", not "sold nothing", and a zero column would read as the second. Population rows count
+  // towards this too: a month whose whole value went missing must still get a column, or the sheet
+  // would answer "there was no such month" instead of "this sheet lost it".
+  const periods = [...new Set(
+    [...channelRows, ...populationRows].map((row) => row.period).filter((period) => period.trim() !== ""),
+  )].sort();
 
   const comparisonRows: ChannelComparisonRow[] = CHANNEL_ORDER.map((entry) => {
     const byPeriod: Record<string, ChannelCell> = {};
     for (const period of periods) {
-      const match = rows.find((row) => row.period === period && row.channel === entry.channel);
+      const match = channelRows.find((row) => row.period === period && row.channel === entry.channel);
       byPeriod[period] = match
         ? { customers: match.customers, units: match.units, value: match.value }
         : emptyChannelCell();
@@ -197,12 +279,11 @@ export function assembleChannelComparison(input: {
     };
   })
     // The three real channels are the sheet's fixed shape and always appear, even at zero — a line
-    // that sold no hospitals this month is information. The unidentified bucket is different: it is
-    // an exception report, so it appears only when there is something to report. On Anti Infective,
-    // Pedia and Head Office it is empty in every 2026 month and the sheet is unchanged; on CNS it
-    // carries millions and its absence was the bug.
+    // that sold nothing to a hospital this month is information. The unattributed rows are an
+    // exception report, so each appears only when it has something to report. On a clean line the
+    // sheet is byte-identical to before.
     .filter((row) =>
-      row.channel !== UNIDENTIFIED_CHANNEL || row.total.units !== 0 || row.total.value !== 0);
+      !isUnattributedChannel(row.channel) || row.total.units !== 0 || row.total.value !== 0);
 
   const totalsByPeriod: Record<string, ChannelCell> = {};
   for (const period of periods) {
@@ -211,14 +292,45 @@ export function assembleChannelComparison(input: {
       .reduce(addChannelCells, emptyChannelCell());
   }
 
+  // EVERY month, not just the exported one. `totalsByPeriod` is what the sheet actually prints —
+  // the sum of the rows it displays — so a channel value the RPC invents tomorrow and CHANNEL_ORDER
+  // does not list shows up here as a difference instead of vanishing.
+  const selfCheck: ChannelSelfCheck[] = periods.map((period) => {
+    const sheet = totalsByPeriod[period] ?? emptyChannelCell();
+    const population = populationRows.find((row) => row.period === period);
+    const populationUnits = population?.units ?? sheet.units;
+    const populationValue = population?.value ?? sheet.value;
+    const differenceUnits = sheet.units - populationUnits;
+    const differenceValue = sheet.value - populationValue;
+    return {
+      differenceUnits,
+      differenceValue,
+      ok: tiesAtDisplayPrecision(differenceUnits) && tiesAtDisplayPrecision(differenceValue),
+      period,
+      populationAvailable: population !== undefined,
+      populationUnits,
+      populationValue,
+      sheetUnits: sheet.units,
+      sheetValue: sheet.value,
+    };
+  });
+
   return {
     grandTotal: addAcrossPeriods(periods.map((period) => totalsByPeriod[period])),
     line,
     periods,
     restrictedProductsIncluded,
     rows: comparisonRows,
+    selfCheck,
     targetsByPeriod: input.targetsByPeriod ?? {},
     totalsByPeriod,
+    worstSelfCheck: selfCheck
+      .filter((check) => !check.ok)
+      .reduce<ChannelSelfCheck | null>(
+        (worst, check) =>
+          !worst || Math.abs(check.differenceValue) > Math.abs(worst.differenceValue) ? check : worst,
+        null,
+      ),
   };
 }
 
@@ -269,6 +381,10 @@ export async function loadMonthlyClosingChannelComparison(
     p_exclude_codes: includeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES],
     p_hospital_stems: HOSPITAL_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
     p_line: line,
+    // The owner's per-customer rulings, sent from the same list the TypeScript classifier and the
+    // store city split already read. Without this the workbook would call an overridden pharmacy a
+    // store while the Customers tab called it a pharmacy — one customer, two answers, two screens.
+    p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_periods: wanted,
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });
@@ -326,20 +442,64 @@ export type ChannelBreakdownRow = {
   store: number;
   pharmacy: number;
   /**
-   * Money on rows the distributor sent with no client code, so no channel can be inferred. Its own
-   * column rather than a share of Pharmacies, which is where it would otherwise land: the channel
-   * CASE ends in `else 'pharmacy'`, and on CNS 2026-05 that would have reported 4.36M EGP of
-   * unattributable money as pharmacy sales. hospital + store + pharmacy + unidentified = total.
+   * The three "no customer to judge" columns, each its own number rather than a share of Pharmacies
+   * — which is where all three used to land, because the channel CASE ends in `else 'pharmacy'`.
+   * hospital + store + pharmacy + these three = total, and the sheet's TOTAL row proves it.
    */
-  unidentified: number;
+  unidentifiedNoCode: number;
+  unidentifiedNoName: number;
+  directUnnamed: number;
   total: number;
 };
+
+/** A row with every money column at zero. The one place the column list is written out. */
+export function emptyBreakdownRow(key: string, label: string): ChannelBreakdownRow {
+  return {
+    directUnnamed: 0,
+    hospital: 0,
+    key,
+    label,
+    pharmacy: 0,
+    store: 0,
+    total: 0,
+    unidentifiedNoCode: 0,
+    unidentifiedNoName: 0,
+  };
+}
+
+/** Which rep seat owns an area. Supplied by the RPC; the store split moves money over it. */
+export type ChannelBreakdownAreaRep = { key: string; label: string };
+
+/** How much store money each brick holds, and in which area — the store split's brick-side input. */
+export type ChannelBreakdownBrickArea = { brickKey: string; areaKey: string; store: number };
 
 export type ChannelBreakdown = {
   line: string | null;
   period: string | null;
   restrictedProductsIncluded: boolean;
   byDimension: Record<ChannelBreakdownDimension, ChannelBreakdownRow[]>;
+  /** Area code (uppercase) → the rep seat that owns it. Covers every area on the crosswalk, not
+   *  only the ones that sold this month: an area can RECEIVE a share of its city's store pool. */
+  areaRep: ReadonlyMap<string, ChannelBreakdownAreaRep>;
+  /** Store money per brick and area, for the brick side of the split. */
+  brickArea: readonly ChannelBreakdownBrickArea[];
+  /**
+   * The month re-aggregated from the source tables a second, independent time inside the RPC. The
+   * sheet checks its four grids against this rather than against each other — four grids built from
+   * one query agree with each other whether or not that query is right.
+   *
+   * NULL, never 0, when the database has not been migrated and no such row came back. A zero would
+   * make every grid look short by the whole month; the sheet says NOT CHECKED instead.
+   */
+  population: number | null;
+  /** Set by applyStoreSplitToChannelBreakdown so the sheet can state what it moved. */
+  storeSplit?: { applied: boolean; movedValue: number; movedFromBricks: number };
+  /**
+   * Set by applyJulyDirectAreasToBreakdown when July 2026's hand-mapped direct orders were moved
+   * onto the areas and reps the Closing Matrix puts them on. Absent in every other month, which is
+   * correct: direct orders carry no area and belong in their own row.
+   */
+  julyDirect?: { applied: boolean; value: number };
 };
 
 export const BREAKDOWN_DIMENSIONS: ReadonlyArray<ChannelBreakdownDimension> = ["product", "rep", "area", "brick"];
@@ -368,6 +528,10 @@ export function bucketLabel(dimension: ChannelBreakdownDimension, key: string, r
   if (key === "__NO_AREA__") return "Distributor sales with no area on the row";
   if (key === "__NO_PRODUCT__") return "Sales with no product code";
   if (key === "__NO_SEAT__") return "Not on the seat model — no rep owns this area";
+  // The store city split's brick-side landing. A wholesaler supplies its whole city, so once its
+  // sell-in is shared across that city's areas it belongs to no single brick — including the one
+  // the shop itself stands on. Leaving it on that brick is what the Closing Matrix stopped doing.
+  if (key === "__STORE_SPLIT__") return "Store sales shared across the city — no single brick";
   if (key.startsWith(VACANT_PREFIX)) {
     const area = rpcLabel.trim();
     return area ? `Vacant seat — ${area}` : "Vacant seat";
@@ -409,9 +573,9 @@ export function resolveBreakdownLabel(
 /**
  * The dominant channel of a row and its share, for the Leader column the sibling grids use.
  *
- * The unidentified bucket COMPETES here rather than being skipped. If most of a row has no client
- * code, "Pharmacies 30%" is a claim the data does not support — naming the bucket as the leader is
- * the honest reading and points straight at the rows worth fixing.
+ * The unattributed buckets COMPETE here rather than being skipped. If most of a row has no customer
+ * on it, "Pharmacies 30%" is a claim the data does not support — naming the bucket as the leader is
+ * the honest reading, and it points straight at the rows worth fixing.
  */
 export function breakdownLeader(row: ChannelBreakdownRow): { label: string; share: number } | null {
   if (row.total <= 0) return null;
@@ -419,7 +583,9 @@ export function breakdownLeader(row: ChannelBreakdownRow): { label: string; shar
     { label: "Hospitals", value: row.hospital },
     { label: "Stores", value: row.store },
     { label: "Pharmacies", value: row.pharmacy },
-    { label: "Unidentified", value: row.unidentified },
+    { label: "No client code", value: row.unidentifiedNoCode },
+    { label: "No customer name", value: row.unidentifiedNoName },
+    { label: "Direct, unnamed", value: row.directUnnamed },
   ];
   const best = candidates.reduce((top, entry) => (entry.value > top.value ? entry : top), candidates[0]);
   if (best.value <= 0) return null;
@@ -433,10 +599,16 @@ type BreakdownRpcRow = {
   hospital: number;
   store: number;
   pharmacy: number;
-  /** Optional so the app keeps working against a database where the RPC has not been migrated
-   *  yet — it simply reads 0 and the grids behave exactly as they did before. */
-  unidentified?: number;
+  /** Optional so the app keeps working against a database where the migration has not run yet:
+   *  they read 0 and the grids behave exactly as they did before. */
+  unidentified_no_code?: number;
+  unidentified_no_name?: number;
+  direct_unnamed?: number;
   total: number;
+  /** Only on `area_rep` rows. */
+  rep_key?: string | null;
+  /** Only on `brick_area` rows. */
+  area_key?: string | null;
 };
 
 /** Shape the RPC's flat rows into one list per dimension. Pure, so a test needs no database. */
@@ -452,18 +624,46 @@ export function assembleChannelBreakdown(input: {
     product: [] as ChannelBreakdownRow[],
     rep: [] as ChannelBreakdownRow[],
   } satisfies Record<ChannelBreakdownDimension, ChannelBreakdownRow[]>;
+  const areaRep = new Map<string, ChannelBreakdownAreaRep>();
+  const brickArea: ChannelBreakdownBrickArea[] = [];
+  let population: number | null = null;
 
   for (const raw of input.rows) {
+    // The RPC emits three row sets that are not grids: the area→rep seat map, the store money per
+    // brick and area, and the month's independently re-aggregated total. They travel in the same
+    // array on purpose — an app running the previous code filters on the four grid dimensions and
+    // never sees them, which is what lets the migration be applied before the deploy.
+    if (raw.dimension === "area_rep") {
+      areaRep.set(String(raw.key ?? "").trim().toUpperCase(), {
+        key: String(raw.rep_key ?? "").trim() || "__NO_SEAT__",
+        label: String(raw.label ?? "").trim(),
+      });
+      continue;
+    }
+    if (raw.dimension === "brick_area") {
+      brickArea.push({
+        areaKey: String(raw.area_key ?? "").trim(),
+        brickKey: String(raw.key ?? "").trim(),
+        store: Number(raw.store ?? 0),
+      });
+      continue;
+    }
+    if (raw.dimension === "population") {
+      population = Number(raw.total ?? 0);
+      continue;
+    }
     const dimension = raw.dimension as ChannelBreakdownDimension;
     if (!BREAKDOWN_DIMENSIONS.includes(dimension)) continue;
     byDimension[dimension].push({
+      directUnnamed: Number(raw.direct_unnamed ?? 0),
       hospital: Number(raw.hospital ?? 0),
       key: String(raw.key ?? ""),
       label: String(raw.label ?? ""),
       pharmacy: Number(raw.pharmacy ?? 0),
       store: Number(raw.store ?? 0),
       total: Number(raw.total ?? 0),
-      unidentified: Number(raw.unidentified ?? 0),
+      unidentifiedNoCode: Number(raw.unidentified_no_code ?? 0),
+      unidentifiedNoName: Number(raw.unidentified_no_name ?? 0),
     });
   }
   // Biggest first inside each grid. The RPC already orders this way; re-sorting here means the
@@ -473,9 +673,12 @@ export function assembleChannelBreakdown(input: {
   }
 
   return {
+    areaRep,
+    brickArea,
     byDimension,
     line: input.line,
     period: input.period,
+    population,
     restrictedProductsIncluded: input.restrictedProductsIncluded,
   };
 }
@@ -484,16 +687,44 @@ export function assembleChannelBreakdown(input: {
 export function sumBreakdownRows(rows: readonly ChannelBreakdownRow[]): ChannelBreakdownRow {
   return rows.reduce<ChannelBreakdownRow>(
     (total, row) => ({
+      directUnnamed: total.directUnnamed + row.directUnnamed,
       hospital: total.hospital + row.hospital,
       key: "TOTAL",
       label: "TOTAL",
       pharmacy: total.pharmacy + row.pharmacy,
       store: total.store + row.store,
       total: total.total + row.total,
-      unidentified: total.unidentified + row.unidentified,
+      unidentifiedNoCode: total.unidentifiedNoCode + row.unidentifiedNoCode,
+      unidentifiedNoName: total.unidentifiedNoName + row.unidentifiedNoName,
     }),
-    { hospital: 0, key: "TOTAL", label: "TOTAL", pharmacy: 0, store: 0, total: 0, unidentified: 0 },
+    emptyBreakdownRow("TOTAL", "TOTAL"),
   );
+}
+
+/**
+ * Does this grid hold the whole month? One number per grid, checked against the RPC's independent
+ * re-aggregation rather than against the other three grids — four grids built from one query agree
+ * with each other whether or not that query is right, which is exactly how the missing 4.36M went
+ * unnoticed.
+ */
+export function breakdownSelfCheck(breakdown: ChannelBreakdown): Array<{
+  dimension: ChannelBreakdownDimension;
+  gridValue: number;
+  population: number;
+  difference: number;
+  ok: boolean;
+  /** False when the RPC supplied no independent total, so nothing could be checked. */
+  available: boolean;
+}> {
+  const available = breakdown.population != null;
+  return BREAKDOWN_DIMENSIONS.map((dimension) => {
+    const gridValue = sumBreakdownRows(breakdown.byDimension[dimension]).total;
+    // With nothing to check against, the grid is compared to itself: difference zero, but the
+    // `available` flag is what the sheet prints, so it reads NOT CHECKED rather than OK.
+    const population = breakdown.population ?? gridValue;
+    const difference = gridValue - population;
+    return { available, difference, dimension, gridValue, ok: tiesAtDisplayPrecision(difference), population };
+  });
 }
 
 /**
@@ -516,6 +747,10 @@ export async function loadMonthlyClosingChannelBreakdown(
     p_exclude_codes: includeRestricted ? [] : [...RESTRICTED_PRODUCT_CODES],
     p_hospital_stems: HOSPITAL_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
     p_line: line,
+    // The owner's per-customer rulings, sent from the same list the TypeScript classifier and the
+    // store city split already read. Without this the workbook would call an overridden pharmacy a
+    // store while the Customers tab called it a pharmacy — one customer, two answers, two screens.
+    p_pharmacy_override_codes: [...PHARMACY_OVERRIDE_CLIENT_CODES],
     p_period: period,
     p_store_stems: STORE_NAME_KEYWORDS.map((keyword) => normalizeCustomerName(keyword.stem)),
   });
