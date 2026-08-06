@@ -52,6 +52,18 @@ type Collector = {
    * manual HR entries.
    */
   reconcilesWholeCategory?: DeductionsCategory;
+  /**
+   * The narrower form of the same idea, for a category with MORE THAN ONE writer: this collector
+   * is the only writer of these `sourceSystems`, so it may retire its own stale rows without
+   * touching a sibling's.
+   *
+   * This is what makes a correction actually correct something. While these collectors were
+   * insert-only, a fixed re-collect could only ADD a row — the wrong one stayed live beside it,
+   * because `candidate_key` embeds a hash of the day set, so a recalculation looks like a
+   * brand-new finding. Measured on July 2026 production: 7 employee-days charged twice
+   * (3,419.35 EGP), and 14,629.01 EGP of false CRM deductions that no re-run could retract.
+   */
+  reconcilesSourceScope?: { category: DeductionsCategory; sourceSystems: readonly string[] };
 };
 
 /**
@@ -59,8 +71,19 @@ type Collector = {
  * admin UI can drive them one request at a time and show per-connector progress.
  */
 export const DEDUCTION_COLLECTORS: readonly Collector[] = [
-  { key: "fingerprint", label: "Fingerprint attendance report", run: collectFingerprintCandidates },
-  { key: "crm", label: "CRM no-activity", run: collectCrmCandidates },
+  {
+    key: "fingerprint",
+    label: "Fingerprint attendance report",
+    reconcilesSourceScope: { category: "fingerprint", sourceSystems: ["fingerprint_report"] },
+    run: collectFingerprintCandidates,
+  },
+  {
+    key: "crm",
+    label: "CRM no-activity",
+    // `crm` is shared with dsm_no_record, so scope the retraction to this writer's own source.
+    reconcilesSourceScope: { category: "crm", sourceSystems: ["crm_visits_mirror"] },
+    run: collectCrmCandidates,
+  },
   // no_records_activity is NOT here. Its connector has no population left: the field
   // workforce belongs to `crm`, and Head Office has no CRM obligation, which between
   // them is everybody. Leaving it registered made the collection UI offer a step that
@@ -88,12 +111,23 @@ export const DEDUCTION_COLLECTORS: readonly Collector[] = [
   // After the four that own their own populations, before holiday_bridge. Like
   // holiday_bridge it dedups against the live ledger, so it must not run before
   // the categories whose days it needs to avoid.
-  { key: "dsm_no_record", label: "District manager CRM no-record days", run: collectDsmNoRecordCandidates },
+  {
+    key: "dsm_no_record",
+    label: "District manager CRM no-record days",
+    reconcilesSourceScope: { category: "crm", sourceSystems: ["dsm_no_record"] },
+    run: collectDsmNoRecordCandidates,
+  },
   // LAST on purpose. Its dedup reads the live ledger to skip any employee-day
   // another category already charges, so it must run after those categories
   // have been written — running it first would find an empty ledger and
   // manufacture the exact duplicates the rule forbids.
-  { key: "holiday_bridge", label: "Governmental-holiday bridging", run: collectHolidayBridgeCandidates },
+  {
+    key: "holiday_bridge",
+    label: "Governmental-holiday bridging",
+    // `other` is shared with manual_hr entries — never retire a hand-entered deduction.
+    reconcilesSourceScope: { category: "other", sourceSystems: ["holiday_bridge"] },
+    run: collectHolidayBridgeCandidates,
+  },
 ];
 
 const COLLECTORS_BY_KEY = new Map(DEDUCTION_COLLECTORS.map((collector) => [collector.key, collector]));
@@ -174,6 +208,18 @@ export async function collectOneConnectorForMonth(
         scope: {
           category: collector.reconcilesWholeCategory,
           monthKey: `${year}-${String(month).padStart(2, "0")}`,
+        },
+        sourceLabel: collector.label,
+      });
+    }
+    if (collector.reconcilesSourceScope) {
+      return await reconcileCandidateDrafts({
+        createdBy,
+        drafts,
+        scope: {
+          category: collector.reconcilesSourceScope.category,
+          monthKey: `${year}-${String(month).padStart(2, "0")}`,
+          sourceSystems: collector.reconcilesSourceScope.sourceSystems,
         },
         sourceLabel: collector.label,
       });
