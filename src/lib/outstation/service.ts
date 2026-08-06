@@ -2639,6 +2639,7 @@ export type ManagerExpenseCalculationPreview = {
   meetingAmount: number;
   otherAmount: number;
   overnightDays: number;
+  ticketAmount: number;
   travelCost: number;
   sameDayTrip: boolean;
 };
@@ -2681,6 +2682,8 @@ export async function previewManagerExpenseCalculation(
     fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
   }
   const travelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+  const ticketAmount =
+    input.transportationType === "car" ? 0 : roundMoney(Math.max(0, travelCost - fuelAmount));
   const meetingAmount = positiveMoney(input.meetingAmount);
   const otherAmount = positiveMoney(input.otherAmount);
 
@@ -2716,6 +2719,7 @@ export async function previewManagerExpenseCalculation(
     meetingAmount,
     otherAmount,
     overnightDays: allowance.overnightDays,
+    ticketAmount,
     travelCost,
     sameDayTrip: allowance.sameDayTrip,
   };
@@ -2750,6 +2754,11 @@ export async function createManagerExpenseAsAdmin(
     fuelAmount = roundMoney(input.distanceKm * 2 * policy.fuelRatePerKm);
   }
   const reportTravelCost = optionalPositiveMoney(input.travelCostAmount) ?? fuelAmount;
+  // Keep fuelAmount + ticketAmount === reportTravelCost: the payroll mapper rebuilds
+  // travel cost from those two columns, so a ticket trip that leaves ticket_amount at 0
+  // reaches payroll with the ticket price missing.
+  const ticketAmount =
+    input.transportationType === "car" ? 0 : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
   const reportMeetingAmount = positiveMoney(input.meetingAmount);
   const reportOtherAmount = positiveMoney(input.otherAmount);
 
@@ -2844,7 +2853,7 @@ export async function createManagerExpenseAsAdmin(
       ...workloadPayload,
       meeting_amount: input.meetingAmount ?? 0,
       other_amount: input.otherAmount ?? 0,
-      ticket_amount: 0,
+      ticket_amount: ticketAmount,
       ticket_attachment_metadata: [],
       ticket_attachment_paths: [],
       to_area: input.destination.area ?? null,
@@ -2946,6 +2955,8 @@ export async function updateManagerExpenseAsAdmin(
     "travelCostAmount" in input
       ? optionalPositiveMoney(input.travelCostAmount) ?? computedTravelCost
       : existingTravelCost;
+  const ticketAmount =
+    transportationType === "car" ? 0 : roundMoney(Math.max(0, reportTravelCost - fuelAmount));
   const reportMeetingAmount =
     "meetingAmount" in input
       ? positiveMoney(input.meetingAmount)
@@ -3028,6 +3039,7 @@ export async function updateManagerExpenseAsAdmin(
     report_trip_type: reportTripType,
     route_polyline: routePolyline,
     same_day_trip: allowance.sameDayTrip,
+    ticket_amount: ticketAmount,
     transportation_type: transportationType,
     trip_end_date: tripEndDate,
     trip_start_date: tripStartDate,

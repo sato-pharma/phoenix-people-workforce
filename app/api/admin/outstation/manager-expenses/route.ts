@@ -16,6 +16,12 @@ function managerExpenseCreateStatus(error: unknown) {
   return 500;
 }
 
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: Request) {
   try {
     const csrfError = assertSameOriginMutation(request);
@@ -110,6 +116,7 @@ export async function POST(request: Request) {
       routePolyline:
         typeof body.routePolyline === "string" ? body.routePolyline : null,
       transportationType,
+      travelCostAmount: optionalNumber(body.travelCostAmount),
       tripEndDate,
       tripStartDate,
     };
