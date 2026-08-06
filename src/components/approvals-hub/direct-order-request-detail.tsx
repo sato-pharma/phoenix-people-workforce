@@ -160,8 +160,14 @@ export function DirectOrderRequestDetail({
           </div>
         ) : null}
 
+        {/* ONE column on a phone, not two. Measured on production at 375px: two columns give each
+            value 150px, and eight of them need up to 287px — a request id, a requester's
+            "name · code · role", a price with its "(on file, not used — discount deal)" note. Every
+            value is whitespace-nowrap by the owner's rule, so they did not wrap, they RAN INTO the
+            next column and printed on top of it. One column gives 317px and the widest needs 287,
+            so all eight fit. Two columns return at sm, four at md, exactly as before. */}
         <div className="overflow-x-auto">
-          <dl className="grid grid-cols-2 gap-4 px-4 py-4 md:grid-cols-4">
+          <dl className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2 md:grid-cols-4">
             {gridFields.map((field) => (
               <Field key={field.label} label={field.label} value={field.value} />
             ))}

@@ -126,4 +126,35 @@ export function runDirectOrdersApprovalWindowMobileTests() {
       "the retail empty state must still come from the domain's standing sentence, not from a count in the view",
     );
   }
+
+  // ── The field grid starts at ONE column ────────────────────────────────────
+  // This is the half the first pass missed. Converting the three tables to cards left the field
+  // grid at `grid-cols-2`, which was assumed fine because it already carried a breakpoint. It was
+  // not. Measured on production at 375px: two columns give each value 150px while eight of them
+  // need up to 287px — a request id, a requester's "name · code · role", a price carrying its
+  // "(on file, not used — discount deal)" note. Every value is `whitespace-nowrap` by the owner's
+  // standing rule, so they did not wrap; they overran into the next column and printed on top of
+  // it. Two columns of colliding text is worse than either wrapping or a table.
+  //
+  // Only a browser could have caught this. The tables were provably desktop-only and the page did
+  // not scroll sideways, so every source-level check passed while the screen was unreadable.
+  {
+    const grid = /<dl className="grid ([^"]*)"/.exec(source);
+    assert.ok(grid, "the detail field grid must still be a <dl> with explicit column classes");
+    const cls = grid[1];
+    assert.ok(
+      /\bgrid-cols-1\b/.test(cls),
+      `the field grid must start at ONE column: at 375px two columns give each value 150px while ` +
+        `values run to 287px, and whitespace-nowrap makes them overlap the next column rather than ` +
+        `wrap. Found: "${cls}"`,
+    );
+    assert.ok(
+      !/^grid-cols-2\b/.test(cls) && !/\s(?<!sm:|md:|lg:)grid-cols-2\b/.test(` ${cls}`),
+      `two columns must be behind a breakpoint, never the base: "${cls}"`,
+    );
+    assert.ok(
+      /\bmd:grid-cols-4\b/.test(cls),
+      "the desktop grid must still be four columns — nothing about the mobile fix may narrow the desktop view",
+    );
+  }
 }
