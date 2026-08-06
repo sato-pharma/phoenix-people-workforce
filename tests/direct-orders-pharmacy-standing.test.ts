@@ -88,6 +88,57 @@ export function runDirectOrdersPharmacyStandingTests() {
     "a trusted pharmacy is not on probation and must not be described as though it were",
   );
 
+  // ── The NO-CODE branch must name the trust state too ──────────────────────
+  // Found by opening a real order in production: `retailUnmatchable` is checked BEFORE the
+  // empty-history branch, so a provisional pharmacy with no distributor code was told only that
+  // paperwork was missing. Five of the ten live provisional pharmacies had no code, and every one
+  // of them read as routine. Both branches were individually correct, which is why no test caught
+  // it — the bug was in which one wins.
+  const provisionalNoCode = describeDirectOrderPharmacyStanding({
+    trustState: "provisional",
+    probationStartedAt: "2026-08-01T00:00:00.000Z",
+    now: new Date("2026-08-06T00:00:00.000Z"),
+  });
+  assert.match(
+    provisionalNoCode.noCodeNote,
+    /probation day 6 of 90/,
+    "a provisional pharmacy with no distributor code must STILL state its probation standing — a " +
+      "missing code is paperwork, an unproved pharmacy is the risk",
+  );
+  assert.match(
+    provisionalNoCode.noCodeNote,
+    /no distributor customer code on file/,
+    "it must still say the code is missing — the trust state adds to that fact, it does not replace it",
+  );
+  assert.match(
+    provisionalNoCode.noCodeNote,
+    /Register it against the distributor/,
+    "the remedy must survive: the approver still needs to know what to do about the missing code",
+  );
+
+  const trustedNoCode = describeDirectOrderPharmacyStanding({ trustState: "trusted", probationStartedAt: null });
+  assert.match(
+    trustedNoCode.noCodeNote,
+    /^This pharmacy has no distributor customer code on file/,
+    "an established pharmacy's no-code message must be unchanged — this fix must not make every " +
+      "ordinary pharmacy look suspicious",
+  );
+  assert.doesNotMatch(
+    trustedNoCode.noCodeNote,
+    /probation|provisional|phantom/,
+    "a trusted pharmacy must never be described in probation language",
+  );
+
+  const phantomNoCode = describeDirectOrderPharmacyStanding({
+    trustState: "phantom_suspected",
+    probationStartedAt: null,
+  });
+  assert.match(
+    phantomNoCode.noCodeNote,
+    /suspected phantom/,
+    "a reported phantom with no code must still lead with the report, not with the missing code",
+  );
+
   // ── Every branch is a sentence, never a bare count ─────────────────────────
   for (const state of ["trusted", "provisional", "phantom_suspected"]) {
     const standing = describeDirectOrderPharmacyStanding({ trustState: state, probationStartedAt: null });
@@ -137,6 +188,16 @@ export function runDirectOrdersPharmacyStandingTests() {
     detailSource,
     /No distributor sales found for this pharmacy&apos;s customer codes\./,
     "the old bare empty-state string must be gone — leaving it is how the window drifts from the rule",
+  );
+  assert.match(
+    detailSource,
+    /pharmacyStanding\?\.noCodeNote/,
+    "the no-code branch must render the domain's sentence too, or it silently outranks the trust state",
+  );
+  assert.doesNotMatch(
+    detailSource,
+    /This pharmacy has no distributor customer code on file, so its retail sales cannot be\s*\n?\s*matched\. Register it/,
+    "the hand-rolled no-code paragraph must be gone — it is the branch that hid the probation state",
   );
 
   // ── The footprint query must name the column SoS actually has ──────────────

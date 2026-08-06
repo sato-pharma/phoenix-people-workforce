@@ -86,37 +86,45 @@ export function describeDirectOrderPharmacyStanding(input: {
     windowDays,
   });
 
+  // The remedy for a missing code, appended to every no-code sentence. Kept identical across trust
+  // states so the instruction never changes — only what precedes it does.
+  const registerTheCode =
+    "Register it against the distributor that actually supplies it to see them here.";
+
   if (trustState === "phantom_suspected") {
+    const reported =
+      `this pharmacy finished its ${windowDays}-day probation with no distributor sales and no ` +
+      "payment, and has been reported as a suspected phantom. Treat this order as unverified " +
+      "until someone confirms the pharmacy exists";
     return {
       trustState,
       probationDay,
       windowDays,
-      noHistoryNote:
-        `No history — this pharmacy finished its ${windowDays}-day probation with no distributor ` +
-        "sales and no payment, and has been reported as a suspected phantom. Treat this order as " +
-        "unverified until someone confirms the pharmacy exists.",
+      noHistoryNote: `No history — ${reported}.`,
+      noCodeNote: `No history — ${reported}. It also has no distributor customer code on file. ${registerTheCode}`,
     };
   }
 
   if (trustState === "provisional") {
-    if (probationDay === null) {
-      return {
-        trustState,
-        probationDay,
-        windowDays,
-        noHistoryNote:
-          "No history — new pharmacy, still provisional. Its probation clock was never started, so " +
-          "nothing will promote or flag it on its own; it needs a distributor sale or a paid " +
-          "collection before its sales can appear here.",
-      };
-    }
+    const unproved =
+      probationDay === null
+        ? "new pharmacy, still provisional. Its probation clock was never started, so nothing will " +
+          "promote or flag it on its own"
+        : `new pharmacy, probation day ${probationDay} of ${windowDays}. It is approved but not yet ` +
+          "proved: no distributor has invoiced it and no collection has been paid";
     return {
       trustState,
       probationDay,
       windowDays,
       noHistoryNote:
-        `No history — new pharmacy, probation day ${probationDay} of ${windowDays}. It is approved ` +
-        "but not yet proved: no distributor has invoiced it and no collection has been paid.",
+        probationDay === null
+          ? `No history — ${unproved}; it needs a distributor sale or a paid collection before its sales can appear here.`
+          : `No history — ${unproved}.`,
+      // The trust state leads. A missing code is paperwork; an unproved pharmacy is the risk, and
+      // showing only the former is what let five of the ten provisional pharmacies look routine.
+      noCodeNote:
+        `No history — ${unproved}. It has no distributor customer code on file either, so even its ` +
+        `retail sales cannot be matched. ${registerTheCode}`,
     };
   }
 
@@ -127,5 +135,8 @@ export function describeDirectOrderPharmacyStanding(input: {
     noHistoryNote:
       "No distributor sales found for this pharmacy's customer codes. The pharmacy is established, " +
       "so this means it has not bought in the months on record — not that it is unknown.",
+    noCodeNote:
+      "This pharmacy has no distributor customer code on file, so its retail sales cannot be " +
+      `matched. ${registerTheCode}`,
   };
 }
