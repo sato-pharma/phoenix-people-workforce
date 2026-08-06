@@ -61,7 +61,10 @@ export function runDirectOrdersSheetEditableColumnsTests() {
   // buildOrdersFrame calls resetSheet. Capturing after it would read a sheet that has just been
   // wiped, and the notes typed since the last refresh would be gone with no error anywhere.
   const captureAt = source.indexOf("var captured = captureEditableByRequestId(sheet, header, cols);");
-  const rebuildAt = source.indexOf("if (rebuild) buildOrdersFrame(sheet, header, cols);");
+  // Anchored on the CALL, not on the whole `if (rebuild) …;` line — that line became a block when
+  // the style stamp was added, and an assertion pinned to its exact text failed against code that
+  // was perfectly correct.
+  const rebuildAt = source.indexOf("buildOrdersFrame(sheet, header, cols);");
   const writeAt = source.indexOf("sheet.getRange(ROW_DATA, 1, values.length, cols).setValues(values)");
   assert.notEqual(captureAt, -1, "the capture must exist");
   assert.notEqual(rebuildAt, -1, "the frame rebuild must exist");
@@ -154,6 +157,58 @@ export function runDirectOrdersSheetEditableColumnsTests() {
     matcher.slice(0, 900),
     /sheet\.getRange\(at, 1, 1, header\.length\)/,
     "the header comparison must be bounded by Phoenix's own column count",
+  );
+
+  // ── A restyle must actually reach a sheet that already exists ─────────────
+  // Styling lives in buildOrdersFrame, which only runs when the column set changes. A pure restyle
+  // changes no header, so without a stamp an existing sheet keeps the old look forever and pasting
+  // a new script appears to do nothing. That is exactly how the editable block shipped invisible.
+  assert.match(
+    source,
+    /var STYLE_VERSION = "/,
+    "a style stamp must exist, or a restyle can never reach a sheet that has already been built",
+  );
+  assert.match(
+    source,
+    /var restyled = PropertiesService\.getDocumentProperties\(\)\.getProperty\(STYLE_STAMP_KEY\) !== STYLE_VERSION;/,
+    "the style stamp must be read",
+  );
+  // Asserted on the DECISION, not on the declaration. Checking only that `restyled` exists left
+  // the assertion green when it was deleted from the rebuild expression — the stamp was computed
+  // and then ignored, which is the same as not having one.
+  assert.match(
+    source,
+    /var rebuild = restyled \|\| !headerMatches\(sheet, header, ROW_HEADER\);/,
+    "the rebuild decision must actually USE the style stamp — a stamp that is read and then " +
+      "ignored repaints nothing, and the restyle never reaches a sheet that already exists",
+  );
+  assert.match(
+    source,
+    /setProperty\(STYLE_STAMP_KEY, STYLE_VERSION\)/,
+    "the stamp must be written after the rebuild, or every refresh repaints the whole layout",
+  );
+
+  // ── One palette, no near-misses ───────────────────────────────────────────
+  // It shipped with three raw hex values found nowhere else in the workbook — a muddy orange
+  // beside ORANGE, an off-white beside TILE_BG. Near-misses of a house colour read as bolted on.
+  const frame = source.slice(source.indexOf("function buildEditableFrame"));
+  assert.doesNotMatch(
+    frame.slice(0, 2200),
+    /#[0-9a-fA-F]{6}/,
+    "the team's block must use the workbook's own constants, never a raw hex value — the owner's " +
+      "standing rule is to match the module's design identity, never invent a one-off look",
+  );
+
+  // ── Every cell centred (owner's rule, 2026-08-06) ─────────────────────────
+  assert.ok(
+    (source.match(/setHorizontalAlignment\("center"\)/g) ?? []).length >= 5,
+    "the total bar, the header, the body, the numeric columns and the team's block must all be " +
+      "centred — a half-centred sheet looks like a mistake rather than a choice",
+  );
+  assert.doesNotMatch(
+    source.slice(source.indexOf("function buildOrdersFrame")).slice(0, 4000),
+    /setHorizontalAlignment\("right"\)/,
+    "no column on the orders tab may stay right-aligned once the sheet is centred",
   );
 
   // ── Findable, because nothing is locked ───────────────────────────────────
