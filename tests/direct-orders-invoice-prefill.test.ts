@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { codeCandidates } from "../src/lib/direct-orders/invoice-extraction.ts";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Invoice-photo prefill (spec B5).
 //
@@ -35,10 +37,27 @@ export function runDirectOrderInvoicePrefillTests() {
   const route = read(ROUTE);
 
   // ── Rule 1: an unresolved code prefills NOTHING ──────────────────────────────────────────
+  // The RULE is unchanged and load-bearing; only its implementation moved. It used to pin one
+  // literal `hits.find(...)` expression, which broke the moment padding and printed pairs had to be
+  // tolerated — the old exact-only compare resolved 0 of 6 real invoices. What must never return is
+  // a FIRST-HIT or nearest-name match, so that is what is asserted now: the code is compared, the
+  // comparison is on the code key, and a candidate is taken only when it is unique.
   assert.match(
     extractor,
-    /const exact = hits\.find\(\(hit\) => codeKey\(hit\.customerCode\) === codeKey\(read\.customerCode\)\)/,
-    "THE CUSTOMER CODE MUST BE CONFIRMED BY AN EXACT DIRECTORY MATCH: a fuzzy or first-hit match would prefill the nearest-looking pharmacy, which is worse than no prefill because it looks deliberate",
+    /matches\.length === 1/,
+    "THE CUSTOMER CODE MUST BE CONFIRMED BY A UNIQUE DIRECTORY MATCH: a fuzzy or first-hit match would prefill the nearest-looking pharmacy, which is worse than no prefill because it looks deliberate",
+  );
+  // `matches[0]` is fine and is what the code does — it is the sole element of an array already
+  // proven to have length 1. What must never appear is `hits[0]`: taking the first row the
+  // DIRECTORY SEARCH returned, with no uniqueness check at all.
+  assert.ok(
+    !/\bhits\[0\]/.test(extractor),
+    "nothing may take the first search hit: with 89 codes colliding once leading zeros are stripped, first-hit resolution files the order against the wrong real pharmacy",
+  );
+  assert.match(
+    extractor,
+    /codeKey\(hit\.customerCode\)/,
+    "the comparison must still be on the normalized CODE, never on the name — a name compare is how the nearest-looking pharmacy gets prefilled",
   );
   assert.match(
     extractor,
@@ -338,18 +357,30 @@ export function runDirectOrderInvoicePrefillTests() {
 
     assert.match(
       ruleText,
-      /كود العميل/,
-      "THE CUSTOMER CODE MUST BE ANCHORED ON ITS PRINTED LABEL: 'the distributor's customer/account code' does not distinguish it from the barcode, the location code or the sales order number sharing the same page",
+      /كود الحساب/,
+      "THE RULE MUST NAME THE LABEL THAT IS ACTUALLY PRINTED: four real PharmaOverseas invoices read كود الحساب, not كود العميل — an earlier version named the wrong one and told the reader to return null without it, which is worse than the vague instruction it replaced",
     );
-    for (const decoy of ["الكود المكاني", "رقم أمر البيع", "اسم الحساب"]) {
-      assert.ok(
-        ruleText.includes(decoy),
-        `the decoy ${decoy} must be named and refused IN THE INSTRUCTION — naming the right label identifies the number, naming the wrong ones is what makes them rejectable`,
-      );
-    }
     assert.match(
       ruleText,
-      /do NOT substitute another number from the page/,
+      /ACCOUNT NUMBER/,
+      "the rule must describe the FIELD, not just a label: the Ibnsina invoice carries neither Arabic label, so a label-only definition cannot generalise past one distributor",
+    );
+    assert.match(
+      ruleText,
+      /report the WHOLE printed value/,
+      "A PAIR MUST BE REPORTED WHOLE: the field is often '812702 / 1573334', and a reader that picks a half looks certain while being wrong half the time — choosing belongs in codeCandidates, where a unique-match rule can arbitrate",
+    );
+    for (const decoy of ["الكود المكاني", "رقم أمر البيع"]) {
+      assert.ok(
+        ruleText.includes(decoy),
+        `the decoy ${decoy} must be named and refused IN THE INSTRUCTION — naming the field identifies the number, naming the wrong ones is what makes them rejectable`,
+      );
+    }
+    // Fragment chosen to sit inside ONE string literal. The full sentence spans a `" +` line break,
+    // so matching it against source text fails on formatting rather than on meaning.
+    assert.match(
+      ruleText,
+      /do NOT substitute another number/,
       "a missing code must return null rather than the nearest long number: a wrong code is worse than no code, because it will be treated as a real pharmacy",
     );
     // Both passes must carry the same rule, or the rescue could accept a number the first pass
@@ -363,6 +394,92 @@ export function runDirectOrderInvoicePrefillTests() {
         `${constant} must include CUSTOMER_CODE_RULE: if the rescue pass does not carry the same rule, it can accept on the worst photographs a number the first pass was told to refuse`,
       );
     }
+  }
+
+  // ── The printed code must reach its pharmacy: padding, and pairs ──────────────────────────
+  // Measured in production on 2026-08-06: SIX invoice reads, six codes read off the paper,
+  // ZERO resolved. The reader was never the problem — matching was, for two reasons, and every
+  // case below is a real invoice the owner photographed.
+  //
+  //   PADDING  `source_of_sales_customer_map` stores PharmaOverseas (PS) codes zero-padded to ten
+  //            digits — 28,576 of 28,577 rows. The paper prints 1573270; the map holds 0001573270.
+  //   PAIRS    The header prints "812702 / 1573334". Across five invoices the LEFT half matched
+  //            nothing and the RIGHT half matched exactly one pharmacy, every time.
+  {
+    // Every one of these is a real header, with the code that is actually in master data.
+    const invoices: Array<{ printed: string; inMasterData: string; pharmacy: string }> = [
+      { printed: "812702 / 1573334", inMasterData: "0001573334", pharmacy: "لمياء * عمرو هريدي" },
+      { printed: "850254 / 1558852", inMasterData: "0001558852", pharmacy: "ابتسام بلال كفر البطيخ" },
+      { printed: "802714 / 1504289", inMasterData: "0001504289", pharmacy: "الشريف - مغاغه" },
+      { printed: "836397 / 1556836", inMasterData: "0001556836", pharmacy: "السيد ابوالفتوح ج كفر شكر" },
+      { printed: "1573270", inMasterData: "0001573270", pharmacy: "محمود احمد صالح الجديدة" },
+    ];
+    for (const invoice of invoices) {
+      const candidates = codeCandidates(invoice.printed);
+      const unpadded = invoice.inMasterData.replace(/^0+(?=\d)/, "");
+      assert.ok(
+        candidates.includes(unpadded),
+        `"${invoice.printed}" must produce the candidate ${unpadded} so it can reach ${invoice.pharmacy} ` +
+          `(stored as ${invoice.inMasterData}). Got: ${candidates.join(", ")}`,
+      );
+    }
+  }
+
+  // The printed form is tried FIRST, so a genuine exact hit can never be displaced by a looser
+  // reading of the same string.
+  {
+    assert.equal(
+      codeCandidates("0001573270")[0],
+      "0001573270",
+      "the code exactly as printed must be the first candidate — a looser form must never outrank an exact one",
+    );
+    // Padding travels BOTH ways. The five real invoices all print the short form against a padded
+    // master record, and the split loop happens to cover those — so this direction (a padded code
+    // printed on the paper, a short one in master data) was left unasserted, and the line that
+    // implements it could be deleted with the suite still green. Caught by prove-it-fails.
+    assert.ok(
+      codeCandidates("0001573270").includes("1573270"),
+      "a code printed WITH padding must also be tried without it — padding differs between the paper and master data in both directions, and only one of them is covered by splitting a pair",
+    );
+    assert.deepEqual(codeCandidates(""), [], "an empty code must produce no candidates rather than one empty query");
+    // The invariant is that no candidate is EMPTY — an empty query is a substring of every code in
+    // the directory. ("000" legitimately yields "0" as well; the search refuses anything under two
+    // characters, and the uniqueness rule refuses the rest.)
+    for (const probe of ["000", "0", "812702 / 1573334", "  0001573270  ", "//", "0-0"]) {
+      const candidates = codeCandidates(probe);
+      assert.ok(
+        candidates.every((candidate) => candidate.length > 0),
+        `no candidate may be the empty string — it is a substring of every code in the directory. "${probe}" gave: ${JSON.stringify(candidates)}`,
+      );
+      assert.equal(
+        new Set(candidates).size,
+        candidates.length,
+        `candidates must be unique — a repeated form is a wasted directory query. "${probe}" gave: ${JSON.stringify(candidates)}`,
+      );
+    }
+  }
+
+  // ── An ambiguous code REFUSES rather than guessing ────────────────────────────────────────
+  // 89 codes in the live customer map become ambiguous once leading zeros are stripped. Taking the
+  // first close-looking row would file an order against the wrong REAL pharmacy — the exact failure
+  // this module exists to stop, arriving with better handwriting.
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /if \(matches\.length > 1\) \{/,
+      "AN AMBIGUOUS CODE MUST REFUSE: 89 codes collide once leading zeros are stripped, and picking one would file the order against the wrong real pharmacy",
+    );
+    assert.match(
+      extractor,
+      /matches more than one pharmacy in the master/,
+      "the refusal must say WHY in words the submitter can act on, not fall back to the generic not-found sentence",
+    );
+    assert.match(
+      extractor,
+      /for \(const candidate of codeCandidates\(read\.customerCode\)\) \{[\s\S]{0,300}?await searchDirectOrderPharmacyDirectory/,
+      "EACH CANDIDATE MUST BE SEARCHED, NOT JUST FILTERED: the directory search is a substring match, so a printed pair queries for the whole string, matches nothing, and leaves nothing to filter — the pair only resolves if its halves are searched in their own right",
+    );
   }
 
   // ── The retry is bounded, conditional, and cannot turn a read into an error ────────────────
