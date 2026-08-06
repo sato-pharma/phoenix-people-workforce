@@ -137,6 +137,13 @@ var LAST_ROW = ROW_DATA + MAX_DATA_ROWS - 1;
 // for good the moment it dropped off the visible list.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Bumped whenever the LOOK changes. Styling lives in buildOrdersFrame, which only runs when the
+// column set changes — so a pure restyle alters no header, no rebuild fires, and a sheet that has
+// already been built keeps the old look forever. Pasting a new script would appear to do nothing,
+// which is exactly how the editable block shipped invisible. The stamp is the trigger.
+var STYLE_VERSION = "2026-08-06-centred";
+var STYLE_STAMP_KEY = "phoenixOrdersStyleVersion";
+
 var NOTES_TAB = "_Phoenix notes (do not delete)";
 var NOTES_KEY_HEADER = "Request ID";
 
@@ -546,8 +553,13 @@ function buildOrdersSheet(ss, grid, stamp, created) {
     if (captured.hasOwnProperty(capturedId)) store[capturedId] = captured[capturedId];
   }
 
-  var rebuild = !headerMatches(sheet, header, ROW_HEADER);
-  if (rebuild) buildOrdersFrame(sheet, header, cols);
+  // A restyle changes no header, so headerMatches alone would never repaint an existing sheet.
+  var restyled = PropertiesService.getDocumentProperties().getProperty(STYLE_STAMP_KEY) !== STYLE_VERSION;
+  var rebuild = restyled || !headerMatches(sheet, header, ROW_HEADER);
+  if (rebuild) {
+    buildOrdersFrame(sheet, header, cols);
+    PropertiesService.getDocumentProperties().setProperty(STYLE_STAMP_KEY, STYLE_VERSION);
+  }
   // Painted independently of Phoenix's header, because on a sheet whose own columns have not
   // changed — which is every existing sheet — `rebuild` is false and buildOrdersFrame never runs.
   // The block would sit there unstyled and unlabelled forever, which is exactly what happened the
@@ -715,20 +727,29 @@ function buildEditableFrame(sheet, cols) {
   ensureColumns(sheet, start + width - 1);
   ensureRows(sheet, LAST_ROW);
 
+  // The house palette, not a near-miss of it. This shipped with three raw hex values that appear
+  // nowhere else in the workbook — a muddy orange beside ORANGE, an off-white beside TILE_BG — and
+  // that is precisely what reads as bolted on rather than built in.
   sheet.getRange(ROW_TOTAL, start, 1, width)
-    .setBackground("#f4b183").setFontColor("#000000").setFontFamily(FONT)
-    .setFontWeight("bold").setFontSize(9).setVerticalAlignment("middle");
+    .setBackground(AMBER).setFontColor(AMBER_TEXT).setFontFamily(FONT)
+    .setFontWeight("bold").setFontSize(9)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center")
+    .setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
   sheet.getRange(ROW_TOTAL, start).setValue("YOURS ▸ kept on refresh");
 
   sheet.getRange(ROW_HEADER, start, 1, width)
     .setValues([EDITABLE_COLUMNS.map(function (c) { return c.label; })])
-    .setBackground("#c55a11").setFontColor(WHITE).setFontWeight("bold")
-    .setFontFamily(FONT).setFontSize(9).setVerticalAlignment("middle").setWrap(true);
+    .setBackground(ORANGE).setFontColor(WHITE).setFontWeight("bold")
+    .setFontFamily(FONT).setFontSize(9.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center").setWrap(true)
+    .setBorder(true, true, true, true, true, true, WHITE, SpreadsheetApp.BorderStyle.SOLID);
 
   for (var i = 0; i < width; i++) {
     sheet.setColumnWidth(start + i, (EDITABLE_COLUMNS[i].width || 18) * 7);
     var body = sheet.getRange(ROW_DATA, start + i, MAX_DATA_ROWS, 1);
-    body.setBackground("#fff7f0").setFontFamily(FONT).setFontSize(9.5).setVerticalAlignment("top");
+    body.setBackground(TILE_BG).setFontFamily(FONT).setFontSize(10).setFontColor(SLATE)
+      .setVerticalAlignment("middle").setHorizontalAlignment("center")
+      .setBorder(true, true, true, true, true, true, GRID, SpreadsheetApp.BorderStyle.SOLID);
     if (EDITABLE_COLUMNS[i].choices) {
       body.setDataValidation(
         SpreadsheetApp.newDataValidation()
@@ -752,8 +773,10 @@ function buildOrdersFrame(sheet, header, cols) {
   // ── the sticky TOTAL bar, ABOVE the data so it never moves ──
   var totalRange = sheet.getRange(ROW_TOTAL, 1, 1, cols);
   totalRange.setBackground(TOTAL_BG).setFontColor(WHITE).setFontFamily(FONT)
-    .setFontWeight("bold").setFontSize(10.5).setVerticalAlignment("middle");
-  sheet.setRowHeight(ROW_TOTAL, 28);
+    .setFontWeight("bold").setFontSize(10.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center")
+    .setBorder(null, null, true, null, null, null, ORANGE, SpreadsheetApp.BorderStyle.SOLID_THICK);
+  sheet.setRowHeight(ROW_TOTAL, 30);
   sheet.getRange(ROW_TOTAL, 1).setValue("TOTAL ▸");
   for (var t = 0; t < cols; t++) {
     if (TOTALLED.indexOf(header[t]) === -1) continue;
@@ -764,7 +787,7 @@ function buildOrdersFrame(sheet, header, cols) {
     sheet.getRange(ROW_TOTAL, t + 1)
       .setFormula("=SUBTOTAL(109," + letter + ROW_DATA + ":" + letter + LAST_ROW + ")")
       .setNumberFormat(NUMERIC[header[t]] || VALUE_FMT)
-      .setHorizontalAlignment("right");
+      .setHorizontalAlignment("center");
   }
 
   buildEditableFrame(sheet, cols);
@@ -773,9 +796,10 @@ function buildOrdersFrame(sheet, header, cols) {
   sheet.getRange(ROW_HEADER, 1, 1, cols)
     .setValues([header])
     .setBackground(INK).setFontColor(WHITE).setFontWeight("bold")
-    .setFontFamily(FONT).setFontSize(10.5).setVerticalAlignment("middle").setWrap(true)
+    .setFontFamily(FONT).setFontSize(10.5)
+    .setVerticalAlignment("middle").setHorizontalAlignment("center").setWrap(true)
     .setBorder(true, true, true, true, true, true, ORANGE, SpreadsheetApp.BorderStyle.SOLID);
-  sheet.setRowHeight(ROW_HEADER, 36);
+  sheet.setRowHeight(ROW_HEADER, 38);
 
   // Band, total and header all stay on screen; the first column stays on screen sideways. The
   // frozen column is only possible because bandTitle PAINTS the band instead of merging it.
@@ -786,13 +810,17 @@ function buildOrdersFrame(sheet, header, cols) {
   var body = sheet.getRange(ROW_DATA, 1, MAX_DATA_ROWS, cols);
   body.setFontFamily(FONT).setFontSize(10).setFontColor(SLATE)
     .setVerticalAlignment("middle")
+    // Every cell centred (owner's rule, 2026-08-06). The one cost worth knowing: centred money no
+    // longer lines up digit-under-digit, so a column is scanned rather than compared at a glance.
+    // The number FORMATS below are what keep the figures readable instead.
+    .setHorizontalAlignment("center")
     .setWrap(false) // owner's rule: never wrap, never truncate with an ellipsis
     .setBorder(true, true, true, true, true, true, HAIRLINE, SpreadsheetApp.BorderStyle.SOLID);
 
   for (var n = 0; n < cols; n++) {
     var fmt = NUMERIC[header[n]];
     if (fmt) {
-      sheet.getRange(ROW_DATA, n + 1, MAX_DATA_ROWS, 1).setNumberFormat(fmt).setHorizontalAlignment("right");
+      sheet.getRange(ROW_DATA, n + 1, MAX_DATA_ROWS, 1).setNumberFormat(fmt).setHorizontalAlignment("center");
     }
   }
 
