@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listCandidatesForMonth } from "@/lib/deductions/service.ts";
 import { deductionsCategories, type DeductionsCategory } from "@/lib/deductions/types.ts";
 
@@ -12,6 +13,8 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "read");
+    // Every candidate for the month, for every employee — admin audience only. See the export route.
+    assertDeductionsReadActor(access);
 
     const url = new URL(request.url);
     const monthKey = url.searchParams.get("monthKey");

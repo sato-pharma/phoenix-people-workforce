@@ -53,7 +53,7 @@ export default async function DeductionsPortalPage(props: DeductionsPortalPagePr
   return (
     <EmployeePortalPageShell
       badge="Payroll Governance"
-      description="Approved and finalized salary deductions visible to you and, when applicable, your reporting line."
+      description="Approved and finalized salary deductions recorded against you."
       title="Deductions"
     >
       <DeductionsPortalWorkspace

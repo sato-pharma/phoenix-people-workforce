@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { getEmployeeMonthSummary } from "@/lib/deductions/service.ts";
 
 export const runtime = "nodejs";
@@ -11,6 +12,9 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "read");
+    // Reads ANY employee's summary by hr_id with no self/subtree check, so it must not be
+    // reachable by a role whose deduction visibility is meant to be their own. See the export route.
+    assertDeductionsReadActor(access);
 
     const url = new URL(request.url);
     const monthKey = url.searchParams.get("monthKey");

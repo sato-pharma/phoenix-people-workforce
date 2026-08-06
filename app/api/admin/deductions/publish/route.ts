@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
+import { assertDeductionsReadActor } from "@/lib/deductions/permissions.ts";
 import { listPublicationsForMonth, publishMonth } from "@/lib/deductions/publish.ts";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
@@ -36,6 +37,8 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "deductions", "read");
+    // A publication carries every published line's employee and amount. See the export route.
+    assertDeductionsReadActor(access);
 
     const url = new URL(request.url);
     const monthKey = url.searchParams.get("monthKey");
