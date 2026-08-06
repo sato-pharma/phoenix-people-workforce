@@ -635,6 +635,8 @@ import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
+import { runClosingStoreSplitHonoursManualSplitTests } from "./closing-store-split-honours-manual-split.test.ts";
+import { runClosingStoreSplitRiskFollowupsTests } from "./closing-store-split-risk-followups.test.ts";
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test.ts";
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
@@ -1382,6 +1384,16 @@ await runTest(
 await runTest(
   "store sales city split (a store's sales divide evenly across its city's AREAS; total preserved exactly; Head Office and pharmacies untouched)",
   runStoreSalesCitySplitTests,
+);
+
+await runTest(
+  "closing export honours a hand-split customer (441164 stays on D22/D26 at -400 units / -34,380; detection reads the FACT area, not the brick-resolved one)",
+  runClosingStoreSplitHonoursManualSplitTests,
+);
+
+await runTest(
+  "closing store split risk follow-ups (Details/Rankings/Gaps agree with the Matrix's area; a genuine two-depot wholesaler still splits; the Channel Breakdown brick grid never debits an exempt customer's brick)",
+  runClosingStoreSplitRiskFollowupsTests,
 );
 
 await runTest(

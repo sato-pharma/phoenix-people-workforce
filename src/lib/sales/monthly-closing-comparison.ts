@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
+import { closingAreaOf } from "@/lib/sales/closing-row-area";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 
 // Distributor comparison + insights for the Monthly Closing report. The on-screen matrix
@@ -770,6 +771,8 @@ export async function loadMonthlyClosingComparison(
  * imports the details module (which would be a cycle). */
 export type ComparisonSourceRow = {
   areaCode: string;
+  /** The row's own fact area. Optional; see closing-row-area.ts for which of the two is used. */
+  sheetAreaCode?: string;
   brickId: string;
   brickName: string;
   clientCode: string;
@@ -802,9 +805,18 @@ export function comparisonLeavesFromRows(
   rows.forEach((row) => {
     if (!row.includedInClosing) return;
 
-    const dpKey = `${row.distributorCode}|${row.regionCode}|${row.areaCode}|${row.productCode}`;
+    // The area the CLOSING books this row in, matching the aggregate RPCs these leaves stand in for
+    // — phx_closing_customers, phx_closing_distributor_product and phx_closing_brick all group by
+    // the fact area. Using the brick-resolved `areaCode` made the from-rows path place a
+    // hand-apportioned customer in a different area than the RPC path did, so the SAME customer
+    // ranked under a different area depending on whether a filter happened to be active, and a
+    // filtered comparison dropped it from the area the Matrix credits. Identical to `areaCode` on
+    // every row in production except a re-booked one.
+    const areaCode = closingAreaOf(row);
+
+    const dpKey = `${row.distributorCode}|${row.regionCode}|${areaCode}|${row.productCode}`;
     const dp = distProduct.get(dpKey) ?? {
-      areaCode: row.areaCode, distributorCode: row.distributorCode, productCode: row.productCode,
+      areaCode, distributorCode: row.distributorCode, productCode: row.productCode,
       productName: row.productName || row.productCode, regionCode: row.regionCode, units: 0, value: 0,
     };
     dp.units += row.qty;
@@ -812,9 +824,9 @@ export function comparisonLeavesFromRows(
     distProduct.set(dpKey, dp);
 
     if (row.brickId.trim()) {
-      const brickKey = `${row.distributorCode}|${row.regionCode}|${row.areaCode}|${row.brickId}`;
+      const brickKey = `${row.distributorCode}|${row.regionCode}|${areaCode}|${row.brickId}`;
       const brick = bricks.get(brickKey) ?? {
-        areaCode: row.areaCode, brickId: row.brickId, distributorCode: row.distributorCode,
+        areaCode, brickId: row.brickId, distributorCode: row.distributorCode,
         regionCode: row.regionCode, units: 0, value: 0,
       };
       brick.units += row.qty;
@@ -823,9 +835,18 @@ export function comparisonLeavesFromRows(
     }
 
     if (row.clientCode.trim()) {
-      const customerKey = `${row.distributorCode}|${row.clientCode}`;
+      // AREA IS PART OF THE GRAIN, matching phx_closing_customers exactly: querying it live for
+      // 441164 returns TWO rows, one per area (D22 -200/-17,190, D26 -200/-17,190), because its SQL
+      // groups by area. A key of distributor+client alone folded a multi-area customer into ONE row
+      // carrying whichever row's area happened to be visited first — every OTHER area's money still
+      // summed in correctly (units/value are a running total), but scopeComparisonInput's area
+      // filter (`keepPlace`) reads that single stored `areaCode`, so filtering to the area that lost
+      // the fold dropped the customer's money entirely, and filtering to the one area that kept it
+      // credited the customer's WHOLE total there. Same failure family as the Details/Matrix
+      // mismatch above, one level up: the RPC path never had this problem because it never folds.
+      const customerKey = `${row.distributorCode}|${row.clientCode}|${areaCode}`;
       const customer = customers.get(customerKey) ?? {
-        areaCode: row.areaCode, brickId: row.brickId, clientCode: row.clientCode,
+        areaCode, brickId: row.brickId, clientCode: row.clientCode,
         clientName: row.clientName || row.clientCode, distributorCode: row.distributorCode,
         regionCode: row.regionCode, units: 0, value: 0,
       };

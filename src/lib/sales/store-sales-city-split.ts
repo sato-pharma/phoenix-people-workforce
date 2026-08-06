@@ -19,6 +19,7 @@
 // untouched. Direct rows carry no area and are already attributed to line+region only, so they
 // are passed through untouched too.
 
+import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { isStoreCustomer } from "@/lib/sales/customer-channel";
 
 /** The three rep-carrying lines. Head Office is excluded on purpose — see the header. */
@@ -85,7 +86,25 @@ export function cityOfArea(areaCode: string | null | undefined): string | null {
 
 /** The minimum a row needs for the split. Matches ClosingDetailRow's shape structurally. */
 export type StoreSplitRow = {
+  /**
+   * The RESOLVED area — brick/master geography where the row has a mapped brick. This is the area
+   * the row is booked against, and the only one the split ever writes to.
+   */
   areaCode: string;
+  /**
+   * The area the SOURCE fact row itself carries, before the brick/master lookup overwrote it
+   * (`ClosingDetailRow.sheetAreaCode`). Optional — a caller without it falls back to `areaCode`.
+   *
+   * Read for ONE purpose: detecting that a human already apportioned this customer by hand. It is
+   * never booked against, never returned on a split row, and changes no area total. See
+   * customersAlreadySplitAcrossAreas for why the resolved area cannot answer that question.
+   */
+  sheetAreaCode?: string;
+  /**
+   * The row's brick. Optional, and read only to report which bricks an EXEMPT customer's store
+   * money sits on — see `exemptStoreValueByBrick`. It never affects whether or how a row splits.
+   */
+  brickId?: string;
   /** Required, not optional: it is the key an owner override is matched on, and a caller that
    *  omits it would silently split a customer the owner has ruled is a pharmacy. */
   clientCode: string;
@@ -98,6 +117,71 @@ export type StoreSplitRow = {
   salesValue: number;
 };
 
+/**
+ * Customers whose rows ALREADY sit in more than one area — someone distributed them on purpose, so
+ * the city split must not distribute them again.
+ *
+ * The case that forced this (owner, 2026-08-06): client 441164 ريونيون للتجارة والاستثمار returned
+ * its whole June purchase in July, -400 units / -34,380.00, and the owner ruled that return splits
+ * evenly between Dakahlia 2 and Port Said - Domiat. Its sales rows were split accordingly. But the
+ * name marks it a wholesaler, so the city split then took the WHOLE -34,380.00 back out of its
+ * customer-map area (Dakahlia 1) and shared it three ways across Dakahlia 1, 2 and 3 — handing a
+ * third of a return to Dakahlia 3, which had nothing to do with it, and dropping Port Said entirely
+ * because it is a different city. The workbook's Closing Matrix showed fractional units
+ * (182.333333) while the frontend, which never runs this split, correctly showed 29.
+ *
+ * A deliberate distribution beats a rule-of-thumb one. The even city share is an ESTIMATE for a
+ * wholesaler nobody has apportioned; once a human has said where the sales go, that answer wins.
+ *
+ * WHY IT MUST NOT ASK `areaCode`. That field is the RESOLVED area — loadMonthlyClosingDetails sets
+ * it to the row's BRICK's master area and only falls back to the sheet's own area when the brick is
+ * unmapped. A hand-split is applied to the fact rows, NOT to the brick: 441164's four July rows all
+ * still carry brick B186-1, whose master area is Dakahlia 1. So the resolved view of that customer
+ * is a single area, the customer looked un-split, and the city rule re-split it anyway — the fix
+ * shipped, the migration applied, and the exported workbook did not change. Asking the ORIGINAL
+ * allocation is the whole point: it is the only field the human's decision was written to.
+ *
+ * TWO CONDITIONS, NOT ONE — and the second is what keeps a real wholesaler splitting. "Sits in more
+ * than one area" alone cannot tell a deliberate apportionment from a chain that simply trades in two
+ * places, and exempting the latter would silently switch the city rule off for a customer nobody has
+ * apportioned. The discriminator is `isRebookedRow`: a genuine two-depot store has fact == resolved
+ * in each of its areas, while a hand-split has rows pointing AWAY from the single brick they all
+ * still carry. So a customer is exempt only when its rows span more than one closing area AND at
+ * least one of them was booked somewhere other than its own master location.
+ *
+ * Measured on live production 2026-08-06, all 153,053 (period, line, client) groups: 6 span more
+ * than one closing area, and exactly ONE of those is re-booked — 441164 / 2026-07 / Anti Infective,
+ * the case above. The other five are four pharmacies and one Head Office customer; the classifier
+ * only ever demotes store → pharmacy and Head Office is an excluded line, so not one of them could
+ * ever have been split and dropping their exemption moves no number.
+ */
+export function customersAlreadySplitAcrossAreas(rows: readonly StoreSplitRow[]): ReadonlySet<string> {
+  const closingAreas = new Map<string, Set<string>>();
+  const rebooked = new Set<string>();
+
+  for (const row of rows) {
+    if (row.isDirect || !row.includedInClosing) continue;
+    const code = String(row.clientCode ?? "").trim();
+    if (!code) continue;
+    const area = closingAreaOf(row);
+    if (area) {
+      let seen = closingAreas.get(code);
+      if (!seen) {
+        seen = new Set<string>();
+        closingAreas.set(code, seen);
+      }
+      seen.add(area);
+    }
+    if (isRebookedRow(row)) rebooked.add(code);
+  }
+
+  const exempt = new Set<string>();
+  closingAreas.forEach((areas, code) => {
+    if (areas.size > 1 && rebooked.has(code)) exempt.add(code);
+  });
+  return exempt;
+}
+
 /** A row is only moved when it is a store, on a split line, has a city, and feeds the closing. */
 export function isSplitEligible(row: StoreSplitRow): boolean {
   if (row.isDirect) return false;
@@ -106,7 +190,11 @@ export function isSplitEligible(row: StoreSplitRow): boolean {
   // The client code is passed so an owner override can be honoured. Without it the override is
   // inert here and an overridden pharmacy's sales would still be scattered across its city.
   if (!isStoreCustomer(row.clientName, row.clientCode)) return false;
-  const city = cityOfArea(row.areaCode);
+  // The CLOSING area, not the resolved one: the split moves money the Closing Matrix actually holds,
+  // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
+  // subtract the money from an area that never carried it — the phantom the 441164 case produced.
+  // Identical to `areaCode` on every row in production except a hand-apportioned one.
+  const city = cityOfArea(closingAreaOf(row));
   if (!city) return false;
   // A city of one area splits to itself — nothing moves, so skip the work entirely.
   return (CITY_AREAS.get(city)?.length ?? 0) > 1;
@@ -135,6 +223,23 @@ export type StoreSplitResult<T> = {
   movements: StoreSplitAreaMovement[];
   /** How many source rows were redistributed. */
   splitRowCount: number;
+  /**
+   * Per (brick, area) — key `${brickId}|${closingArea}`, both uppercase — the store money belonging
+   * to a customer that WAS eligible to split there but was exempted as hand-apportioned.
+   *
+   * Exists for the Channel Breakdown's brick grid, which takes a brick's store money off whenever
+   * the brick's area gave money up. That grid reads its own figures rather than these rows (see
+   * store-split-channel-breakdown.ts for why), so without this it cannot tell that part of a
+   * brick's store money never moved, and would debit a brick for a customer the Matrix left alone.
+   *
+   * KEYED BY AREA AS WELL AS BRICK, not by brick alone. The grid's own brick_area figures are grained
+   * that way (one row per brick PER area), and an exempt customer can have more than one ELIGIBLE
+   * leg on the same brick in DIFFERENT areas. Summing those legs into one per-brick total and
+   * subtracting it from whichever single area's grid figure happens to exist would cancel a debit
+   * that has nothing to do with that other leg — under-crediting an unrelated eligible seller who
+   * happens to share the brick. Per-(brick, area) is the smallest key that cannot do that.
+   */
+  exemptStoreValueByBrick: Map<string, number>;
 };
 
 /**
@@ -168,7 +273,12 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   rows: readonly T[],
 ): StoreSplitResult<T> {
   const out: T[] = [];
+
+  // A customer already distributed across areas by hand is never redistributed by the city rule.
+  // See customersAlreadySplitAcrossAreas for the case that forced this.
+  const exemptCustomers = customersAlreadySplitAcrossAreas(rows);
   const movements = new Map<string, StoreSplitAreaMovement>();
+  const exemptStoreValueByBrick = new Map<string, number>();
   let splitRowCount = 0;
 
   const movementFor = (
@@ -190,11 +300,28 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
   };
 
   for (const row of rows) {
-    if (!isSplitEligible(row)) {
+    const eligible = isSplitEligible(row);
+    if (!eligible || exemptCustomers.has(String(row.clientCode ?? "").trim())) {
+      // An exempt row that WOULD otherwise have split is store money sitting on a brick that the
+      // matrix never moved. The brick grid has to know, or it debits the brick anyway. Keyed by
+      // area too — see the field doc on exemptStoreValueByBrick for why brick alone is not enough.
+      if (eligible) {
+        const brick = normalizeArea(row.brickId);
+        const area = closingAreaOf(row);
+        if (brick && area) {
+          const key = `${brick}|${area}`;
+          exemptStoreValueByBrick.set(
+            key,
+            (exemptStoreValueByBrick.get(key) ?? 0) + (Number(row.salesValue) || 0),
+          );
+        }
+      }
       out.push(row);
       continue;
     }
-    const origin = normalizeArea(row.areaCode);
+    // The area the CLOSING books this row in — see isSplitEligible, which picked the city the same
+    // way. Money must leave the area that actually holds it.
+    const origin = closingAreaOf(row);
     const city = cityOfArea(origin);
     // isSplitEligible already proved both of these; the guard keeps the types honest.
     const areas = city ? CITY_AREAS.get(city) : undefined;
@@ -217,11 +344,21 @@ export function splitStoreSalesAcrossCityAreas<T extends StoreSplitRow>(
       const received = movementFor(areaCode, city, line, productCode);
       received.inQty += qtyShares[index];
       received.inValue += valueShares[index];
-      out.push({ ...row, areaCode, qty: qtyShares[index], salesValue: valueShares[index] });
+      // BOTH area fields move to the share's area. A share is a synthetic row that now genuinely
+      // belongs to `areaCode`, so leaving `sheetAreaCode` on the origin would make closingAreaOf
+      // report every share as still sitting in the area it came from.
+      out.push({
+        ...row,
+        areaCode,
+        qty: qtyShares[index],
+        salesValue: valueShares[index],
+        sheetAreaCode: areaCode,
+      });
     });
   }
 
   return {
+    exemptStoreValueByBrick,
     rows: out,
     movements: [...movements.values()].sort(
       (left, right) => left.city.localeCompare(right.city)
@@ -306,14 +443,19 @@ export function summariseStoreSplitByArea<T extends StoreSplitRow & { areaName?:
   const areaNames = new Map<string, string>();
   for (const row of rows) {
     if (row.isDirect || !row.includedInClosing) continue;
-    const area = normalizeArea(row.areaCode);
+    // The area's CLOSING position, so "before" is the number the Closing Matrix shows for that area
+    // and `before + net = after` reconciles against the sheet rather than against the brick map.
+    const area = closingAreaOf(row);
     const key = `${area} ${String(row.officialLine ?? "").trim()}`;
     const entry = before.get(key) ?? { qty: 0, value: 0 };
     entry.qty += Number(row.qty) || 0;
     entry.value += Number(row.salesValue) || 0;
     before.set(key, entry);
+    // Names stay keyed on the RESOLVED area: `areaName` is the brick's area name, so filing it
+    // under a re-booked row's closing area would label that area with another area's name.
     const name = typeof row.areaName === "string" ? row.areaName.trim() : "";
-    if (name && !areaNames.has(area)) areaNames.set(area, name);
+    const named = normalizeArea(row.areaCode);
+    if (name && named && !areaNames.has(named)) areaNames.set(named, name);
   }
 
   // Movements are per product; the sheet reads per area and line, so fold the products together.
@@ -421,10 +563,15 @@ export function detailStoreSplitByCustomer<
     if (area && name && !areaNames.has(area)) areaNames.set(area, name);
   }
 
+  // Same exemption as the split itself, or the detail sheet would report a store as "split" that
+  // the matrix left alone — the two tabs must describe the same operation.
+  const detailExempt = customersAlreadySplitAcrossAreas(rows);
+
   const byKey = new Map<string, StoreSplitDetailRow>();
   for (const row of rows) {
-    if (!isSplitEligible(row)) continue;
-    const origin = normalizeArea(row.areaCode);
+    if (!isSplitEligible(row) || detailExempt.has(String(row.clientCode ?? "").trim())) continue;
+    // The same origin the split itself uses, or this sheet would name a different area as the giver.
+    const origin = closingAreaOf(row);
     const city = cityOfArea(origin);
     const areas = city ? CITY_AREAS.get(city) : undefined;
     if (!city || !areas || areas.length === 0) continue;

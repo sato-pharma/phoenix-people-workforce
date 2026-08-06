@@ -14,8 +14,7 @@ import {
 type Row = {
   areaCode: string;
   areaName?: string;
-  clientCode: "TEST-CODE",
-
+  clientCode: string;
   clientName: string;
   includedInClosing: boolean;
   isDirect: boolean;
@@ -25,12 +24,20 @@ type Row = {
   salesValue: number;
 };
 
+/**
+ * One code per customer NAME, so the fixture's six differently-named shops are six customers.
+ *
+ * They used to share a single literal "TEST-CODE". That is not a neutral placeholder: a customer
+ * whose rows sit in more than one area counts as already apportioned by hand and is exempt from the
+ * city split (customersAlreadySplitAcrossAreas). One code across Menoufia, Alexandria and Cairo
+ * therefore exempted the ENTIRE fixture, and every split assertion below read zero — splitRowCount
+ * came back 0 instead of 3. A test can still pass its own explicit code to model one chain trading
+ * in two places.
+ */
 function row(overrides: Partial<Row> = {}): Row {
-  return {
+  const base = {
     areaCode: "D12",
     areaName: "Menoufia 1",
-    clientCode: "TEST-CODE",
-
     clientName: "مخزن الحجاز فارما",
     includedInClosing: true,
     isDirect: false,
@@ -40,6 +47,7 @@ function row(overrides: Partial<Row> = {}): Row {
     salesValue: 37_800,
     ...overrides,
   };
+  return { ...base, clientCode: overrides.clientCode ?? `TEST-${base.clientName}` };
 }
 
 const sum = (rows: readonly Row[], key: "qty" | "salesValue") =>
