@@ -38,7 +38,12 @@ const box = "border border-[#e4e9ec] bg-white";
  * more conviction than any typo.
  */
 export function InvoiceCapture({ onApply, customerHint }: Props) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  // TWO inputs, not one whose `capture` attribute is toggled before the click. An input carrying
+  // `capture` opens the camera on most phones and never offers the gallery, so a single input can
+  // only ever be one of the two things. Setting the attribute and then calling click() in the same
+  // tick is unreliable across mobile browsers; two inputs are simply two inputs.
+  const cameraRef = useRef<HTMLInputElement | null>(null);
+  const uploadRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InvoiceExtractionResult | null>(null);
@@ -72,7 +77,7 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
     setAppliedIndex((current) => (current === index ? null : current));
   }
 
-  async function read(file: File) {
+  async function read(file: File, source: "camera" | "upload") {
     setBusy(true);
     setError(null);
     setResult(null);
@@ -93,7 +98,10 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
       const res = await fetch("/api/direct-orders/invoice-extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64, mimeType: file.type }),
+        // `source` is recorded, never used to decide anything. It answers "do the photos people
+        // forward read worse than the ones they take?" — and if they do, the answer is better
+        // guidance, not a refusal.
+        body: JSON.stringify({ imageBase64: base64, mimeType: file.type, source }),
       });
       const data = (await res.json().catch(() => ({}))) as {
         result?: InvoiceExtractionResult;
@@ -121,12 +129,13 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
       </header>
       <div className="space-y-3 px-4 py-4">
         <p className="text-[12px] text-slate-600">
-          Photograph the distributor invoice and Phoenix fills in what it can. You confirm every line
-          before it is used — nothing is entered on its own.
+          Photograph the distributor invoice, or choose a photo you already have, and Phoenix fills
+          in what it can. You confirm every line before it is used — nothing is entered on its own.
         </p>
 
+        {/* The CAMERA route. `capture="environment"` asks for the rear lens directly. */}
         <input
-          ref={fileRef}
+          ref={cameraRef}
           type="file"
           accept="image/*"
           capture="environment"
@@ -136,17 +145,46 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
             // Cleared so choosing the SAME photo again still fires a change event — otherwise a
             // retry after a failed read looks like a dead button.
             event.target.value = "";
-            if (file) void read(file);
+            if (file) void read(file, "camera");
           }}
         />
-        <button
-          type="button"
-          className="bg-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-          disabled={busy}
-          onClick={() => fileRef.current?.click()}
-        >
-          {busy ? "Reading the invoice…" : "Photograph the invoice"}
-        </button>
+        {/* The GALLERY route. NO `capture` attribute — that single word is the whole difference.
+            With it, a phone opens the camera and never offers the files, which left a rep whose
+            invoice arrived by WhatsApp with no way in at all. */}
+        <input
+          ref={uploadRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void read(file, "upload");
+          }}
+        />
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="bg-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={busy}
+            onClick={() => cameraRef.current?.click()}
+          >
+            {busy ? "Reading the invoice…" : "Photograph the invoice"}
+          </button>
+          <button
+            type="button"
+            className="border border-slate-900 px-4 py-2 text-[11px] font-black uppercase tracking-wider text-slate-900 hover:bg-slate-900 hover:text-white disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+            disabled={busy}
+            onClick={() => uploadRef.current?.click()}
+          >
+            Choose a photo
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400">
+          Either way, Phoenix straightens and sharpens the picture before reading it — a photo taken
+          in a dim shop, or one forwarded to you, both work.
+        </p>
 
         {error ? (
           <p className="border border-rose-300 bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-800">{error}</p>
@@ -170,13 +208,26 @@ export function InvoiceCapture({ onApply, customerHint }: Props) {
                   Not much came off this photo. If the invoice is still in front of you, a second
                   shot usually fixes it — get closer, keep the page flat, and avoid the glare.
                 </p>
-                <button
-                  type="button"
-                  className="mt-2 border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Retake the photo
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
+                    onClick={() => cameraRef.current?.click()}
+                  >
+                    Retake the photo
+                  </button>
+                  {/* Both routes offered again here. A thin read from a forwarded photo cannot be
+                      fixed by retaking it — the paper is not in front of them — so "choose another"
+                      is the only move that helps, and offering only a retake would be advice they
+                      cannot follow. */}
+                  <button
+                    type="button"
+                    className="border border-amber-800 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-amber-900 hover:bg-amber-800 hover:text-white"
+                    onClick={() => uploadRef.current?.click()}
+                  >
+                    Choose another
+                  </button>
+                </div>
                 <p className="mt-1.5 text-[11px] text-amber-800">
                   Or carry on and fill the rest in yourself — nothing here stops you submitting.
                 </p>

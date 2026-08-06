@@ -251,7 +251,7 @@ export function codeCandidates(value: string | null | undefined): string[] {
  */
 export async function extractDirectOrderInvoice(
   access: AccessContext,
-  input: { imageBase64: string; mimeType: string },
+  input: { imageBase64: string; mimeType: string; source?: "camera" | "upload" },
 ): Promise<InvoiceExtractionResult> {
   await assertPermission(access, "direct_orders", "create");
 
@@ -418,6 +418,10 @@ export async function extractDirectOrderInvoice(
       prepared: scan.prepared,
       bytesBefore: scan.originalBytes,
       bytesAfter: scan.preparedBytes,
+      // Camera or gallery. Recorded, never acted on: if forwarded photos read worse, the answer is
+      // better guidance, not refusing them — a rep whose invoice arrived on WhatsApp has no camera
+      // shot to offer, and blocking that route sends them back to typing codes by hand.
+      source: input.source ?? "upload",
     },
     summary:
       `Invoice read: customer code ${read.customerCode ? "read" : "not read"}` +
