@@ -740,6 +740,41 @@ export async function countCandidatesForMonth(input: {
 }
 
 /**
+ * Guard for a payroll path that does NOT read this module.
+ *
+ * WHY. Two deduction systems shipped side by side with table names one letter apart —
+ * `deductions_candidates`/`deductions_decisions` (this module, where HR actually decides) and
+ * `deduction_candidates`/`deduction_decisions` (the older governance flow). The Payroll Copilot's
+ * sheet generation still reads the SECOND. Measured on production 2026-08-06 for 2026-07: it would
+ * charge ~224,216.71 EGP of CRM deductions off legacy rows nobody approved, against 28,233.87 EGP
+ * HR actually approved here. `startRun` refuses once a salary batch exists for the period — but no
+ * July batch exists, so today nothing refuses.
+ *
+ * Returns a human-readable refusal when this module holds live candidates for the period (HR is
+ * working here, so this module is the system of record for that month), or null when there is
+ * nothing to conflict with.
+ *
+ * DELIBERATELY NOT APPLIED to Automated Payroll's own publish path: that one already reads this
+ * module through `loadConfirmedDeductions`, and it never reads `deductions_publications` at all —
+ * so gating it on "a publication exists" would deadlock it permanently, since publishing deductions
+ * has never been a prerequisite for paying anyone. Its problem is a stale latched figure, which is a
+ * different fix.
+ */
+export async function describeUnifiedDeductionsConflict(input: {
+  month: number;
+  year: number;
+}): Promise<string | null> {
+  const monthKey = normalizeMonthKey(`${input.year}-${String(input.month).padStart(2, "0")}`);
+  const liveCandidates = await countCandidatesForMonth({ monthKey });
+  if (liveCandidates === 0) return null;
+  return (
+    `The Deductions module holds ${liveCandidates} live deduction candidate(s) for ${monthKey}. ` +
+    "This screen reads the older deductions tables, so generating a sheet here would charge figures " +
+    "that were never reviewed in the Deductions workspace. Use Automated Payroll for this month."
+  );
+}
+
+/**
  * Live (non-superseded) candidates for a month, optionally scoped to one category, joined with their decision.
  *
  * Paginated via fetchAllRows: PostgREST caps every response at db-max-rows
