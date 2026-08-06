@@ -22,7 +22,12 @@ import {
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
+import { applyJulyDirectAreasToBreakdown } from "@/lib/sales/july-direct-channel-breakdown";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
+import {
+  applyStoreSplitToChannelBreakdown,
+  planChannelBreakdownStoreSplit,
+} from "@/lib/sales/store-split-channel-breakdown";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
 export const runtime = "nodejs";
@@ -224,7 +229,11 @@ export async function POST(request: Request) {
       const monthRows = await detailsPromise;
       // Allocate over the whole month, THEN narrow to the areas on show. That order is the fix and
       // it lives in the domain module, not here — see closing-store-split-export.ts.
-      const { details, net: storeSplitNet } = prepareClosingStoreSplit(monthRows, scopedAreaCodes);
+      const {
+        details,
+        movements: storeSplitMovements,
+        net: storeSplitNet,
+      } = prepareClosingStoreSplit(monthRows, scopedAreaCodes);
       const comparison = aggregateComparisonPromise
         ? await aggregateComparisonPromise
         : await loadMonthlyClosingComparisonFromRows(
@@ -305,8 +314,38 @@ export async function POST(request: Request) {
               + " the workbook. Export without filters to see them.")
         : undefined;
 
+      // The Channel Breakdown grids get the SAME store city split the matrix just got, for the same
+      // reason: a wholesaler supplies its whole city, so its sell-in belongs to every area of that
+      // city and to whoever holds each area's seat. Without this, one workbook published two
+      // different numbers for the same area — the Matrix halving D15 across Gharbia while the Area ×
+      // Channel grid kept all of it on D15 — and the rep grid credited the lot to a single rep.
+      //
+      // Applied HERE rather than inside the loader, exactly as applyStoreSplitToMatrix is: the two
+      // write-backs sit side by side so neither can be added without the other being noticed. The
+      // sheet states on itself whether the split reached it, so a future caller that skips this line
+      // produces a workbook that says so rather than a workbook that quietly disagrees.
+      // The SAME movements applyStoreSplitToMatrix was given, not a second derivation of them: that
+      // shared origin is what makes the Area × Channel grid agree with the Closing Matrix area for
+      // area. Deriving them again from the grid's own figures put six Anti Infective areas and
+      // eleven Pedia areas out of step, because the RPC reads a customer's name from the directory
+      // rollup while these rows carry the name the distributor put on the invoice line.
+      //
+      // July 2026's hand-mapped direct orders are re-attributed FIRST, in the same order the matrix
+      // does it: direct money lands on real areas, and the store split then moves that area's whole
+      // cell exactly as it moves the matrix's. Reversing the two would split a number the direct
+      // money had not joined yet.
+      const rawBreakdown = await channelBreakdownPromise;
+      const julyDirect = rawBreakdown ? applyJulyDirectAreasToBreakdown(rawBreakdown) : null;
+      const seatedBreakdown = julyDirect?.breakdown ?? rawBreakdown;
+      const channelBreakdown = seatedBreakdown
+        ? applyStoreSplitToChannelBreakdown(
+          seatedBreakdown,
+          planChannelBreakdownStoreSplit(seatedBreakdown, storeSplitMovements),
+        )
+        : null;
+
       const buffer = await buildMonthlyClosingWorkbook(workbookMatrix, comparison, details, {
-        channelBreakdown: await channelBreakdownPromise,
+        channelBreakdown,
         channelComparison: await channelComparisonPromise,
         channels,
         coverage: await coveragePromise,

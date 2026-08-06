@@ -11,6 +11,7 @@ import {
   assembleChannelBreakdown,
   assembleChannelComparison,
   breakdownLeader,
+  emptyBreakdownRow,
   resolveBreakdownLabel,
   sumBreakdownRows,
   sumLineTargets,
@@ -478,7 +479,7 @@ async function runChannelBreakdownTests() {
     `the leader's share is its own value over the row total (expected 0.667, got ${leader?.share})`,
   );
   assert.equal(
-    breakdownLeader({ hospital: 0, key: "x", label: "x", pharmacy: 0, store: 0, total: 0 }),
+    breakdownLeader(emptyBreakdownRow("x", "x")),
     null,
     "a row that sold nothing claims no leader rather than a fake 100%",
   );
