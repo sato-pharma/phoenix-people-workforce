@@ -533,6 +533,7 @@ import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-ref
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
+import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runDirectOrdersAreaAutofillTests } from "./direct-orders-area-autofill.test.ts";
 import { runDirectOrdersShareLinkControlsTests } from "./direct-orders-share-link-controls.test.ts";
@@ -1259,6 +1260,7 @@ await runTest("direct orders finance-month badge (approved never shows alone, on
 await runTest("direct orders storefront evidence (unknown is never a pass, a failed read never blocks filing, and it never gates the decision)", runDirectOrderEvidenceCheckTests);
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
+await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("direct orders area auto-fill (the body carries pointers only, the server copies the catalogue row and fails closed, a picked pharmacy never carries client geography)", runDirectOrdersAreaAutofillTests);
 await runTest("direct orders share-link controls (export-gated not read-gated, passcode in the body never the URL, expiry mandatory and capped, scope frozen at creation, nothing cached or indexed)", runDirectOrdersShareLinkControlsTests);
