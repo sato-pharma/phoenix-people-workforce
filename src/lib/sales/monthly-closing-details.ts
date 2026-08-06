@@ -8,8 +8,19 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { JULY_2026_DIRECT_PERIOD } from "@/lib/sales/july-2026-direct-orders";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+
+/**
+ * The one month whose DIRECT rows are taken as stored rather than valued at factory price —
+ * the owner's ruling of 2026-08-06. See resolveClosingDetailSalesValue for the reasoning.
+ *
+ * Deliberately the SAME constant as July's hand-mapped direct orders rather than a second
+ * `"2026-07"` literal: the ruling and the mapping describe one month, and if that month's direct
+ * data ever moves, both must move together.
+ */
+const STORED_VALUE_DIRECT_PERIOD: string = JULY_2026_DIRECT_PERIOD;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Monthly Closing — DETAILS.
@@ -89,7 +100,11 @@ export type ClosingDetailRow = {
   discount: number;
   /** qty x (1 - discount) — the base the matrix values (mirrors fact_rollup.effective_units). */
   effectiveUnits: number;
-  /** effectiveUnits x factoryPrice — the matrix's sales_value contribution. */
+  /**
+   * The row's contribution to the closing's sales value. Normally effectiveUnits x factoryPrice —
+   * the distributor formula the matrix uses. See resolveClosingDetailSalesValue for the one
+   * documented month that is taken as stored instead.
+   */
   salesValue: number;
   /** The value column as it appeared on the distributor sheet, untouched. */
   sheetValue: number;
@@ -173,6 +188,57 @@ function text(value: unknown): string {
 function num(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * What ONE row contributes to the closing's sales value.
+ *
+ * This is the only place in the closing where a value is DERIVED rather than read, so it is the
+ * only place the owner's July ruling can live without special-casing a sheet.
+ *
+ * ── THE NORMAL RULE ──────────────────────────────────────────────────────────────────────────
+ * effectiveUnits x factoryPrice. That is the DISTRIBUTOR formula — the same arithmetic
+ * phx_monthly_closing_matrix values sell-out at (`f.effective_units * p.factory_price`) — and it is
+ * correct for a distributor invoice line, whose sheet value is a restatement of it.
+ *
+ * ── THE JULY 2026 EXCEPTION (owner's ruling, 2026-08-06) ─────────────────────────────────────
+ * "july exception take direct units and values as they are — 149,288.50 is accurate 100%"
+ *
+ * For 2026-07, and for DIRECT rows only, the STORED sheet value IS the value. It is authoritative
+ * and is not re-derived from anything.
+ *
+ * WHY. A direct order is a negotiated deal — it carries its own price, its own discount and its own
+ * bonus — so pricing it at factory price answers a question nobody asked. Measured in production on
+ * 2026-08-06 for Anti Infective 2026-07 direct, 16 rows, 2,120 units:
+ *
+ *   source_of_sales_import_rows.value        149,288.50   <- the owner's own file, to the piastre
+ *   source_of_sales_fact_rollup.direct_value 149,288.50
+ *   phx_monthly_closing_direct               149,288.50
+ *   phx_closing_channel_breakdown __DIRECT__ 149,288.50
+ *   effectiveUnits x factoryPrice            157,518.00   <- ONLY this line, overstating by 8,229.50
+ *
+ * Every other surface in the closing already reads the stored value. This derivation was the single
+ * disagreement, and it reached the Data sheet's "Sales Value" column, the Data/Total reconciliation
+ * (`excludedDirect`) and the on-screen Closing Details panel.
+ *
+ * WHY ONLY JULY, AND WHY THIS IS NOT A PRICING RULE. The owner ruled ONE month, so every other month
+ * keeps exactly the behaviour it has today — deliberately, and a future month must be ruled on
+ * before it is added here. This function also does not PRICE anything: it declines to. The locked
+ * direct-order pricing rule (discount qty x PUBLIC x (1 - disc%), bonus qty x PHARMACY) is neither
+ * read nor changed here, and factory price remains banned as a direct-order price.
+ */
+export function resolveClosingDetailSalesValue(input: {
+  isDirect: boolean;
+  /** The row's own invoice period, `YYYY-MM`. */
+  invoicePeriod: string;
+  /** qty x (1 - discount). */
+  effectiveUnits: number;
+  factoryPrice: number;
+  /** The value column exactly as the sheet stored it. */
+  sheetValue: number;
+}): number {
+  if (input.isDirect && input.invoicePeriod.trim() === STORED_VALUE_DIRECT_PERIOD) return input.sheetValue;
+  return input.effectiveUnits * input.factoryPrice;
 }
 
 function emptyTotals(): ClosingDetailsTotals {
@@ -485,6 +551,17 @@ export async function loadMonthlyClosingDetails(
     const isDirect = raw.is_direct === true;
     const clientCode = text(raw.client_code);
     const isConfidential = isRestrictedProductCode(productCode);
+    const invoicePeriod = text(raw.invoice_period);
+    const sheetValue = num(raw.value);
+    // Derived in ONE place, because July 2026's direct rows are taken as stored — see
+    // resolveClosingDetailSalesValue for the owner's ruling and the measured figures.
+    const salesValue = resolveClosingDetailSalesValue({
+      effectiveUnits,
+      factoryPrice,
+      invoicePeriod,
+      isDirect,
+      sheetValue,
+    });
 
     const exclusions: ClosingDetailExclusion[] = [];
     if (isDirect) exclusions.push("direct");
@@ -494,7 +571,7 @@ export async function loadMonthlyClosingDetails(
       id: num(raw.id),
       rowNumber: raw.row_number == null ? null : num(raw.row_number),
       distributorCode: text(raw.distributor_code),
-      invoicePeriod: text(raw.invoice_period),
+      invoicePeriod,
       invoiceDate: text(raw.invoice_date) || null,
       officialLine: text(raw.official_line),
 
@@ -529,8 +606,8 @@ export async function loadMonthlyClosingDetails(
       bonusQty: num(raw.bonus_qty),
       discount,
       effectiveUnits: Number(effectiveUnits.toFixed(6)),
-      salesValue: Number((effectiveUnits * factoryPrice).toFixed(6)),
-      sheetValue: num(raw.value),
+      salesValue: Number(salesValue.toFixed(6)),
+      sheetValue,
 
       isDirect,
       isConfidential,

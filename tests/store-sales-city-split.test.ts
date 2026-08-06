@@ -14,6 +14,8 @@ import {
 type Row = {
   areaCode: string;
   areaName?: string;
+  clientCode: "TEST-CODE",
+
   clientName: string;
   includedInClosing: boolean;
   isDirect: boolean;
@@ -27,6 +29,8 @@ function row(overrides: Partial<Row> = {}): Row {
   return {
     areaCode: "D12",
     areaName: "Menoufia 1",
+    clientCode: "TEST-CODE",
+
     clientName: "مخزن الحجاز فارما",
     includedInClosing: true,
     isDirect: false,

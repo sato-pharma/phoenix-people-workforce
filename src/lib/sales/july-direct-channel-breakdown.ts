@@ -7,9 +7,15 @@
 // The Channel Breakdown did not, so one workbook published two different figures for the same area:
 //
 //   Anti Infective 2026-07 — Matrix CA4 21,632.00 vs Area x Channel grid 11,052.00, and five more
-//   areas, 93,554.00 EGP in total. Pedia 2026-07 — eleven areas, 534,713.65 EGP in total.
+//   areas, 93,554.00 EGP in total at the time. Pedia 2026-07 — eleven areas, 534,713.65 EGP.
 //   CNS has no direct orders at all and never disagreed, which is why this hid behind the other
 //   defects: the line used to check the sheets was the one line it could not show up on.
+//
+// ANTI INFECTIVE'S FIGURE WAS RESTATED THE SAME DAY. #1857 replaced that line's 14 region-only rows
+// with the owner's 16-row area distribution — 1,150 units / 93,554.00 becomes 2,120 units /
+// 149,288.50 — and he ruled it "accurate 100%" on 2026-08-06. Both sides moved together (the mapping
+// table AND the production rows), which is the only reason the reconciliation below still passes.
+// 149,288.50, not 93,554.00, is this line's July direct total everywhere today.
 //
 // The database cannot fix this: those rows genuinely have no area_code (verified in production
 // 2026-08-06 — 46 direct rows across the two lines, 0 with an area). The mapping exists only as the
