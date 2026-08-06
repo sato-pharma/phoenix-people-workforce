@@ -77,3 +77,14 @@ as $function$
    and cm.customer_code    = a.client_code
    and cm.active;
 $function$;
+
+-- Grants, restated to exactly what this function already carries in production
+-- ({postgres=X, service_role=X}). CREATE OR REPLACE does not reset an ACL, so this changes nothing
+-- live -- it is here so a rebuilt database lands on the same privileges rather than the permissive
+-- default. anon/authenticated inherit EXECUTE through PUBLIC membership, so PUBLIC has to be named
+-- or revoking those two is a no-op; and revoking PUBLIC on a default ACL also strips service_role,
+-- which is why it is granted back explicitly. Note analytics_readonly is deliberately NOT granted
+-- here -- it holds EXECUTE on phx_monthly_closing_matrix/_direct but not on this one, and this
+-- migration is not the place to widen that.
+revoke execute on function public.phx_closing_customers(text, text) from public, anon, authenticated;
+grant execute on function public.phx_closing_customers(text, text) to service_role;
