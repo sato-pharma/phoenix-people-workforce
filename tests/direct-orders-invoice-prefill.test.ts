@@ -317,6 +317,77 @@ export function runDirectOrderInvoicePrefillTests() {
       "writeAuditLog",
       "THE OUTCOME RECORD MUST USE THE FORGIVING AUDIT WRITE: writeRequiredAuditLog re-throws, which would make a measurement the reason a rep standing in a pharmacy cannot read their invoice — the tail wagging the dog",
     );
+  }
+
+  // ── The customer code is anchored on its printed label, not on "a long number" ─────────────
+  // The owner's real PharmaOverseas page carries at least five long numbers and only one is the
+  // pharmacy: the barcode, the account number beside اسم الحساب, كود العميل, the location code
+  // الكود المكاني, and the sales order number رقم أمر البيع. A plausible WRONG one is the most
+  // damaging thing this reader can produce — it resolves against master data as some other real
+  // pharmacy, and the order is filed against a customer who never placed it. A null is recoverable;
+  // a confident mismatch is not.
+  {
+    const extractor = read(EXTRACTOR);
+    // Scoped to the RULE STRING, not the file. Checked file-wide first, which was worthless: the
+    // comment above the constant documents the same five Arabic labels, so deleting the anchor from
+    // the instruction actually sent to the reader left the comment behind and every assertion
+    // stayed green. A test that a comment can satisfy is not a test of the instruction.
+    const rule = /const CUSTOMER_CODE_RULE =([\s\S]*?);\n/.exec(extractor);
+    assert.ok(rule, "CUSTOMER_CODE_RULE must remain a single named constant, so it can be asserted on and reused by both passes");
+    const ruleText = rule[1];
+
+    assert.match(
+      ruleText,
+      /كود العميل/,
+      "THE CUSTOMER CODE MUST BE ANCHORED ON ITS PRINTED LABEL: 'the distributor's customer/account code' does not distinguish it from the barcode, the location code or the sales order number sharing the same page",
+    );
+    for (const decoy of ["الكود المكاني", "رقم أمر البيع", "اسم الحساب"]) {
+      assert.ok(
+        ruleText.includes(decoy),
+        `the decoy ${decoy} must be named and refused IN THE INSTRUCTION — naming the right label identifies the number, naming the wrong ones is what makes them rejectable`,
+      );
+    }
+    assert.match(
+      ruleText,
+      /do NOT substitute another number from the page/,
+      "a missing code must return null rather than the nearest long number: a wrong code is worse than no code, because it will be treated as a real pharmacy",
+    );
+    // Both passes must carry the same rule, or the rescue could accept a number the first pass
+    // was told to refuse — and the rescue is the one running on the worst photographs.
+    for (const constant of ["INSTRUCTIONS", "HEADER_ONLY_INSTRUCTIONS"]) {
+      const body = new RegExp(`const ${constant} =([\\s\\S]*?);\\n`).exec(extractor);
+      assert.ok(body, `${constant} must remain a named constant`);
+      assert.match(
+        body[1],
+        /CUSTOMER_CODE_RULE/,
+        `${constant} must include CUSTOMER_CODE_RULE: if the rescue pass does not carry the same rule, it can accept on the worst photographs a number the first pass was told to refuse`,
+      );
+    }
+  }
+
+  // ── The retry is bounded, conditional, and cannot turn a read into an error ────────────────
+  {
+    const extractor = read(EXTRACTOR);
+    assert.match(
+      extractor,
+      /if \(text\(parsed\.customer_code\) == null\) \{/,
+      "THE SECOND PASS MUST FIRE ONLY ON A MISS: running it every time doubles the wait for every rep to rescue the minority of photographs that needed it",
+    );
+    assert.ok(
+      !/while\s*\(|for\s*\([^)]*retr/i.test(extractor),
+      "THE RETRY MUST RUN EXACTLY ONCE: a loop turns a dark photograph into a stack of identical calls and a rep watching a spinner",
+    );
+    const retryBlock = extractor.slice(extractor.indexOf("if (text(parsed.customer_code) == null)"));
+    assert.match(
+      retryBlock.slice(0, 1400),
+      /\} catch \{/,
+      "A FAILED RESCUE MUST BE SWALLOWED: the first read is still worth returning, and an attempt to improve it must never be the reason an otherwise usable read becomes an error the submitter sees",
+    );
+    assert.match(
+      extractor,
+      /retried,\s*\n\s*rescuedByRetry,/,
+      "the retry must record whether it actually rescued anything — an extra call per miss is only justified if it recovers codes, and that is a number, not an opinion",
+    );
     for (const field of ["codeRead", "codeResolved", "linesRead", "linesMatched"]) {
       assert.ok(
         extractor.includes(`${field}:`),
