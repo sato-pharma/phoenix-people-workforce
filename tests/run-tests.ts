@@ -667,6 +667,7 @@ import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-p
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
+import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1500,6 +1501,10 @@ await runTest(
 await runTest(
   "SoS self-heal never overwrites an owner-verified (confidence=100) customer mapping, and the guard is keyed on (distributor, customer) exactly as the upsert is",
   runSosSelfHealOwnerVerifiedGuardTests,
+);
+await runTest(
+  "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
+  runOutstationManualExpenseTicketPlusAllowanceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
