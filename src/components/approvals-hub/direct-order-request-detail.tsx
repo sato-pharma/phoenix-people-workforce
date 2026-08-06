@@ -208,32 +208,66 @@ export function DirectOrderRequestDetail({
               </p>
             </div>
           ) : (
-            <div className="mt-1.5 overflow-x-auto">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-[#eef1f3] text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    <th className="whitespace-nowrap px-2 py-1">Distributor</th>
-                    <th className="whitespace-nowrap px-2 py-1">Distributor code</th>
-                    <th className="whitespace-nowrap px-2 py-1">Customer code</th>
-                    <th className="whitespace-nowrap px-2 py-1">Mapped brick</th>
-                    <th className="whitespace-nowrap px-2 py-1">Mapped area</th>
-                    <th className="whitespace-nowrap px-2 py-1">Mapped region</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {distributors.map((row) => (
-                    <tr key={`${row.distributorCode}-${row.customerCode}`} className="border-b border-[#eef1f3]">
-                      <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.distributorCode || "—"}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.customerCode}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedAreaName ?? "not mapped"}</td>
-                      <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedRegionName ?? "not mapped"}</td>
+            <>
+              <div className="mt-1.5 hidden overflow-x-auto md:block">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[#eef1f3] text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                      <th className="whitespace-nowrap px-2 py-1">Distributor</th>
+                      <th className="whitespace-nowrap px-2 py-1">Distributor code</th>
+                      <th className="whitespace-nowrap px-2 py-1">Customer code</th>
+                      <th className="whitespace-nowrap px-2 py-1">Mapped brick</th>
+                      <th className="whitespace-nowrap px-2 py-1">Mapped area</th>
+                      <th className="whitespace-nowrap px-2 py-1">Mapped region</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {distributors.map((row) => (
+                      <tr key={`${row.distributorCode}-${row.customerCode}`} className="border-b border-[#eef1f3]">
+                        <td className="whitespace-nowrap px-2 py-1.5 font-semibold text-slate-900">{row.distributorName}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.distributorCode || "—"}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-700">{row.customerCode}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedBrickName ?? "not mapped"}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedAreaName ?? "not mapped"}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 text-slate-500">{row.mappedRegionName ?? "not mapped"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile: the same six fields as a card. The mapped geography stays on the card
+                  rather than being dropped as "detail" — a variance between the pharmacy's area and
+                  the distributor's mapping is the single most useful thing in this block, and an
+                  approver on a phone is exactly the one who cannot go and look it up. */}
+              <div className="mt-1.5 space-y-2 md:hidden">
+                {distributors.map((row) => (
+                  <article
+                    key={`${row.distributorCode}-${row.customerCode}`}
+                    className="block border border-[#e4e9ec] p-3"
+                  >
+                    <p className="text-sm font-black text-slate-900">{row.distributorName}</p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      {row.distributorCode || "—"} · customer {row.customerCode}
+                    </p>
+                    <dl className="mt-2 space-y-0.5 text-[12px]">
+                      {(
+                        [
+                          ["Mapped brick", row.mappedBrickName],
+                          ["Mapped area", row.mappedAreaName],
+                          ["Mapped region", row.mappedRegionName],
+                        ] as const
+                      ).map(([label, value]) => (
+                        <div key={label} className="flex items-baseline justify-between gap-3">
+                          <dt className="text-slate-400">{label}</dt>
+                          <dd className="font-semibold text-slate-600">{value ?? "not mapped"}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -282,7 +316,8 @@ export function DirectOrderRequestDetail({
               "No distributor sales found for this pharmacy's customer codes."}
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -338,6 +373,49 @@ export function DirectOrderRequestDetail({
               </tfoot>
             </table>
           </div>
+
+          {/* Mobile: one card per month/product/distributor. The TOTAL is a card of its own at the
+              end rather than a dropped "footer" — it is the judgement line the approver weighs this
+              order against, and it is the first thing lost when a table is squeezed onto a phone. */}
+          <div className="space-y-2 p-3 md:hidden">
+            {retailHistory.map((row) => (
+              <article
+                key={`${row.month}-${row.productCode}-${row.distributorCode}`}
+                className="block border border-[#e4e9ec] p-3"
+              >
+                <p className="text-sm font-black text-slate-900">
+                  {row.month} · {row.productName}{" "}
+                  <span className="font-semibold text-slate-400">({row.productCode})</span>
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  {row.distributorName} ({row.distributorCode}) · customer {row.customerCode}
+                </p>
+                <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
+                  {row.qty.toLocaleString("en-US")} qty
+                  <span className="ml-2 font-semibold text-slate-500">
+                    {row.bonus.toLocaleString("en-US")} bonus
+                  </span>
+                  <span className="ml-2">{money(row.salesValue)}</span>
+                </p>
+              </article>
+            ))}
+            <article className="block border border-slate-300 bg-slate-50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                Total — {retailHistory.length.toLocaleString("en-US")} row
+                {retailHistory.length === 1 ? "" : "s"}
+              </p>
+              <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
+                {retailHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")} qty
+                <span className="ml-2 font-bold text-slate-600">
+                  {retailHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")} bonus
+                </span>
+                <span className="ml-2">
+                  {money(retailHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                </span>
+              </p>
+            </article>
+          </div>
+          </>
         )}
       </section>
 
@@ -355,7 +433,8 @@ export function DirectOrderRequestDetail({
             No other direct orders recorded for this pharmacy yet — this is its first.
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
@@ -423,6 +502,57 @@ export function DirectOrderRequestDetail({
               </tfoot>
             </table>
           </div>
+
+          {/* Mobile. The "not final" flag rides the card exactly as it rides the row: a month that
+              Finance has not closed must never be read as settled, and that warning is worth more
+              on a phone than any of the numbers beside it. */}
+          <div className="space-y-2 p-3 md:hidden">
+            {pharmacyHistory.map((row) => (
+              <article
+                key={`${row.month}-${row.productCode}-${row.distributorCode}`}
+                className="block border border-[#e4e9ec] p-3"
+              >
+                <p className="text-sm font-black text-slate-900">
+                  {row.month}
+                  {row.monthIsProvisional ? (
+                    <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                      not final
+                    </span>
+                  ) : null}
+                  <span className="font-bold"> · {row.productName}</span>{" "}
+                  <span className="font-semibold text-slate-400">({row.productCode})</span>
+                </p>
+                <p className="mt-0.5 text-[11px] text-slate-500">
+                  {row.distributorName}
+                  {row.distributorCode ? ` (${row.distributorCode})` : ""}
+                </p>
+                <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
+                  {row.orders.toLocaleString("en-US")} order{row.orders === 1 ? "" : "s"}
+                  <span className="ml-2">{row.qty.toLocaleString("en-US")} qty</span>
+                  <span className="ml-2 font-semibold text-slate-500">
+                    {row.bonus.toLocaleString("en-US")} bonus
+                  </span>
+                  <span className="ml-2">{money(row.salesValue)}</span>
+                </p>
+              </article>
+            ))}
+            <article className="block border border-slate-300 bg-slate-50 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Total</p>
+              <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
+                {pharmacyHistory.reduce((sum, row) => sum + row.orders, 0).toLocaleString("en-US")} orders
+                <span className="ml-2">
+                  {pharmacyHistory.reduce((sum, row) => sum + row.qty, 0).toLocaleString("en-US")} qty
+                </span>
+                <span className="ml-2 font-bold text-slate-600">
+                  {pharmacyHistory.reduce((sum, row) => sum + row.bonus, 0).toLocaleString("en-US")} bonus
+                </span>
+                <span className="ml-2">
+                  {money(pharmacyHistory.reduce((sum, row) => sum + row.salesValue, 0))}
+                </span>
+              </p>
+            </article>
+          </div>
+          </>
         )}
       </section>
 

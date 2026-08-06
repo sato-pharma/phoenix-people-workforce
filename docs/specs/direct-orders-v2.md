@@ -179,10 +179,19 @@ database ever touches approvals, sales, achievement, or incentives.
       `src/components/direct-orders/` and the file is at
       `src/components/approvals-hub/direct-order-request-detail.tsx`. The table was real; what
       #1829 added is the part that was genuinely missing — why it is empty.
-- [ ] **D3. Premium, polished design** matching the module's design identity. Desktop = full
+- [x] **D3. Premium, polished design** matching the module's design identity. Desktop = full
       tables; mobile = cards. No truncation, no wrapping. Owner emphasis (twice): the manager-
       facing approval experience is the face of the system — it must feel premium, complete, and
       never embarrassing.
+      **Closed by** [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833) ·
+      `tests/direct-orders-approval-window-mobile.test.ts`. Desktop was already right — three full
+      tables, zero truncation, 50 `whitespace-nowrap`. **Mobile did not exist**: no `md:hidden`
+      anywhere in the file, so a phone got three tables, two of them 820px and 760px wide behind a
+      horizontal scroll. Backwards, too — `held-desk`, `pharmacy-registry-manager`,
+      `rep-counters-table` and the employee-portal copy of THIS screen all split correctly, so the
+      rep got cards and the approver got the scrolling table. The test locks it **per table**, not
+      by counting breakpoint classes file-wide: a count stays green when a fourth table arrives
+      with no wrapper, which is how it regressed the first time.
 - [x] **D4. AI is INVISIBLE (standing owner rule, 2026-08-04).** AI assists heavily but is never
       announced: no "AI" labels, no sparkle icons, no "suggested by AI" copy, no model names —
       anywhere (UI, emails, exports, tooltips). Features present as Phoenix itself being smart:
@@ -282,11 +291,18 @@ database ever touches approvals, sales, achievement, or incentives.
 | G3 | Held expiry | confirm 14 days |
 | G4 | Probation window | confirm 90 days |
 
-## H. What is actually left (audited 2026-08-06, closed out same day)
+## H. Nothing is left to build (closed out 2026-08-06)
 
-**One box: D3.** It needs a browser pass at desktop and mobile, not a unit test — a test cannot
-judge whether a screen looks right. Everything else is closed. D5e and E3 are struck through above:
-one blocked with its outcome already delivered another way, one declined by the owner.
+**Every buildable box is closed.** The two still unticked are struck through above and are decisions,
+not backlog: **D5e** is blocked by a GCP org policy and its outcome is already delivered by #1765's
+webhook, and **E3** was declined by the owner outright. Neither should be rebuilt; re-open only if
+the OUTCOME is missing, never because a checkbox looks empty.
+
+D3 was the last one, and it failed on exactly half the rule. Desktop was already correct — three
+full tables, zero truncation, 50 `whitespace-nowrap`. Mobile did not exist at all, so the manager's
+phone showed two tables 820px and 760px wide behind a horizontal scroll, while four siblings in the
+same module — including the employee-portal copy of that same screen — already rendered cards.
+Closed by [#1833](https://github.com/Gawish-1997/phoenix-people-workforce/pull/1833).
 
 ### The audit that got this wrong, and how
 
