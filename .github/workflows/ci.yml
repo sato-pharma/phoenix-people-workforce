@@ -30,21 +30,11 @@ name: CI
 
 on:
   pull_request:
-    # Keep this list an EXACT INVERSE of ci-docs-fallback.yml's `paths`. That workflow supplies
-    # same-named jobs for the PRs this one skips; if the two lists ever disagree, a required check
-    # either never reports (the PR is blocked forever) or reports from the wrong workflow.
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/PULL_REQUEST_TEMPLATE/**'
-      # A migration is SQL: it cannot change a lint result, a type, a test or the build, so a
-      # migration-only PR paid ~4 min (build 143s + lint 114s + typecheck 67s) for nothing.
-      # The fallback still runs check:migrations FOR REAL — that is the one check SQL actually
-      # needs, and it caught a missing REVOKE ... FROM PUBLIC on 2026-08-06 — it only skips the
-      # rest. Note this covers migrations ONLY, not all of supabase/: a change to a config or
-      # generated type there can affect the build and must still run the full gate.
-      - 'supabase/migrations/**'
   push:
     branches:
       - main

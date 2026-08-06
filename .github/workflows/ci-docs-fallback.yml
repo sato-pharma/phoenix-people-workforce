@@ -1,69 +1,47 @@
-name: CI (docs/migration-only fallback)
+name: CI (docs-only fallback)
 
-# ci.yml's jobs use paths-ignore for this same list, so they never queue for PRs that touch only
-# these paths. A required check with no run has no status, which blocks such a PR forever. This
-# workflow's jobs share ci.yml's job names and trigger on the inverse filter, so those PRs get
-# fast runs instead. For mixed PRs (code + docs/migrations) both workflows trigger and all must
-# succeed, which is correct.
+# ci.yml's jobs use paths-ignore for this same list, so they never queue for PRs that touch
+# only these paths. A required check with no run has no status, which blocks such a PR
+# forever. This workflow's jobs share ci.yml's job names and trigger on the inverse filter,
+# so a docs-only PR gets fast, trivially-passing runs instead. For mixed PRs (code + docs)
+# both workflows trigger and all must succeed, which is correct.
 #
 # The job names here MUST track ci.yml's actual job ids. On 2026-07-30 ci.yml split
-# `lint-typecheck` into separate `lint` and `typecheck` jobs and this file was not updated, so it
-# kept satisfying a check that no longer exists while providing nothing for the two that do. That
-# was harmless ONLY because branch protection then required no checks. It now requires five
-# (validate, lint, typecheck, secret-scan, sast-scan), so the same drift would hang every affected
-# PR permanently. ci.yml's current job ids: validate, lint, typecheck, full-e2e. secret-scan and
-# sast-scan come from security-scan.yml, which triggers on every pull_request with no path filter
-# and therefore needs nothing from here.
-#
-# MIGRATIONS ARE NOT STUBBED OUT (added 2026-08-06). A migration is SQL — it cannot change a lint
-# result, a type, a test or the build — but it very much can be wrong on its own terms, so
-# `validate` below runs the real check:migrations rather than echoing. That check earns its place:
-# it blocked a migration on 2026-08-06 for creating a public SECURITY DEFINER function without
-# revoking EXECUTE from PUBLIC. It costs seconds because scripts/check-migrations.mjs imports only
-# node builtins, so this job needs a checkout and nothing else — no pnpm, no install, no cache.
-# The saving is the rest: a migration-only PR was paying ~4 minutes (build 143s + lint 114s +
-# typecheck 67s) to prove that a .sql file had not broken TypeScript.
+# `lint-typecheck` into separate `lint` and `typecheck` jobs and this file was not updated,
+# so it kept satisfying a check that no longer exists while providing nothing for the two
+# that do. Harmless only because branch protection currently requires no checks at all —
+# the moment it does, every docs-only PR would hang. Current ci.yml jobs: validate, lint,
+# typecheck, full-e2e.
 #
 # See https://github.com/Gawish-1997/phoenix-people-workforce/issues/679
 
 on:
   pull_request:
-    # Keep this list an EXACT INVERSE of ci.yml's `paths-ignore`.
     paths:
       - '**/*.md'
       - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
       - '.github/PULL_REQUEST_TEMPLATE/**'
-      - 'supabase/migrations/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # Runs for docs-only PRs too. It re-checks every migration in the tree, not just the changed
-      # ones, so on a docs PR it is a free extra guard rather than wasted work.
-      - name: Migration checks
-        run: node scripts/check-migrations.mjs
-      - name: Note what was skipped
-        run: echo "Only docs/template/migration files changed -- lint, typecheck, tests and build cannot be affected and run in ci.yml whenever code changes are present. The migration checks above did run for real."
+      - name: Skip full validation for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- full lint/typecheck/test/build runs in ci.yml when code changes are present. Satisfying the required 'validate' check here so docs-only PRs are mergeable."
 
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip lint
-        run: echo "Only docs/template/migration files changed in this PR -- there is no app code for lint to check. Satisfying the required 'lint' check here so the PR is mergeable."
+      - name: Skip lint for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- there is no app code for lint to check. Satisfying the required 'lint' check here so docs-only PRs are mergeable."
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - name: Skip typecheck
-        run: echo "Only docs/template/migration files changed in this PR -- there is no app code for typecheck to check. Satisfying the required 'typecheck' check here so the PR is mergeable."
+      - name: Skip typecheck for docs-only changes
+        run: echo "Only documentation/template files changed in this PR -- there is no app code for typecheck to check. Satisfying the required 'typecheck' check here so docs-only PRs are mergeable."
