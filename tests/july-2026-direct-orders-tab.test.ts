@@ -12,7 +12,7 @@ import { selectJulyDirectRowsForScope } from "../src/lib/sales/monthly-closing-e
 //
 // What these tests protect is the pair of properties that make that snapshot trustworthy:
 //
-//   1. It still adds up to the month that was actually reported. 684,002.15 EGP over 5,241 units
+//   1. It still adds up to the month that was actually reported. 1,187,548.15 EGP over 7,240 units
 //      is the figure sitting in production (source_of_sales_fact_rollup, period 2026-07,
 //      distributor 'Direct') and printed on the owner's signed-off workbook. If an edit ever
 //      changes a line, the total moves and this test fails — which is the point, because the
@@ -20,31 +20,31 @@ import { selectJulyDirectRowsForScope } from "../src/lib/sales/monthly-closing-e
 //
 //      That total was 628,267.65 over 4,271 units until 2026-08-06, when the owner restated
 //      Anti-Infective from his own sheets: the line's 14 region-only rows became 16 area rows,
-//      1,150 units / 93,554.00 -> 2,120 units / 149,288.50. Pedia did not move. The production
-//      rows were replaced in the same operation, and that is the rule a restatement must follow —
-//      this file and source_of_sales_fact_rollup move together or the closing stops trusting
-//      either, because the merge is gated on the two agreeing to the piastre.
+//      1,150 units / 93,554.00 -> 2,120 units / 149,288.50. Pedia was then RESTATED on 2026-08-07
+//      from the owner's 33-row area × product hand sheet: the previous 38 anonymous-region-only /
+//      3,121 units / 534,713.65 EGP Pedia rows (sheetRow 2-70) were replaced with 33 area-mapped
+//      rows (sheetRow 201-233), 5,120 units / 1,038,259.65 EGP. D16 Kafr El-Sheikh 1 carries the
+//      Pedia organogram override: region=AB per the hand sheet, not the canonical crosswalk D1.
+//      The production rows were replaced in the same operation, and that is the rule a restatement
+//      must follow — this file and source_of_sales_fact_rollup move together or the closing stops
+//      trusting either, because the merge is gated on the two agreeing to the piastre.
 //
 //   2. Value is NEVER units x factory price. Direct deals carry negotiated bonus/discount
 //      pricing, so value deliberately does not equal qty x price. Recomputing July at factory
-//      price would have inflated it by 31,837.35 EGP (628,267.65 -> 660,105.00). The dataset must
-//      keep carrying its own submitted value, so we pin rows where the two genuinely disagree.
+//      price would have inflated it by tens of thousands of EGP. The dataset must keep carrying
+//      its own submitted value, so we pin rows where the two genuinely disagree.
 
-const TOTAL_VALUE = 684002.15;
-const TOTAL_UNITS = 5241;
+const TOTAL_VALUE = 1187548.15;
+const TOTAL_UNITS = 7240;
 
 /** The owner's 2026-08-06 Anti-Infective restatement, as it now stands in production. */
 const ANTI_INFECTIVE_VALUE = 149288.5;
 const ANTI_INFECTIVE_UNITS = 2120;
 const ANTI_INFECTIVE_ROWS = 16;
-/** Pedia was not part of that restatement and must still carry exactly what it always did. */
-const PEDIA_VALUE = 534713.65;
-const PEDIA_UNITS = 3121;
-
-/** El Otefy is one chain the owner ruled is shared evenly by three reps. */
-const EL_OTEFY_SHEET_ROWS = [9, 10, 11];
-const EL_OTEFY_AREAS = ["GZ1", "GZ4", "GZ7"];
-const EL_OTEFY_PER_AREA = 59171.25;
+/** Pedia was RESTATED on 2026-08-07 — 33 area rows / 5,120 units / EGP 1,038,259.65. */
+const PEDIA_VALUE = 1038259.65;
+const PEDIA_UNITS = 5120;
+const PEDIA_ROWS = 33;
 
 export function runJuly2026DirectOrdersTabTests() {
   // ── the guard that keeps this a one-off ────────────────────────────────────
@@ -60,18 +60,18 @@ export function runJuly2026DirectOrdersTabTests() {
   assert.equal(
     totalValue,
     TOTAL_VALUE,
-    "July direct value must still equal the 684,002.15 sitting in production for period 2026-07",
+    "July direct value must still equal the 1,187,548.15 sitting in production for period 2026-07 (149,288.50 AI + 1,038,259.65 Pedia restated 2026-08-07)",
   );
   assert.equal(
     totalUnits,
     TOTAL_UNITS,
-    "July direct units must still equal the 5,241 reported for the month",
+    "July direct units must still equal the 7,240 reported for the month (2,120 AI + 5,120 Pedia restated 2026-08-07)",
   );
 
   // ── the 2026-08-06 Anti-Infective restatement ──────────────────────────────
   // The month total alone cannot catch a restatement that moves money BETWEEN the two lines, so
-  // each line is pinned on its own. Anti-Infective is the line the owner restated; Pedia is the
-  // control that proves the restatement stayed inside its own line.
+  // each line is pinned on its own. Anti-Infective is the line the owner restated first; Pedia is
+  // the 2026-08-07 second restatement.
   const byLine = (name: string) => JULY_2026_DIRECT_ROWS.filter((r) => r.line === name);
   const sumValue = (rows: readonly { value: number }[]) =>
     Math.round(rows.reduce((sum, r) => sum + r.value, 0) * 100) / 100;
@@ -98,72 +98,58 @@ export function runJuly2026DirectOrdersTabTests() {
     "the whole point of the restatement is that every Anti-Infective row now names an area",
   );
 
+  // ── the 2026-08-07 Pedia restatement ────────────────────────────────────────
   const pedia = byLine("Pedia");
+  assert.equal(pedia.length, PEDIA_ROWS, `Pedia restatement is exactly ${PEDIA_ROWS} area rows (sheetRow 201-233)`);
   assert.equal(
     sumValue(pedia),
     PEDIA_VALUE,
-    "Pedia was not restated and must still carry 534,713.65 — if this moved, the edit crossed lines",
+    "Pedia was restated 2026-08-07 and must now carry 1,038,259.65 — the 33 new hand rows written to both DB and this constant",
   );
-  assert.equal(sumUnits(pedia), PEDIA_UNITS, "Pedia was not restated and must still carry 3,121 units");
+  assert.equal(sumUnits(pedia), PEDIA_UNITS, "Pedia was restated 2026-08-07 and must now carry 5,120 units");
+
+  // D16 organogram override (Kafr El-Sheikh 1) — region=AB per hand sheet, NOT canonical D1 crosswalk
+  const d16 = pedia.find((r) => r.areaCode === "D16");
+  assert.ok(d16, "D16 Kafr El-Sheikh 1 must be present in Pedia restatement");
+  assert.equal(d16.regionCode, "AB", "D16 Pedia organogram override: region=AB per owner hand sheet, not canonical D1 crosswalk");
+  assert.ok(
+    d16.note.includes("region=AB (not crosswalk D1)"),
+    "the D16 Pedia row must carry an explicit audit-trail note documenting the region override so the exception survives future reads",
+  );
 
   // ── value is carried, never derived ────────────────────────────────────────
   // At least one row must disagree with qty x any single price, proving the dataset is not a
-  // recomputation. (Rows 2 and 4 are the clearest: same product/qty/bonus as rows 26-31 but a
-  // different negotiated value — the owner confirmed direct pricing is per-deal.)
-  const row2 = JULY_2026_DIRECT_ROWS.find((r) => r.sheetRow === 2);
-  const row26 = JULY_2026_DIRECT_ROWS.find((r) => r.sheetRow === 26);
-  assert.ok(row2 && row26, "sheet rows 2 and 26 must both be present");
-  assert.equal(row2.product, row26.product, "rows 2 and 26 are the same product");
-  assert.equal(row2.qty, row26.qty, "rows 2 and 26 are the same quantity");
+  // recomputation. Same LA001 (Lacto 1 Advance New Price) qty=144 appears in both D22 Dakahlia 2
+  // and GZ1 Giza Centers, with values 35,640 vs 36,432 — the owner confirmed direct pricing is
+  // per-deal.
+  const la001_144 = pedia.filter((r) => r.productCode === "LA001" && r.qty === 144);
+  assert.ok(
+    la001_144.length >= 2,
+    "the restated Pedia set must contain at least two LA001 rows with qty=144 for the per-deal pricing proof",
+  );
+  assert.equal(la001_144[0].product, la001_144[1].product, "the two proof rows are the same product");
+  assert.equal(la001_144[0].qty, la001_144[1].qty, "the two proof rows are the same quantity");
   assert.notEqual(
-    row2.value,
-    row26.value,
+    la001_144[0].value,
+    la001_144[1].value,
     "identical product+qty with DIFFERENT values is the proof that direct value is per-deal and must never be recomputed",
   );
 
-  // ── El Otefy: one chain, split evenly three ways ───────────────────────────
-  const elOtefy = JULY_2026_DIRECT_ROWS.filter((r) => EL_OTEFY_SHEET_ROWS.includes(r.sheetRow));
-  assert.equal(
-    elOtefy.length,
-    9,
-    "El Otefy's 3 sheet rows expand to 9 lines — three products across three sharing reps",
-  );
-  for (const areaCode of EL_OTEFY_AREAS) {
-    const share = Math.round(
-      elOtefy.filter((r) => r.areaCode === areaCode).reduce((sum, r) => sum + r.value, 0) * 100,
-    ) / 100;
-    assert.equal(
-      share,
-      EL_OTEFY_PER_AREA,
-      `El Otefy area ${areaCode} must carry exactly one third (${EL_OTEFY_PER_AREA}) — the owner ruled an even split`,
-    );
-  }
-  const elOtefyUnits = elOtefy.reduce((sum, r) => sum + r.qty, 0);
-  assert.equal(
-    elOtefyUnits,
-    804,
-    "splitting El Otefy three ways must neither create nor lose a unit (100 + 512 + 192)",
-  );
-
-  // ── the National Sales Manager's rows stay unattributed ────────────────────
+  // ── 2026-08-07 restatement: every Pedia row is area-attributed ─────────────
+  // The old Pedia set carried 3 area-less National Sales Manager orders (sheetRow 21/22/24
+  // = 13,732 EGP). Those were removed in the 2026-08-07 restatement; all 33 new Pedia rows name
+  // a real area, so there are zero unattributed Pedia rows now.
   const areaLess = JULY_2026_DIRECT_ROWS.filter((r) => !r.areaCode);
   assert.equal(
     areaLess.length,
-    3,
-    "exactly the three National Sales Manager direct orders carry no area",
+    0,
+    "after the 2026-08-07 Pedia restatement, every remaining row names an area — the three old NSM area-less orders (sheetRow 21/22/24) were retired",
   );
   assert.equal(
-    Math.round(areaLess.reduce((sum, r) => sum + r.value, 0) * 100) / 100,
-    13732,
-    "the unattributed direct total is 13,732.00 — counted in the month total but credited to no area",
+    areaLess.reduce((sum, r) => sum + r.value, 0),
+    0,
+    "zero area-less rows ⇒ zero area-less value",
   );
-  for (const row of areaLess) {
-    assert.equal(
-      row.repName,
-      "",
-      "an area-less row must name no medical rep — the owner ruled these are not distributed",
-    );
-  }
 
   // ── every attributed row is internally consistent ──────────────────────────
   for (const row of JULY_2026_DIRECT_ROWS) {
@@ -174,14 +160,34 @@ export function runJuly2026DirectOrdersTabTests() {
       `sheet row ${row.sheetRow} must belong to a real line, got ${row.line}`,
     );
     if (row.areaCode) {
-      assert.ok(
-        row.repName.length > 0,
-        `sheet row ${row.sheetRow} has area ${row.areaCode} so it must name the rep who covers it`,
-      );
-      assert.ok(
-        row.repHrId.length > 0,
-        `sheet row ${row.sheetRow} must carry the rep's HR_ID so the credit is traceable to a person`,
-      );
+      if (row.line === "Anti Infective") {
+        // The 2026-08-06 Anti-Infective restatement is 100% rep-assigned (16 named reps / HR IDs).
+        assert.ok(
+          row.repName.length > 0,
+          `Anti-Infective sheet row ${row.sheetRow} has area ${row.areaCode} so it must name the rep who covers it`,
+        );
+        assert.ok(
+          row.repHrId.length > 0,
+          `Anti-Infective sheet row ${row.sheetRow} must carry the rep's HR_ID so the credit is traceable to a person`,
+        );
+      } else {
+        // Pedia 2026-08-07 restatement is an area × product hand map. Rep is inherited from old rows
+        // where the generator could find a single dominant rep for the area; otherwise both fields
+        // are empty because the owner did not supply rep attribution at this level. The closing
+        // aggregates by area anyway, so the tab still shows the right totals.
+        if (row.repName.length > 0) {
+          assert.ok(
+            row.repHrId.length > 0,
+            `Pedia sheet row ${row.sheetRow} names a rep so it must also carry the HR_ID so the credit is traceable`,
+          );
+        } else {
+          assert.equal(
+            row.repHrId,
+            "",
+            `Pedia sheet row ${row.sheetRow} has no rep name so it must also leave HR_ID blank — no partial identity allowed`,
+          );
+        }
+      }
     }
   }
 
@@ -211,25 +217,24 @@ function runJulyDirectScopeTests() {
   const giza = selectJulyDirectRowsForScope(
     fakeMatrix([{ areaCodes: ["GZ1", "GZ2", "GZ3", "GZ4", "GZ5", "GZ6", "GZ7", "UE9"], regionCode: "GZ" }], "Pedia"),
   );
-  assert.equal(total(giza), 203913.75, "a Giza-filtered export must show exactly Giza's direct sales");
+  assert.equal(total(giza), 279958.95, "a Giza-filtered export must show exactly Giza's direct sales after the 2026-08-07 Pedia restatement (9 rows)");
   assert.ok(
     giza.every((row) => row.regionCode === "GZ"),
     "a Giza-filtered export must not list a single row from another region — this is the bug that shipped",
   );
   assert.ok(
     giza.every((row) => row.areaCode !== ""),
-    "the National Sales Manager's area-less rows belong to Others and must NOT appear under a Giza filter",
+    "after the 2026-08-07 Pedia restatement every row carries an area — no NSM area-less rows remain under any area-bearing filter",
   );
 
-  // Others only — where the National Sales Manager's own orders DO belong.
+  // Others / OT filter: after the 2026-08-07 restatement, Pedia's 3 area-less NSM orders
+  // (sheetRow 21/22/24, 13,732 EGP) were retired. OT/Others therefore has zero rows for both
+  // lines, and the explicit "no area-less rows" rule is what we now guard.
   const others = selectJulyDirectRowsForScope(
     fakeMatrix([{ areaCodes: [], regionCode: "OT" }], "Pedia"),
   );
-  assert.equal(total(others), 13732, "an Others-filtered export must show exactly the 13,732.00 booked to Others");
-  assert.ok(
-    others.every((row) => row.areaCode === ""),
-    "Others carries only the unattributed rows — no area-bearing row belongs there",
-  );
+  assert.equal(total(others), 0, "after the 2026-08-07 Pedia restatement, OT/Others has zero rows — the 3 old NSM area-less orders were retired");
+  assert.equal(others.length, 0, "Others carries zero rows post restatement — no area-bearing row belongs there and no area-less rows remain");
 
   // Unfiltered — every region present, so the whole month must survive.
   const all = selectJulyDirectRowsForScope(
@@ -237,20 +242,22 @@ function runJulyDirectScopeTests() {
       [
         { areaCodes: ["CA3", "CA4", "CA6"], regionCode: "CA" },
         { areaCodes: ["GZ1", "GZ2", "GZ3", "GZ4", "GZ5", "GZ6", "GZ7", "UE9"], regionCode: "GZ" },
-        { areaCodes: ["D11", "D12", "D13", "D14", "D15", "D16", "D17"], regionCode: "D1" },
+        { areaCodes: ["D11", "D12", "D13", "D14", "D15", "D17"], regionCode: "D1" },
         { areaCodes: ["D21", "D22", "D23", "D24", "D25", "D26"], regionCode: "D2" },
         { areaCodes: ["UE1", "UE2", "UE3", "UE4", "UE5", "UE6", "UE7", "UE8"], regionCode: "UE" },
-        // Alex-BHR entered this dataset with the 2026-08-06 restatement — Behira 2 is the only
-        // area it contributes, and leaving the region out would silently drop 9,200.00.
-        { areaCodes: ["AB1", "AB2", "AB3", "AB4", "AB5"], regionCode: "AB" },
+        // Alex-BHR entered this dataset with the 2026-08-06 Anti-Infective restatement via AB5.
+        // D16 Kafr El-Sheikh 1 joined AB via the 2026-08-07 Pedia organogram override
+        // (region=AB per owner hand sheet, NOT the canonical crosswalk D1), so it must appear
+        // under the AB area list or the unfiltered export silently drops 240 units / 42,900.00.
+        { areaCodes: ["AB1", "AB2", "AB3", "AB4", "AB5", "D16"], regionCode: "AB" },
         { areaCodes: [], regionCode: "OT" },
       ],
       null,
     ),
   );
-  assert.equal(total(all), 684002.15, "an unfiltered export must still carry the whole month, both lines");
+  assert.equal(total(all), 1187548.15, "an unfiltered export must still carry the whole month, both lines — 149,288.50 AI + 1,038,259.65 restated Pedia = 1,187,548.15");
 
-  // Delta (2) arrived with the restatement too: before it, no July direct row sat in D2 at all.
+  // Delta (2) arrived with the 2026-08-06 Anti-Infective restatement; it is untouched.
   const delta2 = selectJulyDirectRowsForScope(
     fakeMatrix([{ areaCodes: ["D21", "D22", "D23", "D24", "D25", "D26"], regionCode: "D2" }], "Anti Infective"),
   );
