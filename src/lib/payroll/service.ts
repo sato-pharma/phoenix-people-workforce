@@ -122,15 +122,10 @@ function buildPayrollIdentityFilterValue(hrId: string, mode: "exact" | "contains
 function buildPayrollIdentityOrClause(
   hrId: string,
   mode: "exact" | "contains" = "exact",
-  includeEmployeeCode = true,
 ) {
   const value = buildPayrollIdentityFilterValue(hrId, mode);
   if (!value) return null;
-  const clauses = [`hr_id.ilike.${value}`];
-  if (includeEmployeeCode) {
-    clauses.push(`employee_code.ilike.${value}`);
-  }
-  return clauses.join(",");
+  return `hr_id.ilike.${value}`;
 }
 
 type PayrollBatchLookupResult = {
@@ -143,7 +138,7 @@ type PayrollBatchLookupResult = {
 // clause), instead of a separate exact-match request per ID per column.
 async function collectPayrollBatchIdsForColumnBatch(
   supabase: ReturnType<typeof getSupabaseAdmin>,
-  column: "hr_id" | "employee_code",
+  column: "hr_id",
   targetHrIds: string[],
 ): Promise<PayrollBatchLookupResult> {
   if (targetHrIds.length === 0) return { batchIds: new Set(), schemaMissing: false, columnMissing: false };
@@ -155,9 +150,9 @@ async function collectPayrollBatchIdsForColumnBatch(
     .or(orClause);
 
   const schemaMissing = Boolean(error && isPayrollSchemaMissing(error));
-  const columnMissing = Boolean(error && isMissingColumnError(error, column));
+  const columnMissing = false;
 
-  if (error && !schemaMissing && !columnMissing) {
+  if (error && !schemaMissing) {
     throw error;
   }
 
@@ -260,7 +255,7 @@ function mapRecord(row: Record<string, unknown>): SalaryRecord {
     id: String(row.id),
     batchId: String(row.batch_id),
     baseSalary: resolvedBaseSalary,
-    employeeCode: String(row.employee_code ?? row.hr_id ?? ""),
+    employeeCode: String(row.hr_id ?? ""),
     hrId: String(row.hr_id ?? ""),
     fullName: String(row.full_name ?? ""),
     nameAr: row.name_ar ? String(row.name_ar) : null,
@@ -398,7 +393,6 @@ function getPayrollAllowedHrIdsForLine(
 function isPayrollRecordInScope(row: Record<string, unknown>, allowedHrIds: Set<string>) {
   const hrValues = [
     String(row.hr_id ?? ""),
-    String(row.employee_code ?? ""),
   ];
   return hrValues.some((value) => {
     const normalized = normalizeHrId(value);
@@ -488,14 +482,10 @@ async function getVisiblePayrollBatchIds(
   );
   if (normalizedIds.length === 0) return new Set<string>();
 
-  const [hrIdResult, employeeCodeResult] = await Promise.all([
-    collectPayrollBatchIdsForColumnBatch(supabase, "hr_id", normalizedIds),
-    collectPayrollBatchIdsForColumnBatch(supabase, "employee_code", normalizedIds),
-  ]);
+  const hrIdResult = await collectPayrollBatchIdsForColumnBatch(supabase, "hr_id", normalizedIds);
 
   const batchIds = new Set<string>();
   hrIdResult.batchIds.forEach((batchId) => batchIds.add(batchId));
-  employeeCodeResult.batchIds.forEach((batchId) => batchIds.add(batchId));
 
   return batchIds;
 }
@@ -503,22 +493,20 @@ async function getVisiblePayrollBatchIds(
 function filterPayrollQueryByAllowedHrIds<T extends { or: (value: string) => T; ilike?: (column: string, value: string) => T }>(
   query: T,
   allowedHrIds: Set<string>,
-  options?: { includeEmployeeCode?: boolean },
 ) {
   const ids = Array.from(allowedHrIds);
   if (ids.length === 0) return query;
   const conditions: string[] = [];
-  const includeEmployeeCode = options?.includeEmployeeCode ?? true;
   for (const hrId of ids) {
     if (!hrId) continue;
     const normalized = normalizeHrId(hrId);
     const compact = normalizeHrIdForAccess(hrId);
     if (normalized) {
-      const exact = buildPayrollIdentityOrClause(normalized, "exact", includeEmployeeCode);
+      const exact = buildPayrollIdentityOrClause(normalized, "exact");
       if (exact) conditions.push(exact);
     }
     if (compact && compact !== normalized) {
-      const compactClause = buildPayrollIdentityOrClause(compact, "exact", includeEmployeeCode);
+      const compactClause = buildPayrollIdentityOrClause(compact, "exact");
       if (compactClause) conditions.push(compactClause);
     }
   }
@@ -738,7 +726,7 @@ export async function getLatestSalaryExpenseTotalsBefore(
 
   const { data, error } = await supabase
     .from("salary_records")
-    .select("employee_code,hr_id,expenses")
+    .select("hr_id,expenses")
     .eq("batch_id", String(previousBatch.id));
 
   if (error) {
@@ -748,7 +736,7 @@ export async function getLatestSalaryExpenseTotalsBefore(
 
   const totals = new Map<string, number>();
   ((data ?? []) as Array<Record<string, unknown>>).forEach((row) => {
-    const hrId = String(row.employee_code ?? row.hr_id ?? "").trim();
+    const hrId = String(row.hr_id ?? "").trim();
     if (!hrId) return;
     totals.set(hrId, Number(row.expenses ?? 0));
   });
@@ -970,13 +958,12 @@ export async function getSalaryBatchExport(
   }
 
   const buildRecordsQuery = () => supabase.from("salary_records").select("*").eq("batch_id", targetBatchId);
-  const buildFilteredRecordsQuery = (includeEmployeeCode = false) =>
+  const buildFilteredRecordsQuery = () =>
     payrollAccessFilter.all
       ? buildRecordsQuery()
       : filterPayrollQueryByAllowedHrIds(
           buildRecordsQuery(),
           payrollAccessFilter.allowedHrIds,
-          { includeEmployeeCode },
         );
 
   const batchPromise = supabase
@@ -984,19 +971,7 @@ export async function getSalaryBatchExport(
     .select("*")
     .eq("id", targetBatchId)
     .maybeSingle();
-  let recordsResult = await buildFilteredRecordsQuery(false);
-  if (
-    recordsResult.error &&
-    !payrollAccessFilter.all &&
-    isMissingColumnError(recordsResult.error, "employee_code")
-  ) {
-    if (isDevelopment) {
-      console.debug("[employee-portal] salary_records query missing employee_code column; fallback to hr_id only", {
-        batchId: targetBatchId,
-      });
-    }
-    recordsResult = await buildFilteredRecordsQuery(false);
-  }
+  const recordsResult = await buildFilteredRecordsQuery();
 
   const batchResult = await batchPromise;
 
