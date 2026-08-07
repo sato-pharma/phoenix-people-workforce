@@ -1539,8 +1539,14 @@ async function buildChannelEmailInput(
     recipientHonorific: managerHonorific(recipient.role, recipient.name),
     recipientName: input.email?.recipientName ?? recipient.name ?? undefined,
     recipientHrId: recipient.hrId ?? undefined,
-    recipients: input.email?.recipients ?? (recipient.email ? [recipient.email] : undefined),
-    recipientMode: input.email?.recipientMode ?? (recipient.email ? "candidate" : undefined),
+    recipients: (input.email?.recipients && input.email.recipients.length > 0)
+      ? input.email.recipients
+      : (recipient.email ? [recipient.email] : []),
+    recipientMode: input.email?.recipientMode ?? (
+      ((input.email?.recipients && input.email.recipients.length > 0) || recipient.email)
+        ? "candidate"
+        : undefined
+    ),
     subject: input.email?.subject ?? emailContent.title,
     summary: input.email?.summary ?? emailContent.message,
     // Lets a domain pin the exact /admin/email-templates key that frames this event.

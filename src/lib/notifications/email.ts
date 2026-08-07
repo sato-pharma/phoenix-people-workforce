@@ -20,6 +20,7 @@ import { ACTIVE_EMPLOYMENT_STATUSES_IN_LIST } from "@/lib/auth/session-lifecycle
 import { writeAuditLog } from "@/lib/admin/audit";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { isPayslipEventType } from "@/lib/notifications/payslip-channel-guard";
 
 export const emailNotificationTypes = [
   "probation",
@@ -202,6 +203,25 @@ type EmailContactRow = {
 type NotificationDelivery =
   | { policy: EmailNotificationPolicy; recipients: string[]; skipped: false }
   | { reason: string; skipped: true };
+
+function payloadLooksLikePayslip(input: NotificationEmailInput): boolean {
+  const haystack = [
+    input.eventType,
+    input.templateKey,
+    input.subject,
+    input.summary,
+    input.title,
+    input.ctaHref,
+    input.ctaLabel,
+    input.module,
+    input.recipientName,
+    input.recipientHonorific,
+  ]
+    .map((v) => String(v ?? "").trim().toLowerCase())
+    .join(" | ");
+  if (isPayslipEventType(input.eventType)) return true;
+  return haystack.includes("payslip");
+}
 
 export const defaultEmailNotificationPolicies: EmailNotificationPolicy[] = [
   {
@@ -672,12 +692,16 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
     return { reason: "Email skipped: unsupported notification type.", skipped: true };
   }
 
+  const hasExplicitRecipients = cleanEmailList(input.recipients ?? []).length > 0;
   const requestedRecipientMode = input.recipientMode ?? (input.notificationType === "birthday" ? "employee" : undefined);
+  const effectiveRequestedMode = hasExplicitRecipients
+    ? requestedRecipientMode ?? "candidate"
+    : requestedRecipientMode;
   const policy = {
     ...storedPolicy,
-    includeHrInbox: input.includeHrInbox ?? storedPolicy.includeHrInbox,
-    recipientMode: requestedRecipientMode ?? storedPolicy.recipientMode,
-    recipientModes: requestedRecipientMode ? [requestedRecipientMode] : storedPolicy.recipientModes,
+    includeHrInbox: hasExplicitRecipients ? false : (input.includeHrInbox ?? storedPolicy.includeHrInbox),
+    recipientMode: effectiveRequestedMode ?? storedPolicy.recipientMode,
+    recipientModes: effectiveRequestedMode ? [effectiveRequestedMode] : storedPolicy.recipientModes,
   };
 
   if (!policy.enabled) {
@@ -692,7 +716,10 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
   const policyRecipients = cleanEmailList(allPolicyRecipients.flat());
   const hrRecipients = policy.includeHrInbox ? recipientsFromEnv() : [];
   const explicitRecipients = cleanEmailList(input.recipients ?? []);
-  const recipients = cleanEmailList([...policyRecipients, ...hrRecipients, ...explicitRecipients]);
+  const rawCombined = hasExplicitRecipients
+    ? [...explicitRecipients]
+    : [...policyRecipients, ...hrRecipients, ...explicitRecipients];
+  const recipients = cleanEmailList(rawCombined);
 
   if (recipients.length === 0) {
     return { reason: `Email skipped: ${policy.label} routing resolved no recipient emails.`, skipped: true };
@@ -1329,7 +1356,8 @@ export type OutboxSkipCode =
   | "no_recipients"
   | "recipient_suppressed"
   | "no_deliverable_recipient"
-  | "probation_audit_failed";
+  | "probation_audit_failed"
+  | "payslip_email_blocked";
 
 export type OutboxSkipClass =
   | { terminal: true; sentryEscalate: boolean; code: OutboxSkipCode }
@@ -1381,6 +1409,10 @@ export function classifyOutboxSkip(
   // could not be emailed — the in-app copy still delivers).
   if (r.includes("no deliverable recipient")) {
     return { terminal: true, sentryEscalate: high, code: "no_deliverable_recipient" };
+  }
+  // Payslip hard block. Never retries — owner rule means payslip emails never fire, period.
+  if (r.includes("payslip emails are hard-blocked")) {
+    return { terminal: true, sentryEscalate: false, code: "payslip_email_blocked" };
   }
   // Unknown reason (e.g. a missing/inactive template that may be republished, or
   // "already being processed") → transient: keep retrying within the attempt budget.
@@ -1520,6 +1552,27 @@ function validateAllRecipients(to: string[], cc: string[], bcc: string[]): {
 async function sendNotificationEmailDirect(input: NotificationEmailInput): Promise<SendEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
+  }
+  if (payloadLooksLikePayslip(input)) {
+    const reason = "Payslip emails are hard-blocked per owner rule (payslip-channel-guard layer 5 — sendNotificationEmailDirect choke-point).";
+    console.log("Payslip email BLOCKED at sendNotificationEmailDirect choke-point", {
+      level: "error",
+      tags: {
+        component: "email",
+        outboxSkipCode: "payslip_email_blocked",
+        notificationType: input.notificationType ?? "unknown",
+      },
+      extra: {
+        eventType: input.eventType ?? null,
+        templateKey: input.templateKey ?? null,
+        module: input.module ?? null,
+        employeeHrId: input.employeeHrId ?? null,
+        recipientHrId: input.recipientHrId ?? null,
+        subject: input.subject?.slice(0, 140) ?? null,
+        title: input.title?.slice(0, 140) ?? null,
+      },
+    });
+    return { reason, skipped: true };
   }
   const identity = validateNotificationEmailIdentity(input);
   if (!identity.ok) {
@@ -2116,6 +2169,35 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
         tags: { component: "email", cron: "outbox-processing" },
         extra: payloadSummary,
       });
+    }
+
+    // Payslip hard block (layer 4 outbox dispatch guard). Runs even if all upstream layers
+    // somehow got bypassed — catches payslip-named content in eventType, templateKey, subject,
+    // summary, title, ctaHref, module, or recipient fields.
+    if (payloadLooksLikePayslip(claimed.payload)) {
+      const skipReason = "Payslip emails are hard-blocked per owner rule (payslip-channel-guard layer 4 — outbox dispatch guard).";
+      await markNotificationOutboxSkipped(claimed, skipReason, "payslip_email_blocked");
+      console.log("Payslip email BLOCKED at outbox dispatch guard", {
+        level: "error",
+        tags: {
+          component: "email",
+          cron: "outbox-processing",
+          outboxSkipCode: "payslip_email_blocked",
+          notificationType: claimed.payload.notificationType ?? "unknown",
+        },
+        extra: {
+          id: claimed.id,
+          attempts: claimed.attempts,
+          eventType: claimed.payload.eventType ?? null,
+          templateKey: claimed.payload.templateKey ?? null,
+          module: claimed.payload.module ?? null,
+          employeeHrId: claimed.payload.employeeHrId ?? null,
+          recipientHrId: claimed.payload.recipientHrId ?? null,
+          subject: claimed.payload.subject?.slice(0, 140) ?? null,
+          title: claimed.payload.title?.slice(0, 140) ?? null,
+        },
+      });
+      return { reason: skipReason, skipped: true };
     }
 
     const result = await sendNotificationEmailDirect(claimed.payload);
