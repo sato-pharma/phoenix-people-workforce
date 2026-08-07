@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { PremiumLoginPage } from "@/components/auth/premium-login-page";
 import { systemIdentity } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
-import {
-  getCookieValue,
-  phoenixSessionCookieName,
-  verifySessionToken,
-} from "@/lib/auth/session-token";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const metadata: Metadata = {
   title: systemIdentity.appName,
@@ -36,12 +31,8 @@ function safeReturnUrl(value: string | null | undefined): string | null {
 }
 
 async function resolveSessionRedirectRole() {
-  const headerStore = await headers();
-  const session = verifySessionToken(
-    getCookieValue(headerStore.get("cookie"), phoenixSessionCookieName),
-  );
-
-  return session?.role ?? null;
+  const access = await resolveAccessContextFromPage();
+  return access.loginId ? access.role : null;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
