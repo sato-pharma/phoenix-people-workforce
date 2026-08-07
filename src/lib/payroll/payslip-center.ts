@@ -18,7 +18,6 @@ function assertPayslipCenterAccess(access: AccessContext) {
 type SalaryRecordLookupRow = {
   area: string | null;
   batch_id: string;
-  employee_code: string | null;
   full_name: string | null;
   gross_salary: number | null;
   hr_id: string | null;
@@ -91,19 +90,6 @@ function errorMessage(error: unknown) {
   return String(error ?? "");
 }
 
-function isMissingColumn(error: unknown, columnName: string) {
-  const message = errorMessage(error).toLowerCase();
-  const tableQualifiedColumn = `salary_records.${columnName}`;
-  return (
-    message.includes(`column "${columnName}"`) ||
-    message.includes(`column ${columnName}`) ||
-    message.includes(`column ${tableQualifiedColumn}`) ||
-    message.includes(`column "${tableQualifiedColumn}"`) ||
-    message.includes(`${tableQualifiedColumn} does not exist`) ||
-    message.includes("42703")
-  );
-}
-
 function uniqueRows(rows: SalaryRecordLookupRow[]) {
   const byId = new Map<string, SalaryRecordLookupRow>();
   rows.forEach((row) => byId.set(String(row.id), row));
@@ -117,46 +103,34 @@ export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
   const supabase = getSupabaseAdmin();
   const initialResult = await supabase
     .from("salary_records")
-    .select("employee_code,hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
+    .select("hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
     .in("salary_batches.status", publishedPayslipStatuses)
     .order("full_name", { ascending: true })
     .limit(2000);
-  let data: unknown[] | null = initialResult.data;
-  let error: unknown = initialResult.error;
-
-  if (error && isMissingColumn(error, "employee_code")) {
-    const fallbackResult = await supabase
-      .from("salary_records")
-      .select("hr_id,full_name,line,area,job_title,salary_batches!inner(status)")
-      .in("salary_batches.status", publishedPayslipStatuses)
-      .order("full_name", { ascending: true })
-      .limit(2000);
-    data = fallbackResult.data;
-    error = fallbackResult.error;
-  }
+  const data: unknown[] | null = initialResult.data;
+  const error: unknown = initialResult.error;
 
   if (error) throw error;
 
   const optionsByKey = new Map<string, PayslipCenterEmployeeOption>();
-  ((data ?? []) as Array<Partial<Pick<SalaryRecordLookupRow, "area" | "employee_code" | "full_name" | "hr_id" | "job_title" | "line">>>).forEach((row) => {
+  ((data ?? []) as Array<Partial<Pick<SalaryRecordLookupRow, "area" | "full_name" | "hr_id" | "job_title" | "line">>>).forEach((row) => {
     const hrId = String(row.hr_id ?? "").trim();
-    const employeeCode = String(row.employee_code ?? "").trim();
     const fullName = String(row.full_name ?? "").trim();
-    const value = hrId || employeeCode;
+    const value = hrId;
     if (!value || !fullName) return;
 
     const key = normalizeKey(value);
     if (optionsByKey.has(key)) return;
 
     const secondary = [
-      hrId || employeeCode,
+      hrId,
       row.job_title,
       row.line,
       row.area,
     ].filter(Boolean).join(" - ");
 
     optionsByKey.set(key, {
-      employeeCode,
+      employeeCode: hrId,
       fullName,
       hrId,
       label: `${fullName}${secondary ? ` (${secondary})` : ""}`,
@@ -167,11 +141,11 @@ export async function getPayslipCenterEmployeeOptions(access: AccessContext) {
   return [...optionsByKey.values()].sort((left, right) => left.fullName.localeCompare(right.fullName));
 }
 
-async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id", query: string) {
+async function querySalaryRecords(column: "full_name" | "hr_id", query: string) {
   const supabase = getSupabaseAdmin();
   const base = supabase
     .from("salary_records")
-    .select("id,batch_id,employee_code,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
+    .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
     .in("salary_batches.status", publishedPayslipStatuses);
 
   // ID columns require exact match — ilike on hr_id would match A-5, A-50, A-51, A-500, etc.
@@ -179,24 +153,8 @@ async function querySalaryRecords(column: "employee_code" | "full_name" | "hr_id
     ? base.ilike(column, `%${query}%`)
     : base.eq(column, query)
   ).limit(120);
-  let data: unknown[] | null = initialResult.data;
-  let error: unknown = initialResult.error;
-
-  if (error && isMissingColumn(error, "employee_code")) {
-    if (column === "employee_code") return [];
-
-    const fallbackBase = supabase
-      .from("salary_records")
-      .select("id,batch_id,hr_id,full_name,line,area,job_title,gross_salary,total_additions,total_deductions,net_salary,salary_batches!inner(status)")
-      .in("salary_batches.status", publishedPayslipStatuses);
-
-    const fallbackResult = await (column === "full_name"
-      ? fallbackBase.ilike(column, `%${query}%`)
-      : fallbackBase.eq(column, query)
-    ).limit(120);
-    data = fallbackResult.data;
-    error = fallbackResult.error;
-  }
+  const data: unknown[] | null = initialResult.data;
+  const error: unknown = initialResult.error;
 
   if (error) throw error;
   return (data ?? []) as SalaryRecordLookupRow[];
@@ -216,7 +174,6 @@ export async function searchPayslipCenter(access: AccessContext, search: string 
   const recordResults = await Promise.all([
     querySalaryRecords("full_name", query),
     querySalaryRecords("hr_id", query),
-    querySalaryRecords("employee_code", query),
   ]);
   const records = uniqueRows(recordResults.flat());
   const batchIds = [...new Set(records.map((record) => record.batch_id).filter(Boolean))];
@@ -245,10 +202,10 @@ export async function searchPayslipCenter(access: AccessContext, search: string 
       return {
         area: record.area ?? "Unassigned",
         batchId: record.batch_id,
-        employeeCode: record.employee_code ?? record.hr_id ?? "",
+        employeeCode: record.hr_id ?? "",
         fullName: record.full_name ?? "Unknown employee",
         grossSalary: Number(record.gross_salary ?? 0),
-        hrId: record.hr_id ?? record.employee_code ?? "",
+        hrId: record.hr_id ?? "",
         jobTitle: record.job_title ?? "Unassigned",
         line: record.line ?? "Unassigned",
         month: Number(batch.month),

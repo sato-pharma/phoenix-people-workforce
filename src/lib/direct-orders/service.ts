@@ -1530,65 +1530,30 @@ export async function ensureDirectOrderPharmacyFromDirectory(
 
   const row = mapRow as Record<string, unknown>;
   const catalogueName = String(row.customer_name ?? "").trim();
-  const now = new Date().toISOString();
-  const { data: pharmacyRow, error: insertError } = await supabase
-    .from("direct_order_pharmacies")
-    .insert({
-      // A nameless directory customer keeps its code as its display name — absence stays visible.
-      pharmacy_name: catalogueName || customerCode,
-      brick_id: row.brick_id ? String(row.brick_id) : null,
-      area_code: row.area_code ? String(row.area_code) : null,
-      region_code: row.region_code ? String(row.region_code) : null,
-      doctor_name: null,
-      pharmacy_address: row.address ? String(row.address) : null,
-      created_by_hr_id: access.hrId,
-      verification_status: "verified",
-      entry_source: "catalogue",
-      verified_by_hr_id: access.hrId ?? null,
-      verified_at: now,
-    })
-    .select("*")
-    .single();
-  if (insertError) throw insertError;
-  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
+  const pharmacyName = catalogueName || customerCode;
 
-  const { error: childError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({
-    pharmacy_id: pharmacy.id,
-    distributor_code: distributorCode,
-    customer_code: customerCode,
-    mapped_brick_id: row.brick_id ? String(row.brick_id) : null,
-    mapped_area_code: row.area_code ? String(row.area_code) : null,
-    mapped_region_code: row.region_code ? String(row.region_code) : null,
+  const { data: pharmacyIdRow, error: rpcError } = await supabase.rpc("phx_resolve_directory_pharmacy", {
+    p_distributor_code: distributorCode,
+    p_customer_code: customerCode,
+    p_pharmacy_name: pharmacyName,
+    p_brick_id: row.brick_id ? String(row.brick_id) : null,
+    p_area_code: row.area_code ? String(row.area_code) : null,
+    p_region_code: row.region_code ? String(row.region_code) : null,
+    p_address: row.address ? String(row.address) : null,
+    p_hr_id: access.hrId,
   });
-  if (childError) {
-    // LOST THE RACE (23505 on direct_order_pharmacy_distributor_codes_code_unique).
-    //
-    // The reuse lookup above and this insert are two statements on two connections, so two reps
-    // submitting the same directory customer at the same moment can both pass the lookup. The
-    // unique index is what actually decides; whoever loses lands here, deletes the pharmacy shell
-    // it just created, and returns the WINNER's row — so the pair still resolves to one pharmacy,
-    // which is the whole point of picking from the master database.
-    //
-    // Anything that is not a uniqueness violation is a real failure and still throws.
-    if (String((childError as { code?: string }).code ?? "") !== "23505") throw childError;
-    await supabase.from("direct_order_pharmacies").delete().eq("id", pharmacy.id);
-    const { data: winnerLink } = await supabase
-      .from("direct_order_pharmacy_distributor_codes")
-      .select("pharmacy_id")
-      .eq("distributor_code", distributorCode)
-      .eq("customer_code", customerCode)
-      .limit(1)
-      .maybeSingle();
-    const winnerId = winnerLink?.pharmacy_id ? String(winnerLink.pharmacy_id) : "";
-    if (!winnerId) throw childError;
-    const { data: winner } = await supabase
-      .from("direct_order_pharmacies")
-      .select("*")
-      .eq("id", winnerId)
-      .maybeSingle();
-    if (!winner) throw childError;
-    return mapPharmacyRow(winner as Record<string, unknown>);
-  }
+
+  if (rpcError) throw rpcError;
+  const pharmacyId = String(pharmacyIdRow);
+
+  const { data: pharmacyRow, error: fetchError } = await supabase
+    .from("direct_order_pharmacies")
+    .select("*")
+    .eq("id", pharmacyId)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
