@@ -175,32 +175,31 @@ need in the task prompt.
 
 ## 6. Approval rules
 
-Pipeline: `inspect → isolate → implement → validate → summarize → approve delivery → commit/push/PR
+Pipeline: `inspect → isolate → implement → validate → summarize → commit/push/PR
 → verify CI → approve merge → verify production`.
 
-**Automatic** within the requested scope: reading files, searching code, inspecting Git state and
-logs, reviewing diffs, creating a branch or worktree, editing requested files, running validation,
-applying safe local fixes, staging task-related files.
+**The default decision is: PROCEED.**
 
-**One bundled approval** may authorize commit + push + open/update PR together, when the owner's
-message explicitly requests those actions ("implement, commit, push, and open a PR"). Do not ask
-again unless scope, risk, target, or validation result materially changes.
+For all tasks, complete every pre-approved step automatically and ask for permission ONLY when you reach one of the two protected actions below. Do NOT repeatedly ask for confirmation ("Should I proceed?", "Can I make this change?") for pre-approved actions. If a task does not require a protected action, complete the entire task without asking for permission.
 
-**Always require separate, explicit, plain-language approval before:**
+**PRE-APPROVED ACTIONS (Proceed automatically):**
+- Reading, searching, and auditing the codebase
+- Editing or creating files, refactoring, fixing bugs
+- Running local commands, tests, lint, type checks, builds, and validation
+- Installing or updating dependencies when required for the task
+- Creating branches, worktrees, commits, and pushing to non-production branches
+- Creating, updating, or reviewing Pull Requests (merging requires approval)
+- Resolving merge conflicts on the working branch
+- Creating database migration files, testing migrations locally or in non-production
+- Running Supabase CLI commands that do NOT modify production
+- Updating documentation, configuration, or CI/CD configuration
+- Deploying or testing in local, preview, development, or staging environments
+- Investigating logs, errors, or infrastructure (GitHub, Railway, Supabase)
+- Running safe diagnostic or repair actions outside production
 
-- Merging a PR or otherwise updating `main`.
-- Applying a migration to staging or production (production needs its own, separate approval). **Exception: Supabase writes/migrations are pre-authorized per §8's grant — announce destructive/bulk prod changes, don't wait.**
-- Deploying to production or changing production environment variables.
-- Changing authentication, authorization, RLS, payroll, employee-lifecycle data, or other high-risk live behavior.
-- Rebasing, resetting, deleting a branch or worktree, force-pushing, rewriting history, rolling back, or any destructive Git command.
-- Bulk updating or deleting live data, destructive SQL, or any irreversible operation.
-- Creating or deleting a Supabase project, or reading project secrets — the owner-connector `mcp__45bb6356-…` can do these, and §8's Supabase pre-authorization does NOT cover them.
-- Editing any of the three protected files listed in [CLAUDE.md](CLAUDE.md).
-
-Approval covers only the explained action, scope, environment, and target. Silence, an approval for
-another task, green validation, and **the absence of a permission prompt** are all not approval. For
-destructive work, show the target, expected impact, backup/recovery plan, and verification plan
-before asking.
+**PROTECTED ACTIONS (Stop and require separate, explicit approval before):**
+1. Merging any branch or Pull Request into `main` or any production branch.
+2. Running or applying any database migration against the production database/environment.
 
 **Git hygiene.** Review `git status`, `git diff`, `git diff --cached` before committing. Stage only
 files owned by the task. Never commit `.env*`, `.vercel/`, credentials, local artifacts,
