@@ -1,4 +1,4 @@
-﻿import { runI18nConfigTests } from "./i18n-config.test.ts";
+import { runI18nConfigTests } from "./i18n-config.test.ts";
 import { runI18nCairoDateBoundaryTests } from "./i18n-cairo-date-boundary.test.ts";
 import { runPortalTargetDedupTests } from "./portal-target-dedup.test.ts";
 import { runTargetsViewScopeTests } from "./targets-view-scope.test.ts";
@@ -673,6 +673,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 
@@ -1540,6 +1541,10 @@ await runTest(
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
   runOutstationManualExpenseTicketPlusAllowanceTests,
+);
+await runTest(
+  "Fayoum/Beni Suef merged Closing Matrix row exports static (Pedia/CNS) — unprotected proves the SUMIFS-revert bug fires, markMergedAreaRowsStatic fixes it, sibling rows and the Giza subtotal stay live",
+  runMonthlyClosingExportAreaMergeStaticTests,
 );
 await runTest(
   "store-override forces a keyword-less wholesaler (ابن خلدون, 446299) to channel=store and into the city split, mirroring the pharmacy override in reverse",

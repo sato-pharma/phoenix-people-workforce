@@ -18,6 +18,7 @@ import {
   loadLineOperationalRegions,
   loadRegionBySubmitter,
 } from "@/lib/sales/closing-organogram-regions";
+import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/closing-area-merges";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
@@ -3159,10 +3160,12 @@ export type MonthlyClosingAreaRow = {
   // a split line would match no region for them and fail OPEN to the whole company.
   sourceRegionCode?: string;
   sourceRegionName?: string;
-  // Set only by applyStoreSplitToMatrix: this row's cached numbers include store (wholesaler)
-  // sales moved in or out by the city split, which no distributor invoice line carries. The
-  // export must render such a row as static values — a live SUMIFS over the raw rows would
-  // recalculate straight back to the pre-split figure.
+  // Set by applyStoreSplitToMatrix (store/wholesaler sales moved in or out by the city split) OR
+  // by markMergedAreaRowsStatic (closing-area-merges.ts — this row folds in another area's sales
+  // under one area code, e.g. Pedia/CNS's Fayoum-Beni Suef). Either way, this row's cached numbers
+  // do not match what a live SUMIFS over the raw Data-sheet rows would give, so the export must
+  // render it as static values — a live formula would recalculate straight back to the wrong
+  // (pre-split, or single-area) figure.
   storeSplitAdjusted?: boolean;
 };
 
@@ -4139,10 +4142,12 @@ export async function loadMonthlyClosingParts(input?: {
         ? loadLineOperationalRegions(skeletonLineCode)
         : Promise.resolve(null),
     ]);
+    // Skeleton groups exactly as the loaded month will — including a merged Fayoum/Beni Suef row
+    // on Pedia and CNS — so the area/region filters offer the same choices before and after a
+    // month is picked.
+    const skeletonMerged = applyClosingAreaMerges(skeletonLineCode, areas, [], []);
     const skeleton = buildMonthlyClosingMatrix({
-      // The empty skeleton groups exactly as the loaded month will, so the region filter offers the
-      // same regions before and after a month is picked.
-      areas: applyOperationalRegions(areas, operationalRegions),
+      areas: applyOperationalRegions(skeletonMerged.areas, operationalRegions),
       availableLines,
       availablePeriods,
       cells: [],
@@ -4218,16 +4223,24 @@ export async function loadMonthlyClosingParts(input?: {
     regionBySubmitter,
   });
 
-  const matrix = buildMonthlyClosingMatrix({
-    areas: applyOperationalRegions(areas, operationalRegions),
-    availableLines,
-    availablePeriods,
-    cells,
-    line: selectedLine,
-    period: selectedPeriod,
-    products,
-    targets,
-  });
+  // Fayoum (GZ6) and Beni Suef (UE9) fold into one row on Pedia and CNS — see
+  // closing-area-merges.ts. Applied to a COPY, after the Direct allocation above already read the
+  // real (unmerged) areas/cells it needed for region-level attribution.
+  const areaMerged = applyClosingAreaMerges(targetLineCode, areas, cells, targets);
+
+  const matrix = markMergedAreaRowsStatic(
+    buildMonthlyClosingMatrix({
+      areas: applyOperationalRegions(areaMerged.areas, operationalRegions),
+      availableLines,
+      availablePeriods,
+      cells: areaMerged.cells,
+      line: selectedLine,
+      period: selectedPeriod,
+      products,
+      targets: areaMerged.targets,
+    }),
+    targetLineCode,
+  );
 
   return {
     combined: injectDirectIntoMatrix(matrix, allocatedDirect),
