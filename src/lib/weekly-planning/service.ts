@@ -1,4 +1,4 @@
-﻿import crypto from "crypto";
+import crypto from "crypto";
 
 import { writeAuditLog } from "@/lib/admin/audit";
 
@@ -94,7 +94,7 @@ import {
   type PlanWorkweek,
 } from "@/lib/weekly-planning/plan-v1";
 
-type PlanHeaderRow = {
+export type PlanHeaderRow = {
   ceo_decision_at: string | null;
   ceo_decision_by_hr_id: string | null;
   ceo_decision_comment: string | null;
