@@ -1279,10 +1279,11 @@ async function migratedTemplateRecipientOverrides(
     loadManagerChain(input.employeeHrId),
   ]);
   const to = cleanEmailList([employee?.work_email, ...deliveryRecipients]);
+  const directManager = managers[0];
+  const districtManagers = managers.filter(isDistrictManagerContact);
   const cc = cleanEmailList([
-    ...managers
-      .filter(isDistrictManagerContact)
-      .map((manager) => manager.work_email),
+    directManager?.work_email,
+    ...districtManagers.map((manager) => manager.work_email),
     ...(input.cc ?? []),
   ]);
 
@@ -1408,6 +1409,114 @@ function listUnsubscribeHeaders(
   };
 }
 
+async function enrichRecipientsWithManagerCc(
+  input: NotificationEmailInput,
+  toRecipients: string[],
+): Promise<{ cc: string[]; enrichmentLog: Record<string, unknown> }> {
+  const enrichmentLog: Record<string, unknown> = {
+    employeeHrId: input.employeeHrId ?? null,
+    originalToCount: toRecipients.length,
+    originalCcCount: (input.cc ?? []).length,
+  };
+
+  if (!input.employeeHrId) {
+    enrichmentLog.reason = "No employeeHrId - manager CC lookup skipped";
+    return { cc: input.cc ?? [], enrichmentLog };
+  }
+
+  try {
+    const [employee, managers] = await Promise.all([
+      loadEmployeeContact(input.employeeHrId),
+      loadManagerChain(input.employeeHrId, 1),
+    ]);
+
+    const employeeEmail = employee?.work_email?.trim().toLowerCase() ?? null;
+    const directManager = managers[0];
+    const directManagerEmail = directManager?.work_email?.trim().toLowerCase() ?? null;
+
+    enrichmentLog.employeeEmail = employeeEmail;
+    enrichmentLog.directManagerEmail = directManagerEmail;
+    enrichmentLog.directManagerName = directManager?.full_name ?? null;
+    enrichmentLog.directManagerHrId = directManager?.hr_id ?? null;
+
+    if (!employeeEmail) {
+      enrichmentLog.reason = "Employee has no work_email - manager CC skipped";
+      return { cc: input.cc ?? [], enrichmentLog };
+    }
+
+    const toSet = new Set(toRecipients.map((e) => e.trim().toLowerCase()));
+    const employeeIsPrimaryTo = toSet.has(employeeEmail);
+
+    if (!employeeIsPrimaryTo) {
+      enrichmentLog.reason = "Employee is not the primary To recipient - manager CC skipped";
+      return { cc: input.cc ?? [], enrichmentLog };
+    }
+
+    const mergedCc = new Set<string>();
+    for (const addr of (input.cc ?? [])) {
+      const lc = addr.trim().toLowerCase();
+      if (lc && validEmail(lc)) mergedCc.add(lc);
+    }
+
+    if (directManagerEmail && validEmail(directManagerEmail) && !toSet.has(directManagerEmail)) {
+      if (!mergedCc.has(directManagerEmail)) {
+        mergedCc.add(directManagerEmail);
+        enrichmentLog.managerAddedToCc = true;
+      } else {
+        enrichmentLog.managerAlreadyInCc = true;
+      }
+    } else if (!directManagerEmail) {
+      enrichmentLog.managerMissing = true;
+    } else if (!validEmail(directManagerEmail)) {
+      enrichmentLog.managerInvalidEmail = directManagerEmail;
+    } else if (toSet.has(directManagerEmail)) {
+      enrichmentLog.managerAlreadyInTo = true;
+    }
+
+    return { cc: Array.from(mergedCc), enrichmentLog };
+  } catch (error) {
+    enrichmentLog.reason = "Error during manager CC lookup";
+    enrichmentLog.error = error instanceof Error ? error.message : String(error);
+    console.log("Recipient enrichment (manager CC lookup) failed", {
+      level: "warning",
+      tags: { component: "email", enrichment: "manager_cc" },
+      extra: enrichmentLog,
+    });
+    return { cc: input.cc ?? [], enrichmentLog };
+  }
+}
+
+function validateAllRecipients(to: string[], cc: string[], bcc: string[]): {
+  invalid: { to: string[]; cc: string[]; bcc: string[] };
+  sanitized: { to: string[]; cc: string[]; bcc: string[] };
+} {
+  const invalid = { to: [] as string[], cc: [] as string[], bcc: [] as string[] };
+  const sanitized = { to: [] as string[], cc: [] as string[], bcc: [] as string[] };
+
+  const process = (list: string[], bucket: "to" | "cc" | "bcc") => {
+    for (const raw of list) {
+      const value = String(raw ?? "").trim().toLowerCase();
+      if (!value) continue;
+      if (validEmail(value)) sanitized[bucket].push(value);
+      else invalid[bucket].push(raw);
+    }
+  };
+
+  process(to, "to");
+  process(cc, "cc");
+  process(bcc, "bcc");
+
+  const toSet = new Set(sanitized.to);
+  sanitized.cc = sanitized.cc.filter((e) => {
+    if (toSet.has(e)) return false;
+    toSet.add(e);
+    return true;
+  });
+  sanitized.bcc = sanitized.bcc.filter((e) => !toSet.has(e) ? (toSet.add(e), true) : false);
+
+  return { invalid, sanitized };
+}
+
 async function sendNotificationEmailDirect(input: NotificationEmailInput): Promise<SendEmailResult> {
   if (!emailNotificationsEnabled()) {
     return { reason: "EMAIL_NOTIFICATIONS_ENABLED is not true.", skipped: true };
@@ -1428,14 +1537,49 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   if (!from) return { reason: "NOTIFICATION_EMAIL_FROM is missing.", skipped: true };
   if (delivery.skipped) return delivery;
 
-  // Never CC a caller-supplied address alongside a "to" recipient it already is (avoid a
-  // redundant header entry). The standing BCC copy (omar.anwar@satopharma.com) is applied
-  // unconditionally further down the pipeline in sendPhoenixEmail, not here.
-  const cc = cleanEmailList(input.cc ?? []).filter((address) => !delivery.recipients.includes(address));
-  const inputWithCc: NotificationEmailInput = { ...input, cc };
+  const enriched = await enrichRecipientsWithManagerCc(input, delivery.recipients);
+  const ccList = enriched.cc.filter((address) => !delivery.recipients.includes(address));
+
+  const validation = validateAllRecipients(delivery.recipients, ccList, input.bcc ?? []);
+  if (validation.invalid.to.length + validation.invalid.cc.length + validation.invalid.bcc.length > 0) {
+    console.log("Email send had invalid recipient addresses filtered before dispatch", {
+      level: "warning",
+      tags: {
+        component: "email",
+        notificationType: input.notificationType ?? "unknown",
+        invalidRecipients: "true",
+      },
+      extra: {
+        managerEnrichment: enriched.enrichmentLog,
+        invalid: validation.invalid,
+        sanitizedCounts: {
+          to: validation.sanitized.to.length,
+          cc: validation.sanitized.cc.length,
+          bcc: validation.sanitized.bcc.length,
+        },
+      },
+    });
+  }
+
+  if (validation.sanitized.to.length === 0) {
+    const reason = "No valid To recipients after format validation.";
+    console.log("Email send skipped: no valid To recipients after format validation", {
+      level: "error",
+      tags: { component: "email", notificationType: input.notificationType ?? "unknown" },
+      extra: { managerEnrichment: enriched.enrichmentLog, invalid: validation.invalid },
+    });
+    return { reason, skipped: true };
+  }
+
+  const cc = validation.sanitized.cc.length > 0 ? validation.sanitized.cc : undefined;
+  const bcc = validation.sanitized.bcc.length > 0 ? validation.sanitized.bcc : undefined;
+  const inputWithCc: NotificationEmailInput = { ...input, cc, bcc };
 
   const requestId = notificationDedupeKey(inputWithCc);
   const migratedTemplateKey = migratedTemplateKeyForNotification(input);
+  const finalTo = validation.sanitized.to;
+  const finalCc = cc;
+  const finalBcc = bcc;
 
   const origin = {
     employeeHrId: input.employeeHrId ?? null,
@@ -1448,7 +1592,48 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   };
 
   if (migratedTemplateKey) {
-    const overrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, inputWithCc, delivery.recipients);
+    const baseOverrides = await migratedTemplateRecipientOverrides(migratedTemplateKey, inputWithCc, finalTo);
+    const templateToClean = cleanEmailList(baseOverrides.to ?? []);
+    const templateEnriched = await enrichRecipientsWithManagerCc(input, templateToClean);
+    const templateCcBase = cleanEmailList([
+      ...(baseOverrides.cc ?? []),
+      ...templateEnriched.cc,
+    ]);
+    const templateCcFinal = templateCcBase.filter((e) => !templateToClean.includes(e));
+    const templateValidation = validateAllRecipients(templateToClean, templateCcFinal, [
+      ...(baseOverrides.bcc ?? []),
+      ...(inputWithCc.bcc ?? []),
+    ]);
+    if (templateValidation.invalid.to.length + templateValidation.invalid.cc.length + templateValidation.invalid.bcc.length > 0) {
+      console.log("Templated email send had invalid recipients filtered", {
+        level: "warning",
+        tags: {
+          component: "email",
+          notificationType: input.notificationType ?? "unknown",
+          templateKey: migratedTemplateKey,
+        },
+        extra: {
+          baseManagerEnrichment: enriched.enrichmentLog,
+          templateManagerEnrichment: templateEnriched.enrichmentLog,
+          templateInvalid: templateValidation.invalid,
+          templateSanitized: templateValidation.sanitized,
+        },
+      });
+    }
+    const dispatchTo = templateValidation.sanitized.to.length > 0 ? templateValidation.sanitized.to : finalTo;
+    const dispatchCc = templateValidation.sanitized.cc.length > 0 ? templateValidation.sanitized.cc : undefined;
+    const dispatchBcc = templateValidation.sanitized.bcc.length > 0 ? templateValidation.sanitized.bcc : finalBcc;
+
+    if (dispatchTo.length === 0) {
+      return { reason: "No valid To recipients after format validation for templated email.", skipped: true };
+    }
+
+    const overrides = {
+      bcc: dispatchBcc,
+      cc: dispatchCc,
+      replaceRecipients: true as const,
+      to: dispatchTo,
+    };
     // Every caller that passes `metrics` (the label/value pairs already shown in the in-app
     // notification and, historically, hand-rolled into each template's own inline HTML table)
     // gets a premium zebra-striped table for free via {{detailsTable}} - no per-template
@@ -1499,7 +1684,7 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
         ...(input.templateContext ?? {}),
       },
       employeeHrId: input.employeeHrId,
-      fallbackTo: delivery.recipients,
+      fallbackTo: dispatchTo,
       from,
       origin,
       overrides,
@@ -1507,21 +1692,21 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     });
   }
 
-  const fanout = delivery.recipients.length > 1;
+  const fanout = finalTo.length > 1;
   return sendPhoenixEmail({
-    bcc: input.bcc,
-    cc,
+    bcc: finalBcc,
+    cc: finalCc,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal
     // staff (manager chain / HR inbox) and use the mailto fallback.
-    headers: listUnsubscribeHeaders(input.notificationType, fanout ? undefined : delivery.recipients[0]),
+    headers: listUnsubscribeHeaders(input.notificationType, fanout ? undefined : finalTo[0]),
     html: renderHtml(input, delivery.policy),
     idempotencyKey: requestId,
     origin,
     subject: notificationSubject(input, delivery.policy),
     text: renderText(input, delivery.policy),
-    to: delivery.recipients,
+    to: finalTo,
   });
 }
 
@@ -1861,6 +2046,7 @@ export function auditProbationOutboundEmail(payload: NotificationEmailInput): { 
 }
 
 async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise<SendEmailResult> {
+  const isRetry = row.attempts > 0;
   const claimed = await claimNotificationOutboxRow(row.id);
   if (!claimed) {
     return { reason: "Notification is already being processed.", skipped: true };
@@ -1878,7 +2064,7 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
           notificationType: claimed.payload.notificationType ?? "unknown",
           outboxSkipCode: "unsafe_identity",
         },
-        extra: { id: claimed.id, ...identity.metadata },
+        extra: { id: claimed.id, isRetry, ...identity.metadata },
       });
       return { reason: identity.reason, skipped: true };
     }
@@ -1891,10 +2077,45 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
         console.log("Probation email blocked by pre-send audit", {
           level: "error",
           tags: { component: "email", cron: "outbox-processing", notificationType: "probation", outboxSkipCode: "probation_audit_failed" },
-          extra: { id: claimed.id, reason: audit.reason },
+          extra: { id: claimed.id, isRetry, reason: audit.reason },
         });
         return { reason: audit.reason, skipped: true };
       }
+    }
+
+    const payloadSummary = {
+      id: claimed.id,
+      attempts: row.attempts,
+      isRetry,
+      lastError: row.last_error ?? null,
+      notificationType: claimed.payload.notificationType ?? "unknown",
+      employeeHrId: claimed.payload.employeeHrId ?? null,
+      module: claimed.payload.module ?? null,
+      eventType: claimed.payload.eventType ?? null,
+      originalCcCount: (claimed.payload.cc ?? []).length,
+      originalToCount: (
+        cleanEmailList(claimed.payload.recipients ?? []).length ||
+        cleanEmailList([claimed.payload.candidateEmail]).length
+      ),
+      subject: claimed.payload.subject?.slice(0, 120) ?? null,
+    };
+    if (isRetry) {
+      console.log("Retrying failed outbox email", {
+        level: "info",
+        tags: {
+          component: "email",
+          cron: "outbox-processing",
+          isRetry: "true",
+          notificationType: claimed.payload.notificationType ?? "unknown",
+        },
+        extra: payloadSummary,
+      });
+    } else {
+      console.log("Processing new outbox email", {
+        level: "info",
+        tags: { component: "email", cron: "outbox-processing" },
+        extra: payloadSummary,
+      });
     }
 
     const result = await sendNotificationEmailDirect(claimed.payload);
@@ -1911,14 +2132,46 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
               outboxSkipCode: classification.code,
               notificationType: claimed.payload.notificationType ?? "unknown",
             },
-            extra: { id: claimed.id, reason: result.reason },
+            extra: { id: claimed.id, isRetry, reason: result.reason },
+          });
+        }
+        if (isRetry) {
+          console.log("Retried email terminally skipped", {
+            level: "warning",
+            tags: {
+              component: "email",
+              cron: "outbox-processing",
+              isRetry: "true",
+              outboxSkipCode: classification.code,
+            },
+            extra: { ...payloadSummary, skipReason: result.reason },
           });
         }
         return result;
       }
       // Transient skip (e.g. template temporarily unavailable) → retry within budget.
+      if (isRetry) {
+        console.log("Retried email marked transient failed — will re-attempt later", {
+          level: "warning",
+          tags: { component: "email", cron: "outbox-processing", isRetry: "true" },
+          extra: { ...payloadSummary, skipReason: result.reason },
+        });
+      }
       await markNotificationOutboxFailed(claimed, result.reason);
       return result;
+    }
+
+    if (isRetry) {
+      console.log("Retried outbox email sent successfully", {
+        level: "info",
+        tags: {
+          component: "email",
+          cron: "outbox-processing",
+          isRetry: "true",
+          notificationType: claimed.payload.notificationType ?? "unknown",
+        },
+        extra: { ...payloadSummary, providerMessageId: result.id ?? null },
+      });
     }
 
     await markNotificationOutboxSent(claimed, result.id);
@@ -1926,6 +2179,25 @@ async function processNotificationOutboxRow(row: NotificationOutboxRow): Promise
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email notification failed.";
     const retryAfterMs = error instanceof RetryableEmailError ? error.retryAfterMs : undefined;
+    if (isRetry) {
+      console.log("Retried outbox email threw exception — scheduling retry", {
+        level: "error",
+        tags: {
+          component: "email",
+          cron: "outbox-processing",
+          errorClass: error instanceof RetryableEmailError ? "retryable" : "terminal",
+          isRetry: "true",
+          notificationType: claimed.payload.notificationType ?? "unknown",
+        },
+        extra: {
+          attempts: row.attempts,
+          errorMessage: message,
+          id: claimed.id,
+          lastError: row.last_error ?? null,
+          retryAfterMs: retryAfterMs ?? null,
+        },
+      });
+    }
     await markNotificationOutboxFailed(claimed, message, retryAfterMs);
     return { reason: message, skipped: true };
   }
