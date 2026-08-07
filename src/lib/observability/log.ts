@@ -71,17 +71,48 @@ export const logInfo = (message: string, options?: LogOptions) => logStructured(
 export const logWarning = (message: string, options?: LogOptions) => logStructured("WARNING", message, options);
 export const logError = (message: string, options?: LogOptions) => logStructured("ERROR", message, options);
 
+// GCP Cloud Scheduler jobs from the project retired 2026-08-01 still fire on their old schedule
+// (billing closed, not deleted) and will keep hitting these routes with a stale secret until GCP
+// garbage-collects the project ~30 days after closure. cron-job.org is the real scheduler and
+// authenticates fine, so this specific caller is confirmed noise, not an incident. Logged at INFO
+// (not WARNING) so it stays searchable via `event=cron_unauthorized` without paging anyone; any
+// other unauthorized caller — brute force, a leaked secret, a genuinely misconfigured scheduler —
+// still logs at WARNING.
+//
+// User-Agent alone is client-controlled (any caller can send `User-Agent: Google-Cloud-Scheduler`),
+// so downgrading on that header alone would let a real prober silence its own WARNING. Requiring the
+// source IP to also fall in the range Railway observed for this caller (34.116.39.0/24, live-verified
+// against Railway's HTTP access log 2026-08-06/07) closes that gap: both signals must match. If GCP
+// ever rotates addresses and this range stops matching, the caller just reverts to WARNING — a safe
+// failure (noisier logs again), never a silently-widened one.
+const KNOWN_STALE_CRON_USER_AGENTS = new Set(["Google-Cloud-Scheduler"]);
+const KNOWN_STALE_CRON_IP_PREFIX = "34.116.39.";
+
+// Same `x-forwarded-for` convention as requestIp() in src/lib/security/api-rate-limit.ts.
+function sourceIp(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwardedFor || request.headers.get("x-real-ip")?.trim() || null;
+}
+
 /**
  * Log an unauthorized cron/webhook invocation so a spike (brute force / misconfigured
  * scheduler / leaked-secret probing) is detectable via a log-based metric + alert.
  */
 export function logCronUnauthorized(job: string, request?: Request) {
-  logStructured("WARNING", `Unauthorized cron invocation: ${job}`, {
+  const userAgent = request?.headers.get("user-agent") ?? null;
+  const ip = request ? sourceIp(request) : null;
+  const isKnownStaleScheduler =
+    userAgent != null &&
+    KNOWN_STALE_CRON_USER_AGENTS.has(userAgent) &&
+    ip != null &&
+    ip.startsWith(KNOWN_STALE_CRON_IP_PREFIX);
+  logStructured(isKnownStaleScheduler ? "INFO" : "WARNING", `Unauthorized cron invocation: ${job}`, {
     labels: { event: "cron_unauthorized", job },
     context: request
       ? {
           hasAuthHeader: Boolean(request.headers.get("authorization")),
-          userAgent: request.headers.get("user-agent") ?? null,
+          userAgent,
+          ip,
         }
       : undefined,
   });

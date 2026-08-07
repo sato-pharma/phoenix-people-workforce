@@ -85,7 +85,11 @@ workflow exists to prevent.
 format is unchanged if GCP ever returns — on Railway it is simply part of the JSON line. Current
 stable labels:
 
-- `event=cron_unauthorized` — a cron/worker endpoint hit without a valid `CRON_SECRET`.
+- `event=cron_unauthorized` — a cron/worker endpoint hit without a valid `CRON_SECRET`. Logged at
+  `WARNING` except for the known-dead `Google-Cloud-Scheduler` user-agent (the GCP project retired
+  2026-08-01 whose scheduler jobs still fire on their old secret), which logs at `INFO` so it stays
+  greppable without reading as an incident. Any other caller — including a caller claiming that same
+  user-agent string with a different IP — still warrants a look.
 - `event=webhook_signature_invalid` / `webhook_misconfigured` — Resend webhook rejections.
 - `event=cron_failed` / `background_job_failed` — job execution failures.
 - `event=config_drift` — a notification-critical env var (`EMAIL_NOTIFICATIONS_ENABLED`, `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, `RESEND_WEBHOOK_SECRET`, `TELEGRAM_BOT_TOKEN`, `NOTIFICATION_WEBHOOK_SECRET`) is unset in production, emitted by `/api/readyz` (`src/lib/observability/config-drift.ts`). Non-fatal — readiness stays 200 — but alerted, see below.
