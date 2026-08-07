@@ -8,7 +8,8 @@ import {
   replaceDirectOrderPharmacyCodes,
   updateDirectOrderPharmacyDetails,
 } from "@/lib/direct-orders/service";
-import { toApiError } from "@/lib/http/api-errors";
+import { describeUnexpectedError, toApiError } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -27,6 +28,13 @@ export async function GET(request: Request) {
   } catch (error) {
     const apiError = toApiError(error, "Could not load the pharmacy registry.");
     const status = isForbiddenError(error) ? 403 : apiError.status;
+    if (status >= 500) {
+      logError("pharmacy-registry GET failed", {
+        labels: { event: "pharmacy_registry_get_failed" },
+        context: { detail: describeUnexpectedError(error) },
+        error,
+      });
+    }
     return NextResponse.json(
       { error: status === 403 ? "forbidden" : apiError.code, message: apiError.message, success: false },
       { status },
@@ -108,6 +116,15 @@ export async function POST(request: Request) {
   } catch (error) {
     const apiError = toApiError(error, "Could not update the pharmacy registry.");
     const status = isForbiddenError(error) ? 403 : apiError.status;
+    if (status >= 500) {
+      // A 500 here is almost always a raw PostgREST error object (not an Error instance) that
+      // toApiError cannot unwrap — log the full detail so Railway shows the real DB message.
+      logError("pharmacy-registry POST failed", {
+        labels: { event: "pharmacy_registry_post_failed" },
+        context: { action: (typeof error === "object" && error ? String((error as Record<string, unknown>).action ?? "") : ""), detail: describeUnexpectedError(error) },
+        error,
+      });
+    }
     return NextResponse.json(
       { error: status === 403 ? "forbidden" : apiError.code, message: apiError.message, success: false },
       { status },
