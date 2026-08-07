@@ -1091,8 +1091,13 @@ function writeComparisonSheet(workbook: ExcelJS.Workbook, c: MonthlyClosingCompa
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "2026-01" -> "Jan 2026". Names, never codes — and short enough that no header ever wraps. */
-function monthLabel(period: string): string {
+/**
+ * "2026-01" -> "Jan 2026". Names, never codes — and short enough that no header ever wraps.
+ *
+ * Exported because the download FILENAME uses it too: a workbook whose sheets say "Jul 2026" and
+ * whose file says "2026-07" makes the reader do the translation twice.
+ */
+export function monthLabel(period: string): string {
   const match = /^(\d{4})-(\d{2})$/.exec(period.trim());
   if (!match) return period;
   const index = Number(match[2]) - 1;

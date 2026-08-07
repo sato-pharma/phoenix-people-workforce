@@ -673,6 +673,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1538,6 +1539,10 @@ await runTest(
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
   runOutstationManualExpenseTicketPlusAllowanceTests,
+);
+await runTest(
+  "the closing workbook download is named by month, line and region (and never by a raw period code)",
+  runClosingExportFilenameTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
