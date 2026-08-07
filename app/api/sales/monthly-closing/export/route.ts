@@ -11,6 +11,7 @@ import {
   loadMonthlyClosingChannelComparison,
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
+import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
 import { buildClosingDetailsWorkbook, buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
 import {
   filterMonthlyClosingMatrix,
@@ -32,10 +33,6 @@ import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function slug(value: string | null | undefined) {
-  return (value ?? "all").toString().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "all";
-}
 
 function fileResponse(buffer: Buffer, fileName: string) {
   return new Response(new Uint8Array(buffer), {
@@ -362,7 +359,17 @@ export async function POST(request: Request) {
         storeSplitRows: monthRows.rows,
         storeSplitScopeAreaCodes: scopedAreaCodes,
       });
-      return fileResponse(buffer, `phoenix-monthly-closing-${slug(matrix.line)}-${slug(matrix.period)}.xlsx`);
+      // The region comes from the matrix the workbook was actually built from, so a filtered export
+      // is named for the region it was narrowed to rather than for the whole line.
+      return fileResponse(buffer, closingFileName({
+        line: matrix.line ?? "",
+        period: matrix.period ?? "",
+        region: regionScopeLabel((function* () {
+          for (const region of workbookMatrix.regions) {
+            yield region.regionName;
+          }
+        })()),
+      }));
     }
 
     // Every other scoped sales role (District/Regional/National Sales Manager, Product/Group
@@ -400,7 +407,18 @@ export async function POST(request: Request) {
     }
 
     const buffer = await buildClosingDetailsWorkbook(details);
-    return fileResponse(buffer, `phoenix-monthly-closing-details-${slug(details.line)}-${slug(details.period)}.xlsx`);
+    // These rows are already narrowed to this caller's own access, so a District Manager's file is
+    // named for their region without the route having to re-derive the scope.
+    return fileResponse(buffer, closingFileName({
+      kind: "details",
+      line: details.line,
+      period: details.period,
+      region: regionScopeLabel((function* () {
+        for (const row of details.rows) {
+          yield row.regionName;
+        }
+      })()),
+    }));
   } catch (error) {
     if (isApiRateLimitError(error)) {
       return NextResponse.json(
