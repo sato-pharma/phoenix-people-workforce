@@ -74,25 +74,21 @@ export type LineOperationalRegionMap = {
 };
 
 /**
- * The ONLY lines whose closing groups areas by the ORGANOGRAM instead of by geography.
+ * The field-sales lines whose closing groups areas by the ORGANOGRAM instead of by geography.
  *
  * Anti Infective is on this list because its Upper Egypt is genuinely two DM districts, and the
  * owner wants UE-1 / UE-2 subtotals on the sheet rather than one UE lump.
  *
- * Every other line groups by `source_of_sales_areas.region_code` — plain geography — because the
- * owner reads those regions as places. Without this gate the organogram was applied to ALL lines
- * and silently restated them (measured on 2026-07): Pedia moved 4 areas, putting **Kafr El-Sheikh 1
- * inside Alex-Behira** — AB read 186,580.13 / 20.3% where geography gives 178,503.75 / 24.1%, and
- * Delta 1 read 291,702.60 / 36.4% against a true 301,128.98 / 30.7%. CNS moved 7, including Down
- * town into Giza and Fayoum into Others. Both sales AND targets travel with an area, so the
- * achievement moved in opposite directions in the two regions and neither number was the one the
- * owner was reading it as. It also contradicted his own ruling that an Others area is "calculated
- * with others but laying under Cairo".
+ * Pedia and CNS are on this list because the owner confirmed on 2026-08-07 that Monthly Closing
+ * must follow the EU Organogram source of truth. That puts every area under the manager territory
+ * assigned to that line, including Kafr El-Sheikh 2 (D17) in Others (OT) for both lines.
+ *
+ * Lines outside the field-sales structure (for example Head Office) keep geographic grouping.
  *
  * ADDING A LINE HERE REWRITES THAT LINE'S REGION SUBTOTALS — ask the owner first, every time.
- * (Owner ruling 2026-08-05: fix Pedia and CNS, keep Anti Infective as is.)
+ * (Owner ruling 2026-08-07: Pedia and CNS must follow the EU Organogram.)
  */
-const CLOSING_ORGANOGRAM_REGION_LINES = new Set(["anti_infective"]);
+const CLOSING_ORGANOGRAM_REGION_LINES = new Set(["anti_infective", "cns", "pedia"]);
 
 /** Does this line's closing group by the organogram? Line code as `resolveTargetLineCode` returns. */
 export function usesOrganogramRegions(lineCode: string | null | undefined): boolean {
