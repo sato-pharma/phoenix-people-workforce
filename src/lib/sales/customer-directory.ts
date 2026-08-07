@@ -3,6 +3,7 @@ import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales
 import {
   classifyCustomerChannel,
   matchedChannelKeywords,
+  storeOverrideReason,
   type CustomerChannel,
 } from "@/lib/sales/customer-channel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -168,6 +169,7 @@ export function mapDirectoryRowsToNames(rows: DirectoryRpcRow[], maps: NameMaps)
     const regionCode = String(row.region_code ?? "");
     const distributorCode = String(row.distributor_code ?? "");
     const clientName = String(row.client_name ?? "");
+    const overrideReason = storeOverrideReason(String(row.client_code ?? ""), distributorCode);
     return {
       areaCode,
       areaName: maps.areaName.get(normalizeCode(areaCode)) ?? areaCode,
@@ -175,12 +177,15 @@ export function mapDirectoryRowsToNames(rows: DirectoryRpcRow[], maps: NameMaps)
       brickName: maps.brickName.get(normalizeCode(brickId)) ?? brickId,
       // Derived from the name on every read, so a newly uploaded sheet is classified the moment
       // it lands — no backfill, no stored column to drift.
-      channel: classifyCustomerChannel(clientName, String(row.client_code ?? "")),
+      channel: classifyCustomerChannel(clientName, String(row.client_code ?? ""), distributorCode),
       clientAddress: String(row.client_address ?? ""),
       clientCode: String(row.client_code ?? ""),
       clientName,
       distributorCode,
-      matchedKeywords: matchedChannelKeywords(clientName),
+      matchedKeywords: [
+        ...matchedChannelKeywords(clientName),
+        ...(overrideReason ? [overrideReason] : []),
+      ],
       distributorName: maps.distributorName.get(normalizeCode(distributorCode)) ?? distributorCode,
       regionCode,
       regionName: maps.regionName.get(normalizeCode(regionCode)) ?? regionCode,

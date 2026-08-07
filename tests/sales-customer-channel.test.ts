@@ -20,14 +20,14 @@ const emptyMaps = {
   regionName: new Map<string, string>(),
 };
 
-function directoryRow(clientName: string, totalValue: number, clientCode: string) {
+function directoryRow(clientName: string, totalValue: number, clientCode: string, distributorCode = "PS") {
   return {
     area_code: "A1",
     brick_id: "B-1",
     client_address: "",
     client_code: clientCode,
     client_name: clientName,
-    distributor_code: "PS",
+    distributor_code: distributorCode,
     region_code: "CA",
     total_units: 10,
     total_value: totalValue,
@@ -182,6 +182,7 @@ export function runSalesCustomerChannelTests() {
       directoryRow("صيدلية النور", 250, "C2"),
       directoryRow("الجمعية التعاونية - قنا", 750, "C3"),
       directoryRow("مستشفى دارالفؤاد", 500, "C4"),
+      directoryRow("ابن خلدون", 300, "446299", "IS-S"),
     ],
     emptyMaps,
   );
@@ -199,20 +200,26 @@ export function runSalesCustomerChannelTests() {
     ["مخزن", "فارما / فارم"],
     "a name carrying two keywords reports both, in the configured order",
   );
+  assert.equal(mapped[4]?.channel, "store");
+  assert.deepEqual(
+    mapped[4]?.matchedKeywords,
+    ["Owner-approved store"],
+    "an owner override explains itself in the Stores tab even without a matched name word",
+  );
 
   // Totals must cover EVERY row on that side, not just the ones the display cap kept — a channel
   // total that silently means "the first page" is the same defect as rendering missing data as 0.
   const grouped = splitDirectoryByChannel(mapped);
-  assert.equal(grouped.stores.totalCustomers, 2, "both store-keyword customers land in stores");
+  assert.equal(grouped.stores.totalCustomers, 3, "keyword and owner-approved stores land together");
   assert.equal(grouped.pharmacies.totalCustomers, 1);
   assert.equal(grouped.hospitals.totalCustomers, 1);
-  assert.equal(grouped.stores.totalValue, 1_750, "store value sums every store row");
+  assert.equal(grouped.stores.totalValue, 2_050, "store value sums every store row");
   assert.equal(grouped.pharmacies.totalValue, 250, "pharmacy value sums every pharmacy row");
   assert.equal(grouped.hospitals.totalValue, 500, "hospital value sums every hospital row");
-  assert.equal(grouped.stores.totalUnits, 20);
+  assert.equal(grouped.stores.totalUnits, 30);
   assert.equal(
     grouped.stores.totalValue + grouped.pharmacies.totalValue + grouped.hospitals.totalValue,
-    2_500,
+    2_800,
     "the three channels partition the directory — no customer is counted twice or dropped",
   );
   assert.equal(grouped.stores.truncated, false, "three rows are far below the display cap");

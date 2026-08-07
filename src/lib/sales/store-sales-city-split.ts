@@ -109,6 +109,8 @@ export type StoreSplitRow = {
    *  omits it would silently split a customer the owner has ruled is a pharmacy. */
   clientCode: string;
   clientName: string;
+  /** Distributor is part of customer identity; owner overrides never apply by code alone. */
+  distributorCode?: string;
   includedInClosing: boolean;
   isDirect: boolean;
   officialLine: string;
@@ -189,7 +191,7 @@ export function isSplitEligible(row: StoreSplitRow): boolean {
   if (!isSplitEligibleLine(row.officialLine)) return false;
   // The client code is passed so an owner override can be honoured. Without it the override is
   // inert here and an overridden pharmacy's sales would still be scattered across its city.
-  if (!isStoreCustomer(row.clientName, row.clientCode)) return false;
+  if (!isStoreCustomer(row.clientName, row.clientCode, row.distributorCode)) return false;
   // The CLOSING area, not the resolved one: the split moves money the Closing Matrix actually holds,
   // and the Matrix books by the fact area. Taking a re-booked row's city from its brick would
   // subtract the money from an area that never carried it — the phantom the 441164 case produced.
