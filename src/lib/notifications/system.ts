@@ -469,11 +469,11 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
       try {
         const { data: employee } = await supabase
           .from("employees")
-          .select("work_email, name_en")
+          .select("work_email, name:full_name")
           .eq("hr_id", resolvedHrId)
           .maybeSingle();
         workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
-        employeeName = (employee as { name_en?: string | null } | null)?.name_en ?? null;
+        employeeName = (employee as { name?: string | null } | null)?.name ?? null;
       } catch (employeeError) {
         if (!schemaMissing(employeeError, "employees")) {
           logError("Notification recipient work email lookup failed", {
