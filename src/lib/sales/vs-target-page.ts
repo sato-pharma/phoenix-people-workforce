@@ -21,6 +21,7 @@ import {
   regionName as regionNameOf,
 } from "@/lib/sales/monthly-targets";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
+import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import {
   SALES_VS_TARGET_FLOOR,
   buildTrend,
@@ -189,15 +190,21 @@ export async function buildVsTargetDashboard(
     loadTargetBearingPairs().catch(() => new Set<string>()),
   ]);
 
+  // Scope FIRST — everything below derives from these arrays.
+  // Apply area merges (Fayoum/Beni Suef) immediately after loading before any aggregation.
+  const mergedRows = applyAchievementAreaMerges(rangeRows);
+  const scopedAll = filterRowsForBound(mergedRows, bound);
+
+  // If the dashboard is scoped to a single line, use that line to look up merged area names (e.g. "Fayoum - Beni Suef").
+  const distinctLines = new Set(scopedAll.map((r) => r.lineCode).filter(Boolean));
+  const activeLine = distinctLines.size === 1 ? [...distinctLines][0] : null;
+
   const names: VsTargetNames = {
     lineName: lineLabel,
     regionName: (code) => regionNameOf(code) || "Unassigned region",
-    areaName: (code) => areaNames.get(code) ?? "Unassigned area",
+    areaName: (code) => getMergedAreaName(activeLine, code) ?? areaNames.get(code) ?? "Unassigned area",
     employeeName: (hrId) => employeeNames.get(hrId) ?? "Unnamed employee",
   };
-
-  // Scope FIRST — everything below derives from these arrays.
-  const scopedAll = filterRowsForBound(rangeRows, bound);
 
   // Land on the newest month that actually has sales. Defaulting to the calendar month
   // would open the dashboard on an un-uploaded August showing 0% against targets copied

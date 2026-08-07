@@ -18,6 +18,7 @@ import {
   rollupAchievementByLine,
   rollupAchievementByRegion,
 } from "@/lib/sales/monthly-targets";
+import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 import { filterAchievementForScope, isPortalTargetsRole, resolvePortalTargetsBound } from "@/lib/sales/portal-targets";
 
 export const runtime = "nodejs";
@@ -83,13 +84,14 @@ export default async function PortalTargetsPage({
 
     // Scope FIRST, then filter by the selected line, THEN roll up. Rolling up before scoping would
     // render a correct-looking grid above whole-line summary cards — an aggregate leak.
-    const scopedRows = filterAchievementForScope(achievement, bound);
+    const mergedAchievement = applyAchievementAreaMerges(achievement);
+    const scopedRows = filterAchievementForScope(mergedAchievement, bound);
     const lineRows = scopedRows.filter((row) => row.lineCode === selectedLine);
 
     rows = lineRows
       .map((row) => ({
         areaCode: row.areaCode ?? "",
-        areaName: areaName.get(row.areaCode ?? "") ?? "",
+        areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
         regionCode: row.regionCode,
         regionName: regionName(row.regionCode),
         areaState: row.areaState,

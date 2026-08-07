@@ -20,6 +20,7 @@ import {
   rollupAchievementByRegion,
   type SourceFileRow,
 } from "@/lib/sales/monthly-targets";
+import { applyAchievementAreaMerges, getMergedAreaName } from "@/lib/sales/closing-area-merges";
 
 export const dynamic = "force-dynamic";
 
@@ -89,12 +90,14 @@ export default async function TargetsPage({
     ]);
     sourceFiles = files;
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
-    const lineRows = achievement.filter((row) => row.lineCode === selectedLine);
+    
+    const mergedAchievement = applyAchievementAreaMerges(achievement);
+    const lineRows = mergedAchievement.filter((row) => row.lineCode === selectedLine);
 
     rows = lineRows
       .map((row) => ({
         areaCode: row.areaCode ?? "",
-        areaName: areaName.get(row.areaCode ?? "") ?? "",
+        areaName: getMergedAreaName(selectedLine, row.areaCode ?? "") ?? areaName.get(row.areaCode ?? "") ?? "",
         regionCode: row.regionCode,
         regionName: regionName(row.regionCode),
         areaState: row.areaState,
