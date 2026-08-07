@@ -537,6 +537,8 @@ export async function loadMonthlyClosingDetails(
 
   const allowedRegionCodes = await resolveRegionCodes(scope.allowedRegionNames, references);
 
+  const isPediaOrCns = line && (normalizeLineKey(line) === "pedia" || normalizeLineKey(line) === "cns");
+
   const mapped: ClosingDetailRow[] = rawRows.map((raw) => {
     const brickId = text(raw.brick_id);
     const brick = brickId ? brickById.get(brickId.toUpperCase()) : undefined;
@@ -544,9 +546,21 @@ export async function loadMonthlyClosingDetails(
     const sheetRegionCode = text(raw.region_code);
 
     // Prefer the brick's master area; fall back to the sheet's area when the brick is unmapped.
-    const areaCode = text(brick?.areaCode) || sheetAreaCode;
+    let areaCode = text(brick?.areaCode) || sheetAreaCode;
     const area = areaCode ? areaByCode.get(areaCode.toUpperCase()) : undefined;
-    const regionCode = text(brick?.regionCode) || text(area?.regionCode) || sheetRegionCode;
+    let regionCode = text(brick?.regionCode) || text(area?.regionCode) || sheetRegionCode;
+    let areaName = text(brick?.areaName) || text(area?.areaName) || text(raw.area_name);
+
+    if (isPediaOrCns) {
+      if (areaCode.toUpperCase() === "UE9") {
+        areaCode = "GZ6";
+        // Align geographic region to Fayoum's geographic region so it doesn't split the area
+        regionCode = "GZ";
+      }
+      if (areaCode.toUpperCase() === "GZ6") {
+        areaName = "Fayoum-Beni Suef";
+      }
+    }
 
     const productCode = text(raw.product_code);
     const product = productCode ? productByCode.get(productCode.toUpperCase()) : undefined;
@@ -591,7 +605,7 @@ export async function loadMonthlyClosingDetails(
 
       brickName: text(brick?.brickName),
       areaCode,
-      areaName: text(brick?.areaName) || text(area?.areaName) || text(raw.area_name),
+      areaName,
       regionCode,
       regionName: regionNameByCode.get(regionCode.toUpperCase()) ?? text(raw.region_name),
       areaMismatch:
