@@ -218,6 +218,23 @@ function rowLabelled(rows: (string | number | null)[][], label: string): (string
   return rows.find((row) => row.some((value) => typeof value === "string" && value.trim() === label)) ?? null;
 }
 
+/**
+ * Extract the text from every hyperlink cell on a worksheet (e.g. the Dashboard's tab-link
+ * column, which uses `{ text, hyperlink }` objects rather than plain strings).
+ */
+function dashboardTabLinks(sheet: ExcelJS.Worksheet): string[] {
+  const links: string[] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (excelCell) => {
+      const v = excelCell.value;
+      if (v && typeof v === "object" && "text" in v && typeof (v as { text: unknown }).text === "string") {
+        links.push((v as { text: string }).text);
+      }
+    });
+  });
+  return links;
+}
+
 export async function runClosingChannelTabsTests() {
   const retail = buildRetailMatrix();
   const master = injectDirectIntoMatrix(retail, DIRECT_CELLS);
@@ -416,5 +433,150 @@ export async function runClosingChannelTabsTests() {
   assert.ok(
     matrixRows.some((row) => row.some((value) => typeof value === "string" && value.includes("Contr%"))),
     "the Closing Matrix's contribution columns say Contr%, not a bare % that reads like achievement",
+  );
+
+  // ── Dashboard — tab 1 lists every sheet in this workbook ────────────────────────────────────
+  // The Dashboard is always the first sheet created, written last from the sheets that actually
+  // exist. Its rows must mention the tabs the reader will find, and never a tab that is absent.
+  const dashboardSheet = workbook.getWorksheet("Dashboard");
+  assert.ok(dashboardSheet, "the Dashboard sheet is always present as tab 1");
+  assert.equal(workbook.worksheets[0]?.name, "Dashboard", "Dashboard is the first tab — created before all others so it lands at position 1");
+
+  // The tab-name column uses hyperlink objects {text, hyperlink} — extract the text field.
+  const tabLinksOnDashboard = dashboardTabLinks(dashboardSheet!);
+  assert.ok(
+    tabLinksOnDashboard.includes("Closing Matrix"),
+    "Dashboard links to the Closing Matrix tab",
+  );
+  assert.ok(
+    tabLinksOnDashboard.includes("Retail Sales (no direct)"),
+    "Dashboard links to the Retail Sales tab when channels are provided",
+  );
+
+  // ── Store Split Detail sheet — one row per store that was split ──────────────────────────────
+  // The Store Split and Store Split Detail sheets are only written when `details` is provided.
+  // Build a minimal details object with one split-eligible store row to exercise the non-empty
+  // code path in writeStoreSplitDetailSheet.
+  const storeRow: ClosingDetailRow = {
+    areaCode: "D12",
+    areaMismatch: false,
+    areaName: "Menoufia 1",
+    blockCode: "",
+    bonusQty: 0,
+    brickId: "",
+    brickName: "",
+    brickUnmapped: false,
+    clientAddress: "",
+    clientCode: "W-001",
+    clientName: "مخزن الدلتا للدواء",  // Arabic for "Delta Medicine Warehouse" — classified as a store
+    discount: 0,
+    distributorCode: "UCP",
+    effectiveUnits: 60,
+    exclusions: [],
+    factoryPrice: 0,
+    family: "Milk",
+    id: 9001,
+    includedInClosing: true,
+    invoiceDate: null,
+    invoicePeriod: "2026-06",
+    isConfidential: false,
+    isDirect: false,
+    missingClientCode: false,
+    officialLine: "Pedia",
+    productCode: "LA001",
+    productName: "Lacto Advanced 1",
+    qty: 60,
+    regionCode: "D1",
+    regionName: "Delta (1)",
+    rowNumber: 1,
+    salesValue: 6_000,
+    sheetAreaCode: "D12",
+    sheetAreaName: "Menoufia 1",
+    sheetRegionCode: "D1",
+    sheetRegionName: "Delta (1)",
+    sheetValue: 6_000,
+    validationState: "valid",
+  };
+  const emptyTotals = { effectiveUnits: 0, rows: 0, salesValue: 0, units: 0 };
+  const minimalDetails = {
+    availableLines: ["Pedia"],
+    availablePeriods: ["2026-06"],
+    canRevealConfidential: false,
+    confidentialIncluded: false,
+    filteredRowCount: 1,
+    line: "Pedia",
+    options: { areas: [], distributors: [], products: [], regions: [] },
+    outOfScope: false,
+    page: 1,
+    pageSize: 500,
+    period: "2026-06",
+    reconciliation: {
+      areaMismatches: emptyTotals,
+      excludedConfidential: emptyTotals,
+      excludedDirect: emptyTotals,
+      includedInClosing: emptyTotals,
+      missingClientCode: emptyTotals,
+      unmappedBricks: emptyTotals,
+    },
+    rows: [storeRow],
+    totals: emptyTotals,
+  };
+  const bufferWithDetails = await buildMonthlyClosingWorkbook(master, buildComparison(), minimalDetails, {
+    channels: { directCells: DIRECT_CELLS, retail },
+  });
+  const wbWithDetails = new ExcelJS.Workbook();
+  await wbWithDetails.xlsx.load(bufferWithDetails as unknown as ArrayBuffer);
+
+  const splitDetailSheet = wbWithDetails.getWorksheet("Store Split Detail");
+  assert.ok(splitDetailSheet, "Store Split Detail sheet is present when details with split-eligible store rows are provided");
+  const splitDetailRows = sheetValues(splitDetailSheet!);
+  const splitDetailText = splitDetailRows.flat().filter((v): v is string => typeof v === "string");
+  assert.ok(
+    splitDetailText.some((v) => v.includes("مخزن الدلتا للدواء")),
+    "the store's name appears on the detail sheet",
+  );
+  assert.ok(
+    splitDetailText.some((v) => v === "W-001"),
+    "the store's customer code appears on the detail sheet",
+  );
+  assert.ok(
+    splitDetailText.some((v) => v === "Menoufia 1 (D12)"),
+    "the store's own area is shown as 'Name (Code)' on the detail sheet",
+  );
+
+  // Dashboard for the details workbook must also list the Store Split tabs.
+  const dashboardWithDetails = wbWithDetails.getWorksheet("Dashboard");
+  const tabLinksWithDetails = dashboardTabLinks(dashboardWithDetails!);
+  assert.ok(tabLinksWithDetails.includes("Store Split"), "Dashboard links to the Store Split tab when details are provided");
+  assert.ok(tabLinksWithDetails.includes("Store Split Detail"), "Dashboard links to the Store Split Detail tab when details are provided");
+
+  // ── Outside rows — filtered export with area-less national direct ────────────────────────────
+  // When a filtered export's master still carries direct money that belongs to no area on show
+  // (e.g. the National Sales Manager's own orders), the reconciliation section names them so the
+  // Difference stays exactly zero rather than leaving the reader an unexplained gap.
+  // Simulate this by injecting a NATIONAL direct cell (empty regionCode), which
+  // filterMonthlyClosingMatrix carries through while the filter excludes it from the Direct tab.
+  const directWithNational: MonthlyClosingDirectCell[] = [
+    ...DIRECT_CELLS,
+    { productCode: "LA001", regionCode: "", salesUnits: 5, salesValue: 3_000 },
+  ];
+  const masterWithNational = injectDirectIntoMatrix(retail, directWithNational);
+  const filteredWithNational = filterMonthlyClosingMatrix(masterWithNational, { regionCodes: ["D1"] });
+  const filteredRetailForNational = filterMonthlyClosingMatrix(retail, { regionCodes: ["D1"] });
+  const bufferWithNational = await buildMonthlyClosingWorkbook(filteredWithNational, buildComparison(), undefined, {
+    channels: { directCells: directWithNational, retail: filteredRetailForNational },
+  });
+  const wbWithNational = new ExcelJS.Workbook();
+  await wbWithNational.xlsx.load(bufferWithNational as unknown as ArrayBuffer);
+  const directWithNationalRows = sheetValues(wbWithNational.getWorksheet("Direct Sales (no retail)")!);
+  const directWithNationalText = directWithNationalRows.flat().filter((v): v is string => typeof v === "string");
+  assert.ok(
+    directWithNationalText.some((v) => v.startsWith("Direct outside this filter")),
+    "when the master carries national direct money that the filter excluded, the reconciliation names it",
+  );
+  const nationalDiff = rowLabelled(directWithNationalRows, "Difference");
+  assert.ok(
+    nationalDiff?.some((v) => v === 0),
+    "the Difference is still zero even when national money sits outside the filter",
   );
 }
