@@ -18,10 +18,9 @@ import type {
 // areas (different bricks, different invoice lines) on every line, including Anti Infective. This
 // module is the ONLY place that folds them into one row, and only for the two lines the owner named.
 //
-// Scope is deliberately narrow: this merges AREA ROWS for display (Closing Matrix, and therefore
-// every export/tab built from it), never `source_of_sales_areas` itself, never the customer-level
-// drill-down (`phx_closing_customers` — a sale still books to GZ6 or UE9 specifically), and never
-// Anti Infective, whose organogram keeps them apart on purpose.
+// Following the owner's "Golden Rule" (2026-08-07), this merge is applied EVERYWHERE for those lines
+// — on the Closing Matrix, the export's Data sheet, and the UI's Closing Details panel — so the
+// viewer never sees them as separate areas.
 
 const up = (value: string | null | undefined) => String(value ?? "").trim().toUpperCase();
 
@@ -61,6 +60,43 @@ function mergeCells<T extends { areaCode: string; productCode: string }>(
     byKey.set(key, existing ? add(existing, row) : { ...row, areaCode: mappedCode });
   });
   return [...byKey.values()];
+}
+
+/**
+ * Applies the line's area merges to any array of objects carrying `lineCode` and `areaCode`
+ * (e.g. `AchievementRow`s in the dashboard). Merged areas will have their `areaCode` rewritten
+ * to the `keepAreaCode`. The aggregation (totals, rollup) will naturally sum them together.
+ */
+export function applyAchievementAreaMerges<
+  T extends { lineCode: string | null; areaCode: string | null }
+>(rows: T[]): T[] {
+  return rows.map((row) => {
+    if (!row.lineCode || !row.areaCode) return row;
+    const rules = CLOSING_AREA_MERGES[row.lineCode.trim().toLowerCase()] ?? [];
+    if (rules.length === 0) return row;
+
+    const keepCodeByMergeCode = new Map<string, string>();
+    for (const rule of rules) {
+      keepCodeByMergeCode.set(up(rule.mergeAreaCode), up(rule.keepAreaCode));
+    }
+
+    const areaCode = up(row.areaCode);
+    const remappedCode = keepCodeByMergeCode.get(areaCode);
+    
+    if (remappedCode) {
+      return { ...row, areaCode: remappedCode };
+    }
+    
+    return row;
+  });
+}
+
+/** Get the merged area name for a code if the active line defines one. */
+export function getMergedAreaName(lineCode: string | null | undefined, areaCode: string): string | null {
+  if (!lineCode) return null;
+  const rules = CLOSING_AREA_MERGES[lineCode.trim().toLowerCase()] ?? [];
+  const match = rules.find((r) => up(r.keepAreaCode) === up(areaCode));
+  return match ? match.mergedAreaName : null;
 }
 
 /**
@@ -125,12 +161,10 @@ export function applyClosingAreaMerges(
 }
 
 /**
- * A merged row's cached value cannot be trusted to a live Data-sheet SUMIFS in the export: the
- * raw invoice rows for `mergeAreaCode` still carry THEIR OWN area code on the Data sheet, so a
- * formula keyed to `keepAreaCode` alone would recalculate straight back down to just its own
- * half the moment Excel reopens the file — silently dropping the other area's sales. Caught by
- * the CI review bot on the PR that introduced this module; see its P1 comment on
- * closing-area-merges.ts for the exact failure mode.
+ * A merged row's cached value cannot be trusted to a live Data-sheet SUMIFS in the export if the
+ * raw invoice rows for `mergeAreaCode` still carry THEIR OWN area code on the Data sheet.
+ * However, since we now also rewrite the Data sheet rows via `applyClosingAreaMergesToDetails`,
+ * the SUMIFS formula would actually work. We keep this static mark as a defensive measure.
  *
  * Reuses `storeSplitAdjusted` — the export's existing "render this row static, not a live
  * formula" contract (see MonthlyClosingAreaRow's own doc comment). Two different producers,
@@ -161,4 +195,52 @@ export function markMergedAreaRowsStatic(
       ),
     })),
   };
+}
+
+/**
+ * Applies the line's area merges to the raw invoice rows for the Data sheet and Closing Details
+ * panel. A row mapped to `mergeAreaCode` is rewritten to `keepAreaCode` and `mergedAreaName`.
+ */
+export function applyClosingAreaMergesToDetails<
+  T extends { areaCode: string; areaName: string; sheetAreaCode?: string; sheetAreaName?: string }
+>(lineCode: string | null | undefined, rows: T[]): T[] {
+  const rules = CLOSING_AREA_MERGES[String(lineCode ?? "").trim().toLowerCase()] ?? [];
+  if (rules.length === 0) return rows;
+
+  const keepCodeByMergeCode = new Map<string, string>();
+  const mergedNameByKeepCode = new Map<string, string>();
+  for (const rule of rules) {
+    keepCodeByMergeCode.set(up(rule.mergeAreaCode), up(rule.keepAreaCode));
+    mergedNameByKeepCode.set(up(rule.keepAreaCode), rule.mergedAreaName);
+  }
+
+  return rows.map((row) => {
+    const newRow = { ...row };
+
+    // Rewrite resolved area
+    const areaCode = up(newRow.areaCode);
+    const remappedCode = keepCodeByMergeCode.get(areaCode);
+    if (remappedCode) {
+      newRow.areaCode = remappedCode;
+      newRow.areaName = mergedNameByKeepCode.get(remappedCode) ?? newRow.areaName;
+    } else {
+      const mergedName = mergedNameByKeepCode.get(areaCode);
+      if (mergedName) newRow.areaName = mergedName;
+    }
+
+    // Rewrite sheet area
+    if (newRow.sheetAreaCode !== undefined) {
+      const sheetCode = up(newRow.sheetAreaCode);
+      const remappedSheetCode = keepCodeByMergeCode.get(sheetCode);
+      if (remappedSheetCode) {
+        newRow.sheetAreaCode = remappedSheetCode;
+        newRow.sheetAreaName = mergedNameByKeepCode.get(remappedSheetCode) ?? newRow.sheetAreaName;
+      } else {
+        const mergedSheetName = mergedNameByKeepCode.get(sheetCode);
+        if (mergedSheetName) newRow.sheetAreaName = mergedSheetName;
+      }
+    }
+
+    return newRow;
+  });
 }

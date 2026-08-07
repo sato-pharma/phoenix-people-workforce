@@ -8,9 +8,11 @@ import {
   normalizeLineKey,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
+import { applyClosingAreaMergesToDetails } from "@/lib/sales/closing-area-merges";
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { JULY_2026_DIRECT_PERIOD } from "@/lib/sales/july-2026-direct-orders";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -626,7 +628,9 @@ export async function loadMonthlyClosingDetails(
     };
   });
 
-  const scoped = applyDetailScope(mapped, {
+  const merged = applyClosingAreaMergesToDetails(resolveTargetLineCode(line), mapped);
+
+  const scoped = applyDetailScope(merged, {
     allowedRegionCodes,
     allowedAreaCodes: scope.allowedAreaCodes,
     allowedProductCodes: scope.allowedProductCodes,
