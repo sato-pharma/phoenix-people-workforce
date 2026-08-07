@@ -5,6 +5,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
   canonicalizeRegionName,
@@ -292,15 +293,17 @@ function scopeMatrixByRegion(
       const groupMatches = hit(region.regionName, region.regionCode);
       const areas = region.areas.filter((area) => {
         // The synthetic Direct row has no geography of its own — it belongs to whichever territory
-        // survived, so it rides along rather than being matched on its own.
-        if (area.isDirect) return true;
+        // survived, so it rides along rather than being matched on its own. A REAL area that
+        // absorbed July's direct money is NOT that row: it has its own geography and must be matched
+        // on it, or it rides into regions the viewer has no business seeing.
+        if (isSyntheticDirectArea(area)) return true;
         if (groupMatches) return true;
         return area.sourceRegionName !== undefined
           ? hit(area.sourceRegionName, area.sourceRegionCode ?? "")
           : false;
       });
       // A group kept only by its Direct row would be a region the viewer has no areas in.
-      if (areas.length === 0 || areas.every((area) => area.isDirect)) return null;
+      if (areas.length === 0 || areas.every((area) => isSyntheticDirectArea(area))) return null;
       if (areas.length === region.areas.length && groupMatches) return region;
       const subtotalCells = cellsAt(areas);
       return {
@@ -343,8 +346,11 @@ export function scopeMatrixToAreaCodes(
     .map((region) => {
       // The synthetic per-region "Direct" row carries no real area code; a region-scoped viewer never
       // saw national direct sales (scopeMatrixToRegionNames nulls directNational), so drop it here too.
+      // ONLY that row: `area.isDirect` is also true for a real area that absorbed July 2026's direct
+      // orders, and reading the raw flag dropped a District Manager's OWN area (Dakahlia 1, D21) out
+      // of their seat scope — silently, and taking the region with it once every area carried direct.
       const areas = region.areas.filter(
-        (area) => !area.isDirect && allowed.has(area.areaCode.trim().toUpperCase()),
+        (area) => !isSyntheticDirectArea(area) && allowed.has(area.areaCode.trim().toUpperCase()),
       );
       if (areas.length === 0) return null;
       const subtotalCells = cellsAt(areas);

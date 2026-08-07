@@ -35,6 +35,7 @@ import {
   type MonthlyClosingCell,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { areaProductKey } from "@/lib/sales/store-sales-city-split";
 
 type NetMap = ReadonlyMap<string, { qty: number; value: number }>;
@@ -78,15 +79,6 @@ function adjustCell(cell: MonthlyClosingCell, delta: { qty: number; value: numbe
  * that are not in `matrix`; they have nowhere to land and are skipped, and the amount skipped is
  * exactly what `applied` lets the caller state out loud instead of losing.
  */
-/**
- * The synthetic "Direct orders (company)" pseudo-area — the only row the split must never touch.
- * Both conditions on purpose: the areaCode is what identifies it, and `isDirect` keeps a real area
- * that happens to be coded "DIRECT" from being skipped by accident.
- */
-function isSyntheticDirectArea(area: { areaCode?: string; isDirect?: boolean }): boolean {
-  return Boolean(area.isDirect) && String(area.areaCode ?? "").trim().toUpperCase() === "DIRECT";
-}
-
 export function applyStoreSplitToMatrix(matrix: MonthlyClosingMatrix, net: NetMap): StoreSplitApplication {
   const nothingApplied = { qty: 0, value: 0 };
   if (net.size === 0) return { applied: nothingApplied, matrix };
