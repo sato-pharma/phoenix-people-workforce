@@ -1484,7 +1484,7 @@ await runTest(
 );
 
 await runTest(
-  "closing region grouping is per line (Anti Infective by organogram, Pedia and CNS by geography, gate consulted before the fetch)",
+  "closing region grouping follows the EU Organogram for Anti Infective, Pedia, and CNS (gate consulted before the fetch)",
   runClosingRegionGroupingPerLineTests,
 );
 
