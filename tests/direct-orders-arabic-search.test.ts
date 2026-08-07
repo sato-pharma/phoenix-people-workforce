@@ -17,6 +17,9 @@ import { readFileSync } from "node:fs";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const MIGRATION = "../supabase/migrations/20260804183000_direct_order_customer_directory_search.sql";
+const SPACE_FOLD_MIGRATION = "../supabase/migrations/20260807120000_direct_order_search_arabic_space_fold.sql";
+const TRIGRAM_REINDEX_MIGRATION =
+  "../supabase/migrations/20260807120100_direct_order_search_arabic_trigram_reindex.sql";
 
 export function runDirectOrdersArabicSearchTests() {
   const sql = readFileSync(new URL(MIGRATION, import.meta.url), "utf8");
@@ -156,6 +159,41 @@ export function runDirectOrdersArabicSearchTests() {
       reader,
       /allowedAreaCodes\.has\(hit\.areaCode\.toUpperCase\(\)\)/,
       "the caller's AREA scope must be re-applied to the returned rows — the SQL function deliberately does not apply it",
+    );
+  }
+
+  // ── Whitespace must be folded, not just letter forms (2026-08-07) ─────────
+  // A real, active, 42-invoice customer (PS/0001556836) was unreachable through this exact search
+  // because the stored name is one word ("ابوالفتوح") and a rep typed it as two ("ابو الفتوح").
+  // Proven live against production before this migration: the OLD normalizer left both sides with a
+  // surviving space mismatch, so the ILIKE substring check returned false — a real customer,
+  // findable by nothing, is indistinguishable on screen from a customer that was never in the
+  // directory.
+  {
+    const spaceFoldSql = readFileSync(new URL(SPACE_FOLD_MIGRATION, import.meta.url), "utf8");
+    assert.match(
+      spaceFoldSql,
+      /create or replace function public\.phx_normalize_arabic\(p_text text\)/,
+      "the space-fold migration must replace the same function, not fork a second normalizer",
+    );
+    const fnStart = spaceFoldSql.indexOf("create or replace function public.phx_normalize_arabic");
+    const fnBody = spaceFoldSql.slice(fnStart, spaceFoldSql.indexOf("$$;", fnStart));
+    assert.match(fnBody, /\bimmutable\b/, "the normalizer must stay IMMUTABLE or the search index cannot be built on it");
+    assert.match(
+      fnBody,
+      /'\\s\+', '', 'g'/,
+      "whitespace must be stripped ENTIRELY (not collapsed) — a stored one-word name and a typed two-word name must normalize identically",
+    );
+    assert.match(
+      spaceFoldSql,
+      /reindex index public\.source_of_sales_customer_map_norm_name_idx/,
+      "the expression index built on this function must be reindexed — CREATE OR REPLACE FUNCTION does not recompute it",
+    );
+    const trigramReindexSql = readFileSync(new URL(TRIGRAM_REINDEX_MIGRATION, import.meta.url), "utf8");
+    assert.match(
+      trigramReindexSql,
+      /reindex index public\.source_of_sales_customer_map_name_trgm_idx\s*;/,
+      "the trigram expression index must also be rebuilt — stale normalized keys can return results using the old spacing rules",
     );
   }
 }
