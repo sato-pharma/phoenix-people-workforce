@@ -464,14 +464,16 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     // (phx-<hex>@auth.phoenix.local), never a real mailbox. The deliverable address lives on
     // employees.work_email. Resolve it; degrade to in-app only (null) when there is none.
     let workEmail: string | null = null;
+    let employeeName: string | null = null;
     if (resolvedHrId) {
       try {
         const { data: employee } = await supabase
           .from("employees")
-          .select("work_email")
+          .select("work_email, name_en")
           .eq("hr_id", resolvedHrId)
           .maybeSingle();
         workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
+        employeeName = (employee as { name_en?: string | null } | null)?.name_en ?? null;
       } catch (employeeError) {
         if (!schemaMissing(employeeError, "employees")) {
           logError("Notification recipient work email lookup failed", {
@@ -485,7 +487,7 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     return {
       email: pickDeliverableEmail(workEmail, row?.auth_email),
       hrId: resolvedHrId,
-      name: row?.name ?? null,
+      name: row?.name ?? employeeName ?? null,
       role: row?.role ?? null,
       userId: row?.login_id ?? (userId || null),
     };
@@ -501,13 +503,13 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
 }
 
 /**
- * "Dr. " for managerial/professional roles; "" for Medical Rep, Employee, and Super
- * Admin. Also "" when the recipient's stored name already carries a "Dr" title, so the
+ * "Dr. " for managerial/professional roles; "" for Medical Rep and Employee.
+ * Also "" when the recipient's stored name already carries a "Dr" title, so the
  * "Dear {{honorific}}{{recipientName}}" greeting never doubles up into "Dear Dr. Dr Name".
  */
 function managerHonorific(role: string | null, name: string | null): string {
   if (!role) return "";
-  if (role === "Employee" || role === "Medical Rep" || role === "Super Admin") return "";
+  if (role === "Employee" || role === "Medical Rep") return "";
   if (/^dr\.?\s/i.test(cleanText(name))) return "";
   return "Dr. ";
 }
