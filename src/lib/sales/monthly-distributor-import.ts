@@ -3148,7 +3148,12 @@ export type MonthlyClosingAreaRow = {
   areaCode: string;
   areaName: string;
   cells: MonthlyClosingCell[];
-  // True for the synthetic "Direct" row injected inside a region (company direct sales).
+  // "This row contains direct money" — NOT "this row is the anonymous company Direct row".
+  // True for the synthetic "Direct" row injected inside a region (company direct sales) AND, since
+  // July 2026's direct orders were restated to area grain, for a REAL area that absorbed hand-mapped
+  // direct. Dakahlia 1 is still Dakahlia 1 and must keep its own code and name.
+  // To ask "is this the synthetic pseudo-area?" use isSyntheticDirectArea (lib/sales/closing-direct-area)
+  // — reading this flag for that question renames real areas and drops them out of every filter.
   isDirect?: boolean;
   kind: "area";
   regionCode: string;

@@ -18,6 +18,7 @@ import {
 } from "@/components/sales/monthly-closing-filters";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   filterMonthlyClosingMatrix,
   type MonthlyClosingMatrix,
@@ -95,10 +96,12 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
     return {
       regions: matrix.regions.map((region) => ({ code: region.regionCode, label: `${region.regionName} (${region.regionCode})` })),
       // Exclude the synthetic per-region "Direct" rows — they share the code "DIRECT" across
-      // regions and are not a filterable area.
+      // regions and are not a filterable area. Only those: `area.isDirect` is also true for a real
+      // area that absorbed July 2026's direct orders, and the raw flag hid every such area (Dakahlia
+      // 1, Behira 2, …) from this picker.
       areas: matrix.regions.flatMap((region) =>
         region.areas
-          .filter((area) => !area.isDirect)
+          .filter((area) => !isSyntheticDirectArea(area))
           .map((area) => ({ code: area.areaCode, label: `${area.areaName} (${area.areaCode})`, regionCode: region.regionCode })),
       ),
       products: matrix.columns.map((column) => ({ code: column.productCode, label: `${column.productName} (${column.productCode})` })),

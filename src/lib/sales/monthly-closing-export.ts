@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import { systemIdentity } from "@/config/system-settings";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
 import {
   emptyClosingCell,
@@ -942,13 +943,12 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     rowIndex += 1;
   };
 
-  // Two DIFFERENT questions, deliberately not the same flag:
+  // Two DIFFERENT questions, deliberately not the same flag — see isSyntheticDirectArea:
   //   * is this the synthetic "Direct orders (company)" pseudo-area?  -> drives the LABEL and the
   //     blue band. Identified by its areaCode, which the injector sets to "DIRECT".
   //   * does this row contain direct money?  -> drives STATIC rendering. A real area that absorbed
   //     July's direct sales is still "GZ1 / Giza - Giza Centers" and must keep its own name.
   // Collapsing the two would rename every area that absorbed direct to "◆ Direct".
-  const isSyntheticDirect = (area: { areaCode: string }) => (area.areaCode ?? "").trim().toUpperCase() === "DIRECT";
 
   // Every live formula on this sheet SUMIFS the hidden Calc sheet, which holds distributor invoice
   // lines ONLY — direct sales have no block there. So once any row carries direct, the subtotal and
@@ -956,7 +956,7 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   // direct has been merged into the areas we therefore write the whole sheet as cached values:
   // a static number that is right beats a live formula that silently drops direct on first edit.
   const hasMergedDirect = matrix.regions.some((region) =>
-    region.areas.some((area) => area.isDirect && !isSyntheticDirect(area)));
+    region.areas.some((area) => area.isDirect && !isSyntheticDirectArea(area)));
 
   // The store split is the SAME problem at row grain. applyStoreSplitToMatrix moves store
   // (wholesaler) sales between a city's areas, but the Calc sheet still holds the unsplit rows —
@@ -969,7 +969,7 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
 
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
-      const synthetic = isSyntheticDirect(area);
+      const synthetic = isSyntheticDirectArea(area);
       const carriesDirect = Boolean(area.isDirect);
       const splitTouched = area.storeSplitAdjusted === true;
       writeRow(
@@ -1955,7 +1955,10 @@ function writeTargetAchievementSheet(workbook: ExcelJS.Workbook, matrix: Monthly
 
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
-      push(region.regionName, area.isDirect ? "Direct orders (company)" : area.areaName, area.rowTotal);
+      // Synthetic pseudo-area only. A real area that absorbed July's direct money keeps its own
+      // name here exactly as it does on the Closing Matrix sheet — the raw `isDirect` flag is true
+      // for both, and reading it renamed Dakahlia 1 to "Direct orders (company)" on this sheet.
+      push(region.regionName, isSyntheticDirectArea(area) ? "Direct orders (company)" : area.areaName, area.rowTotal);
     });
     push(region.regionName, `${region.regionName} — REGION TOTAL`, region.subtotal.rowTotal);
   });
@@ -2626,8 +2629,10 @@ function writeRetailChannelSheet(
   retail.regions.forEach((region) => {
     region.areas
       // A synthetic "Direct" row cannot exist on the retail matrix (it is pre-injection), but the
-      // guard keeps this sheet honest if the caller ever passes an already-injected matrix.
-      .filter((area) => !area.isDirect)
+      // guard keeps this sheet honest if the caller ever passes an already-injected matrix. It must
+      // drop ONLY that pseudo-area: a real area carrying direct is a retail area like any other and
+      // dropping it would delete its rows from the sheet.
+      .filter((area) => !isSyntheticDirectArea(area))
       .forEach((area) => {
         rows.push(channelRow(area.areaCode, area.areaName, area.cells, channel.value, area.rowTotal.targetValue));
       });

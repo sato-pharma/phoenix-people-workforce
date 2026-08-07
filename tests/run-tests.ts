@@ -673,6 +673,7 @@ import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-
 
 import { runSosSelfHealOwnerVerifiedGuardTests } from "./sos-self-heal-owner-verified-guard.test.ts";
 import { runOutstationManualExpenseTicketPlusAllowanceTests } from "./outstation-manual-expense-ticket-plus-allowance.test.ts";
+import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identity.test.ts";
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
@@ -1541,6 +1542,10 @@ await runTest(
 await runTest(
   "manual admin outstation expense adds the ticket price to the allowance instead of replacing it (travelCostAmount reaches the create route)",
   runOutstationManualExpenseTicketPlusAllowanceTests,
+);
+await runTest(
+  "an area carrying July direct keeps its own code/name (screen + XLSX) and stays in seat scope; only areaCode=DIRECT is the company row",
+  runClosingDirectAreaIdentityTests,
 );
 await runTest(
   "Fayoum/Beni Suef merged Closing Matrix row exports static (Pedia/CNS) — unprotected proves the SUMIFS-revert bug fires, markMergedAreaRowsStatic fixes it, sibling rows and the Giza subtotal stay live",

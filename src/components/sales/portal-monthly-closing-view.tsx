@@ -13,6 +13,7 @@ import {
 } from "@/components/sales/monthly-closing-filters";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { cn } from "@/lib/utils";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   filterMonthlyClosingMatrix,
   type MonthlyClosingMatrix,
@@ -66,9 +67,12 @@ export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selec
         code: region.regionCode,
         label: `${region.regionName} (${region.regionCode})`,
       })),
+      // Only the synthetic per-region "Direct" pseudo-area is unfilterable. `area.isDirect` is also
+      // true for a real area that absorbed July 2026's direct orders, and the raw flag hid those
+      // areas from the picker.
       areas: matrix.regions.flatMap((region) =>
         region.areas
-          .filter((area) => !area.isDirect)
+          .filter((area) => !isSyntheticDirectArea(area))
           .map((area) => ({
             code: area.areaCode,
             label: `${area.areaName} (${area.areaCode})`,
@@ -114,7 +118,11 @@ export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selec
               areaCodes: [
                 ...new Set(
                   filteredMatrix.regions.flatMap((region) =>
-                    region.areas.filter((area) => !area.isDirect).map((area) => area.areaCode),
+                    // Drop ONLY the synthetic pseudo-area, whose "DIRECT" code matches no raw row.
+                    // A real area that absorbed July 2026's direct orders must stay: these codes are
+                    // what the export route narrows to, so the raw `isDirect` flag silently deleted
+                    // Dakahlia 1's rows from a filtered portal workbook.
+                    region.areas.filter((area) => !isSyntheticDirectArea(area)).map((area) => area.areaCode),
                   ),
                 ),
               ],

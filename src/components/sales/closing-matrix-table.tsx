@@ -5,6 +5,7 @@ import { Fragment, useRef } from "react";
 
 import { AdminCallout } from "@/components/admin/admin-design-system";
 import { cn } from "@/lib/utils";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { formatNumber, formatPercent } from "@/lib/sales/format";
 import type {
   MonthlyClosingCell,
@@ -269,10 +270,15 @@ function RegionBlock({
     <>
       {region.areas.map((area) => {
         const directBg = "bg-[#CFE0FB]";
+        // The anonymous "◆ Direct / Direct orders (company)" identity belongs ONLY to the synthetic
+        // pseudo-area. Since July 2026's direct orders were restated to area grain, `area.isDirect`
+        // is also true for REAL areas that absorbed direct money — Dakahlia 1 is still Dakahlia 1,
+        // and reading the raw flag here erased the name of every area that earned a direct order.
+        const synthetic = isSyntheticDirectArea(area);
         return (
-          <tr className={area.isDirect ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
-            <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${area.isDirect ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{area.isDirect ? "◆ Direct" : area.areaCode}</td>
-            <td className={`${STICKY2} truncate px-3 py-2.5 ${area.isDirect ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{area.isDirect ? "Direct orders (company)" : area.areaName}</td>
+          <tr className={synthetic ? "" : "transition-colors hover:bg-orange-50/40"} key={area.areaCode}>
+            <td className={`${STICKY1} whitespace-nowrap px-3 py-2.5 font-semibold ${synthetic ? `${directBg} uppercase tracking-wide text-[#1D4ED8]` : "bg-white text-slate-900"}`}>{synthetic ? "◆ Direct" : area.areaCode}</td>
+            <td className={`${STICKY2} truncate px-3 py-2.5 ${synthetic ? `${directBg} font-bold text-[#1D4ED8]` : "bg-white text-slate-600"}`} style={{ left: COL.area }}>{synthetic ? "Direct orders (company)" : area.areaName}</td>
             {columnGroups.map((group, gi) => (
               <Fragment key={gi}>
                 {group.indices.map((idx) => (
@@ -281,7 +287,7 @@ function RegionBlock({
                     cell={area.cells[idx]}
                     key={`${area.areaCode}-${idx}`}
                     productTotal={productTotals[idx] ?? null}
-                    rowBg={area.isDirect ? directBg : undefined}
+                    rowBg={synthetic ? directBg : undefined}
                     variant="area"
                   />
                 ))}
@@ -291,13 +297,13 @@ function RegionBlock({
                     grandTotalValue={grandTotalValue}
                     group={group}
                     key={`fam-${area.areaCode}-${gi}`}
-                    rowBg={area.isDirect ? directBg : undefined}
+                    rowBg={synthetic ? directBg : undefined}
                     variant="area"
                   />
                 )}
               </Fragment>
             ))}
-            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} rowBg={area.isDirect ? directBg : undefined} variant="area" />
+            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} rowBg={synthetic ? directBg : undefined} variant="area" />
           </tr>
         );
       })}
