@@ -124,16 +124,57 @@ export const PHARMACY_OVERRIDE_CLIENT_CODES: ReadonlySet<string> = new Set([
   "1577318",
 ]);
 
+/**
+ * Customers the owner has ruled are STORES even though their name carries none of the six words.
+ *
+ * THE SINGLE EDIT POINT for these exceptions, keyed by DISTRIBUTOR + CUSTOMER CODE because a
+ * customer code is only unique inside one distributor. A name-keyed exception stops applying the
+ * moment a distributor spells it differently, while this composite identity stays put.
+ *
+ * The owner ruled on 2026-08-07 that ابن خلدون (client code 446299, distributor IBNSINA) is a
+ * genuine wholesaler and must be split across its city's areas like the others, even though its
+ * name — confirmed in production as exactly "ابن خلدون" on every period on record — carries none
+ * of the STORE_NAME_KEYWORDS. Comparing its Jul-2026 Menoufia sales against the frontend closing
+ * workbook showed the four other Menoufia wholesalers already split correctly on their names
+ * (فرندز فارم, مخزن القادسية, جي زد فارما, بدر فارما); this one just never had a matching word.
+ */
+export const STORE_OVERRIDE_CUSTOMER_KEYS: ReadonlySet<string> = new Set([
+  // ابن خلدون — a wholesaler despite carrying no store keyword.
+  "IS-S|446299",
+]);
+
 /** Codes arrive with distributor-specific zero padding, so compare on the digits alone. */
 function normalizeClientCode(value: string | null | undefined): string {
   const trimmed = String(value ?? "").trim();
   return trimmed.replace(/^0+/, "") || trimmed;
 }
 
+function normalizeDistributorCode(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
 /** True when the owner has ruled this customer a pharmacy despite a store word in its name. */
 export function isPharmacyOverride(clientCode: string | null | undefined): boolean {
   const code = normalizeClientCode(clientCode);
   return code !== "" && PHARMACY_OVERRIDE_CLIENT_CODES.has(code);
+}
+
+/** True when the owner has ruled this customer a store despite no store word in its name. */
+export function isStoreOverride(
+  clientCode: string | null | undefined,
+  distributorCode: string | null | undefined,
+): boolean {
+  const code = normalizeClientCode(clientCode);
+  const distributor = normalizeDistributorCode(distributorCode);
+  return code !== "" && distributor !== "" && STORE_OVERRIDE_CUSTOMER_KEYS.has(`${distributor}|${code}`);
+}
+
+/** Human-readable evidence for an owner ruling shown wherever keyword evidence is displayed. */
+export function storeOverrideReason(
+  clientCode: string | null | undefined,
+  distributorCode: string | null | undefined,
+): string | null {
+  return isStoreOverride(clientCode, distributorCode) ? "Owner-approved store" : null;
 }
 
 /**
@@ -143,16 +184,18 @@ export function isPharmacyOverride(clientCode: string | null | undefined): boole
  * A blank name is evidence of nothing, so it falls to pharmacy — the same side an un-keyworded
  * name lands on.
  *
- * `clientCode` is optional so every existing caller keeps working, but pass it wherever it is to
- * hand: it is the only way an owner override can be honoured, and a caller that omits it silently
- * gets the keyword answer.
+ * `clientCode` and `distributorCode` are optional so existing keyword-only callers keep working,
+ * but pass both wherever they are to hand: both are required for an owner override, and a caller
+ * that omits either silently gets the keyword answer.
  */
 export function classifyCustomerChannel(
   name: string | null | undefined,
   clientCode?: string | null,
+  distributorCode?: string | null,
 ): CustomerChannel {
   if (matchedHospitalKeywords(name).length > 0) return "hospital";
   if (isPharmacyOverride(clientCode)) return "pharmacy";
+  if (isStoreOverride(clientCode, distributorCode)) return "store";
   if (matchedStoreKeywords(name).length > 0) return "store";
   return "pharmacy";
 }
@@ -169,12 +212,15 @@ export function classifyCustomerChannel(
 export function isStoreCustomer(
   name: string | null | undefined,
   clientCode?: string | null,
+  distributorCode?: string | null,
 ): boolean {
-  // The owner's override DOES apply here, unlike the hospital rule above. The reason they differ:
-  // the hospital carve-out is a classification nuance, while an override says "this is not a
-  // warehouse at all". Splitting an overridden customer's sales across its city would move a
-  // pharmacy's money onto other reps — the exact error the override exists to stop.
+  // The owner's overrides DO apply here, unlike the hospital rule above. The reason they differ:
+  // the hospital carve-out is a classification nuance, while an override says "this either is or
+  // is not a warehouse, full stop". Splitting an overridden pharmacy's sales across its city would
+  // move its money onto other reps; NOT splitting an overridden store's sales does the same thing
+  // in reverse — both are the exact error the two override lists exist to stop.
   if (isPharmacyOverride(clientCode)) return false;
+  if (isStoreOverride(clientCode, distributorCode)) return true;
   return matchedStoreKeywords(name).length > 0;
 }
 

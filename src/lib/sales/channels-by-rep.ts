@@ -2,6 +2,7 @@ import { canViewRestrictedProducts, RESTRICTED_PRODUCT_CODES } from "@/lib/sales
 import {
   HOSPITAL_NAME_KEYWORDS,
   normalizeCustomerName,
+  STORE_OVERRIDE_CUSTOMER_KEYS,
   STORE_NAME_KEYWORDS,
 } from "@/lib/sales/customer-channel";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -178,6 +179,7 @@ export async function loadChannelsByRep(options: {
     p_excluded_product_codes: excluded,
     p_hospital_stems: stems.hospital,
     p_period: period,
+    p_store_override_keys: [...STORE_OVERRIDE_CUSTOMER_KEYS],
     p_store_stems: stems.store,
   });
   if (error) throw error;
