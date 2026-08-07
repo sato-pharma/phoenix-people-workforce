@@ -425,28 +425,28 @@ const placeholderHints = TOKEN_REGISTRY.map((t) => t.token);
 const allowedPlaceholderSet = new Set<string>(placeholderHints);
 
 const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
-  birthday: emptyRules(["employee"], ["district_manager"]),
+  birthday: emptyRules(["employee"], ["direct_manager", "district_manager"]),
   contract_renewal: emptyRules(["manager_chain"], ["hr"]),
   general: emptyRules(["admin"], ["hr"]),
   marketing_request: emptyRules(["admin"], ["hr"]),
   excuse_request: emptyRules(["direct_manager"], ["hr"]),
-  excuse_decision: emptyRules(["employee"]),
+  excuse_decision: emptyRules(["employee"], ["direct_manager"]),
   offer_status: emptyRules(["hr"], []),
   recruitment_update: emptyRules(["hr", "recruiter"], []),
   coaching_report: emptyRules(["employee"], ["direct_manager"]),
   payroll_update: emptyRules(["admin"], ["finance"]),
-  attendance_workflow: emptyRules(["employee"], ["hr_manager", "admin"]),
+  attendance_workflow: emptyRules(["employee"], ["direct_manager", "hr_manager", "admin"]),
   weekly_plans: emptyRules(["employee"], ["direct_manager"]),
   outstation: emptyRules(["direct_manager"], ["hr_manager", "finance"]),
   interview_feedback: emptyRules(["hr", "hiring_manager", "recruiter"]),
   interview_invitation: emptyRules(["candidate"]),
-  leave_approval: emptyRules(["employee"], ["hr"]),
-  leave_manager_step_decision: emptyRules(["employee"], ["hr"]),
-  leave_rejection: emptyRules(["employee"], ["hr"]),
+  leave_approval: emptyRules(["employee"], ["direct_manager", "hr"]),
+  leave_manager_step_decision: emptyRules(["employee"], ["direct_manager", "hr"]),
+  leave_rejection: emptyRules(["employee"], ["direct_manager", "hr"]),
   leave_request: emptyRules(["direct_manager"], ["manager_of_manager", "hr"]),
-  leave_resubmit_confirmation: emptyRules(["employee"]),
-  leave_returned: emptyRules(["employee"], ["hr"]),
-  leave_submission_confirmation: emptyRules(["employee"]),
+  leave_resubmit_confirmation: emptyRules(["employee"], ["direct_manager"]),
+  leave_returned: emptyRules(["employee"], ["direct_manager", "hr"]),
+  leave_submission_confirmation: emptyRules(["employee"], ["direct_manager"]),
   vacation_balance_settlement: emptyRules(["employee", "direct_manager"], ["hr"]),
   offer: emptyRules(["candidate"]),
   password_setup: emptyRules(["candidate"]),
@@ -467,7 +467,7 @@ const defaultRules: Record<EmailTemplateKey, EmailTemplateRecipientRules> = {
   probation_day60: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   probation_day75: emptyRules(["ceo", "direct_manager", "national_sales_manager"], ["hr"]),
   resignation_workflow: emptyRules(["manager_chain"], ["hr"]),
-  user_created: emptyRules(["employee"]),
+  user_created: emptyRules(["employee"], ["direct_manager"]),
 };
 
 const templateDefaults: Record<EmailTemplateKey, EmailTemplateDefinition> = {
@@ -2297,6 +2297,92 @@ export async function getEmailTemplateRoutingOptions() {
   };
 }
 
+function enrichTemplateRecipientsWithManagerCc({
+  bcc,
+  cc,
+  contacts,
+  context,
+  to,
+}: {
+  bcc: Recipient[];
+  cc: Recipient[];
+  contacts: Contact[];
+  context: Partial<EmailTemplateContext>;
+  to: Recipient[];
+}) {
+  const diagnostic: Record<string, unknown> = { employeeHrId: (context.employeeHrId as string | null | undefined) ?? null };
+  const employeeHrId = String(context.employeeHrId ?? "").trim().toUpperCase();
+  if (!employeeHrId) {
+    diagnostic.reason = "No employeeHrId in context - manager CC skipped";
+    return { bcc, cc, diagnostic, to };
+  }
+  const employee = contacts.find((c) => hrIdMatches(c.hrId, employeeHrId)) ?? null;
+  const employeeEmail = employee?.email ? normalizeEmail(employee.email) : null;
+  diagnostic.employeeEmail = employeeEmail;
+  if (!employeeEmail) {
+    diagnostic.reason = "Employee record not found in contacts - manager CC skipped";
+    return { bcc, cc, diagnostic, to };
+  }
+  const toEmails = new Set(to.map((r) => normalizeEmail(r.email)));
+  if (!toEmails.has(employeeEmail)) {
+    diagnostic.reason = "Employee is not primary To recipient - manager CC skipped";
+    return { bcc, cc, diagnostic, to };
+  }
+  const directManager = managerChain(contacts, employee)[0];
+  const directManagerEmail = directManager?.email ? normalizeEmail(directManager.email) : null;
+  diagnostic.directManagerHrId = directManager?.hrId ?? null;
+  diagnostic.directManagerName = directManager?.name ?? null;
+  diagnostic.directManagerEmail = directManagerEmail ?? null;
+  if (!directManagerEmail || !validEmail(directManagerEmail)) {
+    diagnostic.managerMissingOrInvalid = true;
+    return { bcc, cc, diagnostic, to };
+  }
+  if (toEmails.has(directManagerEmail)) {
+    diagnostic.managerAlreadyInTo = true;
+    return { bcc, cc, diagnostic, to };
+  }
+  const ccEmails = new Set(cc.map((r) => normalizeEmail(r.email)));
+  if (ccEmails.has(directManagerEmail)) {
+    diagnostic.managerAlreadyInCc = true;
+    return { bcc, cc, diagnostic, to };
+  }
+  const enrichedCc = dedupe([...cc, { email: directManagerEmail, name: directManager?.name ?? "Direct Manager" }]);
+  diagnostic.managerAddedToCc = true;
+  return { bcc, cc: enrichedCc, diagnostic, to };
+}
+
+function validateTemplateRecipients(to: Recipient[], cc: Recipient[], bcc: Recipient[]) {
+  const invalid = { to: [] as string[], cc: [] as string[], bcc: [] as string[] };
+  const sanitize = (list: Recipient[], bucket: "to" | "cc" | "bcc"): Recipient[] => {
+    const seen = new Set<string>();
+    return list.filter((recipient) => {
+      const value = normalizeEmail(recipient.email);
+      if (!value || !validEmail(value)) {
+        invalid[bucket].push(recipient.email);
+        return false;
+      }
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+  };
+  const safeTo = sanitize(to, "to");
+  const toSet = new Set(safeTo.map((r) => normalizeEmail(r.email)));
+  const safeCc = sanitize(cc, "cc").filter((r) => {
+    const e = normalizeEmail(r.email);
+    if (toSet.has(e)) return false;
+    toSet.add(e);
+    return true;
+  });
+  const safeBcc = sanitize(bcc, "bcc").filter((r) => {
+    const e = normalizeEmail(r.email);
+    if (toSet.has(e)) return false;
+    toSet.add(e);
+    return true;
+  });
+  return { invalid, sanitized: { bcc: safeBcc, cc: safeCc, to: safeTo } };
+}
+
 export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promise<SendPhoenixEmailResult> {
   const key = normalizeTemplateKey(input.templateKey);
   if (!key) return { reason: "Unsupported email template.", skipped: true };
@@ -2309,30 +2395,81 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     ...(input.context ?? {}),
     employeeHrId: input.employeeHrId ?? input.context?.employeeHrId ?? null,
   };
-  const resolved = await resolveTemplateRecipients({
-    candidateEmail: input.candidateEmail,
-    context,
-    fallbackTo: input.fallbackTo,
-    templateKey: key,
-  });
+  const [contacts, resolved] = await Promise.all([
+    loadContacts(),
+    resolveTemplateRecipients({
+      candidateEmail: input.candidateEmail,
+      context,
+      fallbackTo: input.fallbackTo,
+      templateKey: key,
+    }),
+  ]);
   const baseRecipients = input.overrides?.replaceRecipients
     ? { bcc: [] as Recipient[], cc: [] as Recipient[], to: [] as Recipient[] }
     : resolved;
 
-  const to = dedupe([
+  const rawTo = dedupe([
     ...baseRecipients.to,
     ...cleanEmails(input.overrides?.to ?? []).map((email) => ({ email, name: "Override recipient" })),
   ]);
-  const cc = removeEmails(dedupe([
+  const rawCc = removeEmails(dedupe([
     ...baseRecipients.cc,
     ...cleanEmails(input.overrides?.cc ?? []).map((email) => ({ email, name: "Override recipient" })),
-  ]), to);
-  const bcc = removeEmails(dedupe([
+  ]), rawTo);
+  const rawBcc = removeEmails(dedupe([
     ...baseRecipients.bcc,
     ...cleanEmails(input.overrides?.bcc ?? []).map((email) => ({ email, name: "Override recipient" })),
-  ]), [...to, ...cc]);
+  ]), [...rawTo, ...rawCc]);
 
-  if (to.length === 0) return { reason: "No TO recipients resolved for email template.", skipped: true };
+  const enriched = enrichTemplateRecipientsWithManagerCc({
+    bcc: rawBcc,
+    cc: rawCc,
+    contacts,
+    context,
+    to: rawTo,
+  });
+  const validation = validateTemplateRecipients(enriched.to, enriched.cc, enriched.bcc);
+  const invalidCount = validation.invalid.to.length + validation.invalid.cc.length + validation.invalid.bcc.length;
+  if (invalidCount > 0) {
+    console.log("Templated email send had invalid recipient addresses filtered before dispatch", {
+      level: "warning",
+      tags: {
+        component: "email",
+        invalidRecipients: "true",
+        templateKey: key,
+      },
+      extra: {
+        invalid: validation.invalid,
+        managerEnrichment: enriched.diagnostic,
+        originalRecipientCounts: {
+          bcc: rawBcc.length,
+          cc: rawCc.length,
+          to: rawTo.length,
+        },
+        sanitizedCounts: {
+          bcc: validation.sanitized.bcc.length,
+          cc: validation.sanitized.cc.length,
+          to: validation.sanitized.to.length,
+        },
+      },
+    });
+  }
+  const to = validation.sanitized.to;
+  const cc = validation.sanitized.cc;
+  const bcc = validation.sanitized.bcc;
+
+  if (to.length === 0) {
+    const reason = "No TO recipients resolved for email template (no valid format addresses after sanitization).";
+    console.log("Templated email send skipped - no valid To recipients", {
+      level: "error",
+      tags: { component: "email", templateKey: key },
+      extra: {
+        invalid: validation.invalid,
+        managerEnrichment: enriched.diagnostic,
+      },
+    });
+    return { reason, skipped: true };
+  }
 
   // Admin-defined custom variables resolve from the SUBJECT employee's record (not the
   // recipient's) — the email is about that person, so a custom token must describe them
@@ -2363,9 +2500,24 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     };
   })();
 
+  const dispatchDiagnostic = {
+    managerEnrichment: enriched.diagnostic,
+    sanitizedCounts: {
+      bcc: bcc.length,
+      cc: cc.length,
+      to: to.length,
+    },
+    templateKey: key,
+  };
+  console.log("Dispatching templated email", {
+    level: "info",
+    tags: { component: "email", templateKey: key },
+    extra: dispatchDiagnostic,
+  });
+
   const result = await sendPhoenixEmail({
-    bcc: bcc.map((recipient) => recipient.email),
-    cc: cc.map((recipient) => recipient.email),
+    bcc: bcc.length > 0 ? bcc.map((recipient) => recipient.email) : undefined,
+    cc: cc.length > 0 ? cc.map((recipient) => recipient.email) : undefined,
     // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,
@@ -2387,6 +2539,13 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
     text: rendered.text,
     to: to.map((recipient) => recipient.email),
   });
+  if (result.skipped) {
+    console.log("Templated email send skipped by sendPhoenixEmail", {
+      level: "warning",
+      tags: { component: "email", templateKey: key },
+      extra: { ...dispatchDiagnostic, reason: result.reason },
+    });
+  }
   // Best-effort live "times fired" counter (owner request, 2026-07-22) — a real automated
   // send, never a "Send Test" click (sendTemplateTestEmail does not call this path). Must
   // never fail/delay the actual send; a counter miss is cosmetic, a dropped email is not.
