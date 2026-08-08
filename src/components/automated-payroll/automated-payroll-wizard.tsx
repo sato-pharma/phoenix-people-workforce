@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check } from "lucide-react";
 
-import { AdminInsightChip, AdminPageHero } from "@/components/admin/admin-design-system";
+import {
+  AdminCallout,
+  AdminInsightChip,
+  AdminPageHero,
+} from "@/components/admin/admin-design-system";
 import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +23,7 @@ import { PART1_STEP_KEYS, PART2_STEP_KEYS, stepPhase } from "@/lib/automated-pay
 import type { PopulationDiff } from "@/lib/automated-payroll/population-diff";
 import {
   PAYROLL_DATA_ISSUE_LABELS,
+  type PayrollDataIssue,
   type PayrollDataQualityReport,
 } from "@/lib/automated-payroll/data-quality";
 import { cn } from "@/lib/utils";
@@ -28,6 +33,36 @@ import { RecommendationStep } from "./recommendation-step";
 import { SelectField } from "./select-field";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Purely a visual grouping of the same PART1/PART2_STEP_KEYS — no step gains or
+ * loses anything, HR just no longer scans one flat row of 10 identical pills to
+ * find the one they want (owner feedback 2026-08-08: "very uncomfortable to
+ * use"). Keep in sync with PART1_STEP_KEYS / PART2_STEP_KEYS by construction —
+ * `renderStepPills` still walks the flat arrays for index numbers and
+ * confirm/active state, these groups only decide layout.
+ */
+const PART1_STEP_GROUPS: { label: string; keys: readonly StepKey[] }[] = [
+  { label: "Headcount changes", keys: ["p1_new_hires", "p1_resignations"] },
+  {
+    label: "Deductions",
+    keys: [
+      "p1_fingerprint",
+      "p1_crm",
+      "p1_resignation_crm",
+      "p1_unpaid_vacation",
+      "p1_no_record",
+      "p1_other_deductions",
+    ],
+  },
+  { label: "Special cases & review", keys: ["p1_special_situations", "p1_holds"] },
+];
+
+const PART2_STEP_GROUPS: { label: string; keys: readonly StepKey[] }[] = [
+  { label: "Expenses & leave", keys: ["p2_expenses", "p2_vacation", "p2_crm"] },
+  { label: "Pay adjustments", keys: ["p2_additions", "p2_manual_deductions"] },
+  { label: "Review", keys: ["p2_holds"] },
+];
 
 type Props = {
   initialMonth: number;
@@ -39,12 +74,20 @@ function money(value: number): string {
   return value.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+/** "1 employee" / "6 employees" — the data-quality banner composes several counts. */
+function people(count: number): string {
+  return `${count} ${count === 1 ? "employee" : "employees"}`;
+}
+
 export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher }: Props) {
   const [month, setMonth] = useState(initialMonth);
   const [year, setYear] = useState(initialYear);
   const [run, setRun] = useState<MonthlySalaryRun | null>(null);
   const [stepStates, setStepStates] = useState<StepState[]>([]);
   const [activeStep, setActiveStep] = useState<StepKey | null>(null);
+  /** Whether the currently-open step has unsaved edits — gates the Sheets downloads
+   * below, since a downloaded sheet reads saved draft rows only. */
+  const [activeStepDirty, setActiveStepDirty] = useState(false);
   /** Which installment's Non-Employees Payroll list is open, if any. */
   const [nonEmployeesOpen, setNonEmployeesOpen] = useState<NonEmployeePart | null>(null);
   const [nonEmployeeCount, setNonEmployeeCount] = useState<Record<NonEmployeePart, number>>({
@@ -60,6 +103,9 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     { runId: string; part: "part1" | "part2"; message: string } | null
   >(null);
   const [dataQuality, setDataQuality] = useState<PayrollDataQualityReport | null>(null);
+  /** The names behind the data-quality banner — collapsed by default so the
+   * headline stays a one-liner instead of a nine-name wall of red. */
+  const [dataQualityOpen, setDataQualityOpen] = useState(false);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
 
   const confirmedSet = useMemo(
@@ -70,6 +116,42 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   const part2Confirmed = PART2_STEP_KEYS.filter((key) => confirmedSet.has(key)).length;
   const part1AllConfirmed = part1Confirmed === PART1_STEP_KEYS.length;
   const part2AllConfirmed = part2Confirmed === PART2_STEP_KEYS.length;
+
+  /**
+   * The data-quality banner used to describe every row as "missing payroll data"
+   * that "falls back to ... a 0.00 salary". For an employee whose ONLY problem is
+   * a zero derived base salary that is simply false — their net salary is on
+   * record and this month's pay computes correctly from it; what breaks is the
+   * Base/30 day-rate every future deduction uses. Saying they are about to be
+   * paid nothing is the kind of wrong-but-confident alarm people learn to click
+   * through (owner-reported 2026-08-08: "those errors are not true").
+   *
+   * So the two populations are counted separately and the banner describes each
+   * in its own words — and when NOBODY has a genuine gap the whole callout drops
+   * from danger to warning, because nothing on the sheet is actually wrong yet.
+   */
+  const dataQualitySplit = useMemo(() => {
+    const rows = dataQuality?.rows ?? [];
+    const baseOnly = rows.filter(
+      (row) => row.issues.length === 1 && row.issues[0] === "zero_base_after_allowances",
+    ).length;
+    return { baseOnly, missing: rows.length - baseOnly };
+  }, [dataQuality]);
+
+  /** Same rows, pivoted issue-first so each explanation is written once and the
+   * names sit under it as a plain list. A person with two issues appears in both
+   * groups, which is the correct reading — they have two separate things wrong. */
+  const dataQualityGroups = useMemo(() => {
+    const byIssue = new Map<PayrollDataIssue, string[]>();
+    for (const row of dataQuality?.rows ?? []) {
+      for (const issue of row.issues) {
+        const names = byIssue.get(issue) ?? [];
+        names.push(`${row.fullName} (${row.hrId})`);
+        byIssue.set(issue, names);
+      }
+    }
+    return Array.from(byIssue, ([issue, names]) => ({ issue, names }));
+  }, [dataQuality]);
 
   /**
    * Stable by design: the panel's own loader depends on this callback, so an
@@ -307,13 +389,18 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
    * the grid gets the page's full width (owner request 2026-07-25: the grid was
    * cramped fighting a fixed-width sidebar for space). Pills wrap onto a second
    * line on narrow viewports rather than the row ever h-scrolling.
+   *
+   * `allKeys` (the full PART1/PART2_STEP_KEYS array) drives the number badge so
+   * it stays a stable "step 3 of 10" even though `keys` here is only one visual
+   * group's slice — grouping is layout only, never renumbering.
    */
-  const renderStepPills = (keys: readonly StepKey[]) => (
+  const renderStepPills = (keys: readonly StepKey[], allKeys: readonly StepKey[]) => (
     <div className="flex flex-wrap gap-2">
-      {keys.map((key, index) => {
+      {keys.map((key) => {
         const definition = stepDefinition(key);
         const isConfirmed = confirmedSet.has(key);
         const isActive = activeStep === key;
+        const index = allKeys.indexOf(key);
         return (
           <button
             key={key}
@@ -343,6 +430,25 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           </button>
         );
       })}
+    </div>
+  );
+
+  /**
+   * The same pills, chunked under a light sub-label (PART1_STEP_GROUPS /
+   * PART2_STEP_GROUPS) instead of one flat row of 10 look-alike buttons — the
+   * owner's own words were "very uncomfortable to use" on this screen. Nothing
+   * about confirm/active state or the number badges changes, only the layout.
+   */
+  const renderStepGroups = (groups: { label: string; keys: readonly StepKey[] }[], allKeys: readonly StepKey[]) => (
+    <div className="flex flex-col gap-2.5">
+      {groups.map((group) => (
+        <div key={group.label} className="flex flex-wrap items-center gap-2">
+          <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+            {group.label}
+          </span>
+          {renderStepPills(group.keys, allKeys)}
+        </div>
+      ))}
     </div>
   );
 
@@ -446,32 +552,34 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         )}
       </div>
 
-      {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
-      {notice ? <div className="border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">{notice}</div> : null}
+      {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
+      {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
 
       {/* Unexplained disappearance — the loudest thing on this page by design.
           Someone was paid last month, is absent now, and has no resignation on
           file. That is the exact shape of the 2026-07-25 notice-period bug,
           which was invisible until the owner asked about one person by name. */}
       {populationDiff && populationDiff.disappeared.length > 0 ? (
-        <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          <div className="font-black">
-            {populationDiff.disappeared.length === 1
-              ? "1 employee disappeared from payroll with no resignation on file"
-              : `${populationDiff.disappeared.length} employees disappeared from payroll with no resignation on file`}
+        <AdminCallout tone="danger">
+          <div>
+            <div className="font-black">
+              {populationDiff.disappeared.length === 1
+                ? "1 employee disappeared from payroll with no resignation on file"
+                : `${populationDiff.disappeared.length} employees disappeared from payroll with no resignation on file`}
+            </div>
+            <p className="mt-1 text-xs">
+              They were paid last month and are missing from this run. This usually means a data problem, not a real
+              departure — check each one before confirming anything.
+            </p>
+            <ul className="mt-2 flex flex-col gap-0.5 text-xs">
+              {populationDiff.disappeared.map((person) => (
+                <li key={person.hrId}>
+                  <span className="font-semibold">{person.fullName}</span> ({person.hrId})
+                </li>
+              ))}
+            </ul>
           </div>
-          <p className="mt-1 text-xs">
-            They were paid last month and are missing from this run. This usually means a data problem, not a real
-            departure — check each one before confirming anything.
-          </p>
-          <ul className="mt-2 flex flex-col gap-0.5 text-xs">
-            {populationDiff.disappeared.map((person) => (
-              <li key={person.hrId}>
-                <span className="font-semibold">{person.fullName}</span> ({person.hrId})
-              </li>
-            ))}
-          </ul>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {/* Overpayment gate — real money already paid out that this month can't
@@ -482,79 +590,98 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
           becomes a default that pays money — that is how two August starters got
           a full July month (owner-reported 2026-08-04). */}
       {dataQuality && dataQuality.total > 0 ? (
-        <div className="border-l-4 border-rose-600 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          <div className="font-black">
-            {dataQuality.total === 1
-              ? "1 employee is missing payroll data that decides their pay"
-              : `${dataQuality.total} employees are missing payroll data that decides their pay`}
+        <AdminCallout tone={dataQualitySplit.missing > 0 ? "danger" : "warning"}>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="font-black">
+                {dataQualitySplit.missing > 0 && dataQualitySplit.baseOnly > 0
+                  ? `${people(dataQualitySplit.missing)} missing payroll data, ${dataQualitySplit.baseOnly} with no base salary`
+                  : dataQualitySplit.missing > 0
+                    ? `${people(dataQualitySplit.missing)} missing payroll data that decides their pay`
+                    : `${people(dataQualitySplit.baseOnly)} with no base salary on record`}
+              </div>
+              <button
+                type="button"
+                onClick={() => setDataQualityOpen((open) => !open)}
+                className="shrink-0 text-xs font-semibold underline underline-offset-2"
+              >
+                {dataQualityOpen ? "Hide who" : "Show who"}
+              </button>
+            </div>
+            {/* Collapsed by default and grouped BY ISSUE, not by person: the old
+                shape repeated the same long sentence under all nine names, which
+                is what made this unreadable (owner, 2026-08-08: "very big and
+                ugly"). One explanation per issue, then a plain list of names. */}
+            {dataQualityOpen ? (
+              <div className="mt-2 flex flex-col gap-2 text-xs">
+                {dataQualityGroups.map((group) => (
+                  <div key={group.issue}>
+                    <div className="font-semibold">
+                      {people(group.names.length)} — {PAYROLL_DATA_ISSUE_LABELS[group.issue]}
+                    </div>
+                    <div className="mt-0.5 opacity-80">{group.names.join(" · ")}</div>
+                  </div>
+                ))}
+                <div className="opacity-80">
+                  Fix them on the employee record; confirming with these open needs your acknowledgment.
+                </div>
+              </div>
+            ) : null}
           </div>
-          <p className="mt-1 text-xs">
-            Each missing field silently falls back to a default — a full unprorated month, a 0.00 salary, or a
-            guessed First/Second Part split. Fix them on the employee record; confirming with these open needs your
-            acknowledgment.
-          </p>
-          <ul className="mt-2 flex flex-col gap-1 text-xs">
-            {dataQuality.rows.map((row) => (
-              <li key={row.hrId}>
-                <span className="font-semibold">{row.fullName}</span> ({row.hrId})
-                <ul className="ml-4 list-disc">
-                  {row.issues.map((issue) => (
-                    <li key={issue}>{PAYROLL_DATA_ISSUE_LABELS[issue]}</li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {/* The acknowledgement itself — a separate decision point from the banner,
           and written to the audit log so a knowingly-confirmed gap is answerable. */}
       {dataIssuePrompt ? (
-        <div className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <div className="font-black">
-            Missing payroll data — your acknowledgment is required to confirm{" "}
-            {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
+        <AdminCallout tone="warning">
+          <div>
+            <div className="font-black">
+              Missing payroll data — your acknowledgment is required to confirm{" "}
+              {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
+            </div>
+            <p className="mt-1 text-xs">{dataIssuePrompt.message}</p>
+            <div className="mt-2 flex gap-2">
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  void (dataIssuePrompt.part === "part1"
+                    ? confirmPart1WithDataGate(dataIssuePrompt.runId, true)
+                    : confirmPart2WithOverpaidGate(dataIssuePrompt.runId, false, true))
+                }
+                className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+              >
+                Acknowledge &amp; confirm {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDataIssuePrompt(null)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-          <p className="mt-1 text-xs">{dataIssuePrompt.message}</p>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() =>
-                void (dataIssuePrompt.part === "part1"
-                  ? confirmPart1WithDataGate(dataIssuePrompt.runId, true)
-                  : confirmPart2WithOverpaidGate(dataIssuePrompt.runId, false, true))
-              }
-              className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
-            >
-              Acknowledge &amp; confirm {dataIssuePrompt.part === "part1" ? "Part 1" : "Part 2"}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDataIssuePrompt(null)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {overpaidPrompt ? (
-        <div className="border-l-4 border-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <div className="font-black">Part 1 overpayment — your acknowledgment is required</div>
-          <p className="mt-1 text-xs">{overpaidPrompt.message}</p>
-          <div className="mt-2 flex gap-2">
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => void confirmPart2WithOverpaidGate(overpaidPrompt.runId, true)}
-              className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
-            >
-              Acknowledge &amp; confirm Part 2
-            </Button>
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOverpaidPrompt(null)}>
-              Cancel
-            </Button>
+        <AdminCallout tone="warning">
+          <div>
+            <div className="font-black">Part 1 overpayment — your acknowledgment is required</div>
+            <p className="mt-1 text-xs">{overpaidPrompt.message}</p>
+            <div className="mt-2 flex gap-2">
+              <Button
+                size="sm"
+                disabled={busy}
+                onClick={() => void confirmPart2WithOverpaidGate(overpaidPrompt.runId, true)}
+                className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+              >
+                Acknowledge &amp; confirm Part 2
+              </Button>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOverpaidPrompt(null)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-        </div>
+        </AdminCallout>
       ) : null}
 
       {!run ? (
@@ -580,9 +707,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 Confirm Part 1
               </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {renderStepPills(PART1_STEP_KEYS)}
-              {renderNonEmployeesPill("first")}
+            <div className="flex flex-col gap-2.5">
+              {renderStepGroups(PART1_STEP_GROUPS, PART1_STEP_KEYS)}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+                  No HR record
+                </span>
+                {renderNonEmployeesPill("first")}
+              </div>
             </div>
 
             <div className="border-t border-slate-200 pt-3">
@@ -619,9 +751,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                       </Button>
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {renderStepPills(PART2_STEP_KEYS)}
-                    {renderNonEmployeesPill("second")}
+                  <div className="flex flex-col gap-2.5">
+                    {renderStepGroups(PART2_STEP_GROUPS, PART2_STEP_KEYS)}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="w-full text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:w-auto sm:min-w-[132px]">
+                        No HR record
+                      </span>
+                      {renderNonEmployeesPill("second")}
+                    </div>
                   </div>
                 </div>
               )}
@@ -629,8 +766,29 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
 
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
               <span className="text-[11px] font-black uppercase tracking-wide text-slate-500">Sheets</span>
-              <Button variant="outline" size="sm" onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=part1`)}>Part 1 sheet</Button>
-              <Button variant="outline" size="sm" onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=full`)}>Full sheet</Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={activeStepDirty}
+                title={activeStepDirty ? "Save or confirm the open step first — the sheet reads saved values only." : undefined}
+                onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=part1`)}
+              >
+                Part 1 sheet
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={activeStepDirty}
+                title={activeStepDirty ? "Save or confirm the open step first — the sheet reads saved values only." : undefined}
+                onClick={() => (window.location.href = `/api/automated-payroll/runs/${run.id}/sheet?variant=full`)}
+              >
+                Full sheet
+              </Button>
+              {activeStepDirty ? (
+                <span className="text-xs font-medium text-orange-600">
+                  Unsaved changes on this step — save or confirm it to include them in a download.
+                </span>
+              ) : null}
               <Button variant="outline" size="sm" disabled={busy} onClick={() => void loadRecon()}>Reconcile</Button>
               {run.phase === "ready" && isPublisher ? (
                 <Button
@@ -714,7 +872,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
               <Stat label="Resignations" value={String(recon.leavers)} />
               <Stat
                 label="Split OK"
-                value={recon.splitMismatches.length === 0 ? "✓ balanced" : `${recon.splitMismatches.length} off`}
+                value={recon.splitMismatches.length === 0 ? "balanced" : `${recon.splitMismatches.length} off`}
                 tone={recon.splitMismatches.length === 0 ? "emerald" : "rose"}
               />
             </div>
@@ -737,6 +895,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 confirmed={confirmedSet.has(activeStep)}
                 locked={stepLocked(activeStep)}
                 onConfirmed={() => void onStepConfirmed(activeStep)}
+                onDirtyChange={setActiveStepDirty}
               />
             ) : (
               <div className="p-6 text-center text-sm text-slate-500">Select a step above to begin.</div>

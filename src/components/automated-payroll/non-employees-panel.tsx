@@ -337,6 +337,164 @@ export function NonEmployeesPanel({ runId, part, locked, onChange }: Props) {
         </div>
       </div>
 
+      {/* Mobile: the admin shell never shows a table on small screens — same rule
+          RecommendationStep already follows for the 16 step grids. */}
+      <div className="flex flex-col gap-2 md:hidden">
+        {rows.map((row, index) => {
+          const draft = edits[row.id] ?? emptyDraft;
+          return (
+            <div key={row.id} className="border border-slate-200 bg-white p-3">
+              <div className="mb-2 flex items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                <span className="text-xs font-semibold text-slate-500">Entry {index + 1}</span>
+                {!locked ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={busyId === row.id}
+                    onClick={() => void deleteExisting(row.id)}
+                    className="text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-500">Full Name (EN)</span>
+                  <Input
+                    value={draft.fullNameEn}
+                    disabled={locked}
+                    onChange={(event) => setEditField(row.id, "fullNameEn", event.target.value)}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-500">Full Name (AR)</span>
+                  <Input
+                    value={draft.fullNameAr}
+                    disabled={locked}
+                    dir="rtl"
+                    onChange={(event) => setEditField(row.id, "fullNameAr", event.target.value)}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-500">Bank Name</span>
+                  <Input
+                    value={draft.bankName ?? ""}
+                    disabled={locked}
+                    onChange={(event) => setEditField(row.id, "bankName", event.target.value)}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-500">Bank Account</span>
+                  <Input
+                    value={draft.bankAccount ?? ""}
+                    disabled={locked}
+                    onChange={(event) => setEditField(row.id, "bankAccount", event.target.value)}
+                    className={fieldClassName}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-slate-500">Total Salary</span>
+                  <Input
+                    type="number"
+                    value={String(draft.totalSalary)}
+                    disabled={locked}
+                    onChange={(event) => setEditField(row.id, "totalSalary", Number(event.target.value) || 0)}
+                    className={fieldClassName}
+                  />
+                </label>
+                {!locked ? (
+                  <Button
+                    size="sm"
+                    disabled={busyId === row.id}
+                    onClick={() => void saveExisting(row.id)}
+                    className="self-start border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+                  >
+                    Save
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+
+        {newRows.map((row) => (
+          <div key={row.tempId} className="border border-orange-300 bg-orange-50/40 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-orange-200 pb-2">
+              <span className="text-xs font-semibold text-orange-700">New entry</span>
+              <Button size="sm" variant="ghost" onClick={() => discardNewRow(row.tempId)}>
+                <Trash2 className="size-4" />
+              </Button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-slate-500">Full Name (EN)</span>
+                <Input
+                  value={row.fullNameEn}
+                  placeholder="Full name (English)"
+                  onChange={(event) => setNewRowField(row.tempId, "fullNameEn", event.target.value)}
+                  className={fieldClassName}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-slate-500">Full Name (AR)</span>
+                <Input
+                  value={row.fullNameAr}
+                  placeholder="الاسم بالعربية"
+                  dir="rtl"
+                  onChange={(event) => setNewRowField(row.tempId, "fullNameAr", event.target.value)}
+                  className={fieldClassName}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-slate-500">Bank Name</span>
+                <Input
+                  value={row.bankName ?? ""}
+                  placeholder="Bank Name"
+                  onChange={(event) => setNewRowField(row.tempId, "bankName", event.target.value)}
+                  className={fieldClassName}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-slate-500">Bank Account</span>
+                <Input
+                  value={row.bankAccount ?? ""}
+                  placeholder="Bank Account"
+                  onChange={(event) => setNewRowField(row.tempId, "bankAccount", event.target.value)}
+                  className={fieldClassName}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-slate-500">Total Salary</span>
+                <Input
+                  type="number"
+                  value={String(row.totalSalary)}
+                  onChange={(event) => setNewRowField(row.tempId, "totalSalary", Number(event.target.value) || 0)}
+                  className={fieldClassName}
+                />
+              </label>
+              <Button
+                size="sm"
+                disabled={busyId === row.tempId}
+                onClick={() => void saveNewRow(row.tempId)}
+                className="self-start border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+        ))}
+
+        {rows.length === 0 && newRows.length === 0 ? (
+          <div className="border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">
+            No {partLabel} non-employees this month.
+          </div>
+        ) : null}
+      </div>
+
       {!locked ? (
         <Button variant="outline" onClick={addNewRowSlot} className="self-start">
           + Add one more

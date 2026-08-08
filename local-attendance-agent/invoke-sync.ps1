@@ -23,14 +23,84 @@ function Read-EnvValue([string]$Name) {
   return $line.Substring($Name.Length + 1).Trim().Trim('"')
 }
 
-function Ensure-Agent {
+# Reads /health WITHOUT throwing on a non-2xx status.
+#
+# This exists because Invoke-RestMethod throws on any error status, and the old catch block wrote
+# "Agent not reachable" for every failure. That is wrong for the most important case: the agent
+# answers on 8787 with HTTP 503 and a body naming exactly what is broken, e.g.
+#   {"status":"degraded","checks":{...,"deviceTcpReachable":false},
+#    "errors":["Device 192.168.100.52:4370 is not reachable."]}
+# Throwing that away turned a precise, actionable diagnosis into "not reachable", then spawned a
+# second agent that could never help, and timed out. Punch ingestion was dead from 2026-07-30 to
+# 2026-08-08 and every one of the ~100 log lines said the wrong thing.
+#
+# Returns: @{ Responded = $true|$false; Status = <http status or 0>; Body = <parsed or $null> }
+function Get-AgentHealth {
+  $result = @{ Body = $null; Responded = $false; Status = 0 }
   try {
-    Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8787/health" -TimeoutSec 5 | Out-Null
-    return
+    $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:8787/health")
+    $req.Timeout = 5000
+    $resp = $req.GetResponse()
+  } catch [System.Net.WebException] {
+    # A WebException with a Response means the agent ANSWERED (e.g. 503) — it is running.
+    # No Response means nothing is listening — the agent really is down.
+    $resp = $_.Exception.Response
+    if (-not $resp) { return $result }
   } catch {
-    Write-Log "Agent not reachable; starting local agent."
+    return $result
   }
 
+  $result.Responded = $true
+  $result.Status = [int]$resp.StatusCode
+  try {
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+    $raw = $reader.ReadToEnd()
+    $reader.Close()
+    if ($raw) { $result.Body = $raw | ConvertFrom-Json }
+  } catch {
+    # Body unreadable/not JSON — the status alone is still useful.
+  }
+  return $result
+}
+
+function Format-AgentHealthProblem {
+  param($Health)
+  if ($Health.Body) {
+    # The agent nests its errors under `checks`, not at the top level:
+    #   {"status":"degraded","checks":{...,"errors":["Device 192.168.100.52:4370 is not reachable."]}}
+    # Both paths are read so a future payload shape change cannot silently drop the reason and
+    # send us back to a generic message — which is the whole failure this function exists to end.
+    $errors = $null
+    if ($Health.Body.checks -and $Health.Body.checks.errors) { $errors = $Health.Body.checks.errors }
+    elseif ($Health.Body.errors) { $errors = $Health.Body.errors }
+    if ($errors -and @($errors).Count -gt 0) { return (@($errors) -join "; ") }
+
+    # No errors array: name the failed checks themselves, so "degraded" is never the whole story.
+    if ($Health.Body.checks) {
+      $failed = @()
+      foreach ($p in $Health.Body.checks.PSObject.Properties) {
+        if ($p.Value -is [bool] -and -not $p.Value) { $failed += $p.Name }
+      }
+      if ($failed.Count -gt 0) { return "failed checks: " + ($failed -join ", ") }
+    }
+    if ($Health.Body.status) { return "agent reports status '$($Health.Body.status)'" }
+  }
+  return "agent returned HTTP $($Health.Status)"
+}
+
+function Ensure-Agent {
+  $health = Get-AgentHealth
+  if ($health.Responded -and $health.Status -ge 200 -and $health.Status -lt 300) { return }
+
+  if ($health.Responded) {
+    # The agent IS running and is telling us what is wrong. Starting another copy cannot fix a
+    # device that is off the network, so report the real reason and stop.
+    $problem = Format-AgentHealthProblem -Health $health
+    Write-Log "Agent is RUNNING but not healthy: $problem"
+    throw "Agent is running but unhealthy: $problem"
+  }
+
+  Write-Log "Agent not listening on 127.0.0.1:8787; starting local agent."
   Start-Process powershell.exe `
     -WindowStyle Hidden `
     -WorkingDirectory $AgentRoot `
@@ -39,12 +109,18 @@ function Ensure-Agent {
   $deadline = (Get-Date).AddSeconds(30)
   do {
     Start-Sleep -Seconds 2
-    try {
-      Invoke-RestMethod -Method Get -Uri "http://127.0.0.1:8787/health" -TimeoutSec 5 | Out-Null
+    $health = Get-AgentHealth
+    if ($health.Responded -and $health.Status -ge 200 -and $health.Status -lt 300) {
       Write-Log "Agent started."
       return
-    } catch {
-      if ((Get-Date) -gt $deadline) { throw "Agent did not become reachable within 30 seconds." }
+    }
+    if ((Get-Date) -gt $deadline) {
+      if ($health.Responded) {
+        $problem = Format-AgentHealthProblem -Health $health
+        Write-Log "Agent started but is unhealthy: $problem"
+        throw "Agent started but is unhealthy: $problem"
+      }
+      throw "Agent did not start listening on 127.0.0.1:8787 within 30 seconds."
     }
   } while ($true)
 }

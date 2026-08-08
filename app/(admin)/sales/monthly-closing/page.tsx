@@ -4,15 +4,17 @@ import { MonthlyClosingWorkspace } from "@/components/sales/monthly-closing-work
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import {
-  loadMonthlyClosing,
-  type MonthlyClosingMatrix,
-} from "@/lib/sales/monthly-distributor-import";
+import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const dynamic = "force-dynamic";
 
-export default async function MonthlyClosingPage() {
+export default async function MonthlyClosingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const access = await resolveAuthenticatedPageAccess();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/source-of-sales");
@@ -31,13 +33,20 @@ export default async function MonthlyClosingPage() {
     redirect(resolveLandingPathForRole(access.role));
   }
 
+  // Deep-linked from the closing-published email (see app/api/sales/monthly-closing/go/route.ts):
+  // ?line=&period= pre-select which month opens, instead of always the default (latest) one. Absent
+  // for a normal visit, which keeps today's default-to-latest behavior unchanged.
+  const params = await searchParams;
+  const requestedLine = typeof params.line === "string" ? params.line : Array.isArray(params.line) ? params.line[0] : null;
+  const requestedPeriod = typeof params.period === "string" ? params.period : Array.isArray(params.period) ? params.period[0] : null;
+
   let initialMatrix: MonthlyClosingMatrix | null = null;
   let initialCoverage: MonthlySourceCoverage | null = null;
   let initialError: string | null = null;
 
   try {
     await assertPermission(access, "sales", "import");
-    initialMatrix = await loadMonthlyClosing();
+    initialMatrix = await loadMonthlyClosingWithStoreSplit({ line: requestedLine, period: requestedPeriod });
     // Completeness ride-along; a coverage failure hides the banner, never the closing.
     initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period).catch(() => null);
   } catch (error) {

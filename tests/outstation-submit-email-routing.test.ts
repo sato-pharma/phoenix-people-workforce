@@ -46,7 +46,10 @@ export function runOutstationSubmitEmailRoutingTests() {
     "dropping the CEO from Cc must not quietly re-add him on Bcc",
   );
 
-  // ── …but the CEO as a DIRECT manager is a real reporting line, so he stays ───────
+  // ── Owner rule 2026-08-08: the CEO is NEVER on an outstation submission ──────────
+  // Widened from the 2026-08-04 skip-level-only exclusion, which still copied him on every
+  // submission by one of his 21 direct reports (all three NSMs, plus DMs, reps, Finance,
+  // Marketing and SFE) — the same broadcast the earlier change set out to stop.
   const ceoIsDirectManager = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-NSM",
@@ -54,10 +57,47 @@ export function runOutstationSubmitEmailRoutingTests() {
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
+  assert.equal(ceoIsDirectManager.toHrId, "HR-NSM", "the submitter is still the To");
   assert.deepEqual(
     ceoIsDirectManager.ccHrIds,
-    ["HR-CEO"],
-    "the exclusion is scoped to the skip-level slot only; a direct report of the CEO still copies him",
+    [],
+    "a direct report of the CEO gets NO Cc at all — he is excluded from the direct-manager slot too",
+  );
+  assert.ok(
+    !ceoIsDirectManager.bccHrIds.includes("HR-CEO"),
+    "and dropping him from Cc must not quietly re-add him on Bcc",
+  );
+  assert.deepEqual(
+    ceoIsDirectManager.bccHrIds,
+    ADMINS,
+    "the Super Admin Bcc is untouched — that is how omar.anwar (B-10) keeps receiving his copy",
+  );
+
+  // The real manager is still copied when he is NOT the CEO — the exclusion is about one person,
+  // not about emptying the Cc.
+  const ceoIsNeitherRung = buildOutstationSubmitRouting({
+    ceoHrIds: CEO,
+    employeeHrId: "HR-REP",
+    managerHrId: "HR-DM",
+    managerOfManagerHrId: null,
+    superAdminHrIds: ADMINS,
+  });
+  assert.deepEqual(ceoIsNeitherRung.ccHrIds, ["HR-DM"], "a non-CEO direct manager is still Cc'd");
+
+  // Even if the CEO were also granted Super Admin, he must not reappear on the Bcc — "removed
+  // from Cc" must never silently mean "moved to a quieter header".
+  const ceoIsAlsoSuperAdmin = buildOutstationSubmitRouting({
+    ceoHrIds: CEO,
+    employeeHrId: "HR-REP",
+    managerHrId: "HR-CEO",
+    managerOfManagerHrId: null,
+    superAdminHrIds: ["HR-CEO", "HR-SA1"],
+  });
+  assert.deepEqual(ceoIsAlsoSuperAdmin.ccHrIds, [], "still no Cc");
+  assert.deepEqual(
+    ceoIsAlsoSuperAdmin.bccHrIds,
+    ["HR-SA1"],
+    "a CEO who is also a Super Admin is still off the email entirely, not silently Bcc'd",
   );
 
   // ── One person, one slot: the most visible slot wins ─────────────────────────────

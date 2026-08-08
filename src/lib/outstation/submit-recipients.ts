@@ -6,15 +6,19 @@
  * The new envelope is one email per submission:
  *
  *   To   the submitting employee                — it is his confirmation, so he is the audience
- *   Cc   his direct manager                     — always
- *   Cc   his manager's manager                  — ONLY when that person is not the CEO
+ *   Cc   his direct manager                     — unless that is the CEO
+ *   Cc   his manager's manager                  — unless that is the CEO
  *   Bcc  every active Super Admin               — silent oversight copy
  *
- * The CEO is deliberately dropped from the skip-level slot: he was receiving a mail for
- * every outstation submission company-wide, which is the complaint that prompted this
- * change. He still receives one if he happens to be the employee's DIRECT manager — that
- * is a real reporting line, not a broadcast, and the owner's instruction only excluded
- * him from the manager-of-manager slot.
+ * Owner instruction 2026-08-08: THE CEO IS NEVER ON AN OUTSTATION SUBMISSION EMAIL, in any slot.
+ *
+ * The 2026-08-04 version excluded him from the skip-level slot only. That left the direct-manager
+ * slot copying him on every submission by one of his 21 direct reports — all three NSMs (A-12,
+ * AI-0008, B-122), plus District Managers, Medical Reps, Finance, Marketing and SFE — i.e. the same
+ * company-wide broadcast the earlier change set out to stop, arriving through the other slot.
+ *
+ * omar.anwar needs no special handling — he is an active Super Admin (B-10) so he is already in
+ * the Bcc list above, and send-phoenix-email.ts additionally Bccs him on every automated email.
  *
  * The decision is split from the lookup on purpose: `buildOutstationSubmitRouting` is pure
  * so every edge (CEO as skip-level, a Super Admin who is also the manager, a self-managing
@@ -65,9 +69,21 @@ export function buildOutstationSubmitRouting(input: {
   if (!toKey) return { bccHrIds: [], ccHrIds: [], toHrId: null };
 
   const ceoKeys = new Set(input.ceoHrIds.map(key).filter(Boolean));
-  const taken = new Set<string>([toKey]);
+  // Seeding `taken` with the CEO keeps "removed from Cc" from silently becoming "Bcc'd on every
+  // submission" the day someone grants him Super Admin — the Bcc loop below skips anyone already
+  // taken. He is off the email entirely, not moved to a quieter header.
+  const taken = new Set<string>([toKey, ...ceoKeys]);
 
   const ccHrIds: string[] = [];
+  // Owner instruction 2026-08-08: the CEO is never Cc'd on an outstation submission, in ANY slot.
+  //
+  // The 2026-08-04 rule excluded him from the skip-level slot only, which still copied him on every
+  // submission by one of his 21 direct reports — all three NSMs (A-12, AI-0008, B-122), plus
+  // District Managers, Medical Reps, Finance, Marketing and SFE. That is the same company-wide
+  // broadcast the earlier change set out to stop, arriving through the other slot.
+  //
+  // Enforced HERE, inside addCc, rather than at each call site: a future slot (area manager, an
+  // approver chain) then inherits the exclusion automatically instead of quietly reintroducing him.
   const addCc = (hrId: string | null | undefined) => {
     const original = String(hrId ?? "").trim();
     const candidate = key(original);
@@ -77,10 +93,7 @@ export function buildOutstationSubmitRouting(input: {
   };
 
   addCc(input.managerHrId);
-
-  // The one conditional in the whole envelope: the skip-level manager is copied unless
-  // he is the CEO.
-  if (!ceoKeys.has(key(input.managerOfManagerHrId))) addCc(input.managerOfManagerHrId);
+  addCc(input.managerOfManagerHrId);
 
   const bccHrIds: string[] = [];
   for (const superAdmin of input.superAdminHrIds) {
