@@ -9,9 +9,11 @@ name: CI (docs-only fallback)
 # The job names here MUST track ci.yml's actual job ids. On 2026-07-30 ci.yml split
 # `lint-typecheck` into separate `lint` and `typecheck` jobs and this file was not updated,
 # so it kept satisfying a check that no longer exists while providing nothing for the two
-# that do. Harmless only because branch protection currently requires no checks at all —
-# the moment it does, every docs-only PR would hang. Current ci.yml jobs: validate, lint,
-# typecheck, full-e2e.
+# that do. That was harmless only while branch protection required no checks; it now requires
+# validate, lint, typecheck and secret-scan, so any name drift here hangs every docs-only PR.
+# Current ci.yml jobs: validate, lint, typecheck, full-e2e — the three required ones are all
+# mirrored below. `secret-scan` needs no mirror: security-scan.yml carries no path filter and
+# so runs on every PR, docs-only included.
 #
 # See https://github.com/Gawish-1997/phoenix-people-workforce/issues/679
 
