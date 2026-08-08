@@ -40,10 +40,22 @@ type BrickCentroid = {
 
 /** The resolved brick for a coordinate, with the distance that justifies it. */
 export type ResolvedBrickPoint = {
+  /**
+   * The CODE, alongside the display name. Added 2026-08-08 for the outstation claim-validation
+   * check, which asks whether a captured point falls inside the territory of the rep a manager
+   * was visiting. That comparison has to join on codes: area NAMES are display strings that vary
+   * in spelling and casing between sources, and matching money-adjacent territory on a label is
+   * exactly the kind of fragile join that silently stops matching after a rename.
+   *
+   * Both values are already loaded onto BrickCentroid and populated — they were simply not
+   * carried through to the result, so exposing them costs nothing and changes no matching maths.
+   */
+  areaCode: string | null;
   areaName: string | null;
   brickId: string;
   brickName: string | null;
   distanceKm: number;
+  regionCode: string | null;
   regionName: string | null;
 };
 
@@ -189,10 +201,12 @@ export function resolveBrickForPoint(
   }
   if (!best) return null;
   return {
+    areaCode: best.areaCode,
     areaName: best.areaName,
     brickId: best.brickId,
     brickName: best.brickName,
     distanceKm: bestKm,
+    regionCode: best.regionCode,
     regionName: best.regionName,
   };
 }

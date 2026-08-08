@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Fact, PanelSection } from "@/components/outstation/approval-detail-primitives";
 import { TripAttachments } from "@/components/outstation/trip-attachments";
+import { ExpenseClaimValidationPanel } from "@/components/outstation/expense-claim-validation-panel";
 import { TripWorkloadEvidencePanel } from "@/components/outstation/trip-workload-evidence";
 import { formatCurrencyValue, formatDateValue, formatNumberValue } from "@/lib/i18n/format";
 import {
@@ -149,7 +150,18 @@ const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
   warn: "bg-amber-100 font-bold text-amber-800",
 };
 
-export function ExpenseApprovalsWorkspace() {
+export function ExpenseApprovalsWorkspace({
+  /**
+   * Whether this viewer may DECIDE, as opposed to merely read. Resolved on the server and passed
+   * down (2026-08-08) — the CEO can now open this workspace to read the claim validation, and
+   * must not be shown controls he cannot use.
+   *
+   * Presentation only. The decision route asserts system-administrator access independently, so a
+   * viewer who somehow reached the buttons is still refused server-side. Defaults to true so every
+   * existing caller keeps its current behaviour.
+   */
+  canDecide = true,
+}: { canDecide?: boolean } = {}) {
   const [records, setRecords] = useState<LoadedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1086,6 +1098,7 @@ export function ExpenseApprovalsWorkspace() {
               }}
               onUnapprove={() => setDecision(selected, { hrApproved: false, status: "" })}
               onUnreject={() => setDecision(selected, { hrApproved: false, status: "" })}
+              canDecide={canDecide}
               record={selected}
             />
           )}
@@ -1339,6 +1352,7 @@ function EmployeeSummaryPanel({
 function ExpenseDecisionPanel({
   record,
   decision,
+  canDecide,
   onApprove,
   onReject,
   onUnapprove,
@@ -1346,6 +1360,7 @@ function ExpenseDecisionPanel({
   onChangeAmount,
   onChangeReason,
 }: {
+  canDecide: boolean;
   decision: Decision;
   onApprove: () => void;
   onChangeAmount: (value: number) => void;
@@ -1356,6 +1371,9 @@ function ExpenseDecisionPanel({
   record: LoadedRecord;
 }) {
   const adjusted = isAdjustedAmount(decision.approvedAmount, record.total);
+  // Only a Phoenix-submitted trip has an outstation request behind it (and therefore a captured
+  // GPS point). An imported expense returns null here and the validation panel is skipped.
+  const validationRequestId = outstationRequestIdFromTripId(record.tripId);
   // Derived, never stored: `approvedAmount` stays the single value that gets saved, so the new
   // Deduction field cannot introduce a second source of truth for what a trip pays.
   const deduction = deductionFromApprovedAmount(record.total, decision.approvedAmount);
@@ -1466,6 +1484,13 @@ function ExpenseDecisionPanel({
           tripStartDate={record.date}
         />
 
+        {/* Claim validation — only for Phoenix-submitted trips. An imported expense carries no
+            captured GPS, so the panel would have nothing to check and would render four
+            "could not verify" rows that mean nothing. Rendering nothing is the honest answer. */}
+        {validationRequestId !== null ? (
+          <ExpenseClaimValidationPanel requestId={validationRequestId} />
+        ) : null}
+
         {/* Attachments (Phoenix-submitted trips carry the ticket/receipt picture or PDF) */}
         <PanelSection title="Attachment">
           <TripAttachments tripId={record.tripId} />
@@ -1563,7 +1588,19 @@ function ExpenseDecisionPanel({
         </PanelSection>
 
         {/* Decision bar — the page's one destructive/committing surface, so it is given its own
-            weight instead of sitting loose under the form. */}
+            weight instead of sitting loose under the form.
+
+            Hidden entirely for a read-only viewer (the CEO, 2026-08-08) rather than disabled:
+            a row of greyed-out Approve/Reject buttons invites someone to keep clicking and
+            wondering what is wrong. This is presentation only — the decision route asserts
+            system-administrator access on its own, so hiding it grants nothing and revealing it
+            would grant nothing either. */}
+        {!canDecide ? (
+          <p className="border border-slate-200 bg-slate-50 p-4 text-xs font-semibold text-slate-500">
+            You have read-only access to this workspace. Approving, rejecting and adjusting the
+            payable amount are reserved for a system administrator.
+          </p>
+        ) : (
         <div className="flex flex-wrap items-center gap-2 border border-slate-200 bg-slate-50 p-4">
           {decision.hrApproved ? (
             <Button onClick={onUnapprove} variant="secondary">
@@ -1605,6 +1642,7 @@ function ExpenseDecisionPanel({
             <span className="text-xs font-semibold text-slate-500">Add a reason to reject this trip.</span>
           ) : null}
         </div>
+        )}
       </div>
     </div>
   );
