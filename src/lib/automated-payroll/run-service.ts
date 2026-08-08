@@ -53,6 +53,7 @@ import {
 } from "./permissions.ts";
 import {
   computeVacationDeductionTotals,
+  filterExcludedMembers,
   loadStepContext,
   recommendStep,
   settleCrmLeaveBalanceForPeriod,
@@ -308,7 +309,15 @@ async function loadRunContext(period: PayrollPeriod, runId: string): Promise<{
     loadStepContext(period),
     listDraftRows(runId),
   ]);
-  return { members, sources, draftRows };
+  // Run-scoped exclusion (excludeEmployeeFromRun): drop the employee from every
+  // consumer of `members` — steps, data-quality audit, assembly/pre-flight,
+  // population diff — while `draftRows` itself is returned unfiltered so the
+  // wizard can still show/reverse the exclusion. See DraftRow.excluded's doc
+  // comment for why this exists (a run-wide hard block over one edge-case row).
+  const excludedCompacts = new Set(
+    draftRows.filter((row) => row.excluded).map((row) => row.employeeHrIdCompact),
+  );
+  return { members: filterExcludedMembers(members, excludedCompacts), sources, draftRows };
 }
 
 /**
@@ -840,6 +849,62 @@ export async function getPayrollDataQuality(
     sources,
     draftRows,
     part1Confirmed: run.part1ConfirmedAt != null,
+  });
+}
+
+/**
+ * Drop one employee from THIS run's population entirely (every step, the
+ * data-quality audit, and assembly/pre-flight) — never their master employee
+ * record, never another run. Exists for the one case the data-quality
+ * acknowledgement gate can't cover: a row whose derived Gross Salary is <= 0
+ * hard-blocks Part 2 confirmation for the whole run via preflightValidate, with
+ * no acknowledge-and-proceed option (owner-reported 2026-08-08, a same-day
+ * hire/termination whose master record carries only allowances, no base).
+ *
+ * A reason is required so the decision is on the record, same convention as
+ * `manualReason`/`holdReason`.
+ */
+export async function excludeEmployeeFromRun(
+  access: AccessContext,
+  runId: string,
+  hrId: string,
+  reason: string,
+): Promise<void> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  assertActiveRun(run);
+  const compact = compactHrKey(hrId);
+  if (!compact) throw new Error("Validation: a valid HR ID is required.");
+  const trimmedReason = reason.trim();
+  if (!trimmedReason) throw new Error("Validation: a reason is required to exclude an employee from this run.");
+
+  await upsertDraftRows(runId, [
+    { employeeHrId: hrId, excluded: true, excludedReason: trimmedReason, editedBy: actorId(access) },
+  ]);
+  await writeAutomatedPayrollAudit({
+    runId,
+    actorHrId: actorId(access),
+    action: "employee_excluded_from_run",
+    detail: { hrId, reason: trimmedReason },
+  });
+}
+
+/** Reverse excludeEmployeeFromRun — the employee re-enters the run's population. */
+export async function includeEmployeeInRun(access: AccessContext, runId: string, hrId: string): Promise<void> {
+  assertAutomatedPayrollHrActor(access);
+  const run = await requireRun(runId);
+  assertActiveRun(run);
+  const compact = compactHrKey(hrId);
+  if (!compact) throw new Error("Validation: a valid HR ID is required.");
+
+  await upsertDraftRows(runId, [
+    { employeeHrId: hrId, excluded: false, excludedReason: null, editedBy: actorId(access) },
+  ]);
+  await writeAutomatedPayrollAudit({
+    runId,
+    actorHrId: actorId(access),
+    action: "employee_included_in_run",
+    detail: { hrId },
   });
 }
 

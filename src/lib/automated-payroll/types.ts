@@ -191,6 +191,16 @@ export type DraftRow = {
   // Hold — held employee still appears (red + flagged), excluded from publish.
   onHold: boolean;
   holdReason: string | null;
+  /**
+   * Run-scoped exclusion: this employee is dropped from THIS run's population
+   * entirely — every step, the data-quality audit, and assembly/pre-flight —
+   * without touching their master employee record or any other run. Distinct
+   * from `onHold`, which still assembles and validates the row and only skips
+   * it at publish. Reason is required by the service layer (excludeEmployeeFromRun)
+   * so the decision is on the record.
+   */
+  excluded: boolean;
+  excludedReason: string | null;
   source: StepInputMode;
   editedBy: string | null;
   updatedAt: string;

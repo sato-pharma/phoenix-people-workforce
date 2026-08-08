@@ -11,8 +11,10 @@ import {
 import { adminPanelClassName, adminSoftPanelClassName } from "@/components/admin/admin-design-tokens";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { stepDefinition } from "@/lib/automated-payroll/step-definitions";
 import type {
+  DraftRow,
   MonthlySalaryRun,
   NonEmployeePart,
   ReconciliationTotals,
@@ -106,6 +108,14 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
   /** The names behind the data-quality banner — collapsed by default so the
    * headline stays a one-liner instead of a nine-name wall of red. */
   const [dataQualityOpen, setDataQualityOpen] = useState(false);
+  /** The employee, if any, HR is about to exclude from this run entirely — a
+   * separate decision point (with a required reason) from the data-quality
+   * acknowledgment above, since exclusion removes them from the sheet rather
+   * than just flagging them. */
+  const [excludePrompt, setExcludePrompt] = useState<{ hrId: string; fullName: string } | null>(null);
+  const [excludeReason, setExcludeReason] = useState("");
+  const [draftRows, setDraftRows] = useState<DraftRow[]>([]);
+  const excludedRows = useMemo(() => draftRows.filter((row) => row.excluded), [draftRows]);
   const [populationDiff, setPopulationDiff] = useState<PopulationDiff | null>(null);
 
   const confirmedSet = useMemo(
@@ -140,17 +150,19 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
 
   /** Same rows, pivoted issue-first so each explanation is written once and the
    * names sit under it as a plain list. A person with two issues appears in both
-   * groups, which is the correct reading — they have two separate things wrong. */
+   * groups, which is the correct reading — they have two separate things wrong.
+   * Kept as {hrId, fullName} rather than a pre-joined string so each name can
+   * carry its own "Exclude from this run" action. */
   const dataQualityGroups = useMemo(() => {
-    const byIssue = new Map<PayrollDataIssue, string[]>();
+    const byIssue = new Map<PayrollDataIssue, { hrId: string; fullName: string }[]>();
     for (const row of dataQuality?.rows ?? []) {
       for (const issue of row.issues) {
-        const names = byIssue.get(issue) ?? [];
-        names.push(`${row.fullName} (${row.hrId})`);
-        byIssue.set(issue, names);
+        const people = byIssue.get(issue) ?? [];
+        people.push({ hrId: row.hrId, fullName: row.fullName });
+        byIssue.set(issue, people);
       }
     }
-    return Array.from(byIssue, ([issue, names]) => ({ issue, names }));
+    return Array.from(byIssue, ([issue, people]) => ({ issue, people }));
   }, [dataQuality]);
 
   /**
@@ -171,6 +183,7 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
       if (!res.ok) throw new Error(data.error ?? "Failed to load run.");
       setRun(data.run ?? null);
       setStepStates(data.view?.stepStates ?? []);
+      setDraftRows(data.view?.draftRows ?? []);
       setRecon(null);
       setNonEmployeeCount({ first: 0, second: 0 });
       setPopulationDiff(null);
@@ -314,6 +327,37 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
     } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * Run-scoped exclusion: drops one flagged employee from this run entirely
+   * (every step, the audit, assembly/pre-flight) — never their master record.
+   * Exists for the one gate the acknowledgment flow above can't cover: a row
+   * whose derived Gross Salary is <= 0 hard-blocks Part 2 for everyone, with
+   * no acknowledge-and-proceed option (owner-reported 2026-08-08).
+   */
+  const submitExclude = async () => {
+    if (!run || !excludePrompt) return;
+    const reason = excludeReason.trim();
+    if (!reason) {
+      setError("A reason is required to exclude an employee from this run.");
+      return;
+    }
+    const result = await post(
+      `/api/automated-payroll/runs/${run.id}/exclude`,
+      `${excludePrompt.fullName} excluded from this run.`,
+      { hrId: excludePrompt.hrId, reason },
+    );
+    if (result) {
+      setExcludePrompt(null);
+      setExcludeReason("");
+    }
+  };
+
+  /** Reverses submitExclude — the employee re-enters this run's population. */
+  const submitInclude = async (hrId: string, fullName: string) => {
+    if (!run) return;
+    await post(`/api/automated-payroll/runs/${run.id}/include`, `${fullName} re-included in this run.`, { hrId });
   };
 
   const onStartClick = async () => {
@@ -582,6 +626,34 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
         </AdminCallout>
       ) : null}
 
+      {/* Who's currently excluded from this run, with the reason and a one-click
+          reversal — so an exclusion is never a one-way, un-auditable dead end. */}
+      {excludedRows.length > 0 ? (
+        <AdminCallout tone="warning">
+          <div>
+            <div className="font-black">{people(excludedRows.length)} excluded from this run</div>
+            <ul className="mt-2 flex flex-col gap-1 text-xs">
+              {excludedRows.map((row) => (
+                <li key={row.employeeHrIdCompact} className="flex items-center justify-between gap-2">
+                  <span>
+                    <span className="font-semibold">{row.employeeHrId}</span>
+                    {row.excludedReason ? ` — ${row.excludedReason}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submitInclude(row.employeeHrId, row.employeeHrId)}
+                    className="shrink-0 font-semibold underline underline-offset-2 disabled:opacity-50"
+                  >
+                    Include again
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </AdminCallout>
+      ) : null}
+
       {/* Overpayment gate — real money already paid out that this month can't
           absorb. Deliberately NOT a browser confirm(): HR needs to read who and
           how much before accepting, and the acceptance is written to the audit log. */}
@@ -617,9 +689,28 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 {dataQualityGroups.map((group) => (
                   <div key={group.issue}>
                     <div className="font-semibold">
-                      {people(group.names.length)} — {PAYROLL_DATA_ISSUE_LABELS[group.issue]}
+                      {people(group.people.length)} — {PAYROLL_DATA_ISSUE_LABELS[group.issue]}
                     </div>
-                    <div className="mt-0.5 opacity-80">{group.names.join(" · ")}</div>
+                    <ul className="mt-0.5 flex flex-col gap-0.5">
+                      {group.people.map((person) => (
+                        <li key={person.hrId} className="flex items-center justify-between gap-2 opacity-80">
+                          <span>
+                            {person.fullName} ({person.hrId})
+                          </span>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => {
+                              setExcludeReason("");
+                              setExcludePrompt(person);
+                            }}
+                            className="shrink-0 font-semibold underline underline-offset-2 disabled:opacity-50"
+                          >
+                            Exclude from this run
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 ))}
                 <div className="opacity-80">
@@ -627,6 +718,52 @@ export function AutomatedPayrollWizard({ initialMonth, initialYear, isPublisher 
                 </div>
               </div>
             ) : null}
+          </div>
+        </AdminCallout>
+      ) : null}
+
+      {/* Run-scoped exclusion — a separate, named action from the acknowledgment
+          below: acknowledgment lets the row through with a flag, this removes it
+          from the sheet entirely. Requires a reason so the decision is answerable
+          later (written to the audit log by excludeEmployeeFromRun). */}
+      {excludePrompt ? (
+        <AdminCallout tone="warning">
+          <div>
+            <div className="font-black">
+              Exclude {excludePrompt.fullName} ({excludePrompt.hrId}) from this run?
+            </div>
+            <p className="mt-1 text-xs">
+              They will be dropped from every step, the pre-flight check, and the final sheet for this month only —
+              their employee record and every other run are untouched. Reversible any time from the &quot;Excluded
+              from this run&quot; list above.
+            </p>
+            <Input
+              value={excludeReason}
+              onChange={(event) => setExcludeReason(event.target.value)}
+              placeholder="Reason (required) — e.g. same-day hire/termination, no base salary on record"
+              className="mt-2"
+            />
+            <div className="mt-2 flex gap-2">
+              <Button
+                size="sm"
+                disabled={busy || !excludeReason.trim()}
+                onClick={() => void submitExclude()}
+                className="border border-amber-600 bg-amber-600 text-white hover:bg-amber-700"
+              >
+                Exclude from this run
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setExcludePrompt(null);
+                  setExcludeReason("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
           </div>
         </AdminCallout>
       ) : null}

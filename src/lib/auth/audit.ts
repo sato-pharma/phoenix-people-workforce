@@ -5,7 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 const loginThrottleWindowMinutes = 15;
-const loginThrottleMaxFailures = 5;
+const loginThrottleMaxFailures = 10;
 const loginIpThrottleMaxFailures = 15;
 const loginLockoutMinutes = 30;
 
