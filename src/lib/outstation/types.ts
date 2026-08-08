@@ -166,6 +166,11 @@ export type OutstationAllowanceBreakdown = {
   rows: Array<{
     amount: number;
     label: string;
+    /** True when this day's allowance was zeroed because another live request already
+     * claimed it. See skipReason for which one. Optional: absent on every row written
+     * before the duplicate-day guard existed. */
+    skipped?: boolean;
+    skipReason?: string | null;
     type: "overnight" | "return_day" | "same_day";
   }>;
   sameDayTrip: boolean;

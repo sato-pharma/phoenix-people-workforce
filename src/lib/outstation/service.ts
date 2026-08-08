@@ -42,6 +42,11 @@ import {
 } from "@/lib/outstation/captured-location";
 import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
 import {
+  allowanceRowDates,
+  deriveClaimedAllowanceDays,
+  type AllowanceClaimingRequest,
+} from "@/lib/outstation/allowance-day-guard";
+import {
   cairoDateOnly,
   isWithinDepartureWindow,
   reviewDepartureEvidence,
@@ -163,6 +168,23 @@ function appendCarEvidenceNote(
   ].join(" ");
 
   return [notes, evidenceLine].filter(Boolean).join("\n");
+}
+
+/**
+ * Puts the duplicate-day guard's reason in the SAME notes an employee already reads, not only
+ * in the structured breakdown JSON. He should never have to open the raw record to find out
+ * whether a missing allowance line was deliberate — that uncertainty is exactly what made him
+ * stop and flag this in the first place.
+ */
+function appendAllowanceGuardNote(
+  notes: string | null,
+  allowanceBreakdown: OutstationAllowanceBreakdown | null | undefined,
+) {
+  const skipped = (allowanceBreakdown?.rows ?? []).filter((row) => row.skipped && row.skipReason);
+  if (skipped.length === 0) return notes;
+
+  const line = `Allowance guard: ${skipped.map((row) => row.skipReason).join(" ")}`;
+  return [notes, line].filter(Boolean).join("\n");
 }
 
 function numberValue(value: unknown) {
@@ -325,7 +347,22 @@ function daysBetween(startIso: string, endIso: string) {
   return Math.max(0, Math.round((endUtc - startUtc) / 86400000));
 }
 
-function calculateAllowanceBreakdown(
+/**
+ * The raw per-day allowance for ONE trip span. Pure: no employee id, no database, no idea any
+ * OTHER request exists.
+ *
+ * DO NOT call this directly outside calculateGuardedAllowanceBreakdown below. Until
+ * 2026-08-08 this WAS the only allowance function, called independently from all four write
+ * paths (employee wizard, admin preview, admin create, admin edit) — each one priced its own
+ * trip span with zero awareness of a sibling request touching the same calendar day. An
+ * employee who submitted a trip, then separately logged a same-day meeting invoice, was about
+ * to be paid a full second day's allowance purely because two different requests happened to
+ * name the same date. He caught it himself before submitting; the owner hit the identical
+ * bypass on the very next manual expense he tried to create. Kept private and unexported for
+ * exactly that reason: this file is the only place allowance is ever computed, and every path
+ * through it must go through the guarded version.
+ */
+function calculateRawAllowanceBreakdown(
   tripStartDate: string,
   tripEndDate: string,
   policy: OutstationPolicyRule,
@@ -366,6 +403,89 @@ function calculateAllowanceBreakdown(
     } satisfies OutstationAllowanceBreakdown,
     overnightDays,
     sameDayTrip,
+  };
+}
+
+/**
+ * Every calendar day, for one employee, already covered by a live request's allowance —
+ * mapped to the id of the request that claims it.
+ *
+ * Read fresh on every calculation rather than cached: this is the guard that stops the same
+ * day being paid twice, so it has to see whatever the database holds RIGHT NOW.
+ */
+async function resolveClaimedAllowanceDays(input: {
+  employeeHrId: string;
+  excludeRequestId?: number;
+}): Promise<Map<string, number>> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("outstation_expense_requests")
+    .select("id, status, trip_start_date, trip_end_date")
+    .ilike("employee_hr_id", input.employeeHrId)
+    .gt("allowance_amount", 0);
+
+  if (error || !data) return new Map();
+
+  const requests: AllowanceClaimingRequest[] = (
+    data as Array<{ id: number; status: string; trip_end_date: string; trip_start_date: string }>
+  ).map((row) => ({
+    id: row.id,
+    status: row.status,
+    tripEndDate: row.trip_end_date,
+    tripStartDate: row.trip_start_date,
+  }));
+
+  return deriveClaimedAllowanceDays(requests, input.excludeRequestId);
+}
+
+/**
+ * The one function every write path must call for allowance. Prices the trip span, then
+ * zeroes any day another live request already claims for this employee — never refuses the
+ * request over it, because the rest of the claim (ticket, meeting cost, other) is real
+ * regardless of whether its date overlaps someone else's trip, and blocking the whole
+ * submission over one duplicate line would strand it.
+ *
+ * Every zeroed row carries WHY, in skipReason — this is not a silent correction. The employee
+ * who reported this asked for exactly that: never make him wonder whether a missing allowance
+ * line is a bug.
+ */
+async function calculateGuardedAllowanceBreakdown(input: {
+  employeeHrId: string;
+  excludeRequestId?: number;
+  policy: OutstationPolicyRule;
+  tripEndDate: string;
+  tripStartDate: string;
+}) {
+  const raw = calculateRawAllowanceBreakdown(input.tripStartDate, input.tripEndDate, input.policy);
+
+  const claimedDays = await resolveClaimedAllowanceDays({
+    employeeHrId: input.employeeHrId,
+    excludeRequestId: input.excludeRequestId,
+  });
+  if (claimedDays.size === 0) return raw;
+
+  const rowDates = allowanceRowDates(input.tripStartDate, raw.breakdown.rows.length);
+  let removedAmount = 0;
+  const guardedRows = raw.breakdown.rows.map((row, index) => {
+    const day = rowDates[index];
+    const claimingRequestId = claimedDays.get(day);
+    if (claimingRequestId == null) return row;
+
+    removedAmount += row.amount;
+    return {
+      ...row,
+      amount: 0,
+      skipReason: `Allowance for ${day} was already granted on request #${claimingRequestId} — not paid twice.`,
+      skipped: true,
+    };
+  });
+
+  if (removedAmount === 0) return raw;
+
+  return {
+    allowanceAmount: roundMoney(raw.allowanceAmount - removedAmount),
+    breakdown: { ...raw.breakdown, rows: guardedRows } satisfies OutstationAllowanceBreakdown,
+    overnightDays: raw.overnightDays,
+    sameDayTrip: raw.sameDayTrip,
   };
 }
 
@@ -1009,7 +1129,7 @@ export async function calculateOutstationExpense(
     hasTicketAttachments: input.hasTicketAttachments,
     offlineCaptured: input.offlineCaptured,
   });
-  const { policy, result } = validated;
+  const { identity, policy, result } = validated;
 
   if (!input.tripStartDate || !input.tripEndDate) {
     throw new Error("Trip start and end dates are required.");
@@ -1021,7 +1141,12 @@ export async function calculateOutstationExpense(
     throw new Error("Trip dates are invalid.");
   }
 
-  const allowance = calculateAllowanceBreakdown(tripStartDate, tripEndDate, policy);
+  const allowance = await calculateGuardedAllowanceBreakdown({
+    employeeHrId: identity.employeeHrId,
+    policy,
+    tripEndDate,
+    tripStartDate,
+  });
   let fuelAmount = 0;
   let ticketAmount = 0;
   if (input.transportationType === "car") {
@@ -1558,7 +1683,7 @@ export async function submitOutstationRequest(
     medical_trip_name: calculation.medicalTripName,
     minimum_required_distance_km: calculation.minimumRequiredDistanceKm,
     notes: appendCarEvidenceNote(
-      calculation.notes,
+      appendAllowanceGuardNote(calculation.notes, calculation.allowanceBreakdown),
       storedCarEvidenceMetadata,
       calculation.transportationType,
     ),
@@ -1628,7 +1753,7 @@ export async function submitOutstationRequest(
       .update({
         car_evidence_metadata: metadataWithRequestId,
         notes: appendCarEvidenceNote(
-          calculation.notes,
+          appendAllowanceGuardNote(calculation.notes, calculation.allowanceBreakdown),
           metadataWithRequestId,
           calculation.transportationType,
         ),
@@ -2693,7 +2818,12 @@ export async function previewManagerExpenseCalculation(
   }
 
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
-  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+  const allowance = await calculateGuardedAllowanceBreakdown({
+    employeeHrId: employee.hrId,
+    policy,
+    tripEndDate: input.tripEndDate,
+    tripStartDate: input.tripStartDate,
+  });
 
   let fuelAmount = 0;
   if (input.transportationType === "car") {
@@ -2765,7 +2895,12 @@ export async function createManagerExpenseAsAdmin(
 
   const residence = await getResidenceLocationForEmployee(employee.hrId);
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
-  const allowance = calculateAllowanceBreakdown(input.tripStartDate, input.tripEndDate, policy);
+  const allowance = await calculateGuardedAllowanceBreakdown({
+    employeeHrId: employee.hrId,
+    policy,
+    tripEndDate: input.tripEndDate,
+    tripStartDate: input.tripStartDate,
+  });
 
   let fuelAmount = 0;
   if (input.transportationType === "car") {
@@ -2853,7 +2988,7 @@ export async function createManagerExpenseAsAdmin(
       go_ticket_amount: 0,
       line: employee.lineName ?? null,
       minimum_required_distance_km: policy.minimumDistanceKm,
-      notes: input.notes ?? null,
+      notes: appendAllowanceGuardNote(input.notes ?? null, allowance.breakdown),
       offline_captured: false,
       overnight_days: allowance.overnightDays,
       report_am_workload: positiveMoney(input.amWorkload),
@@ -2972,7 +3107,13 @@ export async function updateManagerExpenseAsAdmin(
     ? (input.routePolyline ?? null)
     : existing.routePolyline;
 
-  const allowance = calculateAllowanceBreakdown(tripStartDate, tripEndDate, policy);
+  const allowance = await calculateGuardedAllowanceBreakdown({
+    employeeHrId,
+    excludeRequestId: requestId,
+    policy,
+    tripEndDate,
+    tripStartDate,
+  });
   let fuelAmount = 0;
   if (transportationType === "car") {
     fuelAmount = roundMoney(distanceKm * 2 * policy.fuelRatePerKm);
@@ -3056,7 +3197,7 @@ export async function updateManagerExpenseAsAdmin(
     expected_total_amount: expectedTotalAmount,
     fuel_amount: fuelAmount,
     meeting_amount: input.meetingAmount ?? existing.meetingAmount ?? 0,
-    notes: notes,
+    notes: appendAllowanceGuardNote(notes, allowance.breakdown),
     other_amount: input.otherAmount ?? existing.otherAmount ?? 0,
     overnight_days: allowance.overnightDays,
     report_am_workload: reportAmWorkload,
