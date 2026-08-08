@@ -9,9 +9,12 @@
  *  - Duplicate submissions are collapsed via the canonical read-door collapse, so counts agree
  *    with DV Analytics / FWC.
  *  - Departed agents are excluded for free by the reads door (scanVisitsForRange).
- *  - The vendor only began sending contactGrade on 2026-07-24, so months before 2026-07 have a
- *    near-empty graded panel by construction — the board renders that as an empty state, never an
- *    error.
+ *  - Grading history: this note used to say the vendor only began sending contactGrade on
+ *    2026-07-24, so months before 2026-07 were "near-empty by construction". That is no longer
+ *    true and the board must not imply it — checked against production 2026-08-08, graded type-0
+ *    visits run back to 2026-01-01, with 72,721 graded rows dated before 2026-07-24 and every month
+ *    March–August 99.9–100% graded. The vendor backfilled. An empty panel now means a genuinely
+ *    empty month in scope, not a missing feed, and the board says so.
  *
  * Coverage norms (owner-confirmed 2026-08-02): A-grade (A+ folds into A) doctors need 2 visits in
  * the month to count covered; B and C need 1. A doctor with zero visits this month who WAS seen in
@@ -23,8 +26,9 @@
  * never Date-object parsing or ISO re-serialization (either would shift the wall-clock).
  */
 
-import { collapseDuplicateVisitSubmissions, scanVisitsForRange } from "@/lib/crm/reads";
+import { collapseDuplicateVisitSubmissions, queryVisits } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 
 /** Editable coverage norms: required type-0 visits per month, by grade tier. A+ folds into A. */
 export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = { A: 2, B: 1, C: 1 };
@@ -40,6 +44,14 @@ export const DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS = 2;
 export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS;
 /** Specialty mix lists this many named specialties before folding the rest into "Other". */
 const SPECIALTY_MIX_TOP_N = 8;
+/** How many doctors the prioritised call list names. The full panel stays available in the table
+ * below it; this is the "who do I send someone to next" answer, and a list nobody can act on in a
+ * week is not one. `callListTotal` always reports the true count so the cap is never silent. */
+export const DOCTOR_COVERAGE_CALL_LIST_SIZE = 50;
+/** Coverage % that counts as healthy over a WHOLE month. Pro-rated by elapsed days for the current
+ * month — see `resolveCoveragePace`. Below `..._GOOD` but at or above `..._FAIR` reads amber. */
+const COVERAGE_TONE_GOOD_PCT = 80;
+const COVERAGE_TONE_FAIR_PCT = 50;
 
 export type DoctorCoverageGradeTier = "A" | "B" | "C";
 export type DoctorCoverageStatus = "green" | "yellow" | "red";
@@ -75,14 +87,59 @@ export type DoctorCoverageRepRow = {
   yellow: number;
 };
 
+/** One doctor on the prioritised call list — the module's actual output for a manager or rep. */
+export type DoctorCoverageCallListRow = {
+  contactCrmId: number;
+  contactName: string;
+  gradeTier: DoctorCoverageGradeTier;
+  /** Latest type-0 visit on or before the month end, YYYY-MM-DD. Null = not seen in the window. */
+  lastVisitDate: string | null;
+  repKey: string;
+  repName: string;
+  speciality: string | null;
+  /** Visits still owed this month to reach the grade's norm. Always ≥ 1 on this list. */
+  visitsNeeded: number;
+  visitsThisMonth: number;
+};
+
+/**
+ * How far through the month we are, and what "good" looks like TODAY rather than at month end.
+ *
+ * The board used to compare a month-to-date coverage % against the whole-month bar and colour the
+ * headline tile rose below 50%. On 2026-08-08 — 8 days into a 31-day month — that rendered a red
+ * "13.7%" with 6,965 doctors flagged, which is what a perfectly on-pace team also looks like on
+ * day 8. A metric that reads catastrophic for the first three weeks of every month teaches people
+ * to ignore it, so the bar is pro-rated by elapsed days. A CLOSED month has elapsedFraction 1 and
+ * therefore keeps exactly the original 80/50 thresholds.
+ */
+export type DoctorCoveragePace = {
+  /** Calendar days left in the selected month; 0 once it has closed. */
+  daysRemaining: number;
+  /** 0–1. Fraction of the selected month elapsed in Cairo wall-clock; 1 for any closed month. */
+  elapsedFraction: number;
+  /** Coverage % an on-pace team would show by today. 100 for a closed month. */
+  expectedCoveragePct: number;
+  /** Pace-adjusted tone for the headline coverage tile. Lives here, not in the component, so the
+   * admin and portal twins can never disagree about what counts as healthy. */
+  tone: "emerald" | "amber" | "rose";
+};
+
 export type SfeDoctorCoverageBoard = {
+  /** Prioritised "go see these next", A-grade and longest-neglected first. Capped at
+   * {@link DOCTOR_COVERAGE_CALL_LIST_SIZE}; `callListTotal` reports the uncapped count. */
+  callList: DoctorCoverageCallListRow[];
+  callListTotal: number;
   doctors: DoctorCoverageDoctorRow[];
   gradeSplit: Array<{ covered: number; doctors: number; tier: DoctorCoverageGradeTier }>;
   /** True → the selected month is still running (render "month to date"). */
   isCurrentMonth: boolean;
   month: string;
   monthLabel: string;
+  pace: DoctorCoveragePace;
   reps: DoctorCoverageRepRow[];
+  /** Human-readable description of whose data this is ("District Manager · own team"). Empty for
+   * the pure-core/fixture path, which has no viewer. */
+  scopeLabel: string;
   specialtyMix: Array<{ doctors: number; label: string }>;
   totals: {
     activePanel: number;
@@ -160,6 +217,50 @@ export function lastDayOfMonthKeyIso(monthKey: string): string {
   return `${monthKey}-${String(days).padStart(2, "0")}`;
 }
 
+/**
+ * Elapsed-month pace for the selected month. Pure: `todayIso` is injected so this is testable
+ * without freezing the clock, and all arithmetic stays string-based per the module's DATE
+ * DISCIPLINE note (no Date parsing, which would shift the Cairo wall-clock).
+ *
+ * `coveragePct` is the achieved figure; the returned tone compares it against the whole-month bar
+ * scaled by how much of the month has actually happened.
+ */
+export function resolveCoveragePace(input: {
+  coveragePct: number;
+  selectedMonth: string;
+  todayIso: string;
+}): DoctorCoveragePace {
+  const daysInMonth = Number(lastDayOfMonthKeyIso(input.selectedMonth).slice(8, 10));
+  const isCurrentMonth = input.selectedMonth === monthKeyOfVisitDate(input.todayIso);
+  // A FUTURE month has no elapsed days at all; a past month is fully elapsed. Clamping to at least
+  // one day keeps the tone defined on day 1 instead of dividing the bar down to zero, which would
+  // paint every board emerald the moment a month rolls over.
+  const daysElapsed = isCurrentMonth
+    ? Math.min(daysInMonth, Math.max(1, Number(input.todayIso.slice(8, 10))))
+    : input.selectedMonth > monthKeyOfVisitDate(input.todayIso)
+      ? 0
+      : daysInMonth;
+  const elapsedFraction = daysElapsed / daysInMonth;
+  const goodBar = COVERAGE_TONE_GOOD_PCT * elapsedFraction;
+  const fairBar = COVERAGE_TONE_FAIR_PCT * elapsedFraction;
+  // A month that has not started yet has no pace to judge: both bars are 0, and "0% ≥ 0" would
+  // paint an empty future board emerald — a false all-clear. Report it as neutral instead.
+  const tone: DoctorCoveragePace["tone"] =
+    elapsedFraction === 0
+      ? "amber"
+      : input.coveragePct >= goodBar
+        ? "emerald"
+        : input.coveragePct >= fairBar
+          ? "amber"
+          : "rose";
+  return {
+    daysRemaining: daysInMonth - daysElapsed,
+    elapsedFraction,
+    expectedCoveragePct: Math.round(COVERAGE_TONE_GOOD_PCT * elapsedFraction),
+    tone,
+  };
+}
+
 /** A valid "YYYY-MM" passes through; anything else falls back to the current Cairo month —
  * same validate-or-default posture as attendance's resolveSummaryMonth. */
 export function resolveCoverageMonth(month: string | undefined): string {
@@ -220,6 +321,8 @@ function trackLatest<T extends { date: string; visitId: number }>(current: T | n
 export function buildDoctorCoverageBoard(
   visits: readonly DoctorCoverageVisitInput[],
   selectedMonth: string,
+  /** Optional so the existing fixture tests keep their two-argument calls. */
+  options: { scopeLabel?: string } = {},
 ): SfeDoctorCoverageBoard {
   const windowMonths: string[] = [];
   for (let back = DOCTOR_COVERAGE_MONTHS_BACK; back >= 0; back -= 1) {
@@ -462,7 +565,41 @@ export function buildDoctorCoverageBoard(
     };
   });
 
+  // ── Prioritised call list — the module's actual answer to "so what do I do now" ────────────────
+  // Every doctor still short of their own grade norm this month, hardest-hitting first. The order
+  // is the coaching order a DM would use out loud: A-grade before B/C (an A doctor is worth two
+  // visits a month for a reason), then whoever is furthest behind, then whoever has gone longest
+  // unseen. A doctor never visited in the whole window sorts to the very top of their tier — an
+  // empty `lastVisitDate` is the strongest signal on the board, not a missing value to skip past.
+  const callListAll = doctors
+    .filter((doctor) => doctor.visitsThisMonth < doctor.targetVisits)
+    .map((doctor) => ({
+      contactCrmId: doctor.contactCrmId,
+      contactName: doctor.contactName,
+      gradeTier: doctor.gradeTier,
+      lastVisitDate: doctor.lastVisitDate,
+      repKey: doctor.repKey,
+      repName: doctor.repName,
+      speciality: doctor.speciality,
+      visitsNeeded: doctor.targetVisits - doctor.visitsThisMonth,
+      visitsThisMonth: doctor.visitsThisMonth,
+    }))
+    .sort((a, b) => {
+      const tierRank = (tier: DoctorCoverageGradeTier) => (tier === "A" ? 0 : tier === "B" ? 1 : 2);
+      if (tierRank(a.gradeTier) !== tierRank(b.gradeTier)) return tierRank(a.gradeTier) - tierRank(b.gradeTier);
+      if (a.visitsNeeded !== b.visitsNeeded) return b.visitsNeeded - a.visitsNeeded;
+      // "" sorts before any real date, which puts never-visited doctors first — intended.
+      const aSeen = a.lastVisitDate ?? "";
+      const bSeen = b.lastVisitDate ?? "";
+      if (aSeen !== bSeen) return aSeen < bSeen ? -1 : 1;
+      return a.contactName.localeCompare(b.contactName);
+    });
+
+  const coveragePct = activePanel > 0 ? Math.round((totalsGreen / activePanel) * 100) : 0;
+
   return {
+    callList: callListAll.slice(0, DOCTOR_COVERAGE_CALL_LIST_SIZE),
+    callListTotal: callListAll.length,
     doctors: doctors.sort((a, b) => {
       const severity = (status: DoctorCoverageStatus) => (status === "red" ? 0 : status === "yellow" ? 1 : 2);
       return (
@@ -475,13 +612,15 @@ export function buildDoctorCoverageBoard(
     isCurrentMonth: selectedMonth === currentCairoMonth,
     month: selectedMonth,
     monthLabel: monthLabelOf(selectedMonth),
+    pace: resolveCoveragePace({ coveragePct, selectedMonth, todayIso: cairoTodayIso() }),
     reps: Array.from(repRows.values()).sort(
       (a, b) => a.coveragePct - b.coveragePct || a.repName.localeCompare(b.repName),
     ),
+    scopeLabel: options.scopeLabel ?? "",
     specialtyMix,
     totals: {
       activePanel,
-      coveragePct: activePanel > 0 ? Math.round((totalsGreen / activePanel) * 100) : 0,
+      coveragePct,
       green: totalsGreen,
       red: totalsRed,
       ungradedContacts,
@@ -494,12 +633,48 @@ export function buildDoctorCoverageBoard(
   };
 }
 
-/** IO wrapper: single-source-door read + duplicate collapse, then the pure core. */
-export async function getSfeDoctorCoverage(input?: { month?: string }): Promise<SfeDoctorCoverageBoard> {
-  const month = resolveCoverageMonth(input?.month);
+/**
+ * IO wrapper: viewer-SCOPED read + duplicate collapse, then the pure core.
+ *
+ * `scope` is required and has no default. It was previously absent altogether, which is exactly how
+ * every seat that could open this board ended up reading all 205 agents and 12,420 doctors
+ * company-wide; a required argument means a future caller cannot silently reopen that hole by
+ * forgetting to pass one. Resolve it with `getDoctorCoverageScope(access)`.
+ *
+ * Both filters below now run in Postgres instead of Node:
+ *  - `agentHrIds` is the whole point — a District Manager's ~8 reps instead of all 205. Measured on
+ *    production for a real DM seat (B-12, 5 reps): 3,071 rows over 4 keyset pages, against 95,324
+ *    rows over 96 pages before, each page a separate Railway-sfo → Supabase-eu-central round trip.
+ *  - `visitTypes: [0]` is free correctness: the pure core discards every other type on its first
+ *    `continue`, and non-regular rows were 29.3% of a measured 6-month window (27,934 of 95,324
+ *    rows) that crossed the Atlantic only to be thrown away.
+ *
+ * ONE CONSEQUENCE A SCOPED VIEWER SHOULD KNOW ABOUT. Because the scope filters VISITS, a doctor
+ * seen by two reps in different districts is counted for each viewer only from their own reps'
+ * visits — so a shared doctor can read under-visited for one DM while the company covered them.
+ * That is the correct reading for "is MY team covering its panel", and it is rare: measured on
+ * production 2026-08-08, 310 of 12,422 doctors (2.5%) were touched by more than one rep in a
+ * 6-month window, and never by more than three. Company-scoped viewers are unaffected.
+ */
+export async function getSfeDoctorCoverage(input: {
+  month?: string;
+  scope: DoctorCoverageScope;
+}): Promise<SfeDoctorCoverageBoard> {
+  if (input.scope.kind === "none") {
+    // Defence in depth. Both pages check this first and render an explanation; reaching here means
+    // a caller skipped that check, and the safe answer to "no scope" is no data, never all of it.
+    throw new Error(input.scope.reason);
+  }
+  const month = resolveCoverageMonth(input.month);
   const dateFrom = `${addMonthsToMonthKey(month, -DOCTOR_COVERAGE_SCAN_MONTHS_BACK)}-01`;
   const dateTo = lastDayOfMonthKeyIso(month);
-  const rows = await scanVisitsForRange<DoctorCoverageVisitInput>({ columns: VISIT_COLUMNS, dateFrom, dateTo });
+  const rows = await queryVisits<DoctorCoverageVisitInput>({
+    columns: VISIT_COLUMNS,
+    dateFrom,
+    dateTo,
+    visitTypes: [0],
+    ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
+  });
   const collapsed = collapseDuplicateVisitSubmissions(rows);
-  return buildDoctorCoverageBoard(collapsed, month);
+  return buildDoctorCoverageBoard(collapsed, month, { scopeLabel: input.scope.label });
 }
