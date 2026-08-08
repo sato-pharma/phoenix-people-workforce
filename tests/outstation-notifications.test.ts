@@ -136,31 +136,36 @@ export function runOutstationNotificationsTests() {
     "a failed decision persists as rejected_by_system rather than throwing",
   );
 
-  // The medical-rep and admin-manual flows still auto-accept via approveOutstationRequestForPayroll.
-  const autoAcceptHooks = [
+  // REVERSED 2026-08-08 by owner decision: no submit path auto-accepts any more. Every claim waits
+  // for a human, so each of these must raise the alert ITSELF — the notification used to ride along
+  // inside approveOutstationRequestForPayroll, and dropping the auto-approval without moving the
+  // mail would have silently stopped every submission email in the system.
+  const waitingSubmitHooks = [
     "async function submitMedicalRepSimpleExpenseRequest",
     "async function createManagerExpenseAsAdmin",
   ];
-  for (const hook of autoAcceptHooks) {
+  for (const hook of waitingSubmitHooks) {
     const slice = functionSlice(service, hook);
     assert.doesNotMatch(
       slice,
-      /notifyOutstationSubmitted\(/,
-      `${hook} must not call the submit notification directly — it fires from inside approveOutstationRequestForPayroll`,
+      /approveOutstationRequestForPayroll\(/,
+      `${hook} must NOT approve its own submission — an approval belongs to a person, in the queue`,
     );
     assert.match(
       slice,
-      /approveOutstationRequestForPayroll\(/,
-      `${hook} must auto-accept on submit`,
+      /notifyOutstationSubmitted\([\s\S]{0,120}heldForReview:\s*true/,
+      `${hook} must raise the awaiting-approval alert itself, now that no approval fires it`,
     );
   }
 
-  // ── Rule 1: Approve fires the Super Admin submit alert, never the employee decision email ──
+  // ── Rule 1: Approve alerts ONLY on a rejection override, never the employee decision email ──
   const approveSlice = functionSlice(service, "async function approveOutstationRequestForPayroll");
   assert.match(
     approveSlice,
-    /notifyOutstationSubmitted\(/,
-    "RULE 1: approveOutstationRequestForPayroll must fire the employee's submit confirmation",
+    /existing\.status\.startsWith\("rejected"\)[\s\S]{0,80}notifyOutstationSubmitted\(/,
+    "RULE 1: the submit alert fires from approve ONLY when overriding a system rejection — every " +
+      "other claim was already alerted at submit, so an unconditional send here would double-mail " +
+      "the employee, his manager and the Super Admins on every single trip",
   );
   assert.doesNotMatch(
     approveSlice,

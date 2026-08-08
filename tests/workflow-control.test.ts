@@ -116,10 +116,12 @@ export function runWorkflowControlTests() {
   // ---------------------------------------------------------------------------
   // Phase 1.5: notification gaps are surfaced where producers are missing.
   // ---------------------------------------------------------------------------
-  // The expenses-outstation domain is intentionally near-silent: submit auto-approves into
-  // payroll staging (no submit alert), approval is silent, and payroll import is silent. The
-  // ONLY notification is notifyOutstationDecision on REJECTION → the submitter. These silent
-  // steps are by-design, not unimplemented gaps, so none carry a notificationGap flag.
+  // The expenses-outstation domain is deliberately quiet: submit raises ONE awaiting-approval
+  // alert (To submitter, Cc manager + skip-level, Bcc Super Admins), approval is silent, and
+  // payroll import is silent. Rejection notifies the submitter via notifyOutstationDecision.
+  // Since 2026-08-08 submit no longer auto-approves into payroll — the claim waits — so that one
+  // alert is what tells the approver there is something in the queue. These steps are quiet
+  // by design, not unimplemented gaps, so none carry a notificationGap flag.
   const expenseSubmitStep = getWorkflowSubflow("expenses-outstation", "expense")?.steps.find((s) => s.id === "submit");
   assert.notEqual(expenseSubmitStep?.notificationGap, true, "expense submit is intentionally silent (not a gap)");
   const addToPayrollStep = getWorkflowSubflow("expenses-outstation", "payroll-queue")?.steps.find((s) => s.id === "add_to_payroll");

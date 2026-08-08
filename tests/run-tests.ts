@@ -671,6 +671,7 @@ import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-p
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
+import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
@@ -1553,6 +1554,11 @@ await runTest(
 await runTest(
   "an approval note is rewritten in the system's voice and can never invent a figure",
   runOutstationExpenseNoteAssistTests,
+);
+
+await runTest(
+  "an outstation claim waits for a human — no submit path can approve itself into payroll",
+  runOutstationSubmissionWaitsForApprovalTests,
 );
 
 await runTest(

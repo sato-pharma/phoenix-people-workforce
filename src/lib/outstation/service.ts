@@ -1253,7 +1253,7 @@ function formatEgp(value: number) {
 // practice). Not fired on later edits to an already-approved request.
 async function notifyOutstationSubmitted(
   request: OutstationExpenseRequest,
-  options: { heldForReview?: boolean } = {},
+  options: { heldForReview?: boolean; reviewReason?: string | null } = {},
 ) {
   try {
     // To = the employee, Cc = his manager and skip-level, Bcc = active Super Admins. The CEO is
@@ -1292,8 +1292,16 @@ async function notifyOutstationSubmitted(
         ? [
             {
               label: "Action needed",
-              value:
-                "Held for Super Admin review — the residence/destination governorate could not be confirmed. NOT added to payroll until you approve or reject it.",
+              // Generic on purpose since 2026-08-08: EVERY submission now waits, so this line can
+              // no longer name the one hold reason (an unconfirmable governorate) that used to be
+              // the only way a claim reached this state. The specific reason, when there is one,
+              // is appended rather than assumed.
+              value: [
+                "Awaiting your approval — this claim is NOT added to payroll until you approve or reject it.",
+                text(options.reviewReason),
+              ]
+                .filter(Boolean)
+                .join(" "),
             },
           ]
         : []),
@@ -1624,6 +1632,21 @@ export async function submitOutstationRequest(
     : reviewHoldReasons.length > 0
       ? "submitted"
       : "accepted_by_system";
+  /**
+   * Where the request sits in the WORKFLOW — deliberately separate from what the automated
+   * calculation concluded, which stays in `calculation_status`.
+   *
+   * Owner decision 2026-08-08: a clean submission now WAITS for a human. It used to persist as
+   * `accepted_by_system` and be pushed to payroll in the same second it was submitted, which put
+   * 21 of 29 live claims into payroll staging before anyone could look at them — and left the
+   * approvals queue holding only the handful the automated checks had refused to clear.
+   *
+   * Everything that is not a system rejection is therefore `submitted`, so it lands in the pending
+   * queue. `calculation_status` still records `accepted_by_system` vs `submitted`, so "passed every
+   * automated check" stays distinguishable from "held because a check could not run" — the
+   * distinction is preserved, it just no longer decides where the money goes.
+   */
+  const workflowStatus = decisionStatus === "rejected_by_system" ? decisionStatus : "submitted";
   const decisionReason = systemRejectionReason
     ? systemRejectionReason
     : reviewHoldReasons.length > 0
@@ -1704,7 +1727,7 @@ export async function submitOutstationRequest(
     residence_longitude: residence?.residenceLongitude ?? null,
     route_polyline: calculation.routePolyline,
     same_day_trip: calculation.sameDayTrip,
-    status: decisionStatus,
+    status: workflowStatus,
     submitted_at: calculation.submittedAt,
     territory_validation_status: calculation.territoryValidationStatus,
     territory_validation_reason: calculation.territoryValidationReason,
@@ -1782,14 +1805,14 @@ export async function submitOutstationRequest(
     await notifyOutstationDecision({ comment: decisionReason, decision: "reject", request: submitted });
     return submitted;
   }
-  if (decisionStatus === "submitted") {
-    // Held for Super Admin review (governorate unconfirmed): persisted as pending, NOT
-    // pushed to payroll. Alert Super Admins so they can accept/override or reject it.
-    await notifyOutstationSubmitted(submitted, { heldForReview: true });
-    return submitted;
-  }
-  await pushAcceptedOutstationExpenseToPayroll(submitted, systemAccessContext);
-  await notifyOutstationSubmitted(submitted);
+  // Everything that is not a system rejection now WAITS (owner decision 2026-08-08) — whether it
+  // passed every automated check or was held because one could not run. Nothing is pushed to
+  // payroll from here any more; only an explicit approval in the queue moves money, which is what
+  // makes the evidence gate, the workload gate and the CRM claim checks worth reading.
+  await notifyOutstationSubmitted(submitted, {
+    heldForReview: true,
+    reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,
+  });
   return submitted;
 }
 
@@ -2398,7 +2421,11 @@ export async function submitMedicalRepSimpleExpenseRequest(
     }
 
     const submitted = mapOutstationRequestRow(data as Record<string, unknown>);
-    await approveOutstationRequestForPayroll(submitted.id, systemAccessContext);
+    // Waits for a human, like every other submit path (owner decision 2026-08-08). The row was
+    // inserted as `submitted`, so simply not approving it here is what leaves it in the queue —
+    // and the alert that used to fire from inside the approval is raised directly instead, so
+    // removing the auto-approval does not silently stop the mail.
+    await notifyOutstationSubmitted(submitted, { heldForReview: true });
     return submitted;
   } catch (error) {
     await deleteOutstationTicketAttachments(
@@ -2605,7 +2632,15 @@ export async function approveOutstationRequestForPayroll(
       : `Outstation request ${request.id} accepted (${acceptedStatus}) but HELD out of payroll: ${gate.message}`,
   });
 
-  if (!existing.status.startsWith("accepted")) {
+  // Narrowed 2026-08-08, when submission stopped auto-approving. Every ordinary claim is now
+  // alerted the moment it is submitted, so firing here too would mail the employee, his manager
+  // and the Super Admins a second "submitted" notice for the same trip — on every single claim.
+  //
+  // The one case that still needs it is a Super Admin OVERRIDING a system rejection: that path
+  // sent a rejection email at submit and never sent the submission alert at all, so this is its
+  // first and only one. Approving an ordinary pending claim stays silent, which is what the
+  // owner's standing rule already says approval should be.
+  if (existing.status.startsWith("rejected")) {
     await notifyOutstationSubmitted(request);
   }
 
@@ -3057,7 +3092,11 @@ export async function createManagerExpenseAsAdmin(
     summary: `Admin created manual outstation expense for ${employee.hrId} to ${input.destination.label} (${input.distanceKm} km).`,
   });
 
-  await approveOutstationRequestForPayroll(created.id, systemAccessContext);
+  // An admin-created expense waits for an approval too (owner decision 2026-08-08). Creating a
+  // claim on someone's behalf and approving it in the same call is one action wearing the clothes
+  // of two — the queue is where the amount is confirmed, for this path as much as for a rep's own
+  // submission.
+  await notifyOutstationSubmitted(created, { heldForReview: true });
   return created;
 }
 
