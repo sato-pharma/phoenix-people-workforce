@@ -1,7 +1,7 @@
 import { AlarmClock, AlertTriangle, CheckCircle2, Clock, Sunrise } from "lucide-react";
 
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
-import type { NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
+import { EARLY_BIRD_LIMIT, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 
 // Shared "who has submitted their first CRM visit today" board. Extracted from the NSM command
 // center so the National (line-scoped) and Regional (region-scoped) dashboards render one
@@ -16,17 +16,43 @@ function cairoTime(iso: string): string {
   });
 }
 
-// Early-bird `at` comes from the vendor's crm_save_date — a zone-less Cairo wall-clock stored as
-// +00, so its clock reading is ALREADY Cairo-local. Render as-is (timeZone "UTC"); using cairoTime
-// here (as lastSyncAt correctly does for the true-UTC synced_at) would double-add the offset and
-// show submission times 2–3h late.
-function vendorLocalTime(iso: string): string {
+// Early-bird `at` is a VENDOR timestamp — either the GPS check_date or the crm_save_date, both
+// zone-less Cairo wall-clock stored as +00, so the clock reading is ALREADY Cairo-local. Render
+// as-is (timeZone "UTC"); using cairoTime here (as lastSyncAt correctly does for the true-UTC
+// synced_at) would double-add the offset and show submission times 2–3h late. `at` is null when
+// the vendor sent no usable clock for the visit — the person still ranks (they did submit), so
+// show a dash rather than a fabricated time.
+function vendorLocalTime(iso: string | null): string {
+  if (!iso) return "—";
   return new Date(iso).toLocaleTimeString("en-GB", {
     timeZone: "UTC",
     hour: "2-digit",
     minute: "2-digit",
   });
 }
+
+// The visit time's provenance, stated on every chip: a GPS check-in is real on-site presence, a
+// save time is rep-controlled paperwork, and "no time" is a submitted visit the vendor sent no
+// clock for. All three rank together, so the badge is what keeps them comparable.
+type EarlyBirdSource = NsmCrmComplianceData["earlyBirds"][number]["source"];
+
+const SOURCE_BADGE: Record<EarlyBirdSource, { label: string; className: string; title: string }> = {
+  gps_checkin: {
+    label: "GPS",
+    className: "bg-emerald-100 text-emerald-700",
+    title: "Real GPS check-in time (on site)",
+  },
+  save_time: {
+    label: "Logged",
+    className: "bg-slate-100 text-slate-500",
+    title: "Logged/save time — not GPS-verified; may be logged later",
+  },
+  none: {
+    label: "No time",
+    className: "bg-amber-100 text-amber-700",
+    title: "Visit submitted, but iReports360 sent no usable clock for it — ranked last",
+  },
+};
 
 function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: string }>; tone: "danger" | "muted" }) {
   const cls =
@@ -47,10 +73,19 @@ function PersonChips({ people, tone }: { people: Array<{ hrId: string; name: str
 export function CrmFirstVisitBoard({
   crm,
   allClearMessage = "Everyone on your line has submitted their first visit.",
+  rankHint = `first ${EARLY_BIRD_LIMIT} to submit`,
+  showAccount = false,
 }: {
   crm: NsmCrmComplianceData | null;
   /** Scope-specific wording for the all-clear state (e.g. "your region" vs "your line"). */
   allClearMessage?: string;
+  /** What the ranking actually contains. The line/region board is capped, so it says so; the
+   * District Manager board ranks every submitter and says that instead. */
+  rankHint?: string;
+  /** District Manager board: also name the account each rep's first visit was captured at. A DM
+   * has a dozen reps and acts on them individually, so the account is the actionable detail; on a
+   * whole line or region it would be noise. */
+  showAccount?: boolean;
 }) {
   const syncLabel = crm?.lastSyncAt ? `as of ${cairoTime(crm.lastSyncAt)}` : "awaiting sync";
 
@@ -101,13 +136,20 @@ export function CrmFirstVisitBoard({
             <div className="mb-2 flex items-center gap-2">
               <Sunrise className="h-4 w-4 text-emerald-600" />
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Early birds</p>
+              {crm.earlyBirds.length > 0 && (
+                // State what the list contains out loud: N chips on their own cannot be told apart
+                // from "only N people submitted today".
+                <span className="ml-auto whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+                  {rankHint}
+                </span>
+              )}
             </div>
             {crm.earlyBirds.length === 0 ? (
               <p className="text-sm text-slate-500">No visits submitted yet today.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {crm.earlyBirds.map((b, i) => {
-                  const isGps = b.source === "gps_checkin";
+                  const badge = SOURCE_BADGE[b.source];
                   return (
                     <span
                       key={b.hrId || b.name}
@@ -115,14 +157,23 @@ export function CrmFirstVisitBoard({
                     >
                       <span className="font-black text-emerald-600">{i + 1}</span>
                       {b.name}
-                      <span className="font-normal text-emerald-600/70">{vendorLocalTime(b.at)}</span>
+                      <span className="border border-emerald-200 bg-white px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700/80">
+                        {b.visitType}
+                      </span>
+                      {showAccount && (
+                        // The account that first record was captured at. Arabic names are common
+                        // here, so the chip carries dir="auto" and never truncates — a long name
+                        // makes a wider chip that wraps to the next row as a whole.
+                        <span dir="auto" className="font-normal text-emerald-700/90">
+                          {b.account ?? "—"}
+                        </span>
+                      )}
+                      <span className="font-normal tabular-nums text-emerald-600/70">{vendorLocalTime(b.at)}</span>
                       <span
-                        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
-                          isGps ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                        }`}
-                        title={isGps ? "Real GPS check-in time (on site)" : "Logged/save time — not GPS-verified; may be logged later"}
+                        className={`rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${badge.className}`}
+                        title={badge.title}
                       >
-                        {isGps ? "GPS" : "Logged"}
+                        {badge.label}
                       </span>
                     </span>
                   );
