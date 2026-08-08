@@ -172,4 +172,32 @@ export function runEmailNotificationTests() {
   assert.match(scheduledProcessingSource, /processTelegramDeliveryRetries\(limit\)\.catch\(/, "telegram delivery retries must have catch boundary");
   assert.match(scheduledProcessingSource, /logError\("Notification outbox processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-outbox" \},/, "outbox errors must be captured in Sentry with tags");
   assert.match(scheduledProcessingSource, /logError\("Telegram delivery retry processing step failed", \{\s*labels: \{ event: "cron_step_failed", cron: "notification-process-telegram" \},/, "telegram retry errors must be captured in Sentry with tags");
+
+  // Regression (2026-08-08): the Part 2 ready + Published payroll milestone emails silently
+  // vanished because their own body text said "...publish to payslips" / "...published to
+  // payslips" — email.ts's payloadLooksLikePayslip() content-sniffs summary/title (not just
+  // eventType) and hard-blocked them as if they were real payslip content. See notify.ts.
+  const automatedPayrollNotifySource = readFileSync("src/lib/automated-payroll/notify.ts", "utf8");
+  assert.doesNotMatch(
+    automatedPayrollNotifySource,
+    /message: `[^`]*payslip[^`]*`/i,
+    "an automated-payroll milestone email body must never contain \"payslip\" — payloadLooksLikePayslip() in email.ts hard-blocks any email whose summary contains that substring, even ordinary admin prose, regardless of eventType",
+  );
+  assert.doesNotMatch(
+    automatedPayrollNotifySource,
+    /title: `[^`]*payslip[^`]*`/i,
+    "same guard for the notification title, which payloadLooksLikePayslip() also scans",
+  );
+
+  // Regression (2026-08-08): safeSendNotificationEmail used to prefix EVERY outbox skip reason
+  // with "Queued for retry:", regardless of whether the skip was terminal (payslip block,
+  // identity guard — never retried) or genuinely transient. system.ts's two callers both branch
+  // on that exact prefix to decide "sent" vs "skipped", so a permanently-blocked email was
+  // recorded as a successful delivery with no error anywhere in notification_deliveries.
+  const safeSendNotificationEmailSource = source.slice(source.indexOf("export async function safeSendNotificationEmail"));
+  assert.match(
+    safeSendNotificationEmailSource,
+    /classifyOutboxSkip\(result\.reason, input\.notificationType\)/,
+    "safeSendNotificationEmail must classify an outbox skip as terminal/transient (classifyOutboxSkip) before deciding whether to report it as \"Queued for retry\" — a blanket prefix makes a terminal skip look like a successful, retryable handoff",
+  );
 }

@@ -209,7 +209,10 @@ export async function notifyPart2Ready(run: MonthlySalaryRun): Promise<void> {
     run,
     eventType: "automated_payroll_part2_ready",
     title: `${label} Payroll — Part 2 ready`,
-    message: `${label} Automated Payroll Part 2 is HR-confirmed. The full monthly sheet is ready for review. Awaiting System Admin publish to payslips.`,
+    // Must not contain the word "payslip" — email.ts's payloadLooksLikePayslip() hard-blocks
+    // ANY email whose summary/title contains that substring, even ordinary admin prose (bug
+    // found 2026-08-08: this exact sentence silently vanished the Part 2 milestone email).
+    message: `${label} Automated Payroll Part 2 is HR-confirmed. The full monthly sheet is ready for review. Awaiting System Admin to publish this run.`,
     channels: ["in_app", "email", "telegram", "push"],
   });
 }
@@ -220,8 +223,11 @@ export async function notifyPublished(run: MonthlySalaryRun): Promise<void> {
   await fanOut({
     run,
     eventType: "automated_payroll_published",
-    title: `${label} Payroll — published to payslips`,
-    message: `${label} Automated Payroll has been published to payslips.`,
+    // Title and message must not contain the word "payslip" — see the note on notifyPart2Ready
+    // above. This one was also silently blocked (never observed in production only because no
+    // run has reached Publish since the guard's summary-scanning was added).
+    title: `${label} Payroll — published`,
+    message: `${label} Automated Payroll has been published and is now live for employees.`,
     channels: ["in_app", "email", "push"],
   });
 }
