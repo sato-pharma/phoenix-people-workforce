@@ -442,7 +442,10 @@ const defaultPermissionMatrix: PermissionMap = {
   "Super Admin": {
     admin: allActions,
     attendance: allActions,
-    crm_visits: ["read"],
+    // `update` added 2026-08-09 for the Doctor Coverage visit-norms editor
+    // (/admin/doctor-coverage-settings). It gates ONLY that policy singleton — the CRM visit
+    // mirror itself stays read-only everywhere, since it is a vendor mirror nothing may write.
+    crm_visits: ["read", "update"],
     early_birds: ["read", "approve"],
     communication: allActions,
     overview: ["read"],
@@ -821,7 +824,10 @@ const defaultPermissionMatrix: PermissionMap = {
     // buttons that 403.
     direct_orders: ["read", "export", "approve"],
     attendance: ["read", "create", "update", "delete", "export"],
-    crm_visits: ["read"],
+    // See the Super Admin note: `update` is the Doctor Coverage visit-norms editor only. SFE
+    // Manager owns this module, so he sets the norms. CEO is deliberately NOT granted it —
+    // that account stays observational by design.
+    crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: ["read"],
     // Read-only org structure (2026-08-02): needed for /organogram. Grants no write anywhere —

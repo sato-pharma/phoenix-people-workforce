@@ -26,6 +26,7 @@ export type AuditEntityType =
   | "deductions_decision"
   | "deductions_publication"
   | "direct_order_request"
+  | "doctor_coverage_config"
   | "double_visit_import"
   | "employee_resignation"
   | "excuse_request"

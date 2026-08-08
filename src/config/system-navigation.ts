@@ -2189,6 +2189,16 @@ export const crmPageItems: readonly AdminToolsPageItem[] = [
     description: "Doctor visit frequency vs norms — a prioritised call list, plus covered, under-visited and lapsed panels per rep.",
     roles: ["Super Admin", "SFE Manager", "CEO"],
   },
+  {
+    // Visit-norms editor. CEO is excluded on purpose: that account is observational on policy, and
+    // this page changes what every role's coverage % means. Gate is crm_visits:update, held only by
+    // Super Admin and SFE Manager — the same gate the page and the API route assert.
+    href: "/admin/doctor-coverage-settings",
+    icon: SlidersHorizontal,
+    label: "Doctor Coverage Settings",
+    description: "Visits required per month by grade — set separately for doctors and for pharmacies, hospitals and contract accounts.",
+    roles: ["Super Admin", "SFE Manager"],
+  },
 ] as const satisfies readonly AdminToolsPageItem[];
 
 // ── Pharmacovigilance hub (app/(admin)/admin/pharmacovigilance/page.tsx) ────────
