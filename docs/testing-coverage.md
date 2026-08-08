@@ -9,8 +9,9 @@
 > **The measurements below remain accurate and still worth reading** — the `c8 --all` wiring is
 > unchanged, and these are the real numbers for this codebase. What is no longer live is the *gate*:
 > the "recommended threshold" note near the end is superseded, since nothing is gating on it.
-> `sast-scan` and `secret-scan` were never actually required checks on main, and the workflow that
-> ran them (`security-scan.yml`) was removed 2026-08-08.
+> `security-scan.yml` was removed on 2026-08-08 by #1889 and restored the same day by #1894: its
+> gitleaks `secret-scan` job now runs on every PR, blocks on a finding, and **is** a required check
+> on `main`. Semgrep's `sast-scan` was deliberately not restored and no longer runs.
 
 Written 2026-08-05, after PR #1748 was blocked by SonarQube reporting **4.3% coverage on new code**
 while the repo appeared to be at **55%**. Both figures were produced by the same tooling, and the

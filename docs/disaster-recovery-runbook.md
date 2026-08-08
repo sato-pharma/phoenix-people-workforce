@@ -84,7 +84,7 @@ git push -u origin codex/revert-<short-reason>
 gh pr create --title "revert: <reason>" --body "Reverts <bad-sha> — <why>"
 ```
 
-Wait for the 3 required checks to go green (`validate`, `lint`, `typecheck` —
+Wait for the 4 required checks to go green (`validate`, `lint`, `typecheck`, `secret-scan` —
 `gh pr checks <PR-number> --required`; don't foreground-watch, check back). Get
 explicit owner approval — merging to `main` always needs it, incident or not (AGENTS.md §6) — then:
 
@@ -129,7 +129,7 @@ Confirm the same way: `curl -s https://phoenix-hr.satopharma.com/api/healthz`.
 
 ## 3. Redeploy / forward-fix
 
-Same pipeline as §2A: branch → PR → the 5 required checks → explicit owner approval → `gh pr merge`.
+Same pipeline as §2A: branch → PR → the 4 required checks → explicit owner approval → `gh pr merge`.
 There is no separate "Deploy to Railway" workflow to dispatch — the merge **is** the deploy, and it
 ships within minutes at full traffic. See §2A for the exact commands and the deployments-API check.
 
