@@ -6,20 +6,19 @@
  * The new envelope is one email per submission:
  *
  *   To   the submitting employee                — it is his confirmation, so he is the audience
- *   Cc   his direct manager                     — EXCEPT the CEO when the submitter is an NSM
- *   Cc   his manager's manager                  — ONLY when that person is not the CEO
+ *   Cc   his direct manager                     — unless that is the CEO
+ *   Cc   his manager's manager                  — unless that is the CEO
  *   Bcc  every active Super Admin               — silent oversight copy
  *
- * Owner instruction 2026-08-08: an NSM's submission is addressed to the NSM alone. Every NSM
- * reports directly to the CEO, so the direct-manager rule was still copying him on all of them.
+ * Owner instruction 2026-08-08: THE CEO IS NEVER ON AN OUTSTATION SUBMISSION EMAIL, in any slot.
+ *
+ * The 2026-08-04 version excluded him from the skip-level slot only. That left the direct-manager
+ * slot copying him on every submission by one of his 21 direct reports — all three NSMs (A-12,
+ * AI-0008, B-122), plus District Managers, Medical Reps, Finance, Marketing and SFE — i.e. the same
+ * company-wide broadcast the earlier change set out to stop, arriving through the other slot.
+ *
  * omar.anwar needs no special handling — he is an active Super Admin (B-10) so he is already in
  * the Bcc list above, and send-phoenix-email.ts additionally Bccs him on every automated email.
- *
- * The CEO is deliberately dropped from the skip-level slot: he was receiving a mail for
- * every outstation submission company-wide, which is the complaint that prompted this
- * change. He still receives one if he happens to be the employee's DIRECT manager — that
- * is a real reporting line, not a broadcast, and the owner's instruction only excluded
- * him from the manager-of-manager slot.
  *
  * The decision is split from the lookup on purpose: `buildOutstationSubmitRouting` is pure
  * so every edge (CEO as skip-level, a Super Admin who is also the manager, a self-managing
@@ -63,7 +62,6 @@ export function buildOutstationSubmitRouting(input: {
   employeeHrId: string | null | undefined;
   managerHrId: string | null | undefined;
   managerOfManagerHrId: string | null | undefined;
-  nationalSalesManagerHrIds?: readonly string[];
   superAdminHrIds: readonly string[];
 }): OutstationSubmitRouting {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
@@ -71,20 +69,21 @@ export function buildOutstationSubmitRouting(input: {
   if (!toKey) return { bccHrIds: [], ccHrIds: [], toHrId: null };
 
   const ceoKeys = new Set(input.ceoHrIds.map(key).filter(Boolean));
-  const nsmKeys = new Set((input.nationalSalesManagerHrIds ?? []).map(key).filter(Boolean));
-  // Owner instruction 2026-08-08: an NSM's submission goes to the NSM ALONE. Every NSM reports
-  // directly to the CEO (verified in production: A-12, AI-0008 and B-122 all have manager AA), so
-  // the 2026-08-04 rule below — which only kept the CEO out of the SKIP-LEVEL slot — still copied
-  // him on every NSM submission as their direct manager. Dropping him from the direct-manager slot
-  // too leaves an NSM's Cc empty, which is exactly "to NSM only".
-  //
-  // Scoped to NSM submitters on purpose. 21 active people report directly to the CEO, so a blanket
-  // "never Cc the CEO" would silently change 18 other people's emails that the owner did not ask
-  // about — District Managers, Medical Reps, Finance, Marketing and SFE all report to him too.
-  const submitterIsNsm = nsmKeys.has(toKey);
-  const taken = new Set<string>([toKey]);
+  // Seeding `taken` with the CEO keeps "removed from Cc" from silently becoming "Bcc'd on every
+  // submission" the day someone grants him Super Admin — the Bcc loop below skips anyone already
+  // taken. He is off the email entirely, not moved to a quieter header.
+  const taken = new Set<string>([toKey, ...ceoKeys]);
 
   const ccHrIds: string[] = [];
+  // Owner instruction 2026-08-08: the CEO is never Cc'd on an outstation submission, in ANY slot.
+  //
+  // The 2026-08-04 rule excluded him from the skip-level slot only, which still copied him on every
+  // submission by one of his 21 direct reports — all three NSMs (A-12, AI-0008, B-122), plus
+  // District Managers, Medical Reps, Finance, Marketing and SFE. That is the same company-wide
+  // broadcast the earlier change set out to stop, arriving through the other slot.
+  //
+  // Enforced HERE, inside addCc, rather than at each call site: a future slot (area manager, an
+  // approver chain) then inherits the exclusion automatically instead of quietly reintroducing him.
   const addCc = (hrId: string | null | undefined) => {
     const original = String(hrId ?? "").trim();
     const candidate = key(original);
@@ -93,10 +92,8 @@ export function buildOutstationSubmitRouting(input: {
     ccHrIds.push(original);
   };
 
-  if (!(submitterIsNsm && ceoKeys.has(key(input.managerHrId)))) addCc(input.managerHrId);
-
-  // The skip-level manager is copied unless he is the CEO.
-  if (!ceoKeys.has(key(input.managerOfManagerHrId))) addCc(input.managerOfManagerHrId);
+  addCc(input.managerHrId);
+  addCc(input.managerOfManagerHrId);
 
   const bccHrIds: string[] = [];
   for (const superAdmin of input.superAdminHrIds) {
@@ -150,11 +147,10 @@ function findByHrId(rows: readonly EmployeeDirectoryRow[], hrId: string | null |
 export async function resolveOutstationSubmitRouting(
   employeeHrId: string,
 ): Promise<OutstationSubmitRouting & { managerName: string | null }> {
-  const [directory, ceoHrIds, superAdminHrIds, nationalSalesManagerHrIds] = await Promise.all([
+  const [directory, ceoHrIds, superAdminHrIds] = await Promise.all([
     getEmployeeDirectory(),
     activeHrIdsForRoles(["CEO"]),
     activeHrIdsForRoles(["Super Admin"]),
-    activeHrIdsForRoles(["National Sales Manager"]),
   ]);
 
   const employee = findByHrId(directory.employees, employeeHrId);
@@ -168,7 +164,6 @@ export async function resolveOutstationSubmitRouting(
     employeeHrId: employee?.hrId ?? employeeHrId,
     managerHrId: manager?.hrId ?? null,
     managerOfManagerHrId: managerOfManager?.hrId ?? null,
-    nationalSalesManagerHrIds,
     superAdminHrIds,
   });
 
