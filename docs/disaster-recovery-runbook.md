@@ -84,8 +84,8 @@ git push -u origin codex/revert-<short-reason>
 gh pr create --title "revert: <reason>" --body "Reverts <bad-sha> — <why>"
 ```
 
-Wait for the 5 required checks to go green (`validate`, `lint`, `typecheck`, `secret-scan`,
-`sast-scan` — `gh pr checks <PR-number> --required`; don't foreground-watch, check back). Get
+Wait for the 3 required checks to go green (`validate`, `lint`, `typecheck` —
+`gh pr checks <PR-number> --required`; don't foreground-watch, check back). Get
 explicit owner approval — merging to `main` always needs it, incident or not (AGENTS.md §6) — then:
 
 ```bash

@@ -1126,7 +1126,9 @@ async function notifyOutstationSubmitted(
 ) {
   try {
     // To = the employee, Cc = his manager (+ skip-level unless that is the CEO),
-    // Bcc = active Super Admins. Nothing is sent when the employee cannot be
+    // Bcc = active Super Admins. An NSM's submission is the exception: the CEO is their direct
+    // manager, and he is dropped from that slot too (owner, 2026-08-08), so an NSM's mail carries
+    // no Cc at all — to the NSM only. Nothing is sent when the employee cannot be
     // identified: a confirmation with no one to confirm TO is not worth mailing to
     // his managers alone.
     const routing = await resolveOutstationSubmitRouting(request.employeeHrId);
