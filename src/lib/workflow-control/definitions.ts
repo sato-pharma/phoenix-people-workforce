@@ -896,7 +896,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             notificationRecipients: n("Assigned approver (per step)", "Requester", "CC steps"),
             emailRecipients: n("Assigned approver (per step)", "Requester"),
             sideEffects:
-              "Wired via notifyMarketingWorkflow → createSystemNotification: request_submitted/assigned (approver), request_approved (requester + all participants), request_rejected/returned (requester); plus daily SLA reminders (due_date_reminder/overdue_reminder/escalation) from runMarketingSlaDaily on the daily cron.",
+              "Wired via notifyMarketingWorkflow → createSystemNotification: request_submitted/assigned (approver), request_approved (requester + all participants), request_rejected/returned (requester); plus daily SLA reminders (due_date_reminder/overdue_reminder) from runMarketingSlaDaily on the daily cron.",
           },
         ],
       },
