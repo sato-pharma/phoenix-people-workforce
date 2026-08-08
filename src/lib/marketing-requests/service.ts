@@ -2301,7 +2301,7 @@ function marketingTelegramButtons(requestId: string) {
 async function notifyMarketingWorkflow(params: {
   actorHrId: string | null;
   ccHrIds?: string[];
-  eventType: "request_assigned" | "request_returned" | "request_approved" | "request_rejected" | "request_completed" | "due_date_reminder" | "overdue_reminder" | "escalation";
+  eventType: "request_assigned" | "request_returned" | "request_approved" | "request_rejected" | "request_completed" | "due_date_reminder" | "overdue_reminder";
   message: string;
   metadata?: Record<string, unknown>;
   priority?: "normal" | "high" | "critical";
@@ -2372,9 +2372,8 @@ async function notifyMarketingWorkflow(params: {
 // --- Marketing SLA reminders (daily) ---------------------------------------
 const MARKETING_SLA_PENDING_STATUSES = ["pending_validation", "pending_approval", "returned"] as const;
 const MARKETING_SLA_DUE_SOON_DAYS = 3; // remind when the pay date is within N days
-const MARKETING_SLA_ESCALATION_DAYS = 2; // escalate when overdue by more than N days
 
-export type MarketingSlaEvent = "due_date_reminder" | "overdue_reminder" | "escalation";
+export type MarketingSlaEvent = "due_date_reminder" | "overdue_reminder";
 
 /**
  * Pure SLA classifier from a request's pay date relative to today (both YYYY-MM-DD,
@@ -2386,7 +2385,6 @@ export function classifyMarketingSla(input: { payDate: string | null; today: str
   const today = Date.parse(`${input.today}T00:00:00Z`);
   if (!Number.isFinite(due) || !Number.isFinite(today)) return null;
   const daysUntilDue = Math.round((due - today) / 86_400_000);
-  if (daysUntilDue < -MARKETING_SLA_ESCALATION_DAYS) return "escalation";
   if (daysUntilDue < 0) return "overdue_reminder";
   if (daysUntilDue <= MARKETING_SLA_DUE_SOON_DAYS) return "due_date_reminder";
   return null;
@@ -2400,7 +2398,6 @@ export function classifyMarketingSla(input: { payDate: string | null; today: str
 // axis: how long the CURRENT approval step has been waiting for a decision.
 const MARKETING_WAITING_DUE_SOON_DAYS = 3;
 const MARKETING_WAITING_OVERDUE_DAYS = 7;
-const MARKETING_WAITING_ESCALATION_DAYS = 14;
 
 /**
  * Pure classifier for how long the current approval step has been outstanding.
@@ -2416,7 +2413,6 @@ export function classifyMarketingWaitingSla(input: {
 }): MarketingSlaEvent | null {
   const daysWaiting = marketingDaysWaiting(input.waitingSince, input.now);
   if (daysWaiting === null) return null;
-  if (daysWaiting >= MARKETING_WAITING_ESCALATION_DAYS) return "escalation";
   if (daysWaiting >= MARKETING_WAITING_OVERDUE_DAYS) return "overdue_reminder";
   if (daysWaiting >= MARKETING_WAITING_DUE_SOON_DAYS) return "due_date_reminder";
   return null;
@@ -2434,7 +2430,6 @@ export function marketingDaysWaiting(waitingSince: string | null, now: string): 
 /** Severity order, so the two independent signals reduce to the single worst one. */
 const MARKETING_SLA_SEVERITY: Record<MarketingSlaEvent, number> = {
   due_date_reminder: 1,
-  escalation: 3,
   overdue_reminder: 2,
 };
 
@@ -2454,20 +2449,17 @@ function marketingTodayCairo(): string {
 
 const MARKETING_SLA_EVENT_COPY: Record<MarketingSlaEvent, { priority: "critical" | "high"; title: string; verb: string }> = {
   due_date_reminder: { priority: "high", title: "Marketing request due soon", verb: "is approaching its pay date" },
-  escalation: { priority: "critical", title: "Marketing request escalation", verb: "is significantly overdue and requires immediate action" },
   overdue_reminder: { priority: "high", title: "Marketing request overdue", verb: "is past its pay date and still needs a decision" },
 };
 
 /**
  * Daily SLA scan for marketing requests. For each still-pending request with a pay date,
- * fire the due/overdue/escalation notification (routed by policy to the assigned approver
- * + request owner, or the workflow approver for escalation). Idempotent per day via a
- * date-stamped notification key. Best-effort; never throws.
+ * fire the due/overdue notification (routed by policy to the assigned approver + request
+ * owner). Idempotent per day via a date-stamped notification key. Best-effort; never throws.
  */
 export async function runMarketingSlaDaily(): Promise<{
   dataIntegrityIssues: number;
   errors: Array<{ message: string; requestId: string }>;
-  escalations: number;
   overdue: number;
   reminders: number;
   runDate: string;
@@ -2477,7 +2469,6 @@ export async function runMarketingSlaDaily(): Promise<{
   const errors: Array<{ message: string; requestId: string }> = [];
   let reminders = 0;
   let overdue = 0;
-  let escalations = 0;
   let scanned = 0;
   let dataIntegrityIssues = 0;
   const dataIntegrityRequestCodes: string[] = [];
@@ -2486,7 +2477,7 @@ export async function runMarketingSlaDaily(): Promise<{
   // "enabled" switch (see "marketing_sla_reminder" in role-recipients.ts) is the only real toggle
   // for this reminder, checked before any request is even scanned.
   if (!(await resolveNotificationRoleEnabled("marketing_sla_reminder"))) {
-    return { dataIntegrityIssues, errors, escalations, overdue, reminders, runDate: today, scanned };
+    return { dataIntegrityIssues, errors, overdue, reminders, runDate: today, scanned };
   }
   try {
     const supabase = getSupabaseAdmin();
@@ -2529,7 +2520,7 @@ export async function runMarketingSlaDaily(): Promise<{
         // atomically on submission), and decideMarketingRequestWorkflow hard-requires one before
         // ANY approve/reject/return can happen. So a `pending_approval` row with no `current`
         // step is not a normal in-flight state — it is undecidable by any approver in any role,
-        // and firing an "act now" reminder/escalation at the requester (the only recipient left
+        // and firing an "act now" reminder at the requester (the only recipient left
         // once approverHrId is null) is actively misleading. Scoped to `pending_approval` ONLY:
         // `pending_validation` and `returned` rows legitimately have zero `current` steps by
         // design (steps don't exist until a request enters `pending_approval` — see
@@ -2567,15 +2558,13 @@ export async function runMarketingSlaDaily(): Promise<{
             // (notifyMarketingWorkflow keys off metadata.decisionAt).
             decisionAt: `sla:${today}`,
             dueDate: request.payDate,
-            escalationOwnerHrId: approverHrId,
             workflowApproverHrId: approverHrId,
           },
           priority: copy.priority,
           request,
           title: `${copy.title} — ${request.requestCode}`,
         });
-        if (eventType === "escalation") escalations += 1;
-        else if (eventType === "overdue_reminder") overdue += 1;
+        if (eventType === "overdue_reminder") overdue += 1;
         else reminders += 1;
       } catch (rowError) {
         errors.push({ message: rowError instanceof Error ? rowError.message : "Marketing SLA notify failed.", requestId: request.id });
@@ -2599,7 +2588,7 @@ export async function runMarketingSlaDaily(): Promise<{
     });
     errors.push({ message: error instanceof Error ? error.message : "Marketing SLA scan failed.", requestId: "scan" });
   }
-  return { dataIntegrityIssues, errors, escalations, overdue, reminders, runDate: today, scanned };
+  return { dataIntegrityIssues, errors, overdue, reminders, runDate: today, scanned };
 }
 
 export function parseMarketingRequestDecision(value: unknown): MarketingRequestDecision | null {

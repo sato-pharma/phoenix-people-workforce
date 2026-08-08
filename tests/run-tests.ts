@@ -729,7 +729,7 @@ await runTest("birthday eligibility (on_leave included, terminal excluded, birth
 await runTest("unified notifications", runUnifiedNotificationsTests);
 await runTest("notification step runner (per-step timeout budget + overlap guard)", runNotificationStepRunnerTests);
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
-await runTest("marketing SLA email block (SLA reminders/escalations never emailed)", runMarketingSlaEmailBlockTests);
+await runTest("marketing SLA email block (SLA reminders never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
 await runTest("email admin control center", runEmailAdminControlCenterTests);
