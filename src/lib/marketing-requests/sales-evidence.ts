@@ -1,5 +1,12 @@
 import { forbiddenError, notFoundError } from "@/lib/http/api-errors";
 import type { AccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
+import {
+  canViewRestrictedProducts,
+  isRestrictedProductCode,
+  normalizeProductNameKey,
+  RESTRICTED_PRODUCT_NAME_FALLBACKS,
+} from "@/lib/sales/access-scope";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -42,6 +49,8 @@ export type MarketingSalesEvidence = {
   byDistributor: SalesEvidenceBreakdown[];
   byMonth: SalesEvidenceMonth[];
   byProduct: SalesEvidenceBreakdown[];
+  /** True when confidential products were excluded from every figure here for this viewer. */
+  confidentialProductsWithheld: boolean;
   customerName: string;
   /** The distributor pharmacy codes this evidence was gathered from — shown so a null result is auditable. */
   matchedPharmacyCodes: string[];
@@ -82,6 +91,10 @@ export type MarketingSalesEvidence = {
   };
 };
 
+/**
+ * Company-wide oversight: roles whose remit covers EVERY marketing request, so they may read this
+ * evidence without being named on the request itself.
+ */
 const marketingEvidenceRoles = new Set<AccessContext["role"]>([
   "Marketing Manager",
   "SFE Manager",
@@ -89,12 +102,89 @@ const marketingEvidenceRoles = new Set<AccessContext["role"]>([
   "CEO",
 ]);
 
-function assertSalesEvidenceAccess(access: AccessContext) {
-  if (access.scope === "system") return;
-  if (!marketingEvidenceRoles.has(access.role)) {
-    throw forbiddenError(`Forbidden: ${access.role} cannot view marketing sales evidence.`);
-  }
+/**
+ * The company-wide half of the gate, as a pure predicate — no request, no database.
+ *
+ * Split out so the rule is directly executable in a test instead of being asserted against source
+ * text. Answers only "may this role read ANY request's evidence?"; being an approver on ONE request
+ * is the separate, per-request path in assertSalesEvidenceAccess below.
+ */
+export function canReadMarketingSalesEvidenceByRole(access: AccessContext): boolean {
+  if (access.scope === "system") return true;
+  return marketingEvidenceRoles.has(access.role);
 }
+
+/**
+ * Who may read a request's sales evidence.
+ *
+ * A hard-coded role list was the whole gate, and it locked out the first rung of the live chain:
+ * National Sales Manager -> SFE Manager -> Marketing Manager -> CEO. The NSM was 403'd and decided
+ * with no sales history at all. The chain is CONFIGURABLE per request, so adding more role names
+ * would only drift again — the question that actually matters is "is this person an approver on
+ * THIS request?", so that is what we ask.
+ *
+ * Deliberately NOT filtered on `is_cc` or on step status: a CC/advisory reviewer (Product Manager /
+ * Group Product Manager) is asked to advise on the spend and currently sees nothing, and an
+ * approver whose rung has not opened yet should be able to read ahead rather than meet the evidence
+ * for the first time at the moment they must decide.
+ *
+ * FAILS CLOSED throughout: no HR_ID and a failed steps lookup both deny. Neither ever falls
+ * through to allow.
+ */
+async function assertSalesEvidenceAccess(requestId: string, access: AccessContext): Promise<void> {
+  if (canReadMarketingSalesEvidenceByRole(access)) return;
+
+  const denied = forbiddenError(`Forbidden: ${access.role} cannot view marketing sales evidence.`);
+
+  // Fail closed: an actor with no HR_ID can never be matched to an approval step, so there is
+  // nothing left to check.
+  const actorHrId = String(access.hrId ?? "").trim();
+  if (!actorHrId) throw denied;
+
+  const supabase = getSupabaseAdmin();
+  // `assigned_hr_id` is stored in the employee master's real casing while the session id is
+  // lower-cased — match every HR_ID dialect, the same way getApproverPendingRequests does against
+  // this table, or a real approver silently reads as "not on this request".
+  const stepResult = await supabase
+    .from("marketing_request_approval_steps")
+    .select("id")
+    .eq("request_id", requestId)
+    .in("assigned_hr_id", hrIdLookupKeys(actorHrId))
+    .limit(1);
+  // Fail closed: a lookup error means "unknown", not "not an approver". Rethrow rather than let an
+  // unreadable steps table widen access to the sales history.
+  if (stepResult.error) throw stepResult.error;
+  if ((stepResult.data ?? []).length === 0) throw denied;
+}
+
+/**
+ * Strip the confidential products from raw sales rows.
+ *
+ * Products LA003 / LA004 ("Lacto Basic 1 & 2") and SS001 ("Satoslim") are excluded from every
+ * total, KPI, chart, table, filter and export for everyone except CEO / Super Admin — see
+ * src/lib/sales/access-scope.ts, which owns that rule. This panel read source_of_sales_import_rows
+ * with NO product filter at all, so a Marketing Manager or SFE Manager (neither permitted to see
+ * them) could reach them here.
+ *
+ * Gated ONLY on `canViewRestrictedProducts(role)`. There is deliberately no `scope === "system"`
+ * bypass: the locked rule is role-based, and a scope bypass would reopen the leak for every
+ * non-CEO role whose context happens to be system-scoped.
+ *
+ * Pure — no DB, no access context — so the rule is unit-testable directly.
+ */
+export function stripConfidentialSalesRows<T extends { product_code?: string | null }>(
+  rows: T[],
+  role: AccessContext["role"],
+): { rows: T[]; withheld: boolean } {
+  if (canViewRestrictedProducts(role)) return { rows, withheld: false };
+  const kept = rows.filter((row) => !isRestrictedProductCode(row.product_code));
+  return { rows: kept, withheld: kept.length !== rows.length };
+}
+
+/** Confidential product names, for the snapshot fallback below where no product code survives. */
+const restrictedProductNameFallbackKeys = new Set<string>(
+  RESTRICTED_PRODUCT_NAME_FALLBACKS.map(normalizeProductNameKey),
+);
 
 /**
  * PostgREST folds every `.in()` value into the request URL, and an unbatched list of a few hundred
@@ -143,7 +233,8 @@ export async function getMarketingSalesEvidence(
   requestId: string,
   access: AccessContext,
 ): Promise<MarketingSalesEvidence> {
-  assertSalesEvidenceAccess(access);
+  // Stays the FIRST statement — no customer or sales data is read until access is settled.
+  await assertSalesEvidenceAccess(requestId, access);
 
   const supabase = getSupabaseAdmin();
 
@@ -215,6 +306,7 @@ export async function getMarketingSalesEvidence(
       byDistributor: [],
       byMonth: [],
       byProduct: [],
+      confidentialProductsWithheld: false,
       customerName,
       matchedPharmacyCodes,
       requested: emptyRequested(),
@@ -236,6 +328,7 @@ export async function getMarketingSalesEvidence(
       byDistributor: [],
       byMonth: [],
       byProduct: [],
+      confidentialProductsWithheld: false,
       customerName,
       matchedPharmacyCodes,
       requested: emptyRequested(),
@@ -253,6 +346,11 @@ export async function getMarketingSalesEvidence(
   };
 
   const salesRows: SalesRow[] = [];
+  // Confidential products are stripped HERE, as the rows arrive — not at the end. Everything below
+  // (byMonth, byProduct, byDistributor, the requested block, the verdict run-rate and projection)
+  // is derived from `salesRows`, so filtering at the source is what keeps a restricted product out
+  // of every figure rather than out of one table.
+  let confidentialProductsWithheld = false;
   // Both lists are folded into the request URL by PostgREST, so batch each independently.
   for (const codeBatch of chunk(matchedPharmacyCodes)) {
     for (const batchIdBatch of chunk(batchIds as string[])) {
@@ -263,7 +361,9 @@ export async function getMarketingSalesEvidence(
         .in("batch_id", batchIdBatch)
         .in("client_code", codeBatch);
       if (rowsResult.error) throw rowsResult.error;
-      salesRows.push(...((rowsResult.data ?? []) as SalesRow[]));
+      const visible = stripConfidentialSalesRows((rowsResult.data ?? []) as SalesRow[], access.role);
+      if (visible.withheld) confidentialProductsWithheld = true;
+      salesRows.push(...visible.rows);
     }
   }
 
@@ -283,7 +383,12 @@ export async function getMarketingSalesEvidence(
   const requestedProductIds = requestProductRows
     .map((row) => row.product_id)
     .filter((id): id is number | string => id !== null && id !== undefined);
+  const canSeeConfidential = canViewRestrictedProducts(access.role);
   const requestedByCode = new Map<string, string>();
+  // Counted before the confidential filter, so "the master had nothing for this id" (fall back to
+  // the snapshot name) stays distinguishable from "the master answered but this viewer may not see
+  // the product" (show nothing).
+  let requestedMasterCodeCount = 0;
   for (const batch of chunk(requestedProductIds)) {
     const productsResult = await supabase
       .from("marketing_products")
@@ -295,14 +400,33 @@ export async function getMarketingSalesEvidence(
       product_name: string | null;
     }>) {
       const code = String(row.product_code ?? "").trim().toUpperCase();
-      if (code) requestedByCode.set(code, cleanProductName(row.product_name));
+      if (!code) continue;
+      requestedMasterCodeCount += 1;
+      // Defensive: no marketing_products row carries a restricted code today, so no live request
+      // promotes one. If one ever does, a viewer who may not see it must find it in NEITHER list —
+      // reporting it under "never sold here" would both name the product and state something false
+      // about it, since its sales were stripped from the history above.
+      if (!canSeeConfidential && isRestrictedProductCode(code)) {
+        confidentialProductsWithheld = true;
+        continue;
+      }
+      requestedByCode.set(code, cleanProductName(row.product_name));
     }
   }
   // Fall back to the snapshot names so a product removed from the master since submission is still
-  // named in the "never sold" list rather than vanishing from the count.
-  const requestedProductNames = requestedByCode.size > 0
+  // named in the "never sold" list rather than vanishing from the count. That path has no product
+  // code left to gate on, so match the confidential names instead — the fallback must not become
+  // the way a restricted product gets named.
+  const requestedProductNames = requestedMasterCodeCount > 0
     ? [...requestedByCode.values()]
-    : requestProductRows.map((row) => cleanProductName(row.product_name_snapshot));
+    : requestProductRows
+        .map((row) => cleanProductName(row.product_name_snapshot))
+        .filter((name) => {
+          if (canSeeConfidential) return true;
+          if (!restrictedProductNameFallbackKeys.has(normalizeProductNameKey(name))) return true;
+          confidentialProductsWithheld = true;
+          return false;
+        });
 
   const requestedSalesRows = salesRows.filter((row) =>
     requestedByCode.has(String(row.product_code ?? "").trim().toUpperCase()),
@@ -360,6 +484,7 @@ export async function getMarketingSalesEvidence(
     byDistributor,
     byMonth,
     byProduct,
+    confidentialProductsWithheld,
     customerName,
     matchedPharmacyCodes,
     requested: {
