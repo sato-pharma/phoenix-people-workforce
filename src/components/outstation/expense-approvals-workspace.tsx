@@ -15,6 +15,7 @@ import {
   ChevronRight,
   ClipboardList,
   Search,
+  Sparkles,
   Undo2,
   Users,
   Wallet,
@@ -1349,6 +1350,93 @@ function EmployeeSummaryPanel({
   );
 }
 
+/**
+ * Rewrites the approver's rough comment into the sentence the employee reads.
+ *
+ * Owner request 2026-08-08: the note must land "as if the system auto replied" — now that HR sits
+ * behind the workflow rather than in front of it, a decision should not read as one named person's
+ * verdict. The approver writes what he means, in Arabic or English, however roughly; this puts it
+ * into the system's own voice.
+ *
+ * Deliberately not automatic and not hidden: it replaces the field's text in place, the previous
+ * wording stays one click away, and nothing is saved until he presses Save as usual. Per the
+ * owner's standing rule, no user-facing surface names a model — this is presented as something
+ * Phoenix does.
+ */
+function SystemNoteRewriteControl({
+  disabled,
+  facts,
+  onChangeReason,
+  outcome,
+  value,
+}: {
+  disabled: boolean;
+  facts: Array<{ label: string; value: string }>;
+  onChangeReason: (value: string) => void;
+  outcome: "adjusted" | "approved" | "pending" | "rejected";
+  value: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The approver's own wording, kept so a rewrite he dislikes costs one click to undo.
+  const [previous, setPrevious] = useState<string | null>(null);
+
+  async function rewrite() {
+    const draft = value.trim();
+    if (!draft || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/outstation/expenses/note-assist", {
+        body: JSON.stringify({ draft, facts, outcome }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json().catch(() => null)) as { message?: string; note?: string } | null;
+      if (!response.ok || typeof payload?.note !== "string" || !payload.note.trim()) {
+        setError(payload?.message || "The note could not be rewritten. Try again.");
+        return;
+      }
+      setPrevious(draft);
+      onChangeReason(payload.note.trim());
+    } catch {
+      setError("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <button
+          className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 transition hover:border-orange-400 hover:text-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled || busy || !value.trim()}
+          onClick={() => void rewrite()}
+          title="Rewrite this comment as a formal system note for the employee"
+          type="button"
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {busy ? "Rewriting" : "Rewrite formally"}
+        </button>
+        {previous ? (
+          <button
+            className="inline-flex items-center gap-1.5 whitespace-nowrap border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500 transition hover:text-slate-900"
+            onClick={() => {
+              onChangeReason(previous);
+              setPrevious(null);
+            }}
+            type="button"
+          >
+            <Undo2 className="h-3.5 w-3.5" /> Restore my wording
+          </button>
+        ) : null}
+      </div>
+      {error ? <p className="mt-1 text-[11px] font-semibold text-rose-600">{error}</p> : null}
+    </>
+  );
+}
+
 function ExpenseDecisionPanel({
   record,
   decision,
@@ -1564,14 +1652,35 @@ function ExpenseDecisionPanel({
             ) : null}
           </div>
           <div className="mt-3">
-            <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`reason-${record.tripId}`}>
-              Reason / comment{" "}
-              {adjusted ? (
-                <span className="text-rose-500">(required for a changed amount)</span>
-              ) : (
-                <span className="text-slate-400">(required to reject)</span>
-              )}
-            </label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400" htmlFor={`reason-${record.tripId}`}>
+                Reason / comment{" "}
+                {adjusted ? (
+                  <span className="text-rose-500">(required for a changed amount)</span>
+                ) : (
+                  <span className="text-slate-400">(required to reject)</span>
+                )}
+              </label>
+              {/* Only the figures already on this screen are offered, so the note can cite the
+                  deduction without anything being able to invent one. */}
+              <SystemNoteRewriteControl
+                disabled={!canDecide}
+                facts={[
+                  { label: "Claimed total", value: egp(record.total) },
+                  { label: "Approved amount", value: egp(decision.approvedAmount) },
+                  ...(adjusted ? [{ label: "Deduction", value: egp(deduction) }] : []),
+                  { label: "Trip start", value: formatDateValue(record.date) },
+                  { label: "Trip end", value: formatDateValue(record.toDate) },
+                  ...(record.km ? [{ label: "Distance", value: `${formatNumberValue(record.km)} km` }] : []),
+                  { label: "Expense type", value: record.requestType || "—" },
+                ]}
+                onChangeReason={onChangeReason}
+                outcome={
+                  decision.hrApproved ? (adjusted ? "adjusted" : "approved") : isRejected ? "rejected" : "pending"
+                }
+                value={decision.hrComment}
+              />
+            </div>
             <input
               className={cn(
                 "mt-1 h-11 w-full border bg-white px-3 text-sm text-slate-900 outline-none transition focus:ring-2 focus:ring-orange-500/20",
