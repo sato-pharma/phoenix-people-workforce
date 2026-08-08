@@ -2,6 +2,8 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
+import { variables as syncedVariables } from "./sync-railway-production-secrets.mjs";
+
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";
@@ -39,6 +41,18 @@ const requiredVariables = [
   "NOTIFICATION_WEBHOOK_SECRET",
   "CRON_SECRET",
   "ATTENDANCE_AGENT_TOKEN",
+  // Added 2026-08-08 — code-verified to have no fallback/default, unlike the other 18 newly
+  // GitHub-tracked variables (see sync-railway-production-secrets.mjs). Safe to require here
+  // regardless of GitHub backfill status: this script checks Railway's live value, which is
+  // already correct for all 8.
+  "EMAIL_NOTIFICATIONS_ENABLED",
+  "IREPORTS360_BASE_URL",
+  "IREPORTS360_USERNAME",
+  "IREPORTS360_PASSWORD",
+  "NOTIFICATION_EMAIL_FROM",
+  "PHOENIX_APP_URL",
+  "PHOENIX_LIVE_CRM_POLL",
+  "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
 ];
 
 const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
@@ -107,7 +121,7 @@ for (const name of requiredVariables) {
   }
 
   const trimmed = String(value).trim();
-  if (name === "APP_URL" || name === "NEXT_PUBLIC_APP_URL") {
+  if (name === "APP_URL" || name === "NEXT_PUBLIC_APP_URL" || name === "PHOENIX_APP_URL") {
     if (!/^https:\/\//i.test(trimmed)) failures.push(`${name} must be an https URL`);
     if (/vercel\.app/i.test(trimmed)) failures.push(`${name} must not use a vercel.app host`);
   }
@@ -121,6 +135,59 @@ for (const name of requiredVariables) {
   if (name === "NEXT_PUBLIC_SUPABASE_ANON_KEY" || name === "SUPABASE_SERVICE_ROLE_KEY") {
     if (trimmed.length < 20) failures.push(`${name} looks too short`);
   }
+}
+
+// Added 2026-08-08, after CLOUDFLARE_API_TOKEN and NOTIFICATION_WEBHOOK_SECRET were found on
+// Railway with a second, unrelated KEY=VALUE pair glued onto the end of the real value with no
+// separator (consistent with a lost newline during a manual multi-line paste). Neither the
+// presence check above nor its shape checks would have caught this — the values were non-empty
+// and neither variable has a named shape rule. Runs against EVERY variable Railway returns, not
+// just requiredVariables, since CLOUDFLARE_API_TOKEN isn't and won't be on that list.
+//
+// NO negative lookbehind, deliberately — tried one first (requiring a non-alphanumeric
+// character before the match) and it was WRONG for the real failure mode: the actual
+// corruption has zero separator, so the embedded key name butts directly against the previous
+// token's last (alphanumeric) character, which a lookbehind would block from matching at all.
+// Verified against every real variable *shape* in this system (JWTs, API keys of every
+// provider in use, webhook URLs, connection strings) with none containing a literal "=" at
+// all outside of this corruption — so an unqualified match here is a strong, low-noise signal.
+//
+// Warn, don't fail, for now — this heuristic is unverified against every one of the ~90 live
+// values, and a false positive should never take down a real deploy. This matches how this
+// repo already treats an unproven check (validate-env.mjs sits unwired; check-secret-pins.ts
+// was kept rather than deleted). Promote the push target below from corruptionWarnings to
+// failures once it's proven clean across a few real runs.
+const EMBEDDED_KEY_VALUE = /[A-Z][A-Z0-9_]{3,}=/;
+const corruptionWarnings = [];
+for (const [name, rawValue] of valuesByName) {
+  if (rawValue === undefined || rawValue === null) continue;
+  const value = String(rawValue);
+  const match = EMBEDDED_KEY_VALUE.exec(value);
+  if (match) {
+    corruptionWarnings.push(
+      `${name} looks corrupted — contains an embedded "${match[0]}" at offset ${match.index} of ${value.length} chars (a second KEY=VALUE pair may be glued onto this value)`,
+    );
+  }
+}
+
+// Free bonus, same motivation: log any Railway variable that is tracked by neither this
+// script's requiredVariables nor sync-railway-production-secrets.mjs's own variable list —
+// exactly the class of drift that let 27 variables go unsynced and unnoticed for weeks.
+// Informational only; a variable can legitimately be Railway-only on purpose.
+const RAILWAY_PLATFORM_PREFIX = /^RAILWAY_/;
+const knownNames = new Set([...requiredVariables, ...syncedVariables.map((entry) => entry.railway)]);
+const untrackedNames = [...valuesByName.keys()].filter(
+  (name) => !knownNames.has(name) && !RAILWAY_PLATFORM_PREFIX.test(name),
+);
+
+if (corruptionWarnings.length > 0) {
+  console.warn("[validate-railway-production-secrets] possible value corruption (warning only):");
+  for (const warning of corruptionWarnings) console.warn(`  - ${warning}`);
+}
+
+if (untrackedNames.length > 0) {
+  console.warn("[validate-railway-production-secrets] Railway variables not tracked by any script (informational):");
+  for (const name of untrackedNames) console.warn(`  - ${name}`);
 }
 
 if (failures.length > 0) {
