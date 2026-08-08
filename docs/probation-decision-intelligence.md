@@ -2,6 +2,13 @@
 
 Branch: `codex/probation-intelligence` · PR #1041 · Status: **Phases 1–11 complete, staging-verified, not yet on production.**
 
+> **Point-in-time record — not live documentation.** This is the completion report for PR #1041 and
+> describes the pipeline as it stood when the work was verified. The CI job names it cites
+> (`preview-smoke`, `lint-typecheck`) no longer exist: `ci.yml` has since been reorganized into
+> `validate` / `lint` / `typecheck`, with the login smoke test moved into `validate`. Those
+> references are left as written on purpose, so the record still reflects what was actually run.
+> For the current pipeline see [testing.md](testing.md).
+
 ## 1. Executive summary
 
 A rebuild of the probation module into an evidence-based **Decision Intelligence System** for the

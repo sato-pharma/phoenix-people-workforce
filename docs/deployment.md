@@ -38,10 +38,12 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
 ## Deployment Workflow
 
 1. Develop on a branch/worktree, open a PR to `main`.
-2. `.github/workflows/ci.yml` runs on the PR: `validate` (routes/migrations/sql-backups/deductions/
-   stale-domain checks, test, build), `lint`, `typecheck`, and `preview-smoke` (a Playwright login
-   smoke test run against the built app **inside the CI runner**, pointed at the staging Supabase
-   project — despite the job name, this does not deploy or hit any live preview URL).
+2. `.github/workflows/ci.yml` runs on the PR — exactly three jobs: `validate`
+   (routes/migrations/sql-backups/deductions/stale-domain checks, test, build, and a Playwright
+   login smoke test run against the built app **inside the CI runner**, pointed at the staging
+   Supabase project — it does not deploy or hit any live preview URL), `lint`, and `typecheck`.
+   The smoke test used to be a fourth `preview-smoke` job; it now runs as a step inside `validate`,
+   so there is no separate job to wait on.
 3. Run `pnpm run check:harden` locally once before you push — see AGENTS.md § 7.
 4. **Apply any database migration by hand BEFORE the merge.** The Railway deploy applies none. See
    "Database Deployment" below.
@@ -147,9 +149,9 @@ replacement. Any rule requiring "verify against staging" currently has nothing t
 so plainly rather than pretending the gate exists.
 
 The staging **database** survives as its own isolated Supabase project (`cifwmndunmlxjhyjugxa`),
-with no shared third-party secrets with production. CI's `preview-smoke` job points at it so the
-login smoke test writes its expected session-rejection noise there instead of production
-`audit_logs`.
+with no shared third-party secrets with production. The login smoke test step inside CI's `validate`
+job points at it, so its expected session-rejection noise lands there instead of in production
+`audit_logs`; `migration-drift-check.yml`'s staging legs point at it too.
 
 `PHOENIX_PREVIEW_READ_ONLY` / the `proxy.ts` preview-read-only guard are legacy from the Vercel
 preview model and are inert (nothing sets `APP_ENV=preview`).

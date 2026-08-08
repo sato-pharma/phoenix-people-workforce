@@ -58,8 +58,8 @@ Excel imports (payroll, employees, sales) require specific column formats. Check
 ### Change not showing up after push
 
 There is no per-branch preview deployment (that was a retired Vercel-era model).
-Verify locally, check that CI's `preview-smoke` job passed (it runs a Playwright
-smoke test inside the CI runner against staging Supabase, not a deployed URL), and
+Verify locally, check that CI's `validate` job passed (it ends with a Playwright login
+smoke test run inside the CI runner against staging Supabase, not a deployed URL), and
 after merge, check the staging Cloud Run service for a live look against staging
 data. If production itself looks stale after a merge, check
 `.github/workflows/deploy-cloud-run.yml`'s run for that commit.

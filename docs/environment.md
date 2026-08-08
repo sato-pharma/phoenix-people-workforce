@@ -136,7 +136,7 @@ copies directly with no variable fallback, so deleting the secret copies would s
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | Supabase anon/public key (also a GitHub variable) |
 | NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | Modern publishable key (also a GitHub variable) |
 | SUPABASE_SERVICE_ROLE_KEY | Production service-role key — canonical, preferred by the Railway sync |
-| STAGING_SUPABASE_SERVICE_ROLE_KEY | Staging service-role key — CI preview-smoke + `migration-drift-check.yml`'s staging leg |
+| STAGING_SUPABASE_SERVICE_ROLE_KEY | Staging service-role key — the login smoke test step in `ci.yml`'s `validate` job + both of `migration-drift-check.yml`'s staging legs |
 | PRODUCTION_SUPABASE_SERVICE_ROLE_KEY | Used ONLY by `migration-drift-check.yml`'s production leg — intentionally a separate secret from `SUPABASE_SERVICE_ROLE_KEY` (see that workflow's comment); never reaches Railway |
 | PHOENIX_AUTH_SECRET | Session signing secret |
 
