@@ -9,6 +9,7 @@ const PLAN_ACTIVITY_COLORS: Record<string, string> = {
   "Double Visit": "bg-violet-50 text-violet-800 border-violet-200",
   Training: "bg-amber-50 text-amber-900 border-amber-200",
   Meeting: "bg-teal-50 text-teal-800 border-teal-200",
+  "Meeting with Team": "bg-cyan-50 text-cyan-800 border-cyan-200",
   Event: "bg-rose-50 text-rose-800 border-rose-200",
   Travel: "bg-orange-50 text-orange-800 border-orange-200",
   Office: "bg-slate-50 text-slate-700 border-slate-200",
