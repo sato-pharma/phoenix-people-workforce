@@ -97,7 +97,11 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // exact-key override targets whichever admins the caller names explicitly via
   // metadata.moduleOwnerHrIds (see runAttendanceIngestionAlert), bypassing the
   // subject/org-scope matching permission_based normally requires.
-  "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "email", "push"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
+  // Email retired 2026-08-08 (owner request): in-app + push only. The alert still fires — it is
+  // the only automated signal that punch data has stopped reaching payroll — but it no longer
+  // emails. runAttendanceIngestionAlert passes these channels explicitly too; both are kept in
+  // step so a future caller relying on policy resolution cannot reintroduce the email.
+  "attendance.attendance_agent_ingestion_stalled": { channels: ["in_app", "push"], permissionResource: "admin", priority: "high", recipientStrategy: ["permission_based"] },
   "attendance.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "birthday.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },

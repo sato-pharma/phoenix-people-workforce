@@ -193,21 +193,12 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
     const result = await createSystemNotification({
       actionUrl: "/attendance/device-user-mapping",
       actorId: "system",
-      email: {
-        ctaHref: "/attendance/device-user-mapping",
-        ctaLabel: "Open attendance admin",
-        metrics: [
-          { label: "Last sync", value: health.lastIngestedLabel },
-          { label: "Missed working days", value: String(health.missedWorkingDays) },
-          { label: "Status", value: health.status === "attention" ? "Critical" : "Warning" },
-        ],
-        notificationType: "general",
-        recipientMode: "hr_notifications",
-        subject: `Attendance agent alert — no fingerprint sync (${health.lastIngestedLabel})`,
-        summary: message,
-        title: "Attendance agent not syncing",
-        tone: "warning",
-      },
+      // Email retired 2026-08-08 at the owner's request. The alert itself stays — it is the only
+      // automated signal that punch data has stopped flowing into payroll — but it now reaches
+      // Super Admins in-app and by push only. The email added nothing: it was addressed
+      // hr_notifications, i.e. the shared inbox, so it never named a person to act, and it fired
+      // once every night for as long as an outage lasted.
+      channels: ["in_app", "push"],
       eventType: "attendance_agent_ingestion_stalled",
       message,
       metadata: {

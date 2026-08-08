@@ -467,11 +467,17 @@ async function loadRecipientProfile(input: CreateSystemNotificationInput): Promi
     let employeeName: string | null = null;
     if (resolvedHrId) {
       try {
-        const { data: employee } = await supabase
+        // `error` MUST be destructured and thrown. Ignoring it is what made PR #1872 invisible:
+        // it selected `name_en`, a column that does not exist on `employees`, so PostgREST
+        // returned an error with data = null. Nothing threw, the catch below never ran, and
+        // work_email silently became null for EVERY recipient — which then redirected their mail
+        // to the shared HR inbox for ~13h with no log line anywhere. A failed lookup must be loud.
+        const { data: employee, error: employeeQueryError } = await supabase
           .from("employees")
           .select("work_email, name:full_name")
           .eq("hr_id", resolvedHrId)
           .maybeSingle();
+        if (employeeQueryError) throw employeeQueryError;
         workEmail = (employee as { work_email?: string | null } | null)?.work_email ?? null;
         employeeName = (employee as { name?: string | null } | null)?.name ?? null;
       } catch (employeeError) {
@@ -1542,6 +1548,13 @@ async function buildChannelEmailInput(
     recipients: (input.email?.recipients && input.email.recipients.length > 0)
       ? input.email.recipients
       : (recipient.email ? [recipient.email] : []),
+    // This email is addressed to ONE person (`recipient`). When their address is missing there is
+    // nobody to deliver to, and the empty `recipients` below used to fall through to the stored
+    // policy — whose "general" entry routes to hr_notifications — so the shared inbox stood in for
+    // the person and the send was recorded as successful. State the failure explicitly instead;
+    // resolveNotificationDelivery skips and logs on it. See its GUARD 1.
+    recipientAddressUnresolved:
+      !(input.email?.recipients && input.email.recipients.length > 0) && !recipient.email,
     recipientMode: input.email?.recipientMode ?? (
       ((input.email?.recipients && input.email.recipients.length > 0) || recipient.email)
         ? "candidate"

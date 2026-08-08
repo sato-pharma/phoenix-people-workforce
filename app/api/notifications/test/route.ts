@@ -58,6 +58,10 @@ export async function POST(request: Request) {
     });
 
     const result = await sendPhoenixEmail({
+      // A Super Admin is deliberately probing delivery to an address of their choosing, which may
+      // be a personal or external mailbox. Declared external so the Recipient Assurance Guard
+      // does not block the one tool used to prove email is working at all.
+      externalRecipients: recipients,
       html,
       idempotencyKey: `test-${randomUUID()}`,
       subject,
