@@ -100,6 +100,7 @@ export type PermissionResource =
   | "report_it"
   | "attendance"
   | "crm_visits"
+  | "early_birds"
   | "user_activity"
   | "synthetic_journeys";
 
@@ -145,6 +146,10 @@ export const permissionResources: PermissionResource[] = [
   "report_it",
   "attendance",
   "crm_visits",
+  // MUST live in this runtime array, not only in the union above. The sidebar's permission lookup
+  // FAILS OPEN on a key it has never seen, so omitting it here would show the Early Birds tab to
+  // every role — Finance Manager, Talent Acquisition, Employee — silently and with no test failure.
+  "early_birds",
   "user_activity",
   "synthetic_journeys",
 ];
@@ -438,6 +443,7 @@ const defaultPermissionMatrix: PermissionMap = {
     admin: allActions,
     attendance: allActions,
     crm_visits: ["read"],
+    early_birds: ["read", "approve"],
     communication: allActions,
     overview: ["read"],
     admin_access: ["read"],
@@ -489,6 +495,7 @@ const defaultPermissionMatrix: PermissionMap = {
     // workflows. It may read/export attendance but not create/update/delete records.
     attendance: ["read", "export"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: ["read"],
     imports: ["read"], // Bulk user-admin preview only — see Super Admin's `imports` note above.
     // SoD: read/export only — contract renew/not-renew (can drive termination)
@@ -643,6 +650,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Medical Rep": {
     attendance: ["read"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     coaching: ["read"],
     employee_documents: ["read", "export"],
@@ -662,6 +670,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    early_birds: ["read", "approve"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -687,6 +696,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     // NO `deductions` grant (owner instruction, 2026-08-06: "everyone can only see his deductions
     // only"). This previously read `["read"]`, declared to match a portal page that widened a
@@ -732,6 +742,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "approve", "export"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -757,6 +768,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -781,6 +793,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -809,6 +822,7 @@ const defaultPermissionMatrix: PermissionMap = {
     direct_orders: ["read", "export", "approve"],
     attendance: ["read", "create", "update", "delete", "export"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: ["read"],
     // Read-only org structure (2026-08-02): needed for /organogram. Grants no write anywhere —
     // seat/vacancy mutations are gated separately.
@@ -838,6 +852,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Training Manager": {
     attendance: ["read"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
@@ -865,6 +880,7 @@ const defaultPermissionMatrix: PermissionMap = {
   "Marketing Manager": {
     attendance: ["read"],
     crm_visits: ["read"],
+    early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],
     expenses: ["read", "export"],

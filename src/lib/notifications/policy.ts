@@ -107,6 +107,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "contract_renewal.renewal_reminder": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "contract_renewal.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "contracts", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
   "direct_orders.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["workflow_step_approver", "cc"], telegramAllowed: true },
+  // Recipients are supplied explicitly (the District Manager, with his NSM and RM copied), so the
+  // strategy is "cc" rather than a lookup. Without an entry here it falls back to the bare default
+  // policy — the silent degradation weekly_plans.* documents.
+  "early_birds.*": { actionUrlRequired: true, channels: ["in_app", "email", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"] },
   "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },

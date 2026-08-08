@@ -292,6 +292,33 @@ function mapSyncRun(row: Record<string, unknown>): VisitsSyncRun {
   };
 }
 
+/**
+ * When was a given day last CHECKED, as opposed to when its newest row happened to change?
+ *
+ * The compliance board's freshness label used to come from `max(synced_at)` over the day's mirrored
+ * rows. That is "when data last moved", not "when we last looked" — so a successful sync that found
+ * nothing new left the label frozen and made the Sync button look broken. This reads the run
+ * ledger instead: the completed_at of the most recent SUCCESSFUL run whose window covers `dateIso`.
+ *
+ * Returns null (never throws) when the mirror schema is absent or no run covers the day.
+ */
+export async function getLatestSuccessfulSyncRunFor(dateIso: string): Promise<string | null> {
+  const { data, error } = await getSupabaseAdmin()
+    .from(syncRunsTable)
+    .select("completed_at")
+    .eq("status", "success")
+    .lte("date_from", dateIso)
+    .gte("date_to", dateIso)
+    .order("completed_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    if (isCrmSchemaMissingError(error)) return null;
+    throw new Error(error.message);
+  }
+  const rows = (data ?? []) as unknown as Array<{ completed_at?: string | null }>;
+  return rows[0]?.completed_at ?? null;
+}
+
 export async function getLatestVisitsSyncRuns(limit = 10): Promise<VisitsSyncRun[]> {
   const { data, error } = await getSupabaseAdmin()
     .from(syncRunsTable)

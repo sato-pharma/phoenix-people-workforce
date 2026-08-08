@@ -25,6 +25,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { IdentityCard } from "@/components/employee-portal/identity-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { DsmCommandCenter } from "@/components/employee-portal/dashboards/dsm-command-center";
@@ -446,7 +447,9 @@ function pctTextClass(pct: number): string {
 function pctBarClass(pct: number): string {
   return pct >= 100 ? "bg-emerald-500" : pct >= 90 ? "bg-amber-400" : pct >= 70 ? "bg-orange-500" : "bg-rose-500";
 }
-function rankChipClass(index: number): string {
+/** The house medal palette — gold, silver, bronze, then plain. Exported so the Early Birds race
+ * panel reuses the same chips as the sales leaderboard instead of a second, drifting copy. */
+export function rankChipClass(index: number): string {
   return index === 0
     ? "bg-amber-400 text-slate-900"
     : index === 1
@@ -639,7 +642,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount } =
+  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount, earlyBirdWinner } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -721,6 +724,11 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
           // /employee-portals/payslips.
         ]}
       />
+
+      {/* The rep's own landing page is the whole point of the competition — this is where a rep
+          sees who is currently the star and what it would take to be next. */}
+      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+
       <QuickActions
         actions={[
           { href: "/employee-portals/expenses", icon: ReceiptText, label: "My Expenses" },

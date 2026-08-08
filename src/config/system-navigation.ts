@@ -49,6 +49,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Stethoscope,
+  Sunrise,
   Store,
   Tags,
   Target,
@@ -757,6 +758,10 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/expense-submissions", icon: FileClock, label: "Expense Submissions", permissions: [{ resource: "expenses" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager", "Manager"] },
       { href: "/employee-portals/submit-expense", icon: ReceiptText, label: "Submit Expense", permissions: [{ resource: "outstation", action: "create" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       { href: "/employee-portals/team-expenses", icon: ReceiptText, label: "Team Expenses", permissions: [{ resource: "expenses" }], roles: ["National Sales Manager"] },
+      // Present here so the destination is CURATABLE from Modules Control — the catalog is matched
+      // by href, and a portal page missing from it is silently always-visible. This entry is what
+      // employee-portal-nav-catalog-sync.test.ts checks for.
+      { href: "/employee-portals/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager", "Training Manager"] },
     ],
     label: "Medical Rep Portal",
   },
@@ -1010,6 +1015,18 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/report-it", icon: ShieldAlert, label: "Report It", excludedRoles: ["Manager"] },
     ],
     label: "Pharmacovigilance",
+  },
+  // A NEW section rather than an item inside an existing one: navigation-active-path.test.ts pins
+  // the exact ordered href list of several sections, so inserting into one breaks it. A section
+  // resolving to a single visible item renders headerless, which is exactly the "tab" this is meant
+  // to be. Ship the real label — getSections blanks it for the flat-sidebar roles at render time,
+  // and the role-scoped heading test requires a non-empty label for Super Admin and CEO.
+  {
+    id: "early-birds",
+    items: [
+      { href: "/admin/early-birds", icon: Sunrise, label: "Early Birds", permissions: [{ resource: "early_birds", action: "read" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
+    ],
+    label: "Early Birds",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
 

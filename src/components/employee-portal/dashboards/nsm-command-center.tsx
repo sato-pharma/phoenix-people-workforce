@@ -36,6 +36,8 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
+import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -124,7 +126,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus, earlyBirdWinner } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
   return (
@@ -156,7 +158,9 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <RankingPanel title="Districts (DSMs)" subtitle="by achievement %" icon={Network} rows={nsmBoard?.dsms ?? []} />
       </div>
 
-      <CrmFirstVisitBoard crm={nsmBoard?.crm ?? null} />
+      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+
+      <CrmFirstVisitBoard action={<EarlyBirdsSyncButton />} crm={nsmBoard?.crm ?? null} />
 
       <ActionStrip items={ACTIONS} />
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Star } from "lucide-react";
 
 import {
@@ -8,6 +7,7 @@ import {
   getCoachingScoreColor,
 } from "@/lib/coaching/landing-insights";
 import type { CoachingPerformanceZone } from "@/lib/coaching/types";
+import { PersonPhoto } from "@/components/people/person-photo";
 
 export type CoachingStarOfMonth = {
   hrId: string;
@@ -16,36 +16,6 @@ export type CoachingStarOfMonth = {
   scorePercent: number;
   zone: CoachingPerformanceZone | null;
 };
-
-function initialsFor(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] ?? "" : "";
-  return `${first}${last}`.toUpperCase();
-}
-
-const AVATAR_SIZE = "h-32 w-32 sm:h-36 sm:w-36";
-
-function StarAvatar({ src, name }: { src: string | null; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) {
-    return (
-      <div className={`flex ${AVATAR_SIZE} items-center justify-center rounded-lg border-2 border-orange-200 bg-slate-100 text-3xl font-black text-slate-500`}>
-        {initialsFor(name)}
-      </div>
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- same-origin photo route / bundled asset, cropped square
-    <img
-      alt={name}
-      className={`${AVATAR_SIZE} rounded-lg border-2 border-orange-200 object-cover object-top`}
-      onError={() => setFailed(true)}
-      src={src}
-    />
-  );
-}
 
 /**
  * "Stars of the Month" — a photo-forward showcase of the previous month's top
@@ -74,7 +44,7 @@ export function CoachingStarsOfMonthCard({
         {stars.map((star, index) => (
           <div key={star.hrId} className="flex w-36 flex-col items-center gap-2 text-center sm:w-40">
             <div className="relative">
-              <StarAvatar name={star.name} src={star.photoSrc} />
+              <PersonPhoto name={star.name} size="xl" src={star.photoSrc} />
               <span
                 className={`absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-md text-xs font-black text-white shadow ${
                   index === 0 ? "bg-orange-500" : "bg-slate-700"
