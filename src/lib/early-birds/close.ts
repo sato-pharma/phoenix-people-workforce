@@ -17,7 +17,7 @@ import { normalizeHrIdForAccess, resolveStoredHrId } from "@/lib/hr-id";
 import { logError, logInfo } from "@/lib/observability/log";
 import { buildEarlyBirdsCandidateKey } from "@/lib/early-birds/candidate-key";
 import { collectEarlyBirdsInputs, listEarlyBirdsDistrictManagers } from "@/lib/early-birds/collect";
-import { earlyBirdsPeriodFromKey, isEarlyBirdsPeriodKey, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
+import { isEarlyBirdsPeriodKey, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
 import { resolveCurrentEarlyBirdsCandidate } from "@/lib/early-birds/current-candidate";
 import {
   EARLY_BIRDS_CLOSE_MAX_PER_TICK,
@@ -37,13 +37,19 @@ import { notifyEarlyBirdsRecommendation } from "@/lib/early-birds/notify";
 /** In-memory throttle on how often the DATABASE is asked. Losing it on restart costs one query. */
 let lastDueCheckMs = 0;
 
-type SnapshotRow = { id: string; period_key: string; manager_hr_id: string; status: string };
+type SnapshotRow = {
+  id: string;
+  period_key: string;
+  manager_hr_id: string;
+  status: string;
+  computed_at: string;
+};
 
 async function listLiveSnapshots(): Promise<SnapshotRow[]> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("early_birds_period_snapshots")
-    .select("id, period_key, manager_hr_id, status")
+    .select("id, period_key, manager_hr_id, status, computed_at")
     .is("superseded_at", null)
     .order("period_key", { ascending: false })
     .limit(500);
@@ -145,8 +151,10 @@ async function autoApproveStaleSnapshots(todayIso: string, storedHrId: (value: s
 
   for (const snapshot of snapshots) {
     if (!isEarlyBirdsPeriodKey(snapshot.period_key)) continue;
-    const period = earlyBirdsPeriodFromKey(snapshot.period_key);
-    if (!isEarlyBirdsAutoApproveDue(period, todayIso)) continue;
+    // Measured from when the manager was ASKED, not from when the fortnight ended. A backfilled
+    // period is past a period-end deadline the instant it is created, so the old check crowned
+    // every district in the same tick that created it — nobody was ever asked.
+    if (!isEarlyBirdsAutoApproveDue({ computedAtIso: snapshot.computed_at, todayIso })) continue;
 
     const [{ data: candidateData }, { data: decisionData }] = await Promise.all([
       supabase
@@ -210,9 +218,11 @@ async function crownNationalWinners(todayIso: string): Promise<number> {
 
   for (const [periodKey, rows] of byPeriod) {
     if (!isEarlyBirdsPeriodKey(periodKey)) continue;
-    const period = earlyBirdsPeriodFromKey(periodKey);
     const openDistrictCount = rows.filter((row) => row.status === "open").length;
-    if (!isEarlyBirdsNationalCrownDue({ period, todayIso, openDistrictCount })) continue;
+    const latestComputedAtIso = rows.map((row) => row.computed_at).sort().at(-1) ?? null;
+    // Keyed off the LAST manager asked, so a backfill cannot crown the first district to approve as
+    // the national winner while the rest have not been asked yet.
+    if (!isEarlyBirdsNationalCrownDue({ todayIso, openDistrictCount, latestComputedAtIso })) continue;
 
     const { data: existing } = await supabase
       .from("early_birds_national_winners")

@@ -61,30 +61,43 @@ export function resolveDueEarlyBirdsPeriods(input: {
   return due;
 }
 
-/** The day rank #1 is crowned automatically if the manager still has not decided. */
-export function earlyBirdsAutoApproveDateIso(period: EarlyBirdsPeriod): string {
-  return addDaysIso(period.endIso, EARLY_BIRDS_AUTO_APPROVE_AFTER_DAYS);
+/**
+ * The day rank #1 is crowned automatically if the manager still has not decided.
+ *
+ * Measured from when the recommendation was COMPUTED — the day the manager was actually asked — not
+ * from the day the fortnight ended. For a normally-closed period those are the same day. For a
+ * BACKFILLED period they are not, and the difference is severe: a fortnight that closed nine days
+ * ago is already past a period-end deadline the instant it is created, so every district
+ * auto-crowned in the same tick that created it and no manager was ever asked. That happened in
+ * production on 2026-08-09 for 2026-07-H2, and it is irreversible by design —
+ * phx_close_early_birds_period refuses a recompute once a winner exists.
+ */
+export function earlyBirdsAutoApproveDueAtIso(computedAtIso: string): string {
+  return addDaysIso(String(computedAtIso).slice(0, 10), EARLY_BIRDS_AUTO_APPROVE_AFTER_DAYS);
 }
 
 /**
  * The rep is never punished for his manager's inaction, and the award always lands while it still
- * feels current. The manager is told it happened rather than it being silent.
+ * feels current — but only once that manager has genuinely had the window. He is told it happened
+ * rather than it being silent.
  */
-export function isEarlyBirdsAutoApproveDue(period: EarlyBirdsPeriod, todayIso: string): boolean {
-  return todayIso >= earlyBirdsAutoApproveDateIso(period);
+export function isEarlyBirdsAutoApproveDue(input: { computedAtIso: string; todayIso: string }): boolean {
+  return input.todayIso >= earlyBirdsAutoApproveDueAtIso(input.computedAtIso);
 }
 
 /**
- * The national winner is crowned once every district has settled, or at the auto-approve deadline —
- * whichever comes first. Waiting only on "all settled" would stall forever behind one district with
- * no eligible rep; waiting only on the deadline would delay a fortnight everyone had already
- * decided.
+ * The national winner is crowned once every district has settled, or once every district has had
+ * its full decision window — whichever comes first. Waiting only on "all settled" would stall
+ * forever behind one district with no eligible rep; keying off a period-end deadline would, on a
+ * backfilled fortnight, crown the first district to approve while the rest had not been asked.
  */
 export function isEarlyBirdsNationalCrownDue(input: {
-  period: EarlyBirdsPeriod;
   todayIso: string;
   openDistrictCount: number;
+  /** The NEWEST computed_at across the period's snapshots — the last manager to be asked. */
+  latestComputedAtIso: string | null;
 }): boolean {
   if (input.openDistrictCount === 0) return true;
-  return isEarlyBirdsAutoApproveDue(input.period, input.todayIso);
+  if (!input.latestComputedAtIso) return false;
+  return isEarlyBirdsAutoApproveDue({ computedAtIso: input.latestComputedAtIso, todayIso: input.todayIso });
 }
