@@ -108,6 +108,17 @@ export type NotificationEmailInput = {
   recipientHrId?: string | null;
   recipients?: string[];
   recipientMode?: EmailRecipientMode;
+  /**
+   * Set ONLY by buildChannelEmailInput (system.ts), and only when this email is addressed to
+   * ONE specific person whose deliverable address could not be resolved.
+   *
+   * It exists because an empty `recipients` is indistinguishable from "this send is legitimately
+   * policy-routed", and that ambiguity silently mailed 67 notifications to the shared HR inbox
+   * while the intended person appeared nowhere in To, CC or BCC — recorded as a successful send
+   * (production, 2026-07-25 → 2026-08-08). The address is missing, so nobody can be reached:
+   * resolveNotificationDelivery must SKIP LOUDLY rather than let the inbox stand in for a person.
+   */
+  recipientAddressUnresolved?: boolean;
   subjectHrIdSource?: NotificationEmailIdentitySource | null;
   includeHrInbox?: boolean;
   subject: string;
@@ -708,14 +719,70 @@ export async function resolveNotificationDelivery(input: NotificationEmailInput)
     return { reason: `Email skipped: ${policy.label} notifications are disabled.`, skipped: true };
   }
 
-  const allPolicyRecipients = await Promise.all(
-    (policy.recipientModes.length > 0 ? policy.recipientModes : [policy.recipientMode]).map((mode) =>
-      resolveRecipientsForMode(mode, input, policy),
-    ),
+  const requestedModes = policy.recipientModes.length > 0 ? policy.recipientModes : [policy.recipientMode];
+  // "hr_notifications" addresses a shared mailbox; every other mode resolves real people. Keeping
+  // them apart is what lets GUARD 2 tell "nobody resolved" from "correctly routed to the inbox".
+  const personModes = requestedModes.filter((mode) => mode !== "hr_notifications");
+  const resolvedByMode = await Promise.all(
+    requestedModes.map(async (mode) => ({ mode, recipients: await resolveRecipientsForMode(mode, input, policy) })),
   );
-  const policyRecipients = cleanEmailList(allPolicyRecipients.flat());
+  const policyRecipients = cleanEmailList(resolvedByMode.flatMap((entry) => entry.recipients));
+  const personRecipients = cleanEmailList(
+    resolvedByMode.filter((entry) => entry.mode !== "hr_notifications").flatMap((entry) => entry.recipients),
+  );
   const hrRecipients = policy.includeHrInbox ? recipientsFromEnv() : [];
   const explicitRecipients = cleanEmailList(input.recipients ?? []);
+
+  // GUARD 1 — a named person with no address is a RESOLUTION FAILURE, never an inbox fallback.
+  // Without this, buildChannelEmailInput's empty `recipients` fell through to the stored policy,
+  // and the "general" policy is configured recipient_modes = ["hr_notifications"], so the mail
+  // shipped to the shared inbox with the intended person absent from To, CC and BCC — and was
+  // recorded `sent`. That is how PR #1872's phantom `employees.name_en` column (which nulled every
+  // work_email lookup for ~13h) stayed invisible, and how PHX-1 — a Super Admin account with no
+  // work_email at all — quietly redirected 43 direct-order and weekly-plan emails.
+  //
+  // `personRecipients.length === 0` is load-bearing, NOT redundant. The auth emails (password
+  // setup/reset, user_created) address the account holder by `candidateEmail` and deliberately
+  // leave `recipients` empty, so they arrive here with recipientAddressUnresolved = true — and a
+  // brand-new account has no employees.work_email yet, which is the whole reason it is being sent.
+  // Skipping on the flag alone would have blocked exactly the welcome and password-reset mail that
+  // matters most. The "candidate" mode resolves that address here, so those sends continue.
+  if (input.recipientAddressUnresolved && !hasExplicitRecipients && personRecipients.length === 0) {
+    const target = String(input.recipientHrId ?? "").trim().toUpperCase() || "unknown recipient";
+    const reason =
+      `Email skipped: no deliverable address for ${target}. The notification was addressed to that ` +
+      `person, so it must not be redirected to the HR inbox — set their employees.work_email.`;
+    logError("Notification email has no deliverable address for its intended recipient", {
+      labels: {
+        event: "notification_email_recipient_address_missing",
+        hr_id: target,
+        module: input.module ?? "unknown",
+        notificationType: input.notificationType,
+      },
+    });
+    return { reason, skipped: true };
+  }
+
+  // GUARD 2 — the same masking one level up: when the policy asked for real people (manager chain,
+  // direct manager, employee, selected titles) and every one of them resolved to nothing, the HR
+  // inbox must not be the thing that makes the list non-empty. contract_renewal, leave, resignation
+  // and probation all carry include_hr_inbox = true, so a broken manager chain would otherwise send
+  // an "escalation" that reaches only the inbox and reports success.
+  if (!hasExplicitRecipients && personModes.length > 0 && personRecipients.length === 0) {
+    const reason =
+      `Email skipped: ${policy.label} routing (${personModes.join(", ")}) resolved no recipient emails. ` +
+      `Not falling back to the HR inbox — that would hide the failed lookup.`;
+    logError("Notification email policy resolved no real recipients", {
+      labels: {
+        event: "notification_email_policy_recipients_missing",
+        module: input.module ?? "unknown",
+        notificationType: input.notificationType,
+        recipientModes: personModes.join(","),
+      },
+    });
+    return { reason, skipped: true };
+  }
+
   const rawCombined = hasExplicitRecipients
     ? [...explicitRecipients]
     : [...policyRecipients, ...hrRecipients, ...explicitRecipients];
@@ -1749,6 +1816,9 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
   return sendPhoenixEmail({
     bcc: finalBcc,
     cc: finalCc,
+    // A job candidate has no employee record, so their address is unknown to the Recipient
+    // Assurance Guard by definition. Declare it, or every offer/recruitment email blocks.
+    externalRecipients: input.candidateEmail ? [input.candidateEmail] : undefined,
     fanoutToBcc: true,
     from,
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal

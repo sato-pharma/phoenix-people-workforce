@@ -1994,6 +1994,15 @@ export async function resolveTemplateRecipients(input: {
       finalRecipientCount,
       rawRecipientCount,
     },
+    // Surfaced so the send site can declare these to the Recipient Assurance Guard. A static
+    // recipient is an address an admin typed into the template on purpose (an external auditor,
+    // an agency), so it is deliberate by definition — but it belongs to no employee, and the
+    // guard blocks anything it cannot account for.
+    staticEmails: dedupe([
+      ...rules.toStaticEmails.map((email) => ({ email, name: "Static recipient" })),
+      ...rules.ccStaticEmails.map((email) => ({ email, name: "Static recipient" })),
+      ...rules.bccStaticEmails.map((email) => ({ email, name: "Static recipient" })),
+    ]).map((recipient) => recipient.email),
     to,
   };
 }
@@ -2518,6 +2527,15 @@ export async function sendTemplatedEmail(input: SendTemplatedEmailInput): Promis
   const result = await sendPhoenixEmail({
     bcc: bcc.length > 0 ? bcc.map((recipient) => recipient.email) : undefined,
     cc: cc.length > 0 ? cc.map((recipient) => recipient.email) : undefined,
+    // A template resolving the "candidate" recipient role addresses someone with no employee
+    // record, so the Recipient Assurance Guard cannot recognise them. Declared here, otherwise
+    // every offer and recruitment template would block. Also covers static_to/cc/bcc addresses
+    // configured on the template itself (external auditors, agencies), which are equally
+    // deliberate and equally invisible to the directory.
+    externalRecipients: [
+      ...(input.candidateEmail ? [input.candidateEmail] : []),
+      ...resolved.staticEmails,
+    ],
     // Privacy: when a template resolves to multiple TO recipients (HR fan-out), move them
     // to BCC behind a neutral visible To.
     fanoutToBcc: true,

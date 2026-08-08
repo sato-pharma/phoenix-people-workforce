@@ -12,6 +12,12 @@ import {
   markNotificationSendDelivered,
   type NotificationOrigin,
 } from "@/lib/notifications/confidence-gate";
+import {
+  decideRecipientAssurance,
+  resolveAssuranceDirectory,
+  resolveSystemInboxes,
+} from "@/lib/email/recipient-assurance";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // Re-exported for back-compat: existing callers/tests import these from this module.
@@ -34,6 +40,15 @@ export type SendPhoenixEmailInput = {
    */
   bypassConfidenceGate?: boolean;
   cc?: string[];
+  /**
+   * Addresses that legitimately belong to nobody in the employee directory — a job candidate, or
+   * the sender of an inbound email being replied to. The Recipient Assurance Guard blocks any
+   * unrecognised address, so an external send MUST declare its addresses here or it will not go
+   * out. Required because the owner scoped the guard to all mail, recruitment included
+   * (2026-08-08); without a declaration there is no way to tell an intended external recipient
+   * from a typo or a stale hard-coded address.
+   */
+  externalRecipients?: string[];
   /**
    * When true and the resolved `to` has more than one recipient, move them to BCC behind
    * a neutral visible To. Prevents a multi-recipient fan-out (manager chain, HR inbox,
@@ -243,6 +258,67 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   const resolvedReplyTo = input.replyTo || process.env.NOTIFICATION_REPLY_TO || systemEmail.defaultReplyTo;
 
   let finalTo = to;
+
+  // ── Recipient Assurance Guard ────────────────────────────────────────────────────────────────
+  // Runs on the REAL recipient list, deliberately before the fanoutToBcc transform below: that
+  // transform replaces To with the neutral reply-to for privacy, so checking after it would see a
+  // shared inbox in To and "correct" it by undoing the fan-out — trading a delivery bug for a
+  // privacy leak. Skipped entirely in testing-redirect mode (recipients are the test inboxes by
+  // design) and for a Super Admin's manual re-send of already-reviewed held content.
+  if (!testingRecipients && !input.bypassConfidenceGate) {
+    try {
+      const decision = decideRecipientAssurance(
+        {
+          bcc,
+          cc,
+          declaredExternal: input.externalRecipients,
+          intendedHrId: input.origin?.recipientHrId ?? null,
+          systemInboxes: resolveSystemInboxes(),
+          to: finalTo,
+        },
+        await resolveAssuranceDirectory(),
+      );
+
+      if (decision.outcome === "block") {
+        logError("Recipient Assurance Guard blocked an email", {
+          labels: {
+            code: decision.code,
+            event: "recipient_assurance_blocked",
+            eventType: input.origin?.eventType ?? "unknown",
+            module: input.origin?.module ?? "unknown",
+            recipientHrId: input.origin?.recipientHrId ?? "",
+          },
+        });
+        return { reason: `Blocked before sending — ${decision.reason}`, skipped: true };
+      }
+
+      if (decision.outcome === "corrected") {
+        // Not silent: a correction means something upstream resolved the wrong recipient, and the
+        // email only looks right because this guard rewrote it. That upstream bug still needs
+        // fixing, so it is surfaced rather than absorbed.
+        logError("Recipient Assurance Guard corrected the To address", {
+          labels: {
+            event: "recipient_assurance_corrected",
+            eventType: input.origin?.eventType ?? "unknown",
+            module: input.origin?.module ?? "unknown",
+            recipientHrId: input.origin?.recipientHrId ?? "",
+          },
+          context: { correction: decision.correction },
+        });
+      }
+
+      finalTo = decision.to;
+    } catch (assuranceError) {
+      // FAIL-OPEN on infrastructure failure only. A directory-load outage must not become a total
+      // email blackout — that would turn a read failure into a worse incident than the one this
+      // guard prevents. A genuine block above still returns skipped; only an unexpected throw
+      // lands here, and it is logged so the gap is visible rather than assumed.
+      logError("Recipient Assurance Guard could not run — sending unguarded", {
+        error: assuranceError,
+        labels: { event: "recipient_assurance_unavailable", module: input.origin?.module ?? "unknown" },
+      });
+    }
+  }
   // Privacy: a multi-recipient fan-out must not expose every recipient to the others.
   // Move them to BCC behind a neutral visible To (never in testing-redirect mode).
   if (input.fanoutToBcc && !testingRecipients && finalTo.length > 1) {
