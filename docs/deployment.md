@@ -50,8 +50,8 @@ Never push directly to `main`. Work happens on a branch/PR and merges after CI p
    revision, no post-deploy smoke test, and no cron wait — nothing stands between the merge and
    employees using it.
 
-> ⚠️ Branch protection does gate the merge itself: 3 required status checks (`validate`, `lint`,
-> `typecheck`) must be green on the PR head commit, with
+> ⚠️ Branch protection does gate the merge itself: 4 required status checks (`validate`, `lint`,
+> `typecheck`, `secret-scan`) must be green on the PR head commit, with
 > `enforce_admins: true`. So a merged commit has passed CI. But CI passing is the *only* gate —
 > once merged, it serves live traffic. **Never merge anything you are not willing to have serving
 > employees within minutes.**

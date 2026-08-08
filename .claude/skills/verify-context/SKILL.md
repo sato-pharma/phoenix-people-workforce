@@ -35,7 +35,7 @@ point there. **This skill never changes infra, settings, or the database — it 
    gh api repos/Gawish-1997/phoenix-people-workforce/branches/main/protection \
      --jq '{checks:[.required_status_checks.checks[].context], reviews:.required_pull_request_reviews.required_approving_review_count}'
    ```
-   Expect the 3 required checks (`validate`, `lint`, `typecheck`) and
+   Expect the 4 required checks (`validate`, `lint`, `typecheck`, `secret-scan`) and
    `reviews: 0` (solo owner can't self-approve). AGENTS.md §2 must match.
 
 5. **Supabase project refs** (§3, §8)

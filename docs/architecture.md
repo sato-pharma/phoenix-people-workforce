@@ -129,9 +129,9 @@ actually runs. Use the cron-job.org account instead.
 
 🔴 **A merge to `main` ships to production immediately.** Railway is GitHub-connected and deploys on
 push, at **full traffic**, within minutes — no staged rollout, no no-traffic revision, no smoke
-test, no cron wait. Branch protection gates the *merge* (5 required status checks must be green),
-but once merged it is live. Never merge anything you are not willing to have serving employees
-within minutes.
+test, no cron wait. Branch protection gates the *merge* (4 required status checks must be green —
+`validate`, `lint`, `typecheck`, `secret-scan`), but once merged it is live. Never merge anything
+you are not willing to have serving employees within minutes.
 
 This reversed on 2026-08-01 and is the single most important fact to relearn: the old Cloud Run
 pipeline deployed a no-traffic revision, smoke-tested it, then promoted — and ran on a schedule

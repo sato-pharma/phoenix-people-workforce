@@ -82,19 +82,26 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs three checks, all from `.github/workflows/ci.yml`:
+CI runs four required checks — three from `.github/workflows/ci.yml`, one from
+`.github/workflows/security-scan.yml`:
 
 | Check | Workflow | What it runs |
 |---|---|---|
 | `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite** (`pnpm run test`), the production **build**, and the Playwright **login smoke test** — all in one job. |
 | `lint` | ci.yml | `pnpm run lint` (parallel job). |
 | `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
+| `secret-scan` | security-scan.yml | gitleaks (pinned v8.30.1, checksum-verified) over the checked-out tree, `--no-git --redact`, ~13s. **Blocking** — any finding fails the check. |
 
-`.github/workflows/security-scan.yml` (OSS gitleaks secret scan + Semgrep SAST, both
-non-blocking) was removed 2026-08-08 at owner request; it was never a required check.
+`.github/workflows/security-scan.yml` was deleted on 2026-08-08 by #1889 and restored the same day
+by #1894, which also removed the `--exit-code 0` that had made gitleaks incapable of failing (40
+consecutive green runs that proved nothing). It now runs on every PR — no path filter, so docs-only
+PRs get it too — plus daily at 05:17 UTC over `main`, and it **is** a required check. Semgrep's
+`sast-scan` was deliberately not restored (4m14s per PR against gitleaks' 13s, and Sonar covered
+overlapping ground), so SAST no longer runs at all. Since GHAS is not purchasable on a personal
+account (`security_and_analysis: null`), this job is the repo's only automated secret detection.
 
 There is no longer a separate `preview-smoke` job — the login smoke test moved into
 `validate`. The full Playwright E2E suite runs only on manual `workflow_dispatch` (the
-`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 3 checks green before a merge can
+`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 4 checks green before a merge can
 land** (there is no required human review — solo owner); per AGENTS.md §3 a merge to `main` then
 deploys to production immediately.
