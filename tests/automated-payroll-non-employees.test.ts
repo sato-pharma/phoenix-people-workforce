@@ -158,6 +158,62 @@ export async function runAutomatedPayrollNonEmployeesTests() {
     "Full sheet's Executive Summary total must also fold in the non-employees' contribution",
   );
 
+  // ---- a PART 2 non-employee must be visible AS Part 2, and the TOTALS row
+  // must still foot (owner-reported 2026-08-08: "the non-employee payroll Part 2
+  // is not showing in the downloaded xlsx").
+  //
+  // The full sheet used to write EVERY non-employee into "Month Salary" alone,
+  // leaving First Part and Second Part blank for them. So a Part 2 non-employee
+  // was indistinguishable from a Part 1 one — the same person paid in both
+  // installments rendered as two identical-looking rows — and the TOTALS row
+  // stopped balancing. Measured on the live July 2026 run before the fix:
+  // Month Salary exceeded First Part + Second Part by exactly 381,535.00, the
+  // whole non-employee payroll, with nothing on the sheet saying which
+  // installment pays it.
+  const bothParts: NonEmployeePayrollRow[] = [
+    { ...row(1000), fullNameEn: "Part One Person" },
+    { ...row(400), fullNameEn: "Part Two Person", part: "second" },
+  ];
+  const bothBuffer = await buildFullSheetWorkbook({ run, rows: [], nonEmployees: bothParts });
+  const bothRows = await readSheetRows(bothBuffer, "Payroll");
+
+  const partTwoRow = bothRows.find((r) => cellFor(r, "Full Name") === "Part Two Person");
+  assert.ok(partTwoRow, "a Part 2 non-employee must appear on the full sheet");
+  assert.equal(
+    cellFor(partTwoRow!, "Second Part"),
+    400,
+    "a Part 2 non-employee's amount must land in the Second Part column — otherwise their money is invisible as Part 2",
+  );
+  assert.equal(cellFor(partTwoRow!, "First Part"), "", "a Part 2 non-employee must NOT be counted in the first installment");
+  assert.equal(cellFor(partTwoRow!, "Month Salary"), 400, "their amount still totals into the month's whole picture");
+  assert.equal(
+    cellFor(partTwoRow!, "Payment Group"),
+    "Non-Employee · Part 2",
+    "the row must say which installment it belongs to, so the same person paid twice never reads as a duplicate",
+  );
+
+  const partOneRow = bothRows.find((r) => cellFor(r, "Full Name") === "Part One Person");
+  assert.ok(partOneRow, "a Part 1 non-employee must appear on the full sheet");
+  assert.equal(cellFor(partOneRow!, "First Part"), 1000, "a Part 1 non-employee's amount lands in the First Part column");
+  assert.equal(cellFor(partOneRow!, "Second Part"), "", "a Part 1 non-employee must NOT be counted in the second installment");
+  assert.equal(cellFor(partOneRow!, "Payment Group"), "Non-Employee · Part 1");
+
+  // THE INVARIANT THAT BROKE: First Part + Second Part must equal Month Salary
+  // on the TOTALS row, non-employees included.
+  const bothTotals = bothRows.find((r) => cellFor(r, "#") === "TOTALS");
+  assert.ok(bothTotals, "a TOTALS row must exist");
+  const totalFirst = Number(cellFor(bothTotals!, "First Part")) || 0;
+  const totalSecond = Number(cellFor(bothTotals!, "Second Part")) || 0;
+  const totalMonth = Number(cellFor(bothTotals!, "Month Salary")) || 0;
+  assert.equal(totalFirst, 1000, "TOTALS First Part must fold in only the Part 1 non-employees");
+  assert.equal(totalSecond, 400, "TOTALS Second Part must fold in only the Part 2 non-employees");
+  assert.equal(totalMonth, 1400, "TOTALS Month Salary must fold in every non-employee");
+  assert.equal(
+    Math.round((totalFirst + totalSecond) * 100) / 100,
+    totalMonth,
+    "the TOTALS row must balance: First Part + Second Part = Month Salary, non-employees included",
+  );
+
   // ---- no non-employees this run -> no extra rows, no stray section ----------
   const emptyBuffer = await buildPart1SheetWorkbook({ run, rows: [], nonEmployees: [] });
   const emptyRows = await readSheetRows(emptyBuffer, "Part 1");
