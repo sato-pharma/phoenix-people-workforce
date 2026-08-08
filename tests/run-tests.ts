@@ -693,6 +693,7 @@ import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
 import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
 import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
 import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
+import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1645,6 +1646,10 @@ await runTest(
 await runTest(
   "early birds decisions (reject falls through by rank, a rejected rep can never be offered again, and an unanswered fortnight auto-approves on day five)",
   runEarlyBirdsDecisionTests,
+);
+await runTest(
+  "departed-agent CRM scan (one-statement distinct, page-walk fallback, no silent empty exclusion)",
+  runCrmDepartedAgentScanTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

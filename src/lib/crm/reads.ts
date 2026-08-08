@@ -8,7 +8,7 @@
  * type as the generic (the `CrmVisitRow` / `CrmCheckinRow` defaults describe a `select("*")`).
  */
 
-import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { CRM_CHECKINS_TABLE, CRM_VISITS_TABLE } from "@/lib/crm/tables";
@@ -18,6 +18,7 @@ import { isIReports360Configured } from "@/lib/crm/config";
 import { addDaysIso, hasRealVendorTime, todayIso } from "@/lib/crm/dates";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CrmCheckinRow, CrmVisitRow } from "@/lib/crm/types";
 import type {
   VisitsReportData,
@@ -117,16 +118,54 @@ type EffectiveExclusion = { ids: number[]; inList: string };
 let excludedAgentsCache: (EffectiveExclusion & { at: number }) | null = null;
 let excludedAgentsInFlight: Promise<EffectiveExclusion> | null = null;
 
+/** Server-side DISTINCT over the visits mirror (supabase/migrations/…_crm_agent_crm_ids_for_hr_ids).
+ * PostgREST has no DISTINCT, so the one-statement answer has to be an RPC. */
+const CRM_AGENT_CRM_IDS_RPC = "phx_crm_agent_crm_ids_for_hr_ids";
+
 /**
- * Distinct agent_crm_ids in the visits mirror whose sync-resolved `agent_hr_id` belongs to one of
- * `departedHrIds`. Visits alone are complete — every departed agent that has check-ins also has
- * visits (verified against production), so the check-ins table need not be scanned. Raw keyset scan
- * that deliberately does NOT apply the resigned exclusion (it is computing part of it).
+ * True when an error means "this database has no such FUNCTION" — the distinct-scan migration has
+ * not been applied here yet (a fresh clone, staging before it lands, a rollback).
+ *
+ * MUST be tested BEFORE {@link isCrmSchemaMissingError}. PostgREST reports a missing function as
+ * PGRST202 "Could not find the function public.… in the schema cache", and the phrase "schema
+ * cache" also matches the mirror-missing pattern — so checking in the other order would read a
+ * missing FUNCTION as a missing MIRROR and degrade to an EMPTY live exclusion, silently resurfacing
+ * every departed rep across Double Visit Analytics, Field Workforce Compliance and the payroll
+ * no-activity detector. Exported so that ordering is pinned by a test, not by reading order.
  */
-async function scanDepartedAgentCrmIds(departedHrIds: readonly string[]): Promise<number[]> {
-  const keys = expandHrIdFilterValues(departedHrIds);
-  if (keys.length === 0) return [];
-  const supabase = getSupabaseAdmin();
+export function isMissingCrmRpcError(error: unknown): boolean {
+  if (!error) return false;
+  const shape = error as { code?: string | null; message?: string | null };
+  const code = String(shape.code ?? "");
+  if (code === "PGRST202" || code === "42883") return true;
+  const message = String(shape.message ?? (error instanceof Error ? error.message : ""));
+  return /could not find the function|function .*does not exist/i.test(message);
+}
+
+/** Fold scanned rows into the distinct crm_id set. Shared by the RPC and the page-walk fallback so
+ * the two paths cannot drift apart. The `Number.isFinite` guard is the only addition to the
+ * original `ids.add(Number(row.agent_crm_id))`: `agent_crm_id` is `bigint NOT NULL` in production,
+ * so it can only ever reject a value a looser clone produced — and a NaN in the exclusion set would
+ * poison every `.not("agent_crm_id", "in", …)` filter built from it. */
+function collectAgentCrmIds(
+  rows: ReadonlyArray<{ agent_crm_id: number | string | null }>,
+  into: Set<number>,
+): Set<number> {
+  for (const row of rows) {
+    if (row.agent_crm_id == null) continue;
+    const id = Number(row.agent_crm_id);
+    if (Number.isFinite(id)) into.add(id);
+  }
+  return into;
+}
+
+/**
+ * The ORIGINAL keyset page walk, kept as the fallback for a database that does not have
+ * {@link CRM_AGENT_CRM_IDS_RPC} yet. Same result, one round trip per 2,000 matched rows instead of
+ * one in total — so an unmigrated environment stays correct (never silently empty) and only pays
+ * the old cost.
+ */
+async function pageWalkDepartedAgentCrmIds(keys: string[], supabase: SupabaseClient): Promise<number[]> {
   const ids = new Set<number>();
   const pageSize = 2000;
   let cursor: string | null = null;
@@ -144,11 +183,55 @@ async function scanDepartedAgentCrmIds(departedHrIds: readonly string[]): Promis
       throw new Error(error.message);
     }
     const page = (data ?? []) as Array<{ id: string; agent_crm_id: number | null }>;
-    for (const row of page) if (row.agent_crm_id != null) ids.add(Number(row.agent_crm_id));
+    collectAgentCrmIds(page, ids);
     if (page.length < pageSize) break;
     cursor = page[page.length - 1].id;
   }
   return Array.from(ids);
+}
+
+/**
+ * Distinct agent_crm_ids in the visits mirror whose sync-resolved `agent_hr_id` belongs to one of
+ * `departedHrIds`. Visits alone are complete — every departed agent that has check-ins also has
+ * visits (verified against production), so the check-ins table need not be scanned. Raw scan that
+ * deliberately does NOT apply the resigned exclusion (it is computing part of it) and does NOT
+ * apply the handed-over-slot carve-out — {@link resolveLiveDepartedExclusion} still runs on the
+ * result.
+ *
+ * The scan is unscoped by date ON PURPOSE (a departed rep's OLD rows are exactly what mark their
+ * crm_id), so the matched row set only ever grows: it used to be paged 2,000 rows at a time, which
+ * on 2026-08-09 meant 8 sequential Railway-sfo → Supabase-eu-central-1 round trips reading 15,492
+ * rows and 1,944 ms to produce 23 integers, on every cold cache, for every consumer of
+ * {@link getEffectiveExcludedInList}. Postgres answers it in one statement. `rpcAll` rather than a
+ * bare `.rpc()`: PostgREST caps every response at db-max-rows (1,000) with no error, and a silently
+ * truncated exclusion list under-hides departed reps — it costs no extra round trip when uncapped
+ * (the exact count rides back on the same response).
+ *
+ * `client` is injectable for tests only; production always uses the shared admin client.
+ */
+export async function scanDepartedAgentCrmIds(
+  departedHrIds: readonly string[],
+  client?: SupabaseClient,
+): Promise<number[]> {
+  const keys = expandHrIdFilterValues(departedHrIds);
+  if (keys.length === 0) return [];
+  const supabase = client ?? getSupabaseAdmin();
+  try {
+    const rows = await rpcAll<{ agent_crm_id: number | string | null }>(
+      supabase,
+      CRM_AGENT_CRM_IDS_RPC,
+      { p_agent_hr_ids: keys },
+      ["agent_crm_id"],
+    );
+    return Array.from(collectAgentCrmIds(rows, new Set<number>()));
+  } catch (error) {
+    if (isMissingCrmRpcError(error)) return pageWalkDepartedAgentCrmIds(keys, supabase);
+    if (isCrmSchemaMissingError(error)) return [];
+    // toQueryError, not `new Error(String(error))`: supabase-js reports network-level failures as a
+    // plain { message, code } object, and stringifying one yields "[object Object]" — which lands in
+    // the caller's crm_live_departed_exclusion_failed log with the real cause erased.
+    throw toQueryError(error);
+  }
 }
 
 /**
