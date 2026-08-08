@@ -15,6 +15,15 @@ export type DirectOrderWorkflowActionKey =
   | "revive_held"
   | "expire_held"
   | "cancel_held"
+  // Added 2026-08-08 with migration 20260808214500_direct_orders_release_held.sql. THE UNION, THE DB
+  // ROW AND THE CALL SITE MUST LAND TOGETHER — a key declared in only two of the three is audit
+  // finding F2, and an action naming an undeclared status is what caused the 2026-08-05 outage.
+  | "release_held"
+  | "keep_held"
+  // Added 2026-08-09 with migration 20260809031500_direct_orders_duplicate_cleanup.sql. Separate
+  // from cancel_held because that action's audit line says the REQUESTER withdrew the request.
+  // Nobody withdrew this one: the system found a duplicate and an SFE Manager confirmed it.
+  | "cancel_duplicate"
   // The two doors out of the held lane. Both were DECLARED in the registry from the start and
   // neither could be gated, because this union did not list them — the type was quietly the reason
   // the module's governance layer did not cover its own most important flow (audit F2).

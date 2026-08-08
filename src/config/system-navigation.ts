@@ -2268,6 +2268,17 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin"],
   },
   {
+    href: "/admin/direct-orders/cleanup",
+    icon: Sparkles,
+    label: "Duplicate Cleanup",
+    description: "One pharmacy entered twice, one order submitted twice — the system works out the fix and you confirm it.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // WIDER than the Held Desk on purpose (owner rule 5, 2026-08-09): the owner put the SFE Manager
+    // in the reviewer's seat for this cleanup. The service admits exactly these two roles, so the
+    // link and the gate agree — a wider link would only lead to a 403.
+    roles: ["Super Admin", "SFE Manager"],
+  },
+  {
     href: "/admin/direct-orders/rep-counters",
     icon: Gauge,
     label: "Per-rep Counters",

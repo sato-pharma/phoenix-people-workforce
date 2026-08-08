@@ -4,6 +4,8 @@ import type {
   DirectOrderAreaRep,
   DirectOrderPharmacyGeo,
   DirectOrderRequest,
+  DirectOrderRetailHistoryRow,
+  DirectOrderStepState,
 } from "@/lib/direct-orders/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,16 +204,23 @@ export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail):
     // the month stopped being derived from the approval date.
     { label: "Sales month", value: request.salesMonth ?? `${DASH} (not booked into a month yet)` },
     { label: "Submitted", value: dateOnly(request.createdAt) },
-    { label: "Pharmacy registered by", value: text(pharmacy?.createdByHrId) },
+    // A name, not the bare HR-ID (owner rule) — falls back to the id only if the directory has
+    // no name for it, same fallback shape as requesterName.
+    { label: "Pharmacy registered by", value: text(detail.pharmacyRegisteredByName ?? pharmacy?.createdByHrId) },
     { label: "Pharmacy status", value: pharmacy ? (pharmacy.active ? "Active" : "Inactive") : DASH },
-    {
-      label: "Geography check",
-      value: pharmacy
-        ? pharmacy.geoVarianceResolved
-          ? "Resolved"
-          : "Not flagged"
-        : DASH,
-    },
+    // "Geography check" was REMOVED here on 2026-08-08, not merely hidden by one screen.
+    //
+    // It read `geoVarianceResolved` and printed "Resolved" or "Not flagged" — one string covering
+    // three opposite situations: checked and agreeing, never checked, and not checkable at all.
+    // "Not flagged" reads as a pass and most often meant nobody had looked.
+    //
+    // It is replaced by `DirectOrderApprovalDetail.geographyCheck` (see geography-check.ts), which
+    // actually compares the distributor's own recorded brick/area against the brick/area declared on
+    // the request and against the typed address, and returns four distinct verdicts.
+    //
+    // Deleted from the shared field list rather than filtered out by the admin component, because
+    // the PORTAL renders this same list — so hiding it in one place left District/Regional/National
+    // Sales Managers still reading "Not flagged" on the screen they actually work in.
   );
 
   // Conditional — only once they carry a value.
@@ -313,4 +322,280 @@ export function buildDirectOrderNotificationMetrics(
     { label: "Distributor codes", value: ctx.distributorCodesText.trim() || "none on file — distributor sales cannot be linked to this pharmacy" },
     { label: "Collection date", value: dateOnly(request.collectionDate) },
   ];
+}
+
+// ── The sales-history matrix (owner request, 2026-08-08) ──────────────────────────────────────
+//
+// "show it like a table products/months in rows or columns, every cell then shows units sold in
+// this product in this month from which distributor."
+//
+// RETAIL ONLY, deliberately. A direct order carries no distributor of its own, so per-cell
+// distributor attribution on that side would be invented — and until 2026-08-08 it literally was:
+// each order was fanned across every code the pharmacy had, counting it N times at full value.
+// Direct sales keep their own section, without a distributor column.
+//
+// Pure: the rows are already filtered for confidentiality and line scope server-side before they
+// reach here (resolveHistoryVisibility), so this only reshapes what the viewer is allowed to see.
+
+export type DirectOrderMatrixCell = {
+  units: number;
+  bonus: number;
+  /** Which distributor(s) supplied it that month — the owner asked for this per cell. */
+  distributors: string[];
+};
+
+export type DirectOrderSalesMatrix = {
+  /** Months oldest → newest, so the eye reads a trend left to right. */
+  months: string[];
+  /** One row per product, ordered by total units desc — the biggest relationship first. */
+  products: Array<{
+    productCode: string;
+    productName: string;
+    /** Same length and order as `months`; null where that product had no sales that month. */
+    cells: Array<DirectOrderMatrixCell | null>;
+    totalUnits: number;
+  }>;
+  /** Column totals, same order as `months`. */
+  monthTotals: number[];
+  grandTotalUnits: number;
+};
+
+/**
+ * Pivot flat retail rows into products × months.
+ *
+ * Units are the raw `qty` — the same column the monthly closing sums into `total_qty`, NOT
+ * `effective_units`. Bonus is carried separately and never folded into units: they are different
+ * things and merging them would overstate what the pharmacy actually bought.
+ */
+export function buildDirectOrderSalesMatrix(
+  rows: ReadonlyArray<DirectOrderRetailHistoryRow>,
+): DirectOrderSalesMatrix {
+  const months = [...new Set(rows.map((row) => row.month).filter(Boolean))].sort();
+  const monthIndex = new Map(months.map((month, index) => [month, index]));
+
+  const byProduct = new Map<
+    string,
+    { productCode: string; productName: string; cells: Array<DirectOrderMatrixCell | null>; totalUnits: number }
+  >();
+
+  for (const row of rows) {
+    const index = monthIndex.get(row.month);
+    if (index === undefined) continue;
+    const existing =
+      byProduct.get(row.productCode) ??
+      {
+        productCode: row.productCode,
+        productName: row.productName || row.productCode,
+        cells: months.map(() => null),
+        totalUnits: 0,
+      };
+    const cell = existing.cells[index] ?? { units: 0, bonus: 0, distributors: [] };
+    cell.units += row.qty;
+    cell.bonus += row.bonus;
+    // Named, not counted: "which distributor" is the question the owner asked the cell to answer,
+    // and two distributors supplying the same product in one month is a real and interesting case.
+    const distributorLabel = row.distributorName || row.distributorCode;
+    if (distributorLabel && !cell.distributors.includes(distributorLabel)) cell.distributors.push(distributorLabel);
+    existing.cells[index] = cell;
+    existing.totalUnits += row.qty;
+    byProduct.set(row.productCode, existing);
+  }
+
+  const products = [...byProduct.values()].sort(
+    (a, b) => b.totalUnits - a.totalUnits || a.productName.localeCompare(b.productName),
+  );
+  const monthTotals = months.map((_, index) =>
+    products.reduce((sum, product) => sum + (product.cells[index]?.units ?? 0), 0),
+  );
+
+  return {
+    months,
+    products,
+    monthTotals,
+    grandTotalUnits: products.reduce((sum, product) => sum + product.totalUnits, 0),
+  };
+}
+
+// ── Pricing breakdown (the "show your working" the approval window never showed) ──────────────
+
+export type DirectOrderPricingBreakdown = {
+  basis: "bonus" | "discount";
+  qty: number;
+  /** The price the basis actually prices at — pharmacy price for bonus, public price for discount. */
+  unitPrice: number | null;
+  bonusUnits: number | null;
+  discountPct: number | null;
+  /** qty × unitPrice (bonus) or qty × unitPrice × (1 − discountPct/100) (discount). Null when the
+   *  basis price was never set — the same "not set" a missing price means everywhere else here. */
+  computedValue: number | null;
+  salesValue: number;
+};
+
+/**
+ * Re-derives the working behind `request.salesValue`, purely for display — an approver sees
+ * "288 × 240.9 = 69,379.2 EGP" instead of a bare total with nothing to check it against. Does not
+ * touch how `salesValue` is actually computed or stored (that stays `computeDirectOrderSalesValue`/
+ * `computeDiscountSalesValue` in approval-flow.ts); this only re-runs the same arithmetic on
+ * fields already present on the request.
+ */
+export function computeDirectOrderPricingBreakdown(
+  request: Pick<
+    DirectOrderRequest,
+    "dealType" | "qty" | "bonus" | "pharmacyPriceSnapshot" | "publicPriceSnapshot" | "discountPct" | "salesValue"
+  >,
+): DirectOrderPricingBreakdown {
+  if (request.dealType === "discount") {
+    const unitPrice = request.publicPriceSnapshot;
+    const discountPct = request.discountPct ?? 0;
+    const computedValue = unitPrice == null ? null : request.qty * unitPrice * (1 - discountPct / 100);
+    return {
+      basis: "discount",
+      qty: request.qty,
+      unitPrice,
+      bonusUnits: null,
+      discountPct,
+      computedValue,
+      salesValue: request.salesValue,
+    };
+  }
+  const unitPrice = request.pharmacyPriceSnapshot;
+  return {
+    basis: "bonus",
+    qty: request.qty,
+    unitPrice,
+    bonusUnits: request.bonus,
+    discountPct: null,
+    computedValue: unitPrice == null ? null : request.qty * unitPrice,
+    salesValue: request.salesValue,
+  };
+}
+
+// ── Approval-chain narrative (the bare status-dot list, given a sentence per rung) ─────────────
+
+export type DirectOrderApprovalNarrativeStep = DirectOrderStepState & {
+  approverName: string | null;
+  decidedByName: string | null;
+  state: "done" | "current" | "waiting" | "rejected";
+  sentence: string;
+};
+
+/**
+ * Turns the ordered step list into one sentence per rung, borrowing the narrative-stepper IDEA
+ * from the Outstation portal's own submission tracker (not its code — steps here carry different
+ * fields). Only the FIRST not-yet-decided step reads "current"; the raw data has no such
+ * distinction on its own (every undecided rung is stored as `status: "pending"`), so that's tracked
+ * here rather than re-derived by each renderer.
+ */
+export function buildDirectOrderApprovalNarrative(
+  steps: Array<DirectOrderStepState & { approverName: string | null; decidedByName: string | null }>,
+): DirectOrderApprovalNarrativeStep[] {
+  let currentAssigned = false;
+  return steps.map((step) => {
+    const who = step.approverName ?? step.label;
+    if (step.status === "rejected") {
+      return {
+        ...step,
+        state: "rejected",
+        sentence: step.decisionComment
+          ? `${step.decidedByName ?? who} rejected this request: "${step.decisionComment}"`
+          : `${step.decidedByName ?? who} rejected this request.`,
+      };
+    }
+    if (step.status === "approved") {
+      return { ...step, state: "done", sentence: `${step.decidedByName ?? who} approved this rung.` };
+    }
+    if (!currentAssigned) {
+      currentAssigned = true;
+      return { ...step, state: "current", sentence: `Waiting on ${who} now.` };
+    }
+    return { ...step, state: "waiting", sentence: `Will move to ${who} next.` };
+  });
+}
+
+// ── Status banner (one function, so the admin and portal screens can no longer disagree) ───────
+
+export type DirectOrderStatusBannerTone =
+  | "held"
+  | "expired"
+  | "pharmacy-rejected"
+  | "pharmacy-pending-review"
+  | "finance-pending";
+
+export type DirectOrderStatusBanner = { tone: DirectOrderStatusBannerTone; message: string };
+
+/** Tailwind classes per tone — the SAME for every shell that renders a banner (admin, portal). */
+export const DIRECT_ORDER_STATUS_BANNER_CLASSES: Record<
+  DirectOrderStatusBannerTone,
+  { container: string; text: string }
+> = {
+  held: { container: "bg-orange-50", text: "text-orange-900" },
+  expired: { container: "bg-slate-100", text: "text-slate-700" },
+  "pharmacy-rejected": { container: "bg-rose-100", text: "font-black text-rose-900" },
+  "pharmacy-pending-review": { container: "bg-rose-50", text: "text-rose-900" },
+  "finance-pending": { container: "bg-amber-50", text: "text-amber-900" },
+};
+
+/**
+ * Which status banner (if any) belongs above this request's fields.
+ *
+ * Extracted from what used to be five conditionals hand-written inline in the ADMIN detail
+ * component only — which is exactly why the portal detail screen (the one District/Regional/
+ * National Sales Managers actually reach, per resolveNavigationMode) showed just one of the five.
+ * One function, both screens, so they cannot drift apart again.
+ */
+export function resolveDirectOrderStatusBanner(
+  detail: Pick<DirectOrderApprovalDetail, "request" | "pharmacy">,
+): DirectOrderStatusBanner | null {
+  const { request, pharmacy } = detail;
+  if (request.status === "held") {
+    return {
+      tone: "held",
+      message:
+        "HELD — this request stands outside the approval flow. Its pharmacy is not in the master " +
+        "database, so no approver has it as work and nothing can be approved here. It moves only " +
+        "when the pharmacy passes validation, and an untouched held request expires after 14 days.",
+    };
+  }
+  if (request.status === "expired") {
+    return {
+      tone: "expired",
+      message:
+        "EXPIRED — this request stayed held for 14 days without its pharmacy passing validation, " +
+        "and closed automatically. Resubmit with a pharmacy from the master database.",
+    };
+  }
+  // Proven false, not merely unreviewed. An approver must never see this as "awaiting a look" — the
+  // pharmacy was refused, and the strongest thing this screen can do is say so before anyone
+  // considers acting on the order.
+  if (pharmacy?.verificationStatus === "rejected") {
+    return {
+      tone: "pharmacy-rejected",
+      message:
+        "REJECTED PHARMACY — this pharmacy was examined and found not to be real. The order " +
+        "behind it must not be approved, and the pharmacy cannot be used again.",
+    };
+  }
+  if (pharmacy?.verificationStatus === "pending_review") {
+    return {
+      tone: "pharmacy-pending-review",
+      message:
+        "New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of " +
+        "being picked from the list, so nobody has checked that its distributor code is real. " +
+        "That code is what Phoenix uses to find this pharmacy's sales at the distributor, and a " +
+        "wrong one would pull another pharmacy's sales in here. The SFE Manager confirms the " +
+        "pharmacy at their own rung; until then this order cannot be finalized.",
+    };
+  }
+  // The golden rule, stated where the money is judged (spec C2): CEO approval is a commercial
+  // decision, not an accounting event. Until Finance books a month, this order sits in NO month's
+  // numbers — and that absence must be readable, not implied.
+  if (request.status === "approved" && !request.salesMonth) {
+    return {
+      tone: "finance-pending",
+      message:
+        "Approved — awaiting Finance month. The sales are NOT in any month's numbers yet: they " +
+        "inject only when the Finance Manager books this order into a month.",
+    };
+  }
+  return null;
 }

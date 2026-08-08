@@ -20,13 +20,34 @@ export function runDirectOrdersHeldLaneTests() {
     "utf8",
   );
 
-  // ── THE HEADLINE: the submit fork exists and is decided by the PHARMACY ROW ─────────────
+  // ── THE HEADLINE: the submit fork exists, and is decided by EVIDENCE about the pharmacy ──
   // If someone re-unifies submit into a single always-pending_approval path, this is the
   // assertion that must fire first.
+  //
+  // RE-AIMED 2026-08-08. This pinned the literal line
+  // `const submitAsHeld = pharmacy.verificationStatus === "pending_review";` — verification status
+  // as the SOLE input. That is exactly what the owner changed: a hand-typed pharmacy whose
+  // distributor code resolves in the master database, in the brick the request declares, is proven
+  // real and no longer freezes outside the chain. The lane itself is untouched, and review is not
+  // skipped — the chain's first rung is the SFE Manager either way.
+  //
+  // What must still hold, and is asserted below: the fork EXISTS, it is decided in the domain by a
+  // shared pure rule rather than inline in the service, and an unproven pharmacy still submits HELD.
   assert.match(
     serviceSource,
-    /const submitAsHeld = pharmacy\.verificationStatus === "pending_review";/,
-    "HELD LANE GONE: submit must fork on the pharmacy row's verification status — an unknown pharmacy submits HELD, never into the chain",
+    /const submitAsHeld = holdDecision\.hold;/,
+    "HELD LANE GONE: submit must still fork — an unproven pharmacy submits HELD, never straight into the chain",
+  );
+  assert.match(
+    serviceSource,
+    /const holdDecision = decideDirectOrderHold\(\{/,
+    "the fork must be decided by the shared pure rule (hold-decision.ts), never re-implemented inline",
+  );
+  // The pharmacy row is still an input — losing it would release rejected or unreviewed pharmacies.
+  assert.match(
+    serviceSource,
+    /verificationStatus: pharmacy\.verificationStatus,/,
+    "the hold decision must still read the pharmacy's verification status, not only its codes",
   );
 
   // The fork must reach all three write surfaces: registry action, request status, and the clock.
@@ -59,13 +80,21 @@ export function runDirectOrdersHeldLaneTests() {
     /await reviveHeldDirectOrdersForPharmacy\(access, input\.pharmacyId\);/,
     "confirming a pharmacy must revive its held orders — validation is the one door out, with no separate button to forget",
   );
+  // The gate moved into the shared helper on 2026-08-08 (both doors out of held run it), so the
+  // action key is passed in and the assertion below checks the SAME two facts at their new homes:
+  // revive still names its registry action, and the helper still declares the destination status.
   assert.match(
     serviceSource,
-    /actionKey: "revive_held",\s*\n\s*expectedNextStatus: "pending_approval",/,
-    "revival must pass the registry gate with the exact destination status",
+    /actionKey: "revive_held",/,
+    "revival must still name its registry action — a door that stops naming one is an ungated door",
+  );
+  assert.match(
+    serviceSource,
+    /actionKey: opts\.actionKey,\s*\n\s*expectedNextStatus: "pending_approval",/,
+    "the shared held-lane helper must pass the registry gate the exact destination status",
   );
   // Fresh chain at revival, defensively replacing any stale steps.
-  const reviveIdx = serviceSource.indexOf("async function reviveHeldDirectOrdersForPharmacy(");
+  const reviveIdx = serviceSource.indexOf("async function moveHeldDirectOrdersIntoChain(");
   assert.ok(reviveIdx > 0, "the revival function must exist");
   const reviveBody = serviceSource.slice(reviveIdx, reviveIdx + 4200);
   assert.match(reviveBody, /await buildApprovalChain\(\{/, "revival must build the chain fresh (today's managers)");

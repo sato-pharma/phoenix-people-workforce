@@ -6,6 +6,7 @@ import { ChevronRight } from "lucide-react";
 import {
   PortalDesktopTable,
   PortalEmptyState,
+  PortalMetricCard,
   PortalRecordCard,
   PortalRecordFields,
   PortalResponsiveDataList,
@@ -25,12 +26,29 @@ const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) 
 // keeps the portal's rounded ring look under variant="ring". Four copies of this existed; that is
 // why "Approved" could not be made to say "awaiting Finance month" in one edit (spec C2).
 
-function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalListItem[]; base: string; showWaiting: boolean }) {
+function ApprovalsList({
+  rows,
+  base,
+  showWaiting,
+  emptyTitle,
+  emptyMessage,
+}: {
+  rows: DirectOrderApprovalListItem[];
+  base: string;
+  showWaiting: boolean;
+  emptyTitle?: string;
+  emptyMessage?: string;
+}) {
   if (rows.length === 0) {
     return (
       <PortalEmptyState
-        title={showWaiting ? "Nothing waiting on you" : "No response history yet"}
-        message={showWaiting ? "Direct orders that need your approval will appear here." : "Requests you have approved, rejected, or returned will show up here."}
+        title={emptyTitle ?? (showWaiting ? "Nothing waiting on you" : "No response history yet")}
+        message={
+          emptyMessage ??
+          (showWaiting
+            ? "Direct orders that need your approval will appear here."
+            : "Requests you have approved, rejected, or returned will show up here.")
+        }
       />
     );
   }
@@ -134,10 +152,31 @@ function ApprovalsList({ rows, base, showWaiting }: { rows: DirectOrderApprovalL
 }
 
 export function DirectOrderPortalApprovals({ data, backHrefBase }: { data: DirectOrderWorkspaceData; backHrefBase: string }) {
+  // Same already-fetched lists the two sections below render — no new query, just a summary.
+  const approvedCount = data.history.filter((row) => row.status === "approved").length;
+  const rejectedCount = data.history.filter((row) => row.status === "rejected" || row.status === "returned").length;
+
   return (
     <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <PortalMetricCard accent="orange" label="Awaiting" value={data.awaiting.length} note={money(data.awaiting.reduce((sum, row) => sum + row.salesValue, 0))} />
+        <PortalMetricCard accent="sky" label="Held" value={data.held.length} note={money(data.held.reduce((sum, row) => sum + row.salesValue, 0))} />
+        <PortalMetricCard accent="emerald" label="Approved" value={approvedCount} note="decided by you" />
+        <PortalMetricCard accent="rose" label="Rejected" value={rejectedCount} note="rejected or returned" />
+      </div>
+
       <PortalSection eyebrow="Action needed" title="Awaiting your response" description={`${data.awaiting.length} pending`}>
         <ApprovalsList rows={data.awaiting} base={backHrefBase} showWaiting />
+      </PortalSection>
+
+      <PortalSection eyebrow="Parked" title="Held" description="Pharmacy not yet confirmed — outside the approval chain until it is.">
+        <ApprovalsList
+          rows={data.held}
+          base={backHrefBase}
+          showWaiting={false}
+          emptyTitle="Nothing held"
+          emptyMessage="Held requests in your scope will appear here — parked because their pharmacy is not yet in the master database."
+        />
       </PortalSection>
 
       <PortalSection eyebrow="History" title="Your response history">

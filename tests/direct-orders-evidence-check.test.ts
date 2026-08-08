@@ -23,6 +23,12 @@ import { signMatchesClaimedName } from "../src/lib/direct-orders/evidence-check.
 const READER = "../src/lib/direct-orders/evidence-check.ts";
 const VALIDATION = "../src/lib/direct-orders/pharmacy-validation.ts";
 const DESK = "../src/components/direct-orders/validation-desk.tsx";
+// The rendering that actually shows the reading — the EvidenceReading component — moved out of
+// the desk on 2026-08-08 so the admin AND portal approval screens could reuse it unchanged (a
+// second, third copy is exactly how the D4 wording would drift). It is the one file that now
+// carries the visible prose this test exists to police, so it must be swept in its own right, not
+// assumed to still live inside DESK.
+const EVIDENCE_READING = "../src/components/direct-orders/evidence-reading.tsx";
 const MIGRATION = "../supabase/migrations/20260806090000_direct_order_evidence_check.sql";
 
 function read(rel: string) {
@@ -33,6 +39,7 @@ export function runDirectOrderEvidenceCheckTests() {
   const reader = read(READER);
   const validation = read(VALIDATION);
   const desk = read(DESK);
+  const evidenceReading = read(EVIDENCE_READING);
 
   // ── The name comparison, EXECUTED ────────────────────────────────────────────────────────
   //
@@ -81,17 +88,17 @@ export function runDirectOrderEvidenceCheckTests() {
     "the reader must be able to return no answer at all when it cannot reach one",
   );
   assert.match(
-    desk,
+    evidenceReading,
     /The photo has not been read\. Judge it yourself\./,
     "A MISSING READING MUST SAY SO: rendering nothing is read as 'nothing wrong', which is the one thing an absent answer must never mean — the GPS chip already prints 'distance unknown' for the same reason",
   );
   assert.match(
-    desk,
+    evidenceReading,
     /Could not tell whether this is a pharmacy\./,
     "a null isPharmacy must render as could-not-tell, never fall through to the positive branch",
   );
   assert.match(
-    desk,
+    evidenceReading,
     /Could not read the sign\./,
     "an unreadable sign must say so rather than silently omitting the line",
   );
@@ -164,19 +171,24 @@ export function runDirectOrderEvidenceCheckTests() {
     return out;
   };
   const banned = /\b(AI|GPT|OpenAI|LLM|model|confidence|artificial intelligence)\b/i;
-  const visible = proseOnly(desk);
-  for (const text of [...stringLiterals(visible), ...[...visible.matchAll(/>\s*([A-Za-z][^<>{}]{8,})\s*</g)].map((m) => m[1])]) {
-    if (/^[a-z0-9:\-\[\]#/. ]+$/.test(text)) continue;
-    if (/^[@.]{1,2}\//.test(text)) continue;
-    assert.doesNotMatch(
-      text,
-      banned,
-      `D4 VIOLATION — the desk shows "${text}". The reading presents as Phoenix reading a photo: no model named, and no confidence percentage, because a number invites people to treat a reading as a score`,
-    );
+  // Swept per source, not concatenated — the validation desk is one surface and EvidenceReading
+  // (shared by the desk and both approval-detail screens) is another; a failure must point at
+  // which one actually leaked the word.
+  for (const [label, source] of [["the validation desk", desk], ["EvidenceReading", evidenceReading]] as const) {
+    const visible = proseOnly(source);
+    for (const text of [...stringLiterals(visible), ...[...visible.matchAll(/>\s*([A-Za-z][^<>{}]{8,})\s*</g)].map((m) => m[1])]) {
+      if (/^[a-z0-9:\-\[\]#/. ]+$/.test(text)) continue;
+      if (/^[@.]{1,2}\//.test(text)) continue;
+      assert.doesNotMatch(
+        text,
+        banned,
+        `D4 VIOLATION — ${label} shows "${text}". The reading presents as Phoenix reading a photo: no model named, and no confidence percentage, because a number invites people to treat a reading as a score`,
+      );
+    }
   }
   // The similarity IS stored — for later analysis — and must NOT be rendered.
   assert.match(reader, /similarity: number \| null;/, "similarity must be stored for analysis");
-  assert.doesNotMatch(desk, /\{check\.similarity/, "similarity must never be rendered (spec D4)");
+  assert.doesNotMatch(evidenceReading, /\{check\.similarity/, "similarity must never be rendered (spec D4)");
 
   // ── The column exists and says what null means ───────────────────────────────────────────
   const migration = read(MIGRATION);

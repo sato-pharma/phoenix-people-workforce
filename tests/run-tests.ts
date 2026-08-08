@@ -692,6 +692,9 @@ import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-distric
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
 import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-excluded-members.test.ts";
+import { runDirectOrderEvidenceVisibilityTests } from "./direct-orders-evidence-visibility.test.ts";
+import { runDirectOrderHoldReleaseTests } from "./direct-orders-hold-release.test.ts";
+import { runDirectOrderDuplicateCleanupTests } from "./direct-orders-duplicate-cleanup.test.ts";
 import { runNsmCrmComplianceTests } from "./nsm-crm-compliance.test.ts";
 import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
 import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
@@ -1634,6 +1637,18 @@ await runTest(
 await runTest(
   "automated payroll run-scoped exclusion (excludeEmployeeFromRun's population filter)",
   runAutomatedPayrollExcludedMembersTests,
+);
+await runTest(
+  "direct order pharmacy evidence visibility (requester never sees the AI note, the read path stays ungated, both approval screens share one renderer)",
+  runDirectOrderEvidenceVisibilityTests,
+);
+await runTest(
+  "direct order held fork (the distributor code is the proof; a brick mismatch still holds; placeholders prove nothing)",
+  runDirectOrderHoldReleaseTests,
+);
+await runTest(
+  "direct order duplicate cleanup (one pharmacy entered twice, one order submitted twice — and neither merges on a name)",
+  runDirectOrderDuplicateCleanupTests,
 );
 await runTest(
   "NSM/RM CRM First Visit board (GPS-first ranking, a clockless submission still ranks, first 10 early birds, and passing the cap never returns you to the red list)",

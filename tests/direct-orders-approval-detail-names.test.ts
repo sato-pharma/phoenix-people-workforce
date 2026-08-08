@@ -61,6 +61,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
   return {
     request: request(),
     requesterName: "Mahmoud Adel",
+    pharmacyRegisteredByName: "Mahmoud Adel",
     pharmacy: {
       id: "ph-1",
       phoenixPharmacyCode: "DOP-000123",
@@ -80,6 +81,11 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       active: true,
       trustState: "trusted",
       probationStartedAt: null,
+      // No System Admin has ruled on this pharmacy's hold — which is distinct from either ruling.
+      holdReleaseGround: null,
+      holdReleaseReason: null,
+      holdReleaseDecidedByHrId: null,
+      holdReleaseDecidedAt: null,
     },
     productPharmacyPrice: null,
     productPublicPrice: null,
@@ -101,6 +107,16 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
+    // The common case (2026-08-08): most orders never touch the held/validation lane at all.
+    pharmacyEvidence: null,
+    possibleDistributorMatches: [],
+    // No candidates, so nothing was refused — auto-link had nothing to decide about.
+    autoLinkRefusal: null,
+    retailLoadFailed: false,
+    directLoadFailed: false,
+    hiddenConfidentialCount: 0,
+    retailMatchedPairs: 0,
+    geographyCheck: null,
     ...overrides,
   };
 }
@@ -266,7 +282,17 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.equal(valueOf("Sato pharmacy code"), "DOP-000123");
     assert.equal(valueOf("Sato product code"), "CN001");
     assert.equal(valueOf("Deal type"), "Bonus");
-    assert.equal(valueOf("Pharmacy registered by"), "HR-100");
+    // A NAME, not the bare HR-ID (owner rule, 2026-08-08 — "show human-readable names, never raw
+    // codes"). This asserted "HR-100" until then, which is exactly what the owner objected to on
+    // screen. The id remains the fallback when the directory has no name for it, checked below.
+    assert.equal(valueOf("Pharmacy registered by"), "Mahmoud Adel");
+    assert.equal(
+      buildDirectOrderDetailFields(detail({ pharmacyRegisteredByName: null })).find(
+        (field) => field.label === "Pharmacy registered by",
+      )?.value,
+      "HR-100",
+      "with no resolved name the HR_ID must still show — a blank would hide who registered the pharmacy",
+    );
     assert.equal(valueOf("Pharmacy status"), "Active");
 
     // BOTH prices are always present, each stating whether it priced THIS deal — an approver
@@ -510,10 +536,22 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(retailBody, /unmatchable: true/, "an unmatchable pharmacy must say so rather than show zero");
 
     // The two channels must never be merged into one figure.
+    //
+    // Sliced to the function's actual END, not a fixed character count. It was `+ 3000`, then
+    // `+ 4200`, and broke BOTH times something was added to the function — twice in one day. A
+    // magic width silently turns into either a false pass (window runs past the function into the
+    // next one) or a false failure (window stops short), and it had already done the first: the
+    // 3000 window once matched a `<tfoot>` "Total" belonging to the following function entirely.
     const detailIdx = serviceSource.indexOf("export async function getDirectOrderApprovalDetail(");
-    const detailBody = serviceSource.slice(detailIdx, detailIdx + 3000);
+    assert.ok(detailIdx > -1, "getDirectOrderApprovalDetail must exist");
+    const detailEnd = serviceSource.indexOf("\nexport ", detailIdx + 1);
+    const detailBody = serviceSource.slice(detailIdx, detailEnd === -1 ? undefined : detailEnd);
     assert.match(detailBody, /retailHistory: retail\.rows/, "retail rides its own field");
-    assert.match(detailBody, /pharmacyHistory,/, "direct-order history keeps its own field");
+    assert.match(
+      detailBody,
+      /pharmacyHistory: pharmacyHistory\.rows/,
+      "direct-order history keeps its own field (it now arrives as {rows, hiddenConfidentialCount, loadFailed})",
+    );
   }
 
   // ── The pharmacy-price recompute script ────────────────────────────────────
@@ -625,15 +663,25 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     );
     // Plain English, checked as a rule rather than a one-off: "catalogue" is the word the owner
     // said he could not understand ("i donot under4stand"), and it had leaked into three surfaces.
+    //
+    // The approval-window banner text moved to resolveDirectOrderStatusBanner in approval-fields.ts
+    // on 2026-08-08 (both the admin AND portal screens call it now, instead of each hand-writing the
+    // sentence) — so that is the one place left that could leak "catalogue" back in. Reading the
+    // component file for the literal condition would now silently split on nothing and check an
+    // empty string forever; that exact failure mode is why this reads the new location by name, and
+    // asserts the slice is non-empty rather than trusting the split succeeded.
+    const approvalFieldsSourceForBannerCheck = readFileSync(
+      new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url),
+      "utf8",
+    );
     for (const [label, source] of [
       ["the refusal message", decideBody],
       [
         "the approval-window banner",
-        readFileSync(new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url), "utf8")
-          .split("verificationStatus === \"pending_review\"")[1]
-          ?.slice(0, 700) ?? "",
+        approvalFieldsSourceForBannerCheck.split("pharmacy?.verificationStatus === \"pending_review\"")[1]?.slice(0, 700) ?? "",
       ],
     ] as const) {
+      assert.notEqual(source, "", `${label} source slice must not be empty — the anchor text must still exist to check`);
       assert.doesNotMatch(source, /catalogue/i, `${label} must not use the word "catalogue"`);
     }
     // Earlier rungs must NOT be blocked — SFE and the sales line still review normally.
@@ -816,15 +864,29 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "clearing a pharmacy must be audited with its prior state",
     );
 
-    // The flag is pointless if the approver cannot see it.
+    // The flag is pointless if the approver cannot see it. The condition itself moved into
+    // resolveDirectOrderStatusBanner (approval-fields.ts, 2026-08-08) so admin and portal share one
+    // sentence instead of each hand-writing it — checked in BOTH places: the window actually calls
+    // the shared resolver, and the resolver itself still gates on the unverified pharmacy.
     const adminDetail = readFileSync(
       new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
       "utf8",
     );
     assert.match(
       adminDetail,
+      /resolveDirectOrderStatusBanner\(/,
+      "the approval window must surface its status banner (including an unverified pharmacy) via the shared resolver",
+    );
+    // Read fresh rather than reused from the earlier block above — that const is scoped to its own
+    // `{ ... }` test block and does not reach this one.
+    const approvalFieldsSourceForPendingReviewGate = readFileSync(
+      new URL("../src/lib/direct-orders/approval-fields.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      approvalFieldsSourceForPendingReviewGate,
       /pharmacy\?\.verificationStatus === "pending_review"/,
-      "the approval window must surface an unverified pharmacy",
+      "the shared status-banner resolver must still gate on an unverified pharmacy",
     );
 
     // The picker must not silently keep a code that belonged to a different distributor.
@@ -1147,7 +1209,12 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       const idx = source.indexOf("distributors.length === 0");
       assert.ok(idx > -1, `${label} must handle a pharmacy with no distributor codes`);
-      const emptyBranch = source.slice(idx, idx + 1500);
+      // Window widened 1500 → 4000 on 2026-08-08. The empty branch legitimately grew: it now
+      // renders explicit "Distributor / Distributor code: Not provided" fields (a missing FIELD read
+      // as "the screen forgot to ask"), and it forks into THREE states rather than one, because
+      // "no code exists anywhere" and "a real code exists but was never linked to this record"
+      // demand opposite reactions and were briefly printed on top of each other.
+      const emptyBranch = source.slice(idx, idx + 4000);
       assert.match(
         emptyBranch,
         /No distributor customer code on file/,
@@ -1281,7 +1348,18 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // Manager cannot clear an arbitrary pharmacy they are not currently approving. Slice to the
     // exported function's own body so a neighbouring helper's prose cannot satisfy or trip this.
     const ackIdx = serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(");
-    const ackBody = serviceSource.slice(ackIdx, serviceSource.indexOf("\n}\n", ackIdx));
+    // CRLF-SAFE. This slice used to look for the literal "\n}\n", which never matches a file with
+    // Windows line endings ("\r\n}\r\n") — indexOf returned -1, slice(ackIdx, -1) ran to the end of
+    // the file, and the guard silently covered all 5,000 lines instead of this one function. It only
+    // looked green because "SFE Manager" happened not to appear anywhere later in service.ts; the
+    // moment it did (the 2026-08-09 cleanup gate, a completely unrelated function) the test failed
+    // and pointed at the wrong code. Match the closing brace at column 0 on either line ending.
+    const ackEnd = serviceSource.slice(ackIdx).search(/\r?\n\}\r?\n/);
+    const ackBody = serviceSource.slice(ackIdx, ackEnd === -1 ? undefined : ackIdx + ackEnd);
+    assert.ok(
+      ackEnd !== -1 && ackBody.length < 2000,
+      "the acknowledge slice must end at the function's own closing brace — a slice that runs to end-of-file makes every assertion below it meaningless",
+    );
     assert.match(
       ackBody,
       /access\.scope === "system" \|\| access\.role === "Super Admin"/,
