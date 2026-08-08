@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 
 import { buildEarlyBirdsCandidateKey } from "../src/lib/early-birds/candidate-key.ts";
-import { earlyBirdsPeriodFromKey } from "../src/lib/early-birds/period.ts";
 import {
   resolveCurrentEarlyBirdsCandidate,
   type EarlyBirdsCandidateRow,
@@ -11,7 +10,7 @@ import {
   EARLY_BIRDS_AUTO_APPROVE_AFTER_DAYS,
   EARLY_BIRDS_BACKFILL_PERIODS,
   EARLY_BIRDS_CLOSE_EARLIEST_CAIRO_MINUTES,
-  earlyBirdsAutoApproveDateIso,
+  earlyBirdsAutoApproveDueAtIso,
   isEarlyBirdsAutoApproveDue,
   isEarlyBirdsNationalCrownDue,
   resolveDueEarlyBirdsPeriods,
@@ -173,36 +172,61 @@ export function runEarlyBirdsDecisionTests() {
     );
   }
 
-  // ── Auto-approve after five days ────────────────────────────────────────────────
+  // ── Auto-approve five days after the MANAGER WAS ASKED ──────────────────────────
   {
-    const period = earlyBirdsPeriodFromKey("2026-08-H1"); // ends 2026-08-15
     assert.equal(EARLY_BIRDS_AUTO_APPROVE_AFTER_DAYS, 5);
-    assert.equal(earlyBirdsAutoApproveDateIso(period), "2026-08-20");
-    assert.equal(isEarlyBirdsAutoApproveDue(period, "2026-08-19"), false, "the manager still has time");
+    assert.equal(earlyBirdsAutoApproveDueAtIso("2026-08-16T03:00:00Z"), "2026-08-21");
     assert.equal(
-      isEarlyBirdsAutoApproveDue(period, "2026-08-20"),
+      isEarlyBirdsAutoApproveDue({ computedAtIso: "2026-08-16T03:00:00Z", todayIso: "2026-08-20" }),
+      false,
+      "the manager still has time",
+    );
+    assert.equal(
+      isEarlyBirdsAutoApproveDue({ computedAtIso: "2026-08-16T03:00:00Z", todayIso: "2026-08-21" }),
       true,
       "on day five rank #1 is crowned regardless — a rep must never lose his award to his manager's inaction",
     );
   }
 
+  // ── A BACKFILLED fortnight must not self-crown the instant it is created ────────
+  {
+    // The real incident: on 2026-08-09 the first sweep closed 2026-07-H2, whose period-end deadline
+    // (2026-08-05) had already passed — so four districts auto-crowned in the same tick that created
+    // them and no manager was ever asked. Irreversible by design, because a recompute is refused
+    // once a winner exists.
+    assert.equal(
+      isEarlyBirdsAutoApproveDue({ computedAtIso: "2026-08-09T00:32:39Z", todayIso: "2026-08-09" }),
+      false,
+      "a fortnight backfilled today gives its manager five days from TODAY — measuring from the period end crowns it before he was ever asked",
+    );
+    assert.equal(
+      isEarlyBirdsAutoApproveDue({ computedAtIso: "2026-08-09T00:32:39Z", todayIso: "2026-08-14" }),
+      true,
+      "and it does auto-approve once he has genuinely had the window",
+    );
+  }
+
   // ── The national crown waits for the districts, but not forever ─────────────────
   {
-    const period = earlyBirdsPeriodFromKey("2026-08-H1");
     assert.equal(
-      isEarlyBirdsNationalCrownDue({ period, todayIso: "2026-08-17", openDistrictCount: 0 }),
+      isEarlyBirdsNationalCrownDue({ todayIso: "2026-08-17", openDistrictCount: 0, latestComputedAtIso: "2026-08-16T03:00:00Z" }),
       true,
       "once every district has settled there is nothing to wait for",
     );
     assert.equal(
-      isEarlyBirdsNationalCrownDue({ period, todayIso: "2026-08-17", openDistrictCount: 3 }),
+      isEarlyBirdsNationalCrownDue({ todayIso: "2026-08-17", openDistrictCount: 3, latestComputedAtIso: "2026-08-16T03:00:00Z" }),
       false,
       "with districts still deciding, crowning early could pick the wrong national winner",
     );
     assert.equal(
-      isEarlyBirdsNationalCrownDue({ period, todayIso: "2026-08-20", openDistrictCount: 3 }),
+      isEarlyBirdsNationalCrownDue({ todayIso: "2026-08-21", openDistrictCount: 3, latestComputedAtIso: "2026-08-16T03:00:00Z" }),
       true,
       "but one stalled district must not hold the national award hostage forever",
+    );
+    assert.equal(
+      isEarlyBirdsNationalCrownDue({ todayIso: "2026-08-09", openDistrictCount: 14, latestComputedAtIso: "2026-08-09T00:32:39Z" }),
+      false,
+      "a backfill mid-sweep must not crown the first district to approve as the national winner",
     );
   }
 
