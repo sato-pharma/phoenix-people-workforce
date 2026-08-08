@@ -18,6 +18,7 @@ import {
   CircleAlert,
   Clock,
   Download,
+  Eye,
   FileText,
   Pencil,
   Plus,
@@ -44,6 +45,7 @@ import {
   employeePlanActionLabel,
   employeePlanActivityTypes,
   HEAD_OFFICE_WORKWEEK,
+  isDistrictManagerPlanTitle,
   planRequiredSlotsByDate,
 } from "@/lib/weekly-planning/plan-v1";
 import type {
@@ -1047,8 +1049,22 @@ export function PlansWorkspace({
   const editRequestQueue = plans.filter(
     (item) => item.status === "edit_requested" && hrIdsMatch(item.managerHrId, access.hrId),
   );
+  // District Manager plans never reach a CEO decision — their manager's approval cascades
+  // straight to final_approved (service.ts decideEmployeePlan), so they must never populate
+  // this decide queue even during the brief/legacy window a plan sits at manager_approved.
   const ceoQueue = plans.filter(
-    (item) => item.status === "manager_approved" && access.role === "CEO",
+    (item) =>
+      item.status === "manager_approved" &&
+      access.role === "CEO" &&
+      !isDistrictManagerPlanTitle(item.employeeJobTitle),
+  );
+  // Read-only oversight: the CEO can still see every District Manager plan past the draft
+  // stage, just never with a decide action — HR is the real approver-of-record for these.
+  const districtManagerReadOnlyQueue = plans.filter(
+    (item) =>
+      access.role === "CEO" &&
+      item.status !== "draft" &&
+      isDistrictManagerPlanTitle(item.employeeJobTitle),
   );
   const hrQueue = plans.filter(
     (item) =>
@@ -1957,6 +1973,16 @@ export function PlansWorkspace({
             title="CEO Review"
             type="ceo"
           />
+          {districtManagerReadOnlyQueue.length > 0 ? (
+            <QueueCard
+              onFillDetails={() => {}}
+              onOpen={loadPlanForEdit}
+              plans={districtManagerReadOnlyQueue}
+              readOnly
+              showEmployeeName
+              title="District Manager Plans"
+            />
+          ) : null}
           <ReviewCard
             comment={comment}
             isPending={isPending}
@@ -2624,6 +2650,16 @@ export function PlansWorkspace({
                 returnNotes={returnNotes}
                 title="CEO Review"
                 type="ceo"
+              />
+            ) : null}
+            {districtManagerReadOnlyQueue.length > 0 ? (
+              <QueueCard
+                onFillDetails={() => {}}
+                onOpen={loadPlanForEdit}
+                plans={districtManagerReadOnlyQueue}
+                readOnly
+                showEmployeeName
+                title="District Manager Plans"
               />
             ) : null}
             {hrQueue.length > 0 ? (
@@ -3405,11 +3441,15 @@ function QueueCard({
   onFillDetails,
   onOpen,
   plans,
+  readOnly,
+  showEmployeeName,
   title,
 }: {
   onFillDetails: (plan: EmployeePlan) => void;
   onOpen: (plan: EmployeePlan) => void;
   plans: EmployeePlan[];
+  readOnly?: boolean;
+  showEmployeeName?: boolean;
   title: string;
 }) {
   return (
@@ -3417,6 +3457,7 @@ function QueueCard({
       <div className="flex items-center gap-2.5 bg-slate-900 px-4 py-3">
         <span aria-hidden className="h-4 w-1 bg-orange-500" />
         <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
+        {readOnly ? <Eye aria-label="View only" className="h-3.5 w-3.5 text-white/60" /> : null}
       </div>
       <div className="max-h-[360px] space-y-2 overflow-y-auto p-3">
         {plans.length === 0 ? (
@@ -3427,6 +3468,7 @@ function QueueCard({
             <button className="w-full text-left" onClick={() => onOpen(p)} type="button">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-black text-slate-900">
+                  {showEmployeeName ? `${p.employeeDisplayName || p.employeeName} — ` : ""}
                   {p.planKind} {p.periodKey}
                 </p>
                 <span

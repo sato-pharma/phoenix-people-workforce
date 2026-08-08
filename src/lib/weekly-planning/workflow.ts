@@ -64,7 +64,7 @@ export const WEEKLY_PLAN_TRANSITIONS: Record<WeeklyPlanAction, TransitionDef> = 
     requiresApprovalRole: "ceo",
   },
   finalize: {
-    from: ["ceo_approved"],
+    from: ["ceo_approved", "manager_approved"],
     to: "final_approved",
     requiresReason: false,
   },
@@ -157,4 +157,14 @@ export function isTerminalStatus(status: WeeklyPlanStatus): boolean {
 export function isEligibleJobTitle(jobTitle: string): boolean {
   const normalized = jobTitle.trim().toLowerCase();
   return WEEKLY_PLAN_ELIGIBLE_JOB_TITLES.some((t) => t.toLowerCase() === normalized);
+}
+
+/**
+ * Check if a job title represents a District Manager (Sales Manager or Regional Manager).
+ * Comparison is case-insensitive with whitespace trimmed.
+ */
+export function isDistrictManager(jobTitle: string | null): boolean {
+  if (!jobTitle) return false;
+  const normalized = jobTitle.trim().toLowerCase();
+  return ["sales manager", "regional manager", "district manager"].includes(normalized);
 }

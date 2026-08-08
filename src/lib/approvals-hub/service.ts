@@ -26,6 +26,7 @@ import { listExcuseManagerGapRecords, type ExcuseManagerGapRecord } from "@/lib/
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { resolveApproverPlanStage } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind, EmployeePlanStatus } from "@/lib/weekly-planning/plan-v1";
+import { isDistrictManagerPlanTitle } from "@/lib/weekly-planning/plan-v1";
 import type {
   VacationActionAvailability,
   VacationActionCenterRow,
@@ -1240,7 +1241,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
   const [{ data, error }, directory] = await Promise.all([
     getSupabaseAdmin()
       .from("employee_plan_headers")
-      .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at")
+      .select("id,employee_name,employee_hr_id,manager_hr_id,plan_kind,period_key,status,submitted_at,employee_job_title")
       .in("status", PLAN_ACTIVE_STATUSES)
       .order("submitted_at", { ascending: true })
       .limit(PLAN_BUCKET_LIMIT),
@@ -1274,7 +1275,7 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       submittedAt: String(raw.submitted_at ?? ""),
     };
 
-    const stage = resolveApproverPlanStage(status, managerHrId, access);
+    const stage = resolveApproverPlanStage(status, managerHrId, access, String(raw.employee_job_title ?? ""));
     if (stage) {
       awaiting.push({ ...base, stage });
       continue;
@@ -1287,6 +1288,13 @@ export async function getPlanApprovalsForResponder(access: AccessContext): Promi
       continue;
     }
     if (status === "final_approved" && hrActor) {
+      awaiting.push({ ...base, stage: "hr" });
+      continue;
+    }
+    // Also include stuck District Manager plans (manager_approved) for HR to acknowledge.
+    // (Acknowledge handles cascading them to final_approved first).
+    const isDistrictManagerPlan = isDistrictManagerPlanTitle(String(raw.employee_job_title ?? ""));
+    if (status === "manager_approved" && isDistrictManagerPlan && hrActor) {
       awaiting.push({ ...base, stage: "hr" });
       continue;
     }
@@ -1616,12 +1624,15 @@ function computePeriodStatus(startIso: string, endIso: string): PlanPeriodStatus
   return "current";
 }
 
-function planStageLabel(status: EmployeePlanStatus): string | null {
+function planStageLabel(status: EmployeePlanStatus, isDistrictManagerPlan = false): string | null {
   switch (status) {
     case "submitted":
       return "Direct manager review";
     case "manager_approved":
-      return "CEO approval";
+      // District Manager plans skip the CEO stage entirely -- their manager's approval
+      // cascades straight to final_approved, so this status means "awaiting HR", not "awaiting
+      // the CEO" (see decideEmployeePlan's isDistrictManagerPlan cascade).
+      return isDistrictManagerPlan ? "HR acknowledgement" : "CEO approval";
     case "final_approved":
       // The real ceo_approve transition goes manager_approved -> final_approved directly (no
       // separate "ceo_approved" status exists in practice) — this is the HR-acknowledge stage.
@@ -1667,6 +1678,7 @@ function planReadOnlyReason(status: EmployeePlanStatus): string {
 function buildPlanTrackerSteps(
   row: Record<string, unknown>,
   employees: Awaited<ReturnType<typeof getEmployeeDirectory>>["employees"],
+  isDistrictManagerPlan = false,
 ): ApprovalTimelineStep[] {
   const status = String(row.status ?? "") as EmployeePlanStatus;
   const submittedAt = row.submitted_at ? String(row.submitted_at) : null;
@@ -1692,9 +1704,17 @@ function buildPlanTrackerSteps(
         : status === "ceo_rejected" ? "rejected"
           : ceoAt ? "approved"
             : "";
-  const hrStatus = status === "final_approved" ? "pending" : acknowledged ? "approved" : "";
+  // District Manager plans never carry a real CEO decision -- their manager's approval
+  // auto-cascades straight to final_approved (decideEmployeePlan), so "manager_approved" here
+  // means "awaiting HR", the same as final_approved does for every other role.
+  const hrStatus =
+    status === "final_approved" || (isDistrictManagerPlan && status === "manager_approved")
+      ? "pending"
+      : acknowledged
+        ? "approved"
+        : "";
 
-  return [
+  const steps: ApprovalTimelineStep[] = [
     {
       order: 1,
       stepKey: "submitted",
@@ -1715,7 +1735,9 @@ function buildPlanTrackerSteps(
       decidedAt: managerAt,
       decisionComment: row.manager_decision_comment ? String(row.manager_decision_comment) : null,
     },
-    {
+  ];
+  if (!isDistrictManagerPlan) {
+    steps.push({
       order: 3,
       stepKey: "ceo",
       genericStep: "ceo",
@@ -1724,18 +1746,19 @@ function buildPlanTrackerSteps(
       approverTitle: "CEO",
       decidedAt: ceoAt,
       decisionComment: row.ceo_decision_comment ? String(row.ceo_decision_comment) : null,
-    },
-    {
-      order: 4,
-      stepKey: "hr",
-      genericStep: "hr",
-      status: hrStatus,
-      approverName: ack?.hr_id ? deciderDisplayName(employees, String(ack.hr_id)) : null,
-      approverTitle: null,
-      decidedAt: ackAt,
-      decisionComment: ack?.comment ? String(ack.comment) : null,
-    },
-  ];
+    });
+  }
+  steps.push({
+    order: steps.length + 1,
+    stepKey: "hr",
+    genericStep: "hr",
+    status: hrStatus,
+    approverName: ack?.hr_id ? deciderDisplayName(employees, String(ack.hr_id)) : null,
+    approverTitle: "HR",
+    decidedAt: ackAt,
+    decisionComment: ack?.comment ? String(ack.comment) : null,
+  });
+  return steps;
 }
 
 export async function getPlanApprovalDetail(access: AccessContext, id: string): Promise<PlanApprovalDetail> {
@@ -1774,8 +1797,9 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
   // manager_approved -> final_approved directly; "ceo_approved" is never produced in practice —
   // confirmed live during e2e testing, 0 production rows ever hold that status). Own plans are
   // never actionable by the owner.
-  const approverStage = resolveApproverPlanStage(status, managerHrId, access);
-  const canAcknowledge = status === "final_approved" && isSuperAdmin && !own;
+  const approverStage = resolveApproverPlanStage(status, managerHrId, access, String(row.employee_job_title ?? ""));
+  const isDistrictManagerPlan = isDistrictManagerPlanTitle(String(row.employee_job_title ?? ""));
+  const canAcknowledge = (status === "final_approved" || (status === "manager_approved" && isDistrictManagerPlan)) && isSuperAdmin && !own;
   const decisionStage = !own && approverStage ? approverStage : null;
   // The employee's edit-request (reopen a submitted plan) is decided ONLY by the actual direct
   // manager via the separate /edit-request-decision endpoint (assertManagerReviewer has no Super
@@ -1826,7 +1850,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
     statusLabel: humanizeStatus(status),
     calendar,
     composition: computePlanComposition(rawItems, planKind, periodStartDate, periodEndDate),
-    steps: buildPlanTrackerSteps(row, directory.employees),
+    steps: buildPlanTrackerSteps(row, directory.employees, isDistrictManagerPlan),
     actions,
     decisionStage,
     canAcknowledge,
@@ -1835,7 +1859,7 @@ export async function getPlanApprovalDetail(access: AccessContext, id: string): 
     returnableActivities: buildReturnableActivities(rawItems),
     isOwner: own,
     plannerHref,
-    stageLabel: planStageLabel(status),
+    stageLabel: planStageLabel(status, isDistrictManagerPlan),
     slaAgeDays: row.submitted_at ? daysSinceCalendar(String(row.submitted_at)) : 0,
     readOnly: !actionable || own,
     readOnlyReason: own
@@ -1907,7 +1931,10 @@ function planStatusTone(status: string): CompanyRequestStatusTone {
  * a District Manager's plans belong here just like anyone else's. Excludes only "draft" rows
  * (never actually submitted, or currently back under revision after a `revise` action).
  */
-export async function getCompanyPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
+async function fetchCompanyPlanRequestItems(
+  access: AccessContext,
+  options?: { districtManagersOnly?: boolean },
+): Promise<CompanyRequestItem[]> {
   if (!canSeeCeoApprovalTabs(access)) {
     throw new Error("Forbidden: only the CEO or Super Admin can view the company-wide request feed.");
   }
@@ -1930,6 +1957,8 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
 
   const items: CompanyRequestItem[] = [];
   for (const row of (data as Array<Record<string, unknown>> | null) ?? []) {
+    const jobTitle = row.employee_job_title ? String(row.employee_job_title) : null;
+    if (options?.districtManagersOnly && !isDistrictManagerPlanTitle(jobTitle)) continue;
     const status = String(row.status ?? "");
     const id = String(row.id ?? "");
     items.push({
@@ -1937,7 +1966,7 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
       href: planApprovalHref(access, id),
       employeeName: liveEmployeeName(directory.employees, String(row.employee_hr_id ?? ""), String(row.employee_name ?? "Unknown")),
       employeeHrId: String(row.employee_hr_id ?? ""),
-      submitterTitle: row.employee_job_title ? String(row.employee_job_title) : null,
+      submitterTitle: jobTitle,
       typeLabel: String(row.plan_kind ?? "weekly") === "monthly" ? "Monthly" : "Weekly",
       requestDate: String(row.period_start_date ?? ""),
       submittedAt: String(row.submitted_at ?? ""),
@@ -1947,6 +1976,18 @@ export async function getCompanyPlanRequests(access: AccessContext): Promise<Com
     });
   }
   return items;
+}
+
+export async function getCompanyPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
+  return fetchCompanyPlanRequestItems(access);
+}
+
+// District Manager plans never reach a CEO decision (they cascade via their manager's
+// approval — see decideEmployeePlan), so the CEO otherwise has no page that surfaces them at
+// all. This is a read-only oversight feed, same shape as "Company Plans", filtered to just
+// District Manager submitters.
+export async function getCompanyDistrictManagerPlanRequests(access: AccessContext): Promise<CompanyRequestItem[]> {
+  return fetchCompanyPlanRequestItems(access, { districtManagersOnly: true });
 }
 
 // ── Plan workspace (page-ready data for the 4-tab body) ───────────────────────
@@ -1960,6 +2001,10 @@ export type PlanWorkspaceData = {
   companyWide: CompanyWideDecisionItem[] | null;
   // CEO + Super Admin only — the "Company Plans" oversight tab (pending AND decided, all roles).
   companyRequests: CompanyRequestItem[] | null;
+  // CEO + Super Admin only — read-only "District Manager Plans" tab. District Manager plans
+  // never reach a CEO decision (manager approval cascades straight to final_approved), so this
+  // is the CEO's only page-level visibility into them.
+  districtManagerRequests: CompanyRequestItem[] | null;
 };
 
 function planStageStatusLabel(stage: PlanApprovalStage): string {
@@ -1972,12 +2017,13 @@ function planStageStatusLabel(stage: PlanApprovalStage): string {
 export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanWorkspaceData> {
   const showCompanyWide = isPlanHrActor(access);
   const showCeoTabs = canSeeCeoApprovalTabs(access);
-  const [buckets, myRequests, history, companyWide, companyRequests] = await Promise.all([
+  const [buckets, myRequests, history, companyWide, companyRequests, districtManagerRequests] = await Promise.all([
     getPlanApprovalsForResponder(access),
     getMyPlanRequestItems(access),
     getResponderPlanHistory(access),
     showCompanyWide ? getAllPlanDecisionsCompanyWide(access).catch(() => []) : Promise.resolve(null),
     showCeoTabs ? getCompanyPlanRequests(access).catch(() => []) : Promise.resolve(null),
+    showCeoTabs ? getCompanyDistrictManagerPlanRequests(access).catch(() => []) : Promise.resolve(null),
   ]);
   const toCard = (item: PlanBucketItem): ApprovalPendingCard => ({
     id: item.id,
@@ -1995,5 +2041,6 @@ export async function getPlanWorkspaceData(access: AccessContext): Promise<PlanW
     pendingCount: buckets.awaiting.length,
     companyWide,
     companyRequests,
+    districtManagerRequests,
   };
 }

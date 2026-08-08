@@ -27,6 +27,10 @@ export function PlanApprovalsBody({ data }: { data: PlanWorkspaceData }) {
       companyRequestsTabLabel="Company Plans"
       companyRequestsExportTitle="Company Plans"
       companyRequestsEmptyLabel="No weekly/monthly plans have been submitted yet."
+      secondaryCompanyRequests={data.districtManagerRequests}
+      secondaryCompanyRequestsTabLabel="District Manager Plans"
+      secondaryCompanyRequestsExportTitle="District Manager Plans"
+      secondaryCompanyRequestsEmptyLabel="No District Manager plans have been submitted yet."
     />
   );
 }

@@ -83,6 +83,7 @@ import {
   employeePlanActivityTypes,
   getNextEmployeePlanStatus,
   isClosedEmployeePlanStatus,
+  isDistrictManagerPlanTitle,
   isWeeklyMonthlyPlanEligibleTitle,
   planRequiredSlotsByDate,
   resolvePlanWorkweek,
@@ -540,7 +541,11 @@ function summarizePlans(plans: EmployeePlan[]): EmployeePlansSummary {
       summary.managerPending += 1;
     }
     if (plan.status === "details_requested") summary.detailsRequested += 1;
-    if (plan.status === "manager_approved") summary.ceoPending += 1;
+    if (plan.status === "manager_approved") {
+      if (!isDistrictManagerPlanTitle(plan.employeeJobTitle)) {
+        summary.ceoPending += 1;
+      }
+    }
     if (plan.status === "final_approved") summary.finalApproved += 1;
     if (plan.status === "hr_acknowledged") summary.hrAcknowledged += 1;
     if (plan.status.includes("returned")) summary.returned += 1;
@@ -1878,6 +1883,7 @@ export function resolveApproverPlanStage(
   status: EmployeePlanStatus,
   managerHrId: string | null,
   access: Pick<AccessContext, "hrId" | "role" | "scope">,
+  jobTitle?: string | null,
 ): ApproverPlanStage | null {
   const isCeo = access.role === "CEO";
   if (status === "submitted") {
@@ -1886,7 +1892,10 @@ export function resolveApproverPlanStage(
     return null;
   }
   if (status === "manager_approved") {
-    return isCeo ? "ceo" : null;
+    if (isCeo) {
+      return isDistrictManagerPlanTitle(jobTitle ?? null) ? null : "ceo";
+    }
+    return null;
   }
   return null;
 }
@@ -2050,7 +2059,7 @@ export async function getPlansAwaitingAction(access: AccessContext): Promise<App
 
     const items: ApproverPendingPlan[] = [];
     for (const row of rows) {
-      const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access);
+      const stage = resolveApproverPlanStage(row.status, row.manager_hr_id, access, row.employee_job_title);
       if (!stage) continue;
       const planItems = (row.employee_plan_items ?? [])
         .slice()
@@ -2816,6 +2825,13 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   } else if (input.action.startsWith("ceo_")) {
     await assertPermission(access, "weekly_plans", "approve");
     assertCeoReviewer(access);
+    // District Manager plans never reach a human CEO decision — their manager's approval
+    // auto-cascades straight to final_approved further down. The CEO stage exists for every
+    // other eligible role; block it here rather than only hiding it in the UI, so a direct
+    // API call can't still push a DM plan through ceo_approve/ceo_reject/ceo_return.
+    if (isDistrictManagerPlanTitle(plan.employee_job_title)) {
+      throw new Error("Forbidden: District Manager plans are decided by HR, not the CEO.");
+    }
   }
   // The next status is computed client-side for the audit-log entry and the
   // notification branch below, but the SQL function recomputes the same rule
@@ -2849,8 +2865,15 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
   // it just shouldn't also require a separate, purely-formal second click to re-approve
   // their own decision, so it cascades straight into ceo_approve in the same request,
   // recorded as the CEO's own second real decision.
-  if (input.action === "manager_approve" && access.role === "CEO") {
-    await assertPermission(access, "weekly_plans", "approve");
+  //
+  // Additionally, plans submitted by District Managers bypass the CEO stage entirely. When
+  // their manager (National Manager) approves, it cascades straight into ceo_approve so HR
+  // can acknowledge it without requiring CEO action.
+  const isDistrictManagerPlan = isDistrictManagerPlanTitle(updated.employee_job_title);
+  if (input.action === "manager_approve" && (access.role === "CEO" || isDistrictManagerPlan)) {
+    if (access.role === "CEO") {
+      await assertPermission(access, "weekly_plans", "approve");
+    }
     const beforeCeoApprove = updated;
     await rpcDecidePlan({
       access,
@@ -2867,7 +2890,7 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
       entityType: "weekly_plan",
       newValues: { status: "final_approved" },
       oldValues: { status: beforeCeoApprove.status },
-      summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from the CEO's manager approval)`,
+      summary: `${updated.plan_kind} plan decision: ceo_approve (auto-cascaded from manager approval${isDistrictManagerPlan ? ' for District Manager bypass' : ''})`,
     });
     await notifyHr(updated);
   } else if (input.action === "manager_approve") {
@@ -2972,9 +2995,27 @@ export async function acknowledgeEmployeePlan(access: AccessContext, planId: str
   }
   const plan = await loadPlanRow(planId);
   const hrId = access.hrId ?? access.loginId ?? `system-${crypto.randomUUID()}`;
+
+  // HACK: For existing District Manager plans stuck in manager_approved, auto-cascade them
+  // to final_approved under the hood on behalf of the CEO, just as new approvals do,
+  // before running the HR acknowledge step.
+  let currentRevision = plan.revision;
+  if (plan.status === "manager_approved" && isDistrictManagerPlanTitle(plan.employee_job_title)) {
+    await rpcDecidePlan({
+      access,
+      action: "ceo_approve",
+      comment: null,
+      expectedRevision: currentRevision,
+      planId,
+      returnNotes: [],
+    });
+    const refreshed = await loadPlanRow(planId);
+    currentRevision = refreshed.revision;
+  }
+
   await rpcAcknowledgePlan({
     comment,
-    expectedRevision: plan.revision,
+    expectedRevision: currentRevision,
     hrId,
     loginId: access.loginId ?? null,
     planId,
