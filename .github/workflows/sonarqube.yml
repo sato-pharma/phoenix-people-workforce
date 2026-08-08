@@ -48,9 +48,10 @@ name: SonarQube Cloud
 # everybody learns to ignore — worse than no check at all.
 #
 # At the time this was written, `sast-scan` and `secret-scan` were believed to remain REQUIRED
-# status checks on main. That was already wrong (branch protection only ever required validate,
-# lint, typecheck), and as of 2026-08-08 the security-scan.yml workflow that ran them was removed
-# outright at owner request. Sonar was never required either.
+# status checks on main. Half of that holds today: `secret-scan` (gitleaks) IS required and
+# blocking — #1889 deleted security-scan.yml on 2026-08-08 and #1894 restored it the same day —
+# while Semgrep's `sast-scan` was deliberately not restored and no longer runs at all. Sonar was
+# never required.
 #
 # To revive: restore the `pull_request` trigger below. Scan config, coverage wiring and
 # the measured-coverage rationale are left intact in sonar-project.properties and
