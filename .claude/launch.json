@@ -2,11 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "//": "Attach-only. preview_start's spawn mode cannot run here: it rejects every command with \"cwd must be a relative path within the project root\" (reproduced with node -v), because this checkout lives on F:\\ with a space in the path. Start the server yourself with: pnpm exec next dev --turbopack --port 3000",
       "name": "phoenix-workforce",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000,
-      "autoPort": true
+      "url": "http://localhost:3000",
+      "port": 3000
     }
   ]
 }

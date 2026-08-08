@@ -45,6 +45,8 @@ export function HeldRequestsPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [manualFor, setManualFor] = useState<number | null>(null);
   const [manual, setManual] = useState({ am: "", pm: "", reason: "" });
+  const [waiveFor, setWaiveFor] = useState<number | null>(null);
+  const [waiveReason, setWaiveReason] = useState("");
 
   const load = useCallback(async () => {
     // Yield a microtask before touching state. Same idiom as trip-attachments.tsx: without it
@@ -82,11 +84,11 @@ export function HeldRequestsPanel() {
   }, [load]);
 
   const act = useCallback(
-    async (id: number, body: Record<string, unknown>) => {
+    async (id: number, body: Record<string, unknown>, endpoint: "workload" | "evidence" = "workload") => {
       setBusyId(id);
       setNotice(null);
       try {
-        const response = await fetch(`/api/admin/outstation/${id}/workload`, {
+        const response = await fetch(`/api/admin/outstation/${id}/${endpoint}`, {
           body: JSON.stringify(body),
           headers: { "Content-Type": "application/json" },
           method: "POST",
@@ -96,6 +98,8 @@ export function HeldRequestsPanel() {
         setNotice(payload.message ?? "Done.");
         setManualFor(null);
         setManual({ am: "", pm: "", reason: "" });
+        setWaiveFor(null);
+        setWaiveReason("");
         // Re-read rather than mutate locally: a released request must leave this list, and the
         // server is the only thing that knows whether it actually did.
         await load();
@@ -179,9 +183,73 @@ export function HeldRequestsPanel() {
               </p>
             ) : null}
 
-            {/* Only a workload block is repairable here. A missing PHOTO cannot be fixed from an
-                admin desk — only the employee can take it — so no button is offered that would
-                imply otherwise. */}
+            {/* A missing PHOTO still cannot be TAKEN from an admin desk — only the employee can
+                do that, and no button here pretends otherwise. What the admin can do is decide the
+                photo will never arrive (the trip was typed in by hand, or the employee is 400 km
+                past the destination) and waive the gate on the record, with a reason. Before this
+                existed the only way out was editing the database by hand, which is how nine real
+                requests worth 6,587.56 EGP were cleared on 2026-08-08. */}
+            {request.blocker === "arrival_photo" ||
+            request.blocker === "departure_photo" ||
+            request.blocker === "inconsistent" ? (
+              <div className="mt-3">
+                {waiveFor === request.id ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-bold text-amber-900">
+                      Release without the photo. This waives the evidence check permanently and
+                      marks the request exempt from the workload check too.
+                    </p>
+                    <textarea
+                      className="mt-2 w-full rounded-md border border-amber-300 bg-white p-2 text-xs text-slate-900"
+                      onChange={(event) => setWaiveReason(event.target.value)}
+                      placeholder="Why can this photo never arrive? (required)"
+                      rows={2}
+                      value={waiveReason}
+                    />
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <button
+                        className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-amber-600 px-3 text-xs font-black text-white hover:bg-amber-700 disabled:opacity-60"
+                        disabled={busyId === request.id || !waiveReason.trim()}
+                        onClick={() =>
+                          void act(request.id, { reason: waiveReason }, "evidence")
+                        }
+                        type="button"
+                      >
+                        {busyId === request.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                        )}
+                        Release into payroll
+                      </button>
+                      <button
+                        className="min-h-10 rounded-xl px-3 text-xs font-bold text-slate-600 hover:text-slate-900"
+                        onClick={() => {
+                          setWaiveFor(null);
+                          setWaiveReason("");
+                        }}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 text-xs font-black text-amber-800 hover:bg-amber-50"
+                    onClick={() => {
+                      setWaiveFor(request.id);
+                      setWaiveReason("");
+                    }}
+                    type="button"
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    The photo cannot arrive — release it
+                  </button>
+                )}
+              </div>
+            ) : null}
+
             {request.blocker === "workload" ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <button
