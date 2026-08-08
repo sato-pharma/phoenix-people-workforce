@@ -665,6 +665,7 @@ import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-mo
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
+import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
@@ -1516,6 +1517,11 @@ await runTest(
 await runTest(
   "the arrival-photo capture stays reachable for every transport type the validator refuses to exempt",
   runOutstationArrivalPhotoCaptureReachableTests,
+);
+
+await runTest(
+  "every photo-less write path declares its evidence gate instead of inheriting the fail-closed default",
+  runOutstationAdminManualExpenseGateTests,
 );
 
 await runTest(

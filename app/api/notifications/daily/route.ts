@@ -17,7 +17,7 @@ import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operation
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
 import { runExcuseSlaDaily } from "@/lib/excuses/service";
-import { runOutstationSlaDaily } from "@/lib/outstation/service";
+import { runOutstationDeparturePhotoReminders, runOutstationSlaDaily } from "@/lib/outstation/service";
 import { runResignationSlaDaily } from "@/lib/resignations/service";
 import { runWeeklyPlansDriftCheck } from "@/lib/weekly-planning/drift-check";
 import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
@@ -90,6 +90,7 @@ async function runDailyNotifications(request: Request) {
     fieldWorkforceComplianceDeductionsAutoSync,
     excuseSla,
     outstationSla,
+    outstationDeparturePhotoReminders,
     resignationSla,
     weeklyPlansDrift,
     excuseDrift,
@@ -143,6 +144,12 @@ async function runDailyNotifications(request: Request) {
     // Restored 2026-07-23 behind a real admin toggle (see "outstation_sla_reminder" in
     // role-recipients.ts).
     runOutstationSlaDaily().catch(onJobFailure("daily-outstation-sla", (message) => ({ processed: 0, errors: 1, detail: message }))),
+    // Reminds the EMPLOYEE his departure photo is due, on the trip's last day and once more when
+    // it goes overdue. Not behind a toggle — see the note on the function for why an unregistered
+    // toggle key would leave this silently dead.
+    runOutstationDeparturePhotoReminders().catch(
+      onJobFailure("daily-outstation-departure-photo", (message) => ({ processed: 0, errors: 1, detail: message })),
+    ),
     runResignationSlaDaily().catch(
       onJobFailure("daily-resignation-sla", (message) => ({ processed: 0, errors: 1, detail: message })),
     ),
@@ -253,6 +260,7 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     outstationGeocodeWarmup,
     outstationSla,
+    outstationDeparturePhotoReminders,
     rateLimitPrune,
     errorEventsPrune,
     recruitment,

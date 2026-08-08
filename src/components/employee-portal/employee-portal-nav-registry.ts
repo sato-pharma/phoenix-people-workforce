@@ -136,6 +136,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Expenses
   { label: "Expenses", fullLabel: "My Outstation Expenses", href: "/employee-portals/expenses", icon: ReceiptText, flags: ["showMedicalRepExpensesTab"] },
   { label: "Expenses", fullLabel: "Expense Dashboard", href: "/employee-portals/expense-dashboard", icon: CircleDollarSign, flags: ["showExpenseDashboardTab"] },
+  { label: "My claims", fullLabel: "Expense Submissions", href: "/employee-portals/expense-submissions", icon: ReceiptText, flags: ["showExpenseDashboardTab"] },
   { label: "Submit exp", fullLabel: "Submit Expense", href: "/employee-portals/submit-expense", icon: Send, flags: ["showExpenseActionTab"] },
   // Support
   { label: "Support", fullLabel: "Request Support", href: "/employee-portals/contact-hr-support", icon: Headphones, flags: ["showSupportTab"] },
