@@ -688,6 +688,8 @@ import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-distric
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
 import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-excluded-members.test.ts";
+import { runNsmCrmComplianceTests } from "./nsm-crm-compliance.test.ts";
+import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1620,6 +1622,14 @@ await runTest(
 await runTest(
   "automated payroll run-scoped exclusion (excludeEmployeeFromRun's population filter)",
   runAutomatedPayrollExcludedMembersTests,
+);
+await runTest(
+  "NSM/RM CRM First Visit board (GPS-first ranking, a clockless submission still ranks, first 10 early birds, and passing the cap never returns you to the red list)",
+  runNsmCrmComplianceTests,
+);
+await runTest(
+  "campaign account extraction guard (the model may delimit a name already in the rep's note, never author one)",
+  runCrmCampaignAccountTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

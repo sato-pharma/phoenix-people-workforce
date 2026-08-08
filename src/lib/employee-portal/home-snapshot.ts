@@ -60,7 +60,9 @@ export type PortalHomeSnapshot = {
    * without calling Date.now() during render (which is impure for a React component).
    */
   mmOverview: (MarketingOverviewMetrics & { upcoming: UpcomingMarketingActivity[]; asOf: number }) | null;
-  /** District Manager only: the DSM's own med-rep team, current period, + team approvals awaiting the DSM. */
+  /** District Manager only: the DSM's own med-rep team, current period, + team approvals awaiting
+   * the DSM, + the CRM first-visit board for that team. `members` is the top-10 sales leaderboard;
+   * `crm` covers every direct report, ranked and uncapped. */
   dsmTeam:
     | {
         achievementPercent: number;
@@ -69,6 +71,7 @@ export type PortalHomeSnapshot = {
         totalTarget: number;
         pendingApprovals: number;
         members: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
+        crm: NsmCrmComplianceData;
       }
     | null;
   /** National Sales Manager only: the NSM's line, rolled up by DSM, + approvals awaiting the NSM. */
@@ -218,6 +221,26 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           totalSales: m.totalSales,
           totalTarget: m.totalTarget,
         }));
+
+      // CRM first-visit compliance over the DM's FULL direct-report roster — deliberately
+      // `team.members`, not the `members` leaderboard above, which is sliced to the top 10 by
+      // achievement. Ranking a compliance board off a sales leaderboard would silently hide every
+      // rep outside the top 10 from both the green and the red list. `dsms: []` because a District
+      // Manager anchors med reps only (getDsmTeamPerformance runs in "dsm-direct" mode), and the
+      // board is uncapped so nobody on a team this size drops off the ranking.
+      const crmInput = {
+        reps: (team.members ?? []).map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+        dsms: [],
+        limit: Number.POSITIVE_INFINITY,
+      };
+      const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
+        logPortalFailure(
+          { hrId: access.hrId, module: "dsm-crm-compliance", role: access.role, route: "/employee-portals" },
+          error,
+        );
+        return nsmCrmComplianceUnavailable(crmInput);
+      });
+
       return {
         ...emptyRoleExtras,
         dsmTeam: {
@@ -227,6 +250,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           totalTarget: team.teamTotalTarget,
           pendingApprovals: approvals.length,
           members,
+          crm,
         },
       };
     }

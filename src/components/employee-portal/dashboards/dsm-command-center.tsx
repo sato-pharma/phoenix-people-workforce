@@ -26,6 +26,7 @@ import {
 } from "@/components/employee-portal/portal-command-center";
 import { Suspense } from "react";
 
+import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -82,6 +83,13 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
       <DashboardsGrid items={DASHBOARDS} />
 
       <RankingPanel title="My Reps" subtitle="by achievement %" icon={Trophy} rows={dsmTeam?.members ?? []} />
+
+      <CrmFirstVisitBoard
+        crm={dsmTeam?.crm ?? null}
+        allClearMessage="Every rep on your team has submitted their first visit."
+        rankHint="all submitters, ranked"
+        showAccount
+      />
 
       <ActionStrip items={ACTIONS} />
 
