@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks } from "lucide-react";
+import { Clock, Inbox, Building2, ClipboardList, Users, ListChecks, Eye } from "lucide-react";
 
 import type {
   ResponderHistoryItem,
@@ -62,6 +62,14 @@ type Props = {
   // Overrides the tab's displayed label (defaults to "Company Requests") — e.g. plans use
   // "Company Plans" for the identical pending+decided, all-roles, read-only oversight view.
   companyRequestsTabLabel?: string;
+  // A second, narrower read-only oversight feed — same shape and behavior as
+  // companyRequests (no decide actions, ever), just a different subset. Plans use this for
+  // "District Manager Plans": those never reach a CEO decision, so without this tab the CEO
+  // has no page-level visibility into them at all. Absent (null/undefined) hides the tab.
+  secondaryCompanyRequests?: CompanyRequestItem[] | null;
+  secondaryCompanyRequestsTabLabel?: string;
+  secondaryCompanyRequestsExportTitle?: string;
+  secondaryCompanyRequestsEmptyLabel?: string;
 };
 
 function Card({ card, readOnly, slaModule }: { card: PendingCard; readOnly?: boolean; slaModule: ApprovalsSlaModule }) {
@@ -103,11 +111,23 @@ export function ApprovalsWorkspace({
   companyRequestsExportTitle,
   companyRequestsEmptyLabel,
   companyRequestsTabLabel,
+  secondaryCompanyRequests,
+  secondaryCompanyRequestsTabLabel,
+  secondaryCompanyRequestsExportTitle,
+  secondaryCompanyRequestsEmptyLabel,
 }: Props) {
-  type TabKey = "pending" | "history" | "my-requests" | "approval-scope" | "company-requests" | "all-decisions";
+  type TabKey =
+    | "pending"
+    | "history"
+    | "my-requests"
+    | "approval-scope"
+    | "company-requests"
+    | "secondary-company-requests"
+    | "all-decisions";
   const [tab, setTab] = useState<TabKey>(initialTab);
   const showApprovalScopeTab = approvalScope != null;
   const showCompanyRequestsTab = Array.isArray(companyRequests);
+  const showSecondaryCompanyRequestsTab = Array.isArray(secondaryCompanyRequests);
   const showCompanyWideTab = Array.isArray(companyWide);
 
   const tabs: Array<{ key: TabKey; label: string; count: number; icon: typeof Inbox }> = [
@@ -116,6 +136,9 @@ export function ApprovalsWorkspace({
     { key: "my-requests", label: "My Requests", count: myRequests.length, icon: ClipboardList },
     ...(showApprovalScopeTab ? [{ key: "approval-scope" as const, label: "Who I Approve", count: approvalScope.totalPeople, icon: Users }] : []),
     ...(showCompanyRequestsTab ? [{ key: "company-requests" as const, label: companyRequestsTabLabel ?? "Company Requests", count: companyRequests.length, icon: ListChecks }] : []),
+    ...(showSecondaryCompanyRequestsTab
+      ? [{ key: "secondary-company-requests" as const, label: secondaryCompanyRequestsTabLabel ?? "Related Requests", count: secondaryCompanyRequests.length, icon: Eye }]
+      : []),
     ...(showCompanyWideTab ? [{ key: "all-decisions" as const, label: "All Decisions", count: companyWide.length, icon: Building2 }] : []),
   ];
 
@@ -191,6 +214,13 @@ export function ApprovalsWorkspace({
           emptyLabel={companyRequestsEmptyLabel ?? "No requests found."}
           exportTitle={companyRequestsExportTitle ?? "Company Requests"}
           exportSheetName="Company Requests"
+        />
+      ) : tab === "secondary-company-requests" ? (
+        <CompanyRequestsList
+          items={secondaryCompanyRequests ?? []}
+          emptyLabel={secondaryCompanyRequestsEmptyLabel ?? "No requests found."}
+          exportTitle={secondaryCompanyRequestsExportTitle ?? secondaryCompanyRequestsTabLabel ?? "Related Requests"}
+          exportSheetName={secondaryCompanyRequestsTabLabel ?? "Related Requests"}
         />
       ) : (
         <HistoryList

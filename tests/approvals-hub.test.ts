@@ -334,14 +334,22 @@ export function runApprovalsHubTests() {
   );
 
   // ── "Company Plans" tab: CEO + Super Admin, ALL roles (pending + decided), no action buttons ──
+  // getCompanyPlanRequests and getCompanyDistrictManagerPlanRequests (the read-only "District
+  // Manager Plans" tab) share one query via fetchCompanyPlanRequestItems -- the auth gate and
+  // the field-force-inclusion property below live there now, not in either thin wrapper.
   assert.match(
     svc,
-    /export async function getCompanyPlanRequests[\s\S]*?if \(!canSeeCeoApprovalTabs\(access\)\) \{\s*throw new Error\("Forbidden: only the CEO or Super Admin can view the company-wide request feed\."\);/,
-    "getCompanyPlanRequests is gated by the same canSeeCeoApprovalTabs check as the vacation/excuse company-requests views",
+    /export async function getCompanyPlanRequests[\s\S]*?return fetchCompanyPlanRequestItems\(access\);/,
+    "getCompanyPlanRequests must delegate to the shared fetchCompanyPlanRequestItems helper",
+  );
+  assert.match(
+    svc,
+    /async function fetchCompanyPlanRequestItems\([\s\S]*?if \(!canSeeCeoApprovalTabs\(access\)\) \{\s*throw new Error\("Forbidden: only the CEO or Super Admin can view the company-wide request feed\."\);/,
+    "the shared company-plan-request helper is gated by the same canSeeCeoApprovalTabs check as the vacation/excuse company-requests views",
   );
   {
-    const companyPlanFnMatch = svc.match(/export async function getCompanyPlanRequests[\s\S]*?return items;\n}/);
-    assert.ok(companyPlanFnMatch, "getCompanyPlanRequests function body is present");
+    const companyPlanFnMatch = svc.match(/async function fetchCompanyPlanRequestItems\([\s\S]*?return items;\n}/);
+    assert.ok(companyPlanFnMatch, "fetchCompanyPlanRequestItems function body is present");
     assert.doesNotMatch(
       companyPlanFnMatch![0],
       /isExcludedFieldForce/,
