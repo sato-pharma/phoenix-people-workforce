@@ -83,6 +83,12 @@ export function runEmailNotificationTests() {
     "src/lib/notifications/confidence-gate.ts",
     "src/lib/notifications/email.ts",
     "src/lib/notifications/telegram-onboarding.ts",
+    // A Monthly Closing publish notifies that line's leadership (District Managers + a fixed
+    // Cc/Bcc roster) — a system-triggered domain announcement built directly against the shared
+    // Phoenix layout, same reasoning as approved-email.ts/phantom-report.ts above: a bespoke
+    // recipient list resolved live from the organogram, not the DB template engine. See
+    // src/lib/sales/closing-publish-notification.ts.
+    "src/lib/sales/closing-publish-notification.ts",
     "src/lib/sales/sos-report-delivery.ts",
     "src/lib/vacation/email.ts",
   ]);
