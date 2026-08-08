@@ -1,0 +1,112 @@
+name: Security Scan (OSS)
+
+# Secret scanning for this repository.
+#
+# GitHub Advanced Security (native secret scanning + push protection) is not purchasable here:
+# Gawish-1997 is a personal User account, and GHAS is only sold to Team/Enterprise Cloud accounts
+# (confirmed 2026-07-25, re-confirmed 2026-07-26 after the transfer, and again 2026-08-08 —
+# repos/{owner}/{repo} still returns security_and_analysis: null). So this workflow is not a
+# belt-and-braces extra: it is the ONLY automated secret detection on a private repo that holds
+# production Supabase service-role keys, the Resend API key, ATTENDANCE_AGENT_TOKEN, and a
+# workflow that syncs Railway production secrets. A merge to main deploys to production within
+# minutes, so a committed key ships before anyone reads the diff — and this repo has committed a
+# secret before (a shared passphrase sat in a committed file until 2026-07-31).
+#
+# Restored 2026-08-08 after #1889 removed the whole file. That PR also dropped the Semgrep
+# sast-scan job, which is NOT restored here, deliberately: Semgrep took 4m14s per PR against
+# gitleaks' 13s, and Sonar still covers overlapping static-analysis ground. This job is the cheap
+# half that nothing else replaces.
+#
+# NOW BLOCKING. The original rolled out with `--exit-code 0` "for this initial rollout", which
+# meant the job could not fail no matter what it found — 40 consecutive green runs that proved
+# nothing, with findings going to an artifact nobody opened. The last run before restoration
+# reported "no leaks found", so there is no pre-existing backlog to triage and the gate can be
+# real from the start. If it ever fails, treat it as a live credential exposure: rotate the key
+# first, then scrub it — a secret that reached the remote must be considered compromised even
+# after the commit is removed.
+
+on:
+  pull_request:
+  # Not on every push: every change reaches main through a PR, which is already scanned above,
+  # and per-push scanning was a significant repeat Actions cost. Main is covered by the daily
+  # scheduled run below, so a direct hotfix push is caught within 24h.
+  schedule:
+    - cron: "17 5 * * *" # daily 05:17 UTC, offset from the 07:00 migration-drift cron
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The CLI is installed directly, with a pinned version and checksum, rather than via the
+      # marketplace Action: gitleaks-action went proprietary at v2.0.0 (still free for
+      # personal-account repos, but the CLI binary carries no such caveat) and this avoids
+      # depending on a third-party Action's own supply chain.
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      # --no-git: scan the checked-out working tree as plain files, not git history. Simpler and
+      # more robust than diffing PR base...head ranges, and behaves identically for pull_request
+      # and schedule events. Trade-off: won't catch a secret added then removed within one PR's
+      # history — the daily scheduled run over main is the backstop.
+      #
+      # --redact: findings are reported by rule, file and line, never with the secret value, so
+      # the run log and the summary below can never themselves become the leak.
+      - name: Scan for secrets (gitleaks)
+        run: |
+          set -euo pipefail
+          set +e
+          ./gitleaks detect \
+            --source . \
+            --no-git \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks-report.sarif
+          SCAN_STATUS=$?
+          set -e
+
+          COUNT=$(jq '[.runs[]?.results[]?] | length' gitleaks-report.sarif)
+          {
+            echo "### Secret scan (gitleaks v${GITLEAKS_VERSION})"
+            echo "Findings: **${COUNT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::gitleaks found ${COUNT} potential secret(s). ROTATE the credential first — anything pushed to the remote must be treated as compromised — then remove it from the tree. See the gitleaks-report artifact for rule, file and line (values are redacted)."
+            exit 1
+          fi
+
+          # A non-zero exit with zero findings means gitleaks itself failed (bad config, unreadable
+          # tree). Fail rather than report a clean scan that never actually ran.
+          if [ "$SCAN_STATUS" -ne 0 ]; then
+            echo "::error::gitleaks exited ${SCAN_STATUS} without producing findings — the scan did not run correctly. Not reporting this as clean."
+            exit 1
+          fi
+
+      - name: Upload gitleaks report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: gitleaks-report
+          path: gitleaks-report.sarif
+          retention-days: 14
