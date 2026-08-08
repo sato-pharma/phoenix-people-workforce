@@ -120,6 +120,89 @@ export function buildHeldNotificationMessage(input: HeldNotificationAlertInput):
 }
 
 /**
+ * Daily reminder while ANY email is still held. Runs from the daily cron.
+ *
+ * notifyNotificationHeld above fires exactly once, at hold time, and is throttled to one alert per
+ * (module, eventType) per hour. That is right for a burst but it means a held email is announced
+ * once and then never mentioned again — so a missed or ignored alert becomes permanent silent
+ * non-delivery. Measured in production on 2026-08-08: 30 emails held, the oldest for 15 days,
+ * including 8 password resets and 4 account-setup links that people had actively requested. Every
+ * one of those had been correctly alerted at the time and then forgotten.
+ *
+ * A hold is only a safety mechanism if somebody eventually acts on it. This keeps asking.
+ * Best-effort by contract: never throws.
+ */
+export async function remindHeldNotifications(): Promise<HeldNotificationAlertResult> {
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("notification_send_reviews")
+      .select("created_at,module,event_type")
+      .eq("status", "held")
+      .order("created_at", { ascending: true })
+      .limit(500);
+    if (error) throw error;
+
+    const rows = (data ?? []) as Array<{ created_at: string; event_type: string | null; module: string | null }>;
+    if (rows.length === 0) return { delivered: 0, reason: "nothing held", skipped: true };
+
+    const oldestMs = Date.parse(rows[0].created_at);
+    const ageDays = Number.isFinite(oldestMs) ? Math.floor((Date.now() - oldestMs) / 86_400_000) : 0;
+    const sources = Array.from(
+      new Set(rows.map((row) => `${row.module ?? "unknown"}/${row.event_type ?? "unknown"}`)),
+    ).slice(0, 6);
+
+    const { recipients } = await resolveNotifyRecipients();
+    if (recipients.length === 0) return { delivered: 0, reason: "no recipients", skipped: true };
+
+    const message = [
+      `⏸️ ${rows.length} automated email${rows.length === 1 ? " is" : "s are"} still HELD and undelivered.`,
+      "",
+      `Oldest has been waiting ${ageDays} day${ageDays === 1 ? "" : "s"}.`,
+      `Source${sources.length === 1 ? "" : "s"}: ${sources.join(", ")}`,
+      "",
+      "Each one stays undelivered until approved or discarded.",
+      "Review → /admin/notification-confidence",
+    ].join("\n");
+
+    // Cairo date in the key: one reminder per day, and it repeats tomorrow if still unresolved.
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Africa/Cairo" });
+
+    let delivered = 0;
+    await Promise.all(
+      recipients.map(async (recipient) => {
+        await createSystemNotification({
+          actionUrl: "/admin/notification-confidence",
+          actorId: "confidence-gate",
+          channels: ["in_app", "telegram", "push"],
+          eventType: HELD_ALERT_EVENT_TYPE,
+          message,
+          metadata: {
+            heldCount: rows.length,
+            idempotencyKey: `notification-held-reminder:${today}:${recipient.hrId}`,
+            oldestAgeDays: ageDays,
+          },
+          module: "system",
+          priority: "high",
+          recipientHrId: recipient.hrId,
+          recipientUserId: recipient.userId,
+          telegram: { ctaLabel: "Review held notifications", ctaUrl: "/admin/notification-confidence" },
+          title: `${rows.length} email${rows.length === 1 ? "" : "s"} still held for review`,
+        });
+        delivered += 1;
+      }),
+    );
+
+    return { delivered, skipped: false };
+  } catch (error) {
+    logError("Held-notification daily reminder failed", {
+      error,
+      labels: { event: "held_notification_reminder_failed" },
+    });
+    return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+  }
+}
+
+/**
  * Best-effort alert that an automated email was held for review. Never throws.
  * Called from evaluateAndRecordNotificationSend's hold branch.
  */

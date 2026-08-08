@@ -9,7 +9,8 @@
 > **The measurements below remain accurate and still worth reading** — the `c8 --all` wiring is
 > unchanged, and these are the real numbers for this codebase. What is no longer live is the *gate*:
 > the "recommended threshold" note near the end is superseded, since nothing is gating on it.
-> `sast-scan` and `secret-scan` remain required checks on main.
+> `sast-scan` and `secret-scan` were never actually required checks on main, and the workflow that
+> ran them (`security-scan.yml`) was removed 2026-08-08.
 
 Written 2026-08-05, after PR #1748 was blocked by SonarQube reporting **4.3% coverage on new code**
 while the repo appeared to be at **55%**. Both figures were produced by the same tooling, and the

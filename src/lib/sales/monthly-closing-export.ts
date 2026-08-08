@@ -5,6 +5,7 @@ import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
 import {
   emptyClosingCell,
+  rebuildMatrixFromRows,
   roundedClosingCell,
   type MonthlyClosingCell,
   type MonthlyClosingColumn,
@@ -3270,6 +3271,64 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
       details.period,
     );
   }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+/**
+ * Employee-portal export: "Closing Matrix" + "Data" + "Total" (+ "Confidential" when applicable) —
+ * the same three tabs the admin workbook opens with, but for a viewer whose access is scoped to
+ * part of the company (a District/Regional/National Sales Manager, or a Product/Group Product
+ * Manager's product allowlist).
+ *
+ * `matrix` is this viewer's OWN scoped Closing Matrix — the exact one their portal screen already
+ * shows (loadPortalMonthlyClosing), never the company-wide one. Its cells are then REBUILT from
+ * `details.rows` (rebuildMatrixFromRows), the same already-scoped rows the Data sheet lists — so
+ * the Matrix tab can only ever contain area/product cells this viewer's own rows can populate. A
+ * row for an area outside their scope simply cannot appear: the skeleton itself only has their
+ * areas, and rebuildMatrixFromRows never adds a row the skeleton didn't already have.
+ *
+ * No Comparison, Rankings, Gaps, Summary, or Channel sheets — those are company-wide reads (see
+ * buildClosingDetailsWorkbook's own note) with no scoped equivalent yet.
+ */
+export async function buildPortalClosingWorkbook(
+  matrix: MonthlyClosingMatrix,
+  comparison: MonthlyClosingComparison,
+  details: ClosingDetailsResult,
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = systemIdentity.appName;
+  workbook.created = new Date();
+
+  const visible = details.rows.filter((row) => !row.isConfidential);
+  const confidential = details.rows.filter((row) => row.isConfidential);
+
+  const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible);
+  const { blocks, ref } = planDataLayout(comparison.data);
+
+  writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
+  writeRawDataSheet(workbook, "Data", visible, "Data — every invoice line in your scope", details.line, details.period);
+  const headline: ClosingHeadline = {
+    salesUnits: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+    salesValue: rebuiltMatrix.grandTotal.rowTotal.salesValue,
+  };
+  writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data");
+  if (confidential.length > 0) {
+    writeRawDataSheet(
+      workbook,
+      "Confidential",
+      confidential,
+      "Confidential products — excluded from Data, Total and the Closing Matrix",
+      details.line,
+      details.period,
+    );
+  }
+
+  // Hidden Calc sheet last (writeMatrixSheet/writeTotalSheet's live formulas already reference it
+  // by name) — same ordering reason as buildMonthlyClosingWorkbook: Excel refuses to hide the
+  // active sheet, so a visible report sheet must already exist as the active tab.
+  writeDataSheet(workbook, blocks);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);

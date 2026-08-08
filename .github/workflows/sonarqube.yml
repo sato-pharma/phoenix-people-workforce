@@ -47,8 +47,10 @@ name: SonarQube Cloud
 # commits/day that is a permanently red check, and a permanently red check is one
 # everybody learns to ignore — worse than no check at all.
 #
-# NOTHING SECURITY-RELATED IS LOST. `sast-scan` and `secret-scan` remain REQUIRED
-# status checks on main (with validate, lint, typecheck). Sonar was never required.
+# At the time this was written, `sast-scan` and `secret-scan` were believed to remain REQUIRED
+# status checks on main. That was already wrong (branch protection only ever required validate,
+# lint, typecheck), and as of 2026-08-08 the security-scan.yml workflow that ran them was removed
+# outright at owner request. Sonar was never required either.
 #
 # To revive: restore the `pull_request` trigger below. Scan config, coverage wiring and
 # the measured-coverage rationale are left intact in sonar-project.properties and

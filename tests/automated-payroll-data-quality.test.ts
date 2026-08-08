@@ -69,7 +69,12 @@ function member(hrId: string, overrides: Partial<EmployeeDirectoryRow> = {}): Po
 }
 
 function sources(
-  entries: Array<{ hrId: string; baseSalary?: number | null; paymentMode?: string | null }>,
+  entries: Array<{
+    hrId: string;
+    baseSalary?: number | null;
+    paymentMode?: string | null;
+    hasAnyRawCompensationFigure?: boolean;
+  }>,
 ): Map<string, PayrollSalarySource> {
   const map = new Map<string, PayrollSalarySource>();
   for (const entry of entries) {
@@ -82,6 +87,7 @@ function sources(
       socialInsurance: 0,
       employmentIncomeTax: 0,
       paymentMode: entry.paymentMode === undefined ? "two_parts" : entry.paymentMode,
+      hasAnyRawCompensationFigure: entry.hasAnyRawCompensationFigure,
     } as unknown as PayrollSalarySource;
     map.set(entry.hrId.toLowerCase(), source);
     map.set(entry.hrId.toLowerCase().replace(/[^a-z0-9]+/g, ""), source);
@@ -203,6 +209,61 @@ export function runAutomatedPayrollDataQualityTests() {
     "B-165 has no payment mode — a DEFAULT is deciding her First/Second Part split, on a 17,500 net",
   );
   assert.ok(!gannatallah!.issues.includes("missing_salary"), "B-165 does have a salary — do not over-flag");
+
+  // ---- net-salary-only new hires must NOT read as "no salary" --------------
+  // Real case, owner-reported 2026-08-08: 6 August new hires whose entered net
+  // salary exactly equals their title's standard allowances (e.g. a Medical Rep's
+  // 2500 = 2000 cost-of-living + 500 fuel), so the derived base salary is exactly
+  // zero even though the employee record plainly has a compensation figure on
+  // it. Confusing that with "nothing entered at all" is itself misleading — the
+  // banner used to say "would be paid 0.00", which is false for this month (new
+  // hires are prorated from NET, not base); what is actually true is that every
+  // future day-rate deduction for them will compute as 0 until a base salary is
+  // added.
+  const zeroBaseReport = auditPayrollDataQuality({
+    members: [
+      member("PD-0007", { fullName: "Bahaa Gamal" }),
+      member("A-12", { fullName: "Ali Mohamed Ali Elsayed" }),
+    ],
+    sources: sources([
+      { hrId: "PD-0007", baseSalary: 0, hasAnyRawCompensationFigure: true },
+      { hrId: "A-12", baseSalary: null, hasAnyRawCompensationFigure: false },
+    ]),
+    draftRows: [draft("PD-0007", { firstPartFrozen: 0 }), draft("A-12", { firstPartFrozen: 0 })],
+    part1Confirmed: true,
+  });
+  const byZeroBaseHrId = new Map(zeroBaseReport.rows.map((row) => [row.hrId, row]));
+
+  const netOnlyRow = byZeroBaseHrId.get("PD-0007");
+  assert.ok(netOnlyRow, "PD-0007 (net salary present, zero derived base) must still be flagged");
+  assert.ok(
+    netOnlyRow!.issues.includes("zero_base_after_allowances"),
+    "a net salary that nets to a zero base must get the accurate label, not the blanket 'no salary' one",
+  );
+  assert.ok(
+    !netOnlyRow!.issues.includes("missing_salary"),
+    "PD-0007 has a real compensation figure on record — 'no salary on record' would be false",
+  );
+
+  const noneRow = byZeroBaseHrId.get("A-12");
+  assert.ok(noneRow, "A-12 (nothing on record at all) must still be flagged");
+  assert.ok(
+    noneRow!.issues.includes("missing_salary"),
+    "an employee with truly nothing entered must keep the original 'no salary on record' label",
+  );
+  assert.ok(
+    !noneRow!.issues.includes("zero_base_after_allowances"),
+    "A-12 never had a raw figure to net against allowances — the net-only label must not apply",
+  );
+  assert.ok(
+    PAYROLL_DATA_ISSUE_LABELS.zero_base_after_allowances.length > 10,
+    "zero_base_after_allowances needs a plain-English label",
+  );
+  assert.doesNotMatch(
+    PAYROLL_DATA_ISSUE_LABELS.zero_base_after_allowances,
+    /paid 0\.00/,
+    "this label must not claim they would be paid 0.00 — this month's pay is usually fine, only future day-rate deductions are the real risk",
+  );
 
   // ---- part1Confirmed gates the frozen check -------------------------------
   // Before the freeze NOBODY is frozen, so flagging it would fire on the whole

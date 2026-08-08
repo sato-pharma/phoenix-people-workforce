@@ -96,7 +96,7 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Attendance/fingerprint deductions confirmed in the Deductions module — this step no longer recalculates them, it pays what you approved there (owner request 2026-08-03). Fingerprint needs an explicit \"Approved for Payroll\" on that page: anything still Pending shows 0.00 here until you decide it. Expand a row to see each approved deduction behind the figure. These reduce Part 1. Edit or confirm.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
     fields: [
-      { key: "fingerprintDays", label: "Deduction Days", kind: "days" },
+      { key: "fingerprintDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "fingerprintValue" },
       { key: "fingerprintValue", label: "Deduction Value", kind: "money" },
     ],
     hasReason: false,
@@ -344,10 +344,12 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "Unpaid-vacation deductions confirmed in the Deductions module — this step no longer recalculates them, it pays what you approved there (owner request 2026-08-03). Covers both vacation categories, and each needs an explicit \"Approved for Payroll\" on that page. ONLY employees who actually owe something are listed. Highest deduction first. Continuing two-part employees only; resignations and one-part-salary employees are settled in Part 1 instead. Confirming this step still debits leave balances exactly as before — that bookkeeping is separate from the money. Expand a row to see each approved deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Deducted Days", label: "Deducted Days" },
       { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
-    fields: [{ key: "unpaidVacations", label: "Deduction Value", kind: "money" }],
+    fields: [
+      { key: "p2VacationDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "unpaidVacations" },
+      { key: "unpaidVacations", label: "Deduction Value", kind: "money" },
+    ],
     hasReason: false,
     isHoldStep: false,
     detailNoun: "approved deduction",
@@ -361,10 +363,12 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
       "CRM no-activity deductions you marked \"Approved for Payroll\" in the Deductions module — this step no longer recalculates them, and nothing you have not confirmed is deducted (owner rule 2026-08-03). A flagged day sitting Pending on that page pays 0.00 here until you approve it, so this total can be lower than the Deductions Overview for the same month — the gap is exactly the rows still awaiting your decision. Continuing two-part employees only — resignations and one-part-salary employees are settled in Part 1 instead. Expand a row to see each confirmed deduction behind the figure. Edit or confirm.",
     contextColumns: [
       { key: "Hire Date", label: "Hire Date" },
-      { key: "Deducted Days", label: "Deducted Days" },
       { key: "Confirmed Lines", label: "Confirmed Lines" },
     ],
-    fields: [{ key: "crm", label: "Deduction Value", kind: "money" }],
+    fields: [
+      { key: "p2CrmDays", label: "Deduction Days", kind: "days", autoCalcMoneyKey: "crm" },
+      { key: "crm", label: "Deduction Value", kind: "money" },
+    ],
     hasReason: false,
     isHoldStep: false,
     detailNoun: "confirmed deduction",
@@ -391,7 +395,10 @@ export const STEP_DEFINITIONS: Record<StepKey, StepDefinition> = {
     subtitle:
       "Add any other deduction per employee, with a reason. Pre-filled with the Loan and Other deductions you marked \"Approved for Payroll\" in the Deductions module for continuing two-part employees (owner request 2026-08-03) — resignations and one-part-salary employees take theirs on the Part 1 Other Deductions tab instead, so nobody is charged twice. Expand a row to see what made up the figure. Edit freely, or leave 0 for none.",
     contextColumns: [{ key: "Hire Date", label: "Hire Date" }],
-    fields: [{ key: "manualOtherDeductions", label: "Value", kind: "money" }],
+    fields: [
+      { key: "p2ManualDeductionDays", label: "Days", kind: "days", autoCalcMoneyKey: "manualOtherDeductions" },
+      { key: "manualOtherDeductions", label: "Value", kind: "money" },
+    ],
     hasReason: true,
     isHoldStep: false,
     detailNoun: "confirmed deduction",

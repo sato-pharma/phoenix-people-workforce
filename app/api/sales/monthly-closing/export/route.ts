@@ -12,7 +12,12 @@ import {
 } from "@/lib/sales/monthly-closing-channel-comparison";
 import { type ClosingDetailsFilters, loadMonthlyClosingDetails } from "@/lib/sales/monthly-closing-details";
 import { closingFileName, regionScopeLabel } from "@/lib/sales/closing-export-filename";
-import { buildClosingDetailsWorkbook, buildMonthlyClosingWorkbook } from "@/lib/sales/monthly-closing-export";
+import {
+  buildClosingDetailsWorkbook,
+  buildMonthlyClosingWorkbook,
+  buildPortalClosingWorkbook,
+} from "@/lib/sales/monthly-closing-export";
+import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
 import {
   filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
@@ -406,7 +411,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const buffer = await buildClosingDetailsWorkbook(details);
+    // This viewer's OWN scoped Closing Matrix — the exact one their portal screen already shows
+    // (loadPortalMonthlyClosing narrows by line/region/area/product and strips confidential
+    // columns; publish-gated, same as the portal page). Null for a role loadPortalMonthlyClosing
+    // has no scope for, or a period that is not (yet) published — the export then degrades to the
+    // Data/Total-only workbook rather than failing outright.
+    const portalClosing = await loadPortalMonthlyClosing({ access, period: details.period }).catch(() => null);
+    const buffer = portalClosing?.matrix
+      ? await buildPortalClosingWorkbook(
+          portalClosing.matrix,
+          // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
+          // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
+          await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows),
+          details,
+        )
+      : await buildClosingDetailsWorkbook(details);
     // These rows are already narrowed to this caller's own access, so a District Manager's file is
     // named for their region without the route having to re-derive the scope.
     return fileResponse(buffer, closingFileName({

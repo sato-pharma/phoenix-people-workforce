@@ -12,6 +12,7 @@ import { runVacationSlaDaily } from "@/lib/vacation/service";
 import { runFieldWorkforceComplianceDeductionsAutoSync } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { runMarketingSlaDaily } from "@/lib/marketing-requests/service";
 import { runRecruitmentDailyNotifications } from "@/lib/recruitment/notifications";
+import { remindHeldNotifications } from "@/lib/notifications/held-notification-alert";
 import { runTelegramDailyHrDigest } from "@/lib/notifications/telegram-operations";
 import { runWeeklySystemHealthDigest } from "@/lib/notifications/weekly-system-health-digest";
 import { runOutstationGeocodeWarmup } from "@/lib/outstation/geocode-warmup";
@@ -97,6 +98,9 @@ async function runDailyNotifications(request: Request) {
     notificationRetention,
     activityRetention,
     sosMonthlyReportCheck,
+    // Must stay LAST and in the same position as its Promise.all entry — the 2026-07-18
+    // off-by-one noted above happened exactly here, by adding a job without its name.
+    heldNotificationReminder,
   ] = await Promise.all([
     runBirthdayNotifications(request).catch(
       onJobFailure("daily-birthday", (message) =>
@@ -186,6 +190,13 @@ async function runDailyNotifications(request: Request) {
         errors: [{ period: "unknown", error: message }],
       })),
     ),
+    // Keeps asking while any email sits held at /admin/notification-confidence. The hold-time
+    // alert fires once and never repeats, which is how 30 held emails — including 8 password
+    // resets and 4 account-setup links — went undelivered for up to 15 days (measured
+    // 2026-08-08). A hold is only a safety mechanism if somebody eventually acts on it.
+    remindHeldNotifications().catch(
+      onJobFailure("held-notification-reminder", (message) => ({ delivered: 0, skipped: true, reason: message })),
+    ),
   ]);
   const [birthdays, contractRenewals, holidayConfirmation] = await Promise.all([
     birthdayResponse instanceof Response ? birthdayResponse.json() : birthdayResponse,
@@ -196,7 +207,7 @@ async function runDailyNotifications(request: Request) {
   // One structured line per run that states the real outcome. This — not the HTTP status, and not
   // the dead-man's-switch ping (which only proves the route executed) — is the signal to alert on:
   // `event="cron_run_summary" job="notifications/daily" failedCount>0`.
-  const totalJobs = 22;
+  const totalJobs = 23;
   if (failures.length > 0) {
     logError(
       `Daily notification run completed with ${failures.length} of ${totalJobs} sub-job(s) FAILED: ${failures.map((f) => f.job).join(", ")}`,
@@ -236,6 +247,7 @@ async function runDailyNotifications(request: Request) {
     failedCount: failures.length,
     failedJobs: failures,
     fieldWorkforceComplianceDeductionsAutoSync,
+    heldNotificationReminder,
     holidayConfirmation,
     marketingSla,
     notificationRetention,

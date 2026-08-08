@@ -678,6 +678,8 @@ import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-e
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
+import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
+import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1563,6 +1565,14 @@ await runTest(
 await runTest(
   "District Manager weekly/monthly plans skip the CEO decide stage (server guard, no CEO notification, HR bucket, read-only CEO queue)",
   runWeeklyPlansDistrictManagerBypassTests,
+);
+await runTest(
+  "a notification email never substitutes the shared HR inbox for a recipient whose address failed to resolve",
+  runNotificationRecipientAddressResolutionTests,
+);
+await runTest(
+  "no email leaves the system unless every address is accounted for and the intended person is actually addressed",
+  runRecipientAssuranceGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

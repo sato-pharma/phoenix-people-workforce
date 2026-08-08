@@ -49,7 +49,20 @@ async function sendEmail({
 
   if (!from) return { reason: "HR_REPLY_EMAIL_FROM or NOTIFICATION_EMAIL_FROM is missing.", skipped: true as const };
 
-  return sendPhoenixEmail({ bcc, cc, from, html, idempotencyKey, subject, text, to });
+  // A manual HR reply answers whoever emailed in — a candidate, a vendor, an ex-employee — so the
+  // recipient is deliberately outside the employee directory. Declared external, otherwise the
+  // Recipient Assurance Guard would block every reply as an unrecognised address.
+  return sendPhoenixEmail({
+    bcc,
+    cc,
+    externalRecipients: [...to, ...cc, ...bcc],
+    from,
+    html,
+    idempotencyKey,
+    subject,
+    text,
+    to,
+  });
 }
 
 export async function POST(request: Request) {
