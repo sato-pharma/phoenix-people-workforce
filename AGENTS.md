@@ -82,10 +82,14 @@ These exist because 1.4 fixes per feature is what happens without them.
   deliberate exception: its `currentStagingRef` pins the archived ref on purpose and says so.)
 - Production Supabase project ref: `ozucdzovmcqvepbozvqf`
 - GitHub Actions secret `STAGING_SUPABASE_SERVICE_ROLE_KEY` (added 2026-07-18): the staging
-  project's service-role key, used only by `.github/workflows/ci.yml`'s `preview-smoke` job so the
-  Playwright login-smoke test (CI_SMOKE_LOGIN_ID account) writes its expected session-rejection
-  noise to staging instead of production `audit_logs`. The matching URL/anon key for that step are
-  hardcoded in `ci.yml` (public/non-secret, RLS-protected).
+  project's service-role key, consumed by **two** workflows. In `.github/workflows/ci.yml` it is set
+  on the `validate` job's "Run Playwright login smoke test" step, so the login-smoke test
+  (CI_SMOKE_LOGIN_ID account) writes its expected session-rejection noise to staging instead of
+  production `audit_logs`; the matching URL/anon key for that step are hardcoded in `ci.yml`
+  (public/non-secret, RLS-protected). In `.github/workflows/migration-drift-check.yml` it powers
+  both staging legs (`check:migrations-applied` and `check:schema-shape`) — the production legs use
+  the separate `PRODUCTION_SUPABASE_SERVICE_ROLE_KEY`. **There is no `preview-smoke` job any more**;
+  the smoke test is a step inside `validate` (verified 2026-08-09).
 - **`.env.local` points at PRODUCTION Supabase.** `pnpm run dev` mutates production data.
 
 Environment meanings — **Local**: this machine or localhost. **Preview**: the deployment generated

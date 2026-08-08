@@ -193,12 +193,13 @@ export async function POST(request: Request) {
     const ip = getRequestIp(request);
     // PHOENIX_CI_SMOKE_LOGIN=true bypasses ALL Supabase DB calls (rate-limit checks,
     // credential lookup, session insert). Only accepts the hardcoded CI test account.
-    // Used in preview-smoke CI to guarantee login succeeds without requiring DB access.
-    // Gated on VERCEL_ENV (auto-injected by Vercel per deployment, not a project env var
-    // someone can fat-finger) rather than NODE_ENV: Next.js inlines NODE_ENV to the literal
-    // "production" at build time for every `next build` output -- including the artifact
-    // CI's preview-smoke job runs -- so a NODE_ENV check would be dead code that always
-    // resolves to false and would silently break that smoke test.
+    // Set by the login smoke test step in ci.yml's `validate` job, to guarantee login
+    // succeeds there without requiring DB access. (That step used to be its own
+    // `preview-smoke` job; it moved into `validate` and the separate job is gone.)
+    // Gated on APP_ENV rather than NODE_ENV: Next.js inlines NODE_ENV to the literal
+    // "production" at build time for every `next build` output -- including the build
+    // that job's smoke test runs against -- so a NODE_ENV check would be dead code that
+    // always resolves to false and would silently break that smoke test.
     const ciSmokeMode =
       process.env.APP_ENV !== "production" && process.env.PHOENIX_CI_SMOKE_LOGIN === "true";
     const originRejection = rejectUntrustedForwardedOrigin(request);

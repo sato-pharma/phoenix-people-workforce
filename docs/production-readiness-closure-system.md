@@ -114,9 +114,10 @@ New production work must follow this flow:
 
 1. Work on a branch/worktree, not `main`.
 2. Validate with typecheck, tests, build, and audit when code or dependencies change.
-3. Confirm CI's `preview-smoke` job passes (a Playwright smoke test run inside the
-   CI runner against staging Supabase — there is no deployed preview URL to test
-   directly; that was a retired Vercel-era model).
+3. Confirm CI's `validate` job passes — it ends with a Playwright login smoke test run
+   inside the CI runner against staging Supabase. There is no deployed preview URL to
+   test directly (that was a retired Vercel-era model), and the separate `preview-smoke`
+   job that once ran this test no longer exists.
 4. Merge only after approval.
 5. Verify `https://phoenix-hr.satopharma.com` after production deployment.
 
