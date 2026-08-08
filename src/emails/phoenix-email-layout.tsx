@@ -16,12 +16,33 @@ export type PhoenixEmailAction = {
   tone?: "primary" | "danger" | "secondary";
 };
 
+/** One grouped, headed zebra table — several of these in a row replace one long flat
+ * metadataRows list with a scannable, sectioned "document" (Order & Requester, Product &
+ * Deal, Geography, …). Each section renders through the SAME renderPhoenixMetadataTable
+ * used for the flat list, so the zebra striping, borders, and dark-mode rules never drift
+ * between the two shapes. */
+export type PhoenixEmailMetadataSection = {
+  heading: string;
+  rows: PhoenixEmailMetadataRow[];
+};
+
+/** The single most important number in the email (e.g. the order's sales value), called out
+ * in a tinted, gradient highlight band above the metadata so it never has to be found by
+ * scanning a table. `badge` is a short pill (e.g. the deal type) shown beside the value. */
+export type PhoenixEmailHeroStat = {
+  badge?: string;
+  label: string;
+  value: string;
+};
+
 export type PhoenixEmailLayoutProps = {
   action?: PhoenixEmailAction;
   bodyHtml: string;
   closingText?: string;
   greeting?: string;
+  heroStat?: PhoenixEmailHeroStat;
   metadataRows?: PhoenixEmailMetadataRow[];
+  metadataSections?: PhoenixEmailMetadataSection[];
   signatureTagline?: string;
   previewText: string;
   signatureImageSrc?: string;
@@ -119,6 +140,74 @@ export function renderPhoenixMetadataTableText(rows: PhoenixEmailMetadataRow[] |
     .join("\n");
 }
 
+/** Several headed zebra tables in sequence — the sectioned alternative to one long
+ * renderPhoenixMetadataTable list. A section with no non-empty rows is dropped entirely
+ * rather than rendering an empty card. */
+export function renderPhoenixMetadataSections(sections: PhoenixEmailMetadataSection[] | undefined) {
+  const cleanSections = (sections ?? [])
+    .map((section) => ({ heading: section.heading, rows: (section.rows ?? []).filter((row) => String(row.value ?? "").trim()) }))
+    .filter((section) => section.rows.length > 0);
+  if (cleanSections.length === 0) return "";
+
+  return cleanSections
+    .map(
+      (section, index) => `
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:${index === 0 ? 22 : 26}px 0 0;width:100%;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt">
+      <tr>
+        <td style="padding:0 0 0 2px">
+          <p class="phoenix-section-title" style="margin:0;border-left:3px solid #f97316;padding:1px 0 1px 10px;color:#0f172a;-webkit-text-fill-color:#0f172a;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:900;letter-spacing:0.08em;line-height:1.5;text-transform:uppercase">${escapeEmailHtml(section.heading)}</p>
+        </td>
+      </tr>
+    </table>${renderPhoenixMetadataTable(section.rows)}`,
+    )
+    .join("");
+}
+
+/** Plain-text projection of renderPhoenixMetadataSections. */
+export function renderPhoenixMetadataSectionsText(sections: PhoenixEmailMetadataSection[] | undefined) {
+  return (sections ?? [])
+    .map((section) => ({ heading: section.heading, rows: (section.rows ?? []).filter((row) => String(row.value ?? "").trim()) }))
+    .filter((section) => section.rows.length > 0)
+    .map((section) => `${section.heading.toUpperCase()}\n${renderPhoenixMetadataTableText(section.rows)}`)
+    .join("\n\n");
+}
+
+/** The gradient hero band that calls out the single most important number in the email. */
+function renderPhoenixHeroStat(stat: PhoenixEmailHeroStat | undefined) {
+  if (!stat || !String(stat.value ?? "").trim()) return "";
+
+  const badge = String(stat.badge ?? "").trim();
+  return `
+    <table class="phoenix-hero" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:4px 0 0;width:100%;border-collapse:separate;border-spacing:0;mso-table-lspace:0pt;mso-table-rspace:0pt">
+      <tr>
+        <td class="phoenix-hero-cell" bgcolor="#fff7ed" style="padding:18px 20px;background:#fff7ed;background-image:linear-gradient(135deg,#fff7ed 0%,#ffedd5 100%);border:1px solid #fed7aa;border-radius:14px">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt">
+            <tr>
+              <td style="vertical-align:middle">
+                <p class="phoenix-hero-label" style="margin:0;color:#9a3412;-webkit-text-fill-color:#9a3412;font-family:Arial,Helvetica,sans-serif;font-size:11px;font-weight:900;letter-spacing:0.1em;line-height:1.4;text-transform:uppercase">${escapeEmailHtml(stat.label)}</p>
+                <p class="phoenix-hero-value" style="margin:5px 0 0;color:#7c2d12;-webkit-text-fill-color:#7c2d12;font-family:Arial,Helvetica,sans-serif;font-size:28px;font-weight:900;letter-spacing:-0.01em;line-height:1.2;white-space:nowrap">${escapeEmailHtml(stat.value)}</p>
+              </td>
+              ${
+                badge
+                  ? `<td align="right" style="vertical-align:middle;padding-left:12px">
+                <span class="phoenix-hero-badge" style="display:inline-block;white-space:nowrap;border:1px solid #fdba74;background:#ffffff;color:#c2410c;-webkit-text-fill-color:#c2410c;border-radius:999px;padding:7px 16px;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:900">${escapeEmailHtml(badge)}</span>
+              </td>`
+                  : ""
+              }
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>`;
+}
+
+/** Plain-text projection of renderPhoenixHeroStat. */
+function renderPhoenixHeroStatText(stat: PhoenixEmailHeroStat | undefined) {
+  if (!stat || !String(stat.value ?? "").trim()) return "";
+  const badge = String(stat.badge ?? "").trim();
+  return `${stat.label}: ${stat.value}${badge ? ` (${badge})` : ""}`;
+}
+
 function renderPhoenixAction(action: PhoenixEmailAction | undefined) {
   if (!action) return "";
 
@@ -197,6 +286,11 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
         .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
         .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
         .phoenix-divider { background:#334155 !important; }
+        .phoenix-section-title { color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
+        .phoenix-hero-cell { background:#2a1607 !important; background-image:linear-gradient(135deg,#2a1607 0%,#3a2008 100%) !important; border-color:#7c3f12 !important; }
+        .phoenix-hero-label { color:#fdba74 !important; -webkit-text-fill-color:#fdba74 !important; }
+        .phoenix-hero-value { color:#ffedd5 !important; -webkit-text-fill-color:#ffedd5 !important; }
+        .phoenix-hero-badge { background:#1f2937 !important; border-color:#9a5b2a !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
         .phoenix-auto-note { background:#42210f !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
         .phoenix-action-primary { background:#f97316 !important; border-color:#fb923c !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
         .phoenix-action-secondary { background:#334155 !important; border-color:#64748b !important; color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
@@ -217,6 +311,11 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
       [data-ogsc] .phoenix-muted { color:#cbd5e1 !important; -webkit-text-fill-color:#cbd5e1 !important; }
       [data-ogsc] .phoenix-metadata-cell { background:#18212f !important; border-color:#2b3a4f !important; }
       [data-ogsc] .phoenix-metadata-cell.phoenix-metadata-row-alt { background:#1f2b3d !important; }
+      [data-ogsc] .phoenix-section-title { color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
+      [data-ogsc] .phoenix-hero-cell { background:#2a1607 !important; border-color:#7c3f12 !important; }
+      [data-ogsc] .phoenix-hero-label { color:#fdba74 !important; -webkit-text-fill-color:#fdba74 !important; }
+      [data-ogsc] .phoenix-hero-value { color:#ffedd5 !important; -webkit-text-fill-color:#ffedd5 !important; }
+      [data-ogsc] .phoenix-hero-badge { background:#1f2937 !important; border-color:#9a5b2a !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
       [data-ogsc] .phoenix-auto-note { background:#42210f !important; color:#fed7aa !important; -webkit-text-fill-color:#fed7aa !important; }
       [data-ogsc] .phoenix-action-primary { background:#f97316 !important; border-color:#fb923c !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; }
       [data-ogsc] .phoenix-action-secondary { background:#334155 !important; border-color:#64748b !important; color:#f8fafc !important; -webkit-text-fill-color:#f8fafc !important; }
@@ -270,6 +369,8 @@ export function renderPhoenixEmailHtml(input: PhoenixEmailLayoutProps) {
                           : ""
                       }
                       ${input.bodyHtml}
+                      ${renderPhoenixHeroStat(input.heroStat)}
+                      ${renderPhoenixMetadataSections(input.metadataSections)}
                       ${renderPhoenixMetadataTable(input.metadataRows)}
                       ${renderPhoenixAction(input.action)}
                       ${
@@ -330,12 +431,16 @@ export function renderPhoenixEmailText(input: {
   bodyText: string;
   closingText?: string;
   greeting?: string;
+  heroStat?: PhoenixEmailHeroStat;
   metadataRows?: PhoenixEmailMetadataRow[];
+  metadataSections?: PhoenixEmailMetadataSection[];
   signatureTagline?: string;
   signatureName?: string;
   title: string;
 }) {
   const signatureTagline = input.signatureTagline ?? phoenixEmailAutoGeneratedNote;
+  const heroLine = renderPhoenixHeroStatText(input.heroStat);
+  const sectionsText = renderPhoenixMetadataSectionsText(input.metadataSections);
   const lines = [
     input.title,
     "",
@@ -343,7 +448,9 @@ export function renderPhoenixEmailText(input: {
     "",
     input.bodyText.trim(),
     "",
-    ...(input.metadataRows ?? []).map((row) => `${row.label}: ${row.value ?? ""}`),
+    heroLine,
+    heroLine ? "" : "",
+    ...(sectionsText ? sectionsText.split("\n") : (input.metadataRows ?? []).map((row) => `${row.label}: ${row.value ?? ""}`)),
     input.action ? "" : "",
     input.action ? `${input.action.label}: ${input.action.href}` : "",
     input.closingText ? "" : "",

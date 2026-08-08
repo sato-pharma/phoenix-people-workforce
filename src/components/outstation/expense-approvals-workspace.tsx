@@ -151,6 +151,16 @@ const DISTANCE_TONE_CLASS: Record<"fail" | "none" | "warn", string> = {
   warn: "bg-amber-100 font-bold text-amber-800",
 };
 
+/** Tone for the nearest-brick match badge — mirrors the "High/Good/Review/Weak" prefixes
+ * brickMatchConfidence() actually returns (see @/lib/crm/brick-geo), so a wording change
+ * there degrades to the neutral tone instead of silently going stale here. */
+function capturedLocationConfidenceTone(confidence: string): "success" | "warning" | "danger" | "neutral" {
+  if (confidence.startsWith("High") || confidence.startsWith("Good")) return "success";
+  if (confidence.startsWith("Review")) return "warning";
+  if (confidence.startsWith("Weak")) return "danger";
+  return "neutral";
+}
+
 export function ExpenseApprovalsWorkspace({
   /**
    * Whether this viewer may DECIDE, as opposed to merely read. Resolved on the server and passed
@@ -1474,7 +1484,8 @@ function ExpenseDecisionPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-slate-200">
-        <div className="flex flex-wrap items-start justify-between gap-3 bg-slate-900 px-5 py-4">
+        <div className="h-[3px] bg-gradient-to-r from-orange-400 via-orange-500 to-amber-200" />
+        <div className="flex flex-wrap items-start justify-between gap-3 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 px-5 py-4">
           <div className="min-w-0">
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-400">Trip under review</p>
             <h2 className="mt-1 text-lg font-black tracking-tight text-white">{record.specialist || "Unassigned"}</h2>
@@ -1546,6 +1557,30 @@ function ExpenseDecisionPanel({
               </p>
             </div>
           </div>
+          {/* Brick / area / region derived from the trip's captured GPS point (see
+              captured-location.ts) — absent, not "Not resolved", for a historical
+              Excel-imported trip that never captured coordinates at all. */}
+          {record.capturedLocation ? (
+            <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Captured geography</p>
+                {record.capturedLocation.confidence ? (
+                  <Badge variant={capturedLocationConfidenceTone(record.capturedLocation.confidence)}>
+                    {record.capturedLocation.confidence}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="mt-1 flex w-max items-center gap-1.5 text-sm font-semibold text-slate-900">
+                <MapPin className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                {record.capturedLocation.label}
+              </p>
+              <div className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1">
+                <Fact label="Brick" value={record.capturedLocation.brickLabel} />
+                <Fact label="Area" value={record.capturedLocation.areaLabel} />
+                <Fact label="Region" value={record.capturedLocation.regionLabel} />
+              </div>
+            </div>
+          ) : null}
           <div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4">
             <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">Cost breakdown</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-sm text-slate-700">

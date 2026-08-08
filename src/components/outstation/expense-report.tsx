@@ -86,7 +86,13 @@ function escapeForExcel(value: unknown) {
   return /^[=+\-@]/.test(textValue) ? `'${textValue}` : textValue;
 }
 
-type ExpenseReviewColumnKey = keyof ExpenseTripRecord | "validation";
+// Geography fields are excluded: this grid is a flat spreadsheet-style review of
+// Excel-imported/Phoenix trip rows, and capturedLocation is an object (brick/area/region),
+// not a renderable cell value — same reason "specialist" is filtered out below for its own
+// (pinned-column) reason. Neither raw coordinate is a review-worthy standalone column either.
+type ExpenseReviewColumnKey =
+  | Exclude<keyof ExpenseTripRecord, "capturedLocation" | "capturedLatitude" | "capturedLongitude">
+  | "validation";
 
 const expenseCurrencyKeys = new Set<ExpenseReviewColumnKey>([
   "allowance",

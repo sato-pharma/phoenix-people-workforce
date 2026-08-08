@@ -1,4 +1,6 @@
-﻿export type PayrollWorkflowAction =
+﻿import type { OutstationCapturedLocationSummary } from "@/lib/outstation/types";
+
+export type PayrollWorkflowAction =
   | "mark_part1_ready"
   | "mark_part1_paid"
   | "open_adjustments"
@@ -89,6 +91,15 @@ export type SalaryFlag = {
 export type ExpenseTripRecord = {
   allowance: number;
   amWorkload: number;
+  /** Raw GPS captured at submission — present only for Phoenix-submitted requests (same
+   * "absent, not zero" rule as doctorVisits below: Excel-imported historical rows never
+   * carry these). Resolved into `capturedLocation` at read time; see captured-location.ts. */
+  capturedLatitude?: number | null;
+  capturedLongitude?: number | null;
+  /** Brick/area/region the captured GPS point resolves to, derived at read time from
+   * capturedLatitude/capturedLongitude — see resolveOutstationCapturedLocation. Optional
+   * because a historical row (or one still missing coordinates) has nothing to resolve. */
+  capturedLocation?: OutstationCapturedLocationSummary | null;
   date: string;
   description: string;
   /** Doctor/pharmacy/institution split of the trip's REGULAR CRM visits — display-only context,

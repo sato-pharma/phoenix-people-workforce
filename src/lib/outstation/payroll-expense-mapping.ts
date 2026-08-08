@@ -90,6 +90,11 @@ export function mapOutstationRequestToPayrollExpenseRecord(
   return {
     allowance: request.allowanceAmount,
     amWorkload: request.amWorkload ?? 0,
+    capturedLatitude: request.capturedLatitude,
+    capturedLongitude: request.capturedLongitude,
+    // Pass through only — this mapper stays sync, so it never resolves geography itself
+    // (see captured-location.ts). Present when the caller already enriched `request`.
+    capturedLocation: request.capturedLocation ?? null,
     date: tripStartDate,
     description: request.notes ?? request.approvalReason ?? "Approved outstation expense",
     doctorVisits: snapshotKindCount(request.workloadEvidenceSnapshot, "doctorVisits"),
@@ -175,6 +180,8 @@ export function mapOutstationRequestRowToPayrollApproval(
     approvedAmount: null,
     approvedAt: null,
     approvedBy: null,
+    capturedLatitude: toNumber(row.captured_latitude),
+    capturedLongitude: toNumber(row.captured_longitude),
     date: tripStartDate,
     description: toText(row.notes) || "Outstation expense request",
     from: origin || "Residence",
