@@ -1299,7 +1299,11 @@ export async function buildFabSheet(
   }
 
   const valueDate = valueDateIso ? new Date(`${valueDateIso}T00:00:00Z`) : defaultFabValueDate(period2);
-  const buffer = await buildFabSheetWorkbook({ rows: fabRows, valueDate });
+  const buffer = await buildFabSheetWorkbook({
+    rows: fabRows,
+    valueDate,
+    salaryColumnLabel: scope === "part2" ? "Expense" : "Salary",
+  });
   const label = monthLabel(run.month, run.year).replace(/\s+/g, "-");
   return { buffer, fileName: `FAB-Salary-Transfer-${label}-${scope}.xlsx` };
 }

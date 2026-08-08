@@ -427,6 +427,11 @@ export async function buildFullSheetWorkbook(input: {
     run: input.run,
     rows: input.rows,
     headers: [...payrollSheetHeaders],
+    // Owner request 2026-08-08: the Full sheet is finance's complete monthly
+    // picture, and until now it was the one sheet in the module that DIDN'T
+    // carry bank details — the Part 1 sheet already has them (see
+    // buildPart1SheetWorkbook below).
+    extraColumns: bankExtraColumns(),
     nonEmployees: input.nonEmployees ?? [],
     nonEmployeeValueHeader: "Month Salary",
   });
