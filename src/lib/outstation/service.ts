@@ -43,6 +43,7 @@ import {
 import { captureOutstationTripWorkload } from "@/lib/outstation/workload-capture";
 import {
   cairoDateOnly,
+  isWithinDepartureWindow,
   reviewDepartureEvidence,
   type DepartureEvidenceReview,
 } from "@/lib/outstation/departure-evidence";
@@ -90,6 +91,7 @@ import type {
   OutstationApprovalRecommendation,
   OutstationCarEvidenceMetadata,
   OutstationDepartureEvidenceMetadata,
+  OutstationDepartureEvidenceVersion,
   OutstationEvidenceGateStatus,
   OutstationWorkloadGateStatus,
   OutstationCalculationInput,
@@ -3698,10 +3700,28 @@ export async function captureOutstationDeparturePhoto(
     await assertOutstationAdminAccess(access, "approve");
   }
 
-  if (request.departureEvidenceImagePath) {
-    // Not an overwrite: the departure photo is the evidence that he was still there when he said
-    // he was, so a later replacement would defeat the point.
-    throw new Error("A departure photo has already been captured for this request.");
+  // A RETAKE, not an overwrite (owner decision 2026-08-08). Blurred photos, a thumb over the lens
+  // and a camera that fired early are all real, and refusing them outright pushed honest people
+  // towards asking an admin to waive the gate entirely. Two conditions keep it safe, and both are
+  // the owner's explicit choice:
+  //
+  //   - It is bounded by the SAME deadline as the first capture — the end of the trip's last day,
+  //     Cairo. That is what preserves the meaning of the pair: every version was taken while he
+  //     was still on the trip. After the window it needs a Super Admin, exactly as before.
+  //   - Nothing is ever discarded. The superseded capture keeps its own storage object and is
+  //     recorded in previousVersions below, so a retake can correct a photo but never erase one.
+  const isRetake = Boolean(request.departureEvidenceImagePath);
+  if (isRetake) {
+    const stillOpen = isWithinDepartureWindow({
+      capturedAt: new Date().toISOString(),
+      tripEndDate: request.tripEndDate,
+    });
+    if (!stillOpen) {
+      throw new Error(
+        "The departure photo can only be retaken while the trip window is open, and it closed at the end of " +
+          `${String(request.tripEndDate).slice(0, 10)}. Ask a system administrator if this needs changing.`,
+      );
+    }
   }
   if (!request.carEvidenceImagePath) {
     throw new Error(
@@ -3720,10 +3740,36 @@ export async function captureOutstationDeparturePhoto(
     tripEndDate: request.tripEndDate,
   });
 
+  // The capture being replaced, preserved whole before the new one is written. Built from the
+  // CURRENT row rather than recomputed, so what is archived is exactly what the approver would
+  // have seen a moment ago.
+  const existing = request.departureEvidenceMetadata;
+  const previousVersions: OutstationDepartureEvidenceVersion[] = [
+    ...(existing?.previousVersions ?? []),
+    ...(isRetake && request.departureEvidenceImagePath
+      ? [
+          {
+            capturedAt: existing?.capturedAt ?? request.departureCapturedAt ?? capturedAt,
+            capturedLatitude: existing?.capturedLatitude ?? null,
+            capturedLocationLabel: existing?.capturedLocationLabel ?? null,
+            capturedLongitude: existing?.capturedLongitude ?? null,
+            distanceFromArrivalKm: existing?.distanceFromArrivalKm ?? null,
+            flags: existing?.flags ?? [],
+            imagePath: request.departureEvidenceImagePath,
+            minutesAfterArrival: existing?.minutesAfterArrival ?? null,
+            version: existing?.version ?? 1,
+          },
+        ]
+      : []),
+  ];
+
+  const version = previousVersions.length + 1;
+
   const path = await uploadOutstationDepartureEvidenceImage({
     employeeHrId: request.employeeHrId,
     imageDataUrl: input.imageDataUrl,
     requestId: request.id,
+    version,
   });
 
   const metadata: OutstationDepartureEvidenceMetadata = {
@@ -3734,8 +3780,16 @@ export async function captureOutstationDeparturePhoto(
     distanceFromArrivalKm: review.distanceFromArrivalKm,
     flags: review.flags,
     minutesAfterArrival: review.minutesAfterArrival,
+    previousVersions,
     source: "live_camera",
-    summary: review.summary,
+    // The retake count rides in the SUMMARY as well as the structured field, because the summary
+    // is the line the approver actually reads on the approvals screen. A photo retaken four times
+    // may be perfectly innocent, but he must not have to go looking to find that out.
+    summary:
+      version > 1
+        ? `${review.summary} Retaken ${version - 1} time${version === 2 ? "" : "s"} — ${version} captures in total, all kept.`
+        : review.summary,
+    version,
   };
 
   const gateStatus = nextEvidenceGateStatus({
@@ -3951,6 +4005,14 @@ export type MyOutstationSubmission = {
   /** True while the employee can still fix this himself from the portal. */
   canCaptureDeparturePhoto: boolean;
   /**
+   * True when a departure photo EXISTS and the trip window is still open, so he may replace a
+   * blurred or mis-aimed one. Bounded by the same deadline as the first capture (owner decision
+   * 2026-08-08) — that is what keeps every version something taken while he was still on the trip.
+   */
+  canRetakeDeparturePhoto: boolean;
+  /** How many times the departure photo has been replaced. 0 on a first capture. */
+  departureRetakeCount: number;
+  /**
    * Where the arrival GPS point actually falls in Phoenix geography, split into its three
    * levels rather than left as one address string. Derived at read time from the stored
    * coordinates, so it always reflects TODAY's brick tree — the owner's standing rule.
@@ -4063,6 +4125,12 @@ export async function listOwnOutstationSubmissions(
       allowanceAmount: request.allowanceAmount,
       amWorkload: request.amWorkload ?? 0,
       canCaptureDeparturePhoto: gate.blocker === "departure_photo",
+      canRetakeDeparturePhoto:
+        Boolean(request.departureEvidenceImagePath) &&
+        isWithinDepartureWindow({
+          capturedAt: new Date().toISOString(),
+          tripEndDate: request.tripEndDate,
+        }),
       capturedArea: capturedLocation.areaLabel,
       capturedBrick: capturedLocation.brickLabel,
       capturedConfidence: capturedLocation.confidence,
@@ -4075,6 +4143,7 @@ export async function listOwnOutstationSubmissions(
       departureFlags: request.departureEvidenceMetadata?.flags ?? [],
       departureLocationLabel: request.departureEvidenceMetadata?.capturedLocationLabel ?? null,
       departureMinutesAfterArrival: request.departureEvidenceMetadata?.minutesAfterArrival ?? null,
+      departureRetakeCount: Math.max(0, (request.departureEvidenceMetadata?.version ?? 1) - 1),
       destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",
       distanceKm: request.distanceFromResidenceKm,
       expectedTotalAmount: request.expectedTotalAmount,

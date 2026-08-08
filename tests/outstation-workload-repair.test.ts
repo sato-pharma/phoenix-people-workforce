@@ -139,10 +139,24 @@ export function runOutstationWorkloadRepairTests() {
     /assertOutstationAdminAccess\(access,\s*"approve"\)/,
     "…and anyone who is NOT the submitting employee must clear the admin gate instead",
   );
+  // Until 2026-08-08 this asserted that a second departure photo was refused outright. The owner
+  // then allowed retakes, because refusing a blurred photo pushed honest employees into asking an
+  // administrator to waive the evidence gate entirely — a worse outcome than the retake. The rule
+  // it protected has NOT been dropped, it has been re-stated: a replacement is allowed only while
+  // the trip window is open, and it may never overwrite what it replaces. Both halves are asserted
+  // here and again, in depth, in outstation-departure-photo-retake.test.ts.
   assert.match(
     captureSlice,
-    /already been captured/,
-    "a second departure photo must be refused — allowing a replacement defeats the point of the evidence",
+    /isWithinDepartureWindow\(\{/,
+    "a retake must be bounded by the trip window in the SERVICE — unbounded, the photo stops proving the employee was still at the destination, which is the only thing the pair is for",
+  );
+  // Matched inside the metadata literal, not merely somewhere in the function. A bare
+  // /previousVersions/ passes while the archive is built and then never stored — which is exactly
+  // what happened when this assertion was first written, and it stayed green through the break.
+  assert.match(
+    captureSlice,
+    /const metadata: OutstationDepartureEvidenceMetadata = \{[\s\S]*?\n\s*previousVersions,[\s\S]*?\n\s*\};/,
+    "the archived versions must be WRITTEN INTO the stored metadata — building the list and not persisting it leaves no trail at all, and a corrected photo becomes indistinguishable from a substituted one",
   );
 
   for (const route of [

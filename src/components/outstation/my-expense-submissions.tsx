@@ -105,6 +105,7 @@ function buildStages(submission: MyOutstationSubmission): Stage[] {
   const departureDone = submission.hasDeparturePhoto;
   const workloadDone = gateBlocker !== "workload" && submission.isPayrollEligible;
   const decided = decision?.hrApproved === true || decision?.approvedAmount !== null;
+  const rejected = submission.status.toLowerCase().includes("reject");
   const paid = Boolean(decision?.paidAt);
 
   // A grandfathered row never had a photo step. Saying "waiting for the arrival photo" about a
@@ -141,7 +142,7 @@ function buildStages(submission: MyOutstationSubmission): Stage[] {
         ? "Not required — this trip was entered by an administrator, not submitted from the app"
         : arrivalDone
           ? "Captured at the destination"
-          : "Missing. This one cannot be added later — ask HR to release the request",
+          : "Missing. This one cannot be added later — ask a system administrator to release the request",
     ),
     stage(
       "departure",
@@ -172,18 +173,25 @@ function buildStages(submission: MyOutstationSubmission): Stage[] {
           }`
         : "Waiting for your visits to be matched from the CRM",
     ),
+    // Named "Validation", not "HR decision" (owner decision 2026-08-08). HR still owns this step
+    // and nothing about who controls it has changed — but a manager reading his own expense should
+    // see the STATE of his claim, not the department sitting in judgement on it. The vocabulary is
+    // deliberately the same three words everywhere on this page: passed validation, pending,
+    // rejected.
     stage(
       "decision",
-      "HR decision",
+      "Validation",
       decided,
       submission.isPayrollEligible && !decided,
-      decided
-        ? decision?.approvedAt
-          ? `Decided ${formatPhoenixLongDate(decision.approvedAt)}`
-          : "Decided"
-        : submission.isPayrollEligible
-          ? "In the approval queue"
-          : "Not reviewed yet — the trip is still held above",
+      rejected
+        ? "Rejected"
+        : decided
+          ? decision?.approvedAt
+            ? `Passed validation — ${formatPhoenixLongDate(decision.approvedAt)}`
+            : "Passed validation"
+          : submission.isPayrollEligible
+            ? "Pending"
+            : "Pending — the trip is still held above",
     ),
     stage(
       "paid",
@@ -220,7 +228,7 @@ function headlineStatus(submission: MyOutstationSubmission): {
   if (submission.gateBlocker === "arrival_photo") return { label: "Held — no arrival photo", tone: "rose" };
   if (submission.gateBlocker === "workload") return { label: "Waiting on CRM workload", tone: "amber" };
   if (submission.gateBlocker === "inconsistent") return { label: "Held for an administrator", tone: "rose" };
-  if (submission.decision?.hrApproved === true) return { label: "Approved by HR", tone: "emerald" };
+  if (submission.decision?.hrApproved === true) return { label: "Passed validation", tone: "emerald" };
   return { label: "In review", tone: "slate" };
 }
 
@@ -259,6 +267,10 @@ export function MyExpenseSubmissions({
   const [openId, setOpenId] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Record<number, PhotoState>>({});
   const [captured, setCaptured] = useState<number[]>([]);
+  const [retakeFor, setRetakeFor] = useState<number | null>(null);
+  // Tracked client-side so the control disappears the moment a retake lands, without a page
+  // reload. The server is still the authority — a refresh re-reads the real state.
+  const [retaken, setRetaken] = useState<number[]>([]);
 
   const loadPhotos = useCallback(
     async (id: number) => {
@@ -340,7 +352,7 @@ export function MyExpenseSubmissions({
           <p className="mt-0.5 text-xs text-slate-500">{submissions.length} submissions</p>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">HR approved</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Validated</p>
           <p className="mt-1 text-2xl font-black text-emerald-700">
             {totals.approvedCount > 0 ? money(totals.approved) : "—"}
           </p>
@@ -432,7 +444,7 @@ export function MyExpenseSubmissions({
                           {money(submission.decision.approvedAmount)}
                         </p>
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          HR approved
+                          Validated
                         </p>
                       </>
                     ) : null}
@@ -598,7 +610,7 @@ export function MyExpenseSubmissions({
                       >
                         <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                           <CircleDollarSign className="h-3 w-3" />
-                          HR approved
+                          Validated
                         </p>
                         {submission.decision?.approvedAmount !== null &&
                         submission.decision?.approvedAmount !== undefined ? (
@@ -615,13 +627,13 @@ export function MyExpenseSubmissions({
                             ) : null}
                           </>
                         ) : (
-                          <p className="mt-1 text-sm font-bold text-slate-400">Not decided yet</p>
+                          <p className="mt-1 text-sm font-bold text-slate-400">Pending</p>
                         )}
 
                         {submission.decision?.hrComment || submission.decision?.hrNotes ? (
                           <div className="mt-3 rounded border border-slate-200 bg-white p-2.5">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                              HR comment
+                              Note
                             </p>
                             <p className="mt-1 whitespace-pre-line text-[13px] leading-relaxed text-slate-800">
                               {submission.decision.hrComment ?? submission.decision.hrNotes}
@@ -717,6 +729,66 @@ export function MyExpenseSubmissions({
                       <p className="mt-1.5 flex items-start gap-2 text-xs leading-relaxed text-amber-800">
                         <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                         Flagged for the approver to look at. This does not block your payment.
+                      </p>
+                    ) : null}
+
+                    {/* Told to the EMPLOYEE, not only the approver. He should know the earlier
+                        photo survives BEFORE he decides to retake — a retake that felt like a
+                        delete would be the wrong thing to believe about his own evidence. */}
+                    {submission.departureRetakeCount > 0 ? (
+                      <p className="mt-1.5 text-xs text-slate-500">
+                        Retaken {submission.departureRetakeCount}{" "}
+                        {submission.departureRetakeCount === 1 ? "time" : "times"} — every version is
+                        kept and stays visible to your approver.
+                      </p>
+                    ) : null}
+
+                    {submission.canRetakeDeparturePhoto && !retaken.includes(submission.id) ? (
+                      retakeFor === submission.id ? (
+                        <div className="mt-3">
+                          <DeparturePhotoCard
+                            employeeHrId={employeeHrId}
+                            mode="retake"
+                            onCaptured={(id) => {
+                              setRetaken((current) => [...current, id]);
+                              setRetakeFor(null);
+                            }}
+                            requests={[
+                              {
+                                destination: submission.destination,
+                                id: submission.id,
+                                tripEndDate: submission.tripEndDate,
+                                tripStartDate: submission.tripStartDate,
+                              },
+                            ]}
+                          />
+                          <button
+                            className="mt-2 min-h-10 rounded-xl px-3 text-xs font-bold text-slate-600 hover:text-slate-900"
+                            onClick={() => setRetakeFor(null)}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50"
+                          onClick={() => setRetakeFor(submission.id)}
+                          type="button"
+                        >
+                          <Camera className="h-3.5 w-3.5" />
+                          Retake the departure photo
+                        </button>
+                      )
+                    ) : null}
+
+                    {submission.hasDeparturePhoto && !submission.canRetakeDeparturePhoto ? (
+                      // Says WHY instead of just hiding the control. A button that silently is not
+                      // there is what sends people to an administrator asking for a waiver.
+                      <p className="mt-2 text-xs text-slate-500">
+                        The retake window closed at the end of{" "}
+                        {formatPhoenixLongDate(submission.departureDeadline)}. Ask a system
+                        administrator if this photo needs changing.
                       </p>
                     ) : null}
                   </section>

@@ -70,8 +70,31 @@ export type OutstationDepartureEvidenceMetadata = {
   distanceFromArrivalKm: number | null;
   flags: string[];
   minutesAfterArrival: number | null;
+  /**
+   * Every capture this one replaced, oldest first. Empty on a first capture.
+   *
+   * Retakes were allowed on 2026-08-08 on one explicit condition: nothing is ever overwritten.
+   * That is what keeps the control meaningful — an employee fixing a blurred photo costs nothing,
+   * and a photo substituted from somewhere else leaves a permanent trail beside it.
+   */
+  previousVersions?: OutstationDepartureEvidenceVersion[];
   source: "live_camera";
   summary: string;
+  /** 1 for a first capture, 2+ after a retake. Absent on rows written before retakes existed. */
+  version?: number;
+};
+
+/** One superseded departure capture, kept so a retake can never erase what it replaced. */
+export type OutstationDepartureEvidenceVersion = {
+  capturedAt: string;
+  capturedLatitude: number | null;
+  capturedLocationLabel: string | null;
+  capturedLongitude: number | null;
+  distanceFromArrivalKm: number | null;
+  flags: string[];
+  imagePath: string;
+  minutesAfterArrival: number | null;
+  version: number;
 };
 
 /** Workload gate. `manual` = a system admin entered it by hand after the CRM grab failed. */
