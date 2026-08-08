@@ -18,6 +18,7 @@ import {
   type ExpenseDecisionSnapshot,
 } from "@/lib/automated-payroll/expense-resync";
 import { isDisposableExpenseReportRow, isDisposableExpenseRow } from "@/lib/fixture-hygiene";
+import { resolveOutstationCapturedLocation } from "@/lib/outstation/captured-location";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { normalizeExpenseType, normalizeTransportation } from "@/lib/outstation/expense-taxonomy";
 import { normalizeApprovedAmount, payableExpenseAmount } from "@/lib/outstation/payable";
@@ -661,8 +662,19 @@ export async function listOutstationRequestExpenses(
     throw error;
   }
 
-  return ((data ?? []) as Array<Record<string, unknown>>)
-    .map(mapOutstationRequestRowToPayrollApproval);
+  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map(mapOutstationRequestRowToPayrollApproval);
+  // Brick / area / region per row, so the approvals decision panel can show a place name
+  // instead of the raw coordinate pair — same enrichment service.ts already does for the
+  // admin request detail. One cached centroid load for the whole list either way.
+  return Promise.all(
+    mapped.map(async (expense) => ({
+      ...expense,
+      capturedLocation: await resolveOutstationCapturedLocation({
+        latitude: expense.capturedLatitude,
+        longitude: expense.capturedLongitude,
+      }),
+    })),
+  );
 }
 
 /**

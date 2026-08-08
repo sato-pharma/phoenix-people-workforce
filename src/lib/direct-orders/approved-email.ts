@@ -11,9 +11,11 @@ import {
   renderEmailParagraphs,
   renderPhoenixEmailHtml,
   renderPhoenixEmailText,
+  type PhoenixEmailMetadataSection,
 } from "@/emails/phoenix-email-layout";
 import { codeNameLabel } from "@/lib/direct-orders/geo-names";
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
+import { formatPhoenixDateTime } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
@@ -86,29 +88,45 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
       row.dealType === "discount"
         ? `Discount ${row.discountPct ?? 0}% · public price ${money(row.publicPriceSnapshot)}`
         : `Bonus ${units(row.bonus)} units · pharmacy price ${money(row.pharmacyPriceSnapshot)}`;
+    // Short form for the hero badge — the full price context still lives in the Deal row below.
+    const dealBadge =
+      row.dealType === "discount" ? `Discount ${row.discountPct ?? 0}%` : `Bonus ${units(row.bonus)} units`;
 
-    const metadataRows: Array<{ label: string; value: string | number | null | undefined }> = [
-      { label: "Request ID", value: row.id },
-      { label: "Requester", value: `${row.requesterName || row.requesterHrId} · ${row.requesterHrId} · ${row.requesterRole}` },
-      { label: "Line", value: row.line || "—" },
+    const productDealRows: Array<{ label: string; value: string | number | null | undefined }> = [
       { label: "Product", value: codeName(row.productName, row.productCode) },
       { label: "Deal", value: dealLine },
       { label: "Quantity", value: units(row.qty) },
-      { label: "Sales value (EGP)", value: money(row.salesValue) },
-      { label: "Pharmacy", value: codeName(row.pharmacyName, row.pharmacyCode) },
-      { label: "Address", value: row.pharmacyAddress || "—" },
-      { label: "Doctor", value: row.doctorName || "—" },
-      { label: "Brick", value: codeName(row.brickName, row.brickId) },
-      { label: "Area", value: codeName(row.areaName, row.areaCode) },
-      { label: "Region", value: codeName(row.regionName, row.regionCode) },
-      { label: "Distributor codes", value: row.distributorCodesText || "—" },
-      { label: "Collection date", value: row.collectionDate || "—" },
-      { label: "Sales month", value: row.salesMonth || "—" },
-      { label: "Approved (UTC)", value: row.decidedAt ? `${row.decidedAt.replace("T", " ").slice(0, 16)} UTC` : "—" },
     ];
     if (row.bonusOverrideReason) {
-      metadataRows.push({ label: "Cap override reason", value: row.bonusOverrideReason });
+      productDealRows.push({ label: "Cap override reason", value: row.bonusOverrideReason });
     }
+
+    const metadataSections: PhoenixEmailMetadataSection[] = [
+      {
+        heading: "Order & requester",
+        rows: [
+          { label: "Request ID", value: row.id },
+          { label: "Requester", value: `${row.requesterName || row.requesterHrId} · ${row.requesterHrId} · ${row.requesterRole}` },
+          { label: "Line", value: row.line || "—" },
+          { label: "Distributor codes", value: row.distributorCodesText || "—" },
+          { label: "Collection date", value: row.collectionDate || "—" },
+          { label: "Sales month", value: row.salesMonth || "—" },
+          { label: "Approved", value: formatPhoenixDateTime(row.decidedAt) },
+        ],
+      },
+      { heading: "Product & deal", rows: productDealRows },
+      {
+        heading: "Pharmacy, doctor & geography",
+        rows: [
+          { label: "Pharmacy", value: codeName(row.pharmacyName, row.pharmacyCode) },
+          { label: "Address", value: row.pharmacyAddress || "—" },
+          { label: "Doctor", value: row.doctorName || "—" },
+          { label: "Brick", value: codeName(row.brickName, row.brickId) },
+          { label: "Area", value: codeName(row.areaName, row.areaCode) },
+          { label: "Region", value: codeName(row.regionName, row.regionCode) },
+        ],
+      },
+    ];
 
     const subject = `Direct Order Approved — ${row.pharmacyName || row.pharmacyCode} · ${row.productName} · ${money(row.salesValue)} EGP`;
     const bodyText =
@@ -118,16 +136,18 @@ export async function sendDirectOrderApprovedEmail(row: DirectOrderReportRow): P
       href: `${systemDeployment.productionUrl}/admin/direct-orders/report`,
       label: "Open Direct Orders report",
     };
+    const heroStat = { badge: dealBadge, label: "Sales value", value: `${money(row.salesValue)} EGP` };
 
     const html = renderPhoenixEmailHtml({
       title: "Direct Order Approved",
       subject,
       previewText: `Approved: ${row.pharmacyName || row.pharmacyCode} · ${money(row.salesValue)} EGP.`,
       bodyHtml: renderEmailParagraphs(bodyText),
-      metadataRows,
+      heroStat,
+      metadataSections,
       action,
     });
-    const text = renderPhoenixEmailText({ title: "Direct Order Approved", bodyText, metadataRows, action });
+    const text = renderPhoenixEmailText({ title: "Direct Order Approved", bodyText, heroStat, metadataSections, action });
 
     const sendResult = await sendPhoenixEmail({
       to: [DIRECT_ORDER_APPROVED_TO],
