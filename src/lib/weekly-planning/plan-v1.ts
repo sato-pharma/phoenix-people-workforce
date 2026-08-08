@@ -57,6 +57,7 @@ export const employeePlanActivityTypes = [
   "Double Visit",
   "Training",
   "Meeting",
+  "Meeting with Team",
   "Event",
   "Travel",
   "Admin",
