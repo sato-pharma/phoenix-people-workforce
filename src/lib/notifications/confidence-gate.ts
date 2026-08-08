@@ -294,6 +294,24 @@ async function checkFanoutAnomaly(origin: NotificationOrigin | null | undefined)
 const RECIPIENT_VOLUME_MIN_HISTORY_SENDS = 5;
 
 /**
+ * Per-(module,eventType) FIRST-RUN ceiling overrides — for a notification whose design already
+ * knows its own real recipient count exceeds the generic 10-recipient first-run cap, so it does
+ * not have to sit on hold every time until RECIPIENT_VOLUME_MIN_HISTORY_SENDS worth of real
+ * history accumulates and an established baseline takes over on its own. Only ever RAISES the
+ * ceiling (Math.max with the computed one below), and only while basis === "first_run" — once a
+ * pair is established, its own real statistical baseline is trusted over any override here. Keep
+ * this list short and each entry justified; it is a deliberate, per-notification exception to the
+ * gate's general "no manual carve-outs" posture, not a place to quietly raise the bar everywhere.
+ */
+export const FIRST_RUN_CEILING_OVERRIDES: Record<string, number> = {
+  // Anti Infective/Pedia/CNS Monthly Closing publish notifies that line's District Managers plus
+  // a fixed Cc/Bcc roster (CEO, Marketing Manager, SFE Manager, the line's NSM and Product
+  // Manager, two named individuals) — routinely 10-15 recipients by design, confirmed live
+  // 2026-08-08 (12 on Anti Infective's first send). Headroom to 20 for normal roster growth.
+  "sales/closing_published": 20,
+};
+
+/**
  * Pure decision math for checkRecipientVolume, split out so it is unit-testable without Supabase
  * (checkFanoutAnomaly's equivalent logic is not, hence this file's docs noting that one needs I/O
  * — this function deliberately does not).
@@ -360,12 +378,16 @@ async function checkRecipientVolume(input: ConfidenceGateInput): Promise<Confide
 
     const employees = await getEmployeeDirectoryRows().catch(() => []);
     const headcount = employees.length || 1;
-    const { basis, ceiling, mean, stddev } = computeRecipientVolumeCeiling(priorCounts, headcount);
+    const { basis, ceiling: computedCeiling, mean, stddev } = computeRecipientVolumeCeiling(priorCounts, headcount);
+    const override = basis === "first_run" ? FIRST_RUN_CEILING_OVERRIDES[`${moduleName}/${eventType}`] : undefined;
+    const ceiling = override !== undefined ? Math.max(computedCeiling, override) : computedCeiling;
     const passed = currentRecipientCount <= ceiling;
     const detail =
       basis === "established"
         ? `${currentRecipientCount} recipient(s) on this send vs an established baseline of ~${(mean ?? 0).toFixed(1)} (±${(stddev ?? 0).toFixed(1)} stddev) over ${priorCounts.length} prior sends of "${moduleName}/${eventType}".`
-        : `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}", which has no established history yet — capped at ${ceiling} while it's new.`;
+        : override !== undefined
+          ? `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}" — no established history yet, but a known-design ceiling of ${ceiling} applies instead of the generic first-run cap.`
+          : `${currentRecipientCount} recipient(s) on this send for "${moduleName}/${eventType}", which has no established history yet — capped at ${ceiling} while it's new.`;
     return { detail, name: "recipient_volume", passed };
   } catch (error) {
     logError("Confidence gate recipient-volume check failed — defaulting to pass (fail-open on infra error)", {

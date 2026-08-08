@@ -6,6 +6,7 @@ import {
   checkRecipientValidity,
   computeDecision,
   computeRecipientVolumeCeiling,
+  FIRST_RUN_CEILING_OVERRIDES,
 } from "../src/lib/notifications/confidence-gate.ts";
 
 function baseInput(overrides: Partial<Parameters<typeof checkContentIntegrity>[0]> = {}) {
@@ -138,5 +139,19 @@ export function runNotificationConfidenceGateTests() {
   assert.ok(
     establishedSmallList.ceiling < 50,
     "an established 1-3-recipient baseline must not tolerate a jump into the hundreds",
+  );
+
+  // sales/closing_published's known real recipient count (12, confirmed live 2026-08-08 on Anti
+  // Infective's first publish notification: 5 District Managers + 6 fixed Cc + 1 Bcc) must clear
+  // its own first-run override rather than the generic 10-recipient cap every other brand-new
+  // (module,eventType) pair gets — that override is what checkRecipientVolume applies on top of
+  // computeRecipientVolumeCeiling's own (unmodified) first-run result.
+  assert.ok(
+    FIRST_RUN_CEILING_OVERRIDES["sales/closing_published"] >= 12,
+    "sales/closing_published's first-run override must cover its known real recipient count",
+  );
+  assert.ok(
+    FIRST_RUN_CEILING_OVERRIDES["sales/closing_published"] > firstRunBigCompany.ceiling,
+    "the override must actually raise the ceiling above the generic first-run cap it replaces",
   );
 }
