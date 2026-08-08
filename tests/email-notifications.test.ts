@@ -112,7 +112,7 @@ export function runEmailNotificationTests() {
   assert.match(dailyCronRoute, /runContractRenewalNotifications\(request\)\.catch\(/, "daily contract renewal run must have catch boundary");
   assert.match(dailyCronRoute, /runHolidayConfirmationReminder\(request\)\.catch\(/, "daily holiday confirmation run must have catch boundary");
   assert.match(dailyCronRoute, /runVacationSlaDaily\(\)\.catch\(/, "daily vacation SLA run must have catch boundary");
-  assert.match(dailyCronRoute, /runMarketingSlaDaily\(\)\.catch\(/, "marketing SLA reminder/escalation is restored behind a real admin toggle (see marketing_sla_reminder in role-recipients.ts)");
+  assert.match(dailyCronRoute, /runMarketingSlaDaily\(\)\.catch\(/, "marketing SLA reminder is restored behind a real admin toggle (see marketing_sla_reminder in role-recipients.ts)");
   assert.match(dailyCronRoute, /runRecruitmentDailyNotifications\(\)\.catch\(/, "daily recruitment run must have catch boundary");
   assert.match(dailyCronRoute, /runTelegramDailyHrDigest\(\)\.catch\(/, "daily telegram digest run must have catch boundary");
   assert.match(dailyCronRoute, /runOutstationGeocodeWarmup\(\)\.catch\(/, "daily outstation geocode warmup must have catch boundary");
