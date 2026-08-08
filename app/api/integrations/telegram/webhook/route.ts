@@ -3,7 +3,7 @@ import { timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
 
 import { linkTelegramConnection } from "@/lib/notifications/settings";
-import { telegramWebhookSecretToken } from "@/lib/notifications/telegram";
+import { sendTelegramNotification, telegramWebhookSecretToken } from "@/lib/notifications/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,12 @@ export const dynamic = "force-dynamic";
 function extractStartToken(text: string | null | undefined) {
   const match = String(text ?? "").trim().match(/^\/start(?:@\w+)?\s+([A-Za-z0-9_-]+)$/);
   return match?.[1] ?? null;
+}
+
+// A bare /start (no personal token) means someone found the bot without the emailed
+// connect link -- distinct from any other un-handled text, which stays silently ignored.
+function isBareStartCommand(text: string | null | undefined) {
+  return /^\/start(?:@\w+)?\s*$/.test(String(text ?? "").trim());
 }
 
 // Constant-time secret comparison (mirrors src/lib/auth/session-token.ts) to avoid
@@ -55,6 +61,15 @@ export async function POST(request: Request) {
     const token = extractStartToken(message?.text);
     const chatId = message?.chat?.id;
     if (!token || !chatId) {
+      if (chatId && isBareStartCommand(message?.text)) {
+        // Best-effort: a reply failure must never turn into a webhook error, or Telegram
+        // will retry the same update indefinitely for something that isn't fixable by retrying.
+        await sendTelegramNotification({
+          chatId: String(chatId),
+          message: "To connect your account, use the personal link sent to your work email. If you can't find it, ask HR to resend your Telegram connect invite.",
+          title: "👋 Welcome to Phoenix Workforce",
+        }).catch(() => {});
+      }
       return NextResponse.json({ ok: true, ignored: true });
     }
 
