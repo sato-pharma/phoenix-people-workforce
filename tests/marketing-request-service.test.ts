@@ -203,10 +203,10 @@ export async function runMarketingRequestServiceTests() {
   // Reject/return branch to the right event; final approval notifies requester + participants.
   assert.match(serviceSource, /eventType:\s*decision === "reject" \? "request_rejected" : "request_returned"/, "decision must branch reject vs return");
   assert.match(serviceSource, /workflowParticipantHrIds:\s*steps\.map/, "final approval must notify all step participants");
-  // SLA reminders exist and classify all three tiers (invocation from the daily cron is restored
+  // SLA reminders exist and classify both tiers (invocation from the daily cron is restored
   // behind a real admin toggle — see marketing_sla_reminder in role-recipients.ts).
   assert.match(serviceSource, /export async function runMarketingSlaDaily/, "marketing SLA daily job must exist");
-  for (const slaEvent of ["due_date_reminder", "overdue_reminder", "escalation"] as const) {
+  for (const slaEvent of ["due_date_reminder", "overdue_reminder"] as const) {
     assert.match(serviceSource, new RegExp(slaEvent), `SLA classifier must cover ${slaEvent}`);
   }
   assert.match(dailyRouteSource, /runMarketingSlaDaily\(\)/, "marketing SLA reminders are restored in the daily cron route, gated by the marketing_sla_reminder enabled toggle");
@@ -219,7 +219,7 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /request\.status === "pending_approval" && !hasCurrentStep/, "the missing-current-step guard must be scoped to pending_approval only");
   assert.match(serviceSource, /marketing_pending_approval_missing_current_step/, "missing-current-step rows must emit a distinct, greppable structured log event");
   // Routing metadata keys the policy strategies depend on must be present.
-  for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds", "escalationOwnerHrId"] as const) {
+  for (const key of ["requestOwnerHrId", "assignedApproverHrId", "workflowParticipantHrIds"] as const) {
     assert.match(serviceSource, new RegExp(key), `notification routing must set ${key}`);
   }
   // Idempotency keys (helper + explicit submit) prevent double-sends.

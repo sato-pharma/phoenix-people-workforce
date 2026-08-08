@@ -142,7 +142,7 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
   marketing_sla_reminder: {
     key: "marketing_sla_reminder",
     label: "Marketing request SLA reminder",
-    description: "Reminds the assigned approver and requester about overdue marketing request due dates, and escalates critical overdue requests. Recipients are always the specific request's assigned approver and requester — not role-configurable here; roles is intentionally always empty and this policy only carries the master on/off switch.",
+    description: "Reminds the assigned approver and requester about overdue marketing request due dates. Recipients are always the specific request's assigned approver and requester — not role-configurable here; roles is intentionally always empty and this policy only carries the master on/off switch.",
     roles: [],
     // Disabled 2026-07-22 at owner request (335437cc) — restored behind this real toggle.
     enabled: false,

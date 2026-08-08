@@ -335,11 +335,6 @@ export function runNotificationGovernanceHardeningTests() {
     /"marketing_requests\.request_rejected":[\s\S]*recipientStrategy:\s*\["request_owner"\]/,
     "marketing request_rejected must notify request owner only",
   );
-  assertContains(
-    policySource,
-    /"marketing_requests\.escalation":[\s\S]*recipientStrategy:\s*\["workflow_step_approver"\]/,
-    "marketing escalation must use explicit workflow approver only",
-  );
 
   assertContains(
     accessRegistrySource,

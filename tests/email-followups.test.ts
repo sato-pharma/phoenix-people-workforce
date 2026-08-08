@@ -20,7 +20,7 @@ export function runEmailFollowupsTests() {
   assert.equal(classifyMarketingSla({ payDate: "2026-06-09", today }), "due_date_reminder", "due today → reminder");
   assert.equal(classifyMarketingSla({ payDate: "2026-06-08", today }), "overdue_reminder", "1 day overdue → overdue");
   assert.equal(classifyMarketingSla({ payDate: "2026-06-07", today }), "overdue_reminder", "2 days overdue → overdue");
-  assert.equal(classifyMarketingSla({ payDate: "2026-06-06", today }), "escalation", "3+ days overdue → escalation");
+  assert.equal(classifyMarketingSla({ payDate: "2026-06-06", today }), "overdue_reminder", "3+ days overdue → still overdue (no separate escalation tier)");
   assert.equal(classifyMarketingSla({ payDate: "not-a-date", today }), null, "unparseable date → null");
 
   // --- Waiting-time SLA (the other clock) ------------------------------------------
@@ -43,8 +43,8 @@ export function runEmailFollowupsTests() {
   );
   assert.equal(
     classifyMarketingWaitingSla({ now, waitingSince: daysAgo(14) }),
-    "escalation",
-    "14 days waiting → escalation",
+    "overdue_reminder",
+    "14 days waiting → still overdue (no separate escalation tier)",
   );
   assert.equal(
     classifyMarketingWaitingSla({ now, waitingSince: "not-a-date" }),
@@ -56,11 +56,11 @@ export function runEmailFollowupsTests() {
   assert.equal(mostUrgentMarketingSla(null, null), null, "neither clock → nothing");
   assert.equal(mostUrgentMarketingSla("due_date_reminder", null), "due_date_reminder", "one clock only");
   assert.equal(
-    mostUrgentMarketingSla("due_date_reminder", "escalation"),
-    "escalation",
+    mostUrgentMarketingSla("due_date_reminder", "overdue_reminder"),
+    "overdue_reminder",
     "the worse signal wins, regardless of argument order",
   );
-  assert.equal(mostUrgentMarketingSla("escalation", "overdue_reminder"), "escalation", "order does not matter");
+  assert.equal(mostUrgentMarketingSla("overdue_reminder", "due_date_reminder"), "overdue_reminder", "order does not matter");
 
   // The day count is stated in the message, so it must not go negative on a future timestamp.
   assert.equal(marketingDaysWaiting(daysAgo(5), now), 5, "whole days waiting");
