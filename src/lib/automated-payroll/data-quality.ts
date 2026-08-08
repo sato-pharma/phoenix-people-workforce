@@ -45,6 +45,7 @@ import type { DraftRow } from "./types.ts";
 export type PayrollDataIssue =
   | "missing_hire_date"
   | "missing_salary"
+  | "zero_base_after_allowances"
   | "missing_payment_mode"
   | "joined_after_part1";
 
@@ -64,7 +65,16 @@ export type PayrollDataQualityReport = {
 export const PAYROLL_DATA_ISSUE_LABELS: Record<PayrollDataIssue, string> = {
   missing_hire_date:
     "No hire date — cannot prove they worked this month, so they are being paid a full unprorated month",
-  missing_salary: "No salary on record — they would be paid 0.00",
+  missing_salary: "No salary on record at all — they would be paid 0.00",
+  // Deliberately NOT "would be paid 0.00" — this month's pay (new-hire proration,
+  // etc.) is usually computed from net salary and is fine. What is actually zero
+  // is BASE salary, which every day-rate deduction (Base/30 × days — Fingerprint,
+  // CRM, Vacation, ...) derives from. Real case, owner-reported 2026-08-08: 6
+  // August new hires whose entered net salary exactly equals their title's
+  // standard cost-of-living + fuel allowance (e.g. 2500 = 2000 + 500 for a
+  // Medical Rep), so net-minus-allowances lands on exactly zero.
+  zero_base_after_allowances:
+    "Net salary is on record but no base salary — after standard allowances that nets to a zero base, so every day-rate deduction (Base/30 × days) will compute as 0.00 for them",
   missing_payment_mode: "No payment mode — the First/Second Part split is being decided by a default",
   joined_after_part1: "Added to the run after Part 1 was confirmed — no frozen first installment",
 };
@@ -98,7 +108,11 @@ export function auditPayrollDataQuality(input: {
     const source = lookupSource(input.sources, member.employee.hrId);
 
     if (!String(member.employee.hireDate ?? "").trim()) issues.push("missing_hire_date");
-    if (!hasSalary(source)) issues.push("missing_salary");
+    if (!hasSalary(source)) {
+      // Same underlying signal (base salary computes to zero) but two very
+      // different real-world situations — see PAYROLL_DATA_ISSUE_LABELS.
+      issues.push(source?.hasAnyRawCompensationFigure ? "zero_base_after_allowances" : "missing_salary");
+    }
     // Read the RAW field, not the normalized one: normalizePayrollPaymentMode's
     // whole job is to turn a null into "two_parts", so asking it would always
     // answer "fine" and hide the very gap being looked for.

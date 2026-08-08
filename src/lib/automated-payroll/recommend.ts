@@ -152,12 +152,25 @@ function buildSalarySource(employee: EmployeeDirectoryRow, period: PayrollPeriod
     socialInsurance,
   });
   const baseSalary = moneyOrNull(fixedSalary.baseSalary);
+  // Raw, pre-derivation figures only — whether HR entered ANYTHING at all,
+  // distinct from whether the derived base salary above landed above zero.
+  // See PayrollSalarySource.hasAnyRawCompensationFigure's doc comment.
+  const hasAnyRawCompensationFigure = [
+    employee.baseSalary,
+    employee.basicSalary,
+    employee.grossSalary,
+    employee.netSalary,
+  ].some((value) => {
+    const parsed = numberOrNull(value);
+    return parsed !== null && parsed > 0;
+  });
   return {
     baseSalary,
     employmentIncomeTax,
     extraCostOfLiving,
     fuelAllowance,
     grossSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.grossSalary),
+    hasAnyRawCompensationFigure,
     netSalary: baseSalary === null ? null : moneyOrNull(fixedSalary.netSalary),
     paymentMode: normalizePayrollPaymentMode(employee.salaryPaymentMode),
     socialInsurance,
@@ -791,6 +804,7 @@ export function aggregateDeductionRows(
  */
 function recommendFingerprint(
   members: PopulationMember[],
+  sources: Map<string, PayrollSalarySource>,
   deductions: Map<string, EmployeeDeductions>,
   drafts: Map<string, DraftRow>,
 ): StepRow[] {
@@ -806,8 +820,15 @@ function recommendFingerprint(
     if (value === 0 && days === 0 && draft?.fingerprintValue == null && draft?.fingerprintDays == null) {
       continue;
     }
+    const source = lookupSource(sources, member.employee.hrId);
     const row = baseRow(member);
-    row.context = { "Hire Date": member.employee.hireDate ?? "" };
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      // Not shown in this step's contextColumns — purely so the client-side
+      // Days→Value auto-calc (recommendation-step.tsx setDaysValue) has a
+      // Base/30 rate to compute from when HR types a day count by hand.
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+    };
     row.recommended = { fingerprintDays: days, fingerprintValue: value };
     row.values = {
       fingerprintDays: pick(draft?.fingerprintDays, days),
@@ -1222,9 +1243,10 @@ function recommendVacation(
 ): StepRow[] {
   const rows: StepRow[] = [];
   for (const member of members) {
+    const source = lookupSource(sources, member.employee.hrId);
     // Leavers AND one-part employees are settled in Part 1 — never here, to avoid
     // double-deducting the same days. See isSettledInPart1.
-    if (isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
+    if (isSettledInPart1(member, source)) continue;
     const lines = linesFor(deductions, member.compact, "unpaidVacation");
     const amount = roundCurrency(deductions.get(member.compact)?.buckets.unpaidVacation ?? 0);
     const draft = drafts.get(member.compact);
@@ -1235,15 +1257,21 @@ function recommendVacation(
     // is always kept, so an edit can never disappear.
     if (amount === 0 && (draft?.unpaidVacations ?? 0) === 0) continue;
 
+    const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
-      "Deducted Days": roundCurrency(lines.reduce((sum, line) => sum + line.days, 0)),
       "Confirmed Lines": lines.length,
+      // Not shown in this step's contextColumns — the client-side Days→Value
+      // auto-calc (recommendation-step.tsx setDaysValue) reads it directly.
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     };
     row.details = deductionDetailLines(lines);
-    row.recommended = { unpaidVacations: amount };
-    row.values = { unpaidVacations: pick(draft?.unpaidVacations, amount) };
+    row.recommended = { p2VacationDays: days, unpaidVacations: amount };
+    row.values = {
+      p2VacationDays: days,
+      unpaidVacations: pick(draft?.unpaidVacations, amount),
+    };
     rows.push(row);
   }
   rows.sort((left, right) => (right.values.unpaidVacations ?? 0) - (left.values.unpaidVacations ?? 0));
@@ -1290,21 +1318,23 @@ function recommendCrm(
 ): StepRow[] {
   const rows: StepRow[] = [];
   for (const member of members) {
-    if (isSettledInPart1(member, lookupSource(sources, member.employee.hrId))) continue;
+    const source = lookupSource(sources, member.employee.hrId);
+    if (isSettledInPart1(member, source)) continue;
     const lines = linesFor(deductions, member.compact, "crm");
     const value = roundCurrency(deductions.get(member.compact)?.buckets.crm ?? 0);
     const draft = drafts.get(member.compact);
     if (value === 0 && draft?.crm == null) continue;
 
+    const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
     const row = baseRow(member);
     row.context = {
       "Hire Date": member.employee.hireDate ?? "",
-      "Deducted Days": roundCurrency(lines.reduce((sum, line) => sum + line.days, 0)),
       "Confirmed Lines": lines.length,
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
     };
     row.details = deductionDetailLines(lines);
-    row.recommended = { crm: value };
-    row.values = { crm: pick(draft?.crm, value) };
+    row.recommended = { p2CrmDays: days, crm: value };
+    row.values = { p2CrmDays: days, crm: pick(draft?.crm, value) };
     rows.push(row);
   }
   rows.sort((left, right) => (right.values.crm ?? 0) - (left.values.crm ?? 0));
@@ -1347,24 +1377,30 @@ function recommendManualDeductions(
   return members.map((member) => {
     const draft = drafts.get(member.compact);
     const row = baseRow(member);
+    const source = lookupSource(sources, member.employee.hrId);
     // Settled-in-Part-1 employees take their loan/other on the Part 1 tab.
-    const settledInPart1 = isSettledInPart1(member, lookupSource(sources, member.employee.hrId));
+    const settledInPart1 = isSettledInPart1(member, source);
+    const lines = settledInPart1
+      ? []
+      : [...linesFor(deductions, member.compact, "loan"), ...linesFor(deductions, member.compact, "other")];
+    const days = roundCurrency(lines.reduce((sum, line) => sum + line.days, 0));
     const confirmed = settledInPart1
       ? 0
       : roundCurrency(
           (deductions.get(member.compact)?.buckets.loan ?? 0) +
             (deductions.get(member.compact)?.buckets.other ?? 0),
         );
-    row.context = { "Hire Date": member.employee.hireDate ?? "" };
-    row.recommended = { manualOtherDeductions: confirmed };
-    row.values = { manualOtherDeductions: pick(draft?.manualOtherDeductions, confirmed) };
+    row.context = {
+      "Hire Date": member.employee.hireDate ?? "",
+      "Base Salary": roundCurrency(source?.baseSalary ?? 0),
+    };
+    row.recommended = { p2ManualDeductionDays: days, manualOtherDeductions: confirmed };
+    row.values = {
+      p2ManualDeductionDays: days,
+      manualOtherDeductions: pick(draft?.manualOtherDeductions, confirmed),
+    };
     row.reason = draft?.manualReason ?? null;
-    row.details = settledInPart1
-      ? []
-      : deductionDetailLines([
-          ...linesFor(deductions, member.compact, "loan"),
-          ...linesFor(deductions, member.compact, "other"),
-        ]);
+    row.details = deductionDetailLines(lines);
     return row;
   });
 }
@@ -1754,7 +1790,12 @@ export async function recommendStep(input: {
     case "p1_resignations":
       return recommendResignations(input.members, input.sources, input.period, drafts);
     case "p1_fingerprint":
-      return recommendFingerprint(input.members, await loadConfirmedDeductions(input.period), drafts);
+      return recommendFingerprint(
+        input.members,
+        input.sources,
+        await loadConfirmedDeductions(input.period),
+        drafts,
+      );
     case "p1_crm":
       return recommendP1Crm(
         input.members,
