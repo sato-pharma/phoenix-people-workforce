@@ -158,6 +158,16 @@ export function MarketingSalesEvidencePanel({ requestId }: { requestId: string }
         )}
       </p>
 
+      {/* Silently-filtered data must announce the filter. Without this line a shrunken total reads
+          as "this customer barely buys" when the opposite may be true. Deliberately carries no
+          quantity, count, product name or value — saying how many or how much would defeat the
+          lock this line exists to respect. */}
+      {data.confidentialProductsWithheld ? (
+        <p className="text-[12px] font-semibold leading-5 text-[#64748B]">
+          Confidential products are excluded from these figures.
+        </p>
+      ) : null}
+
       {/* ── The requested products, judged on their own ──────────────────────────────────────
           The whole-customer total flatters a request. On the live request the customer had traded
           EGP 2,774 over six months, but only ONE of five promoted products had ever sold there —
