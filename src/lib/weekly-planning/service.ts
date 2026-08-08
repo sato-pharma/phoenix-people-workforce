@@ -2823,6 +2823,8 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     // or reject their reports' plans even though their role lacks a company-wide approve grant.
     await assertManagerReviewer(access, plan);
   } else if (input.action.startsWith("ceo_")) {
+    await assertPermission(access, "weekly_plans", "approve");
+    assertCeoReviewer(access);
     // District Manager plans never reach a human CEO decision — their manager's approval
     // auto-cascades straight to final_approved further down. The CEO stage exists for every
     // other eligible role; block it here rather than only hiding it in the UI, so a direct
@@ -2830,8 +2832,6 @@ export async function decideEmployeePlan(access: AccessContext, planId: string, 
     if (isDistrictManagerPlanTitle(plan.employee_job_title)) {
       throw new Error("Forbidden: District Manager plans are decided by HR, not the CEO.");
     }
-    await assertPermission(access, "weekly_plans", "approve");
-    assertCeoReviewer(access);
   }
   // The next status is computed client-side for the audit-log entry and the
   // notification branch below, but the SQL function recomputes the same rule
