@@ -23,6 +23,18 @@ const DETAIL = "../src/components/approvals-hub/direct-order-request-detail.tsx"
 export function runDirectOrdersApprovalWindowMobileTests() {
   const source = readFileSync(new URL(DETAIL, import.meta.url), "utf8");
 
+  // ── The 2026-08-08 restyle is actually in place ────────────────────────────
+  // Locks the redesign itself, not just its mobile behaviour: every section on this screen must
+  // come from the shared PanelSection primitive (mirroring Outstation's Expense Approvals look),
+  // never a reintroduced one-off <section>/<header> pair.
+  assert.match(
+    source,
+    /from "@\/components\/approvals-hub\/direct-order-detail-primitives"/,
+    "the approval window must still import its section/field primitives from direct-order-detail-primitives.tsx",
+  );
+  assert.match(source, /<PanelSection title="Distributors">/, "Distributors must render inside a PanelSection");
+  assert.match(source, /<PanelSection title="Approval chain">/, "Approval chain must render inside a PanelSection");
+
   // ── Every table is desktop-only ────────────────────────────────────────────
   // Asserted per-table against the wrapper that actually encloses it, rather than by counting
   // `hidden md:block` anywhere in the file — a file-wide count stays green when someone adds a
@@ -76,13 +88,16 @@ export function runDirectOrdersApprovalWindowMobileTests() {
   // The footer row is the judgement line — what this pharmacy is worth across all months, which
   // the approver weighs THIS order against. It is the first thing dropped when a table is
   // squeezed onto a phone, and the one thing a decision cannot be made without.
-  // Each mobile block is sliced to its OWN closing </section>. A fixed character window instead
-  // ran past the end of the section and found the NEXT one's desktop <tfoot> "Total" — so the
-  // assertion passed with no mobile total present at all. Caught by prove-it-fails, not by review.
+  // Each mobile block is sliced to its OWN closing </PanelSection> (the section boundary, since
+  // the 2026-08-08 restyle moved every raw <section> to the shared PanelSection component — the
+  // literal "</PanelSection>" in THIS file's source is the same reliable per-block boundary the
+  // old literal "</section>" used to be). A fixed character window instead ran past the end of the
+  // section and found the NEXT one's desktop <tfoot> "Total" — so the assertion passed with no
+  // mobile total present at all. Caught by prove-it-fails, not by review.
   {
     const withTotals = [...source.matchAll(/md:hidden/g)].filter((m) => {
       const rest = source.slice(m.index ?? 0);
-      const end = rest.indexOf("</section>");
+      const end = rest.indexOf("</PanelSection>");
       return /Total/.test(end === -1 ? rest : rest.slice(0, end));
     });
     assert.equal(
@@ -138,23 +153,32 @@ export function runDirectOrdersApprovalWindowMobileTests() {
   //
   // Only a browser could have caught this. The tables were provably desktop-only and the page did
   // not scroll sideways, so every source-level check passed while the screen was unreadable.
+  //
+  // RE-AIMED 2026-08-08. The owner asked for the three field clusters to become real tables, so the
+  // multi-column `<dl className="grid ...">` this used to inspect no longer exists — the fields now
+  // render through FieldTable, a two-column label/value table that is single-column by construction
+  // and therefore immune to the original defect. What still has to hold is the RULE, not that one
+  // element: nothing on this screen may put a multi-column grid of nowrap values at the phone's base
+  // width. So the check now sweeps EVERY grid on the page instead of the one that used to exist.
   {
-    const grid = /<dl className="grid ([^"]*)"/.exec(source);
-    assert.ok(grid, "the detail field grid must still be a <dl> with explicit column classes");
-    const cls = grid[1];
-    assert.ok(
-      /\bgrid-cols-1\b/.test(cls),
-      `the field grid must start at ONE column: at 375px two columns give each value 150px while ` +
-        `values run to 287px, and whitespace-nowrap makes them overlap the next column rather than ` +
-        `wrap. Found: "${cls}"`,
-    );
-    assert.ok(
-      !/^grid-cols-2\b/.test(cls) && !/\s(?<!sm:|md:|lg:)grid-cols-2\b/.test(` ${cls}`),
-      `two columns must be behind a breakpoint, never the base: "${cls}"`,
-    );
-    assert.ok(
-      /\bmd:grid-cols-4\b/.test(cls),
-      "the desktop grid must still be four columns — nothing about the mobile fix may narrow the desktop view",
+    const grids = [...source.matchAll(/className="([^"]*\bgrid\b[^"]*)"/g)].map((match) => match[1]);
+    assert.ok(grids.length > 0, "the detail screen must still lay out with explicit grid classes");
+    for (const cls of grids) {
+      // A base-level (breakpoint-free) grid-cols-2+ is the exact defect: at 375px each value gets
+      // ~150px while real values run to 287px, and whitespace-nowrap makes them overlap rather
+      // than wrap. Behind sm:/md:/lg: it is fine, because the phone never sees it.
+      const bareMultiColumn = /(^|\s)grid-cols-([2-9]|1[0-2])\b/.exec(` ${cls}`);
+      assert.ok(
+        !bareMultiColumn,
+        `a grid must not start at more than one column — at 375px nowrap values overlap instead of ` +
+          `wrapping. Put it behind a breakpoint. Found: "${cls}"`,
+      );
+    }
+    // …and the desktop view must not have been narrowed to achieve that: the hero row still widens.
+    assert.match(
+      source,
+      /grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4/,
+      "the hero row must stack on a phone and still open out to four columns on desktop — the mobile rule must not cost the desktop view",
     );
   }
 

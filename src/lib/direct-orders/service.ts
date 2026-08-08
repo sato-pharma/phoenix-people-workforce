@@ -17,6 +17,28 @@ import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashbo
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
+import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
+import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
+import {
+  canonicalPharmacyMap,
+  DEDUPE_OPEN_STATUSES,
+  findDuplicateRequestGroups,
+  groupDuplicatePharmacies,
+} from "@/lib/direct-orders/duplicate-resolution";
+import {
+  customerCodesMatch,
+  decideDirectOrderAutoLink,
+  decideDirectOrderHold,
+  describeDirectOrderHoldGround,
+  isDirectOrderHistoryProductVisible,
+  type DirectOrderAutoLinkRefusal,
+  type DirectOrderHoldCandidateCode,
+  type DirectOrderHoldConflict,
+  type DirectOrderHoldGround,
+} from "@/lib/direct-orders/hold-decision";
+import { checkDirectOrderGeography } from "@/lib/direct-orders/geography-check";
+import { isHeadOfficeLine, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
+import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   describeDirectOrderPharmacyStanding,
   normalizeDirectOrderTrustState,
@@ -63,6 +85,7 @@ import {
   type DirectOrderPharmacyHistoryRow,
   type DirectOrderRetailHistoryRow,
   type DirectOrderApprovalListItem,
+  type DirectOrderPossibleDistributorMatch,
   type DirectOrderDealType,
   type DirectOrderDecision,
   type DirectOrderPharmacy,
@@ -70,6 +93,7 @@ import {
   type DirectOrderReportRow,
   type DirectOrderReportScope,
   type DirectOrderRequest,
+  type DirectOrderStatus,
   type DirectSalesReconciliationResult,
   type DirectOrderStepState,
   type DirectOrderWorkspaceData,
@@ -422,6 +446,15 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     active: row.active !== false,
     trustState: normalizeDirectOrderTrustState(row.trust_state),
     probationStartedAt: row.probation_started_at ? String(row.probation_started_at) : null,
+    // Only the two rulings are honoured; anything else in the column reads as "nobody has ruled",
+    // which is the safe direction — an unrecognised value must never release an order.
+    holdReleaseGround:
+      row.hold_release_ground === "admin_released" || row.hold_release_ground === "kept_held"
+        ? row.hold_release_ground
+        : null,
+    holdReleaseReason: row.hold_release_reason ? String(row.hold_release_reason) : null,
+    holdReleaseDecidedByHrId: row.hold_release_decided_by_hr_id ? String(row.hold_release_decided_by_hr_id) : null,
+    holdReleaseDecidedAt: row.hold_release_decided_at ? String(row.hold_release_decided_at) : null,
   };
 }
 
@@ -432,6 +465,132 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
 async function distributorNameResolver(): Promise<(code: string) => string> {
   const names = await loadDistributorNames();
   return (code: string) => names.get(code) ?? code;
+}
+
+/**
+ * Does this pharmacy's own NAME happen to be a real distributor customer code? Found live,
+ * 2026-08-08: a hand-registered pharmacy had "1573270" as its name — a genuinely valid PS
+ * distributor customer code (the master directory stores it padded, "0001573270"), typed into the
+ * name field by mistake. Only worth the query when the pharmacy has NO code on file at all — the
+ * common, well-coded case never reaches this. Purely informational (spec-consistent with the
+ * validation desk's own rule: a match is a human's call, never an automatic one) — this makes an
+ * otherwise-invisible real match visible, it does not link anything.
+ *
+ * Matched on digits-only equality after stripping leading zeros from both sides, not a text
+ * `.eq()`: the directory stores the same customer under differently-zero-padded codes depending on
+ * distributor (confirmed live: "0001573270" for PS, "350599" for IS-family codes).
+ */
+async function findPossibleDistributorMatchesByPharmacyName(
+  pharmacyName: string | null | undefined,
+): Promise<DirectOrderPossibleDistributorMatch[]> {
+  const typed = String(pharmacyName ?? "").trim();
+  // A real pharmacy name is never purely digits — this is the one shape worth checking at all.
+  if (!/^\d{4,}$/.test(typed)) return [];
+  const bare = typed.replace(/^0+/, "") || "0";
+
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("source_of_sales_customer_directory_rollup")
+    // brick_id matters as much as area_code: sales attribution follows the BRICK, so a comparison
+    // that can only check the area answers the less important half of the question.
+    .select("distributor_code, client_code, client_name, area_code, brick_id")
+    .ilike("client_code", `%${bare}`)
+    .limit(50);
+  const rows = (data ?? []) as Array<{
+    distributor_code: string | null;
+    client_code: string | null;
+    client_name: string | null;
+    area_code: string | null;
+    brick_id: string | null;
+  }>;
+
+  const nameOfDistributor = await distributorNameResolver();
+  const byDistributor = new Map<string, DirectOrderPossibleDistributorMatch>();
+  for (const row of rows) {
+    const code = String(row.client_code ?? "");
+    // Suffix-matched by the query above; require the FULL digit string to agree once both sides
+    // are stripped of leading zeros, or "31573270" would wrongly match "1573270".
+    if (code.replace(/^0+/, "") !== bare) continue;
+    const distributorCode = String(row.distributor_code ?? "");
+    if (!distributorCode || byDistributor.has(distributorCode)) continue;
+    byDistributor.set(distributorCode, {
+      distributorCode,
+      distributorName: nameOfDistributor(distributorCode),
+      customerCode: code,
+      customerName: row.client_name ?? code,
+      areaCode: row.area_code,
+      brickId: row.brick_id,
+      // Unresolved here on purpose — this function only searches the DISTRIBUTOR master and knows
+      // nothing about Phoenix's own pharmacies. attachCandidateOwnership fills it in, and every
+      // surface that offers a link must call it, or it offers a link the rule would refuse.
+      ownedByPharmacyCode: null,
+      ownedByPharmacyName: null,
+    });
+  }
+  return Array.from(byDistributor.values());
+}
+
+/**
+ * Fill in `ownedByPharmacyCode` / `ownedByPharmacyName` on name-code candidates.
+ *
+ * Every screen that shows a candidate must run this. A candidate rendered with ownership unresolved
+ * reads as free to link when it may already belong to another Phoenix pharmacy — which is how one
+ * real pharmacy ends up registered twice with its sales split between the two records.
+ */
+async function attachCandidateOwnership(
+  pharmacyId: string,
+  matches: DirectOrderPossibleDistributorMatch[],
+): Promise<DirectOrderPossibleDistributorMatch[]> {
+  return Promise.all(
+    matches.map(async (match) => {
+      const ownerId = await findOtherPharmacyHoldingCode(pharmacyId, match.distributorCode, match.customerCode);
+      if (!ownerId) return match;
+      // "unknown" = the check itself failed. Surfaced as-is so the rule can fail closed on it.
+      if (ownerId === "unknown") return { ...match, ownedByPharmacyCode: "unknown", ownedByPharmacyName: null };
+      const owner = (await loadPharmaciesByIds([ownerId])).get(ownerId) ?? null;
+      return {
+        ...match,
+        ownedByPharmacyCode: owner?.phoenixPharmacyCode ?? ownerId,
+        ownedByPharmacyName: owner?.pharmacyName ?? null,
+      };
+    }),
+  );
+}
+
+/**
+ * The pharmacy's code pairs, each annotated with whether ANOTHER Phoenix pharmacy already claims it.
+ *
+ * The release rule needs this and the pharmacy row cannot supply it. Two Phoenix pharmacies pointing
+ * at one distributor customer is a code collision in its purest form — exactly the case the 2026-08-04
+ * comment on createDirectOrderPharmacy warns about — so a contested pair must never count as proof.
+ */
+async function attachCodeOwnership(pharmacy: DirectOrderPharmacy): Promise<DirectOrderHoldCandidateCode[]> {
+  const pairs = pharmacy.distributorCodes ?? [];
+  if (pairs.length === 0) return [];
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .select("pharmacy_id, distributor_code, customer_code")
+      .in("customer_code", [...new Set(pairs.map((pair) => pair.customerCode))])
+      .neq("pharmacy_id", pharmacy.id);
+    const owners = new Map<string, string>();
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      owners.set(`${String(row.distributor_code ?? "").toLowerCase()}|${String(row.customer_code ?? "")}`, String(row.pharmacy_id));
+    }
+    return pairs.map((pair) => ({
+      ...pair,
+      ownedByOtherPharmacyId: owners.get(`${pair.distributorCode.toLowerCase()}|${pair.customerCode}`) ?? null,
+    }));
+  } catch (error) {
+    // FAIL CLOSED: if we cannot prove a pair is unclaimed, we do not treat it as proof. An
+    // unavailable check must never be the reason an order skips the held lane.
+    logError("Direct order code-ownership check failed", {
+      labels: { event: "direct_order_code_ownership_check_failed", pharmacyId: pharmacy.id },
+      error,
+    });
+    return pairs.map((pair) => ({ ...pair, ownedByOtherPharmacyId: "unknown" }));
+  }
 }
 
 /** distributor_code → distributor_name, for display. */
@@ -708,8 +867,25 @@ export async function createDirectOrderPharmacy(
     summary: `Direct-order pharmacy "${name}" registered by hand — awaiting SFE validation and System Admin acknowledgment (${reviewReason}).`,
   });
 
+  // Catch the wrong-box case at the source (owner rule, 2026-08-08). If the name that was just typed
+  // is really a distributor customer code, and it matches exactly one customer, move it to the column
+  // it belongs in now — before the pharmacy's first order is ever submitted against a broken record.
+  //
+  // This does NOT touch verification_status: the row still reads `pending_review` and the chain still
+  // starts at SFE Manager. Auto-linking changes what the record SAYS, never whether a human checked
+  // it. The 2026-08-04 safety comment above stands untouched.
+  await autoLinkDirectOrderPharmacyCode(pharmacyId, { actorLoginId: access.loginId ?? access.hrId });
+
   const pharmacy = mapPharmacyRow(pharmacyRow as Record<string, unknown>);
   await attachDistributorCodes([pharmacy]);
+  // Re-read the name: the auto-link may have replaced a digit-string name with the master's own.
+  const { data: afterRow } = await supabase
+    .from("direct_order_pharmacies")
+    .select("pharmacy_name")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+  const correctedName = String((afterRow as { pharmacy_name?: string } | null)?.pharmacy_name ?? "").trim();
+  if (correctedName) pharmacy.pharmacyName = correctedName;
   return pharmacy;
 }
 
@@ -876,7 +1052,34 @@ async function markDirectOrderPharmacyVerified(
  * Registry-gated per order with `revive_held` — if the registry says the actor's role cannot
  * revive, the order stays held and says so, rather than sliding into the chain unchecked.
  */
-async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacyId: string): Promise<void> {
+type MoveHeldIntoChainOptions = {
+  /** Registry action gating each request. */
+  actionKey: "revive_held" | "release_held";
+  eventType: string;
+  /** Words for the audit line, the event, and the notification — they differ per door. */
+  auditSummary: (actorHrId: string) => string;
+  eventMessage: string;
+  noticeTitle: string;
+  noticeSuffix: string;
+};
+
+/**
+ * Move a pharmacy's held orders into the approval chain — the shared core behind BOTH doors.
+ *
+ * `revive_held` is "the pharmacy passed validation". `release_held` is "the distributor code proves
+ * it, or a System Admin judged it" — a different authority with a different audit line, which is
+ * exactly why it is a separate registry action and not a reuse of revive (the same reasoning that
+ * made `cancel_held` its own action rather than a reuse of `rejected`).
+ *
+ * Everything here was written against a real incident and is shared rather than copied: the
+ * per-request failure aggregation, the stale-step wipe, the chain rebuilt fresh so it names today's
+ * managers, the `.eq("status","held")` race guard AND the check that it matched a row.
+ */
+async function moveHeldDirectOrdersIntoChain(
+  access: AccessContext,
+  pharmacyId: string,
+  opts: MoveHeldIntoChainOptions,
+): Promise<number> {
   const supabase = getSupabaseAdmin();
   const { data: heldRows, error } = await supabase
     .from("direct_order_requests")
@@ -885,7 +1088,7 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
     .eq("status", "held");
   if (error) throw error;
   const requests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
-  if (requests.length === 0) return;
+  if (requests.length === 0) return 0;
 
   const pharmacy = (await loadPharmaciesByIds([pharmacyId])).get(pharmacyId) ?? null;
   const resolveName = await nameLookup();
@@ -910,7 +1113,7 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
     // status moved between the fetch and this loop, which is exactly the anomaly it exists for.
     await assertDirectOrderWorkflowTransition({
       access,
-      actionKey: "revive_held",
+      actionKey: opts.actionKey,
       expectedNextStatus: "pending_approval",
       status: request.status,
     });
@@ -940,12 +1143,23 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
     );
     if (seedError) throw seedError;
 
-    const { error: updateError } = await supabase
+    const { data: updatedRows, error: updateError } = await supabase
       .from("direct_order_requests")
       .update({ status: "pending_approval", held_at: null })
       .eq("id", request.id)
-      .eq("status", "held");
+      .eq("status", "held")
+      .select("id");
     if (updateError) throw updateError;
+    // The `.eq("status","held")` guard is a race guard, and until now nothing checked whether it
+    // actually matched. If the 14-day expiry cron fires between seeding the steps above and this
+    // update, the request is already `expired` — the update quietly matches zero rows, and the
+    // caller is told the revive succeeded while an expired request now carries a full pending
+    // chain. cancelHeldDirectOrder already checks this exact case; this is the same guard.
+    if ((updatedRows ?? []).length === 0) {
+      throw new Error(
+        `Request ${request.id} was no longer held when the chain was seeded (most likely expired or cancelled in the meantime).`,
+      );
+    }
 
     await writeRequiredAuditLog({
       actorLoginId: access.loginId ?? access.hrId,
@@ -953,13 +1167,13 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
       entityId: request.id,
       oldValues: { status: "held" },
       newValues: { status: "pending_approval" },
-      summary: `Direct order revived after pharmacy validation by ${access.hrId ?? "unknown"} — entering the chain at step 1.`,
+      summary: opts.auditSummary(access.hrId ?? "unknown"),
     });
     await insertEvent({
       requestId: request.id,
       actorHrId: access.hrId,
-      eventType: "revived",
-      message: "Pharmacy validated — request entered the approval chain at step 1.",
+      eventType: opts.eventType,
+      message: opts.eventMessage,
     });
 
     const requesterDisplayName = resolveName(request.requesterHrId) ?? request.requesterHrId;
@@ -968,17 +1182,17 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
     const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
     await notifyDirectOrder({
       recipients: [request.requesterHrId, ...firstApprovers],
-      title: "Direct order released — pharmacy validated",
-      message: `${buildDirectOrderNotificationLine(notifyContext)} The pharmacy passed validation; the request is now with its first approver.`,
+      title: opts.noticeTitle,
+      message: `${buildDirectOrderNotificationLine(notifyContext)} ${opts.noticeSuffix}`,
       metrics: buildDirectOrderNotificationMetrics(notifyContext),
-      eventType: "revived",
+      eventType: opts.eventType,
       requestId: request.id,
       subjectHrId: request.requesterHrId,
     });
     } catch (reviveError) {
       failures.push({ requestId: request.id, error: reviveError });
-      logError("Reviving a held direct order failed; its siblings were unaffected", {
-        labels: { event: "direct_order_revive_failed", requestId: request.id },
+      logError("Moving a held direct order into the chain failed; its siblings were unaffected", {
+        labels: { event: "direct_order_revive_failed", requestId: request.id, actionKey: opts.actionKey },
         error: reviveError,
       });
     }
@@ -992,6 +1206,409 @@ async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacy
         failures.map((f) => f.requestId).join(", "),
     );
   }
+  return requests.length;
+}
+
+/** Door 1: the pharmacy passed validation. Unchanged behaviour — now a thin wrapper. */
+async function reviveHeldDirectOrdersForPharmacy(access: AccessContext, pharmacyId: string): Promise<void> {
+  await moveHeldDirectOrdersIntoChain(access, pharmacyId, {
+    actionKey: "revive_held",
+    eventType: "revived",
+    auditSummary: (actor) => `Direct order revived after pharmacy validation by ${actor} — entering the chain at step 1.`,
+    eventMessage: "Pharmacy validated — request entered the approval chain at step 1.",
+    noticeTitle: "Direct order released — pharmacy validated",
+    noticeSuffix: "The pharmacy passed validation; the request is now with its first approver.",
+  });
+}
+
+/**
+ * Door 2 (owner rule, 2026-08-08): release without a validation decision.
+ *
+ * Two grounds, and they are NOT interchangeable:
+ *   - `code_proven`     — the distributor customer code resolves in the master database and its
+ *                         brick agrees with the request. Evidence, not judgement.
+ *   - `admin_released`  — no code proves anything (the live case is a placeholder like PS/000000),
+ *                         so a System Admin looked and took responsibility. Judgement, recorded.
+ *
+ * NEVER writes `verification_status`. The pharmacy stays unconfirmed and the chain's first rung is
+ * still the SFE Manager — this changes WHERE the order sits, never whether it was reviewed.
+ */
+export async function releaseHeldDirectOrdersForPharmacy(
+  access: AccessContext,
+  input: { pharmacyId: string; ground: "code_proven" | "admin_released"; reason?: string | null },
+): Promise<{ pharmacyId: string; released: number }> {
+  assertHeldDeskAccess(access);
+  const reason = String(input.reason ?? "").trim();
+  if (input.ground === "admin_released" && !reason) {
+    badRequest("A reason is required when a System Admin releases a held request.");
+  }
+
+  // Written BEFORE the orders move, so a later submit on this pharmacy is consistent with the
+  // orders already released rather than re-freezing behind them.
+  if (input.ground === "admin_released") {
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from("direct_order_pharmacies")
+      .update({
+        hold_release_ground: "admin_released",
+        hold_release_reason: reason,
+        hold_release_decided_by_hr_id: access.hrId,
+        hold_release_decided_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.pharmacyId);
+    if (error) throw error;
+  }
+
+  const released = await moveHeldDirectOrdersIntoChain(access, input.pharmacyId, {
+    actionKey: "release_held",
+    eventType: "released",
+    auditSummary: (actor) =>
+      input.ground === "code_proven"
+        ? `Direct order released by ${actor}: the distributor customer code is in the master database and its brick matches the request. The pharmacy remains unconfirmed and still faces the SFE rung.`
+        : `Direct order released by ${actor} on their own judgement (no code proves the pharmacy). Reason: ${reason}`,
+    eventMessage:
+      input.ground === "code_proven"
+        ? "Distributor code verified against the master database — request entered the approval chain at step 1."
+        : `Released by a System Admin — request entered the approval chain at step 1. Reason: ${reason}`,
+    noticeTitle: "Direct order released into the approval chain",
+    noticeSuffix: "It is now with its first approver; the pharmacy itself still has to be confirmed at the SFE rung.",
+  });
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    newValues: { holdReleaseGround: input.ground, released },
+    summary: `${released} held order(s) released into the approval chain (${input.ground}).`,
+  });
+  pingDirectOrderSheet("held_released");
+  return { pharmacyId: input.pharmacyId, released };
+}
+
+/**
+ * Door 3: a System Admin looked at an unprovable pharmacy and ruled its orders STAY held.
+ *
+ * Changes no status — the value is the recorded decision. Without it, "nobody has looked yet" and
+ * "somebody looked and said no" are the same empty state, which is how a request sits untouched
+ * until the 14-day clock kills it and nobody can say whether that was intended.
+ */
+export async function keepDirectOrderHeld(
+  access: AccessContext,
+  input: { pharmacyId: string; reason: string },
+): Promise<{ pharmacyId: string; ordersHeld: number }> {
+  assertHeldDeskAccess(access);
+  const reason = String(input.reason ?? "").trim();
+  if (!reason) badRequest("A reason is required to record that a request stays held.");
+
+  const supabase = getSupabaseAdmin();
+  const { data: heldRows, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("pharmacy_id", input.pharmacyId)
+    .eq("status", "held");
+  if (error) throw error;
+  const requests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+
+  for (const request of requests) {
+    // Gated on the row's REAL status (audit F6), and `to: 'held'` — the registry knows this action
+    // deliberately does not move anything.
+    await assertDirectOrderWorkflowTransition({
+      access,
+      actionKey: "keep_held",
+      expectedNextStatus: "held",
+      status: request.status,
+    });
+  }
+
+  const { error: updateError } = await supabase
+    .from("direct_order_pharmacies")
+    .update({
+      hold_release_ground: "kept_held",
+      hold_release_reason: reason,
+      hold_release_decided_by_hr_id: access.hrId,
+      hold_release_decided_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", input.pharmacyId);
+  if (updateError) throw updateError;
+
+  for (const request of requests) {
+    await insertEvent({
+      requestId: request.id,
+      actorHrId: access.hrId,
+      eventType: "held_decision_recorded",
+      message: `A System Admin reviewed this held request and decided it stays held. Reason: ${reason}`,
+    });
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    newValues: { holdReleaseGround: "kept_held", reason, ordersHeld: requests.length },
+    summary: `${requests.length} held order(s) deliberately kept held by a System Admin. Reason: ${reason}`,
+  });
+  return { pharmacyId: input.pharmacyId, ordersHeld: requests.length };
+}
+
+/**
+ * Door 4 (Task B): link the code that was typed into the WRONG FIELD.
+ *
+ * The live case: pharmacy DOP-000017 was registered with the name "1573270" — a real PS customer
+ * code — and no code linked at all. Verifying it did not fix that: with no code row,
+ * loadPharmacyRetailHistory reports `unmatchable` forever and its retail sales attach to nobody.
+ *
+ * So this writes the link (the durable repair), optionally corrects the name, and only then
+ * re-evaluates the hold. Auto-releasing without linking would put the order in the chain while SFE
+ * still reads "no code on file" — which is why the owner chose surface-and-confirm over automatic.
+ */
+/**
+ * Who else already holds this exact (distributor, customer code) pair?
+ *
+ * The auto-link twin of attachCodeOwnership, for a pair that is NOT yet on the pharmacy. Same
+ * fail-closed contract: an unavailable check returns "unknown", which the rule treats as owned, so a
+ * database hiccup can never be the reason two pharmacies end up pointing at one customer.
+ */
+async function findOtherPharmacyHoldingCode(
+  pharmacyId: string,
+  distributorCode: string,
+  customerCode: string,
+): Promise<string | null> {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("direct_order_pharmacy_distributor_codes")
+      .select("pharmacy_id")
+      .eq("distributor_code", distributorCode)
+      .eq("customer_code", customerCode)
+      .neq("pharmacy_id", pharmacyId)
+      .limit(1);
+    if (error) throw error;
+    const row = (data ?? [])[0] as { pharmacy_id?: string } | undefined;
+    return row?.pharmacy_id ? String(row.pharmacy_id) : null;
+  } catch (error) {
+    logError("Direct order auto-link ownership check failed", {
+      labels: { event: "direct_order_auto_link_ownership_check_failed", pharmacyId },
+      error,
+    });
+    return "unknown";
+  }
+}
+
+export type DirectOrderAutoLinkOutcome = {
+  linked: boolean;
+  distributorCode: string | null;
+  customerCode: string | null;
+  renamedTo: string | null;
+  refusal: DirectOrderAutoLinkRefusal | null;
+};
+
+/**
+ * Link a misplaced distributor code automatically (owner rule, 2026-08-08 — "if the pharmacy matches
+ * automatic link").
+ *
+ * SYSTEM action, not a user action: it runs at registration and at submit, where the actor is a
+ * District Manager with no Held Desk rights. That is why it takes no AccessContext and never calls
+ * assertHeldDeskAccess — the authority comes from `decideDirectOrderAutoLink` refusing everything
+ * ambiguous, not from the caller's role. `actorLoginId` is recorded as the submitter when known so
+ * the audit trail still names a human, with the summary stating the write was automatic.
+ *
+ * FAIL SOFT, ALWAYS. Registration and submission must never break because a convenience repair could
+ * not run. Every failure path logs and returns `linked: false`; nothing here throws.
+ */
+export async function autoLinkDirectOrderPharmacyCode(
+  pharmacyId: string,
+  options: { actorLoginId?: string | null } = {},
+): Promise<DirectOrderAutoLinkOutcome> {
+  const nothing: DirectOrderAutoLinkOutcome = {
+    linked: false,
+    distributorCode: null,
+    customerCode: null,
+    renamedTo: null,
+    refusal: null,
+  };
+  try {
+    const pharmacy = (await loadPharmaciesByIds([pharmacyId])).get(pharmacyId) ?? null;
+    if (!pharmacy) return nothing;
+
+    // Cheap gate first: the candidate search hits the directory rollup, so do not run it for a
+    // pharmacy whose name is a name, or one that already carries a code.
+    const preflight = decideDirectOrderAutoLink({
+      pharmacyName: pharmacy.pharmacyName,
+      existingCodes: pharmacy.distributorCodes ?? [],
+      candidates: [],
+    });
+    if (!preflight.link && preflight.refusal !== "no_candidate") {
+      return { ...nothing, refusal: preflight.refusal };
+    }
+
+    const found = await findPossibleDistributorMatchesByPharmacyName(pharmacy.pharmacyName);
+    const candidates = await Promise.all(
+      found.map(async (match) => ({
+        ...match,
+        ownedByOtherPharmacyId: await findOtherPharmacyHoldingCode(pharmacyId, match.distributorCode, match.customerCode),
+      })),
+    );
+
+    const decision = decideDirectOrderAutoLink({
+      pharmacyName: pharmacy.pharmacyName,
+      existingCodes: pharmacy.distributorCodes ?? [],
+      candidates,
+    });
+    if (!decision.link) return { ...nothing, refusal: decision.refusal };
+
+    // Re-read the authoritative row before writing. The candidate came from the directory rollup,
+    // which carries no region_code and is a derived view — customer_map is the record of truth, and
+    // it is what the manual link path already trusts.
+    const supabase = getSupabaseAdmin();
+    const { data: masterRow } = await supabase
+      .from("source_of_sales_customer_map")
+      .select("distributor_code, customer_code, customer_name, brick_id, area_code, region_code")
+      .eq("distributor_code", decision.candidate.distributorCode)
+      .eq("customer_code", decision.candidate.customerCode)
+      .eq("active", true)
+      .maybeSingle();
+    if (!masterRow) return { ...nothing, refusal: "no_candidate" };
+    const master = masterRow as Record<string, unknown>;
+
+    const distributorCode = String(master.distributor_code ?? decision.candidate.distributorCode);
+    // The MASTER's own spelling, padding included — retail matching compares these as strings.
+    const customerCode = String(master.customer_code ?? decision.candidate.customerCode);
+
+    const { error: insertError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({
+      pharmacy_id: pharmacyId,
+      distributor_code: distributorCode,
+      customer_code: customerCode,
+      mapped_brick_id: master.brick_id ?? null,
+      mapped_area_code: master.area_code ?? null,
+      mapped_region_code: master.region_code ?? null,
+    });
+    if (insertError) {
+      // 23505 = another writer got there first. That is the desired end state, not a failure.
+      if (String((insertError as { code?: string }).code) !== "23505") throw insertError;
+      return { ...nothing, refusal: "already_linked" };
+    }
+
+    let renamedTo: string | null = null;
+    const masterName = String(master.customer_name ?? "").trim();
+    if (decision.renameTo && masterName) {
+      const { error: renameError } = await supabase
+        .from("direct_order_pharmacies")
+        .update({ pharmacy_name: masterName, updated_at: new Date().toISOString() })
+        .eq("id", pharmacyId);
+      if (renameError) throw renameError;
+      renamedTo = masterName;
+    }
+
+    await writeRequiredAuditLog({
+      actorLoginId: options.actorLoginId ?? "system",
+      entityType: "direct_order_request",
+      entityId: `pharmacy:${pharmacyId}`,
+      oldValues: { pharmacyName: pharmacy.pharmacyName, distributorCode: null, customerCode: null },
+      newValues: { pharmacyName: renamedTo ?? pharmacy.pharmacyName, distributorCode, customerCode },
+      summary: `AUTOMATIC: distributor customer code ${distributorCode}/${customerCode} linked to this pharmacy — the code had been typed into the pharmacy NAME field, and it matched exactly one distributor customer.${renamedTo ? ` Name corrected to "${renamedTo}" (was "${pharmacy.pharmacyName}").` : ""}`,
+    });
+
+    return { linked: true, distributorCode, customerCode, renamedTo, refusal: null };
+  } catch (error) {
+    // Never break a registration or a submission over a convenience repair.
+    logError("Direct order auto-link failed", {
+      labels: { event: "direct_order_auto_link_failed", pharmacyId },
+      error,
+    });
+    return nothing;
+  }
+}
+
+export async function linkDirectOrderPharmacyCode(
+  access: AccessContext,
+  input: { pharmacyId: string; distributorCode: string; customerCode: string; renameToCustomerName?: boolean },
+): Promise<{ pharmacyId: string; released: number; renamedTo: string | null }> {
+  assertHeldDeskAccess(access);
+  const supabase = getSupabaseAdmin();
+
+  // Re-read the pair from the master rather than trusting the client — fail closed if it is gone,
+  // exactly as decideDirectOrderPharmacyValidation does before it acts on a match.
+  const { data: masterRow } = await supabase
+    .from("source_of_sales_customer_map")
+    .select("distributor_code, customer_code, customer_name, brick_id, area_code, region_code")
+    .eq("distributor_code", input.distributorCode)
+    .eq("customer_code", input.customerCode)
+    .eq("active", true)
+    .maybeSingle();
+  if (!masterRow) {
+    badRequest("That distributor customer code is no longer in the master database — nothing was linked.");
+  }
+  const master = masterRow as Record<string, unknown>;
+
+  const { error: insertError } = await supabase.from("direct_order_pharmacy_distributor_codes").insert({
+    pharmacy_id: input.pharmacyId,
+    distributor_code: String(master.distributor_code ?? input.distributorCode),
+    // The MASTER's own spelling, padding included — retail matching compares these as strings.
+    customer_code: String(master.customer_code ?? input.customerCode),
+    mapped_brick_id: master.brick_id ?? null,
+    mapped_area_code: master.area_code ?? null,
+    mapped_region_code: master.region_code ?? null,
+  });
+  if (insertError) {
+    if (String((insertError as { code?: string }).code) === "23505") {
+      badRequest("This pharmacy already holds a customer code for that distributor.");
+    }
+    throw insertError;
+  }
+
+  let renamedTo: string | null = null;
+  const masterName = String(master.customer_name ?? "").trim();
+  if (input.renameToCustomerName && masterName) {
+    const { data: before } = await supabase
+      .from("direct_order_pharmacies")
+      .select("pharmacy_name")
+      .eq("id", input.pharmacyId)
+      .maybeSingle();
+    const { error: renameError } = await supabase
+      .from("direct_order_pharmacies")
+      .update({ pharmacy_name: masterName, updated_at: new Date().toISOString() })
+      .eq("id", input.pharmacyId);
+    if (renameError) throw renameError;
+    renamedTo = masterName;
+    await writeRequiredAuditLog({
+      actorLoginId: access.loginId ?? access.hrId,
+      entityType: "direct_order_request",
+      entityId: `pharmacy:${input.pharmacyId}`,
+      oldValues: { pharmacyName: (before as { pharmacy_name?: string } | null)?.pharmacy_name ?? null },
+      newValues: { pharmacyName: masterName },
+      summary: `Pharmacy renamed to its master-database customer name after a code was found in the name field.`,
+    });
+  }
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: `pharmacy:${input.pharmacyId}`,
+    newValues: { distributorCode: input.distributorCode, customerCode: input.customerCode },
+    summary: `Distributor customer code ${input.distributorCode}/${input.customerCode} linked to this pharmacy (it had been typed into the pharmacy NAME field).`,
+  });
+
+  // Now re-evaluate. Linking a code that resolves in the declared brick makes the pharmacy proven,
+  // so its held orders can join the chain — through the same shared rule the submit fork uses.
+  const pharmacy = (await loadPharmaciesByIds([input.pharmacyId])).get(input.pharmacyId) ?? null;
+  let released = 0;
+  if (pharmacy) {
+    const decision = decideDirectOrderHold({
+      verificationStatus: pharmacy.verificationStatus,
+      declaredBrickId: pharmacy.brickId,
+      distributorCodes: await attachCodeOwnership(pharmacy),
+      holdReleaseGround: pharmacy.holdReleaseGround,
+    });
+    if (!decision.hold && decision.ground === "code_proven") {
+      ({ released } = await releaseHeldDirectOrdersForPharmacy(access, {
+        pharmacyId: input.pharmacyId,
+        ground: "code_proven",
+      }));
+    }
+  }
+  return { pharmacyId: input.pharmacyId, released, renamedTo };
 }
 
 /**
@@ -1211,6 +1828,34 @@ export type HeldDirectOrderRow = {
   daysRemaining: number;
   /** When the last held-notice email went out for this request, if ever. */
   lastNoticeAt: string | null;
+  // ── Why it is held, and what the admin needs to decide (added 2026-08-08) ──────────────────
+  // The desk previously showed a name, a date and a countdown, and nothing about the CODE — the
+  // one fact that determines whether the order should be held at all. An admin had to leave the
+  // page to find out anything actionable.
+  /** From the shared rule: unproven | code_conflict | pharmacy_rejected | admin_released | … */
+  holdGround: DirectOrderHoldGround;
+  holdGroundNote: string;
+  declaredBrickId: string | null;
+  declaredAreaCode: string | null;
+  /** Every code on file, with what the master database maps it to. */
+  distributorCodes: Array<{
+    distributorCode: string;
+    distributorName: string;
+    customerCode: string;
+    mappedBrickId: string | null;
+    mappedAreaCode: string | null;
+  }>;
+  /** Resolving codes that nonetheless failed the release test, and why. */
+  conflicts: DirectOrderHoldConflict[];
+  /**
+   * Only when NO code is linked: real customers whose code equals this pharmacy's stored NAME.
+   * This is the "typed into the wrong field" repair, surfaced for one click rather than applied.
+   */
+  nameCodeCandidates: DirectOrderPossibleDistributorMatch[];
+  /** A System Admin's standing ruling on this pharmacy, if one was recorded. */
+  holdReleaseGround: "admin_released" | "kept_held" | null;
+  holdReleaseReason: string | null;
+  holdReleaseDecidedAt: string | null;
 };
 
 function assertHeldDeskAccess(access: AccessContext): void {
@@ -1247,11 +1892,42 @@ export async function listHeldDirectOrders(access: AccessContext): Promise<HeldD
     if (!lastNoticeByRequest.has(row.request_id)) lastNoticeByRequest.set(row.request_id, row.created_at);
   }
 
+  // WHY each one is held, computed with the SAME rule the submit fork uses — never a second copy.
+  // A desk that re-implemented "is this provable" would eventually disagree with the fork, and the
+  // admin would be deciding against a different rule than the one that parked the order.
+  const uniquePharmacies = [...new Set(requests.map((request) => request.pharmacyId))];
+  const decisionByPharmacy = new Map<string, ReturnType<typeof decideDirectOrderHold>>();
+  const candidatesByPharmacy = new Map<string, DirectOrderPossibleDistributorMatch[]>();
+  for (const pharmacyId of uniquePharmacies) {
+    const pharmacy = pharmacies.get(pharmacyId) ?? null;
+    if (!pharmacy) continue;
+    decisionByPharmacy.set(
+      pharmacyId,
+      decideDirectOrderHold({
+        verificationStatus: pharmacy.verificationStatus,
+        declaredBrickId: pharmacy.brickId,
+        distributorCodes: await attachCodeOwnership(pharmacy),
+        holdReleaseGround: pharmacy.holdReleaseGround,
+      }),
+    );
+    // Only worth asking when there is no code at all — that is the "typed into the wrong field"
+    // shape, and it is the one case where the repair is a single click. Ownership is attached
+    // because this desk is where that click happens: offering a Link on a code another pharmacy
+    // already holds is offering an action the rule will refuse.
+    if ((pharmacy.distributorCodes ?? []).length === 0) {
+      candidatesByPharmacy.set(
+        pharmacyId,
+        await attachCandidateOwnership(pharmacyId, await findPossibleDistributorMatchesByPharmacyName(pharmacy.pharmacyName)),
+      );
+    }
+  }
+
   const now = Date.now();
   return requests.map((request) => {
     const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
     const heldAtMs = request.heldAt ? Date.parse(request.heldAt) : now;
     const elapsedDays = Math.floor((now - heldAtMs) / (24 * 60 * 60 * 1000));
+    const decision = decisionByPharmacy.get(request.pharmacyId) ?? null;
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
@@ -1266,6 +1942,22 @@ export async function listHeldDirectOrders(access: AccessContext): Promise<HeldD
       heldAt: request.heldAt ?? null,
       daysRemaining: Math.max(0, HELD_ORDER_LIFETIME_DAYS - elapsedDays),
       lastNoticeAt: lastNoticeByRequest.get(request.id) ?? null,
+      holdGround: decision?.ground ?? "unproven",
+      holdGroundNote: decision ? describeDirectOrderHoldGround(decision) : "This request has no pharmacy on file.",
+      declaredBrickId: pharmacy?.brickId ?? null,
+      declaredAreaCode: pharmacy?.areaCode ?? null,
+      distributorCodes: (pharmacy?.distributorCodes ?? []).map((pair) => ({
+        distributorCode: pair.distributorCode,
+        distributorName: pair.distributorName,
+        customerCode: pair.customerCode,
+        mappedBrickId: pair.mappedBrickId,
+        mappedAreaCode: pair.mappedAreaCode,
+      })),
+      conflicts: decision?.conflicts ?? [],
+      nameCodeCandidates: candidatesByPharmacy.get(request.pharmacyId) ?? [],
+      holdReleaseGround: pharmacy?.holdReleaseGround ?? null,
+      holdReleaseReason: pharmacy?.holdReleaseReason ?? null,
+      holdReleaseDecidedAt: pharmacy?.holdReleaseDecidedAt ?? null,
     };
   });
 }
@@ -2094,15 +2786,42 @@ export async function submitDirectOrder(
   // Load the pharmacy in full (a missing map entry IS "not found") — the approver's
   // notification names the pharmacy, its geography and its distributors, so the bare
   // existence probe this replaced no longer carries enough.
-  const pharmacies = await loadPharmaciesByIds([input.pharmacyId]);
-  const pharmacy = pharmacies.get(input.pharmacyId) ?? null;
+  let pharmacies = await loadPharmaciesByIds([input.pharmacyId]);
+  let pharmacy = pharmacies.get(input.pharmacyId) ?? null;
   if (!pharmacy) badRequest("Pharmacy not found — pick an existing one or add a new pharmacy first.");
 
-  // The HELD fork (spec B6). A pharmacy the master database does not vouch for parks the order
-  // OUTSIDE the approval flow: status 'held', no steps seeded, no approver ever sees it as work.
-  // It re-enters through exactly one door — the pharmacy passing validation — or dies on the
-  // 14-day clock. Decided by the pharmacy row, never by anything the requester typed.
-  const submitAsHeld = pharmacy.verificationStatus === "pending_review";
+  // Repair BEFORE deciding (owner rule, 2026-08-08). Pharmacies registered before auto-link exists
+  // still carry their code in the name field; without this they would keep failing the hold test on
+  // every future order for a code that is sitting right there. Running it here means the repair and
+  // the release happen in ONE submission rather than needing a second order to benefit.
+  //
+  // Order matters: the auto-link must precede decideDirectOrderHold, and the pharmacy must be
+  // re-read afterwards, or the decision would run against the stale pre-link row.
+  const autoLink = await autoLinkDirectOrderPharmacyCode(input.pharmacyId, {
+    actorLoginId: access.loginId ?? access.hrId,
+  });
+  if (autoLink.linked) {
+    pharmacies = await loadPharmaciesByIds([input.pharmacyId]);
+    pharmacy = pharmacies.get(input.pharmacyId) ?? pharmacy;
+  }
+
+  // The HELD fork (spec B6, reworked 2026-08-08). A pharmacy nothing vouches for parks the order
+  // OUTSIDE the approval flow: status 'held', no steps seeded, no approver ever sees it as work,
+  // dead in 14 days.
+  //
+  // What changed: `verification_status` used to be the SOLE input, so a hand-typed pharmacy whose
+  // distributor code resolved perfectly and one with no code at all were frozen identically. The
+  // DISTRIBUTOR code is the real evidence — a code the master database recognises, in the brick this
+  // request declares, proves the pharmacy exists. Releasing does NOT skip review: the chain's first
+  // rung is the SFE Manager either way, and the final-approval backstop still refuses while the
+  // pharmacy is `pending_review`. It only stops freezing a provable pharmacy outside the chain.
+  const holdDecision = decideDirectOrderHold({
+    verificationStatus: pharmacy.verificationStatus,
+    declaredBrickId: pharmacy.brickId,
+    distributorCodes: await attachCodeOwnership(pharmacy),
+    holdReleaseGround: pharmacy.holdReleaseGround,
+  });
+  const submitAsHeld = holdDecision.hold;
 
   // Governance: the registry validates that this role may submit from draft, and that the
   // destination status is the one this code expects.
@@ -2186,6 +2905,14 @@ export async function submitDirectOrder(
       publicPriceSnapshot: publicPrice,
       salesValue,
       overCap,
+      // WHY this order is (or is not) in the held lane, decided at this instant. Re-deriving it later
+      // reads today's pharmacy, which the repair below may have changed — so it must be recorded now.
+      holdGround: holdDecision.ground,
+      // And whether the system repaired the pharmacy on the way in. An order that skipped the held
+      // lane because a code was auto-linked seconds earlier must say so, or the timeline reads as
+      // though the pharmacy had been proven all along.
+      autoLinkedCode: autoLink.linked ? `${autoLink.distributorCode}/${autoLink.customerCode}` : null,
+      autoLinkedRenameTo: autoLink.renamedTo,
     },
   });
 
@@ -2954,7 +3681,27 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
     : { data: [] as Array<Record<string, unknown>> };
   const historyRequests = ((historyRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
 
-  const allRequests = [...pending, ...historyRequests];
+  // Held/expired requests within the VIEWER'S OWN scope (owner rule, 2026-08-08 — see the
+  // DirectOrderWorkspaceData.held doc comment). Same tiering as the report/rep-counters, reused
+  // rather than re-derived: `resolveDirectOrderReportScope`/`resolveVisibleRequesterHrIds` are the
+  // one definition of "which requesters can this viewer see" this module already has. This is READ
+  // visibility only — the Held Desk's own management actions stay Super-Admin-only, untouched.
+  const { data: heldRows } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .in("status", ["held", "expired"])
+    .order("held_at", { ascending: true });
+  let heldRequests = ((heldRows ?? []) as Array<Record<string, unknown>>).map(mapRequestRow);
+  const heldScope = resolveDirectOrderReportScope(access);
+  if (heldScope === "own") {
+    const viewer = canonicalHrIdKey(access.hrId ?? "");
+    heldRequests = heldRequests.filter((request) => canonicalHrIdKey(request.requesterHrId) === viewer);
+  } else if (heldScope === "hierarchy") {
+    const visible = await resolveVisibleRequesterHrIds(access);
+    heldRequests = heldRequests.filter((request) => visible.has(canonicalHrIdKey(request.requesterHrId) ?? ""));
+  }
+
+  const allRequests = [...pending, ...historyRequests, ...heldRequests];
   const stepsByReq = await loadStepsForRequests(allRequests.map((r) => r.id));
   const pharmacies = await loadPharmaciesByIds(allRequests.map((r) => r.pharmacyId));
   const nameOf = await nameLookup();
@@ -2988,7 +3735,21 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
       decorations.repFor(request),
     ),
   );
-  return { awaiting, history };
+  // A held/expired request has no chain yet (it enters at step 1 only after its pharmacy passes
+  // validation), so its active step is always null here — never resolveActiveStep, which would
+  // read an empty steps array and return the same null anyway, less directly.
+  const held: DirectOrderApprovalListItem[] = heldRequests.map((request) =>
+    toApprovalListItem(
+      request,
+      null,
+      nameOf(request.requesterHrId),
+      pharmacies.get(request.pharmacyId) ?? null,
+      isRequestOverCap(request, caps),
+      decorations.geoFor(request),
+      decorations.repFor(request),
+    ),
+  );
+  return { awaiting, history, held };
 }
 
 export async function countDirectOrderAwaiting(access: AccessContext): Promise<number> {
@@ -3181,67 +3942,140 @@ export async function listDirectOrderAreaAndBrickOptions(access?: AccessContext)
 async function loadPharmacyOrderHistory(
   pharmacy: DirectOrderPharmacy | null,
   excludeRequestId: string,
-): Promise<DirectOrderPharmacyHistoryRow[]> {
-  if (!pharmacy) return [];
+  visibility: DirectOrderHistoryVisibility,
+): Promise<{ rows: DirectOrderPharmacyHistoryRow[]; hiddenConfidentialCount: number; loadFailed: boolean }> {
+  if (!pharmacy) return { rows: [], hiddenConfidentialCount: 0, loadFailed: false };
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("direct_order_requests")
-      .select("id, product_code, product_name, qty, bonus, sales_value, sales_month, created_at, status, reversal_of_request_id")
-      .eq("pharmacy_id", pharmacy.id)
-      .is("reversal_of_request_id", null)
-      .neq("status", "rejected")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const rowsRaw = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("direct_order_requests")
+          .select("id, product_code, product_name, qty, bonus, sales_value, sales_month, created_at, status, reversal_of_request_id")
+          .eq("pharmacy_id", pharmacy.id)
+          .is("reversal_of_request_id", null)
+          .neq("status", "rejected"),
+      "id",
+    );
 
-    const distributors = pharmacy.distributorCodes.length
-      ? pharmacy.distributorCodes
-      : [{ distributorCode: "", distributorName: "—", customerCode: "", mappedBrickId: null, mappedAreaCode: null, mappedRegionCode: null }];
-
+    let hiddenConfidentialCount = 0;
+    const hiddenProducts = new Set<string>();
     const byKey = new Map<string, DirectOrderPharmacyHistoryRow>();
-    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const row of rowsRaw) {
       if (String(row.id) === excludeRequestId) continue;
+      const productCode = String(row.product_code ?? "");
+      // Confidentiality and line scoping (owner rule, 2026-08-08) — applied HERE rather than in the
+      // component, so no surface can render what this filter removed. See resolveHistoryVisibility.
+      if (!visibility.allowsProduct(productCode)) {
+        if (productCode && !hiddenProducts.has(productCode)) {
+          hiddenProducts.add(productCode);
+          hiddenConfidentialCount += 1;
+        }
+        continue;
+      }
       const salesMonth = row.sales_month ? String(row.sales_month) : null;
       const month = salesMonth ?? String(row.created_at ?? "").slice(0, 7);
       if (!month) continue;
-      for (const distributor of distributors) {
-        const key = `${month}|${String(row.product_code)}|${distributor.distributorCode}`;
-        const existing = byKey.get(key) ?? {
-          month,
-          monthIsProvisional: salesMonth == null,
-          productCode: String(row.product_code ?? ""),
-          productName: String(row.product_name ?? ""),
-          distributorName: distributor.distributorName || distributor.distributorCode || "—",
-          distributorCode: distributor.distributorCode,
-          orders: 0,
-          qty: 0,
-          bonus: 0,
-          salesValue: 0,
-        };
-        existing.orders += 1;
-        existing.qty += Number(row.qty ?? 0);
-        existing.bonus += Number(row.bonus ?? 0);
-        existing.salesValue += Number(row.sales_value ?? 0);
-        // A bucket is only firm once EVERY order in it has a real sales month.
-        if (salesMonth == null) existing.monthIsProvisional = true;
-        byKey.set(key, existing);
-      }
+      // ONE bucket per (month, product) — NEVER one per distributor pair.
+      //
+      // This used to loop the pharmacy's distributor pairs and add the FULL qty/value/orders to each
+      // of them, so a pharmacy with three linked codes reported every order three times at full
+      // value. The distributor was invented in the first place: a direct order carries no
+      // distributor of its own (see this function's own doc comment), so any per-distributor
+      // attribution on this side is fabricated. Retail history is where distributor attribution is
+      // real; this side reports the pharmacy's own direct orders and nothing more.
+      const key = `${month}|${productCode}`;
+      const existing = byKey.get(key) ?? {
+        month,
+        monthIsProvisional: salesMonth == null,
+        productCode,
+        productName: String(row.product_name ?? ""),
+        distributorName: "—",
+        distributorCode: "",
+        orders: 0,
+        qty: 0,
+        bonus: 0,
+        salesValue: 0,
+      };
+      existing.orders += 1;
+      existing.qty += Number(row.qty ?? 0);
+      existing.bonus += Number(row.bonus ?? 0);
+      existing.salesValue += Number(row.sales_value ?? 0);
+      // A bucket is only firm once EVERY order in it has a real sales month.
+      if (salesMonth == null) existing.monthIsProvisional = true;
+      byKey.set(key, existing);
     }
 
-    return [...byKey.values()].sort(
-      (a, b) =>
-        b.month.localeCompare(a.month) ||
-        a.productName.localeCompare(b.productName) ||
-        a.distributorName.localeCompare(b.distributorName),
+    const rows = [...byKey.values()].sort(
+      (a, b) => b.month.localeCompare(a.month) || a.productName.localeCompare(b.productName),
     );
+    return { rows, hiddenConfidentialCount, loadFailed: false };
   } catch (error) {
-    // Best-effort context, never a reason the approval screen fails to open.
+    // Context only — never a reason the approval screen fails to open. But `loadFailed` MUST travel
+    // with the empty result: a failed read and "this pharmacy bought nothing" are opposite facts,
+    // and returning a bare [] let the screen print the confident trusted sentence for both.
     logError("Direct order pharmacy history failed", {
       labels: { event: "direct_order_pharmacy_history_failed", pharmacyId: pharmacy.id },
       error,
     });
-    return [];
+    return { rows: [], hiddenConfidentialCount: 0, loadFailed: true };
   }
+}
+
+/**
+ * Which products may this viewer see in a pharmacy's sales history? (owner rule, 2026-08-08)
+ *
+ * Closes a real leak: neither history loader took an AccessContext at all, so every approver — a
+ * District Manager on one line, a Medical Rep, anyone — saw that pharmacy's ENTIRE product history,
+ * including the restricted codes and the Head Office line. `RY001` had already reached an SFE
+ * Manager's screen once through the same class of gap.
+ *
+ * TWO exclusions, because the codebase has two independent confidentiality mechanisms and NEITHER
+ * subsumes the other (pinned by tests/sos-import-dashboard-head-office-lock.test.ts):
+ *   - RESTRICTED_PRODUCT_CODES — LA003 / LA004 / SS001, by product code.
+ *   - the Head Office LINE — hides a whole line, which carries RY001, a product that is NOT in the
+ *     restricted list. A restricted code can also sit on a non-Head-Office line. Apply both.
+ *
+ * Both are applied UNCONDITIONALLY, for every role including CEO and Super Admin (owner decision).
+ * That is deliberately stricter than `canViewRestrictedProducts`, which would re-admit those two —
+ * so this must never be routed through that helper.
+ *
+ * The LINE filter uses resolveDirectOrderRequesterLineName, whose unrestricted set is exactly
+ * {Super Admin, SFE Manager, CEO} — matching the owner's spec. `resolveSalesAccessScope` is NOT used
+ * for it: its District Manager mapping is TEAM, additionally narrowed by region and seat areas, so a
+ * DM would see less than their own line.
+ */
+export type DirectOrderHistoryVisibility = {
+  allowsProduct: (productCode: string) => boolean;
+  /** Null when the viewer sees every line. */
+  lineName: string | null;
+};
+
+async function resolveHistoryVisibility(access: AccessContext): Promise<DirectOrderHistoryVisibility> {
+  const lineName = await resolveDirectOrderRequesterLineName(access);
+  const products = await listSourceOfSalesProducts();
+  const lineByCode = new Map<string, string>();
+  for (const product of products) {
+    const code = String((product as { productCode?: string }).productCode ?? "").trim();
+    if (code) lineByCode.set(code.toUpperCase(), String((product as { line?: string }).line ?? ""));
+  }
+  const restricted = new Set(RESTRICTED_PRODUCT_CODES.map((code) => code.toUpperCase()));
+  const wantedLine = lineName === null ? null : lineName.trim().toLowerCase();
+
+  return {
+    lineName,
+    // The rule itself is pure and lives in hold-decision.ts so a test can EXECUTE it. Keeping it
+    // inline here meant a source-text assertion was the only possible guard, and prove-it-fails
+    // showed that guard survived the logic being disabled outright.
+    allowsProduct: (productCode: string) =>
+      isDirectOrderHistoryProductVisible({
+        productCode,
+        line: lineByCode.get(String(productCode ?? "").trim().toUpperCase()) ?? "",
+        restrictedCodes: restricted,
+        isHeadOfficeLine,
+        viewerLine: wantedLine,
+      }),
+  };
 }
 
 /**
@@ -3259,25 +4093,52 @@ async function loadPharmacyOrderHistory(
  */
 async function loadPharmacyRetailHistory(
   pharmacy: DirectOrderPharmacy | null,
-): Promise<{ rows: DirectOrderRetailHistoryRow[]; unmatchable: boolean }> {
+  visibility: DirectOrderHistoryVisibility,
+): Promise<{
+  rows: DirectOrderRetailHistoryRow[];
+  unmatchable: boolean;
+  hiddenConfidentialCount: number;
+  loadFailed: boolean;
+  matchedPairs: number;
+}> {
   const pairs = (pharmacy?.distributorCodes ?? []).filter((pair) => pair.distributorCode && pair.customerCode);
-  if (pairs.length === 0) return { rows: [], unmatchable: true };
+  if (pairs.length === 0) {
+    return { rows: [], unmatchable: true, hiddenConfidentialCount: 0, loadFailed: false, matchedPairs: 0 };
+  }
 
   try {
     const supabase = getSupabaseAdmin();
     const customerCodes = [...new Set(pairs.map((pair) => pair.customerCode))];
-    const { data, error } = await supabase
-      .from("source_of_sales_import_rows")
-      .select("client_code, product_code, product_name, qty, bonus_qty, value, batch_id, source_of_sales_import_batches!inner(distributor_code, period)")
-      .in("client_code", customerCodes);
-    if (error) throw error;
+    const distributorCodes = [...new Set(pairs.map((pair) => pair.distributorCode))];
+    // BOTH halves of the key are pushed into the QUERY, and the read is fully paged.
+    //
+    // It previously filtered on `client_code` alone and applied the distributor half in TypeScript
+    // afterwards, unordered and unpaged against a 1000-row ceiling. A pharmacy whose code collides
+    // with a busy customer at another distributor could therefore receive 1000 foreign rows, discard
+    // every one of them, and render the trusted sentence "it has not bought in the months on record"
+    // — a confident falsehood on the screen where money is approved. Filtering both halves shrinks
+    // the set to (our codes AND our distributors), and fetchAllRows removes the ceiling entirely;
+    // the exact-pair check below still runs, because that intersection is a superset of the pairs.
+    const rowsRaw = await fetchAllRows<Record<string, unknown>>(
+      () =>
+        supabase
+          .from("source_of_sales_import_rows")
+          .select(
+            "id, client_code, product_code, product_name, qty, bonus_qty, value, batch_id, source_of_sales_import_batches!inner(distributor_code, period)",
+          )
+          .in("client_code", customerCodes)
+          .in("source_of_sales_import_batches.distributor_code", distributorCodes),
+      "id",
+    );
 
     // (distributor, customer code) is the only safe key — see the note above.
     const allowed = new Set(pairs.map((pair) => `${pair.distributorCode.toLowerCase()}|${pair.customerCode}`));
     const nameByCode = new Map(pairs.map((pair) => [pair.distributorCode.toLowerCase(), pair.distributorName]));
 
+    let hiddenConfidentialCount = 0;
+    const hiddenProducts = new Set<string>();
     const byKey = new Map<string, DirectOrderRetailHistoryRow>();
-    for (const raw of (data ?? []) as Array<Record<string, unknown>>) {
+    for (const raw of rowsRaw) {
       const batch = raw.source_of_sales_import_batches as { distributor_code?: string; period?: string } | null;
       const distributorCode = String(batch?.distributor_code ?? "");
       const clientCode = String(raw.client_code ?? "");
@@ -3286,6 +4147,17 @@ async function loadPharmacyRetailHistory(
       if (!month) continue;
 
       const productCode = String(raw.product_code ?? "");
+      // Confidentiality + line scoping, server-side. This loader reads the raw distributor invoice
+      // feed, so before this filter existed every approver of any line saw every product this
+      // pharmacy ever bought — including the restricted codes and the Head Office line.
+      if (!visibility.allowsProduct(productCode)) {
+        if (productCode && !hiddenProducts.has(productCode)) {
+          hiddenProducts.add(productCode);
+          hiddenConfidentialCount += 1;
+        }
+        continue;
+      }
+
       const key = `${month}|${productCode}|${distributorCode}`;
       const existing = byKey.get(key) ?? {
         month,
@@ -3310,14 +4182,15 @@ async function loadPharmacyRetailHistory(
         a.productName.localeCompare(b.productName) ||
         a.distributorName.localeCompare(b.distributorName),
     );
-    return { rows, unmatchable: false };
+    return { rows, unmatchable: false, hiddenConfidentialCount, loadFailed: false, matchedPairs: pairs.length };
   } catch (error) {
-    // Context only — never a reason the approval screen fails to open.
+    // Context only — never a reason the approval screen fails to open. `loadFailed` rides with the
+    // empty result so a failed read can never be rendered as "this pharmacy has not bought".
     logError("Direct order retail history failed", {
       labels: { event: "direct_order_retail_history_failed", pharmacyId: pharmacy?.id ?? "" },
       error,
     });
-    return { rows: [], unmatchable: false };
+    return { rows: [], unmatchable: false, hiddenConfidentialCount: 0, loadFailed: true, matchedPairs: pairs.length };
   }
 }
 
@@ -3334,14 +4207,17 @@ export async function getDirectOrderApprovalDetail(
     loadDirectOrderCaps(),
   ]);
   const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+  // Confidentiality + line scoping for THIS viewer, resolved once and handed to both history
+  // loaders. Server-side by design: a component filter would leave the data in the payload.
+  const historyVisibility = await resolveHistoryVisibility(access);
   // Geography names and the area's medical rep are resolved HERE, at the single choke point
   // every approval surface reads, rather than in the components — which is why both of them
   // used to print raw brick/area codes.
   const [geoMaps, rep, pharmacyHistory, retail, productPrices] = await Promise.all([
     loadDirectOrderGeoNames(),
     resolveAreaRep({ line: request.line, areaCode: pharmacy?.areaCode ?? null }, { nameOf }),
-    loadPharmacyOrderHistory(pharmacy, request.id),
-    loadPharmacyRetailHistory(pharmacy),
+    loadPharmacyOrderHistory(pharmacy, request.id, historyVisibility),
+    loadPharmacyRetailHistory(pharmacy, historyVisibility),
     // The product's CURRENT prices, so the window can distinguish "never entered" from
     // "entered, but not the basis for this deal" — a discount order otherwise reported a
     // pharmacy price of "not set" for a product that had one.
@@ -3355,19 +4231,99 @@ export async function getDirectOrderApprovalDetail(
   const active = resolveActiveStep(steps);
   const canAct = request.status === "pending_approval" && viewerCanActOnStep(access, active);
   const bonusOverCap = isRequestOverCap(request, caps);
+
+  // Fetched AFTER the block above, deliberately: a fixed-window source-text test
+  // (direct-orders-approval-detail-names.test.ts) looks for loadDirectOrderGeoNames(/
+  // resolveAreaRep( within the first ~2200 characters of this function's body, and inserting
+  // earlier would push those past it for no reason. Null for the common case — most orders never
+  // touch the held/validation lane. AI note stripped for the requester's own view (owner rule,
+  // 2026-08-08): they see their own photo/GPS, not the adjudicator-facing reading of it.
+  const rawEvidence = await getDirectOrderPharmacyValidationForRequest(request.id, request.pharmacyId);
+  const pharmacyEvidence =
+    rawEvidence && !canViewDirectOrderEvidenceAiNote(access.hrId, request)
+      ? { ...rawEvidence, evidenceCheck: null }
+      : rawEvidence;
+  const rawMatches =
+    (pharmacy?.distributorCodes?.length ?? 0) === 0
+      ? await findPossibleDistributorMatchesByPharmacyName(pharmacy?.pharmacyName)
+      : [];
+  // Ownership MUST be resolved here, not skipped as a read-path economy. Auto-link runs at
+  // registration and at submit, so a candidate still sitting unlinked was refused on purpose — and
+  // "owned by another Phoenix pharmacy" is both the most likely refusal and the only one invisible
+  // from the row itself. Without it the panel prints "Phoenix did not link it automatically" and
+  // then cannot say why, which is exactly the "Not flagged" failure this screen was rewritten to
+  // kill. Naming the holder is also the finding: it is how the duplicate registration surfaces.
+  const possibleDistributorMatches = pharmacy ? await attachCandidateOwnership(pharmacy.id, rawMatches) : rawMatches;
+  const autoLinkRefusal =
+    possibleDistributorMatches.length > 0
+      ? (() => {
+          const decision = decideDirectOrderAutoLink({
+            pharmacyName: pharmacy?.pharmacyName ?? null,
+            existingCodes: pharmacy?.distributorCodes ?? [],
+            candidates: possibleDistributorMatches.map((match) => ({
+              ...match,
+              ownedByOtherPharmacyId: match.ownedByPharmacyCode,
+            })),
+          });
+          return decision.link ? null : decision.refusal;
+        })()
+      : null;
+
+  // The three-way geography comparison. The master side comes from whichever linked code actually
+  // resolved (or, when none is linked, the possible-match candidate) — that is the distributor's own
+  // statement about where this customer is, and it is what the declared brick must agree with.
+  const geo = resolveDirectOrderGeo(pharmacy, geoMaps);
+  const resolvedPair = (pharmacy?.distributorCodes ?? []).find((pair) => pair.mappedBrickId || pair.mappedAreaCode);
+  const candidate = possibleDistributorMatches[0] ?? null;
+  // Both halves fall back to the possible-match candidate, not just the area. Before brickId was
+  // carried, this panel reported "area agrees" and "brick: nothing to check" for the SAME customer
+  // — answering the less important half of the question and hiding that the brick agrees too.
+  const masterBrickId = resolvedPair?.mappedBrickId ?? candidate?.brickId ?? null;
+  const masterAreaCode = resolvedPair?.mappedAreaCode ?? candidate?.areaCode ?? null;
+  const geographyCheck = pharmacy
+    ? checkDirectOrderGeography({
+        declaredBrickId: pharmacy.brickId,
+        declaredBrickName: geo.brick?.name ?? null,
+        declaredAreaCode: pharmacy.areaCode,
+        declaredAreaName: geo.area?.name ?? null,
+        masterBrickId,
+        masterBrickName: masterBrickId ? geoMaps.brickNameById.get(masterBrickId) ?? null : null,
+        masterAreaCode,
+        masterAreaName: masterAreaCode ? geoMaps.areaNameByCode.get(masterAreaCode) ?? null : null,
+        address: pharmacy.pharmacyAddress,
+        // Every BRICK and AREA name in the master data. Bricks matter as much as areas here: a
+        // typed address usually names a town ("كفر شكر"), which is brick-grained, so an
+        // area-only list left most addresses unresolved — and the golden rule is that this column
+        // always answers. More names also make the longest-match rule meaningful.
+        knownPlaces: [
+          ...[...geoMaps.brickNameById.entries()].map(([brickId, name]) => ({ name, brickId })),
+          ...[...geoMaps.areaNameByCode.entries()].map(([areaCode, name]) => ({ name, areaCode })),
+        ],
+      })
+    : null;
+
   return {
     request,
     requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
+    pharmacyRegisteredByName: pharmacy?.createdByHrId ? nameOf(pharmacy.createdByHrId) : null,
     pharmacy,
-    geo: resolveDirectOrderGeo(pharmacy, geoMaps),
+    geo,
     medicalRep: toDirectOrderAreaRep(rep),
     productPharmacyPrice: priceRow?.pharmacy_price == null ? null : Number(priceRow.pharmacy_price),
     productPublicPrice: priceRow?.public_price == null ? null : Number(priceRow.public_price),
     distributorCodesText: formatDistributorCodesText(pharmacy?.distributorCodes),
     distributors: toDistributorRows(pharmacy?.distributorCodes, geoMaps),
-    pharmacyHistory,
+    pharmacyHistory: pharmacyHistory.rows,
     retailHistory: retail.rows,
     retailUnmatchable: retail.unmatchable,
+    // A failed read and "this pharmacy bought nothing" are opposite facts. Before these flags the
+    // catch path returned a bare empty list, so a timeout rendered the confident trusted sentence.
+    retailLoadFailed: retail.loadFailed,
+    directLoadFailed: pharmacyHistory.loadFailed,
+    /** How many distinct products this viewer is not allowed to see (owner rule: say so, show nothing). */
+    hiddenConfidentialCount: retail.hiddenConfidentialCount + pharmacyHistory.hiddenConfidentialCount,
+    /** How many (distributor, code) pairs the retail match ran against — a partial view must not read as complete. */
+    retailMatchedPairs: retail.matchedPairs,
     // Spec D2: the reason an empty retail table is empty. Computed here, server-side, so the
     // window renders prose it cannot contradict — and so a provisional pharmacy never looks like
     // an established one that merely had a quiet quarter.
@@ -3387,6 +4343,10 @@ export async function getDirectOrderApprovalDetail(
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
+    pharmacyEvidence,
+    possibleDistributorMatches,
+    autoLinkRefusal,
+    geographyCheck,
   };
 }
 
@@ -3936,4 +4896,574 @@ export async function setProductPublicPrice(
   input: { productCode: string; publicPrice: number | null },
 ): Promise<void> {
   await setDirectOrderProductPrices(access, { productCode: input.productCode, publicPrice: input.publicPrice });
+}
+
+// ── Automated duplicate cleanup, reviewed and confirmed by an SFE Manager ────────────────────
+//
+// Owner rules 1-5 (2026-08-09), in one flow:
+//   1. repair the records that already exist, not only the ones submitted from now on
+//   2. resolving a pharmacy resolves EVERY request on it
+//   3. duplicate requests are flagged as duplicates and cancelled
+//   4. when the system can prove two records are one pharmacy, merge them instead of blocking the
+//      employee and making them fix their own mistake
+//   5. the system prepares the whole cleanup; an SFE Manager reviews, edits and confirms it
+//
+// Nothing here writes until confirmDirectOrderCleanup is called. getDirectOrderCleanupPlan is a
+// READ: it computes what should happen and says why, in words, for every single change.
+
+/**
+ * Cleanup is SFE Manager + Super Admin, deliberately wider than the Held Desk.
+ *
+ * The Held Desk is System Admin only because it rules on evidence. This is different work: the
+ * system has already decided what is duplicated and only needs a human to agree — and the owner put
+ * SFE in that seat. Both roles are also the registry's `allowedRoles` for cancel_duplicate and
+ * release_held, so this gate and the workflow gate cannot drift apart.
+ */
+function assertDirectOrderCleanupAccess(access: AccessContext): void {
+  if (!(access.scope === "system" || access.role === "Super Admin" || access.role === "SFE Manager")) {
+    throw new Error("Forbidden: direct-order cleanup is for a Super Admin or an SFE Manager.");
+  }
+}
+
+export type DirectOrderCleanupRequestSummary = {
+  requestId: string;
+  status: DirectOrderStatus;
+  productCode: string;
+  productName: string;
+  qty: number;
+  bonus: number;
+  dealType: string;
+  discountPct: number | null;
+  salesValue: number;
+  collectionDate: string | null;
+  requesterHrId: string;
+  requesterName: string;
+  submittedAt: string | null;
+  approvedStepCount: number;
+  pharmacyId: string;
+  pharmacyCode: string;
+  pharmacyName: string;
+};
+
+export type DirectOrderCleanupPharmacySummary = {
+  pharmacyId: string;
+  pharmacyCode: string;
+  pharmacyName: string;
+  brickId: string | null;
+  areaCode: string | null;
+  verificationStatus: string;
+  active: boolean;
+  createdAt: string | null;
+  createdByName: string;
+  linkedCodes: string[];
+  openRequestCount: number;
+};
+
+export type DirectOrderCleanupMerge = {
+  survivor: DirectOrderCleanupPharmacySummary;
+  merged: DirectOrderCleanupPharmacySummary[];
+  provenBy: { distributorCode: string; customerCode: string };
+  reason: string;
+  /** Requests that would move onto the survivor. */
+  requestsMoved: DirectOrderCleanupRequestSummary[];
+};
+
+export type DirectOrderCleanupDuplicate = {
+  keeper: DirectOrderCleanupRequestSummary;
+  duplicates: DirectOrderCleanupRequestSummary[];
+  reason: string;
+};
+
+export type DirectOrderCleanupRepair = {
+  pharmacyId: string;
+  pharmacyCode: string;
+  pharmacyName: string;
+  distributorCode: string;
+  distributorName: string;
+  customerCode: string;
+  renameTo: string | null;
+};
+
+export type DirectOrderCleanupRelease = {
+  pharmacyId: string;
+  pharmacyCode: string;
+  pharmacyName: string;
+  requests: DirectOrderCleanupRequestSummary[];
+};
+
+export type DirectOrderCleanupPlan = {
+  /** Pharmacy records proven to be one real pharmacy (owner rule 4). */
+  merges: DirectOrderCleanupMerge[];
+  /** One order entered more than once (owner rule 3). */
+  duplicates: DirectOrderCleanupDuplicate[];
+  /** Codes sitting in the wrong field that the repair pass can move (owner rule 1). */
+  repairs: DirectOrderCleanupRepair[];
+  /** Held requests that resolution would release (owner rule 2). */
+  releases: DirectOrderCleanupRelease[];
+  /** Empty when there is nothing to do — the screen says so rather than showing a blank page. */
+  isEmpty: boolean;
+};
+
+/** Open requests as plan summaries, keyed by the pharmacy they currently sit on. */
+async function loadCleanupRequestSummaries(): Promise<DirectOrderCleanupRequestSummary[]> {
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<Record<string, unknown>>(
+    () => supabase.from("direct_order_requests").select("*").in("status", [...DEDUPE_OPEN_STATUSES]),
+    "id",
+  );
+  const requests = rows.map(mapRequestRow);
+  if (requests.length === 0) return [];
+
+  // Decided rungs per request — the measure of how much human work a cancellation would discard.
+  const stepCounts = new Map<string, number>();
+  const stepRows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("direct_order_approval_steps")
+        .select("id, request_id, status")
+        .in(
+          "request_id",
+          requests.map((request) => request.id),
+        ),
+    "id",
+  );
+  for (const row of stepRows) {
+    if (String(row.status ?? "") !== "approved") continue;
+    const key = String(row.request_id ?? "");
+    stepCounts.set(key, (stepCounts.get(key) ?? 0) + 1);
+  }
+
+  const [nameOf, pharmacies] = await Promise.all([
+    nameLookup(),
+    loadPharmaciesByIds([...new Set(requests.map((request) => request.pharmacyId))]),
+  ]);
+
+  return requests.map((request) => {
+    const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+    return {
+      requestId: request.id,
+      status: request.status,
+      productCode: request.productCode,
+      productName: request.productName,
+      qty: request.qty,
+      bonus: request.bonus,
+      dealType: request.dealType,
+      discountPct: request.discountPct,
+      salesValue: request.salesValue,
+      collectionDate: request.collectionDate,
+      requesterHrId: request.requesterHrId,
+      requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
+      // The row has no submittedAt on the mapped type; createdAt is the submission moment for
+      // every direct order (the insert sets both together), and it is what orders the plan.
+      submittedAt: request.createdAt,
+      approvedStepCount: stepCounts.get(request.id) ?? 0,
+      pharmacyId: request.pharmacyId,
+      pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+      pharmacyName: pharmacy?.pharmacyName ?? "—",
+    };
+  });
+}
+
+/**
+ * What the cleanup would do, and why — computed fresh, never stored.
+ *
+ * Storing proposals would let a stale plan be confirmed against data that has since moved: a request
+ * approved in the meantime, a pharmacy already merged by somebody else. Recomputing on every read
+ * makes that impossible, and the apply path re-derives the plan again before it writes anything.
+ */
+export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<DirectOrderCleanupPlan> {
+  assertDirectOrderCleanupAccess(access);
+  const supabase = getSupabaseAdmin();
+
+  const pharmacyRows = await fetchAllRows<Record<string, unknown>>(
+    () =>
+      supabase
+        .from("direct_order_pharmacies")
+        .select("*")
+        // A record already merged away is finished business. Re-proposing it would offer the same
+        // merge forever and the screen could never reach empty.
+        .is("merged_into_pharmacy_id", null),
+    "id",
+  );
+  const pharmacies = pharmacyRows.map(mapPharmacyRow);
+  await attachDistributorCodes(pharmacies);
+  const createdAtById = new Map(
+    pharmacyRows.map((row) => [String(row.id), row.created_at ? String(row.created_at) : null]),
+  );
+  const byId = new Map(pharmacies.map((pharmacy) => [pharmacy.id, pharmacy]));
+
+  // Name-code candidates only for the digit-named records — the wrong-box shape. Anything else
+  // cannot contribute a name-derived identity key, so searching for it would spend a round trip
+  // across the Atlantic per pharmacy for a guaranteed empty result.
+  const digitNamed = pharmacies.filter((pharmacy) => /^\d{4,}$/.test(pharmacy.pharmacyName.trim()));
+  const candidatesById = new Map<string, DirectOrderPossibleDistributorMatch[]>();
+  for (const pharmacy of digitNamed) {
+    candidatesById.set(pharmacy.id, await findPossibleDistributorMatchesByPharmacyName(pharmacy.pharmacyName));
+  }
+
+  const [nameOf, allRequests] = await Promise.all([nameLookup(), loadCleanupRequestSummaries()]);
+  const requestsByPharmacy = new Map<string, DirectOrderCleanupRequestSummary[]>();
+  for (const request of allRequests) {
+    const bucket = requestsByPharmacy.get(request.pharmacyId) ?? [];
+    bucket.push(request);
+    requestsByPharmacy.set(request.pharmacyId, bucket);
+  }
+
+  const summarize = (pharmacy: DirectOrderPharmacy): DirectOrderCleanupPharmacySummary => ({
+    pharmacyId: pharmacy.id,
+    pharmacyCode: pharmacy.phoenixPharmacyCode,
+    pharmacyName: pharmacy.pharmacyName,
+    brickId: pharmacy.brickId,
+    areaCode: pharmacy.areaCode,
+    verificationStatus: pharmacy.verificationStatus,
+    active: pharmacy.active,
+    createdAt: createdAtById.get(pharmacy.id) ?? null,
+    createdByName: nameOf(pharmacy.createdByHrId) ?? pharmacy.createdByHrId,
+    linkedCodes: (pharmacy.distributorCodes ?? []).map((pair) => `${pair.distributorName}: ${pair.customerCode}`),
+    openRequestCount: (requestsByPharmacy.get(pharmacy.id) ?? []).length,
+  });
+
+  // ── 4. Which records are one pharmacy? ──────────────────────────────────────────────────
+  const mergeProposals = groupDuplicatePharmacies(
+    pharmacies.map((pharmacy) => ({
+      id: pharmacy.id,
+      phoenixPharmacyCode: pharmacy.phoenixPharmacyCode,
+      pharmacyName: pharmacy.pharmacyName,
+      brickId: pharmacy.brickId,
+      areaCode: pharmacy.areaCode,
+      verificationStatus: pharmacy.verificationStatus,
+      active: pharmacy.active,
+      createdAt: createdAtById.get(pharmacy.id) ?? null,
+      linkedCodes: (pharmacy.distributorCodes ?? []).map((pair) => ({
+        distributorCode: pair.distributorCode,
+        customerCode: pair.customerCode,
+      })),
+      nameCodeCandidates: (candidatesById.get(pharmacy.id) ?? []).map((match) => ({
+        distributorCode: match.distributorCode,
+        customerCode: match.customerCode,
+      })),
+    })),
+  );
+
+  const merges: DirectOrderCleanupMerge[] = [];
+  for (const proposal of mergeProposals) {
+    const survivor = byId.get(proposal.survivorId);
+    if (!survivor) continue;
+    const merged = proposal.mergedIds
+      .map((id) => byId.get(id))
+      .filter((pharmacy): pharmacy is DirectOrderPharmacy => Boolean(pharmacy))
+      .map(summarize);
+    if (merged.length === 0) continue;
+    merges.push({
+      survivor: summarize(survivor),
+      merged,
+      provenBy: proposal.provenBy,
+      reason: proposal.reason,
+      requestsMoved: proposal.mergedIds.flatMap((id) => requestsByPharmacy.get(id) ?? []),
+    });
+  }
+
+  // ── 3. Which orders are the same order? Merges fold FIRST, so a duplicate split across two
+  //       pharmacy records is still seen as one order — which is exactly how the live pair hid.
+  const canonical = canonicalPharmacyMap(mergeProposals);
+  const requestById = new Map(allRequests.map((request) => [request.requestId, request]));
+  const duplicateProposals = findDuplicateRequestGroups(
+    allRequests.map((request) => ({
+      id: request.requestId,
+      pharmacyId: request.pharmacyId,
+      status: request.status,
+      productCode: request.productCode,
+      qty: request.qty,
+      bonus: request.bonus,
+      dealType: request.dealType,
+      discountPct: request.discountPct,
+      collectionDate: request.collectionDate,
+      requesterHrId: request.requesterHrId,
+      submittedAt: request.submittedAt,
+      approvedStepCount: request.approvedStepCount,
+    })),
+    canonical,
+  );
+  const duplicates: DirectOrderCleanupDuplicate[] = [];
+  for (const proposal of duplicateProposals) {
+    const keeper = requestById.get(proposal.keeperId);
+    if (!keeper) continue;
+    const copies = proposal.duplicateIds
+      .map((id) => requestById.get(id))
+      .filter((request): request is DirectOrderCleanupRequestSummary => Boolean(request));
+    if (copies.length === 0) continue;
+    duplicates.push({ keeper, duplicates: copies, reason: proposal.reason });
+  }
+
+  // ── 1. Codes in the wrong field that the repair pass can move. Runs the SAME
+  //       decideDirectOrderAutoLink the live paths run, with ownership resolved, so the plan can
+  //       never offer a link the writer would refuse.
+  const repairs: DirectOrderCleanupRepair[] = [];
+  for (const pharmacy of digitNamed) {
+    if ((pharmacy.distributorCodes ?? []).length > 0) continue;
+    const owned = await attachCandidateOwnership(pharmacy.id, candidatesById.get(pharmacy.id) ?? []);
+    const decision = decideDirectOrderAutoLink({
+      pharmacyName: pharmacy.pharmacyName,
+      existingCodes: pharmacy.distributorCodes ?? [],
+      candidates: owned.map((match) => ({ ...match, ownedByOtherPharmacyId: match.ownedByPharmacyCode })),
+    });
+    if (!decision.link) continue;
+    repairs.push({
+      pharmacyId: pharmacy.id,
+      pharmacyCode: pharmacy.phoenixPharmacyCode,
+      pharmacyName: pharmacy.pharmacyName,
+      distributorCode: decision.candidate.distributorCode,
+      distributorName: decision.candidate.distributorName,
+      customerCode: decision.candidate.customerCode,
+      renameTo: decision.renameTo,
+    });
+  }
+
+  // ── 2. Every held request on a pharmacy the cleanup resolves. Pharmacy-level, never
+  //       request-level: resolving the pharmacy resolves ALL of its requests.
+  const cancelledIds = new Set(duplicates.flatMap((group) => group.duplicates.map((request) => request.requestId)));
+  const resolvedPharmacyIds = new Set<string>([
+    ...merges.map((merge) => merge.survivor.pharmacyId),
+    ...repairs.map((repair) => repair.pharmacyId),
+  ]);
+  const releases: DirectOrderCleanupRelease[] = [];
+  for (const pharmacyId of resolvedPharmacyIds) {
+    const pharmacy = byId.get(pharmacyId);
+    // Held requests on the survivor AND on every record folding into it — after the merge they all
+    // belong to the survivor, so they all release together.
+    const merge = merges.find((entry) => entry.survivor.pharmacyId === pharmacyId);
+    const sourceIds = [pharmacyId, ...(merge?.merged ?? []).map((entry) => entry.pharmacyId)];
+    const held = sourceIds
+      .flatMap((id) => requestsByPharmacy.get(id) ?? [])
+      .filter((request) => request.status === "held" && !cancelledIds.has(request.requestId));
+    if (held.length === 0) continue;
+    releases.push({
+      pharmacyId,
+      pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+      pharmacyName: pharmacy?.pharmacyName ?? "—",
+      requests: held,
+    });
+  }
+
+  return {
+    merges,
+    duplicates,
+    repairs,
+    releases,
+    isEmpty: merges.length === 0 && duplicates.length === 0 && repairs.length === 0 && releases.length === 0,
+  };
+}
+
+/** What an SFE Manager confirmed, after any edits they made to the proposal. */
+export type DirectOrderCleanupConfirmation = {
+  /** survivorId → the ids to fold into it. An empty list, or an absent survivor, skips the merge. */
+  merges?: Array<{ survivorId: string; mergedIds: string[] }>;
+  /** keeperId → the ids to cancel as duplicates of it. */
+  duplicates?: Array<{ keeperId: string; duplicateIds: string[] }>;
+  /** Pharmacy ids whose wrong-box code should be moved into its column. */
+  repairPharmacyIds?: string[];
+  /** Pharmacy ids whose held requests should be released. */
+  releasePharmacyIds?: string[];
+  reason: string;
+};
+
+export type DirectOrderCleanupResult = {
+  pharmaciesMerged: number;
+  requestsMoved: number;
+  requestsCancelled: number;
+  codesRepaired: number;
+  requestsReleased: number;
+};
+
+/**
+ * Apply the cleanup an SFE Manager confirmed.
+ *
+ * ORDER MATTERS and is not arbitrary:
+ *   1. merge pharmacies   — moves requests onto the survivor
+ *   2. repair codes       — the survivor may be the record that still needs its code moved
+ *   3. cancel duplicates  — after the merge, so both copies are visible on one pharmacy
+ *   4. release held       — last, once the pharmacy is finally resolved (owner rule 2)
+ *
+ * Every step is re-validated against live data rather than trusting the submitted ids: the plan the
+ * reviewer read may be minutes old, and in that time an order can be approved or a pharmacy merged
+ * by somebody else. A step whose precondition no longer holds is SKIPPED and counted, never forced.
+ */
+export async function confirmDirectOrderCleanup(
+  access: AccessContext,
+  input: DirectOrderCleanupConfirmation,
+): Promise<DirectOrderCleanupResult> {
+  assertDirectOrderCleanupAccess(access);
+  const reason = String(input.reason ?? "").trim();
+  if (!reason) badRequest("Say why this cleanup is being applied — the reason is the record.");
+  const supabase = getSupabaseAdmin();
+  const actorHrId = requireActorHrId(access);
+  const result: DirectOrderCleanupResult = {
+    pharmaciesMerged: 0,
+    requestsMoved: 0,
+    requestsCancelled: 0,
+    codesRepaired: 0,
+    requestsReleased: 0,
+  };
+
+  // ── 1. Merge pharmacies ────────────────────────────────────────────────────────────────
+  for (const merge of input.merges ?? []) {
+    const ids = (merge.mergedIds ?? []).filter((id) => id && id !== merge.survivorId);
+    if (!merge.survivorId || ids.length === 0) continue;
+    const loaded = await loadPharmaciesByIds([merge.survivorId, ...ids]);
+    const survivor = loaded.get(merge.survivorId);
+    if (!survivor) continue;
+
+    for (const mergedId of ids) {
+      const loser = loaded.get(mergedId);
+      if (!loser) continue;
+
+      // Move the requests. Guarded on the losing pharmacy so a request that moved in the meantime
+      // is not dragged back.
+      const { data: moved, error: moveError } = await supabase
+        .from("direct_order_requests")
+        .update({ pharmacy_id: merge.survivorId })
+        .eq("pharmacy_id", mergedId)
+        .select("id");
+      if (moveError) throw moveError;
+      result.requestsMoved += (moved ?? []).length;
+
+      // Carry over any distributor code the loser holds and the survivor does not. Rare — usually
+      // the loser is the record with NO code — but dropping one would lose the link that proved the
+      // merge in the first place.
+      for (const pair of loser.distributorCodes ?? []) {
+        const alreadyOnSurvivor = (survivor.distributorCodes ?? []).some(
+          (existing) =>
+            existing.distributorCode.toUpperCase() === pair.distributorCode.toUpperCase() &&
+            customerCodesMatch(existing.customerCode, pair.customerCode),
+        );
+        if (alreadyOnSurvivor) continue;
+        const { error: moveCodeError } = await supabase
+          .from("direct_order_pharmacy_distributor_codes")
+          .update({ pharmacy_id: merge.survivorId })
+          .eq("pharmacy_id", mergedId)
+          .eq("distributor_code", pair.distributorCode)
+          .eq("customer_code", pair.customerCode);
+        // A unique-violation here means the survivor already holds it — the desired end state.
+        if (moveCodeError && String((moveCodeError as { code?: string }).code) !== "23505") throw moveCodeError;
+      }
+
+      const { error: markError } = await supabase
+        .from("direct_order_pharmacies")
+        .update({
+          merged_into_pharmacy_id: merge.survivorId,
+          merged_at: new Date().toISOString(),
+          merged_by_hr_id: actorHrId,
+          // Deactivating is what actually removes it from the picker and the directory search —
+          // twelve query sites filter on `active`. A merged-but-active row would be a duplicate the
+          // rest of the module still offers, which is how the second copy got created.
+          active: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", mergedId)
+        .is("merged_into_pharmacy_id", null);
+      if (markError) throw markError;
+      result.pharmaciesMerged += 1;
+
+      await writeRequiredAuditLog({
+        actorLoginId: access.loginId ?? access.hrId,
+        entityType: "direct_order_request",
+        entityId: `pharmacy:${mergedId}`,
+        oldValues: { pharmacyName: loser.pharmacyName, active: true, mergedIntoPharmacyId: null },
+        newValues: { mergedIntoPharmacyId: merge.survivorId, active: false },
+        summary:
+          `Pharmacy "${loser.pharmacyName}" (${loser.phoenixPharmacyCode}) merged into ` +
+          `"${survivor.pharmacyName}" (${survivor.phoenixPharmacyCode}) — the same distributor customer ` +
+          `proves they are one pharmacy. ${(moved ?? []).length} request(s) moved. Reason: ${reason}`,
+      });
+    }
+  }
+
+  // ── 2. Repair codes sitting in the wrong field ─────────────────────────────────────────
+  for (const pharmacyId of input.repairPharmacyIds ?? []) {
+    const outcome = await autoLinkDirectOrderPharmacyCode(pharmacyId, { actorLoginId: access.loginId ?? access.hrId });
+    if (outcome.linked) result.codesRepaired += 1;
+  }
+
+  // ── 3. Cancel duplicates ───────────────────────────────────────────────────────────────
+  for (const group of input.duplicates ?? []) {
+    if (!group.keeperId) continue;
+    for (const duplicateId of group.duplicateIds ?? []) {
+      if (!duplicateId || duplicateId === group.keeperId) continue;
+      const { data: row } = await supabase
+        .from("direct_order_requests")
+        .select("id, status")
+        .eq("id", duplicateId)
+        .maybeSingle();
+      const status = String((row as { status?: string } | null)?.status ?? "");
+      // Re-validated against LIVE status, not the plan's. An order approved since the plan was read
+      // is money committed and must be reversed, never quietly cancelled as a duplicate.
+      if (!(DEDUPE_OPEN_STATUSES as readonly string[]).includes(status)) continue;
+
+      await assertDirectOrderWorkflowTransition({
+        access,
+        actionKey: "cancel_duplicate",
+        expectedNextStatus: "cancelled",
+        status,
+      });
+
+      const { data: updated, error: cancelError } = await supabase
+        .from("direct_order_requests")
+        .update({ status: "cancelled", duplicate_of_request_id: group.keeperId, decided_at: new Date().toISOString() })
+        .eq("id", duplicateId)
+        .eq("status", status)
+        .select("id");
+      if (cancelError) throw cancelError;
+      // An empty result means the status moved between the read and the write. Skipping is correct;
+      // reporting it as cancelled would tell the reviewer a live order had been closed.
+      if (!updated || updated.length === 0) continue;
+      result.requestsCancelled += 1;
+
+      await insertEvent({
+        requestId: duplicateId,
+        actorHrId,
+        eventType: "cancelled",
+        message: `Cancelled as a duplicate of ${group.keeperId}.`,
+        metadata: { duplicateOfRequestId: group.keeperId, confirmedBy: actorHrId, reason },
+      });
+      await writeRequiredAuditLog({
+        actorLoginId: access.loginId ?? access.hrId,
+        entityType: "direct_order_request",
+        entityId: duplicateId,
+        oldValues: { status },
+        newValues: { status: "cancelled", duplicateOfRequestId: group.keeperId },
+        summary:
+          `Direct order cancelled as a confirmed duplicate of ${group.keeperId} — same pharmacy, product, ` +
+          `quantity, deal terms and collection date. Reason: ${reason}`,
+      });
+    }
+  }
+
+  // ── 4. Release every held request on each resolved pharmacy (owner rule 2) ─────────────
+  for (const pharmacyId of input.releasePharmacyIds ?? []) {
+    const pharmacy = (await loadPharmaciesByIds([pharmacyId])).get(pharmacyId) ?? null;
+    if (!pharmacy) continue;
+    // Re-run the SAME hold rule the submit fork runs. A pharmacy the cleanup did not actually manage
+    // to prove must stay held — the cleanup releases what it fixed, never everything it touched.
+    const decision = decideDirectOrderHold({
+      verificationStatus: pharmacy.verificationStatus,
+      declaredBrickId: pharmacy.brickId,
+      distributorCodes: await attachCodeOwnership(pharmacy),
+      holdReleaseGround: pharmacy.holdReleaseGround,
+    });
+    if (decision.hold) continue;
+    result.requestsReleased += await moveHeldDirectOrdersIntoChain(access, pharmacyId, {
+      actionKey: "release_held",
+      eventType: "released",
+      auditSummary: (releasedBy: string) =>
+        `Direct order released from the held lane by the duplicate cleanup, confirmed by ${releasedBy}. Reason: ${reason}`,
+      eventMessage: "Released after the duplicate cleanup resolved this pharmacy.",
+      noticeTitle: "Direct order released — the pharmacy has been resolved",
+      noticeSuffix:
+        "The duplicate cleanup resolved this pharmacy, so this request has entered the approval chain " +
+        "at step 1 (SFE Manager).",
+    });
+  }
+
+  pingDirectOrderSheet("cleanup_applied");
+  return result;
 }

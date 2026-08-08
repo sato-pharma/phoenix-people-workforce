@@ -132,13 +132,37 @@ export function runDirectOrderFinanceMonthBadgeTests() {
   const gates = [...service.matchAll(/assertDirectOrderWorkflowTransition\(\{[\s\S]{0,320}?\}\);/g)].map((m) => m[0]);
   const gateFor = (key: string) => gates.find((g) => g.includes(`actionKey: "${key}"`));
 
-  for (const key of ["revive_held", "expire_held"]) {
-    const block = gateFor(key);
-    assert.ok(block, `${key} must still be gated`);
+  // `revive_held` moved behind a shared helper on 2026-08-08: BOTH doors out of the held lane
+  // (revive after validation, and release once the distributor code proves the pharmacy) run the
+  // same moveHeldDirectOrdersIntoChain, which is handed its action key. So the literal
+  // `actionKey: "revive_held"` now lives at the wrapper's call site, and the GATE reads
+  // `actionKey: opts.actionKey`. Both facts are still required, and both are asserted — what must
+  // never happen is the gate disappearing or being told a constant status.
+  const parameterisedHeldGate = gates.find((gate) => gate.includes("actionKey: opts.actionKey"));
+  assert.ok(
+    parameterisedHeldGate,
+    "the held-lane exit must STILL be registry-gated — both doors run one helper, and that helper gates every request it moves",
+  );
+  assert.match(
+    parameterisedHeldGate!,
+    /status: request\.status,/,
+    "THE HELD-LANE GATE IS BEING TOLD A CONSTANT (audit F6): its query filters on held and then iterates, so a literal only re-states what the filter guaranteed — the gate can never catch a row whose status moved in between",
+  );
+  // …and the only action keys that helper may ever be given are the two declared doors.
+  for (const key of ["revive_held", "release_held"]) {
+    assert.match(
+      service,
+      new RegExp(`actionKey: "${key}"`),
+      `${key} must still be passed to the shared held-lane helper — a door that stops naming its registry action is an ungated door`,
+    );
+  }
+  {
+    const block = gateFor("expire_held");
+    assert.ok(block, "expire_held must still be gated");
     assert.match(
       block!,
       /status: request\.status,/,
-      `${key} IS BEING TOLD A CONSTANT (audit F6): its query filters on held and then iterates, so a literal only re-states what the filter guaranteed — the gate can never catch a row whose status moved in between`,
+      "expire_held IS BEING TOLD A CONSTANT (audit F6): its query filters on held and then iterates, so a literal only re-states what the filter guaranteed",
     );
   }
   const decision = gates.find((g) => g.includes("actionKey: action.actionKey"));

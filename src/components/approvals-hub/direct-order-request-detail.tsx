@@ -1,12 +1,31 @@
 import Link from "next/link";
 
 import { DecisionActions } from "@/components/approvals-hub/decision-actions";
-import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
 import {
+  ApprovalTracker,
+  Field,
+  FieldTable,
+  HeroStat,
+  PanelSection,
+  PriceUsageField,
+  PricingBreakdownFact,
+} from "@/components/approvals-hub/direct-order-detail-primitives";
+import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
+import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
+import {
+  buildDirectOrderApprovalNarrative,
   buildDirectOrderDetailFields,
+  buildDirectOrderSalesMatrix,
+  computeDirectOrderPricingBreakdown,
   dealFieldLabel,
+  DIRECT_ORDER_STATUS_BANNER_CLASSES,
   formatDealValue,
+  resolveDirectOrderStatusBanner,
+  type DirectOrderApprovalNarrativeStep,
 } from "@/lib/direct-orders/approval-fields";
+import { describeResolvedAddressPlace, type DirectOrderGeographyVerdict } from "@/lib/direct-orders/geography-check";
+import { describeDirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 import type { DirectOrderApprovalDetail } from "@/lib/direct-orders/types";
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -23,22 +42,73 @@ const cairoStamp = (iso: string | null | undefined) =>
       }).format(new Date(iso))
     : null;
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div>
-      <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</dt>
-      {/* Never wrap (owner rule). The grid sits inside an overflow-x-auto wrapper, so a long
-          value scrolls rather than clipping. */}
-      <dd className="mt-0.5 whitespace-nowrap text-sm font-semibold text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
-const STEP_TONE: Record<string, string> = {
-  approved: "bg-emerald-500",
-  rejected: "bg-rose-500",
-  pending: "bg-amber-400",
+// Four verdicts, four looks. "Not checked" must never be able to pass for "agrees" — that
+// equivalence is the whole reason the old single "Not flagged" field was worthless.
+const VERDICT_TONE: Record<DirectOrderGeographyVerdict, string> = {
+  match: "bg-emerald-100 text-emerald-800",
+  mismatch: "bg-rose-100 text-rose-800",
+  unknown: "bg-slate-200 text-slate-600",
+  not_checkable: "bg-slate-200 text-slate-600",
 };
+const VERDICT_LABEL: Record<DirectOrderGeographyVerdict, string> = {
+  match: "agrees",
+  mismatch: "disagrees",
+  unknown: "not checked",
+  not_checkable: "nothing to check",
+};
+
+const NARRATIVE_TONE: Record<DirectOrderApprovalNarrativeStep["state"], string> = {
+  done: "bg-emerald-500",
+  rejected: "bg-rose-500",
+  current: "bg-amber-400",
+  waiting: "bg-slate-300",
+};
+
+// Order-details grouping (2026-08-08 restyle): the flat 24-field grid gave every fact equal
+// weight — a decision's headline numbers sat no differently than "Geography check". These three
+// buckets, plus HeroStat for the numbers that matter most, are display-only groupings over the
+// SAME buildDirectOrderDetailFields() output — the domain field list itself is untouched.
+const HERO_LABELS = new Set(["Sales value", "Quantity"]);
+// Present elsewhere on screen already, in a form that makes the plain-grid copy redundant rather
+// than informative: the code rides in the Product/Pharmacy field's own "(CODE)" suffix
+// (codeNameLabel), Discount % repeats the hero tile above verbatim, and the two prices get their
+// own colour-coded PriceUsageField instead of a plain grid row. Still present in
+// buildDirectOrderDetailFields()'s OWN output — the notification email and the completeness test
+// (DIRECT_ORDER_CORE_FIELD_LABELS) both need them as their own fields; this hides them from THIS
+// screen's grid only.
+const GRID_HIDDEN_LABELS = new Set([
+  "Sato product code",
+  "Sato pharmacy code",
+  "Discount %",
+  "Pharmacy price",
+  "Public price",
+  // Hero tiles above the tables carry these three; leaving them in the grid printed each twice.
+  "Sales value",
+  "Quantity",
+  "Collection date",
+  // The header pill and the approval tracker both state it — a third copy read as a third fact.
+  "Status",
+]);
+const PRODUCT_GROUP_LABELS = new Set([
+  "Line",
+  "Product",
+  "Sato product code",
+  "Deal type",
+  "Pharmacy price",
+  "Public price",
+  "Discount %",
+]);
+const PHARMACY_GROUP_LABELS = new Set([
+  "Pharmacy",
+  "Sato pharmacy code",
+  "Doctor",
+  "Brick",
+  "Area",
+  "Region",
+  "Medical rep",
+  "Pharmacy status",
+  "Pharmacy registered by",
+]);
 
 export function DirectOrderRequestDetail({
   detail,
@@ -67,7 +137,6 @@ export function DirectOrderRequestDetail({
 
   const {
     request,
-    pharmacy,
     distributors,
     pharmacyHistory,
     retailHistory,
@@ -77,7 +146,47 @@ export function DirectOrderRequestDetail({
     steps,
     availableActions,
     bonusOverCap,
+    pharmacyEvidence,
+    possibleDistributorMatches,
+    autoLinkRefusal,
+    productPharmacyPrice,
+    productPublicPrice,
+    retailLoadFailed,
+    hiddenConfidentialCount,
+    retailMatchedPairs,
+    geographyCheck,
   } = detail;
+  const statusBanner = resolveDirectOrderStatusBanner(detail);
+  const pricingBreakdown = computeDirectOrderPricingBreakdown(request);
+  const narrativeSteps = buildDirectOrderApprovalNarrative(steps);
+  // Products × months. Built from the ALREADY-scoped retail rows — confidentiality and line
+  // filtering happen server-side, so this only reshapes what this viewer may see.
+  const salesMatrix = buildDirectOrderSalesMatrix(retailHistory);
+  // Same fallback the domain's unusedPrice() draws: the basis that did NOT price this deal falls
+  // back to the product's CURRENT price so a saved price is still visible, and "not set" is
+  // reserved for a product that genuinely has none — never confused with "0 EGP".
+  const pharmacyPriceValue = request.pharmacyPriceSnapshot ?? productPharmacyPrice;
+  const publicPriceValue = request.publicPriceSnapshot ?? productPublicPrice;
+  const collectionDateLabel = request.collectionDate ? String(request.collectionDate).slice(0, 10) : "—";
+  // The one candidate the Distributors block speaks about, read once so the FIELDS and the callout
+  // below them can never describe different things — which is exactly how they came to contradict.
+  const candidateMatch = possibleDistributorMatches[0] ?? null;
+  // Built ONCE and read by both the desktop table and the mobile cards. Two copies of the same
+  // three rows is how the retail totals drifted before (#1833) — the same list, reduced twice.
+  const comparisonRows = geographyCheck
+    ? [
+        { label: "Brick", declared: geographyCheck.brick.declared ?? "—", master: geographyCheck.brick.master ?? "—", verdict: geographyCheck.brick.verdict },
+        { label: "Area", declared: geographyCheck.area.declared ?? "—", master: geographyCheck.area.master ?? "—", verdict: geographyCheck.area.verdict },
+        {
+          label: "Typed address",
+          declared: detail.pharmacy?.pharmacyAddress || "—",
+          // Never blank (golden rule): the address is resolved to a place, and the resolution says
+          // it was read from the address rather than asserted by the master database.
+          master: describeResolvedAddressPlace(geographyCheck.address),
+          verdict: geographyCheck.address.verdict,
+        },
+      ]
+    : [];
   // ONE shared field list, built in the domain. The admin screen and the portal screen each
   // used to hand-maintain their own copy, which is how both ended up printing raw brick/area
   // codes — fixing it in one place could never have fixed the other.
@@ -109,126 +218,373 @@ export function DirectOrderRequestDetail({
 
       <section className="border border-[#e4e9ec] bg-white">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-900 px-4 py-3">
-          <h2 className="text-base font-black text-white">
+          <h2 className="flex flex-wrap items-center gap-2 text-base font-black text-white">
             {request.productName} × {request.qty.toLocaleString("en-US")}
+            <DirectOrderStatusPill status={request.status} salesMonth={request.salesMonth} variant="solid" />
           </h2>
           <span className="text-lg font-black text-orange-400">{money(request.salesValue)}</span>
         </header>
 
-        {request.status === "held" ? (
-          <div className="border-b border-[#eef1f3] bg-orange-50 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-orange-900">
-              HELD — this request stands outside the approval flow. Its pharmacy is not in the
-              master database, so no approver has it as work and nothing can be approved here. It
-              moves only when the pharmacy passes validation, and an untouched held request
-              expires after 14 days.
-            </p>
-          </div>
-        ) : request.status === "expired" ? (
-          <div className="border-b border-[#eef1f3] bg-slate-100 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-slate-700">
-              EXPIRED — this request stayed held for 14 days without its pharmacy passing
-              validation, and closed automatically. Resubmit with a pharmacy from the master
-              database.
-            </p>
-          </div>
-        ) : pharmacy?.verificationStatus === "rejected" ? (
-          /* Proven false, not merely unreviewed. An approver must never see this as "awaiting a
-             look" — the pharmacy was refused, and the strongest thing this screen can do is say so
-             before anyone considers acting on the order. */
-          <div className="border-b border-[#eef1f3] bg-rose-100 px-4 py-2.5">
-            <p className="text-[12px] font-black text-rose-900">
-              REJECTED PHARMACY — this pharmacy was examined and found not to be real. The order
-              behind it must not be approved, and the pharmacy cannot be used again.
-            </p>
-          </div>
-        ) : pharmacy?.verificationStatus === "pending_review" ? (
-          <div className="border-b border-[#eef1f3] bg-rose-50 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-rose-900">
-              New pharmacy — Phoenix has not confirmed it yet. It was typed in by hand instead of
-              being picked from the list, so nobody has checked that its distributor code is real.
-              That code is what Phoenix uses to find this pharmacy&apos;s sales at the distributor,
-              and a wrong one would pull another pharmacy&apos;s sales in here. The SFE Manager
-              confirms the pharmacy at their own rung; until then this order cannot be finalized.
-            </p>
-          </div>
-        ) : null}
-
-        {/* The golden rule, stated where the money is judged (spec C2): CEO approval is a
-            commercial decision, not an accounting event. Until Finance books a month, this
-            order sits in NO month's numbers — and that absence must be readable, not implied. */}
-        {request.status === "approved" && !request.salesMonth ? (
-          <div className="border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
-            <p className="text-[12px] font-bold text-amber-900">
-              Approved — awaiting Finance month. The sales are NOT in any month&apos;s numbers yet:
-              they inject only when the Finance Manager books this order into a month.
+        {statusBanner ? (
+          <div className={`border-b border-[#eef1f3] px-4 py-2.5 ${DIRECT_ORDER_STATUS_BANNER_CLASSES[statusBanner.tone].container}`}>
+            <p className={`text-[12px] font-bold ${DIRECT_ORDER_STATUS_BANNER_CLASSES[statusBanner.tone].text}`}>
+              {statusBanner.message}
             </p>
           </div>
         ) : null}
 
         {bonusOverCap ? (
           <div className="space-y-1 border-b border-[#eef1f3] bg-amber-50 px-4 py-2.5">
-            {bonusOverCap ? (
-              <p className="text-[12px] font-bold text-amber-900">
-                Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
-              </p>
-            ) : null}
+            <p className="text-[12px] font-bold text-amber-900">
+              Over cap — this {request.dealType} exceeds its product cap. Flagged for your attention, not blocked.
+            </p>
           </div>
         ) : null}
+      </section>
 
-        {/* ONE column on a phone, not two. Measured on production at 375px: two columns give each
-            value 150px, and eight of them need up to 287px — a request id, a requester's
-            "name · code · role", a price with its "(on file, not used — discount deal)" note. Every
-            value is whitespace-nowrap by the owner's rule, so they did not wrap, they RAN INTO the
-            next column and printed on top of it. One column gives 317px and the widest needs 287,
-            so all eight fit. Two columns return at sm, four at md, exactly as before. */}
-        <div className="overflow-x-auto">
-          <dl className="grid grid-cols-1 gap-4 px-4 py-4 sm:grid-cols-2 md:grid-cols-4">
-            {gridFields.map((field) => (
-              <Field key={field.label} label={field.label} value={field.value} />
-            ))}
-            {/* The one field the component still owns: it needs an over-cap colour treatment. */}
-            <Field
-              label={dealFieldLabel(request)}
-              value={
-                <span className={bonusOverCap ? "text-rose-600" : undefined}>
-                  {formatDealValue(request)}
-                  {bonusOverCap ? " · over cap" : ""}
-                </span>
-              }
-            />
-          </dl>
+      <PanelSection title="Order details">
+        {/* The four facts a decision actually turns on, first and biggest. */}
+        {/* One per row on a phone. Two-up would probably survive here (these values are short),
+            but the screen's rule is uniform on purpose — a base-level multi-column grid of nowrap
+            values is the defect that made this window unreadable at 375px once already, and
+            "this particular grid is fine" is exactly the judgement call that let it back in. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <HeroStat label="Sales value" value={money(request.salesValue)} tone="orange" />
+          <HeroStat label="Quantity" value={request.qty.toLocaleString("en-US")} />
+          <HeroStat
+            label={dealFieldLabel(request)}
+            tone={bonusOverCap ? "orange" : "slate"}
+            value={
+              <span className={bonusOverCap ? "text-rose-600" : undefined}>
+                {formatDealValue(request)}
+                {bonusOverCap ? " · over cap" : ""}
+              </span>
+            }
+          />
+          {/* Promoted out of the field list (owner request) — a collection date buried beside
+              "Geography check" was invisible, and it is a commitment somebody has to meet. */}
+          <HeroStat label="Collection date" value={collectionDateLabel} />
+        </div>
+
+        {/* Where it stands, as a bar rather than the words "pending approval". */}
+        <div className="mt-4">
+          <ApprovalTracker
+            steps={narrativeSteps.map((step) => ({ order: step.order, label: step.label, state: step.state }))}
+            emptyNote={
+              narrativeSteps.length === 0
+                ? request.status === "held" || request.status === "expired"
+                  ? "Not in the approval chain — a held request enters it only once its pharmacy passes validation."
+                  : "No approval steps recorded for this request."
+                : null
+            }
+          />
+        </div>
+
+        {/* Everything else, as three real tables instead of one 24-field wall. */}
+        <div className="mt-4 space-y-4">
+          <FieldTable
+            title="Product & deal"
+            rows={[
+              ...gridFields
+                .filter((field) => PRODUCT_GROUP_LABELS.has(field.label) && !GRID_HIDDEN_LABELS.has(field.label))
+                .map((field) => ({ label: field.label, value: field.value })),
+              {
+                label: "Pharmacy price",
+                value: (
+                  <PriceUsageField
+                    label=""
+                    used={request.dealType === "bonus"}
+                    notSet={pharmacyPriceValue == null}
+                    value={pharmacyPriceValue}
+                    bare
+                  />
+                ),
+              },
+              {
+                label: "Public price",
+                value: (
+                  <PriceUsageField
+                    label=""
+                    used={request.dealType === "discount"}
+                    notSet={publicPriceValue == null}
+                    value={publicPriceValue}
+                    bare
+                  />
+                ),
+              },
+            ]}
+          />
+          <FieldTable
+            title="Pharmacy & geography"
+            rows={gridFields
+              .filter((field) => PHARMACY_GROUP_LABELS.has(field.label) && !GRID_HIDDEN_LABELS.has(field.label))
+              .map((field) => ({ label: field.label, value: field.value }))}
+          />
+          <FieldTable
+            title="Request & timeline"
+            rows={gridFields
+              .filter(
+                (field) =>
+                  !HERO_LABELS.has(field.label) &&
+                  !PRODUCT_GROUP_LABELS.has(field.label) &&
+                  !PHARMACY_GROUP_LABELS.has(field.label) &&
+                  !GRID_HIDDEN_LABELS.has(field.label),
+              )
+              .map((field) => ({ label: field.label, value: field.value }))}
+          />
         </div>
 
         {fullFields.map((field) => (
-          <dl key={field.label} className="border-t border-[#eef1f3] px-4 py-3">
+          <dl key={field.label} className="mt-3 border-t border-[#eef1f3] pt-3">
             <dt className="text-[10px] font-black uppercase tracking-wider text-slate-400">{field.label}</dt>
             <dd className="mt-0.5 text-sm font-semibold text-slate-900">{field.value}</dd>
           </dl>
         ))}
 
+        <PricingBreakdownFact breakdown={pricingBreakdown} />
+
+        <DirectOrderSalesMonthControl
+          requestId={request.id}
+          salesMonth={request.salesMonth}
+          canEdit={canSetSalesMonth}
+          status={request.status}
+        />
+
+        {request.bonusOverrideReason ? (
+          <p className="mt-3 border-t border-[#eef1f3] pt-2 text-xs text-slate-500">
+            Note: {request.bonusOverrideReason}
+          </p>
+        ) : null}
+      </PanelSection>
+
+      {pharmacyEvidence ? (
+        <PanelSection title="Pharmacy evidence">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+            <div>
+              {pharmacyEvidence.photoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={pharmacyEvidence.photoUrl} alt="Storefront evidence" className="w-full border border-slate-200" />
+              ) : (
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800">
+                  No photo on file for this claim.
+                </p>
+              )}
+              {/* ADVISORY ONLY (spec D4) — sits beside the evidence, never near the decision
+                  buttons below. Absent for the requester's own view (owner rule, 2026-08-08):
+                  service.ts strips evidenceCheck to null before it reaches here for that viewer. */}
+              <EvidenceReading check={pharmacyEvidence.evidenceCheck} claimedName={pharmacyEvidence.claimedPharmacyName} />
+              {pharmacyEvidence.capturedLatitude != null ? (
+                <a
+                  className="mt-1 block text-[11px] font-bold text-orange-600 underline"
+                  href={`https://www.google.com/maps?q=${pharmacyEvidence.capturedLatitude},${pharmacyEvidence.capturedLongitude}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open the pin on the map
+                </a>
+              ) : null}
+            </div>
+            <dl className="space-y-2">
+              <Field
+                label="Why not in the master database"
+                value={<span dir="auto">{pharmacyEvidence.claimedReason ?? "—"}</span>}
+              />
+              <Field
+                label="Distance from their area"
+                value={
+                  pharmacyEvidence.areaDistanceKm == null
+                    ? "distance unknown"
+                    : `${pharmacyEvidence.areaDistanceKm} km${pharmacyEvidence.gpsInsideRequesterArea ? "" : " — outside their area"}`
+                }
+              />
+              <Field label="Submitted" value={cairoStamp(pharmacyEvidence.requestedAt) ?? "—"} />
+            </dl>
+          </div>
+        </PanelSection>
+      ) : null}
+
+      {geographyCheck ? (
+        <PanelSection title="Submitter's details vs the master database">
+          {/* Side by side, because scattered fields hid the problem for months. Live example: the
+              submitter had put the customer CODE in the pharmacy-name box and the customer NAME in
+              the doctor box, while the typed address named a different governorate than the brick.
+              Every one of those was on screen already — just never next to what it contradicts. */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <th className="whitespace-nowrap px-3 py-2">Field</th>
+                  <th className="whitespace-nowrap px-3 py-2">Submitter entered</th>
+                  <th className="whitespace-nowrap px-3 py-2">Master database says</th>
+                  <th className="whitespace-nowrap px-3 py-2">Agreement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.map((row) => (
+                  <tr key={row.label} className="border-b border-[#eef1f3]">
+                    <td className="whitespace-nowrap px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-slate-400">
+                      {row.label}
+                    </td>
+                    <td className="px-3 py-1.5 font-semibold text-slate-900" dir="auto">
+                      {row.declared}
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-700" dir="auto">
+                      {row.master}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-1.5">
+                      <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
+                        {VERDICT_LABEL[row.verdict]}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile: a card per compared field. A four-column comparison table at 375px is exactly
+              what the owner's admin-shell rule forbids — desktop gets tables, mobile gets cards —
+              and the two values being compared must stay stacked together to be readable. */}
+          <div className="space-y-2 md:hidden">
+            {comparisonRows.map((row) => (
+              <article key={row.label} className="block border border-[#e4e9ec] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{row.label}</p>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide ${VERDICT_TONE[row.verdict]}`}>
+                    {VERDICT_LABEL[row.verdict]}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-sm font-semibold text-slate-900" dir="auto">
+                  Submitter: {row.declared}
+                </p>
+                <p className="mt-0.5 break-words text-[12px] text-slate-600" dir="auto">
+                  Master: {row.master}
+                </p>
+              </article>
+            ))}
+          </div>
+          <p
+            className={`mt-3 border px-3 py-2 text-[12px] font-bold ${
+              geographyCheck.brick.verdict === "mismatch" || geographyCheck.area.verdict === "mismatch"
+                ? "border-rose-300 bg-rose-50 text-rose-900"
+                : geographyCheck.address.verdict === "mismatch"
+                  ? "border-amber-300 bg-amber-50 text-amber-900"
+                  : geographyCheck.brick.verdict === "match"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                    : "border-slate-300 bg-slate-50 text-slate-700"
+            }`}
+          >
+            {geographyCheck.summary}
+          </p>
+        </PanelSection>
+      ) : null}
+
+      <PanelSection title="Distributors">
         {/* Distributors get a row each rather than one joined string: three pairs runs ~80
             characters, which would either wrap or blow the grid. This mirrors the layout the
             pharmacy-variance table already uses for exactly this data, and the mapped-brick
             column surfaces a geography variance right inside the approval window. */}
-        <div className="border-t border-[#eef1f3] px-4 py-3">
-          <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Distributors</p>
+        <div>
           {distributors.length === 0 ? (
-            // A bare dash here read as "the screen failed to load the distributor", not as "there
-            // is nothing on file" — and the two demand opposite reactions from an approver. Codes
-            // became optional on 2026-08-04, so an empty list is now a NORMAL state that has to
-            // say what it costs, because nothing else on this page reveals it.
-            <div className="mt-1 border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-[12px] font-bold text-amber-900">
-                No distributor customer code on file for this pharmacy.
-              </p>
-              <p className="mt-0.5 text-[12px] text-amber-800">
-                Nothing is missing from this screen — none was entered. Phoenix matches a
-                pharmacy&apos;s distributor sales on that code, so until one is added this
-                pharmacy&apos;s distributor sales cannot be linked to it. The direct order itself is
-                unaffected. Add the code in Direct Orders → Pharmacy Registry.
-              </p>
-            </div>
+            // Owner rule (2026-08-08): the Distributor / Distributor code fields must stay on
+            // screen even when empty — not disappear into a prose-only block. A missing FIELD reads
+            // as "the screen forgot to ask"; a field that answers reads as "asked, and here is what
+            // is true".
+            //
+            // And when a candidate WAS found, these fields must show it. They read "Not provided"
+            // directly above a block naming that very distributor and code — the same
+            // self-contradiction this section was already fixed for once, resurfacing one block
+            // higher. "Nothing on file" and "found, waiting to be linked" are different facts.
+            <>
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field
+                  label="Distributor"
+                  value={
+                    candidateMatch ? (
+                      <span>
+                        {candidateMatch.distributorName}
+                        <span className="ml-1 text-[11px] font-semibold text-amber-700">found, not linked</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Not provided</span>
+                    )
+                  }
+                />
+                <Field
+                  label="Distributor code"
+                  value={
+                    candidateMatch ? (
+                      <span>
+                        {candidateMatch.customerCode}
+                        <span className="ml-1 text-[11px] font-semibold text-amber-700">found, not linked</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">Not provided</span>
+                    )
+                  }
+                />
+              </dl>
+              {/* THREE states, never two stacked blocks that contradict each other.
+                  "No code exists anywhere" and "a real code exists but was never linked to this
+                  record" demand opposite reactions from an approver, and an earlier version of this
+                  screen printed both at once — "none was entered" directly above "possible match
+                  found", with two competing calls to action. */}
+              {possibleDistributorMatches.length === 0 ? (
+                <div className="mt-2 border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-[12px] font-bold text-amber-900">
+                    No distributor customer code on file for this pharmacy.
+                  </p>
+                  <p className="mt-0.5 text-[12px] text-amber-800">
+                    Nothing is missing from this screen — none was entered. Phoenix matches a
+                    pharmacy&apos;s distributor sales on that code, so until one is added this
+                    pharmacy&apos;s distributor sales cannot be linked to it. The direct order itself is
+                    unaffected. Add the code in Direct Orders → Pharmacy Registry.
+                  </p>
+                </div>
+              ) : (
+                // Auto-link (owner rule, 2026-08-08) runs at registration and at submit, so anything
+                // still visible here was REFUSED by the rule — not merely unnoticed. The block must
+                // therefore lead with the refusal, or it shows the reader a match the system plainly
+                // saw and says nothing about why it declined to act on it.
+                <div className="mt-2 border border-amber-300 bg-amber-50 px-3 py-2">
+                  <p className="text-[12px] font-black text-amber-900">
+                    This pharmacy&apos;s NAME is a real distributor customer code — and Phoenix did not
+                    link it automatically.
+                  </p>
+                  {autoLinkRefusal ? (
+                    <p className="mt-0.5 text-[12px] text-amber-800">
+                      {describeDirectOrderAutoLinkRefusal(autoLinkRefusal)}
+                    </p>
+                  ) : null}
+                  <ul className="mt-1.5 space-y-1">
+                    {possibleDistributorMatches.map((match) => (
+                      <li
+                        key={match.distributorCode}
+                        className="border border-amber-200 bg-white px-2 py-1 text-[12px] text-amber-900"
+                        dir="auto"
+                      >
+                        {match.distributorName} · {match.customerCode} · {match.customerName}
+                        {match.areaCode ? ` · area ${match.areaCode}` : ""}
+                        {/* NAME the holder. "Owned by another pharmacy" without saying which one
+                            leaves the reader with a dead end; with it, the duplicate registration is
+                            visible in one line and the fix is obvious. */}
+                        {match.ownedByPharmacyCode ? (
+                          <span className="ml-1 font-black text-rose-700">
+                            {match.ownedByPharmacyCode === "unknown"
+                              ? "· ownership could not be checked"
+                              : `· already held by ${match.ownedByPharmacyName ?? "another pharmacy"} (${match.ownedByPharmacyCode})`}
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-[11px] text-amber-700">
+                    Link the right one in Direct Orders → Pharmacy Registry to unlock this
+                    pharmacy&apos;s retail sales history.
+                  </p>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div className="mt-1.5 hidden overflow-x-auto md:block">
@@ -292,33 +648,37 @@ export function DirectOrderRequestDetail({
             </>
           )}
         </div>
-
-        <DirectOrderSalesMonthControl
-          requestId={request.id}
-          salesMonth={request.salesMonth}
-          canEdit={canSetSalesMonth}
-          status={request.status}
-        />
-
-        {request.bonusOverrideReason ? (
-          <p className="border-t border-[#eef1f3] px-4 py-2 text-xs text-slate-500">
-            Note: {request.bonusOverrideReason}
-          </p>
-        ) : null}
-      </section>
+      </PanelSection>
 
       {/* RETAIL — what the distributors invoiced this pharmacy. Kept strictly separate from the
           direct-order history below: they are different channels and summing them would double
           count. Matched on (distributor code + customer code) together, because a customer code
           alone is not unique across distributors. */}
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
-            Retail sales — from the distributors
-          </h3>
-          <span className="text-[11px] font-bold text-slate-500">all months on record</span>
-        </header>
-        {retailUnmatchable ? (
+      <PanelSection title="Retail sales — from the distributors">
+        <p className="mb-2 text-[11px] font-bold text-slate-500">
+          all months on record
+          {retailMatchedPairs > 0 ? ` · matched on ${retailMatchedPairs} distributor code${retailMatchedPairs === 1 ? "" : "s"}` : ""}
+        </p>
+        {/* Confidential products are withheld from EVERY role, including CEO and Super Admin (owner
+            rule). Saying so matters: those products are ~81.5% of sales value, so a silently
+            filtered table would read as "this pharmacy barely buys" when the opposite is true. */}
+        {hiddenConfidentialCount > 0 ? (
+          <p className="mb-2 border border-slate-300 bg-slate-50 px-3 py-2 text-[12px] font-semibold text-slate-600">
+            {hiddenConfidentialCount} confidential product{hiddenConfidentialCount === 1 ? "" : "s"} hidden from this
+            view. Figures below exclude {hiddenConfidentialCount === 1 ? "it" : "them"}.
+          </p>
+        ) : null}
+        {retailLoadFailed ? (
+          // A FAILED READ IS NOT AN EMPTY RESULT. Before this branch existed the catch path returned
+          // a bare empty list, so a timeout rendered the trusted sentence "the pharmacy is
+          // established, so this means it has not bought" — a confident lie about a query that
+          // never ran, on the screen where money is approved.
+          <p className="px-4 py-4 text-sm font-bold text-rose-700">
+            This pharmacy&apos;s retail sales could not be loaded — the query failed. This is NOT
+            &quot;no sales&quot;: nothing is known either way right now. Reload before judging the order
+            against its history.
+          </p>
+        ) : retailUnmatchable ? (
           /* Spec D2. This branch is checked FIRST, so before it carried the trust state it hid it:
              a provisional pharmacy with no distributor code was told only that paperwork was
              missing, never that it had not been proved to exist. Five of the ten live provisional
@@ -349,38 +709,55 @@ export function DirectOrderRequestDetail({
           </p>
         ) : (
           <>
+          {/* PRODUCTS × MONTHS (owner request, 2026-08-08). The flat row-per-month-per-product list
+              this replaces made "does this pharmacy usually take this much?" — the actual question
+              an approver is answering — something you had to reconstruct by eye across 30 rows.
+              Each cell carries the units and which distributor supplied them. */}
           <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[820px] border-collapse text-sm">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
-                  <th className="whitespace-nowrap px-3 py-2">Month</th>
-                  <th className="whitespace-nowrap px-3 py-2">Product</th>
-                  <th className="whitespace-nowrap px-3 py-2">Distributor</th>
-                  <th className="whitespace-nowrap px-3 py-2">Customer code</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Qty</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Bonus</th>
-                  <th className="whitespace-nowrap px-3 py-2 text-right">Value</th>
+                  <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2">Product</th>
+                  {salesMatrix.months.map((month) => (
+                    <th key={month} className="whitespace-nowrap px-3 py-2 text-right">
+                      {month}
+                    </th>
+                  ))}
+                  <th className="whitespace-nowrap px-3 py-2 text-right">Total units</th>
                 </tr>
               </thead>
               <tbody>
-                {retailHistory.map((row) => (
-                  <tr key={`${row.month}-${row.productCode}-${row.distributorCode}`} className="border-b border-[#eef1f3]">
-                    <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">{row.month}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">
-                      {row.productName} <span className="text-slate-400">({row.productCode})</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">
-                      {row.distributorName} <span className="text-slate-400">({row.distributorCode})</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-500">{row.customerCode}</td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900">
-                      {row.qty.toLocaleString("en-US")}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">
-                      {row.bonus.toLocaleString("en-US")}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-bold tabular-nums text-slate-900">
-                      {money(row.salesValue)}
+                {salesMatrix.products.map((product) => (
+                  <tr key={product.productCode} className="border-b border-[#eef1f3]">
+                    <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-white px-3 py-1.5 text-left font-semibold text-slate-900">
+                      {product.productName} <span className="font-normal text-slate-400">({product.productCode})</span>
+                    </th>
+                    {product.cells.map((cell, index) => (
+                      <td
+                        key={salesMatrix.months[index]}
+                        className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900"
+                      >
+                        {cell ? (
+                          <>
+                            {cell.units.toLocaleString("en-US")}
+                            {cell.bonus ? (
+                              <span className="ml-1 text-[10px] font-semibold text-slate-500">
+                                +{cell.bonus.toLocaleString("en-US")}b
+                              </span>
+                            ) : null}
+                            <span className="block text-[10px] font-normal text-slate-400">
+                              {cell.distributors.join(", ")}
+                            </span>
+                          </>
+                        ) : (
+                          // A month with no purchase is a real fact about the relationship, so it
+                          // reads as an explicit nothing rather than an empty cell.
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    ))}
+                    <td className="whitespace-nowrap px-3 py-1.5 text-right font-black tabular-nums text-slate-900">
+                      {product.totalUnits.toLocaleString("en-US")}
                     </td>
                   </tr>
                 ))}
@@ -389,52 +766,63 @@ export function DirectOrderRequestDetail({
                   record, so the approver weighs THIS order against THAT total at a glance. */}
               <tfoot>
                 <tr className="bg-slate-50">
-                  <td colSpan={4} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    Total — {retailHistory.length.toLocaleString("en-US")} row{retailHistory.length === 1 ? "" : "s"}
-                  </td>
+                  <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
+                    Total units · {money(retailTotals.salesValue)} over {salesMatrix.months.length} month
+                    {salesMatrix.months.length === 1 ? "" : "s"}
+                  </th>
+                  {salesMatrix.monthTotals.map((total, index) => (
+                    <td
+                      key={salesMatrix.months[index]}
+                      className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700"
+                    >
+                      {total.toLocaleString("en-US")}
+                    </td>
+                  ))}
                   <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {retailTotals.qty.toLocaleString("en-US")}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
-                    {retailTotals.bonus.toLocaleString("en-US")}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-black tabular-nums text-slate-900">
-                    {money(retailTotals.salesValue)}
+                    {salesMatrix.grandTotalUnits.toLocaleString("en-US")}
                   </td>
                 </tr>
               </tfoot>
             </table>
           </div>
 
-          {/* Mobile: one card per month/product/distributor. The TOTAL is a card of its own at the
-              end rather than a dropped "footer" — it is the judgement line the approver weighs this
+          {/* Mobile: one card per PRODUCT — the matrix's own rows, not the raw feed. A phone cannot
+              show a months-wide grid, but it can show the same story: what this pharmacy takes of
+              each product, month by month, and from whom. The TOTAL is a card of its own at the end
+              rather than a dropped "footer" — it is the judgement line the approver weighs this
               order against, and it is the first thing lost when a table is squeezed onto a phone. */}
-          <div className="space-y-2 p-3 md:hidden">
-            {retailHistory.map((row) => (
-              <article
-                key={`${row.month}-${row.productCode}-${row.distributorCode}`}
-                className="block border border-[#e4e9ec] p-3"
-              >
-                <p className="text-sm font-black text-slate-900">
-                  {row.month} · {row.productName}{" "}
-                  <span className="font-semibold text-slate-400">({row.productCode})</span>
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  {row.distributorName} ({row.distributorCode}) · customer {row.customerCode}
-                </p>
-                <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
-                  {row.qty.toLocaleString("en-US")} qty
-                  <span className="ml-2 font-semibold text-slate-500">
-                    {row.bonus.toLocaleString("en-US")} bonus
-                  </span>
-                  <span className="ml-2">{money(row.salesValue)}</span>
-                </p>
+          <div className="space-y-2 md:hidden">
+            {salesMatrix.products.map((product) => (
+              <article key={product.productCode} className="block border border-[#e4e9ec] p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-black text-slate-900">
+                    {product.productName} <span className="font-semibold text-slate-400">({product.productCode})</span>
+                  </p>
+                  <p className="text-sm font-black tabular-nums text-slate-900">
+                    {product.totalUnits.toLocaleString("en-US")} units
+                  </p>
+                </div>
+                <dl className="mt-2 space-y-0.5 text-[12px]">
+                  {product.cells.map((cell, index) =>
+                    cell ? (
+                      <div key={salesMatrix.months[index]} className="flex items-baseline justify-between gap-3">
+                        <dt className="text-slate-500">{salesMatrix.months[index]}</dt>
+                        <dd className="text-right font-semibold tabular-nums text-slate-800">
+                          {cell.units.toLocaleString("en-US")}
+                          {cell.bonus ? <span className="ml-1 text-slate-500">+{cell.bonus.toLocaleString("en-US")}b</span> : null}
+                          <span className="ml-1 font-normal text-slate-400">{cell.distributors.join(", ")}</span>
+                        </dd>
+                      </div>
+                    ) : null,
+                  )}
+                </dl>
               </article>
             ))}
             <article className="block border border-slate-300 bg-slate-50 p-3">
               <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-                Total — {retailHistory.length.toLocaleString("en-US")} row
-                {retailHistory.length === 1 ? "" : "s"}
+                Total — {salesMatrix.products.length.toLocaleString("en-US")} product
+                {salesMatrix.products.length === 1 ? "" : "s"} over {salesMatrix.months.length} month
+                {salesMatrix.months.length === 1 ? "" : "s"}
               </p>
               <p className="mt-1 text-sm font-black tabular-nums text-slate-900">
                 {retailTotals.qty.toLocaleString("en-US")} qty
@@ -457,19 +845,14 @@ export function DirectOrderRequestDetail({
           </div>
           </>
         )}
-      </section>
+      </PanelSection>
 
       {/* DIRECT — what Phoenix booked from approved direct orders. The request being decided is
           excluded, so the baseline never contains the number under judgement. */}
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">
-            Direct sales — from Phoenix direct orders
-          </h3>
-          <span className="text-[11px] font-bold text-slate-500">excludes this request</span>
-        </header>
+      <PanelSection title="Direct sales — from Phoenix direct orders">
+        <p className="mb-2 text-[11px] font-bold text-slate-500">excludes this request</p>
         {pharmacyHistory.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-slate-500">
+          <p className="py-2 text-sm text-slate-500">
             No other direct orders recorded for this pharmacy yet — this is its first.
           </p>
         ) : (
@@ -480,7 +863,9 @@ export function DirectOrderRequestDetail({
                 <tr className="border-b border-[#eef1f3] bg-slate-50 text-left text-[11px] font-black uppercase tracking-wider text-slate-500">
                   <th className="whitespace-nowrap px-3 py-2">Month</th>
                   <th className="whitespace-nowrap px-3 py-2">Product</th>
-                  <th className="whitespace-nowrap px-3 py-2">Distributor</th>
+                  {/* No Distributor column: a direct order carries no distributor of its own. This
+                      table used to invent one by fanning every order across the pharmacy's linked
+                      pairs — which also counted each order once PER PAIR at full value. */}
                   <th className="whitespace-nowrap px-3 py-2 text-right">Orders</th>
                   <th className="whitespace-nowrap px-3 py-2 text-right">Qty</th>
                   <th className="whitespace-nowrap px-3 py-2 text-right">Bonus</th>
@@ -489,10 +874,7 @@ export function DirectOrderRequestDetail({
               </thead>
               <tbody>
                 {pharmacyHistory.map((row) => (
-                  <tr
-                    key={`${row.month}-${row.productCode}-${row.distributorCode}`}
-                    className="border-b border-[#eef1f3]"
-                  >
+                  <tr key={`${row.month}-${row.productCode}`} className="border-b border-[#eef1f3]">
                     <td className="whitespace-nowrap px-3 py-1.5 font-semibold text-slate-900">
                       {row.month}
                       {row.monthIsProvisional ? (
@@ -503,10 +885,6 @@ export function DirectOrderRequestDetail({
                     </td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-slate-800">
                       {row.productName} <span className="text-slate-400">({row.productCode})</span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-slate-700">
-                      {row.distributorName}
-                      {row.distributorCode ? <span className="text-slate-400"> ({row.distributorCode})</span> : null}
                     </td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-700">{row.orders}</td>
                     <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-900">
@@ -523,7 +901,7 @@ export function DirectOrderRequestDetail({
               </tbody>
               <tfoot>
                 <tr className="bg-slate-50">
-                  <td colSpan={3} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
+                  <td colSpan={2} className="whitespace-nowrap px-3 py-2 text-[11px] font-black uppercase tracking-wider text-slate-500">
                     Total
                   </td>
                   <td className="whitespace-nowrap px-3 py-2 text-right font-bold tabular-nums text-slate-700">
@@ -546,12 +924,9 @@ export function DirectOrderRequestDetail({
           {/* Mobile. The "not final" flag rides the card exactly as it rides the row: a month that
               Finance has not closed must never be read as settled, and that warning is worth more
               on a phone than any of the numbers beside it. */}
-          <div className="space-y-2 p-3 md:hidden">
+          <div className="space-y-2 md:hidden">
             {pharmacyHistory.map((row) => (
-              <article
-                key={`${row.month}-${row.productCode}-${row.distributorCode}`}
-                className="block border border-[#e4e9ec] p-3"
-              >
+              <article key={`${row.month}-${row.productCode}`} className="block border border-[#e4e9ec] p-3">
                 <p className="text-sm font-black text-slate-900">
                   {row.month}
                   {row.monthIsProvisional ? (
@@ -561,10 +936,6 @@ export function DirectOrderRequestDetail({
                   ) : null}
                   <span className="font-bold"> · {row.productName}</span>{" "}
                   <span className="font-semibold text-slate-400">({row.productCode})</span>
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-500">
-                  {row.distributorName}
-                  {row.distributorCode ? ` (${row.distributorCode})` : ""}
                 </p>
                 <p className="mt-2 text-sm font-bold tabular-nums text-slate-900">
                   {row.orders.toLocaleString("en-US")} order{row.orders === 1 ? "" : "s"}
@@ -594,34 +965,28 @@ export function DirectOrderRequestDetail({
           </div>
           </>
         )}
-      </section>
+      </PanelSection>
 
-      <section className="border border-[#e4e9ec] bg-white">
-        <header className="border-b border-[#e4e9ec] bg-slate-100 px-4 py-2.5">
-          <h3 className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600">Approval chain</h3>
-        </header>
-        {steps.length === 0 ? (
-          <p className="px-4 py-4 text-sm text-slate-500">
+      <PanelSection title="Approval chain">
+        {narrativeSteps.length === 0 ? (
+          <p className="py-2 text-sm text-slate-500">
             {request.status === "held" || request.status === "expired"
               ? "No approval chain — a held request enters the chain only after its pharmacy passes validation."
               : "No approval steps recorded for this request."}
           </p>
         ) : (
           <ol className="divide-y divide-[#eef1f3]">
-            {steps.map((step) => (
-              <li key={step.order} className="px-4 py-2.5">
+            {narrativeSteps.map((step) => (
+              <li key={step.order} className="py-2.5">
                 <div className="flex items-center gap-3">
-                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STEP_TONE[step.status] ?? "bg-slate-300"}`} />
+                  <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${NARRATIVE_TONE[step.state]}`} />
                   <span className="w-6 shrink-0 text-xs font-bold text-slate-400">{step.order}</span>
                   {/* min-w-0 so a long approver name shrinks instead of shoving the status off the
                       screen, and the rung label drops to its own line on a phone rather than
                       fighting the name for the same one. */}
                   <span dir="auto" className="min-w-0 flex-1 text-sm font-semibold text-slate-800">
-                    {step.approverName ?? step.label}
+                    {step.sentence}
                     <span className="block text-[11px] font-normal text-slate-400 md:ml-2 md:inline">{step.label}</span>
-                  </span>
-                  <span className="shrink-0 text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    {step.status}
                   </span>
                 </div>
                 {/* The decision record (spec D1): who, when — Cairo — and what they wrote. A rung
@@ -647,7 +1012,7 @@ export function DirectOrderRequestDetail({
             ))}
           </ol>
         )}
-      </section>
+      </PanelSection>
 
       <DecisionActions
         endpoint={`/api/direct-orders/${encodeURIComponent(request.id)}/decision`}

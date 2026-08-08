@@ -409,6 +409,67 @@ export async function suggestDirectOrderPharmacies(
   }));
 }
 
+type ValidationPharmacyRow = { pharmacy_name: string; phoenix_pharmacy_code: string };
+
+/**
+ * One validation row, fully resolved (signed photo URL, area proximity, requester name).
+ *
+ * Shared by the Validation Desk (`listDirectOrderPharmacyValidations`, every pending claim) and
+ * `getDirectOrderPharmacyValidationForRequest` (one request's own evidence, for the approval-detail
+ * screen) — extracted so the two call sites can never drift the way two independent copies of the
+ * same eleven-field mapping always eventually do.
+ */
+async function mapValidationRow(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  row: Record<string, unknown>,
+  pharmacy: ValidationPharmacyRow | undefined,
+  requesterName: string,
+): Promise<DirectOrderValidationRow> {
+  const storagePath = row.storage_path ? String(row.storage_path) : null;
+  let photoUrl: string | null = null;
+  if (storagePath) {
+    const { data: signed } = await supabase.storage
+      .from(String(row.storage_bucket ?? DIRECT_ORDER_EVIDENCE_BUCKET))
+      .createSignedUrl(storagePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
+    photoUrl = signed?.signedUrl ?? null;
+  }
+  const proximity = await resolveAreaProximity({
+    areaCode: row.requester_area_code ? String(row.requester_area_code) : null,
+    latitude: row.captured_latitude == null ? null : Number(row.captured_latitude),
+    longitude: row.captured_longitude == null ? null : Number(row.captured_longitude),
+  });
+  const hr = String(row.requested_by_hr_id ?? "");
+  return {
+    id: String(row.id),
+    pharmacyId: String(row.pharmacy_id),
+    pharmacyName: pharmacy?.pharmacy_name ?? "(pharmacy missing)",
+    phoenixPharmacyCode: pharmacy?.phoenix_pharmacy_code ?? "—",
+    requestId: row.request_id ? String(row.request_id) : null,
+    requestedByHrId: hr,
+    requestedByName: requesterName || hr,
+    requestedAt: String(row.requested_at),
+    claimedPharmacyName: String(row.claimed_pharmacy_name ?? ""),
+    claimedAddress: row.claimed_address ? String(row.claimed_address) : null,
+    claimedDoctorName: row.claimed_doctor_name ? String(row.claimed_doctor_name) : null,
+    claimedReason: row.claimed_reason ? String(row.claimed_reason) : null,
+    capturedLatitude: row.captured_latitude == null ? null : Number(row.captured_latitude),
+    capturedLongitude: row.captured_longitude == null ? null : Number(row.captured_longitude),
+    capturedAccuracyMeters: row.captured_accuracy_meters == null ? null : Number(row.captured_accuracy_meters),
+    capturedAt: row.captured_at ? String(row.captured_at) : null,
+    requesterAreaCode: row.requester_area_code ? String(row.requester_area_code) : null,
+    gpsInsideRequesterArea: row.gps_inside_requester_area == null ? null : Boolean(row.gps_inside_requester_area),
+    areaDistanceKm: proximity.distanceKm,
+    status: String(row.status ?? "pending") as DirectOrderValidationStatus,
+    decidedByHrId: row.decided_by_hr_id ? String(row.decided_by_hr_id) : null,
+    decidedAt: row.decided_at ? String(row.decided_at) : null,
+    decisionNotes: row.decision_notes ? String(row.decision_notes) : null,
+    photoUrl,
+    // Read straight through: the column is null whenever there is no answer, and null must stay
+    // null all the way to the screen rather than becoming a default that reads like a pass.
+    evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
+  };
+}
+
 /** The Super Admin's validation desk: every pending claim, with its evidence. */
 export async function listDirectOrderPharmacyValidations(
   access: AccessContext,
@@ -447,52 +508,73 @@ export async function listDirectOrderPharmacyValidations(
 
   const out: DirectOrderValidationRow[] = [];
   for (const row of rows) {
-    const storagePath = row.storage_path ? String(row.storage_path) : null;
-    let photoUrl: string | null = null;
-    if (storagePath) {
-      const { data: signed } = await supabase.storage
-        .from(String(row.storage_bucket ?? DIRECT_ORDER_EVIDENCE_BUCKET))
-        .createSignedUrl(storagePath, EVIDENCE_SIGNED_URL_TTL_SECONDS);
-      photoUrl = signed?.signedUrl ?? null;
-    }
-    const proximity = await resolveAreaProximity({
-      areaCode: row.requester_area_code ? String(row.requester_area_code) : null,
-      latitude: row.captured_latitude == null ? null : Number(row.captured_latitude),
-      longitude: row.captured_longitude == null ? null : Number(row.captured_longitude),
-    });
     const pharmacy = pharmacyById.get(String(row.pharmacy_id));
     const hr = String(row.requested_by_hr_id ?? "");
-    out.push({
-      id: String(row.id),
-      pharmacyId: String(row.pharmacy_id),
-      pharmacyName: pharmacy?.pharmacy_name ?? "(pharmacy missing)",
-      phoenixPharmacyCode: pharmacy?.phoenix_pharmacy_code ?? "—",
-      requestId: row.request_id ? String(row.request_id) : null,
-      requestedByHrId: hr,
-      requestedByName: nameByHr.get(hr.toUpperCase()) ?? hr,
-      requestedAt: String(row.requested_at),
-      claimedPharmacyName: String(row.claimed_pharmacy_name ?? ""),
-      claimedAddress: row.claimed_address ? String(row.claimed_address) : null,
-      claimedDoctorName: row.claimed_doctor_name ? String(row.claimed_doctor_name) : null,
-      claimedReason: row.claimed_reason ? String(row.claimed_reason) : null,
-      capturedLatitude: row.captured_latitude == null ? null : Number(row.captured_latitude),
-      capturedLongitude: row.captured_longitude == null ? null : Number(row.captured_longitude),
-      capturedAccuracyMeters: row.captured_accuracy_meters == null ? null : Number(row.captured_accuracy_meters),
-      capturedAt: row.captured_at ? String(row.captured_at) : null,
-      requesterAreaCode: row.requester_area_code ? String(row.requester_area_code) : null,
-      gpsInsideRequesterArea: row.gps_inside_requester_area == null ? null : Boolean(row.gps_inside_requester_area),
-      areaDistanceKm: proximity.distanceKm,
-      status: String(row.status ?? "pending") as DirectOrderValidationStatus,
-      decidedByHrId: row.decided_by_hr_id ? String(row.decided_by_hr_id) : null,
-      decidedAt: row.decided_at ? String(row.decided_at) : null,
-      decisionNotes: row.decision_notes ? String(row.decision_notes) : null,
-      photoUrl,
-      // Read straight through: the column is null whenever there is no answer, and null must stay
-      // null all the way to the screen rather than becoming a default that reads like a pass.
-      evidenceCheck: (row.evidence_check as DirectOrderEvidenceCheck | null) ?? null,
-    });
+    out.push(await mapValidationRow(supabase, row, pharmacy, nameByHr.get(hr.toUpperCase()) ?? hr));
   }
   return out;
+}
+
+/**
+ * One request's own pharmacy-evidence row, for the approval-detail screen (admin + portal) rather
+ * than the Validation Desk. Owner rule, 2026-08-08: evidence becomes visible to everyone who can
+ * already open the order (`canViewDirectOrderRequest`), not just Super Admin — so this is
+ * deliberately UNGATED, unlike `listDirectOrderPharmacyValidations`. The caller has already proven
+ * the viewer may see this specific request; that check is strictly narrower than the desk's "every
+ * pending claim company-wide", so reusing `assertValidationDeskAccess` here would wrongly refuse a
+ * viewer this function exists to serve.
+ *
+ * Returns null for the common case: most orders never touch the held/validation lane at all.
+ */
+export async function getDirectOrderPharmacyValidationForRequest(
+  requestId: string,
+  pharmacyId: string,
+): Promise<DirectOrderValidationRow | null> {
+  const supabase = getSupabaseAdmin();
+  let row: Record<string, unknown> | null = null;
+  if (requestId) {
+    const { data } = await supabase
+      .from("direct_order_pharmacy_validations")
+      .select("*")
+      .eq("request_id", requestId)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    row = (data as Record<string, unknown> | null) ?? null;
+  }
+  // Fallback for rows filed before request linkage existed: the most recent claim on this pharmacy.
+  if (!row && pharmacyId) {
+    const { data } = await supabase
+      .from("direct_order_pharmacy_validations")
+      .select("*")
+      .eq("pharmacy_id", pharmacyId)
+      .order("requested_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    row = (data as Record<string, unknown> | null) ?? null;
+  }
+  if (!row) return null;
+
+  const { data: pharmacyRow } = await supabase
+    .from("direct_order_pharmacies")
+    .select("pharmacy_name, phoenix_pharmacy_code")
+    .eq("id", pharmacyId)
+    .maybeSingle();
+
+  const hr = String(row.requested_by_hr_id ?? "");
+  let requesterName = hr;
+  if (hr) {
+    // Case-insensitive on purpose: requester_hr_id has shipped lower-cased on other direct-order
+    // tables before, and an exact-cased join against employees.hr_id silently returns nothing.
+    const { data: employeeRow } = await supabase
+      .from("employees")
+      .select("full_name")
+      .ilike("hr_id", hr)
+      .maybeSingle();
+    requesterName = (employeeRow as { full_name?: string | null } | null)?.full_name ?? hr;
+  }
+
+  return mapValidationRow(supabase, row, (pharmacyRow as ValidationPharmacyRow | null) ?? undefined, requesterName);
 }
 
 /**

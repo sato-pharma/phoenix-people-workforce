@@ -1,4 +1,9 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
+import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
+// Type-only, and hold-decision.ts imports type-only from here — a types-only cycle is erased at
+// compile time and has no runtime edge, which is why this does not need a third module.
+import type { DirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decision";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Order Request module — shared types.
@@ -246,6 +251,21 @@ export type DirectOrderPharmacy = {
    * all 10 provisional ones — so it must never be read as "day zero".
    */
   probationStartedAt: string | null;
+  /**
+   * A System Admin's explicit ruling on a pharmacy whose distributor code proves nothing (owner
+   * rule, 2026-08-08 — the live case is a placeholder code like `PS/000000`, which matches no
+   * customer anywhere). `admin_released` lets its held orders into the chain; `kept_held` records
+   * that somebody looked and decided they stay. NULL means nobody has ruled yet — which is NOT the
+   * same as either answer, and must never be collapsed into one.
+   *
+   * Pharmacy-level rather than request-level, mirroring reviveHeldDirectOrdersForPharmacy: "I know
+   * this pharmacy is real" is a statement about the pharmacy, so it has to cover its sibling orders
+   * and the next one submitted, or every reorder re-freezes.
+   */
+  holdReleaseGround: "admin_released" | "kept_held" | null;
+  holdReleaseReason: string | null;
+  holdReleaseDecidedByHrId: string | null;
+  holdReleaseDecidedAt: string | null;
 };
 
 /** A single direct order request (header + its one line, since grain = single line). */
@@ -499,9 +519,41 @@ export type DirectOrderReportRow = {
 /** How much of the report the viewer may see (owner-tiered). */
 export type DirectOrderReportScope = "all" | "hierarchy" | "own";
 
+/** A real distributor customer whose code happens to equal this pharmacy's stored NAME. */
+export type DirectOrderPossibleDistributorMatch = {
+  distributorCode: string;
+  distributorName: string;
+  customerCode: string;
+  customerName: string;
+  areaCode: string | null;
+  /**
+   * Carried so the geography panel can compare BRICK, not just area.
+   *
+   * Without it the panel answered half the question: area resolved against the master and read
+   * "agrees", while brick — the field sales attribution actually follows — read "nothing to check"
+   * for the very same customer. A comparison that can only check the less important half looks
+   * broken, and it hid that the brick genuinely does agree here (B201-3 both sides).
+   */
+  brickId: string | null;
+  /**
+   * The OTHER Phoenix pharmacy already holding this exact (distributor, customer code) pair — the
+   * single fact that decides whether auto-link may act, and the one this panel could not previously
+   * state. Found live on 2026-08-08: DOP-000017 ("1573270") matches PS/0001573270, but DOP-000021
+   * already holds it — the same real pharmacy registered twice by the same person, each carrying its
+   * own 59,400 EGP order. Without naming the holder the screen can only say "not linked
+   * automatically" and leave the reader to guess why.
+   *
+   * `"unknown"` in the code field means the ownership CHECK failed, which the rule treats as owned.
+   */
+  ownedByPharmacyCode: string | null;
+  ownedByPharmacyName: string | null;
+};
+
 export type DirectOrderApprovalDetail = {
   request: DirectOrderRequest;
   requesterName: string;
+  /** Display name for pharmacy.createdByHrId — codeNameLabel needs a name, not a bare HR-ID. */
+  pharmacyRegisteredByName: string | null;
   pharmacy: DirectOrderPharmacy | null;
   /** Brick / area / region as NAMES. Non-null wrapper; see DirectOrderPharmacyGeo. */
   geo: DirectOrderPharmacyGeo;
@@ -538,6 +590,29 @@ export type DirectOrderApprovalDetail = {
   /** True when the pharmacy has no distributor pair that can be matched to retail sales at all. */
   retailUnmatchable: boolean;
   /**
+   * The read FAILED, as opposed to returning nothing.
+   *
+   * These two are opposite facts and used to be indistinguishable: the loaders' catch paths returned
+   * a bare empty list, so a timeout or a permission error rendered `pharmacyStanding.noHistoryNote`
+   * — "The pharmacy is established, so this means it has not bought" — which is a confident lie
+   * about a query that never ran. Never render the trusted sentence when these are true.
+   */
+  retailLoadFailed: boolean;
+  directLoadFailed: boolean;
+  /**
+   * Distinct products withheld from THIS viewer (restricted codes + the Head Office line, plus any
+   * other line when the viewer is line-scoped). Shown as a count only — never names, codes or
+   * figures. Owner rule, 2026-08-08: the confidential products are ~81.5% of sales value, so a
+   * silently filtered table would read as "this pharmacy barely buys" when the opposite is true.
+   */
+  hiddenConfidentialCount: number;
+  /**
+   * How many (distributor, customer code) pairs the retail match actually ran against. A pharmacy
+   * trading with three distributors but carrying one linked code shows a third of its sales — this
+   * is what stops that partial view from reading as the complete picture.
+   */
+  retailMatchedPairs: number;
+  /**
    * Why the retail table is empty, in words (spec D2). Null only when the request has no pharmacy
    * at all. Read this INSTEAD of inferring anything from `retailHistory.length === 0`: a trusted
    * pharmacy that has not bought and a provisional one that has never been proved both produce
@@ -549,6 +624,40 @@ export type DirectOrderApprovalDetail = {
   /** True when the bonus/discount exceeds its product cap — flagged for the approver, NOT blocked. */
   bonusOverCap: boolean;
   /**
+   * The pharmacy's held/validation evidence (photo, GPS, AI sign-check), when this request ever
+   * went through that lane. Null for the common case — most orders never touch a held pharmacy.
+   * `evidenceCheck` on this row is stripped to null when the viewer is the request's own requester
+   * (owner rule, 2026-08-08): they see their own photo, not the adjudicator-facing AI reading.
+   */
+  pharmacyEvidence: DirectOrderValidationRow | null;
+  /**
+   * Only populated when the pharmacy has NO distributor code on file: candidates where the
+   * pharmacy's own stored NAME happens to be a real distributor customer code (the "829575 \
+   * 1533576" failure mode, spotted live 2026-08-08 — a submitter typed a customer code into the
+   * name field instead of an actual pharmacy name).
+   *
+   * These are now AUTO-LINKED when the match is unambiguous (owner rule, 2026-08-08 — "if the
+   * pharmacy matches automatic link"). So anything still sitting here has been REFUSED, and
+   * `autoLinkRefusal` says by which rule. A populated list is therefore no longer "look at this
+   * match" — it is "the system saw this and declined to act; here is why."
+   */
+  possibleDistributorMatches: DirectOrderPossibleDistributorMatch[];
+  /**
+   * Why the candidates above were not linked automatically. Null when there are none to link.
+   * Rendered as a sentence, never a bare code — see `describeDirectOrderAutoLinkRefusal`.
+   */
+  autoLinkRefusal: DirectOrderAutoLinkRefusal | null;
+  /**
+   * The three-way geography comparison: the distributor's own recorded brick/area for the matched
+   * customer code, versus the brick/area declared on this request, versus the free-text address the
+   * submitter typed.
+   *
+   * Replaces the old single "Geography check: Not flagged" field, which printed one identical string
+   * for three opposite situations — agrees, never checked, and not checkable. Null only when there
+   * is no pharmacy at all.
+   */
+  geographyCheck: DirectOrderGeographyCheck | null;
+  /**
    * Whether THIS viewer may book the order into a sales month. Finance (Ahmed El Maraghy) and
    * Super Admin can; the CEO and SFE Manager see the month but cannot change it.
    */
@@ -558,6 +667,14 @@ export type DirectOrderApprovalDetail = {
 export type DirectOrderWorkspaceData = {
   awaiting: DirectOrderApprovalListItem[];
   history: DirectOrderApprovalListItem[];
+  /**
+   * Held/expired requests within the viewer's own visibility scope (owner rule, 2026-08-08: held
+   * status is no longer Super-Admin-only — everyone in a request's normal chain sees it). Scoped
+   * identically to `resolveDirectOrderReportScope`/`resolveVisibleRequesterHrIds`, NOT company-wide.
+   * The Held Desk's management actions (resend notice, cancel, force-expire) stay Super-Admin-only
+   * and untouched — this is read visibility only.
+   */
+  held: DirectOrderApprovalListItem[];
 };
 
 // ── Direct-sales reconciliation (manual DIRECT vs module DirectReq) ────────────

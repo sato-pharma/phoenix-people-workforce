@@ -396,6 +396,12 @@ export const accessRegistry = [
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-suggestions", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacy-validations/:id/decision", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/held/notify", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Duplicate cleanup (owner rule 5, 2026-08-09): merge pharmacy records that are one pharmacy, and
+  // cancel orders submitted twice. Registry permission is only `read` because the REAL gate is the
+  // Super Admin / SFE Manager identity check inside confirmDirectOrderCleanup — same idiom as the
+  // acknowledge and Held Desk routes above. Every cancellation additionally passes the workflow
+  // registry's own cancel_duplicate gate, so an approved order can never be closed this way.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/cleanup", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Acknowledging a hand-entered pharmacy. Registry permission is only `read` because the real
   // gate is a Super-Admin identity check inside acknowledgeDirectOrderPharmacy — an approver
   // holds direct_orders:approve but must NOT be able to self-clear an unverified pharmacy.
