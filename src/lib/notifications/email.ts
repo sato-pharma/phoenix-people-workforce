@@ -2418,10 +2418,18 @@ export async function safeSendNotificationEmail(input: NotificationEmailInput) {
 
     const result = await processNotificationOutboxRow(queued);
     if (result.skipped) {
-      return {
-        reason: `Queued for retry: ${result.reason}`,
-        skipped: true,
-      } satisfies SendEmailResult;
+      // A terminal skip (e.g. the payslip hard block, an identity-guard block) already marked
+      // the outbox row "skipped" for good — nothing will ever retry it. Blindly prefixing every
+      // skip reason with "Queued for retry:" made system.ts's callers (which branch on that
+      // exact prefix) treat a permanently-blocked email as a successful handoff and record the
+      // delivery as "sent" with no error. Bug found 2026-08-08: a Part 2 payroll milestone email
+      // whose own body text mentioned "payslips" tripped the payslip guard and silently vanished
+      // behind a healthy-looking notification_deliveries row. Classify first, exactly like
+      // processNotificationOutboxRow itself already does to choose between
+      // markNotificationOutboxSkipped and markNotificationOutboxFailed.
+      const classification = classifyOutboxSkip(result.reason, input.notificationType);
+      const reason = classification.terminal ? result.reason : `Queued for retry: ${result.reason}`;
+      return { reason, skipped: true } satisfies SendEmailResult;
     }
 
     return result;
