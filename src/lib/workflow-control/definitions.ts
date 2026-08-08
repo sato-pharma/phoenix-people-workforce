@@ -192,7 +192,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             routesTo: "Super Admin approver",
             notificationRecipients: [],
             emailRecipients: [],
-            sideEffects: "Creates request capturing amount, eligibility and fraud flags, then auto-approves into payroll staging (approveOutstationRequestForPayroll). Submit and the auto-approval are silent — no notification is sent.",
+            sideEffects: "Creates request capturing amount, eligibility and fraud flags, and leaves it PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc his manager and skip-level, Bcc active Super Admins.",
           },
           {
             id: "decision",
@@ -223,7 +223,7 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
             routesTo: "Super Admin approver (after validation)",
             notificationRecipients: [],
             emailRecipients: [],
-            sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags, then auto-approves into payroll staging (approveOutstationRequestForPayroll). Submission and the auto-approval are silent — no notification is sent.",
+            sideEffects: "Uploads car evidence / tickets; writes location audit with fraud flags, and leaves the request PENDING — nothing reaches payroll until a Super Admin approves it in the queue (owner decision 2026-08-08; it used to auto-approve into payroll staging on submit). Raises the awaiting-approval alert: To the employee, Cc his manager and skip-level, Bcc active Super Admins.",
           },
           {
             id: "admin_review",
