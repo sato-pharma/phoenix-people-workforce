@@ -830,7 +830,16 @@ const employeePortalNavigationSectionSeeds = [
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror
       // PORTAL_CLOSING_ROLES: no Marketing Manager (Head-Office line) or Medical Rep (no line).
       { href: "/employee-portals/monthly-closing", icon: CalendarRange, label: "Monthly Closing", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // Sales Analytics (/employee-portals/sales-analytics) — hidden from every role, owner
+      // request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National Sales
+      // Manager, Product Manager, Group Product Manager, Marketing Manager. Kept in the catalog
+      // (not deleted) — tests/employee-portal-nav-catalog-sync.test.ts (M12) requires every href
+      // the portal layout renders to be either catalogued or in KNOWN_UNCURATABLE, and that
+      // allowlist is for permanently-VISIBLE pages, the opposite of this one. `roles: []` hides it
+      // from the normal role-gated path; `excludedRoles: ["Super Admin"]` closes the
+      // isSystemAdministratorWorkspace bypass in getSections, which skips `roles` entirely and
+      // only honours excludedRoles (same pattern as the Probation SFE-Manager row above).
+      { href: "/employee-portals/sales-analytics", icon: Activity, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: [], excludedRoles: ["Super Admin"] },
       // Sales vs Target — catalogued (rather than listed as intentionally uncuratable) so an admin
       // can hide it per role from Modules Control. Roles mirror showSalesVsTargetTab in
       // src/lib/employee-portal/navigation.ts; the enforcing gate is resolveVsTargetBound, and a
