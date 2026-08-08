@@ -33,6 +33,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ChoiceGroup } from "@/components/ui/choice-group";
+import { CountUpNumber } from "@/components/ui/count-up";
 import { useDialogA11y } from "@/components/ui/use-dialog-a11y";
 import { PlanConversationThread } from "@/components/weekly-planning/plan-conversation-thread";
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -162,6 +163,22 @@ const tableInputClass = "h-10 w-full min-w-0 rounded-sm border border-orange-200
 // Taller field controls for the touch-friendly mobile bottom-sheet editor.
 const mobileField = "h-11 w-full border border-slate-300 bg-white px-3 text-sm text-slate-800 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-colors duration-150 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed";
 
+// RowEditSheet's entrance motion. Scoped here (rendered inline by RowEditSheet
+// itself, see below) rather than enterprise-shell.tsx's shared <style> block,
+// because that block isn't guaranteed present -- PlansWorkspace also renders
+// under AdminPageHero (/admin/weekly-plans) and WorkspaceFrame (/workspace/plans),
+// neither of which wraps with EmployeePortalPageShell.
+const planSheetMotionStyle = `
+@keyframes plan-sheet-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes plan-sheet-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+`;
+
 function normalizeTime(value: string | null | undefined) {
   return String(value ?? "").slice(0, 5);
 }
@@ -240,7 +257,16 @@ function trainingFormatValue(value: string | null | undefined) {
 
 // Premium activity-type colour system — a left accent bar + dot per activity so
 // each plan day is instantly scannable.
-function activityAccent(value: EmployeePlanItemInput["activityType"]): { bar: string; dot: string } {
+function activityAccent(
+  value: EmployeePlanItemInput["activityType"],
+  activityTitle?: string | null,
+): { bar: string; dot: string } {
+  // Coaching is stored as activityType "Other" (see activityValue), so it would
+  // otherwise fall through to the grey default below despite already having a
+  // dedicated violet identity elsewhere (its resolved-rep text, see
+  // medicalRepStatus) — violet-400 keeps it a recognisable sibling of Double
+  // Visit (violet-500) without reusing that exact shade.
+  if (isCoachingActivity(value, activityTitle)) return { bar: "bg-violet-400", dot: "bg-violet-400" };
   switch (value) {
     case "Field":
       return { bar: "bg-orange-500", dot: "bg-orange-500" };
@@ -280,9 +306,13 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
   "Field",
   "Double Visit",
   "Office",
+  "Admin",
   "Training",
   "Meeting",
   "Meeting with Team",
+  "Event",
+  "Travel",
+  "Remote",
   "Vacation",
   "National Vacation",
   "Excuse",
@@ -299,6 +329,13 @@ function PlanActivityLegend() {
           {activityLabel(type)}
         </span>
       ))}
+      {/* Coaching isn't a real activityType (it's "Other" + title "Coaching", see
+          isCoachingActivity) so it can't live in the LEGEND_ACTIVITIES array above —
+          mirrors how planningActivityOptions appends it after its own filtered map. */}
+      <span className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-slate-600">
+        <span className={`inline-block h-2 w-2 rounded-full ${activityAccent("Other", "Coaching").dot}`} aria-hidden="true" />
+        Coaching
+      </span>
       <span className="inline-flex items-center gap-1 whitespace-nowrap">
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("am")}`}>AM</span>
         <span className={`inline-flex items-center rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase ${slotPillClass("pm")}`}>PM</span>
@@ -362,8 +399,8 @@ function PlanDecisionTimeline({ decisions }: { decisions: EmployeePlanDecision[]
       <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Decision History</p>
       <ol className="space-y-2">
         {decisions.map((d) => (
-          <li className="flex items-start gap-2.5" key={d.id}>
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-400" />
+          <li className="group flex items-start gap-2.5 rounded-sm transition-colors duration-150 hover:bg-orange-50/60" key={d.id}>
+            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-orange-400 ring-4 ring-transparent transition-colors duration-150 group-hover:bg-orange-500 group-hover:ring-orange-100" />
             <div className="min-w-0">
               <p className="text-xs font-black text-slate-800">
                 {employeePlanActionLabel(d.action)}
@@ -794,6 +831,34 @@ function eligibleRepsForArea(options: MedicalRepOption[], area: string, line?: s
 
 function autoRepForArea(options: MedicalRepOption[], area: string, line?: string | null): MedicalRepOption | null {
   return eligibleRepsForArea(options, area, line)[0] ?? null;
+}
+
+// Single source of truth for the three states a Double Visit / Coaching row's
+// Medical Rep field can be in — shared by the desktop table cell, the mobile
+// card, and RowEditSheet's own field so all three read the same status the
+// same way instead of three hand-maintained copies.
+function medicalRepStatus(params: {
+  activityLabel: string;
+  area: string;
+  autoRep: MedicalRepOption | null;
+  medicalRepOptions: MedicalRepOption[];
+  needsLine: boolean;
+  lineFilter: string | null | undefined;
+  // Mobile prefers a stored/looked-up name over a freshly recomputed autoRep
+  // (see MobileDayCard) — optional so desktop/RowEditSheet, which have no such
+  // stored value, can omit it and fall back to autoRep.fullName unchanged.
+  resolvedName?: string;
+}): { tone: "amber" | "slate" | "violet"; text: string } {
+  if (!params.area) return { tone: "slate", text: "Select area first" };
+  if (params.needsLine && !params.lineFilter) return { tone: "slate", text: "Select line first" };
+  if (params.autoRep) {
+    const name = params.resolvedName || params.autoRep.fullName;
+    return { tone: "violet", text: `${params.activityLabel} - ${name}` };
+  }
+  if (!areaHasAssignableRep(params.medicalRepOptions, params.area)) {
+    return { tone: "slate", text: "This area has no medical rep currently" };
+  }
+  return { tone: "amber", text: `${params.activityLabel} needs an assigned Medical Rep` };
 }
 
 function lineOptionsFromReps(options: MedicalRepOption[]): string[] {
@@ -1787,7 +1852,7 @@ export function PlansWorkspace({
               </p>
             </div>
             <span
-              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black ${statusTone(plan?.status ?? "draft")}`}
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black shadow-sm ${statusTone(plan?.status ?? "draft")}`}
             >
               {statusLabels[plan?.status ?? "draft"]}
             </span>
@@ -1877,6 +1942,18 @@ export function PlansWorkspace({
           <Kpi label="Drafts" value={workspace.summary.drafts} />
           <Kpi label="Pending" value={workspace.summary.managerPending + workspace.summary.ceoPending} />
           <Kpi label="Approved" value={workspace.summary.finalApproved} />
+          {/* Desktop's KPI row breaks Returned/Rejected out as their own tiles; mobile
+              stays at 3 tiles normally, but a plan needing attention gets no above-the-
+              fold signal otherwise -- surface a 4th tile only when one exists. */}
+          {workspace.summary.returned + workspace.summary.rejected > 0 ? (
+            <div className="col-span-3">
+              <Kpi
+                label="Needs attention (Returned + Rejected)"
+                tone="red"
+                value={workspace.summary.returned + workspace.summary.rejected}
+              />
+            </div>
+          ) : null}
         </div>
 
         {messageBanner}
@@ -1931,9 +2008,7 @@ export function PlansWorkspace({
 
         {/* My plans + review queues */}
         <div className="space-y-3">
-          {ownPlans.length > 0 ? (
-            <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
-          ) : null}
+          <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
           <ReviewCard
             comment={comment}
             isPending={isPending}
@@ -1973,16 +2048,14 @@ export function PlansWorkspace({
             title="CEO Review"
             type="ceo"
           />
-          {districtManagerReadOnlyQueue.length > 0 ? (
-            <QueueCard
-              onFillDetails={() => {}}
-              onOpen={loadPlanForEdit}
-              plans={districtManagerReadOnlyQueue}
-              readOnly
-              showEmployeeName
-              title="District Manager Plans"
-            />
-          ) : null}
+          <QueueCard
+            onFillDetails={() => {}}
+            onOpen={loadPlanForEdit}
+            plans={districtManagerReadOnlyQueue}
+            readOnly
+            showEmployeeName
+            title="District Manager Plans"
+          />
           <ReviewCard
             comment={comment}
             isPending={isPending}
@@ -1999,7 +2072,7 @@ export function PlansWorkspace({
       {mounted && workspace.canSubmitPlans
         ? createPortal(
             <div
-              className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 backdrop-blur md:hidden"
+              className="fixed inset-x-0 z-30 flex gap-2 border-t border-slate-200 bg-white/95 px-4 pb-3 pt-3 shadow-[0_-12px_28px_rgba(15,23,42,0.10)] backdrop-blur md:hidden"
               style={{ bottom: actionBarBottom }}
             >
               {isOwnPlan && plan?.status === "edit_requested" ? (
@@ -2105,7 +2178,7 @@ export function PlansWorkspace({
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-[linear-gradient(180deg,#ffffff_0%,#f8fafc_100%)] px-4 py-3">
             <div className="min-w-0">
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-orange-500">{headerLabel}</p>
-              <h2 className="mt-1 text-xl font-black text-slate-950">
+              <h2 className="mt-1 text-base font-black text-slate-800">
                 {onAdminSurface
                   ? activeKind === "weekly"
                     ? "Weekly review queue"
@@ -2133,10 +2206,10 @@ export function PlansWorkspace({
             <div className="inline-flex w-full rounded-sm border border-slate-200 bg-slate-50 p-1 sm:w-auto">
               {(["weekly", "monthly"] as const).map((kind) => (
                 <button
-                  className={`min-h-10 flex-1 px-4 text-sm font-black transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
+                  className={`min-h-10 flex-1 rounded-sm px-4 text-sm font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none ${
                     activeKind === kind
-                      ? "bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]"
-                      : "text-slate-700 hover:bg-white"
+                      ? "bg-slate-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.20)]"
+                      : "text-slate-700 hover:bg-white hover:text-slate-900"
                   }`}
                   disabled={periodLocked || isPending || !workspace.canSubmitPlans}
                   key={kind}
@@ -2207,7 +2280,7 @@ export function PlansWorkspace({
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0">
                   <p className="text-[11px] font-black uppercase tracking-[0.2em] text-orange-400">Planning table</p>
-                  <h3 className="mt-1 text-lg font-black">
+                  <h3 className="mt-1 text-lg font-black leading-tight tracking-tight">
                     {activeKind === "weekly" ? "Weekly activities" : "Monthly activities"}
                   </h3>
                   <p className="mt-1 text-sm font-semibold text-slate-300">
@@ -2285,8 +2358,12 @@ export function PlansWorkspace({
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5">Rows: {rows.length}</span>
-                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5">Period days: {periodDays.length}</span>
+                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50">
+                  Rows: {rows.length}
+                </span>
+                <span className="rounded-sm border border-slate-200 bg-white px-2.5 py-1.5 shadow-sm transition-colors duration-150 hover:border-slate-300 hover:bg-slate-50">
+                  Period days: {periodDays.length}
+                </span>
               </div>
             </div>
 
@@ -2313,11 +2390,14 @@ export function PlansWorkspace({
                       ),
                     );
                     const hasReturnNotes = group.rows.some((row) => row.returnNotes?.length);
+                    const groupLocked = group.rows.some((row) => row.locked);
                     const rowTone = hasReturnNotes
                       ? "bg-amber-50/70"
-                      : groupIndex % 2 === 0
-                        ? "bg-white"
-                        : "bg-slate-50/45";
+                      : groupLocked
+                        ? "bg-violet-50/40"
+                        : groupIndex % 2 === 0
+                          ? "bg-white"
+                          : "bg-slate-50/45";
 
                     return (
                       <Fragment key={group.activityDate}>
@@ -2328,7 +2408,6 @@ export function PlansWorkspace({
                           const currentRegionOptions = regionOptions(row.locationText);
                           const showLineSelect = tableNeedsLine && rule.showRep;
                           const locked = Boolean(row.locked);
-                          const dayLocked = group.rows.some((r) => r.locked);
 
                           return (
                             <tr className={`align-middle transition-colors hover:bg-orange-50/35 ${rowTone}`} key={row.key}>
@@ -2360,10 +2439,12 @@ export function PlansWorkspace({
                                   <div className="mt-3 grid grid-cols-2 border border-slate-200 bg-slate-50 p-0.5">
                                     {(["full", "split"] as const).map((mode) => (
                                       <button
-                                        className={`h-8 px-2 text-[11px] font-black ${
-                                          group.mode === mode ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-white"
+                                        className={`h-8 px-2 text-[11px] font-black transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/70 focus-visible:ring-offset-1 focus-visible:ring-offset-slate-50 disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          group.mode === mode
+                                            ? "bg-slate-950 text-white shadow-[0_4px_10px_rgba(15,23,42,0.18)]"
+                                            : "text-slate-600 hover:bg-white"
                                         }`}
-                                        disabled={!canEdit || dayLocked}
+                                        disabled={!canEdit || groupLocked}
                                         key={mode}
                                         onClick={() => setDayMode(group.activityDate, mode)}
                                         type="button"
@@ -2376,7 +2457,7 @@ export function PlansWorkspace({
                               ) : null}
                               <td className="px-3 py-3">
                                 <div className="mb-1 flex items-center gap-1.5">
-                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${activityAccent(row.activityType).dot}`} aria-hidden="true" />
+                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${activityAccent(row.activityType, row.activityTitle).dot}`} aria-hidden="true" />
                                   <span
                                     className={`inline-flex items-center whitespace-nowrap rounded-sm border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide ${slotPillClass(row.slot)}`}
                                   >
@@ -2483,27 +2564,41 @@ export function PlansWorkspace({
                               </td>
                               <td className="px-3 py-3">
                                 {rule.showRep ? (
-                                  <DisabledFieldText>
-                                    {!row.area
-                                      ? "Select area first"
-                                      : showLineSelect && !row.lineFilter
-                                        ? "Select line first"
-                                        : autoRep?.fullName ?? "This area has no medical rep currently"}
-                                  </DisabledFieldText>
+                                  (() => {
+                                    const repStatus = medicalRepStatus({
+                                      activityLabel: rule.label,
+                                      area: row.area ?? "",
+                                      autoRep,
+                                      medicalRepOptions: workspace.medicalRepOptions,
+                                      needsLine: showLineSelect,
+                                      lineFilter: row.lineFilter,
+                                    });
+                                    return <DisabledFieldText tone={repStatus.tone}>{repStatus.text}</DisabledFieldText>;
+                                  })()
                                 ) : (
                                   <DisabledFieldText>Not required</DisabledFieldText>
                                 )}
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <button
-                                  aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
-                                  className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
-                                  disabled={!canEdit || locked || rows.length <= 1}
-                                  onClick={() => deleteRow(row.key)}
-                                  type="button"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
+                                {locked ? (
+                                  <div
+                                    aria-label="Locked — read-only"
+                                    className="inline-flex h-9 w-9 items-center justify-center text-violet-400"
+                                    title="Locked — this day comes from an approved request"
+                                  >
+                                    <ShieldCheck className="h-4 w-4" />
+                                  </div>
+                                ) : (
+                                  <button
+                                    aria-label={`Remove ${formatDate(row.activityDate)} ${slotLabel(row)}`}
+                                    className="inline-flex h-9 w-9 items-center justify-center border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                                    disabled={!canEdit || rows.length <= 1}
+                                    onClick={() => deleteRow(row.key)}
+                                    type="button"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -2523,6 +2618,15 @@ export function PlansWorkspace({
                                   value={group.dayNote}
                                 />
                               </div>
+                              {groupLocked ? (
+                                <div className="mt-2 flex items-start gap-2 text-xs font-bold text-violet-800">
+                                  <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  <span>
+                                    {group.rows.find((row) => row.locked)?.sourceLabel ?? "Locked"} — read-only. This
+                                    day comes from an approved request.
+                                  </span>
+                                </div>
+                              ) : null}
                               {groupWarnings.length > 0 ? (
                                 <div className="mt-2 flex items-start gap-2 text-xs font-bold text-amber-800">
                                   <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -2561,10 +2665,10 @@ export function PlansWorkspace({
             {/* Footer actions */}
             <div className="flex flex-col gap-3 border-t border-slate-200 bg-white px-4 py-4 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-500">
-                <span className={`border px-2.5 py-1.5 ${statusTone(plan?.status ?? "draft")}`}>
+                <span className={`rounded-sm border px-2.5 py-1.5 shadow-sm ${statusTone(plan?.status ?? "draft")}`}>
                   {statusLabels[plan?.status ?? "draft"]}
                 </span>
-                <span className="border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                <span className="rounded-sm border border-slate-200 bg-slate-50 px-2.5 py-1.5 shadow-sm">
                   {workspace.canSubmitPlans ? "Creator access" : "Review access only"}
                 </span>
               </div>
@@ -2604,75 +2708,63 @@ export function PlansWorkspace({
           </section>
 
           <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-            {ownPlans.length > 0 ? (
-              <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
-            ) : null}
-            {managerQueue.length > 0 ? (
-              <ReviewCard
-                comment={comment}
-                isPending={isPending}
-                onBulkApprove={(planIds) =>
-                  runAction(async () => {
-                    const result = await doBulkApprove(planIds);
-                    const failed = result.failed ?? 0;
-                    if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
-                  })
-                }
-                onComment={setComment}
-                onDecision={(planId, action) => runAction(() => decide(planId, action))}
-                onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
-                onReturnNote={updateReturnNote}
-                plans={managerQueue}
-                returnNotes={returnNotes}
-                title="Manager Review"
-                type="manager"
-              />
-            ) : null}
-            {editRequestQueue.length > 0 ? (
-              <ReviewCard
-                comment={comment}
-                isPending={isPending}
-                onComment={setComment}
-                onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
-                plans={editRequestQueue}
-                title="Edit Requests"
-                type="edit_request"
-              />
-            ) : null}
-            {ceoQueue.length > 0 ? (
-              <ReviewCard
-                comment={comment}
-                isPending={isPending}
-                onComment={setComment}
-                onDecision={(planId, action) => runAction(() => decide(planId, action))}
-                onReturnNote={updateReturnNote}
-                plans={ceoQueue}
-                returnNotes={returnNotes}
-                title="CEO Review"
-                type="ceo"
-              />
-            ) : null}
-            {districtManagerReadOnlyQueue.length > 0 ? (
-              <QueueCard
-                onFillDetails={() => {}}
-                onOpen={loadPlanForEdit}
-                plans={districtManagerReadOnlyQueue}
-                readOnly
-                showEmployeeName
-                title="District Manager Plans"
-              />
-            ) : null}
-            {hrQueue.length > 0 ? (
-              <ReviewCard
-                comment={comment}
-                isPending={isPending}
-                onComment={setComment}
-                onDecision={(planId) => runAction(() => acknowledge(planId))}
-                plans={hrQueue}
-                title="HR Acknowledgement"
-                type="hr"
-              />
-            ) : null}
+            <QueueCard onFillDetails={setVisitDetailsPlan} onOpen={loadPlanForEdit} plans={ownPlans} title="My Plans" />
+            <ReviewCard
+              comment={comment}
+              isPending={isPending}
+              onBulkApprove={(planIds) =>
+                runAction(async () => {
+                  const result = await doBulkApprove(planIds);
+                  const failed = result.failed ?? 0;
+                  if (failed > 0) throw new Error(`${result.total - failed} approved, ${failed} failed.`);
+                })
+              }
+              onComment={setComment}
+              onDecision={(planId, action) => runAction(() => decide(planId, action))}
+              onRequestDetails={(p) => runAction(() => doRequestVisitDetails(p.id))}
+              onReturnNote={updateReturnNote}
+              plans={managerQueue}
+              returnNotes={returnNotes}
+              title="Manager Review"
+              type="manager"
+            />
+            <ReviewCard
+              comment={comment}
+              isPending={isPending}
+              onComment={setComment}
+              onDecision={(planId, decision) => runAction(() => decideEditRequestAction(planId, decision as "approve" | "reject"))}
+              plans={editRequestQueue}
+              title="Edit Requests"
+              type="edit_request"
+            />
+            <ReviewCard
+              comment={comment}
+              isPending={isPending}
+              onComment={setComment}
+              onDecision={(planId, action) => runAction(() => decide(planId, action))}
+              onReturnNote={updateReturnNote}
+              plans={ceoQueue}
+              returnNotes={returnNotes}
+              title="CEO Review"
+              type="ceo"
+            />
+            <QueueCard
+              onFillDetails={() => {}}
+              onOpen={loadPlanForEdit}
+              plans={districtManagerReadOnlyQueue}
+              readOnly
+              showEmployeeName
+              title="District Manager Plans"
+            />
+            <ReviewCard
+              comment={comment}
+              isPending={isPending}
+              onComment={setComment}
+              onDecision={(planId) => runAction(() => acknowledge(planId))}
+              plans={hrQueue}
+              title="HR Acknowledgement"
+              type="hr"
+            />
           </div>
         </div>
       </div>
@@ -2753,7 +2845,7 @@ function WorkflowTimeline({ status }: { status: EmployeePlanStatus }) {
 
 function InfoChip({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+    <div className="min-w-0 rounded-sm border border-slate-200 bg-white px-3 py-2 shadow-[0_12px_28px_rgba(15,23,42,0.07)]">
       <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</span>
       <span className="mt-0.5 block whitespace-nowrap text-xs font-black text-slate-700">{value}</span>
     </div>
@@ -2777,11 +2869,6 @@ function MobileDayCard({
   const selectedRep = medicalRepOptions.find((rep) => hrIdsMatch(rep.hrId, row.doubleVisitMedicalRepHrId));
   const autoRep = rule.autoRep ? autoRepForArea(medicalRepOptions, row.area ?? "", row.lineFilter) : null;
   const repName = row.doubleVisitMedicalRepName || selectedRep?.fullName || autoRep?.fullName || "";
-  // A selected area with no rep at all (vacant seat or none) is a valid, submittable
-  // choice — show it as plain info, not the "fix this" warning used for an unresolved
-  // pick (missing line, etc.). See areaHasAssignableRep.
-  const areaHasNoRep = Boolean(row.area) && !autoRep && !areaHasAssignableRep(medicalRepOptions, row.area ?? "");
-  const needsRep = rule.requiresRep && !autoRep && !areaHasNoRep;
   const hasReturnNotes = Boolean(row.returnNotes?.length);
   const region = canonicalRegion(row.locationText) || row.locationText || "";
   const geographySummary = rule.showTrainingFormat
@@ -2791,10 +2878,10 @@ function MobileDayCard({
     : "No geography needed";
 
   const locked = Boolean(row.locked);
-  const accent = activityAccent(row.activityType);
+  const accent = activityAccent(row.activityType, row.activityTitle);
   return (
     <button
-      className={`relative block w-full overflow-hidden border bg-white p-3 pl-4 text-left shadow-sm transition-colors active:bg-slate-50 ${
+      className={`relative block w-full overflow-hidden border bg-white p-3 pl-4 text-left shadow-sm transition-colors hover:border-slate-300 hover:shadow-[0_10px_24px_rgba(15,23,42,0.08)] active:bg-slate-50 ${
         locked ? "border-violet-300 bg-violet-50/40" : hasReturnNotes ? "border-amber-300" : "border-slate-200"
       }`}
       onClick={onOpen}
@@ -2845,30 +2932,31 @@ function MobileDayCard({
 
       {rule.requiresRep || dayNote || conflictWarning ? (
         <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-          {rule.requiresRep ? (
-            rule.label === "Coaching" ? (
-              needsRep ? (
-                <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
-                  <TriangleAlert className="h-3.5 w-3.5" />
-                  Coaching needs an assigned Medical Rep
-                </p>
-              ) : areaHasNoRep ? (
-                <p className="text-xs font-semibold text-slate-500">Coaching - this area has no medical rep currently</p>
-              ) : (
-                <p className="text-xs font-semibold text-violet-700">Coaching - {repName}</p>
-              )
-            ) :
-            needsRep ? (
-              <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
-                <TriangleAlert className="h-3.5 w-3.5" />
-                Double Visit - select a Medical Rep
-              </p>
-            ) : areaHasNoRep ? (
-              <p className="text-xs font-semibold text-slate-500">Double Visit - this area has no medical rep currently</p>
-            ) : (
-              <p className="text-xs font-semibold text-violet-700">Double Visit - {repName}</p>
-            )
-          ) : null}
+          {rule.requiresRep
+            ? (() => {
+                const repStatus = medicalRepStatus({
+                  activityLabel: rule.label,
+                  area: row.area ?? "",
+                  autoRep,
+                  medicalRepOptions,
+                  needsLine: false,
+                  lineFilter: row.lineFilter,
+                  resolvedName: repName,
+                });
+                if (repStatus.tone === "amber") {
+                  return (
+                    <p className="flex items-center gap-1 text-xs font-bold text-amber-700">
+                      <TriangleAlert className="h-3.5 w-3.5" />
+                      {repStatus.text}
+                    </p>
+                  );
+                }
+                if (repStatus.tone === "violet") {
+                  return <p className="text-xs font-semibold text-violet-700">{repStatus.text}</p>;
+                }
+                return <p className="text-xs font-semibold text-slate-500">{repStatus.text}</p>;
+              })()
+            : null}
           {dayNote ? (
             <p className="whitespace-nowrap text-xs text-slate-500">{dayNote}</p>
           ) : null}
@@ -2926,9 +3014,10 @@ function RowEditSheet({
 
   return (
     <div className="fixed inset-0 z-50 md:hidden">
+      <style dangerouslySetInnerHTML={{ __html: planSheetMotionStyle }} />
       <button
         aria-label="Close editor"
-        className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+        className="absolute inset-0 animate-[plan-sheet-backdrop-in_200ms_ease-out_both] bg-slate-900/40 backdrop-blur-sm"
         onClick={onClose}
         type="button"
       />
@@ -2937,7 +3026,7 @@ function RowEditSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Edit day"
-        className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto border-t border-slate-200 bg-white shadow-2xl"
+        className="absolute inset-x-0 bottom-0 max-h-[88vh] animate-[plan-sheet-slide-up_280ms_cubic-bezier(0.22,1,0.36,1)_both] overflow-y-auto border-t border-slate-200 bg-white shadow-2xl"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 16px)" }}
       >
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
@@ -3068,17 +3157,23 @@ function RowEditSheet({
             </Field>
           ) : null}
 
-          {rule.showRep ? (
-            <Field label={showLine ? "Medical Rep" : "Medical Rep (same line)"}>
-              <DisabledFieldText>
-                {!row.area
-                  ? "Select area first"
-                  : showLine && !row.lineFilter
-                    ? "Select line first"
-                    : autoRep?.fullName ?? "This area has no medical rep currently"}
-              </DisabledFieldText>
-            </Field>
-          ) : null}
+          {rule.showRep
+            ? (() => {
+                const repStatus = medicalRepStatus({
+                  activityLabel: rule.label,
+                  area: row.area ?? "",
+                  autoRep,
+                  medicalRepOptions,
+                  needsLine: showLine,
+                  lineFilter: row.lineFilter,
+                });
+                return (
+                  <Field label={showLine ? "Medical Rep" : "Medical Rep (same line)"}>
+                    <DisabledFieldText tone={repStatus.tone}>{repStatus.text}</DisabledFieldText>
+                  </Field>
+                );
+              })()
+            : null}
 
           <Field label="Notes">
             <textarea
@@ -3149,10 +3244,21 @@ function Field({ children, label }: { children: React.ReactNode; label: string }
   );
 }
 
-function DisabledFieldText({ children }: { children: React.ReactNode }) {
+function DisabledFieldText({
+  children,
+  tone = "slate",
+}: {
+  children: React.ReactNode;
+  tone?: "amber" | "slate" | "violet";
+}) {
+  const textClass = {
+    amber: "text-amber-700 font-bold",
+    slate: "text-slate-400 font-semibold",
+    violet: "text-violet-700 font-semibold",
+  }[tone];
   return (
-    <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3">
-      <span className="whitespace-nowrap text-xs font-semibold text-slate-400">{children}</span>
+    <div className="flex h-10 min-w-0 items-center rounded-sm border border-slate-200 bg-slate-50 px-3 transition-colors duration-150 hover:border-slate-300 hover:bg-slate-100">
+      <span className={`whitespace-nowrap text-xs ${textClass}`}>{children}</span>
     </div>
   );
 }
@@ -3170,10 +3276,10 @@ function ContextTile({
 }) {
   const accentCls =
     accent === "orange"
-      ? "border-l-orange-500 bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)]"
-      : "border-l-slate-500 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)]";
+      ? "border-l-orange-500 bg-[linear-gradient(180deg,#fff7ed_0%,#ffffff_100%)] hover:border-l-orange-600 hover:shadow-[0_20px_46px_rgba(249,115,22,0.14)]"
+      : "border-l-slate-500 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] hover:border-l-slate-700 hover:shadow-[0_20px_46px_rgba(15,23,42,0.12)]";
   return (
-    <div className={`rounded-sm border border-slate-200 border-l-4 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] ${accentCls}`}>
+    <div className={`rounded-sm border border-slate-200 border-l-4 p-4 shadow-[0_14px_36px_rgba(15,23,42,0.07)] transition duration-150 ${accentCls}`}>
       <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-2 text-base font-black text-slate-900">{value}</p>
       {sub ? <p className="mt-0.5 text-sm text-slate-600">{sub}</p> : null}
@@ -3191,15 +3297,17 @@ function Kpi({
   value: number;
 }) {
   const toneClass = {
-    amber: "border-amber-200 bg-amber-50 text-amber-800",
-    red: "border-red-200 bg-red-50 text-red-800",
-    sky: "border-sky-200 bg-sky-50 text-sky-800",
-    slate: "border-slate-200 bg-white text-slate-900",
+    amber: "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:shadow-[0_14px_32px_rgba(217,119,6,0.14)]",
+    red: "border-red-200 bg-red-50 text-red-800 hover:border-red-300 hover:shadow-[0_14px_32px_rgba(220,38,38,0.14)]",
+    sky: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:shadow-[0_14px_32px_rgba(2,132,199,0.14)]",
+    slate: "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:shadow-[0_14px_32px_rgba(15,23,42,0.10)]",
   }[tone];
   return (
-    <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] ${toneClass}`}>
+    <div className={`rounded-sm border p-3 shadow-[0_10px_26px_rgba(15,23,42,0.06)] transition duration-150 ${toneClass}`}>
       <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">{label}</p>
-      <p className="mt-1 text-2xl font-black">{value}</p>
+      <p className="mt-1 text-xl font-black">
+        <CountUpNumber durationSeconds={0.5} value={value} />
+      </p>
     </div>
   );
 }
@@ -3452,19 +3560,24 @@ function QueueCard({
   showEmployeeName?: boolean;
   title: string;
 }) {
+  if (plans.length === 0) return null;
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
       <div className="flex items-center gap-2.5 bg-slate-900 px-4 py-3">
-        <span aria-hidden className="h-4 w-1 bg-orange-500" />
+        <span aria-hidden className="h-4 w-1 bg-gradient-to-b from-orange-400 to-orange-600" />
         <h3 className="text-sm font-black uppercase tracking-wide text-white">{title}</h3>
-        {readOnly ? <Eye aria-label="View only" className="h-3.5 w-3.5 text-white/60" /> : null}
+        {readOnly ? (
+          <span title="Read-only — decided by HR, not you">
+            <Eye aria-label="View only" className="h-3.5 w-3.5 text-white/60" />
+          </span>
+        ) : null}
       </div>
       <div className="max-h-[360px] space-y-2 overflow-y-auto p-3">
-        {plans.length === 0 ? (
-          <p className="text-sm font-semibold text-slate-500">No plans yet.</p>
-        ) : null}
         {plans.map((p) => (
-          <div className="border border-slate-200 p-3 hover:bg-slate-50" key={p.id}>
+          <div
+            className="border border-slate-200 p-3 transition-colors duration-150 hover:border-orange-200 hover:bg-orange-50/40"
+            key={p.id}
+          >
             <button className="w-full text-left" onClick={() => onOpen(p)} type="button">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-black text-slate-900">
@@ -3560,7 +3673,10 @@ function ReviewCard({
           estimateSize={200}
           items={plans}
           renderItem={(p) => (
-            <div className="border border-slate-200 p-3" key={p.id}>
+            <div
+              className="rounded-sm border border-slate-200 p-3 shadow-sm transition-colors duration-150 hover:border-slate-300 focus-within:border-orange-300 focus-within:bg-orange-50/20"
+              key={p.id}
+            >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-black text-slate-900">{p.employeeDisplayName || p.employeeName}</p>
@@ -3578,7 +3694,7 @@ function ReviewCard({
                 ) : null}
               </div>
               <textarea
-                className="mt-3 min-h-20 w-full border border-slate-200 p-2 text-sm"
+                className="mt-3 min-h-20 w-full border border-slate-300 bg-white p-2 text-sm text-slate-800 placeholder:text-slate-400 transition-colors duration-150 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 onChange={(e) => onComment(e.target.value)}
                 placeholder={
                   type === "hr"
