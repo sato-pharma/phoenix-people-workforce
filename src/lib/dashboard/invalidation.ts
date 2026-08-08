@@ -1,5 +1,6 @@
 import { revalidatePath, revalidateTag } from "next/cache.js";
 
+import { CLOSING_STORE_SPLIT_CACHE_TAG } from "@/lib/sales/closing-store-split-net";
 import { COMPANY_VACATION_REPORT_CACHE_TAG } from "@/lib/vacation/company-vacation-report";
 
 export type ExecutiveDashboardModule =
@@ -69,6 +70,21 @@ export function invalidateSalesDashboardCache(reason: string) {
     for (const tag of SALES_DASHBOARD_CACHE_TAGS) revalidateTag(tag, "max");
   } catch (error) {
     console.warn("Sales dashboard cache tag revalidation failed.", {
+      error: error instanceof Error ? error.message : String(error),
+      reason,
+    });
+  }
+}
+
+// Busts the cached Closing-Matrix store-split overlay (src/lib/sales/closing-store-split-net.ts)
+// after a validated monthly closing import or a publish/unpublish, so the Matrix and the employee
+// portal pick up the new split immediately instead of waiting out its 1h TTL backstop. Best-effort,
+// same reasoning as invalidateSalesDashboardCache above.
+export function invalidateClosingStoreSplitCache(reason: string) {
+  try {
+    revalidateTag(CLOSING_STORE_SPLIT_CACHE_TAG, "max");
+  } catch (error) {
+    console.warn("Closing store-split cache tag revalidation failed.", {
       error: error instanceof Error ? error.message : String(error),
       reason,
     });
