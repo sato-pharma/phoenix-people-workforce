@@ -46,63 +46,58 @@ export function runOutstationSubmitEmailRoutingTests() {
     "dropping the CEO from Cc must not quietly re-add him on Bcc",
   );
 
-  // ── …but the CEO as a DIRECT manager is a real reporting line, so he stays ───────
-  // 21 active people report straight to the CEO (DMs, reps, Finance, Marketing, SFE). Only the
-  // NSM carve-out below changed; everyone else still copies him, and this pins that.
+  // ── Owner rule 2026-08-08: the CEO is NEVER on an outstation submission ──────────
+  // Widened from the 2026-08-04 skip-level-only exclusion, which still copied him on every
+  // submission by one of his 21 direct reports (all three NSMs, plus DMs, reps, Finance,
+  // Marketing and SFE) — the same broadcast the earlier change set out to stop.
   const ceoIsDirectManager = buildOutstationSubmitRouting({
-    ceoHrIds: CEO,
-    employeeHrId: "HR-DM",
-    managerHrId: "HR-CEO",
-    managerOfManagerHrId: null,
-    nationalSalesManagerHrIds: ["HR-NSM"],
-    superAdminHrIds: ADMINS,
-  });
-  assert.deepEqual(
-    ceoIsDirectManager.ccHrIds,
-    ["HR-CEO"],
-    "a NON-NSM direct report of the CEO still copies him — the carve-out must not leak to the other 18",
-  );
-
-  // ── Owner rule 2026-08-08: an NSM's submission goes to the NSM ALONE ─────────────
-  // Every NSM reports directly to the CEO (A-12, AI-0008, B-122 → AA in production), so before
-  // this the CEO was Cc'd on every single NSM submission via the direct-manager slot.
-  const nsmSubmission = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-NSM",
     managerHrId: "HR-CEO",
     managerOfManagerHrId: null,
-    nationalSalesManagerHrIds: ["HR-NSM"],
     superAdminHrIds: ADMINS,
   });
-  assert.equal(nsmSubmission.toHrId, "HR-NSM", "the NSM is the To");
+  assert.equal(ceoIsDirectManager.toHrId, "HR-NSM", "the submitter is still the To");
   assert.deepEqual(
-    nsmSubmission.ccHrIds,
+    ceoIsDirectManager.ccHrIds,
     [],
-    "an NSM's submission carries NO Cc at all — the CEO is dropped from the direct-manager slot too",
+    "a direct report of the CEO gets NO Cc at all — he is excluded from the direct-manager slot too",
   );
   assert.ok(
-    !nsmSubmission.bccHrIds.includes("HR-CEO"),
+    !ceoIsDirectManager.bccHrIds.includes("HR-CEO"),
     "and dropping him from Cc must not quietly re-add him on Bcc",
   );
   assert.deepEqual(
-    nsmSubmission.bccHrIds,
+    ceoIsDirectManager.bccHrIds,
     ADMINS,
     "the Super Admin Bcc is untouched — that is how omar.anwar (B-10) keeps receiving his copy",
   );
 
-  // A missing NSM list must not accidentally strip the CEO for everyone: absent means "no NSMs
-  // known", so the pre-existing direct-manager behaviour has to survive unchanged.
-  const noNsmListSupplied = buildOutstationSubmitRouting({
+  // The real manager is still copied when he is NOT the CEO — the exclusion is about one person,
+  // not about emptying the Cc.
+  const ceoIsNeitherRung = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
-    employeeHrId: "HR-NSM",
-    managerHrId: "HR-CEO",
+    employeeHrId: "HR-REP",
+    managerHrId: "HR-DM",
     managerOfManagerHrId: null,
     superAdminHrIds: ADMINS,
   });
+  assert.deepEqual(ceoIsNeitherRung.ccHrIds, ["HR-DM"], "a non-CEO direct manager is still Cc'd");
+
+  // Even if the CEO were also granted Super Admin, he must not reappear on the Bcc — "removed
+  // from Cc" must never silently mean "moved to a quieter header".
+  const ceoIsAlsoSuperAdmin = buildOutstationSubmitRouting({
+    ceoHrIds: CEO,
+    employeeHrId: "HR-REP",
+    managerHrId: "HR-CEO",
+    managerOfManagerHrId: null,
+    superAdminHrIds: ["HR-CEO", "HR-SA1"],
+  });
+  assert.deepEqual(ceoIsAlsoSuperAdmin.ccHrIds, [], "still no Cc");
   assert.deepEqual(
-    noNsmListSupplied.ccHrIds,
-    ["HR-CEO"],
-    "with no NSM list supplied nobody is treated as an NSM — the carve-out fails CLOSED, never broadening",
+    ceoIsAlsoSuperAdmin.bccHrIds,
+    ["HR-SA1"],
+    "a CEO who is also a Super Admin is still off the email entirely, not silently Bcc'd",
   );
 
   // ── One person, one slot: the most visible slot wins ─────────────────────────────
