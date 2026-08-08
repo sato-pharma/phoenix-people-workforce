@@ -98,6 +98,40 @@ function sumNonEmployeeTotal(nonEmployees: NonEmployeePayrollRow[]): number {
 }
 
 /**
+ * Which money columns one non-employee's amount is written under on this sheet
+ * variant.
+ *
+ * Always the variant's designated value column (`valueHeader` — "First Part" on
+ * the Part 1 sheet, "Month Salary" on the full sheet), AND — when the sheet
+ * actually carries the installment columns — the column for the installment
+ * that person is really paid with.
+ *
+ * That second part matters (owner-reported 2026-08-08: "the non-employee
+ * payroll Part 2 is not showing in the downloaded xlsx"). The full sheet used
+ * to write every non-employee into "Month Salary" only, leaving First Part and
+ * Second Part blank for them. Two consequences, both wrong:
+ *   - a Part 2 non-employee was indistinguishable from a Part 1 one, so the
+ *     same person appearing in both installments read as a duplicate row; and
+ *   - the TOTALS row stopped footing — measured on the live July run, Month
+ *     Salary exceeded First + Second by exactly 381,535.00, the whole
+ *     non-employee payroll, with no column showing which installment pays it.
+ *
+ * The Part 1 sheet is unaffected: it only ever receives `part: "first"` entries
+ * and has no "Second Part" column, so this resolves to "First Part" either way.
+ */
+function nonEmployeeMoneyColumns(
+  entry: NonEmployeePayrollRow,
+  headers: PayrollSheetHeader[],
+  valueHeader: "First Part" | "Month Salary" | undefined,
+): Set<string> {
+  const columns = new Set<string>();
+  if (valueHeader) columns.add(valueHeader);
+  const installment: PayrollSheetHeader = entry.part === "second" ? "Second Part" : "First Part";
+  if (headers.includes(installment)) columns.add(installment);
+  return columns;
+}
+
+/**
  * Writes one branded payroll worksheet: brand band, bold header, zebra body,
  * money formatting, held rows in red, and a totals row. When `protect` is set,
  * every cell is locked except the appended `extraColumns` (the finance-edit
@@ -217,6 +251,9 @@ export async function writePayrollWorksheet(
   nonEmployees.forEach((entry, neIndex) => {
     const excelRow = sheet.getRow(rowNumber);
     const zebra = (rows.length + neIndex) % 2 === 1;
+    // Both the variant's value column AND this person's own installment column —
+    // see nonEmployeeMoneyColumns for why the installment one is load-bearing.
+    const moneyColumns = nonEmployeeMoneyColumns(entry, headers, options.nonEmployeeValueHeader);
 
     headers.forEach((header, ci) => {
       const cell = excelRow.getCell(ci + 1);
@@ -226,7 +263,8 @@ export async function writePayrollWorksheet(
       else if (header === "Year") value = run.year;
       else if (header === "Full Name") value = entry.fullNameEn;
       else if (header === "Arabic Name") value = entry.fullNameAr;
-      else if (header === options.nonEmployeeValueHeader) value = entry.totalSalary;
+      else if (header === "Payment Group") value = entry.part === "second" ? "Non-Employee · Part 2" : "Non-Employee · Part 1";
+      else if (moneyColumns.has(header)) value = entry.totalSalary;
       cell.value = value as ExcelJS.CellValue;
       if (payrollMoneyHeaders.has(header) && typeof value === "number") cell.numFmt = VALUE_FMT;
       cell.font = { color: { argb: SLATE }, name: "Calibri", size: 10 };
@@ -254,9 +292,10 @@ export async function writePayrollWorksheet(
     rowNumber += 1;
   });
 
-  // Totals over money columns — includes non-employees' contribution to
-  // whichever one column their totalSalary was written under.
-  const nonEmployeeSum = sumNonEmployeeTotal(nonEmployees);
+  // Totals over money columns — each column picks up exactly the non-employees
+  // whose amount was written under it, so First Part + Second Part still foots
+  // to Month Salary (it did not before: the whole non-employee payroll landed in
+  // Month Salary alone — see nonEmployeeMoneyColumns).
   const totalsRow = sheet.getRow(rowNumber);
   let firstPartTotal = 0;
   let monthSalaryTotal = 0;
@@ -268,7 +307,12 @@ export async function writePayrollWorksheet(
         const value = payrollSheetValue(toSheetRecord(entry), run.month, run.year, 0, header);
         return acc + (typeof value === "number" ? value : 0);
       }, 0);
-      const rounded = Math.round((sum + (header === options.nonEmployeeValueHeader ? nonEmployeeSum : 0)) * 100) / 100;
+      const nonEmployeeContribution = sumNonEmployeeTotal(
+        nonEmployees.filter((entry) =>
+          nonEmployeeMoneyColumns(entry, headers, options.nonEmployeeValueHeader).has(header),
+        ),
+      );
+      const rounded = Math.round((sum + nonEmployeeContribution) * 100) / 100;
       cell.value = rounded;
       cell.numFmt = VALUE_FMT;
       if (header === "First Part") firstPartTotal = rounded;
