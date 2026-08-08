@@ -43,6 +43,11 @@ jobs:
     # secrets, and a step `if:` CAN read job-level `env` — and gate the two production steps on
     # that. The secret's value is still injected only into the step that uses it (via `env:` on
     # that step); this job-level copy exists solely so the `if:` can test whether it is set.
+    # PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is intentionally a SEPARATE secret from
+    # SUPABASE_SERVICE_ROLE_KEY — this workflow is the only consumer of this name.
+    # scripts/sync-railway-production-secrets.mjs's Railway sync prefers
+    # SUPABASE_SERVICE_ROLE_KEY and only falls back to this one if the former is unset, so
+    # this value never reaches Railway through that path. Don't rename or consolidate either.
     env:
       HAS_PRODUCTION_SUPABASE_KEY: ${{ secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY != '' }}
 

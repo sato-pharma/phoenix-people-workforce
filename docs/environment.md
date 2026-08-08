@@ -114,16 +114,95 @@ These should never be set in production.
 | PHOENIX_MONTHLY_EXCUSE_ALLOWANCE | Max excuses per employee per month | 2 |
 | PHOENIX_PERMISSION_MATRIX_CACHE_SECONDS | Permission matrix cache TTL | 30 |
 
-## GitHub Actions Secrets
+## GitHub Actions Secrets & Variables
 
-The CI workflow expects these secrets to be configured in GitHub repository settings:
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-- PHOENIX_AUTH_SECRET
+Secrets flow **GitHub → Railway production** automatically: `.github/workflows/sync-railway-production-secrets.yml`
+runs `scripts/sync-railway-production-secrets.mjs` (push a value) then `scripts/validate-railway-production-secrets.mjs`
+(confirm it landed) on every push touching either file, or on manual dispatch. Most of the list below
+only needs setting once, in GitHub — Railway picks it up from there. A number of Railway variables are
+not yet mirrored to GitHub at all (no automated backup if Railway ever lost them); the sync script's own
+`variables` array is the authoritative, current list of what's actually covered — treat this doc as a
+map, not the source of truth for that.
+
+**GitHub secrets AND variables both exist for the same 4 public values** (`NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_APP_URL`) —
+intentionally left duplicated: `ci.yml`'s synthetic-journey-ingest and full-e2e steps read the secret
+copies directly with no variable fallback, so deleting the secret copies would silently break both.
+
+### Core platform & auth
+| Secret | Purpose |
+|---|---|
+| NEXT_PUBLIC_SUPABASE_URL | Supabase project URL (also a GitHub variable) |
+| NEXT_PUBLIC_SUPABASE_ANON_KEY | Supabase anon/public key (also a GitHub variable) |
+| NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY | Modern publishable key (also a GitHub variable) |
+| SUPABASE_SERVICE_ROLE_KEY | Production service-role key — canonical, preferred by the Railway sync |
+| STAGING_SUPABASE_SERVICE_ROLE_KEY | Staging service-role key — CI preview-smoke + `migration-drift-check.yml`'s staging leg |
+| PRODUCTION_SUPABASE_SERVICE_ROLE_KEY | Used ONLY by `migration-drift-check.yml`'s production leg — intentionally a separate secret from `SUPABASE_SERVICE_ROLE_KEY` (see that workflow's comment); never reaches Railway |
+| PHOENIX_AUTH_SECRET | Session signing secret |
+
+### App URLs
+| Secret | Purpose |
+|---|---|
+| NEXT_PUBLIC_APP_URL | Client-side base URL (also a GitHub variable) |
+
+### Email & notifications
+| Secret | Purpose |
+|---|---|
+| RESEND_API_KEY | Primary email provider |
+| RESEND_WEBHOOK_SECRET | Verifies inbound Resend delivery webhooks |
+| NOTIFICATION_WEBHOOK_SECRET | Verifies inbound Telegram webhook calls (`secret_token`) |
+| TELEGRAM_BOT_TOKEN | Telegram Bot API token |
+| NEXT_PUBLIC_ONESIGNAL_APP_ID | OneSignal app id (client-side) |
+| ONESIGNAL_REST_API_KEY | OneSignal REST API key (server-side push) |
+
+### Scheduling & agents
+| Secret | Purpose |
+|---|---|
+| CRON_SECRET | Bearer-token auth for cron-job.org's calls into `/api/cron/*` |
+
+### Maps & geo
+| Secret | Purpose |
+|---|---|
+| NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY | Browser-side Maps API key |
+| NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID | Google Maps style/map ID |
+
+### AI
+| Secret | Purpose |
+|---|---|
+| OPENAI_API_KEY | AI-assist features (email drafting, SoS normalizer suggestions) |
+
+### Feature flags
+| Secret | Purpose |
+|---|---|
+| NEXT_PUBLIC_SMI_USE_FACT_TABLES | Sales-marketing-intelligence fact-table toggle |
+
+### Infra & ops
+| Secret | Purpose |
+|---|---|
+| RAILWAY_TOKEN | Auth for `sync-railway-production-secrets.yml`'s Railway CLI calls |
+| CLOUDFLARE_API_TOKEN | Not currently consumed by any workflow or app code — held for future Cloudflare DNS/cache automation |
+| SENTRY_AUTH_TOKEN | Build-time only — sourcemap upload for the Sentry Next.js plugin, never read at runtime |
+| SONAR_TOKEN | SonarQube Cloud scan (workflow is currently `workflow_dispatch`-only, not running on PRs) |
+
+### CI / testing
+| Secret | Purpose |
+|---|---|
+| PLAYWRIGHT_DATA_USER_HRID | Data-bearing E2E test account HR ID |
+| PLAYWRIGHT_DATA_USER_PASSWORD | Data-bearing E2E test account password |
+| SYNTHETIC_ADMIN_HR_ID | Synthetic-journey monitoring account |
+| SYNTHETIC_ADMIN_PASSWORD | Synthetic-journey monitoring account |
+
+### Orphaned — flagged for removal
+| Secret | Purpose |
+|---|---|
+| WIF_PROVIDER | GCP Workload Identity Federation — authenticated the now-`workflow_dispatch`-only Cloud Run deploy workflows. GCP billing closed 2026-08-01; safe to delete. |
+| WIF_SERVICE_ACCOUNT | Same as above. |
+
+### GitHub variables (non-secret)
+`APP_URL`, `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `RAILWAY_PROJECT_ID`,
+`RAILWAY_SERVICE_NAME`, `SUPABASE_PROJECT_ID` — all verified matching their Railway counterparts.
 
 Optional for full E2E:
 - PLAYWRIGHT_DATA_USER_HRID
 - PLAYWRIGHT_DATA_USER_PASSWORD
-
-See `.env.github-secrets.example` for the full list.
