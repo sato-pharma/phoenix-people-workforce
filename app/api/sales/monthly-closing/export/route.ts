@@ -18,6 +18,8 @@ import {
   buildPortalClosingWorkbook,
 } from "@/lib/sales/monthly-closing-export";
 import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
+import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import { MARKETING_OVERSIGHT_LINE_ROLES } from "@/lib/sales/access-scope";
 import {
   filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
@@ -110,19 +112,25 @@ export async function POST(request: Request) {
     const comparisonFromRows = rowLevelActive || matrixFilter.productCodes.length > 0;
 
     // The full 6-sheet workbook (Matrix, Distributor Comparison, Rankings, Gaps, Summary, plus the
-    // Data/Total audit pair) goes to Super Admin/system scope AND SFE Manager. loadMonthlyClosing
-    // and loadMonthlyClosingComparison read company-wide and take no account of WHO is asking — the
-    // scope passed below is the reader's on-screen filter, a convenience, never a permission
-    // boundary. Confidential products and the Head Office line stay locked out independently, deep
-    // inside loadMonthlyClosingDetails (canViewRestrictedProducts / canViewHeadOfficeLine, CEO /
-    // Super Admin only) — so admitting SFE Manager here cannot leak either.
+    // Data/Total audit pair) goes to Super Admin/system scope, SFE Manager, and CEO.
+    // loadMonthlyClosing and loadMonthlyClosingComparison read company-wide and take no account of
+    // WHO is asking — the scope passed below is the reader's on-screen filter, a convenience, never
+    // a permission boundary. Confidential products and the Head Office line stay locked out
+    // independently, deep inside loadMonthlyClosingDetails (canViewRestrictedProducts /
+    // canViewHeadOfficeLine, CEO / Super Admin only) — so admitting SFE Manager/CEO here cannot
+    // leak either.
     //
     // SFE Manager was added 2026-08-05 (PR #1785, follow-up fix same day): the admin page already
     // shows him this exact matrix, view + download only, never publish (publish stays hard-gated to
     // Super Admin independently in publish/route.ts). His export must match what his own screen
-    // shows rather than silently falling back to the scoped-role branch below, which is built for
-    // District/Regional/National Sales Manager and PM/GPM and returns a different, lesser workbook.
-    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager") {
+    // shows rather than silently falling back to the scoped-role branch below.
+    //
+    // CEO was added 2026-08-08 (owner decision): CEO's sales-read scope is already company-wide
+    // everywhere else in the app (scopeForRole -> "company"), so this branch does not widen his
+    // access — it was previously the ONLY place CEO fell through to the scoped-role branch below,
+    // which is built for District/Regional/National Sales Manager and PM/GPM and returns a
+    // different, lesser workbook that does not match what CEO's own access already permits.
+    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager" || access.role === "CEO") {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
       // The combined matrix AND its two halves. The channel tabs need retail-without-direct and
@@ -411,15 +419,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // This viewer's OWN scoped Closing Matrix — the exact one their portal screen already shows
-    // (loadPortalMonthlyClosing narrows by line/region/area/product and strips confidential
-    // columns; publish-gated, same as the portal page). Null for a role loadPortalMonthlyClosing
-    // has no scope for, or a period that is not (yet) published — the export then degrades to the
-    // Data/Total-only workbook rather than failing outright.
-    const portalClosing = await loadPortalMonthlyClosing({ access, period: details.period }).catch(() => null);
-    const buffer = portalClosing?.matrix
+    // This viewer's OWN scoped Closing Matrix skeleton. Two different sources, because the
+    // portal's "one line per viewer" model does not fit every scoped role:
+    //
+    // - District/Regional/National Manager, Product/Group Product Manager: loadPortalMonthlyClosing
+    //   — narrows by line/region/area/product and strips confidential columns, publish-gated, the
+    //   exact matrix their portal screen shows.
+    // - Marketing Manager (MARKETING_OVERSIGHT_LINE_ROLES): she oversees THREE lines at once
+    //   (Anti Infective/Pedia/CNS — see access-scope.ts), which the single-line portal model can't
+    //   represent, so loadPortalMonthlyClosing always returns null for her. Her actual boundary is
+    //   WHICH lines, not which areas/regions/products within one — resolveSalesAccessScope already
+    //   enforces that on `details.rows` (fail-closed to her 3-line allowlist, confidential-stripped).
+    //   The unscoped company matrix for `details.line` alone is therefore safe to use as the
+    //   skeleton: its SHAPE (which areas/products exist) carries no figures — every cell is about
+    //   to be rebuilt from her own already-scoped rows below, exactly like the other branch.
+    const scopedMatrix = MARKETING_OVERSIGHT_LINE_ROLES.has(access.role)
+      ? await loadMonthlyClosingWithStoreSplit({ line: details.line, period: details.period }).catch(() => null)
+      : (await loadPortalMonthlyClosing({ access, period: details.period }).catch(() => null))?.matrix ?? null;
+    const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
-          portalClosing.matrix,
+          scopedMatrix,
           // Built from the SAME already-scoped rows the Data sheet lists — never a company-wide
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
           await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows),

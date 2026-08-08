@@ -73,7 +73,7 @@ export function isHeadOfficeLine(line: string | null | undefined): boolean {
  * department oversees — not their own line, and not merely the lines of whoever currently reports
  * to them (a marketing line with no PM assigned yet, e.g. CNS, must still be covered).
  */
-const MARKETING_OVERSIGHT_LINE_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
+export const MARKETING_OVERSIGHT_LINE_ROLES = new Set<PhoenixRole>(["Marketing Manager"]);
 
 /** The Marketing department's product lines, as Source-of-Sales official line names (see the
  *  `lines` table: Anti Infective / Pedia / CNS). Head Office is excluded — it carries no product
