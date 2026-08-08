@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { canAccess } from "@/lib/auth/permissions";
 import { isGuestFallbackAccess } from "@/lib/auth/page-access-guard";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
@@ -30,8 +31,14 @@ export async function GET(request: Request) {
   const line = url.searchParams.get("line")?.trim() ?? "";
   const period = url.searchParams.get("period")?.trim() ?? "";
 
-  const destination = (() => {
+  const destination = await (async () => {
     if (isGuestFallbackAccess(access)) return "/login";
+
+    // Never a hard 403 here — a stale/mis-scoped click should degrade to the clicker's own
+    // landing page, not an error page. canAccess() is the same sales:read boundary the admin
+    // and portal Closing pages themselves enforce; this route is redirect-only, so it checks
+    // rather than asserts.
+    if (!(await canAccess(access, "sales", "read"))) return resolveLandingPathForRole(access.role);
 
     if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager") {
       const params = new URLSearchParams();
