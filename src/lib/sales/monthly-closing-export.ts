@@ -3277,20 +3277,33 @@ export async function buildClosingDetailsWorkbook(details: ClosingDetailsResult)
 }
 
 /**
- * Employee-portal export: "Closing Matrix" + "Data" + "Total" (+ "Confidential" when applicable) —
- * the same three tabs the admin workbook opens with, but for a viewer whose access is scoped to
- * part of the company (a District/Regional/National Sales Manager, or a Product/Group Product
- * Manager's product allowlist).
+ * Employee-portal export: Dashboard, Closing Matrix, Target vs Achievement, Distributor
+ * Comparison, Rankings & Mix, Gaps & White-Space, Summary & Insights, Data, Total (+ Confidential
+ * when applicable) — for a viewer whose access is scoped to part of the company: a
+ * District/Regional/National Sales Manager, a Product/Group Product Manager's product allowlist,
+ * or a Marketing Manager's 3-line department oversight (MARKETING_OVERSIGHT_LINE_ROLES). Every
+ * sheet here is built from data ALREADY narrowed to that viewer, never a company-wide read:
  *
- * `matrix` is this viewer's OWN scoped Closing Matrix — the exact one their portal screen already
- * shows (loadPortalMonthlyClosing), never the company-wide one. Its cells are then REBUILT from
- * `details.rows` (rebuildMatrixFromRows), the same already-scoped rows the Data sheet lists — so
- * the Matrix tab can only ever contain area/product cells this viewer's own rows can populate. A
- * row for an area outside their scope simply cannot appear: the skeleton itself only has their
- * areas, and rebuildMatrixFromRows never adds a row the skeleton didn't already have.
+ * - `matrix` is this viewer's OWN scoped Closing Matrix skeleton — loadPortalMonthlyClosing for a
+ *   territory/product role, or (for Marketing Manager, whose 3-line oversight the single-line
+ *   portal model can't represent) the whole-line company matrix for just the one requested line,
+ *   which is safe because her only boundary is WHICH lines, not areas/regions/products within
+ *   one. Either way its cells are REBUILT from `details.rows` (rebuildMatrixFromRows) — the same
+ *   already-scoped rows the Data sheet lists — so a row outside this viewer's access simply cannot
+ *   appear: the skeleton's SHAPE carries no figures, and the rebuild never adds a row the caller's
+ *   own access wouldn't have populated.
+ * - `comparison` is built by the caller from those SAME rows (loadMonthlyClosingComparisonFromRows),
+ *   so Distributor Comparison / Rankings / Gaps / Summary inherit the identical boundary — they
+ *   can only ever describe customers, bricks and products this viewer's own rows contain.
+ * - Target vs Achievement reads targets straight off the scoped matrix's own cells, so a target
+ *   for an area outside scope never appears either.
  *
- * No Comparison, Rankings, Gaps, Summary, or Channel sheets — those are company-wide reads (see
- * buildClosingDetailsWorkbook's own note) with no scoped equivalent yet.
+ * Deliberately NOT included, even scoped: Retail/Direct channel split (needs a scoped "retail
+ * before direct" half the portal loader doesn't expose yet), Store Split/Store Split Detail (the
+ * split's redistribution math needs the WHOLE month's rows to be correct — computing it from
+ * already-narrowed rows would silently underweight it, not just narrow it), and Channel
+ * Comparison/Breakdown (their RPCs are line-wide with no product/area scoping today). Omitted
+ * rather than guessed at.
  */
 export async function buildPortalClosingWorkbook(
   matrix: MonthlyClosingMatrix,
@@ -3304,10 +3317,19 @@ export async function buildPortalClosingWorkbook(
   const visible = details.rows.filter((row) => !row.isConfidential);
   const confidential = details.rows.filter((row) => row.isConfidential);
 
+  // Created first so it lands as tab 1 (sheet order is creation order) but written LAST, once
+  // every other sheet exists — same two-step as buildMonthlyClosingWorkbook's Dashboard.
+  const dashboard = workbook.addWorksheet(sanitizeSheetName("Dashboard"), { views: [{ showGridLines: false }] });
+
   const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible);
   const { blocks, ref } = planDataLayout(comparison.data);
 
   writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
+  writeTargetAchievementSheet(workbook, rebuiltMatrix);
+  writeComparisonSheet(workbook, comparison, ref);
+  writeRankingsSheet(workbook, comparison, ref);
+  writeGapsSheet(workbook, comparison, ref);
+  writeSummarySheet(workbook, comparison, ref);
   writeRawDataSheet(workbook, "Data", visible, "Data — every invoice line in your scope", details.line, details.period);
   const headline: ClosingHeadline = {
     salesUnits: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
@@ -3325,10 +3347,14 @@ export async function buildPortalClosingWorkbook(
     );
   }
 
-  // Hidden Calc sheet last (writeMatrixSheet/writeTotalSheet's live formulas already reference it
-  // by name) — same ordering reason as buildMonthlyClosingWorkbook: Excel refuses to hide the
-  // active sheet, so a visible report sheet must already exist as the active tab.
+  // Hidden Calc sheet next (writeMatrixSheet/writeTotalSheet's live formulas already reference it
+  // by name) — Excel refuses to hide the active sheet, so a visible report sheet must already
+  // exist as the active tab.
   writeDataSheet(workbook, blocks);
+
+  // Last, now that every sheet exists: fill tab 1 with what this export actually contains — same
+  // order as buildMonthlyClosingWorkbook.
+  writeDashboardSheet(dashboard, workbook, details.line, details.period);
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
