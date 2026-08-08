@@ -110,6 +110,8 @@ function mapDraftRow(row: RunRow): DraftRow {
     firstPartFrozen: numeric(row.first_part_frozen),
     onHold: Boolean(row.on_hold),
     holdReason: (row.hold_reason as string | null) ?? null,
+    excluded: Boolean(row.excluded),
+    excludedReason: (row.excluded_reason as string | null) ?? null,
     source: (String(row.source ?? "inline") as StepInputMode) ?? "inline",
     editedBy: (row.edited_by as string | null) ?? null,
     updatedAt: String(row.updated_at ?? ""),
@@ -304,6 +306,8 @@ function draftPatchToDb(runId: string, patch: DraftRowPatch): Record<string, unk
   if (patch.specialSituationPart !== undefined) db.special_situation_part = patch.specialSituationPart;
   if (patch.onHold !== undefined) db.on_hold = patch.onHold;
   if (patch.holdReason !== undefined) db.hold_reason = patch.holdReason;
+  if (patch.excluded !== undefined) db.excluded = patch.excluded;
+  if (patch.excludedReason !== undefined) db.excluded_reason = patch.excludedReason;
   if (patch.source !== undefined) db.source = patch.source;
   if (patch.editedBy !== undefined) db.edited_by = patch.editedBy;
   return db;

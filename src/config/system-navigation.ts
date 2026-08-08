@@ -1324,6 +1324,14 @@ export const adminToolsPageItems: readonly AdminToolsPageItem[] = [
     roles: ["Super Admin", "CEO"],
   },
   {
+    href: "/admin/notification-confidence",
+    icon: ShieldAlert,
+    label: "Notification Confidence Center",
+    description: "Every automated email's pre-send validation checks, confidence score, and any held for review.",
+    permissions: [{ resource: "communication" }],
+    roles: ["Super Admin"],
+  },
+  {
     href: "/admin/data-health",
     icon: Database,
     label: "Data Health",

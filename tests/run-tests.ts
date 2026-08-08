@@ -681,6 +681,7 @@ import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts
 import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 import { runNotificationRecipientAddressResolutionTests } from "./notification-recipient-address-resolution.test.ts";
 import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.test.ts";
+import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-excluded-members.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1579,6 +1580,10 @@ await runTest(
 await runTest(
   "no email leaves the system unless every address is accounted for and the intended person is actually addressed",
   runRecipientAssuranceGuardTests,
+);
+await runTest(
+  "automated payroll run-scoped exclusion (excludeEmployeeFromRun's population filter)",
+  runAutomatedPayrollExcludedMembersTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

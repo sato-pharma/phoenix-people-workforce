@@ -89,6 +89,21 @@ export type PopulationMember = {
   unpaidDaysInSpan: number;
 };
 
+/**
+ * Drops run-scoped-excluded employees (DraftRow.excluded, set via
+ * excludeEmployeeFromRun) out of a run's population. Pure and separate from
+ * `resolvePayrollPopulationAndSources` so it is unit-testable without a
+ * database: the caller (loadRunContext in run-service.ts) supplies the members
+ * and the set of excluded compact HR IDs drawn from that run's draft rows.
+ */
+export function filterExcludedMembers(
+  members: PopulationMember[],
+  excludedCompacts: ReadonlySet<string>,
+): PopulationMember[] {
+  if (excludedCompacts.size === 0) return members;
+  return members.filter((member) => !excludedCompacts.has(member.compact));
+}
+
 function numberOrNull(value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const numeric = Number(value);

@@ -138,6 +138,8 @@ function draft(hrId: string, patch: Partial<DraftRow> = {}): DraftRow {
     firstPartFrozen: null,
     onHold: false,
     holdReason: null,
+    excluded: false,
+    excludedReason: null,
     source: "inline",
     editedBy: null,
     updatedAt: "",
