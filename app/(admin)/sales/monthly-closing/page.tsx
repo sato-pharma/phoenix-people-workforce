@@ -4,10 +4,8 @@ import { MonthlyClosingWorkspace } from "@/components/sales/monthly-closing-work
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
-import {
-  loadMonthlyClosing,
-  type MonthlyClosingMatrix,
-} from "@/lib/sales/monthly-distributor-import";
+import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
+import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +35,7 @@ export default async function MonthlyClosingPage() {
 
   try {
     await assertPermission(access, "sales", "import");
-    initialMatrix = await loadMonthlyClosing();
+    initialMatrix = await loadMonthlyClosingWithStoreSplit();
     // Completeness ride-along; a coverage failure hides the banner, never the closing.
     initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period).catch(() => null);
   } catch (error) {

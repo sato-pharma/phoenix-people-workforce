@@ -14,11 +14,11 @@ import {
 } from "@/lib/sales/access-scope";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
 import {
-  loadMonthlyClosing,
   type MonthlyClosingCell,
   type MonthlyClosingGrandTotalRow,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
+import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -447,7 +447,7 @@ export async function loadPortalMonthlyClosing(input: {
   const requested = String(input.period ?? "").trim();
   const selectedPeriod = publishedPeriods.includes(requested) ? requested : publishedPeriods[0];
 
-  const raw = await loadMonthlyClosing({ line: scope.line, period: selectedPeriod });
+  const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line, period: selectedPeriod });
   // Lock the line and restrict the month selector to published months only.
   const locked: MonthlyClosingMatrix = {
     ...raw,
@@ -493,7 +493,7 @@ export async function loadPortalClosingTrend(input: {
 
   const points = await Promise.all(
     periods.map(async (period) => {
-      const raw = await loadMonthlyClosing({ line: scope.line as string, period });
+      const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line as string, period });
       const safe = stripRestrictedColumns(raw);
       const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
       const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
@@ -542,7 +542,7 @@ export async function loadPortalLiveMonthly(input: {
     return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
   }
 
-  const raw = await loadMonthlyClosing({ line: scope.line, period: input.period ?? null });
+  const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line, period: input.period ?? null });
   const availablePeriods: string[] = raw.availablePeriods ?? [];
 
   if (availablePeriods.length === 0) {

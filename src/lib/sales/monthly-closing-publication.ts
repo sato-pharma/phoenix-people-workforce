@@ -1,3 +1,4 @@
+import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ export async function publishClosing(input: {
       { onConflict: "normalized_line,period" },
     );
   if (error) throw new Error(error.message);
+  invalidateClosingStoreSplitCache(`closing published — ${line}/${period}`);
 }
 
 /** Unpublish a (line, period) — hides it from the portal again. */
@@ -141,4 +143,5 @@ export async function unpublishClosing(input: {
     .eq("normalized_line", normalizedLine)
     .eq("period", period);
   if (error) throw new Error(error.message);
+  invalidateClosingStoreSplitCache(`closing unpublished — ${input.line}/${period}`);
 }
