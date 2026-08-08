@@ -1,0 +1,139 @@
+// Who can see which districts.
+//
+// This is the security boundary for the module, so it is derived from the real reporting chain in
+// the directory rather than from a role label: a Regional Manager sees the districts that actually
+// roll up to him, not "all districts because he is an RM". The tab being hidden in the sidebar is
+// UX; this is the enforcement.
+
+import type { AccessContext } from "@/lib/auth/permissions";
+import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import { isMedicalRepDirectoryEmployee } from "@/lib/employee-portal/service";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
+
+export type EarlyBirdsDistrict = { hrId: string; hrIdKey: string; name: string };
+
+export type EarlyBirdsScope = {
+  districts: EarlyBirdsDistrict[];
+  /** The viewer's own rep key, so the race panel can pin their row. */
+  viewerHrIdKey: string | null;
+  /** Company-wide viewers (CEO, SFE, Super Admin) see every district and the national wall. */
+  isCompanyWide: boolean;
+  scopeLabel: string;
+};
+
+const COMPANY_WIDE_ROLES = new Set([
+  "Super Admin",
+  "CEO",
+  "SFE Manager",
+  "Marketing Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Training Manager",
+]);
+
+/**
+ * Every district manager in `viewer`'s reporting subtree, found by walking each DM's manager chain
+ * upward. Depth-capped because a directory cycle (a genuine data error) would otherwise hang the
+ * request rather than degrade.
+ */
+function districtsUnder(
+  viewerKey: string,
+  managerKeyByEmployeeKey: Map<string, string | null>,
+  districtKeys: readonly string[],
+): Set<string> {
+  const owned = new Set<string>();
+  for (const districtKey of districtKeys) {
+    let cursor: string | null = districtKey;
+    for (let depth = 0; depth < 8 && cursor; depth += 1) {
+      if (cursor === viewerKey) {
+        owned.add(districtKey);
+        break;
+      }
+      cursor = managerKeyByEmployeeKey.get(cursor) ?? null;
+    }
+  }
+  return owned;
+}
+
+export async function resolveEarlyBirdsScope(access: AccessContext): Promise<EarlyBirdsScope> {
+  const rows = await getEmployeeDirectoryRows().catch(() => []);
+  const viewerKey = normalizeHrIdForAccess(access.hrId);
+
+  const managerKeyByEmployeeKey = new Map<string, string | null>();
+  const nameByKey = new Map<string, string>();
+  const hrIdByKey = new Map<string, string>();
+  const districtKeys = new Set<string>();
+
+  for (const row of rows) {
+    const key = normalizeHrIdForAccess(row.hrId);
+    if (!key) continue;
+    managerKeyByEmployeeKey.set(key, normalizeHrIdForAccess(row.managerHrId));
+    nameByKey.set(key, row.displayName);
+    hrIdByKey.set(key, row.hrId);
+    if (isMedicalRepDirectoryEmployee(row)) {
+      const managerKey = normalizeHrIdForAccess(row.managerHrId);
+      if (managerKey) districtKeys.add(managerKey);
+    }
+  }
+
+  const toDistrict = (key: string): EarlyBirdsDistrict => ({
+    hrId: hrIdByKey.get(key) ?? key,
+    hrIdKey: key,
+    name: nameByKey.get(key) ?? key,
+  });
+
+  const byName = (a: EarlyBirdsDistrict, b: EarlyBirdsDistrict) => a.name.localeCompare(b.name);
+
+  // Super Admin / system scope and the executive audience see everything.
+  if (access.scope === "system" || COMPANY_WIDE_ROLES.has(access.role)) {
+    return {
+      districts: Array.from(districtKeys, toDistrict).sort(byName),
+      viewerHrIdKey: viewerKey,
+      isCompanyWide: true,
+      scopeLabel: "the company",
+    };
+  }
+
+  if (!viewerKey) {
+    return { districts: [], viewerHrIdKey: null, isCompanyWide: false, scopeLabel: "your team" };
+  }
+
+  // A District Manager sees his own district and nothing else.
+  if (districtKeys.has(viewerKey)) {
+    return {
+      districts: [toDistrict(viewerKey)],
+      viewerHrIdKey: viewerKey,
+      isCompanyWide: false,
+      scopeLabel: "your team",
+    };
+  }
+
+  // A Medical Rep sees the district he competes in — his own manager's.
+  const viewerManagerKey = managerKeyByEmployeeKey.get(viewerKey) ?? null;
+  if (viewerManagerKey && districtKeys.has(viewerManagerKey)) {
+    return {
+      districts: [toDistrict(viewerManagerKey)],
+      viewerHrIdKey: viewerKey,
+      isCompanyWide: false,
+      scopeLabel: "your team",
+    };
+  }
+
+  // Regional / National managers: the districts that genuinely roll up to them. Fails CLOSED —
+  // an empty subtree shows nothing rather than the whole company.
+  const owned = districtsUnder(viewerKey, managerKeyByEmployeeKey, Array.from(districtKeys));
+  return {
+    districts: Array.from(owned, toDistrict).sort(byName),
+    viewerHrIdKey: viewerKey,
+    isCompanyWide: false,
+    scopeLabel: owned.size > 1 ? "your line" : "your team",
+  };
+}
+
+/** Guard for a district passed in a URL — a viewer must never read a district outside their scope. */
+export function assertDistrictInScope(scope: EarlyBirdsScope, districtHrId: string | null | undefined): EarlyBirdsDistrict | null {
+  if (scope.districts.length === 0) return null;
+  const requestedKey = normalizeHrIdForAccess(districtHrId);
+  if (!requestedKey) return scope.districts[0];
+  return scope.districts.find((district) => district.hrIdKey === requestedKey) ?? null;
+}

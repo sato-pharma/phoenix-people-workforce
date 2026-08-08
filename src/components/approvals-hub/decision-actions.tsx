@@ -13,6 +13,9 @@ export type DecisionActionsProps = {
   actions: { approve?: boolean; reject?: boolean; return?: boolean; acknowledge?: boolean };
   // Where to return after a successful decision.
   backHref: string;
+  /** Extra fields merged into the request body. Early Birds sends the candidate id so the server
+   * can detect a stale tab and refuse, instead of deciding whichever rep happens to be current. */
+  extraPayload?: Record<string, unknown>;
 };
 
 type Pending = "approve" | "reject" | "return" | "acknowledge" | null;
@@ -39,7 +42,7 @@ const DECISION_TOKEN: Record<Exclude<Pending, null>, string> = {
   acknowledge: "approve",
 };
 
-export function DecisionActions({ endpoint, commentField, actions, backHref }: DecisionActionsProps) {
+export function DecisionActions({ endpoint, commentField, actions, backHref, extraPayload }: DecisionActionsProps) {
   const router = useRouter();
   const [pending, setPending] = useState<Pending>(null);
   const [reason, setReason] = useState("");
@@ -88,7 +91,11 @@ export function DecisionActions({ endpoint, commentField, actions, backHref }: D
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision: DECISION_TOKEN[pending], [commentField]: reason.trim() || null }),
+        body: JSON.stringify({
+          ...extraPayload,
+          decision: DECISION_TOKEN[pending],
+          [commentField]: reason.trim() || null,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
       if (!res.ok || !data.success) {

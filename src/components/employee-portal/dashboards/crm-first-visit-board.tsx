@@ -34,9 +34,12 @@ function vendorLocalTime(iso: string | null): string {
 // The visit time's provenance, stated on every chip: a GPS check-in is real on-site presence, a
 // save time is rep-controlled paperwork, and "no time" is a submitted visit the vendor sent no
 // clock for. All three rank together, so the badge is what keeps them comparable.
-type EarlyBirdSource = NsmCrmComplianceData["earlyBirds"][number]["source"];
+export type EarlyBirdSource = NsmCrmComplianceData["earlyBirds"][number]["source"];
 
-const SOURCE_BADGE: Record<EarlyBirdSource, { label: string; className: string; title: string }> = {
+/** Exported so the fortnightly Early Birds board labels provenance identically. A competition where
+ * one screen says "GPS" and another stays silent about a self-reported clock is one reps learn to
+ * game. */
+export const SOURCE_BADGE: Record<EarlyBirdSource, { label: string; className: string; title: string }> = {
   gps_checkin: {
     label: "GPS",
     className: "bg-emerald-100 text-emerald-700",
@@ -75,6 +78,7 @@ export function CrmFirstVisitBoard({
   allClearMessage = "Everyone on your line has submitted their first visit.",
   rankHint = `first ${EARLY_BIRD_LIMIT} to submit`,
   showAccount = false,
+  action,
 }: {
   crm: NsmCrmComplianceData | null;
   /** Scope-specific wording for the all-clear state (e.g. "your region" vs "your line"). */
@@ -86,14 +90,30 @@ export function CrmFirstVisitBoard({
    * has a dozen reps and acts on them individually, so the account is the actionable detail; on a
    * whole line or region it would be noise. */
   showAccount?: boolean;
+  /** Sync-now island, rendered beside the freshness label. */
+  action?: React.ReactNode;
 }) {
-  const syncLabel = crm?.lastSyncAt ? `as of ${cairoTime(crm.lastSyncAt)}` : "awaiting sync";
+  // "Checked", not "as of". The label is driven by the sync RUN, so it moves even when a sync finds
+  // nothing new — `lastSyncAt` (newest row) does not, which made a perfectly successful Sync press
+  // look like a broken button. lastSyncAt survives only as the tooltip.
+  const checkedAt = crm?.lastSyncRunAt ?? crm?.lastSyncAt ?? null;
+  const syncLabel = checkedAt ? `Checked ${cairoTime(checkedAt)}` : "awaiting sync";
 
   return (
     <div className="overflow-hidden border border-slate-200 bg-white">
       <SectionHead
         title="CRM First Visit"
-        right={<span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400">{syncLabel}</span>}
+        right={
+          <span className="flex items-center gap-2">
+            <span
+              className="whitespace-nowrap text-[10px] font-bold uppercase tracking-widest text-slate-400"
+              title={crm?.lastSyncAt ? `Newest visit mirrored at ${cairoTime(crm.lastSyncAt)}` : undefined}
+            >
+              {syncLabel}
+            </span>
+            {action}
+          </span>
+        }
       />
       {crm?.error ? (
         <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
@@ -102,12 +122,21 @@ export function CrmFirstVisitBoard({
             CRM data is temporarily unavailable — this is a fetch issue, not a compliance gap. Try again shortly.
           </p>
         </div>
-      ) : !crm || !crm.synced ? (
+      ) : !crm || (!crm.synced && !crm.polled) ? (
         <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
           <Clock className="h-4 w-4 shrink-0 text-slate-400" />
           <p className="text-sm text-slate-500">
             Awaiting today&apos;s first CRM sync — visits mirror from iReports360 roughly every 15&nbsp;minutes from 8:30&nbsp;AM
             to noon, then again at 12:07&nbsp;PM and 7:07&nbsp;PM.
+          </p>
+        </div>
+      ) : !crm.synced ? (
+        // Polled but empty. Blaming the sync for a compliance fact is what the old copy did — this
+        // says plainly that we looked and nobody has started.
+        <div className="flex items-center gap-3 bg-white px-4 py-5 sm:px-5">
+          <AlarmClock className="h-4 w-4 shrink-0 text-rose-500" />
+          <p className="text-sm text-slate-500">
+            {checkedAt ? `Checked ${cairoTime(checkedAt)} — ` : ""}nobody on your roster has submitted a visit yet today.
           </p>
         </div>
       ) : (

@@ -1,3 +1,4 @@
+import { getLatestSuccessfulSyncRunFor } from "@/lib/crm/admin";
 import { extractCampaignAccounts } from "@/lib/crm/campaign-account";
 import { indexCheckinsByAgentContactDay, pickCheckinForVisit } from "@/lib/crm/checkin-match";
 import { cairoTodayIso } from "@/lib/crm/dates";
@@ -47,8 +48,16 @@ export type CrmEarlyBird = {
 export type NsmCrmComplianceData = {
   /** Africa/Cairo calendar day the check is computed for (YYYY-MM-DD). */
   date: string;
-  /** Most recent CRM sync timestamp among today's mirrored rows (ISO), or null. */
+  /** Most recent CRM sync timestamp among today's mirrored ROWS (ISO), or null. This is "when data
+   * last moved", not "when we last looked" — it does not advance on a sync that found nothing. */
   lastSyncAt: string | null;
+  /** When this day was last CHECKED: completed_at of the newest successful sync run covering it.
+   * This is what the UI shows, because it moves even when a sync finds no new visits — otherwise a
+   * perfectly successful Sync press leaves the label frozen and reads as a broken button. */
+  lastSyncRunAt: string | null;
+  /** True once a sync run has covered this day at all. Distinguishes "nobody has looked yet" from
+   * "we looked and nobody on your roster has submitted", which `synced: false` alone conflates. */
+  polled: boolean;
   /** True once at least one visit for `date` has been mirrored (i.e. the sync has landed). */
   synced: boolean;
   /** `missing` is ONLY people with no real field visit mirrored today. Anyone who submitted
@@ -66,7 +75,9 @@ export type NsmCrmComplianceData = {
   error?: boolean;
 };
 
-type VisitRow = {
+/** Exported so the Early Birds fortnightly scorer replays this exact board day by day, off one
+ * shared row shape rather than a structurally-duplicated copy that could drift from it. */
+export type NsmCrmVisitRow = {
   agent_hr_id: string | null;
   agent_crm_id: number | null;
   contact_crm_id: number | null;
@@ -80,7 +91,15 @@ type VisitRow = {
   comment: string | null;
 };
 
-type CheckinRow = { agent_crm_id: number | null; contact_crm_id: number | null; check_date: string | null };
+type VisitRow = NsmCrmVisitRow;
+
+export type NsmCrmCheckinRow = {
+  agent_crm_id: number | null;
+  contact_crm_id: number | null;
+  check_date: string | null;
+};
+
+type CheckinRow = NsmCrmCheckinRow;
 
 // Collapse HR IDs to a hyphen-insensitive, case-insensitive key so canonical
 // ("B100") and stored ("B-100") forms always match (guards the hr-id hyphen trap).
@@ -160,6 +179,8 @@ export function nsmCrmComplianceUnavailable(input: { reps: CrmPerson[]; dsms: Cr
   return {
     date: input.date ?? cairoTodayIso(),
     lastSyncAt: null,
+    lastSyncRunAt: null,
+    polled: false,
     synced: false,
     error: true,
     reps: { total: input.reps.length, submitted: 0, missing: [...input.reps] },
@@ -178,8 +199,22 @@ export async function getNsmCrmCompliance(input: {
   limit?: number;
 }): Promise<NsmCrmComplianceData> {
   const date = input.date ?? cairoTodayIso();
-  const [visits, checkins] = await Promise.all([fetchVisitsForDate(date), fetchCheckinsForDate(date)]);
-  const data = buildNsmCrmCompliance({ date, reps: input.reps, dsms: input.dsms, visits, checkins, limit: input.limit });
+  // The run ledger rides along in the same Promise.all, so "when did we last check" costs a round
+  // trip rather than a wait. It must never fail the board: a missing ledger is a missing label.
+  const [visits, checkins, lastSyncRunAt] = await Promise.all([
+    fetchVisitsForDate(date),
+    fetchCheckinsForDate(date),
+    getLatestSuccessfulSyncRunFor(date).catch(() => null),
+  ]);
+  const data = buildNsmCrmCompliance({
+    date,
+    reps: input.reps,
+    dsms: input.dsms,
+    visits,
+    checkins,
+    limit: input.limit,
+    lastSyncRunAt,
+  });
   return withCommentDerivedAccounts(data);
 }
 
@@ -223,12 +258,17 @@ export function buildNsmCrmCompliance(input: {
   visits: VisitRow[];
   checkins: CheckinRow[];
   limit?: number;
+  /** completed_at of the newest successful sync run covering `date`, when the caller has read it. */
+  lastSyncRunAt?: string | null;
 }): NsmCrmComplianceData {
   const { date, visits: rows, checkins } = input;
   const limit = input.limit ?? EARLY_BIRD_LIMIT;
+  const lastSyncRunAt = input.lastSyncRunAt ?? null;
   const notSynced: NsmCrmComplianceData = {
     date,
     lastSyncAt: null,
+    lastSyncRunAt,
+    polled: lastSyncRunAt !== null,
     synced: false,
     reps: { total: input.reps.length, submitted: 0, missing: [...input.reps] },
     dsms: { total: input.dsms.length, submitted: 0, missing: [...input.dsms] },
@@ -346,6 +386,8 @@ export function buildNsmCrmCompliance(input: {
   return {
     date,
     lastSyncAt: lastSync ? new Date(lastSync).toISOString() : null,
+    lastSyncRunAt,
+    polled: lastSyncRunAt !== null,
     synced: true,
     reps: { total: input.reps.length, submitted: repSubmitted, missing: repMissing },
     dsms: { total: input.dsms.length, submitted: dsmSubmitted, missing: dsmMissing },

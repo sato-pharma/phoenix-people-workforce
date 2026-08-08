@@ -690,6 +690,9 @@ import { runRecipientAssuranceGuardTests } from "./recipient-assurance-guard.tes
 import { runAutomatedPayrollExcludedMembersTests } from "./automated-payroll-excluded-members.test.ts";
 import { runNsmCrmComplianceTests } from "./nsm-crm-compliance.test.ts";
 import { runCrmCampaignAccountTests } from "./crm-campaign-account.test.ts";
+import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
+import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
+import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1630,6 +1633,18 @@ await runTest(
 await runTest(
   "campaign account extraction guard (the model may delimit a name already in the rep's note, never author one)",
   runCrmCampaignAccountTests,
+);
+await runTest(
+  "early birds fortnight (Cairo 1st-15th / 16th-end, a period is not closed on its own last day, and the TS key pattern equals the SQL CHECK)",
+  runEarlyBirdsPeriodTests,
+);
+await runTest(
+  "early birds scoring (GPS is a quality weight not a filter, an after-midnight save is paperwork not a 02:25 start, and two brilliant mornings is not a fortnight)",
+  runEarlyBirdsScoringTests,
+);
+await runTest(
+  "early birds decisions (reject falls through by rank, a rejected rep can never be offered again, and an unanswered fortnight auto-approves on day five)",
+  runEarlyBirdsDecisionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

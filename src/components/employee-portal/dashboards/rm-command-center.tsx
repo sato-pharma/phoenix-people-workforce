@@ -34,6 +34,8 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
+import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -213,6 +215,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     plansAwaitingManagerApproval,
     rmRegional,
     dvFocus,
+    earlyBirdWinner,
   } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -253,7 +256,10 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
       <DistrictsAttention rmRegional={rmRegional} />
 
+      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+
       <CrmFirstVisitBoard
+        action={<EarlyBirdsSyncButton />}
         crm={rmRegional?.crm ?? null}
         allClearMessage="Everyone in your region has submitted their first visit."
       />

@@ -27,6 +27,8 @@ import {
 import { Suspense } from "react";
 
 import { CrmFirstVisitBoard } from "@/components/employee-portal/dashboards/crm-first-visit-board";
+import { EarlyBirdsSyncButton } from "@/components/crm/early-birds-sync-button";
+import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { DoubleVisitFocusSection } from "@/components/employee-portal/dashboards/double-visit-focus-section";
 import { LineSalesPacingSection, MmSectionSkeleton } from "@/components/employee-portal/dashboards/mm-intel-sections";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -49,7 +51,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 ];
 
 export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus, earlyBirdWinner } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
   const pctNum = pct ?? 0;
@@ -84,7 +86,10 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <RankingPanel title="My Reps" subtitle="by achievement %" icon={Trophy} rows={dsmTeam?.members ?? []} />
 
+      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+
       <CrmFirstVisitBoard
+        action={<EarlyBirdsSyncButton />}
         crm={dsmTeam?.crm ?? null}
         allClearMessage="Every rep on your team has submitted their first visit."
         rankHint="all submitters, ranked"

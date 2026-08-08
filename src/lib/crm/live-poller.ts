@@ -44,6 +44,7 @@ import {
 import { CRM_SYNC_RUNS_TABLE } from "@/lib/crm/tables";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { pingDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { runDueEarlyBirdsClose } from "@/lib/early-birds/close";
 import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
@@ -442,6 +443,17 @@ async function tick(): Promise<void> {
     await runScheduledWork(dueWork);
     return;
   }
+
+  // Early Birds closes its fortnights here rather than from a cron route: the external scheduler is
+  // a third-party account with a 30s request cap, far too short for a company-wide close. This is
+  // self-throttling (it asks the database at most every 15 minutes) and never throws, so a failure
+  // cannot cost the CRM probe its tick.
+  await runDueEarlyBirdsClose().catch((error: unknown) =>
+    logError("Early Birds sweep threw into the poller tick", {
+      labels: { event: "early_birds_sweep_threw" },
+      error,
+    }),
+  );
 
   const plan = resolvePollPlan(hour * 60 + minute, state.tickIndex);
   const dateFrom = plan.includeYesterday ? addDaysIso(today, -1) : today;

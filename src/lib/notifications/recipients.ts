@@ -36,6 +36,10 @@ export const PERSONAL_BELL_CATEGORIES = [
   // catch: the approver never sees the request and the delivery audit reports success. Any new
   // category added to a createSystemNotification call must land here too, or it goes nowhere.
   "direct_order_request",
+  // Emitted by notifyEarlyBirdsRecommendation (src/lib/early-birds/notify.ts). Same rule as
+  // direct_order_request above: leave it off and the District Manager's bell stays empty while the
+  // delivery audit cheerfully reports "sent".
+  "early_bird_recommendation",
 ] as const;
 
 const personalBellCategorySet = new Set<string>(PERSONAL_BELL_CATEGORIES);
