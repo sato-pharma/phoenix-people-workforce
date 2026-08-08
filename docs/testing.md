@@ -82,19 +82,19 @@ These test against real data and require valid credentials.
 
 ## CI Integration
 
-CI runs five checks across two workflows — `.github/workflows/ci.yml` and
-`.github/workflows/security-scan.yml`:
+CI runs three checks, all from `.github/workflows/ci.yml`:
 
 | Check | Workflow | What it runs |
 |---|---|---|
 | `validate` | ci.yml | Structural checks (routes, migrations, sql-backups, deductions contract, stale-domains), `pnpm audit`, the **unit/integration suite** (`pnpm run test`), the production **build**, and the Playwright **login smoke test** — all in one job. |
 | `lint` | ci.yml | `pnpm run lint` (parallel job). |
 | `typecheck` | ci.yml | `next typegen` + `pnpm run typecheck` (parallel job). |
-| `secret-scan` | security-scan.yml | gitleaks secret scan (PRs + daily schedule; currently non-blocking). |
-| `sast-scan` | security-scan.yml | Semgrep SAST scan (PRs + daily schedule; currently non-blocking). |
+
+`.github/workflows/security-scan.yml` (OSS gitleaks secret scan + Semgrep SAST, both
+non-blocking) was removed 2026-08-08 at owner request; it was never a required check.
 
 There is no longer a separate `preview-smoke` job — the login smoke test moved into
 `validate`. The full Playwright E2E suite runs only on manual `workflow_dispatch` (the
-`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 5 checks green before a merge can
+`full-e2e` job). Per AGENTS.md §2, `main` branch protection **requires these 3 checks green before a merge can
 land** (there is no required human review — solo owner); per AGENTS.md §3 a merge to `main` then
 deploys to production immediately.

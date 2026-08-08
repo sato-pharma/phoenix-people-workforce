@@ -6,9 +6,14 @@
  * The new envelope is one email per submission:
  *
  *   To   the submitting employee                — it is his confirmation, so he is the audience
- *   Cc   his direct manager                     — always
+ *   Cc   his direct manager                     — EXCEPT the CEO when the submitter is an NSM
  *   Cc   his manager's manager                  — ONLY when that person is not the CEO
  *   Bcc  every active Super Admin               — silent oversight copy
+ *
+ * Owner instruction 2026-08-08: an NSM's submission is addressed to the NSM alone. Every NSM
+ * reports directly to the CEO, so the direct-manager rule was still copying him on all of them.
+ * omar.anwar needs no special handling — he is an active Super Admin (B-10) so he is already in
+ * the Bcc list above, and send-phoenix-email.ts additionally Bccs him on every automated email.
  *
  * The CEO is deliberately dropped from the skip-level slot: he was receiving a mail for
  * every outstation submission company-wide, which is the complaint that prompted this
@@ -58,6 +63,7 @@ export function buildOutstationSubmitRouting(input: {
   employeeHrId: string | null | undefined;
   managerHrId: string | null | undefined;
   managerOfManagerHrId: string | null | undefined;
+  nationalSalesManagerHrIds?: readonly string[];
   superAdminHrIds: readonly string[];
 }): OutstationSubmitRouting {
   const employeeHrId = String(input.employeeHrId ?? "").trim();
@@ -65,6 +71,17 @@ export function buildOutstationSubmitRouting(input: {
   if (!toKey) return { bccHrIds: [], ccHrIds: [], toHrId: null };
 
   const ceoKeys = new Set(input.ceoHrIds.map(key).filter(Boolean));
+  const nsmKeys = new Set((input.nationalSalesManagerHrIds ?? []).map(key).filter(Boolean));
+  // Owner instruction 2026-08-08: an NSM's submission goes to the NSM ALONE. Every NSM reports
+  // directly to the CEO (verified in production: A-12, AI-0008 and B-122 all have manager AA), so
+  // the 2026-08-04 rule below — which only kept the CEO out of the SKIP-LEVEL slot — still copied
+  // him on every NSM submission as their direct manager. Dropping him from the direct-manager slot
+  // too leaves an NSM's Cc empty, which is exactly "to NSM only".
+  //
+  // Scoped to NSM submitters on purpose. 21 active people report directly to the CEO, so a blanket
+  // "never Cc the CEO" would silently change 18 other people's emails that the owner did not ask
+  // about — District Managers, Medical Reps, Finance, Marketing and SFE all report to him too.
+  const submitterIsNsm = nsmKeys.has(toKey);
   const taken = new Set<string>([toKey]);
 
   const ccHrIds: string[] = [];
@@ -76,10 +93,9 @@ export function buildOutstationSubmitRouting(input: {
     ccHrIds.push(original);
   };
 
-  addCc(input.managerHrId);
+  if (!(submitterIsNsm && ceoKeys.has(key(input.managerHrId)))) addCc(input.managerHrId);
 
-  // The one conditional in the whole envelope: the skip-level manager is copied unless
-  // he is the CEO.
+  // The skip-level manager is copied unless he is the CEO.
   if (!ceoKeys.has(key(input.managerOfManagerHrId))) addCc(input.managerOfManagerHrId);
 
   const bccHrIds: string[] = [];
@@ -134,10 +150,11 @@ function findByHrId(rows: readonly EmployeeDirectoryRow[], hrId: string | null |
 export async function resolveOutstationSubmitRouting(
   employeeHrId: string,
 ): Promise<OutstationSubmitRouting & { managerName: string | null }> {
-  const [directory, ceoHrIds, superAdminHrIds] = await Promise.all([
+  const [directory, ceoHrIds, superAdminHrIds, nationalSalesManagerHrIds] = await Promise.all([
     getEmployeeDirectory(),
     activeHrIdsForRoles(["CEO"]),
     activeHrIdsForRoles(["Super Admin"]),
+    activeHrIdsForRoles(["National Sales Manager"]),
   ]);
 
   const employee = findByHrId(directory.employees, employeeHrId);
@@ -151,6 +168,7 @@ export async function resolveOutstationSubmitRouting(
     employeeHrId: employee?.hrId ?? employeeHrId,
     managerHrId: manager?.hrId ?? null,
     managerOfManagerHrId: managerOfManager?.hrId ?? null,
+    nationalSalesManagerHrIds,
     superAdminHrIds,
   });
 

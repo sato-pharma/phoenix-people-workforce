@@ -47,7 +47,52 @@ export function runOutstationSubmitEmailRoutingTests() {
   );
 
   // ── …but the CEO as a DIRECT manager is a real reporting line, so he stays ───────
+  // 21 active people report straight to the CEO (DMs, reps, Finance, Marketing, SFE). Only the
+  // NSM carve-out below changed; everyone else still copies him, and this pins that.
   const ceoIsDirectManager = buildOutstationSubmitRouting({
+    ceoHrIds: CEO,
+    employeeHrId: "HR-DM",
+    managerHrId: "HR-CEO",
+    managerOfManagerHrId: null,
+    nationalSalesManagerHrIds: ["HR-NSM"],
+    superAdminHrIds: ADMINS,
+  });
+  assert.deepEqual(
+    ceoIsDirectManager.ccHrIds,
+    ["HR-CEO"],
+    "a NON-NSM direct report of the CEO still copies him — the carve-out must not leak to the other 18",
+  );
+
+  // ── Owner rule 2026-08-08: an NSM's submission goes to the NSM ALONE ─────────────
+  // Every NSM reports directly to the CEO (A-12, AI-0008, B-122 → AA in production), so before
+  // this the CEO was Cc'd on every single NSM submission via the direct-manager slot.
+  const nsmSubmission = buildOutstationSubmitRouting({
+    ceoHrIds: CEO,
+    employeeHrId: "HR-NSM",
+    managerHrId: "HR-CEO",
+    managerOfManagerHrId: null,
+    nationalSalesManagerHrIds: ["HR-NSM"],
+    superAdminHrIds: ADMINS,
+  });
+  assert.equal(nsmSubmission.toHrId, "HR-NSM", "the NSM is the To");
+  assert.deepEqual(
+    nsmSubmission.ccHrIds,
+    [],
+    "an NSM's submission carries NO Cc at all — the CEO is dropped from the direct-manager slot too",
+  );
+  assert.ok(
+    !nsmSubmission.bccHrIds.includes("HR-CEO"),
+    "and dropping him from Cc must not quietly re-add him on Bcc",
+  );
+  assert.deepEqual(
+    nsmSubmission.bccHrIds,
+    ADMINS,
+    "the Super Admin Bcc is untouched — that is how omar.anwar (B-10) keeps receiving his copy",
+  );
+
+  // A missing NSM list must not accidentally strip the CEO for everyone: absent means "no NSMs
+  // known", so the pre-existing direct-manager behaviour has to survive unchanged.
+  const noNsmListSupplied = buildOutstationSubmitRouting({
     ceoHrIds: CEO,
     employeeHrId: "HR-NSM",
     managerHrId: "HR-CEO",
@@ -55,9 +100,9 @@ export function runOutstationSubmitEmailRoutingTests() {
     superAdminHrIds: ADMINS,
   });
   assert.deepEqual(
-    ceoIsDirectManager.ccHrIds,
+    noNsmListSupplied.ccHrIds,
     ["HR-CEO"],
-    "the exclusion is scoped to the skip-level slot only; a direct report of the CEO still copies him",
+    "with no NSM list supplied nobody is treated as an NSM — the carve-out fails CLOSED, never broadening",
   );
 
   // ── One person, one slot: the most visible slot wins ─────────────────────────────
