@@ -1,4 +1,6 @@
 import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
+import { notifyClosingPublished } from "@/lib/sales/closing-publish-notification";
+import { logError } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,14 +117,31 @@ export async function publishClosing(input: {
   }
 
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("monthly_closing_publications")
     .upsert(
       { line, normalized_line: normalizedLine, period, published_by: input.actorHrId },
       { onConflict: "normalized_line,period" },
-    );
+    )
+    .select("published_at")
+    .single();
   if (error) throw new Error(error.message);
   invalidateClosingStoreSplitCache(`closing published — ${line}/${period}`);
+
+  // Best-effort: a notification failure must never turn a successful publish into an error response.
+  // publishedAt anchors the send's idempotency key — a true re-publish (this row didn't exist a
+  // moment ago, e.g. after an unpublish) gets a fresh timestamp and sends again; a same-row no-op
+  // publish keeps the same timestamp and does not re-send. See closing-publish-notification.ts.
+  const publishedAt = String((data as { published_at?: string } | null)?.published_at ?? "");
+  if (publishedAt) {
+    notifyClosingPublished({ line, period, publishedAt }).catch((notifyError) => {
+      logError("closing_published_notification_failed", {
+        error: notifyError,
+        labels: { event: "closing_published_notification_failed" },
+        context: { line, period },
+      });
+    });
+  }
 }
 
 /** Unpublish a (line, period) — hides it from the portal again. */
