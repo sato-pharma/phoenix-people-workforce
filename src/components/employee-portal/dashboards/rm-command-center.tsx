@@ -190,7 +190,6 @@ function DistrictsAttention({ rmRegional }: { rmRegional: PortalHomeSnapshot["rm
 // NSM-only and bounces an RM straight back to /employee-portals.
 const DASHBOARDS: readonly DashboardLink[] = [
   { href: "/employee-portals/source-of-sales", icon: TrendingUp, label: "Source of Sales" },
-  { href: "/employee-portals/sales-analytics", icon: Network, label: "Sales Analytics" },
   { href: "/employee-portals/territory-drilldown", icon: MapIcon, label: "Territory" },
   { href: "/employee-portals/approvals-hub", icon: ClipboardCheck, label: "Approvals Hub" },
   { href: "/employee-portals/plans", icon: CalendarDays, label: "Region Plans" },

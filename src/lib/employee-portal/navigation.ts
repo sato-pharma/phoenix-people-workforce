@@ -499,18 +499,12 @@ export function resolveEmployeePortalNavVisibility(
       isNationalSalesManager ||
       isProductManager ||
       isGroupProductManager,
-    // Portal Sales Analytics module (/employee-portals/sales-analytics) — NOT an /admin URL. Every
-    // sales field/portal role gets it, scoped to their own line/region: Medical Rep + District Manager
-    // see the 3 core dashboards; Regional Manager + the line managers additionally get Executive
-    // Comparison + Reconciliation (see canViewPortalDetailedAnalytics). CEO/SA/SFE use /admin analytics.
-    showSalesAnalyticsTab:
-      isMedicalRep ||
-      isDistrictManager ||
-      resolvedRole === "Regional Manager" ||
-      isNationalSalesManager ||
-      isProductManager ||
-      isGroupProductManager ||
-      isMarketingManager,
+    // Portal Sales Analytics module (/employee-portals/sales-analytics) — hidden from every role,
+    // owner request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National
+    // Sales Manager, Product Manager, Group Product Manager, Marketing Manager (Medical Rep +
+    // District Manager got the 3 core dashboards; Regional Manager + the line managers additionally
+    // got Executive Comparison + Reconciliation — see canViewPortalDetailedAnalytics).
+    showSalesAnalyticsTab: false,
     showSalesVsTargetTab:
       isMedicalRep ||
       isDistrictManager ||
