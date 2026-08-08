@@ -182,23 +182,64 @@ export function runSfeDoctorCoverageTests() {
   // ── Source contracts: the IO wrapper stays inside the single-source door + date discipline ───
   const serviceSource = readFileSync("src/lib/crm/sfe-doctor-coverage.ts", "utf8");
   assert.match(serviceSource, /from "@\/lib\/crm\/reads"/, "reads must go through the CRM single-source door");
-  assert.match(serviceSource, /scanVisitsForRange/, "multi-month reads must use the keyset scanner");
+  assert.match(
+    serviceSource,
+    /queryVisits/,
+    "multi-month reads must use a keyset scanner from the door — queryVisits replaced scanVisitsForRange on 2026-08-08 because it can push the viewer scope and visit_type into Postgres",
+  );
   assert.match(serviceSource, /collapseDuplicateVisitSubmissions/, "counts must agree with DV/FWC via the canonical collapse");
   assert.match(serviceSource, /visit\.visit_type !== 0/, "the board is regular-customer-visits-only by contract");
+  assert.match(
+    serviceSource,
+    /visitTypes:\s*\[0\]/,
+    "the type-0 filter must run in Postgres, not only in the JS loop — it was 29.3% of a measured 6-month window fetched purely to be discarded",
+  );
   assert.doesNotMatch(
     serviceSource,
     /new Date\([^)]*visit|toISOString\(\)/,
     "CRM date strings are Cairo wall-clock — Date parsing would shift them (same rule as sfe-field-analytics)",
   );
 
-  // ── Page gates: admin twin carries SFE+Super Admin (never NSM — portal-mode roles cannot reach
-  // (admin)); the portal twin is NSM's, fail-closed inside the portal shell ─────────────────────
+  // ── Page gates. Both twins delegate to doctor-coverage-scope.ts and keep NO role list of their
+  // own. Before 2026-08-08 each page carried its own hardcoded set and NEITHER scoped the data, so
+  // every seat that got in read all 205 agents company-wide. Pinning "no local role list" is what
+  // stops that returning — a page that re-adds one has re-created the drift. ───────────────────
+  // A "the code must not do X" assertion has to read CODE. Both pages explain the old hardcoded
+  // gate in their header comment — quoting the defect is how the next reader knows not to redo it —
+  // and an unstripped regex matches that prose and fails on the explanation itself.
+  const codeOnly = (source: string) =>
+    source
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+
   const adminPage = readFileSync("app/(admin)/admin/doctor-coverage/page.tsx", "utf8");
-  assert.match(adminPage, /"SFE Manager"/);
-  assert.match(adminPage, /"Super Admin"/);
+  assert.match(adminPage, /getDoctorCoverageScope/, "the admin twin must resolve its viewer scope from the shared resolver");
+  assert.match(adminPage, /scope\.kind === "none"/, "the admin twin must gate on the resolved scope");
   assert.match(adminPage, /redirect\(/, "the admin page must fail closed with a redirect");
-  assert.doesNotMatch(adminPage, /"National Sales Manager"/, "NSM on the admin page would be dead code — the (admin) layout redirects portal-mode roles first");
+  assert.doesNotMatch(
+    codeOnly(adminPage),
+    /ALLOWED_ROLES|new Set\(\[/,
+    "the admin page must not reintroduce a local role list — doctor-coverage-roles.ts is the single source",
+  );
+  assert.doesNotMatch(
+    codeOnly(adminPage),
+    /"National Sales Manager"/,
+    "NSM on the admin page would be dead code — the (admin) layout redirects portal-mode roles first",
+  );
+
   const portalPage = readFileSync("app/employee-portals/doctor-coverage/page.tsx", "utf8");
-  assert.match(portalPage, /"National Sales Manager"/);
-  assert.match(portalPage, /EmployeePortalPageShell/, "the NSM twin must render inside the portal shell");
+  assert.match(portalPage, /getDoctorCoverageScope/, "the portal twin must resolve its viewer scope from the shared resolver");
+  assert.match(portalPage, /EmployeePortalPageShell/, "the portal twin must render inside the portal shell");
+  assert.doesNotMatch(
+    codeOnly(portalPage),
+    /access\.role !==/,
+    "the portal page must not hardcode a role comparison — that check is what limited this board to the NSM while scoping nothing",
+  );
+  // The board is only reachable with a scope, so no caller can fall back to company-wide data.
+  assert.match(
+    serviceSource,
+    /scope:\s*DoctorCoverageScope/,
+    "getSfeDoctorCoverage must take a REQUIRED scope — an optional one is how the company-wide read survived",
+  );
 }

@@ -1,4 +1,5 @@
 import { parseRoleStrict, type PhoenixRole } from "@/lib/auth/permissions";
+import { DOCTOR_COVERAGE_PORTAL_ROLES } from "@/lib/crm/doctor-coverage-roles";
 import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { canViewMarketingCoverageReport } from "@/lib/marketing-requests/coverage-report-access";
@@ -24,8 +25,11 @@ export type EmployeePortalNavVisibility = {
   showMedRepsPerformanceTab?: boolean;
   showMedicalRepExpensesTab?: boolean;
   showDsmsPerformanceTab?: boolean;
-  // Doctor Coverage & Frequency — NSM-only portal twin of /admin/doctor-coverage (SFE Manager and
-  // Super Admin use the admin entry; portal-mode roles cannot reach the (admin) shell).
+  // Doctor Coverage & Frequency — portal twin of /admin/doctor-coverage. Offered to every
+  // portal-mode role in DOCTOR_COVERAGE_PORTAL_ROLES (Medical Rep, District Manager, Regional
+  // Manager, NSM, PM, GPM, Marketing Manager); SFE Manager, CEO and Super Admin use the admin
+  // entry, since portal-mode roles cannot reach the (admin) shell. Each viewer's DATA is scoped
+  // server-side by doctor-coverage-scope.ts, so this flag decides visibility, never reach.
   showDoctorCoverageTab?: boolean;
   // Team Calendar — NSM-only live field-visit month grid for their whole line, scoped
   // server-side (see src/lib/employee-portal/team-calendar.ts). Reads the iReports360
@@ -373,7 +377,10 @@ export function resolveEmployeePortalNavVisibility(
 
   return {
     showDashboardTab: !isTrainingManager,
-    showDoctorCoverageTab: isNationalSalesManager,
+    // Every portal-mode role with a doctor-coverage seat, read from the single role list rather
+    // than re-listed here (src/lib/crm/doctor-coverage-roles.ts). The page itself scopes the DATA
+    // per viewer, so a role appearing here can only ever see its own reps — this flag is UX.
+    showDoctorCoverageTab: DOCTOR_COVERAGE_PORTAL_ROLES.includes(resolvedRole),
     showDsmsPerformanceTab: isNationalSalesManager,
     showTeamCalendarTab: isNationalSalesManager,
     // The isHeadOffice branch is line/department-based, so a District or Regional Manager sitting

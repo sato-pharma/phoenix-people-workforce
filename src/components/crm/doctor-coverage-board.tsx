@@ -48,23 +48,34 @@ function Tile({ label, sub, tone, value }: { label: string; sub?: string; tone?:
 }
 
 export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctorCoverageBoard; monthBasePath: string }) {
-  const scopeLine =
-    "Regular customer visits (type 0) only · duplicates collapsed · departed agents excluded · grades supplied by iReports360 since 2026-07-24";
+  const scopeLine = "Regular customer visits (type 0) only · duplicates collapsed · departed agents excluded";
   const emptyPanel = board.totals.activePanel === 0;
+  // Whose numbers these are, always on screen — the owner's standing rule. Empty only on the
+  // fixture path, which has no viewer.
+  const description = [board.scopeLabel, scopeLine, board.isCurrentMonth ? "month to date" : null]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="border border-slate-200">
       <Section
         action={<MonthPicker basePath={monthBasePath} month={board.month} />}
-        description={`${scopeLine}${board.isCurrentMonth ? " · month to date" : ""}`}
+        description={description}
         title={`Doctor Coverage & Frequency — ${board.monthLabel}`}
       >
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile
               label="Coverage"
-              sub={board.isCurrentMonth ? "month to date" : undefined}
-              tone={board.totals.coveragePct >= 80 ? "emerald" : board.totals.coveragePct >= 50 ? "amber" : "rose"}
+              // Pace-adjusted: on day 8 of 31 an on-track team has not covered 80% of its panel yet,
+              // and colouring that rose taught everyone to ignore the tile. The bar comes from the
+              // domain (board.pace), never re-derived here, so both twins agree.
+              sub={
+                board.isCurrentMonth
+                  ? `vs ${board.pace.expectedCoveragePct}% on-pace · ${board.pace.daysRemaining}d left`
+                  : undefined
+              }
+              tone={board.pace.tone}
               value={`${board.totals.coveragePct}%`}
             />
             <Tile label="Active panel" sub="graded doctors in play" value={String(board.totals.activePanel)} />
@@ -76,8 +87,9 @@ export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctor
 
           {emptyPanel ? (
             <p className="text-xs text-slate-400">
-              No graded doctor panel for this month — iReports360 only began sending doctor grades on 2026-07-24, so
-              earlier months have no coverage baseline.
+              No graded doctor panel for this month. This reads as empty when the month genuinely has no graded
+              regular-visit activity in scope — not because grading is missing: iReports360 grades run back to
+              January 2026.
             </p>
           ) : (
             <div className="grid gap-5 lg:grid-cols-2">
@@ -121,6 +133,43 @@ export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctor
           )}
         </div>
       </Section>
+
+      {board.callList.length > 0 ? (
+        <Section
+          description={
+            board.callListTotal > board.callList.length
+              ? `A-grade first, then furthest behind, then longest unseen · showing ${board.callList.length} of ${board.callListTotal} doctors still short of norm`
+              : `A-grade first, then furthest behind, then longest unseen · ${board.callListTotal} doctors still short of norm`
+          }
+          title={board.isCurrentMonth ? `Call list — ${board.pace.daysRemaining} days left` : "Call list — month closed"}
+        >
+          <div className="overflow-x-auto">
+            <div className="divide-y divide-slate-100">
+              {board.callList.map((doctor, index) => (
+                <div className="flex items-center gap-3 whitespace-nowrap px-5 py-2" key={doctor.contactCrmId}>
+                  <span className="w-6 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                  <span
+                    className={`w-5 text-[11px] font-black ${
+                      doctor.gradeTier === "A" ? "text-rose-700" : doctor.gradeTier === "B" ? "text-amber-700" : "text-slate-400"
+                    }`}
+                  >
+                    {doctor.gradeTier}
+                  </span>
+                  <span className="min-w-56 flex-1 text-sm font-semibold text-slate-800">{doctor.contactName}</span>
+                  <span className="min-w-40 text-xs text-slate-400">{doctor.speciality ?? "Unspecified"}</span>
+                  <span className="min-w-44 text-xs font-medium text-slate-600">{doctor.repName}</span>
+                  <span className="w-28 text-right text-xs font-black text-slate-900">
+                    needs {doctor.visitsNeeded}
+                  </span>
+                  <span className="w-32 text-right text-xs text-slate-400">
+                    {doctor.lastVisitDate ? `last ${doctor.lastVisitDate}` : "never seen"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Section>
+      ) : null}
 
       <Section description="Sorted worst-first — the reps whose panels need attention." title="Coverage by rep">
         <DoctorCoverageRepTable rows={board.reps} />

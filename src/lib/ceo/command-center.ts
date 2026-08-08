@@ -8,6 +8,7 @@ import { getContractRenewalDashboardData } from "@/lib/contracts/service";
 import { addDaysIso, cairoTodayIso } from "@/lib/crm/dates";
 import { getSfeCrmFieldAnalytics, type SfeCrmFieldAnalytics } from "@/lib/crm/sfe-field-analytics";
 import { getSfeDoctorCoverage, type SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
 import { isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
@@ -633,7 +634,13 @@ export async function getCeoLandingDeferred(
     includeWeeklyTrend ? getPortalWeeklyDashboard({}, access) : Promise.resolve(null),
     includeSfePerformance ? getSfeTargetPerformance(access, SFE_VISIBLE_LINES) : Promise.resolve(null),
     includeSfePerformance ? getSfeImsContribution(SFE_VISIBLE_LINES) : Promise.resolve(null),
-    includeDoctorCoverage ? getSfeDoctorCoverage({}) : Promise.resolve(null),
+    // Scoped through the same resolver as the two pages rather than hardcoding "company" here, so
+    // there is exactly one rule deciding whose reps a viewer may see. CEO and Super Admin resolve
+    // to company; any other role reaching this dashboard resolves to no access and the rejection
+    // is absorbed by the allSettled below into the normal "data unavailable" path.
+    includeDoctorCoverage
+      ? getDoctorCoverageScope(access).then((scope) => getSfeDoctorCoverage({ scope }))
+      : Promise.resolve(null),
   ]);
 
   const dv = dvR.status === "fulfilled" ? dvR.value : null;

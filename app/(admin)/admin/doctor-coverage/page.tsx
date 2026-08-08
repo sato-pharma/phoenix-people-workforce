@@ -1,25 +1,31 @@
-// Doctor Coverage & Frequency — READ-ONLY board inside the Phoenix admin shell. Visible to
-// SFE Manager and Super Admin. National Sales Manager is deliberately NOT listed here: NSM is a
-// portal-mode role, and app/(admin)/layout.tsx redirects every portal-mode viewer to
-// /employee-portals before this page's gate could ever run — the NSM surface is the portal twin at
+// Doctor Coverage & Frequency — READ-ONLY board inside the Phoenix admin shell. In practice this
+// serves SFE Manager, Super Admin and CEO: the portal-mode roles (NSM, RM, DM, Medical Rep, PM,
+// GPM, MM) are redirected to /employee-portals by app/(admin)/layout.tsx before this page's gate
+// could ever run, so they reach the identical board through the portal twin at
 // app/employee-portals/doctor-coverage. Month switch is a URL search param so every switch re-runs
-// the role gate server-side (same posture as the S1 Business Review admin page).
+// the gate server-side (same posture as the S1 Business Review admin page).
+//
+// The role list is NOT maintained here. Both twins ask src/lib/crm/doctor-coverage-scope.ts, so
+// they cannot drift apart on who may see whose reps — the failure this replaced, where this page
+// and the portal page each kept their own hardcoded set and neither scoped the DATA at all.
 import { redirect } from "next/navigation";
 
 import { DoctorCoverageBoard } from "@/components/crm/doctor-coverage-board";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { getDoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 import { getSfeDoctorCoverage, resolveCoverageMonth } from "@/lib/crm/sfe-doctor-coverage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_ROLES = new Set(["SFE Manager", "Super Admin"]);
-
 type PageProps = { searchParams?: Promise<{ month?: string }> };
 
 export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
-  if (!ALLOWED_ROLES.has(access.role)) redirect("/admin");
+  const scope = await getDoctorCoverageScope(access);
+  // No access resolves to a redirect rather than an explanation: inside the admin shell an
+  // unreachable page should behave as if it does not exist for that role.
+  if (scope.kind === "none") redirect("/admin");
 
   const month = resolveCoverageMonth((await searchParams)?.month);
 
@@ -29,7 +35,7 @@ export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   let board: Awaited<ReturnType<typeof getSfeDoctorCoverage>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getSfeDoctorCoverage({ month });
+    board = await getSfeDoctorCoverage({ month, scope });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
   }

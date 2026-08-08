@@ -598,6 +598,10 @@ import { runCrmRepDayCheckinAttributionTests } from "./crm-rep-day-checkin-attri
 
 import { runAuthWebauthnTests } from "./auth-webauthn.test.ts";
 import { runSfeDoctorCoverageTests } from "./sfe-doctor-coverage.test.ts";
+// Registered beside its sibling rather than appended at the end of the file: every PR appends
+// there, so a branch parked on that anchor conflicts with each one that lands (this PR hit it
+// four times in one evening — #1910, #1918, #1919 and a re-run).
+import { runDoctorCoverageScopeTests } from "./doctor-coverage-scope.test.ts";
 import { runVisitContactKindTests } from "./visit-contact-kind.test.ts";
 import { runRootRedirectHttp307Tests } from "./root-redirect-http-307.test.ts";
 import { runCrmUnmappedAgentAlertTests } from "./crm-unmapped-agent-alert.test.ts";
@@ -1335,6 +1339,10 @@ await runTest("crm rep-day check-in attribution (managers borrow the rep's check
 await runTest("biometric passkey login (terminal-employment gate, replay counter, single-use challenge, no credential enumeration)", runAuthWebauthnTests);
 
 await runTest("SFE doctor coverage (A=2/B=1 norms, 2-month lapse window, month bucketing, primary-rep model, single-source door)", runSfeDoctorCoverageTests);
+await runTest(
+  "doctor coverage scope (full subtree, line boundary, fail-closed) and elapsed-month pace",
+  runDoctorCoverageScopeTests,
+);
 
 await runTest("push enable hang (a blocked browser resolves instantly instead of freezing the settings panel forever)", runPushEnableHangTests);
 
