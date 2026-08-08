@@ -31,13 +31,17 @@ export function runWeeklyPlansDistrictManagerBypassTests() {
     "isDistrictManagerPlanTitle must classify via resolveJobFunctionRole so Regional Manager/Sales Manager titles never match",
   );
 
-  // 2. decideEmployeePlan must reject a direct ceo_* call on a District Manager plan before
-  // assertCeoReviewer runs -- otherwise a CEO (or any direct API call) could still push a DM
-  // plan through ceo_approve/ceo_reject/ceo_return even though the UI hides the button.
+  // 2. decideEmployeePlan must reject a direct ceo_* call on a District Manager plan --
+  // otherwise a CEO (or any direct API call) could still push a DM plan through
+  // ceo_approve/ceo_reject/ceo_return even though the UI hides the button. The DM check runs
+  // after assertPermission/assertCeoReviewer (not before) so it doesn't disturb the existing
+  // proximity those two are pinned by in weekly-plans-permission-scope.test.ts -- the security
+  // property is the same either way: no caller, CEO or not, can complete a ceo_* decide on a
+  // DM plan.
   assert.match(
     serviceSource,
-    /else if \(input\.action\.startsWith\("ceo_"\)\) \{[\s\S]*?if \(isDistrictManagerPlanTitle\(plan\.employee_job_title\)\) \{[\s\S]*?throw new Error\("Forbidden: District Manager plans are decided by HR, not the CEO\."\);[\s\S]*?\}[\s\S]*?assertCeoReviewer\(access\);/,
-    "decideEmployeePlan must block ceo_* actions on a District Manager plan ahead of assertCeoReviewer, closing the direct-call loophole",
+    /else if \(input\.action\.startsWith\("ceo_"\)\) \{[\s\S]*?assertCeoReviewer\(access\);[\s\S]*?if \(isDistrictManagerPlanTitle\(plan\.employee_job_title\)\) \{[\s\S]*?throw new Error\("Forbidden: District Manager plans are decided by HR, not the CEO\."\);[\s\S]*?\}/,
+    "decideEmployeePlan must block ceo_* actions on a District Manager plan, closing the direct-call loophole",
   );
 
   // 3. The District Manager auto-cascade branch must notify HR and must NEVER notify the CEO;
