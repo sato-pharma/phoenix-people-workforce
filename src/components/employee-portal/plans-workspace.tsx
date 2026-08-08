@@ -116,6 +116,9 @@ const noGeographyActivities = new Set<EmployeePlanItemInput["activityType"]>([
   "Vacation",
   "National Vacation",
   "Excuse",
+  // An internal team meeting, unlike a generic "Meeting" (which may be with an
+  // external party and need a location) -- no region/area to plan around.
+  "Meeting with Team",
 ]);
 
 const dayModeOptions = [
@@ -245,6 +248,8 @@ function activityAccent(value: EmployeePlanItemInput["activityType"]): { bar: st
       return { bar: "bg-sky-500", dot: "bg-sky-500" };
     case "Meeting":
       return { bar: "bg-indigo-500", dot: "bg-indigo-500" };
+    case "Meeting with Team":
+      return { bar: "bg-blue-500", dot: "bg-blue-500" };
     case "Event":
       return { bar: "bg-fuchsia-500", dot: "bg-fuchsia-500" };
     case "Travel":
@@ -275,6 +280,7 @@ const LEGEND_ACTIVITIES: EmployeePlanItemInput["activityType"][] = [
   "Office",
   "Training",
   "Meeting",
+  "Meeting with Team",
   "Vacation",
   "National Vacation",
   "Excuse",
