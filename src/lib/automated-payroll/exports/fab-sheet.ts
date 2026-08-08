@@ -90,6 +90,14 @@ export function fabRowsForNonEmployees(
 export async function buildFabSheetWorkbook(input: {
   rows: FabSheetRow[];
   valueDate: Date;
+  /**
+   * Column D's header. Part 1 keeps the reference file's literal "Salary" —
+   * Part 2 reads "Expense" instead (owner request 2026-08-08: the money in
+   * this column on a Part 2 file is expenses/additions, not a salary figure,
+   * and finance reads it that way). Same underlying number either way — this
+   * only changes the label FAB's own file never actually validates.
+   */
+  salaryColumnLabel?: "Salary" | "Expense";
 }): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Sheet1");
@@ -98,7 +106,7 @@ export async function buildFabSheetWorkbook(input: {
     { header: "COMPANY ACCOUNT NUMBER", key: "companyAccount", width: 28.86 },
     { header: "Title", key: "title", width: 5.14 },
     { header: "Full_Name", key: "fullName", width: 73.57 },
-    { header: "Salary", key: "salary", width: 9.29 },
+    { header: input.salaryColumnLabel ?? "Salary", key: "salary", width: 9.29 },
     { header: "Currency", key: "currency", width: 9.71 },
     { header: "Employee Account_Number", key: "employeeAccount", width: 27.43 },
     { header: "Bank_Name", key: "bankName", width: 11.86 },
