@@ -1,4 +1,5 @@
 import { isPostgresUniqueViolation, SalesWorkflowError } from "@/lib/sales/contracts";
+import { invalidateClosingStoreSplitCache } from "@/lib/dashboard/invalidation";
 import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
 import {
   createSourceOfSalesUploadFromBuffer,
@@ -330,6 +331,10 @@ export async function commitMonthlyUpload(input: {
     }
     throw error;
   }
+  // New/changed retail rows can change which customers count as store/wholesaler and how much of
+  // their sell-in the Closing Matrix redistributes — bust the cached split so the Matrix and portal
+  // pick it up now rather than at the next TTL.
+  invalidateClosingStoreSplitCache(`monthly closing import — ${input.distributorCode}/${period}`);
   return { status: "imported", reconciliation, engineVersion: RECOGNITION_ENGINE_VERSION, validation, ...persisted };
 }
 
