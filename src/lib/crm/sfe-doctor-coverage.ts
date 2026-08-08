@@ -28,10 +28,23 @@
 
 import { collapseDuplicateVisitSubmissions, queryVisits } from "@/lib/crm/reads";
 import { cairoTodayIso } from "@/lib/crm/dates";
+import { classifyCrmContactSpeciality, type CrmContactKind } from "@/lib/crm/contact-taxonomy";
+import {
+  DEFAULT_DOCTOR_COVERAGE_NORMS,
+  getDoctorCoverageConfig,
+  type DoctorCoverageGradeTier,
+  type DoctorCoverageNorms,
+} from "@/lib/crm/doctor-coverage-config";
 import type { DoctorCoverageScope } from "@/lib/crm/doctor-coverage-scope";
 
 /** Editable coverage norms: required type-0 visits per month, by grade tier. A+ folds into A. */
-export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = { A: 2, B: 1, C: 1 };
+/**
+ * The DEFAULT doctor norms. No longer the live rule: since 2026-08-09 the effective norms come from
+ * `doctor_coverage_config` and are editable per kind and grade in the admin panel
+ * (crm/doctor-coverage-config.ts). Kept as the documented fallback, and because it is what the
+ * board falls back to before the config row exists.
+ */
+export const DOCTOR_COVERAGE_TARGETS: Record<DoctorCoverageGradeTier, number> = DEFAULT_DOCTOR_COVERAGE_NORMS.sp;
 /** Selected month plus this many prior months form the board and its trend line — 4 points. */
 export const DOCTOR_COVERAGE_MONTHS_BACK = 3;
 /** A doctor with zero visits in the selected month counts as lapsed only if seen within this many
@@ -42,8 +55,9 @@ export const DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS = 2;
  * Scanning only the trend window dropped every lapsed doctor out of the oldest month's denominator,
  * and since a lapsed doctor is never green, that month's bar was the only one biased upward. */
 export const DOCTOR_COVERAGE_SCAN_MONTHS_BACK = DOCTOR_COVERAGE_MONTHS_BACK + DOCTOR_COVERAGE_LAPSE_LOOKBACK_MONTHS;
-/** Specialty mix lists this many named specialties before folding the rest into "Other". */
-const SPECIALTY_MIX_TOP_N = 8;
+// SPECIALTY_MIX_TOP_N removed 2026-08-08. It capped the mix at 8 named values and folded the rest
+// into "Other" — a bucket defined by RANK, not by meaning, so it held different things for every
+// viewer and hid ~780 real physicians company-wide. Both mixes are complete now; see `mixFor`.
 /** How many doctors the prioritised call list names. The full panel stays available in the table
  * below it; this is the "who do I send someone to next" answer, and a list nobody can act on in a
  * week is not one. `callListTotal` always reports the true count so the cap is never silent. */
@@ -53,7 +67,7 @@ export const DOCTOR_COVERAGE_CALL_LIST_SIZE = 50;
 const COVERAGE_TONE_GOOD_PCT = 80;
 const COVERAGE_TONE_FAIR_PCT = 50;
 
-export type DoctorCoverageGradeTier = "A" | "B" | "C";
+export type { DoctorCoverageGradeTier } from "@/lib/crm/doctor-coverage-config";
 export type DoctorCoverageStatus = "green" | "yellow" | "red";
 
 export type DoctorCoverageDoctorRow = {
@@ -64,6 +78,9 @@ export type DoctorCoverageDoctorRow = {
   gradeTier: DoctorCoverageGradeTier;
   /** Latest type-0 visit date ≤ the selected month's end, YYYY-MM-DD. */
   lastVisitDate: string | null;
+  /** SP (a doctor), HCP (a pharmacy/hospital/contract/insurance account), or unclassified when the
+   * vendor sent a value this build has never seen. See crm/contact-taxonomy.ts. */
+  kind: CrmContactKind;
   repKey: string;
   repName: string;
   speciality: string | null;
@@ -135,6 +152,9 @@ export type SfeDoctorCoverageBoard = {
   isCurrentMonth: boolean;
   month: string;
   monthLabel: string;
+  /** HCP accounts — pharmacies, hospitals, contracts, insurance — counted separately from doctors.
+   * Same shape as `specialtyMix`; both are complete (no rank-based "Other" bucket). */
+  accountMix: Array<{ doctors: number; label: string }>;
   pace: DoctorCoveragePace;
   reps: DoctorCoverageRepRow[];
   /** Human-readable description of whose data this is ("District Manager · own team"). Empty for
@@ -321,9 +341,11 @@ function trackLatest<T extends { date: string; visitId: number }>(current: T | n
 export function buildDoctorCoverageBoard(
   visits: readonly DoctorCoverageVisitInput[],
   selectedMonth: string,
-  /** Optional so the existing fixture tests keep their two-argument calls. */
-  options: { scopeLabel?: string } = {},
+  /** Optional so the existing fixture tests keep their two-argument calls. `norms` defaults to the
+   * shipped doctor norms, so a fixture that does not care about config behaves exactly as before. */
+  options: { norms?: DoctorCoverageNorms; scopeLabel?: string } = {},
 ): SfeDoctorCoverageBoard {
+  const norms = options.norms ?? DEFAULT_DOCTOR_COVERAGE_NORMS;
   const windowMonths: string[] = [];
   for (let back = DOCTOR_COVERAGE_MONTHS_BACK; back >= 0; back -= 1) {
     windowMonths.push(addMonthsToMonthKey(selectedMonth, -back));
@@ -431,7 +453,18 @@ export function buildDoctorCoverageBoard(
       if (visitsThisMonth > 0) ungradedContacts += 1;
       continue;
     }
-    const target = DOCTOR_COVERAGE_TARGETS[tier];
+
+    const kind = classifyCrmContactSpeciality(contact.latestSpeciality?.speciality);
+    // An `unclassified` contact is scored on the SP norms, which is exactly what happened to every
+    // contact before this split existed. Deliberate: a vendor value this build has not seen yet
+    // must not silently drop out of the coverage denominator and move the number — it stays scored
+    // as before and is surfaced in the mix list instead, so somebody classifies it.
+    const scoringKind = kind === "hcp" ? "hcp" : "sp";
+    const target = norms[scoringKind][tier];
+    // 0 = "this population is not held to a frequency" (owner-configurable). It cannot mean
+    // "needs zero visits": `visitsThisMonth >= 0` is always true, so that would paint every one of
+    // them green and inflate coverage. They leave the panel, the denominator, and the call list.
+    if (target <= 0) continue;
 
     // Trend: every window month gets the same green-vs-target math (panel = visited that month
     // OR lapsed relative to that month's own prior-2 window, which the widened scan supplies even
@@ -486,6 +519,7 @@ export function buildDoctorCoverageBoard(
       gradeRaw: gradeRaw as string,
       gradeTier: tier,
       lastVisitDate: contact.lastVisitDate,
+      kind,
       repKey: primary?.repKey ?? "crm:0",
       repName: primary?.repName ?? "Unmapped agent",
       speciality: contact.latestSpeciality?.speciality ?? null,
@@ -532,22 +566,33 @@ export function buildDoctorCoverageBoard(
   const totalsRed = doctors.filter((doctor) => doctor.status === "red").length;
   const activePanel = doctors.length;
 
-  // ── Specialty mix & grade split (panel doctors only) ───────────────────────────────────────────
-  const specialtyCounts = new Map<string, number>();
-  for (const doctor of doctors) {
-    const label = doctor.speciality ?? "Unspecified";
-    specialtyCounts.set(label, (specialtyCounts.get(label) ?? 0) + 1);
-  }
-  const namedSpecialties = Array.from(specialtyCounts.entries())
-    .filter(([label]) => label !== "Unspecified")
-    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  const specialtyMix: Array<{ doctors: number; label: string }> = namedSpecialties
-    .slice(0, SPECIALTY_MIX_TOP_N)
-    .map(([label, count]) => ({ doctors: count, label }));
-  const otherCount = namedSpecialties.slice(SPECIALTY_MIX_TOP_N).reduce((sum, [, count]) => sum + count, 0);
-  if (otherCount > 0) specialtyMix.push({ doctors: otherCount, label: "Other" });
-  const unspecifiedCount = specialtyCounts.get("Unspecified") ?? 0;
-  if (unspecifiedCount > 0) specialtyMix.push({ doctors: unspecifiedCount, label: "Unspecified" });
+  // ── Two mixes: doctors (SP) and accounts (HCP) ────────────────────────────────────────────────
+  // Owner rule 2026-08-08: "all specialities SP, pharmacy and hospitals contract and insurance HCP".
+  // These used to be ONE list, so a pharmacy outranked most real specialties in it.
+  //
+  // Both lists are now COMPLETE — no top-N cut. The old rank-based "Other" bucket was not a
+  // category at all, just "rank 9 and below", so its meaning changed with the viewer's scope: on
+  // one District Manager's board it held 32 contacts that were almost all hospitals and contracts,
+  // while company-wide the same bucket buried ~780 real physicians (Urology 270, General Surgery
+  // 151, Psychiatry 125, Neuro Surgery 88, and the rest). Every value stands on its own now; there
+  // are ~18 SP and ~11 HCP values in production, which is a readable list either way.
+  const mixFor = (kind: CrmContactKind) => {
+    const counts = new Map<string, number>();
+    for (const doctor of doctors) {
+      if (doctor.kind !== kind) continue;
+      const label = doctor.speciality?.trim() || "Unspecified";
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+      .map(([label, count]) => ({ doctors: count, label }));
+  };
+  const specialtyMix = mixFor("sp");
+  const accountMix = mixFor("hcp");
+  // A value the vendor invented since this build shipped lands here rather than being guessed into
+  // one of the two lists — the exact failure that let "Contract" be scored as a doctor for months.
+  const unclassifiedMix = mixFor("unclassified");
+  if (unclassifiedMix.length > 0) specialtyMix.push(...unclassifiedMix.map((row) => ({ ...row, label: `${row.label} (unclassified)` })));
 
   const gradeSplit = (["A", "B", "C"] as const).map((tier) => ({
     covered: doctors.filter((doctor) => doctor.gradeTier === tier && doctor.status === "green").length,
@@ -598,6 +643,7 @@ export function buildDoctorCoverageBoard(
   const coveragePct = activePanel > 0 ? Math.round((totalsGreen / activePanel) * 100) : 0;
 
   return {
+    accountMix,
     callList: callListAll.slice(0, DOCTOR_COVERAGE_CALL_LIST_SIZE),
     callListTotal: callListAll.length,
     doctors: doctors.sort((a, b) => {
@@ -676,5 +722,8 @@ export async function getSfeDoctorCoverage(input: {
     ...(input.scope.kind === "agents" ? { agentHrIds: input.scope.agentHrIds } : {}),
   });
   const collapsed = collapseDuplicateVisitSubmissions(rows);
-  return buildDoctorCoverageBoard(collapsed, month, { scopeLabel: input.scope.label });
+  // Norms are admin-editable per kind and grade; getDoctorCoverageConfig never throws and falls
+  // back to the shipped defaults, so a missing table or a transient read cannot break the board.
+  const { norms } = await getDoctorCoverageConfig();
+  return buildDoctorCoverageBoard(collapsed, month, { norms, scopeLabel: input.scope.label });
 }

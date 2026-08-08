@@ -118,15 +118,40 @@ export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctor
                 </div>
               </div>
               <div>
-                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Specialty mix (panel doctors)</p>
+                {/* Two lists, never one. A pharmacy is not a specialty, and ranking them together
+                    put pharmacies above most real specialties (owner, 2026-08-08). */}
+                <p className="mb-2 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  Specialty mix — doctors (SP)
+                </p>
                 <div className="divide-y divide-slate-100 border border-slate-200">
-                  {board.specialtyMix.map((specialty, index) => (
-                    <div className="flex items-center gap-3 px-3 py-2" key={specialty.label}>
-                      <span className="w-5 text-[11px] font-black text-slate-300">#{index + 1}</span>
-                      <span className="flex-1 text-sm font-medium text-slate-700">{specialty.label}</span>
-                      <span className="w-14 text-right text-sm font-black text-slate-900">{specialty.doctors}</span>
-                    </div>
-                  ))}
+                  {board.specialtyMix.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-slate-400">No doctors in this panel.</p>
+                  ) : (
+                    board.specialtyMix.map((specialty, index) => (
+                      <div className="flex items-center gap-3 whitespace-nowrap px-3 py-2" key={specialty.label}>
+                        <span className="w-5 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                        <span className="flex-1 text-sm font-medium text-slate-700">{specialty.label}</span>
+                        <span className="w-14 text-right text-sm font-black text-slate-900">{specialty.doctors}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <p className="mb-2 mt-4 text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  Account mix — pharmacies, hospitals &amp; contracts (HCP)
+                </p>
+                <div className="divide-y divide-slate-100 border border-slate-200">
+                  {board.accountMix.length === 0 ? (
+                    <p className="px-3 py-2 text-xs text-slate-400">No HCP accounts in this panel.</p>
+                  ) : (
+                    board.accountMix.map((account, index) => (
+                      <div className="flex items-center gap-3 whitespace-nowrap px-3 py-2" key={account.label}>
+                        <span className="w-5 text-[11px] font-black text-slate-300">#{index + 1}</span>
+                        <span className="flex-1 text-sm font-medium text-slate-700">{account.label}</span>
+                        <span className="w-14 text-right text-sm font-black text-slate-900">{account.doctors}</span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>

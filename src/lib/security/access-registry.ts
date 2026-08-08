@@ -352,6 +352,13 @@ export const accessRegistry = [
   // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
   // roster guarantee is a read guarantee, not a write one.
   sessionApi({ methods: ["POST"], pattern: "/api/crm/early-birds/sync", permission: { resource: "crm_visits", action: "read" }, guard: "assert-permission", csrfRequired: true }),
+  // Doctor Coverage visit norms (visits per month, per contact kind and grade). `crm_visits:update`
+  // is held ONLY by Super Admin and SFE Manager — it exists for this policy singleton alone; the
+  // CRM visit mirror stays read-only for everyone. The CEO account is deliberately excluded, being
+  // observational on policy. The PATCH is audited because it silently redefines what every role's
+  // coverage % means, and "why did coverage jump" has to be answerable later.
+  sessionApi({ methods: ["GET"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: false }),
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["PATCH"], pattern: "/api/crm/doctor-coverage/config", permission: { resource: "crm_visits", action: "update" }, guard: "assert-permission", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/approvals/early-bird/:id/decision", permission: { resource: "early_birds", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   // `create` matches the other requester-side mutations, but it is NOT the real gate: cancelling is
   // restricted to the requester of that specific held order (or a Super Admin) by
