@@ -668,6 +668,7 @@ import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arr
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
+import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
@@ -1535,6 +1536,11 @@ await runTest(
 await runTest(
   "one employee earns at most one allowance per calendar day, across every write path",
   runOutstationAllowanceDuplicateDayGuardTests,
+);
+
+await runTest(
+  "outstation claim validation flags a real mismatch and never reads missing CRM data as one",
+  runOutstationClaimValidationTests,
 );
 
 await runTest(

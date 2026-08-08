@@ -235,6 +235,51 @@ export function assertSystemAdministratorWorkspaceAccess(
   }
 }
 
+/**
+ * Who may READ the outstation expense approvals workspace, including its claim validation.
+ *
+ * Owner request (2026-08-08): the CEO must see whether a claim is corroborated by CRM evidence.
+ * The page was Super Admin only, so he could not open it at all. This is the single, named
+ * widening — deliberately its own set rather than a change to systemAdministratorRoles, because
+ * reading a validation result and administering the system are different privileges and must be
+ * able to diverge later without one silently dragging the other along.
+ *
+ * The CEO's scope is "company", not "system", so the scope shortcut above cannot admit him by
+ * accident; membership of this set is the only thing that does.
+ */
+export const outstationApprovalReviewRoles = ["Super Admin", "CEO"] as const satisfies readonly PhoenixRole[];
+const outstationApprovalReviewRoleSet = new Set<PhoenixRole>(outstationApprovalReviewRoles);
+
+export function canReviewOutstationExpenseApprovals(
+  context: Pick<AccessContext, "role" | "scope">,
+): boolean {
+  return context.scope === "system" || outstationApprovalReviewRoleSet.has(context.role);
+}
+
+export function assertOutstationExpenseApprovalReviewAccess(
+  context: Pick<AccessContext, "role" | "scope">,
+  workspace = "outstation expense approvals",
+) {
+  if (!canReviewOutstationExpenseApprovals(context)) {
+    throw new Error(`Forbidden: ${context.role} cannot access ${workspace}.`);
+  }
+}
+
+/**
+ * Who may DECIDE an outstation expense — approve, reject, adjust the payable amount.
+ *
+ * Deliberately unchanged and deliberately separate from the read helper above. The CEO can read
+ * every validation result and decide nothing; Super Admin remains the only role that moves money.
+ * Hiding the buttons in the UI is a courtesy — THIS is the boundary, and the decision POST route
+ * keeps asserting system-administrator access so a CEO request is refused server-side regardless
+ * of what the client renders.
+ */
+export function canDecideOutstationExpenseApprovals(
+  context: Pick<AccessContext, "role" | "scope">,
+): boolean {
+  return canAccessSystemAdministratorWorkspace(context);
+}
+
 function hardBoundaryAllowedActions(role: PhoenixRole, resource: PermissionResource): PermissionAction[] | null {
   switch (resource) {
     case "admin":

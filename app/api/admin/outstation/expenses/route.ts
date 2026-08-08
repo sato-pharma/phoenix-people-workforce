@@ -8,7 +8,10 @@ import {
 } from "@/lib/outstation/expenses";
 import { partitionExpenseApprovalRecords } from "@/lib/outstation/expense-approval-decisions";
 import { applyOutstationRequestExpenseDecisions } from "@/lib/outstation/service";
-import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
+import {
+  assertOutstationExpenseApprovalReviewAccess,
+  assertSystemAdministratorWorkspaceAccess,
+} from "@/lib/auth/permissions";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
@@ -26,7 +29,10 @@ export async function GET(request: Request) {
     // how the denial reads, never who gets through.
     const unauthenticated = unauthenticatedSessionResponse(access);
     if (unauthenticated) return unauthenticated;
-    assertSystemAdministratorWorkspaceAccess(access, "payroll expenses administration");
+    // READ is widened to CEO (2026-08-08) so he can see the claim validation. The decision POST
+    // below keeps asserting system-administrator access — reading the queue and moving money are
+    // separate privileges here.
+    assertOutstationExpenseApprovalReviewAccess(access, "payroll expenses administration");
     const url = new URL(request.url);
     const rawMonth = url.searchParams.get("month");
     const rawYear = url.searchParams.get("year");
