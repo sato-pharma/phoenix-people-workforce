@@ -677,6 +677,7 @@ import { runClosingDirectAreaIdentityTests } from "./closing-direct-area-identit
 import { runMonthlyClosingExportAreaMergeStaticTests } from "./monthly-closing-export-area-merge-static.test.ts";
 import { runSalesStoreOverrideTests } from "./sales-store-override.test.ts";
 import { runClosingExportFilenameTests } from "./closing-export-filename.test.ts";
+import { runWeeklyPlansDistrictManagerBypassTests } from "./weekly-plans-district-manager-bypass.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1558,6 +1559,10 @@ await runTest(
 await runTest(
   "the closing workbook download is named by month, line and region (and never by a raw period code)",
   runClosingExportFilenameTests,
+);
+await runTest(
+  "District Manager weekly/monthly plans skip the CEO decide stage (server guard, no CEO notification, HR bucket, read-only CEO queue)",
+  runWeeklyPlansDistrictManagerBypassTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

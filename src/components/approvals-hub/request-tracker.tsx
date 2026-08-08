@@ -68,7 +68,7 @@ export function RequestTracker({ steps, stageLabel, ageDays, fallbackStatusLabel
                       </span>
                     </div>
                     <p className="text-xs text-slate-600">
-                      {step.approverName ? step.approverName : "Unassigned"}
+                      {step.approverName ? step.approverName : step.approverTitle ?? "Unassigned"}
                       {step.decidedAt ? ` · ${new Date(step.decidedAt).toLocaleDateString("en-GB")}` : ""}
                     </p>
                     {step.decisionComment ? (

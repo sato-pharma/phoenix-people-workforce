@@ -147,6 +147,12 @@ export const WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES = [
 ] as const;
 
 const eligibleRoleSet = new Set<PhoenixRole>(WEEKLY_MONTHLY_PLAN_ELIGIBLE_JOB_TITLES);
+
+export function isDistrictManagerPlanTitle(jobTitle: string | null): boolean {
+  if (!jobTitle) return false;
+  return resolveJobFunctionRole(jobTitle) === "District Manager";
+}
+
 const editableStatuses = new Set<EmployeePlanStatus>(["draft", "manager_returned", "ceo_returned"]);
 const closedStatuses = new Set<EmployeePlanStatus>([
   "manager_rejected",
