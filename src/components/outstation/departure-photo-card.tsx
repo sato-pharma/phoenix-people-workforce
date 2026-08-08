@@ -38,39 +38,75 @@ type CaptureState =
  */
 export function DeparturePhotoCard({
   employeeHrId,
+  mode = "capture",
   onCaptured,
   requests,
 }: {
   employeeHrId: string;
+  /**
+   * "retake" changes the WORDS only. The capture, the watermark, the geolocation fallback and the
+   * server contract stay identical — a retake is a capture — because the moment the two paths
+   * diverge is the moment one of them stops matching what the server actually accepts.
+   */
+  mode?: "capture" | "retake";
   onCaptured?: (requestId: number) => void;
   requests: DeparturePhotoPendingRequest[];
 }) {
+  const isRetake = mode === "retake";
   const [state, setState] = useState<CaptureState>({ kind: "idle" });
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  /**
+   * True only once the element is actually producing frames.
+   *
+   * Without this the shutter is live the instant the preview mounts, and a tap in that window
+   * draws a video with videoWidth 0 — which getCompressedEvidenceCanvasSize falls back to 1280x720
+   * for, producing a perfectly valid, perfectly black 1280x720 JPEG. A black photo that uploads
+   * successfully is worse than an error: it satisfies the gate and nobody looks again.
+   */
+  const [videoReady, setVideoReady] = useState(false);
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    setVideoReady(false);
   }, []);
 
   // Releasing the camera on unmount is not tidiness: a live MediaStream keeps the phone's camera
   // light on and drains the battery long after the employee has navigated away.
   useEffect(() => stopCamera, [stopCamera]);
 
+  // Attaching the stream must happen HERE, not in openCamera.
+  //
+  // The <video> is only rendered while state.kind === "live", so at the moment openCamera has the
+  // MediaStream in hand the element does not exist yet and videoRef.current is null. The old code
+  // guarded that with `if (videoRef.current)` and silently skipped the assignment, so the element
+  // mounted a frame later with no source — a black rectangle, which capture() then drew onto the
+  // canvas and uploaded as a black photo. The guard hid the bug instead of reporting it.
+  //
+  // This effect runs after the element is in the DOM, which is the only point at which the stream
+  // can be attached at all.
+  useEffect(() => {
+    if (state.kind !== "live") return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    if (video.srcObject !== stream) video.srcObject = stream;
+    // Autoplay can still be refused; the readiness gate below keeps a refused play from being
+    // captured as a black frame rather than letting it through silently.
+    void video.play().catch(() => undefined);
+  }, [state]);
+
   const openCamera = useCallback(
     async (requestId: number) => {
+      setVideoReady(false);
       setState({ kind: "opening", requestId });
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" } },
         });
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
         setState({ kind: "live", requestId });
       } catch {
         setState({
@@ -88,6 +124,20 @@ export function DeparturePhotoCard({
     async (request: DeparturePhotoPendingRequest) => {
       const video = videoRef.current;
       if (!video) return;
+
+      // Refuses rather than captures. A zero-sized video is a preview that has not produced a
+      // frame yet, and capturing it yields a black JPEG that passes every check downstream — the
+      // gate is satisfied, the money moves, and the evidence is a black rectangle.
+      if (!video.videoWidth || !video.videoHeight) {
+        setState({
+          kind: "error",
+          message:
+            "The camera has not started yet — the preview is still blank. Wait for the picture to appear, then take the photo.",
+          requestId: request.id,
+        });
+        return;
+      }
+
       setState({ kind: "saving", requestId: request.id });
 
       try {
@@ -171,13 +221,13 @@ export function DeparturePhotoCard({
       <div className="flex items-center gap-2">
         <Camera className="h-4 w-4 text-orange-600" />
         <span className="rounded-md bg-orange-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-orange-700">
-          Departure photo needed
+          {isRetake ? "Retake the departure photo" : "Departure photo needed"}
         </span>
       </div>
       <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-orange-900">
-        {requests.length === 1 ? "One expense request is" : `${requests.length} expense requests are`} waiting
-        for a departure photo. Capture it before you leave the destination — the request does not reach
-        payroll until it is taken.
+        {isRetake
+          ? "Take it again while you are still at the destination. The photo you replace is kept and stays visible to your approver, so a retake never hides anything — it just corrects it."
+          : `${requests.length === 1 ? "One expense request is" : `${requests.length} expense requests are`} waiting for a departure photo. Capture it before you leave the destination — the request does not reach payroll until it is taken.`}
       </p>
 
       <div className="mt-4 space-y-3">
@@ -197,7 +247,13 @@ export function DeparturePhotoCard({
                 {!done ? (
                   <button
                     className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-orange-500 px-4 text-xs font-black text-white hover:bg-orange-600 disabled:opacity-60"
-                    disabled={isActive && (state.kind === "opening" || state.kind === "saving")}
+                    disabled={
+                      (isActive && (state.kind === "opening" || state.kind === "saving")) ||
+                      // The shutter stays dead until the preview is genuinely producing frames.
+                      // Disabling it is the difference between a retake and a black photo that
+                      // quietly satisfies the evidence gate.
+                      (isActive && state.kind === "live" && !videoReady)
+                    }
                     onClick={() => {
                       if (isActive && state.kind === "live") void capture(request);
                       else void openCamera(request.id);
@@ -210,19 +266,38 @@ export function DeparturePhotoCard({
                       <Camera className="h-4 w-4" />
                     )}
                     {isActive && state.kind === "live"
-                      ? "Take the photo"
+                      ? videoReady
+                        ? "Take the photo"
+                        : "Starting the camera…"
                       : isActive && state.kind === "saving"
                         ? "Saving…"
                         : isActive && state.kind === "opening"
                           ? "Opening camera…"
-                          : "Open camera"}
+                          : isRetake
+                            ? "Retake photo"
+                            : "Open camera"}
                   </button>
                 ) : null}
               </div>
 
               {isActive && state.kind === "live" ? (
                 <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-black">
-                  <video className="max-h-[320px] w-full object-contain" playsInline ref={videoRef} />
+                  {/* muted is required, not cosmetic: some browsers refuse to autoplay an
+                      unmuted element, and a refused play is exactly how this ends up black. */}
+                  <video
+                    className="max-h-[320px] w-full object-contain"
+                    muted
+                    onCanPlay={() => setVideoReady(true)}
+                    onLoadedMetadata={() => setVideoReady(true)}
+                    onPlaying={() => setVideoReady(true)}
+                    playsInline
+                    ref={videoRef}
+                  />
+                  {!videoReady ? (
+                    <p className="bg-slate-900 px-3 py-2 text-center text-[11px] font-bold text-white">
+                      Starting the camera…
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 

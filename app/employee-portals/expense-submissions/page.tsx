@@ -61,7 +61,7 @@ export default async function EmployeePortalExpenseSubmissionsPage() {
   return (
     <EmployeePortalPageShell
       badge="Expenses"
-      description="Every outstation trip you have submitted, what it is waiting for, and what HR decided."
+      description="Every outstation trip you have submitted, what it is waiting for, and how it was validated."
       errorBoundaryTitle="Expense Submissions unavailable"
       title="Expense Submissions"
     >

@@ -65,16 +65,29 @@ export function buildOutstationCarEvidenceImagePath(metadata: OutstationCarEvide
 export function buildOutstationDepartureEvidenceImagePath(input: {
   employeeHrId: string;
   requestId: string | number;
+  /**
+   * 1 for the first capture, 2+ for each retake. Versioned rather than overwritten: the owner
+   * allowed retakes on 2026-08-08, and the ONLY thing that keeps that safe is that the earlier
+   * photo survives. A retake that replaced the original would erase the evidence it is meant to
+   * correct, and nobody could ever tell a fixed blurry photo from a substituted one.
+   */
+  version?: number;
 }) {
   const employeeHrId = sanitizeStorageSegment(input.employeeHrId, "unknown-employee");
   const requestId = sanitizeStorageSegment(String(input.requestId), "unknown-request");
-  return `departure/${employeeHrId}/${requestId}.jpg`;
+  const version = Math.max(1, Math.trunc(input.version ?? 1));
+  // v1 keeps the original, unsuffixed path so every photo taken before retakes existed still
+  // resolves — a migration of live storage objects is not worth the risk here.
+  return version === 1
+    ? `departure/${employeeHrId}/${requestId}.jpg`
+    : `departure/${employeeHrId}/${requestId}-v${version}.jpg`;
 }
 
 export async function uploadOutstationDepartureEvidenceImage(params: {
   employeeHrId: string;
   imageDataUrl: string;
   requestId: string | number;
+  version?: number;
 }) {
   // Same JPEG-only, 2MB, live-capture parser as the arrival photo — a departure photo pasted
   // from the gallery must fail on exactly the same rule.
@@ -82,6 +95,7 @@ export async function uploadOutstationDepartureEvidenceImage(params: {
   const path = buildOutstationDepartureEvidenceImagePath({
     employeeHrId: params.employeeHrId,
     requestId: params.requestId,
+    version: params.version,
   });
 
   const { error } = await getSupabaseAdmin()
@@ -89,8 +103,10 @@ export async function uploadOutstationDepartureEvidenceImage(params: {
     .upload(path, parsed.bytes, {
       cacheControl: "31536000",
       contentType: parsed.contentType,
-      // false: a departure photo is captured once. Allowing an overwrite would let a later,
-      // more convenient photo quietly replace the one taken at the destination.
+      // Still false, and still for the original reason: no capture may ever overwrite another.
+      // Retakes do not need it — each one writes to its own versioned path, so a collision here
+      // means two captures raced for the same version and the second must fail loudly rather
+      // than quietly replace the first.
       upsert: false,
     });
 
