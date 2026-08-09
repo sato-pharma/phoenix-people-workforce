@@ -21,7 +21,12 @@ name: Migration Drift Check
 on:
   schedule:
     - cron: "0 7 * * *" # daily, offset from the notification-outbox/probation crons
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -140,29 +145,57 @@ jobs:
       # the exact failure mode being fixed here.
       #
       # Uses curl against the Bot API rather than the app's sendTelegramNotification() — a workflow
-      # runner has no app runtime, no database and no service-role client. TELEGRAM_BOT_TOKEN is
-      # already an Actions secret (shared with the app). TELEGRAM_ALERT_CHAT_ID must be added; it is
-      # the owner's own chat id, readable from public.telegram_links in production.
+      # runner has no app runtime, no database and no service-role client. Both TELEGRAM_BOT_TOKEN
+      # (shared with the app) and TELEGRAM_ALERT_CHAT_ID are Actions secrets; the chat id is the
+      # PHX-1 system-administrator connection, chosen by the owner 2026-08-09.
       #
       # `continue-on-error` so a notification outage can never mask the security result itself —
       # the job's red/green must depend on the checks, never on Telegram being up.
+      #
+      # SELF-TEST. `workflow_dispatch` with test_alert=true fires this step on a PASSING run. An
+      # alarm that has never been observed to ring is indistinguishable from a broken one, and this
+      # workflow already spent three days proving that a detector nobody hears is not a detector.
+      # A bot token can be rotated, a chat id can go stale, and the daily run would keep passing
+      # silently while the alert path rotted. This makes "does the alarm still work?" a question
+      # anyone can answer in two minutes without waiting for a real incident.
       - name: Notify Telegram on failure
-        if: ${{ failure() }}
+        if: ${{ failure() || inputs.test_alert }}
         continue-on-error: true
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IS_TEST: ${{ inputs.test_alert }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
             echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The database posture check FAILED and reached nobody, which is the condition this step exists to prevent."
             exit 0
           fi
-          TEXT=$(printf '🔴 *Database posture check FAILED*\n\nMigration drift / schema shape is red on staging or production.\n\nThis is the check that found six anon-readable backup tables on 2026-08-06 and went unread for three days.\n\n[Open the run](%s)' "$RUN_URL")
-          curl -sS --max-time 20 -X POST \
+          # NO parse_mode. The first version sent parse_mode=Markdown and Telegram answered
+          # HTTP 400: the self-test text contains `test_alert`, and a lone underscore opens an
+          # italic span that is never closed, so the whole message was rejected. An alert must
+          # never fail because of how it is formatted — plain text cannot be mis-parsed, and the
+          # only thing lost is a clickable link, which the bare URL provides anyway.
+          if [ "$IS_TEST" = "true" ]; then
+            TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the drift check with the test flag to confirm this channel still works.\n\nIf you are reading this, a real database posture failure would also reach you.\n\n%s' "$RUN_URL")
+          else
+            TEXT=$(printf 'DATABASE POSTURE CHECK FAILED\n\nMigration drift / schema shape is red on staging or production.\n\nThis is the check that found six anon-readable backup tables on 2026-08-06 and went unread for three days.\n\n%s' "$RUN_URL")
+          fi
+          # Capture the body, not just the status. A silent non-2xx is how this step reported
+          # success while delivering nothing on the very first run.
+          HTTP=$(curl -sS --max-time 20 -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
-            -d "parse_mode=Markdown" \
             -d "disable_web_page_preview=true" \
             --data-urlencode "text=${TEXT}" \
-            -o /dev/null -w 'telegram sendMessage HTTP %{http_code}\n'
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            # Telegram echoes the reason in `description`; print it so the fix is obvious.
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). The database posture result reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            # Non-zero so the step shows RED in the UI. The job outcome is unaffected because of
+            # continue-on-error above — a Telegram outage must never mask, or manufacture, a
+            # security verdict. But a broken alarm must never look healthy either.
+            exit 1
+          fi
+          echo "Telegram alert delivered."
