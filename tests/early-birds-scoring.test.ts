@@ -62,6 +62,32 @@ function visitsAcrossDays(count: number, overrides: Partial<EarlyBirdsVisitFact>
   );
 }
 
+
+/**
+ * Derives the GPS start map from fact-level startMinutes.
+ *
+ * The blocks below were written when a fact's own clock WAS the start time. Since 2026-08-09 the
+ * ranking reads only real GPS check-ins (gpsStartByRepDay), so these fixtures state the same thing
+ * the new way: "this rep verifiably started at this time on this day". Tests that care about the
+ * absence of GPS call buildEarlyBirdsRanking directly instead.
+ */
+function gpsMapFrom(facts: readonly EarlyBirdsVisitFact[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const fact of facts) {
+    // Same floor collect.ts applies before storing a check-in: an after-midnight clock is a
+    // write-up, not an arrival, and must never become the day's start.
+    if (!isPlausibleEarlyBirdsStart(fact.startMinutes)) continue;
+    const key = `${fact.hrIdKey}|${fact.dateIso}`;
+    const current = map.get(key);
+    if (current === undefined || fact.startMinutes < current) map.set(key, fact.startMinutes);
+  }
+  return map;
+}
+
+function rank(input: Parameters<typeof buildEarlyBirdsRanking>[0]) {
+  return buildEarlyBirdsRanking({ gpsStartByRepDay: gpsMapFrom(input.facts), ...input });
+}
+
 export function runEarlyBirdsScoringTests() {
   // ── Start score anchors ─────────────────────────────────────────────────────────
   {
@@ -126,7 +152,7 @@ export function runEarlyBirdsScoringTests() {
     const shared = { reps: [rep({ hrIdKey: "reg", hrId: "B-1", name: "Regular Rep" }),
                             rep({ hrIdKey: "camp", hrId: "B-2", name: "Campaign Rep" })],
                      dailyWinnerHrIdKeys: new Map<string, string | null>() };
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: shared.reps,
       facts: [
@@ -151,8 +177,19 @@ export function runEarlyBirdsScoringTests() {
     assert.ok(regular.totalScore > campaign.totalScore, "so the Regular rep still wins, on merit rather than on GPS");
   }
 
-  // ── A rep with zero GPS still scores, and can still be eligible ─────────────────
+  // ── A rep with zero GPS still scores, but can no longer WIN ────────────────────
   {
+    // POLICY REVERSAL, owner decision 2026-08-09. This block previously asserted the opposite —
+    // "GPS is a weight, not a filter" — and that was the right call while start times could come
+    // from crm_save_date. Once the ranking clock became GPS-only (because save time is submission
+    // time, running a median 57 min and a mean 307 min late on production), a rep with no check-in
+    // has no start time at all, and you cannot crown the earliest starter on a person whose start
+    // you never observed.
+    //
+    // The work is NOT erased: every visit still counts for volume, Regular, Campaign and
+    // consistency, and the rep still appears on the board. What they lose is candidacy, with the
+    // machine-readable reason `no_start_time_evidence` rather than a silent omission.
+    // Raw call on purpose: no gpsStartByRepDay at all is exactly the situation under test.
     const ranking = buildEarlyBirdsRanking({
       period: PERIOD,
       reps: [rep()],
@@ -161,13 +198,22 @@ export function runEarlyBirdsScoringTests() {
     });
     const score = ranking.scores[0];
     assert.equal(score.gpsShare, 0);
-    assert.ok(score.totalScore > 0, "zero GPS reduces the score; it must never zero it");
-    assert.equal(score.eligible, true, "and must never disqualify — GPS is a weight, not a filter");
+    assert.ok(score.totalScore > 0, "the work still scores — a missing check-in must never zero a rep's effort");
+    assert.equal(score.gpsVerifiedDays, 0);
+    assert.equal(
+      score.eligible,
+      false,
+      "but with no verified start there is no candidacy — the award is specifically about start time",
+    );
+    assert.ok(
+      score.ineligibleReasons.includes("no_start_time_evidence"),
+      "and the reason is stated, never silent",
+    );
   }
 
   // ── The minimum-days guard ──────────────────────────────────────────────────────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [
         rep({ hrIdKey: "flash", hrId: "B-1", name: "Two Perfect Days" }),
@@ -198,7 +244,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── The coverage guard — the new hire the activity guard alone would miss ───────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       // Hired on the 10th: only 5 expected working days in this fortnight.
       reps: [rep({ hrIdKey: "new", expectedWorkingDayWeight: 5, expectedWorkingDays: 5 })],
@@ -234,7 +280,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── Ineligible reps always sort after eligible ones, whatever they scored ───────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [
         rep({ hrIdKey: "flash", hrId: "B-1", name: "Aaa Flash" }),
@@ -262,8 +308,8 @@ export function runEarlyBirdsScoringTests() {
       ...visitsAcrossDays(8, { hrIdKey: "b", startMinutes: 540 }),
       ...visitsAcrossDays(8, { hrIdKey: "c", startMinutes: 540 }),
     ];
-    const forward = buildEarlyBirdsRanking({ period: PERIOD, reps, facts, dailyWinnerHrIdKeys: new Map() });
-    const reversed = buildEarlyBirdsRanking({
+    const forward = rank({ period: PERIOD, reps, facts, dailyWinnerHrIdKeys: new Map() });
+    const reversed = rank({
       period: PERIOD,
       reps: [...reps].reverse(),
       facts: [...facts].reverse(),
@@ -279,7 +325,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── The day key comes from visit_date, never from the timestamp ─────────────────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep()],
       facts: [...visitsAcrossDays(5), visit({ dateIso: "2026-08-06", startMinutes: 545 })],
@@ -295,7 +341,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── An after-midnight visit is still a submission on ITS OWN day ────────────────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep()],
       // The 6th's work, written up at 00:30. It belongs to the 6th, and it is real work — but its
@@ -318,7 +364,7 @@ export function runEarlyBirdsScoringTests() {
     // 2026-08-06 is a Thursday (half day) and 2026-08-07 a Friday (weekly off).
     assert.equal(fieldWorkforceDeductionDayWeight({ dateIso: "2026-08-07" }), 0, "Friday is a weekly off");
     assert.equal(fieldWorkforceDeductionDayWeight({ dateIso: "2026-08-06" }), 0.5, "Thursday is a half day");
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep({ expectedWorkingDayWeight: 5.5, expectedWorkingDays: 6 })],
       facts: visitsAcrossDays(6),
@@ -338,7 +384,7 @@ export function runEarlyBirdsScoringTests() {
       ["2026-08-02", null], // uncontested — nobody wins
       ["2026-08-03", "other"],
     ]);
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep()],
       facts: visitsAcrossDays(8),
@@ -354,7 +400,7 @@ export function runEarlyBirdsScoringTests() {
     // Found on real production data: a rep whose Campaign visits were written up after midnight
     // scored a "median start" of 02:25 and a perfect start component, taking the district off a
     // colleague who genuinely started at 09:18 with eight daily wins.
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [
         rep({ hrIdKey: "night", hrId: "B-1", name: "Night Filer" }),
@@ -397,7 +443,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── A rep whose ONLY clocks are after midnight has no start-time evidence ───────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep()],
       facts: visitsAcrossDays(9, { startMinutes: 40, timeSource: "save_time" }),
@@ -412,7 +458,7 @@ export function runEarlyBirdsScoringTests() {
 
   // ── The median is a whole minute ────────────────────────────────────────────────
   {
-    const ranking = buildEarlyBirdsRanking({
+    const ranking = rank({
       period: PERIOD,
       reps: [rep()],
       // Even count -> the median averages two clocks; 665 and 668 average to 666.5.
@@ -439,5 +485,64 @@ export function runEarlyBirdsScoringTests() {
       "calibrated to the p75 of 816 real rep-days in 2026-07-H2 — set it below the median and every rep saturates, which silently deletes this component",
     );
     assert.equal(EARLY_BIRDS_REGULAR_PER_DAY_TARGET, 11, "p75 of Regular visits per rep-day over the same window");
+  }
+
+  // ── The ranking clock is GPS ONLY (owner decision 2026-08-09) ───────────────────
+  {
+    // Reported as "the timing captured is wrong and inaccurate for every medical rep". It was.
+    // The old rule ranked on the earliest RESOLVED visit time, which falls back to crm_save_date
+    // when no check-in matched — submission time, which this repo's own CRM master table labels
+    // "paperwork time, NOT proof of being on site... often hours later or the next morning".
+    // Measured on production: save time ran a median 57 min and a mean 307 min behind the GPS
+    // check-in, and a quarter of rep-days were ranked on it while three quarters used GPS.
+    const reps = [rep({ hrIdKey: "gps", hrId: "B-1", name: "Checked In" }),
+                  rep({ hrIdKey: "paper", hrId: "B-2", name: "Paperwork Only" })];
+    // Both submit the same work; only one has a check-in.
+    const facts = [
+      ...visitsAcrossDays(10, { hrIdKey: "gps", visitType: 0, gpsEligible: true, timeSource: "gps_checkin" }),
+      ...visitsAcrossDays(10, { hrIdKey: "paper", visitType: 0, gpsEligible: true, timeSource: "save_time" }),
+    ];
+    const gpsStartByRepDay = new Map<string, number>();
+    for (const fact of facts) {
+      if (fact.hrIdKey === "gps") gpsStartByRepDay.set(`gps|${fact.dateIso}`, 8 * 60 + 30);
+    }
+
+    const ranking = buildEarlyBirdsRanking({
+      period: PERIOD,
+      reps,
+      facts,
+      dailyWinnerHrIdKeys: new Map<string, string | null>(),
+      gpsStartByRepDay,
+    });
+    const gps = ranking.scores.find((score) => score.hrIdKey === "gps");
+    const paper = ranking.scores.find((score) => score.hrIdKey === "paper");
+    assert.ok(gps && paper);
+
+    assert.equal(gps.medianStartMinutes, 8 * 60 + 30, "a GPS check-in is the start time");
+    assert.equal(
+      paper.medianStartMinutes,
+      null,
+      "a rep with visits but NO check-in has no start time — paperwork time must never be promoted into the ranking",
+    );
+    assert.equal(gps.gpsVerifiedDays, 10);
+    assert.equal(paper.gpsVerifiedDays, 0);
+
+    // Unverified is NOT the same as idle: the work still counts everywhere else.
+    assert.equal(paper.totalVisits, gps.totalVisits, "the visits still count");
+    assert.equal(paper.daysWithSubmission, gps.daysWithSubmission, "and so do the days worked");
+    assert.equal(paper.components.consistency, gps.components.consistency);
+
+    // Omitting the map entirely must not silently fall back to save time.
+    const noMap = buildEarlyBirdsRanking({
+      period: PERIOD,
+      reps,
+      facts,
+      dailyWinnerHrIdKeys: new Map<string, string | null>(),
+    });
+    assert.equal(
+      noMap.scores.every((score) => score.medianStartMinutes === null),
+      true,
+      "with no GPS data at all NOBODY has a verified start — the board shows an unranked field rather than ranking paperwork",
+    );
   }
 }

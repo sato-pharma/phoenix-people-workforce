@@ -97,6 +97,9 @@ export type EarlyBirdsRepScore = {
   campaignVisits: number;
   gpsEligibleVisits: number;
   gpsVerifiedVisits: number;
+  /** Days with a real GPS check-in — the days this rep has a verified start at all. The rest are
+   * worked-but-unverified, never 'late'. */
+  gpsVerifiedDays: number;
   /** null when the rep had no GPS-eligible visit at all — NOT zero. */
   gpsShare: number | null;
   dailyWins: number;

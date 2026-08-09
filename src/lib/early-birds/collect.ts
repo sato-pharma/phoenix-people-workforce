@@ -14,6 +14,7 @@ import { fieldWorkforceDeductionDayWeight } from "@/lib/field-workforce-complian
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { buildEarlyBirdsDailyWinners } from "@/lib/early-birds/daily-board";
 import { earlyBirdsPeriodDays, type EarlyBirdsPeriod } from "@/lib/early-birds/period";
+import { EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES } from "@/lib/early-birds/scoring";
 import type {
   EarlyBirdsRepContext,
   EarlyBirdsRepProfile,
@@ -33,6 +34,11 @@ export type EarlyBirdsInputs = {
   dailyWinnerHrIdKeys: Map<string, string | null>;
   contestedDays: number;
   profiles: Map<string, EarlyBirdsRepProfile>;
+  /**
+   * `${hrIdKey}|${dateIso}` -> minutes past Cairo midnight of that rep's FIRST GPS check-in that
+   * day. The only clock the ranking uses. A day absent from this map has no verified start.
+   */
+  gpsStartByRepDay: Map<string, number>;
   /** Last day actually scored — the period end, or today for a mid-period preview. */
   throughIso: string;
 };
@@ -135,7 +141,15 @@ export async function collectEarlyBirdsInputs(input: {
   }
 
   if (reps.length === 0) {
-    return { reps, facts: [], dailyWinnerHrIdKeys: new Map(), contestedDays: 0, profiles, throughIso };
+    return {
+      reps,
+      facts: [],
+      dailyWinnerHrIdKeys: new Map(),
+      contestedDays: 0,
+      profiles,
+      gpsStartByRepDay: new Map(),
+      throughIso,
+    };
   }
 
   const [visits, checkins] = await Promise.all([
@@ -147,10 +161,12 @@ export async function collectEarlyBirdsInputs(input: {
     }),
     // Company-wide for the window: the check-in door has no roster filter that matches on hr id,
     // and correlation is by agent+contact+day anyway, so a wider read cannot leak into a rep's score.
-    queryCheckins<NsmCrmCheckinRow>({
+    queryCheckins<NsmCrmCheckinRow & { agent_hr_id?: string | null }>({
       dateFrom: input.period.startIso,
       dateTo: throughIso,
-      columns: "agent_crm_id, contact_crm_id, check_date",
+      // agent_hr_id is read so a rep's OWN earliest check-in can be found without correlating it
+      // to a particular visit — see gpsStartByRepDay below.
+      columns: "agent_crm_id, agent_hr_id, contact_crm_id, check_date",
     }),
   ]);
 
@@ -161,12 +177,30 @@ export async function collectEarlyBirdsInputs(input: {
   const visitsByDate = new Map<string, VisitRowWithDate[]>();
   const checkinsByDate = new Map<string, NsmCrmCheckinRow[]>();
 
+  // The rep's OWN earliest GPS check-in per day — the only clock this module ranks on.
+  //
+  // Deliberately NOT visit-correlated. Correlating a check-in to a particular visit needs a
+  // contact both sides share, and measured on production 2026-08-09 that matches 94.8% of Regular
+  // visits and exactly 0 of 546 Campaign rows. Ranking off the correlated time therefore erased
+  // real Campaign work as "never showed up". "When did this rep first check in anywhere today"
+  // is both the honest answer to the question the board asks and immune to that.
+  const gpsStartByRepDay = new Map<string, number>();
+
   for (const checkin of checkins) {
     const dateIso = String(checkin.check_date ?? "").slice(0, 10);
     if (!dateIso) continue;
     const bucket = checkinsByDate.get(dateIso);
     if (bucket) bucket.push(checkin);
     else checkinsByDate.set(dateIso, [checkin]);
+
+    const hrIdKey = normalizeHrIdForAccess(checkin.agent_hr_id ?? null);
+    if (!hrIdKey) continue;
+    const minutes = crmMinutesPastMidnight(checkin.check_date);
+    // An after-midnight check-in is not an arrival; same rule the timeline applies.
+    if (minutes === null || minutes < EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES) continue;
+    const key = `${hrIdKey}|${dateIso}`;
+    const current = gpsStartByRepDay.get(key);
+    if (current === undefined || minutes < current) gpsStartByRepDay.set(key, minutes);
   }
 
   for (const row of visits) {
@@ -222,6 +256,7 @@ export async function collectEarlyBirdsInputs(input: {
     dailyWinnerHrIdKeys: daily.winnersByDate,
     contestedDays: daily.contestedDays,
     profiles,
+    gpsStartByRepDay,
     throughIso,
   };
 }
