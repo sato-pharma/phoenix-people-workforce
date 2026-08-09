@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 
 import { phoenixRoles } from "../src/lib/auth/permissions.ts";
 import { DEFAULT_NOTIFICATION_ROLE_POLICIES, notificationRoleKeys } from "../src/lib/notifications/role-recipients.ts";
@@ -76,4 +77,53 @@ export function runNotificationRoleRecipientsTests() {
       );
     }
   }
+
+  assertEveryNotificationRoleKeyHasAMigratedCheckConstraintSeat();
+}
+
+// Regression guard for the exact gap that shipped resignation_workflow_alert and
+// employee_import_alert into notificationRoleKeys (2026-08-09) with no migration: reads still
+// worked (getNotificationRolePolicies() falls back to DEFAULT_NOTIFICATION_ROLE_POLICIES per key
+// when no DB row exists), so nothing broke until an admin tried to edit either key from the
+// notification-recipients console — updateNotificationRolePolicy()'s .update().eq(...).single()
+// has no row to match (0 rows updated / "no rows returned"), and even a future INSERT would be
+// rejected by the stale notification_key CHECK constraint. Every migration that touches this
+// constraint rewrites it wholesale (the `do $$ ... drop constraint ... end $$` pattern first used
+// in 20260723020000), so its real live shape is whichever such migration sorts LAST by filename
+// (filenames are 14-digit timestamps, so lexicographic order is chronological order) — not any
+// one file read in isolation.
+function assertEveryNotificationRoleKeyHasAMigratedCheckConstraintSeat() {
+  const migrationsDir = new URL("../supabase/migrations/", import.meta.url);
+  const migrationFiles = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
+  let latest: { file: string; keys: string[] } | null = null;
+  for (const file of migrationFiles) {
+    const sql = readFileSync(new URL(file, migrationsDir), "utf8");
+    const constraintBody = sql.match(/check\s*\(\s*notification_key\s+in\s*\(([\s\S]*?)\)\s*\)/i)?.[1];
+    if (!constraintBody) continue;
+    latest = { file, keys: [...constraintBody.matchAll(/'([a-z0-9_]+)'/gi)].map((m) => m[1]!) };
+  }
+  assert.ok(
+    latest,
+    "no migration under supabase/migrations defines the notification_role_policies notification_key CHECK constraint",
+  );
+  const { file: latestFile, keys: constraintKeys } = latest;
+
+  const missingFromConstraint = notificationRoleKeys.filter((key) => !constraintKeys.includes(key));
+  assert.deepEqual(
+    missingFromConstraint,
+    [],
+    `notificationRoleKeys has keys with no seat in the notification_key CHECK constraint (latest definition: ${latestFile}) — ` +
+      `add a migration (follow the "do $$ ... select conname ... drop constraint ... end $$" pattern in 20260723020000) ` +
+      "that includes them, or updateNotificationRolePolicy() will fail the moment an admin edits that key's recipients",
+  );
+
+  const staleInConstraint = constraintKeys.filter((key) => !(notificationRoleKeys as readonly string[]).includes(key));
+  assert.deepEqual(
+    staleInConstraint,
+    [],
+    `the notification_key CHECK constraint in ${latestFile} allows keys that no longer exist in notificationRoleKeys: ${staleInConstraint.join(", ")}`,
+  );
 }
