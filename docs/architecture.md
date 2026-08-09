@@ -138,7 +138,9 @@ pipeline deployed a no-traffic revision, smoke-tested it, then promoted — and 
 rather than on merge. All of that is gone.
 
 `main` is production-only — never edit it directly. Production public domain:
-`https://phoenix-hr.satopharma.com` (Railway service `phoenix-people-workforce`, region `sfo`).
+`https://phoenix-hr.satopharma.com` (Railway service `phoenix-people-workforce`, region
+`europe-west4-drams3a` — Amsterdam, EU West, colocated with the Frankfurt Supabase project on
+purpose; see [AGENTS.md](../AGENTS.md) § Stable Environment Facts).
 **There is no staging app.** There is no per-branch preview deployment. To confirm what is actually
 live, request `/api/healthz` and read `revision` — the running commit SHA — rather than trusting a
 workflow list or a merged PR.
