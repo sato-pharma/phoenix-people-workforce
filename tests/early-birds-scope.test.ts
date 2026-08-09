@@ -39,6 +39,10 @@ const DIRECTORY: EarlyBirdsScopeRow[] = [
   row({ hrId: "AI-0001", displayName: "AI DSM One", jobTitle: "District Sales Manager", lineId: LINE_AI, managerHrId: "AA" }),
   row({ hrId: "B-12", displayName: "AI DSM Two", jobTitle: "District Sales Manager", lineId: LINE_AI, managerHrId: "AA" }),
   row({ hrId: "AI-R1", displayName: "AI Rep One", lineId: LINE_AI, managerHrId: "AI-0001" }),
+  // An ACTING district manager who is still titled "Medical Representative" and reports straight to
+  // the NSM. Real: B-1 holds SEAT-AIF-ADM-UE-1 while carrying a rep job title.
+  row({ hrId: "AI-ADM", displayName: "AI Acting DM", lineId: LINE_AI, managerHrId: "AI-0008" }),
+  row({ hrId: "AI-R4", displayName: "AI Rep Four", lineId: LINE_AI, managerHrId: "AI-ADM" }),
   row({ hrId: "AI-R2", displayName: "AI Rep Two", lineId: LINE_AI, managerHrId: "B-12" }),
   // The CEO directly manages a rep, which is what makes him a "district" at all.
   row({ hrId: "AI-R3", displayName: "AI Rep Three", lineId: LINE_AI, managerHrId: "AA" }),
@@ -60,13 +64,37 @@ const keys = (scope: { districts: Array<{ hrIdKey: string }> }) =>
   scope.districts.map((district) => district.hrIdKey).sort();
 
 export function runEarlyBirdsScopeTests() {
+  // ── An NSM is never his OWN district ────────────────────────────────────────────
+  //
+  // Checked FIRST so that a failure names the rule that broke rather than surfacing as a diff in
+  // the district list below.
+  {
+    // The second defect, and it only appeared once the DATA was correct. Districts are inferred
+    // from "who manages a medical rep", and an ACTING DM can still be titled "Medical
+    // Representative". The moment that acting DM's manager row was repaired to point at her NSM,
+    // the NSM satisfied the "viewer is himself a district" test and saw exactly one district:
+    // himself.
+    const ai = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("AI-0008", "National Sales Manager"));
+    assert.equal(
+      ai.districts.some((district) => district.hrIdKey === "ai0008"),
+      false,
+      "a National Sales Manager must never appear as a district of his own board",
+    );
+    assert.equal(
+      ai.districts.some((district) => district.hrIdKey === "aiadm"),
+      true,
+      "but the acting DM reporting to him IS one of his districts, even though she is titled a rep",
+    );
+    assert.ok(ai.districts.length >= 3, "and he keeps his real districts rather than collapsing to himself");
+  }
+
   // ── An NSM is scoped by LINE, never by the reporting tree ───────────────────────
   {
     const ai = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("AI-0008", "National Sales Manager"));
     assert.deepEqual(
       keys(ai),
-      ["ai0001", "b12"],
-      "the Anti-Infective NSM sees his own line's districts — a subtree walk returns NOTHING for him, because every Anti-Infective district reports to the CEO",
+      ["ai0001", "aiadm", "b12"],
+      "the Anti-Infective NSM sees his own line's districts — including the acting DM who reports directly to him, and never himself",
     );
     assert.equal(
       ai.districts.some((district) => district.hrIdKey === "aa"),
@@ -125,7 +153,10 @@ export function runEarlyBirdsScopeTests() {
   {
     const ceo = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("AA", "CEO"));
     assert.equal(ceo.isCompanyWide, true);
-    assert.equal(ceo.districts.length, 5, "every district that has at least one rep");
+    // Seven: the five real districts, the acting DM, and the NSM above her — because districts are
+    // inferred from "manages someone titled a medical rep" and the acting DM carries that title.
+    // Cosmetic on a company-wide board, and the reason the ordering guard above has to exist at all.
+    assert.equal(ceo.districts.length, 7, "every manager who has at least one rep reporting to him");
 
     const stranger = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("NOBODY", "Manager"));
     assert.deepEqual(stranger.districts, [], "an unknown viewer fails CLOSED, never to the whole company");
