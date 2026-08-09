@@ -12,7 +12,7 @@
 >
 > | Fact | Now |
 > |---|---|
-> | Host | Railway — project `Phoenix-HR-Workforce`, env `production`, service `phoenix-people-workforce` (region `sfo`, US West) |
+> | Host | Railway — project `Phoenix-HR-Workforce`, env `production`, service `phoenix-people-workforce` (region `europe-west4-drams3a`, Amsterdam/EU West since 2026-08-09 — colocated with the Frankfurt Supabase project on purpose; a rebuild must stay in Europe) |
 > | Deploy trigger | push/merge to `main` (GitHub-connected auto-deploy) — **the merge is the deploy**: full traffic, within minutes, no staged rollout, no smoke test |
 > | Confirm what's live | `curl https://phoenix-hr.satopharma.com/api/healthz` → read `revision` |
 > | Migrations | applied by hand, **before** the merge — the Railway build runs none |

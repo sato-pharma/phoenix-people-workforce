@@ -9,7 +9,7 @@ retirement).
 
 | Component | Service | Notes |
 |---|---|---|
-| Application hosting (production) | **Railway** | Project `Phoenix-HR-Workforce`, service `phoenix-people-workforce`, region `sfo` (US West) |
+| Application hosting (production) | **Railway** | Project `Phoenix-HR-Workforce`, service `phoenix-people-workforce`, region `europe-west4-drams3a` (Amsterdam, EU West) — colocated with the Frankfurt Supabase project on purpose; **must stay in Europe** if re-platformed |
 | Application hosting (staging) | **none** | The staging *app* died with Cloud Run and has no Railway replacement |
 | Database + Auth | Supabase | Separate production (`ozucdzovmcqvepbozvqf`) and staging (`cifwmndunmlxjhyjugxa`) projects |
 | Scheduled jobs | **cron-job.org** (third-party, outside this repo) | See "Cron Jobs" below |
