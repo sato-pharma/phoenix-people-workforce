@@ -45,7 +45,9 @@ export default async function TerritoryDrilldownPage() {
       title="Territory & Sales Drilldown"
     >
       <div className="mb-4">
-        <TerritorySyncPanel canRun={access.role === "Super Admin" || access.scope === "system"} />
+        {/* Every role that can open this page is a Territory Drilldown role, and by owner decision
+            all of them may run the (corrective, idempotent) sync — so the button is always live here. */}
+        <TerritorySyncPanel canRun />
       </div>
       <Suspense fallback={<DashboardSkeleton chartCount={1} kpiCount={0} />}>
         <TerritoryDrilldownContent access={access} />

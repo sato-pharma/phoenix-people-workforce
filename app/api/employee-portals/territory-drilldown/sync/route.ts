@@ -9,19 +9,20 @@ import {
   TERRITORY_SYNC_DEFAULT_MONTHS,
 } from "@/lib/sales/territory/sync";
 
-import { jsonError } from "../_lib/route-utils";
+import { isTerritoryDrilldownRole, jsonError } from "../_lib/route-utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-// The Sync mutation re-stamps historical, already-reported Source-of-Sales rows across every batch
-// they appear in and rebuilds the shared rollups the monthly closing also reads — a far bigger
-// blast radius than a single mapping edit, so it is Super-Admin only. This is the same gate the
-// historical reconciliation route uses (app/api/sales/mapping-database/customer-map/route.ts).
+// The Sync mutation re-stamps historical Source-of-Sales rows to today's geography and rebuilds the
+// shared rollups the monthly closing also reads. It is corrective and idempotent (only rows whose
+// brick actually moved are written; a second run re-stamps nothing), so — by owner decision — every
+// role that can open the Territory Drilldown may run it, not only the admin account. Super Admin /
+// system scope stay allowed too (that is the admin-console button's path).
 function assertSyncOperator(access: Awaited<ReturnType<typeof resolveAccessContext>>): void {
-  if (access.role !== "Super Admin" && access.scope !== "system") {
-    throw new Error("Forbidden: Territory data sync is restricted to the admin account.");
+  if (!isTerritoryDrilldownRole(access.role) && access.role !== "Super Admin" && access.scope !== "system") {
+    throw new Error("Forbidden: Territory data sync is not available for your role.");
   }
 }
 
@@ -38,11 +39,11 @@ export async function GET(request: Request) {
   }
 }
 
-// POST — run the sync. Super-Admin only (see assertSyncOperator).
+// POST — run the sync. Open to every Territory Drilldown role (and admin); see assertSyncOperator.
 export async function POST(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    await assertPermission(access, "sales", "import");
+    await assertPermission(access, "sales", "read");
     assertSyncOperator(access);
 
     const body = (await request.json().catch(() => ({}))) as { months?: unknown };
