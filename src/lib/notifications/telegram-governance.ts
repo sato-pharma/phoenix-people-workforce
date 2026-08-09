@@ -50,6 +50,13 @@ const defaultTelegramPolicies: TelegramModulePolicy[] = [
   { enabled: true, genericOnly: false, module: "attendance", notes: "Attendance digest, disputes, and missing-punch workflow alerts.", optional: false },
   { enabled: true, genericOnly: false, module: "field_workforce_compliance", notes: "Monthly field workforce compliance digest to compliance reviewers.", optional: false },
   { enabled: false, genericOnly: false, module: "holiday_confirmation", notes: "Disabled by default; low-volume admin confirmation reminder, email is sufficient today.", optional: true },
+  // Early Birds is in-app + Telegram ONLY (owner rule 2026-08-09; email is hard-blocked in
+  // early-birds-channel-guard.ts). Telegram is therefore not optional garnish here — with email
+  // gone it is one of only two ways the recommendation reaches a manager, so leaving this module
+  // to the unknown-module fail-safe would silently cut delivery in half.
+  // Not genericOnly: the recommendation IS the content. A generic "you have a notification" ping
+  // cannot be approved or rejected, which is the entire point of sending it.
+  { enabled: true, genericOnly: false, module: "early_birds", notes: "In-app and Telegram only; email is permanently blocked for this module.", optional: false },
 ];
 
 function cleanModule(value: unknown) {

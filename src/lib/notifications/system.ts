@@ -23,6 +23,7 @@ import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
 import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
+import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
@@ -325,7 +326,12 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // 2026-07-25, after this exact notification type produced a real incident) -- see
   // marketing-sla-channel-guard.ts. The other marketing_requests lifecycle notifications
   // (submitted/assigned/approved/rejected/returned/completed) are untouched.
-  return enforceMarketingSlaEmailBlock(resolved, input.module, input.eventType);
+  const withoutMarketingSlaEmail = enforceMarketingSlaEmailBlock(resolved, input.module, input.eventType);
+  // Same hard guarantee for the whole Early Birds module (owner request 2026-08-09): in-app and
+  // Telegram only, never email. Applied last so nothing downstream of the policy table can restore
+  // it -- including the Telegram-failure fallback, which matters here because Telegram failing is
+  // the expected case while managers are still unlinked. See early-birds-channel-guard.ts.
+  return enforceEarlyBirdsEmailBlock(withoutMarketingSlaEmail, input.module);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

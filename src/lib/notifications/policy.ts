@@ -110,7 +110,9 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // Recipients are supplied explicitly (the District Manager, with his NSM and RM copied), so the
   // strategy is "cc" rather than a lookup. Without an entry here it falls back to the bare default
   // policy — the silent degradation weekly_plans.* documents.
-  "early_birds.*": { actionUrlRequired: true, channels: ["in_app", "email", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"] },
+  // Owner rule 2026-08-09: in-app and Telegram only, never email. The hard guarantee is
+  // early-birds-channel-guard.ts — this row is the intent, that filter is the enforcement.
+  "early_birds.*": { actionUrlRequired: true, channels: ["in_app", "telegram", "push"], permissionResource: null, priority: "normal", recipientStrategy: ["cc"], telegramAllowed: true },
   "employee_import.*": { channels: ["in_app", "email", "push"], permissionAction: "import", permissionResource: "imports", recipientStrategy: ["permission_based"] },
   "expenses.*": { channels: ["in_app", "email", "push"], recipientStrategy: ["direct_manager"] },
   "excuse.*": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], priority: "high", recipientStrategy: ["direct_manager"], telegramAllowed: true },
