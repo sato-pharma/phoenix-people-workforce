@@ -62,8 +62,16 @@ export default async function PortalTargetsPage({
 
   const sp = await searchParams;
   const { periods, current } = buildPeriods();
-  const selectedLine = SALES_LINES.find((line) => line.code === sp.line)?.code ?? SALES_LINES[0].code;
+  const requestedLine = SALES_LINES.find((line) => line.code === sp.line)?.code ?? null;
   const selectedPeriod = sp.period && periods.includes(sp.period) ? sp.period : current;
+
+  // The line picker must mirror the VIEWER's scope, not the company's. A District / Regional /
+  // National Sales Manager owns exactly one line (their `bound.lineCodes`), so showing the full
+  // CNS/Pedia/Anti-infective switcher lets them navigate to a line whose grid is correctly — but
+  // confusingly — empty for them. Both are finalized inside the try, once resolvePortalTargetsBound
+  // has run; a company viewer (canViewAllTargets) keeps every line.
+  let availableLines: ReadonlyArray<{ code: string; label: string }> = SALES_LINES;
+  let selectedLine = requestedLine ?? SALES_LINES[0].code;
 
   let rows: TargetGridRow[] = [];
   let lineTotal: { actualValue: number; targetValue: number; achievementValue: number | null } | null = null;
@@ -81,6 +89,21 @@ export default async function PortalTargetsPage({
       loadEmployeeNameMap(),
     ]);
     const nameFor = (hrId: string | null): string | null => (hrId ? employeeNames.get(hrId) ?? hrId : null);
+
+    // Restrict the line switcher to the viewer's own line(s). `bound.lineCodes` carries the SALES_LINES
+    // codes the viewer is scoped to (a single line for District / Regional / National Sales Manager);
+    // a company viewer resolves to `canViewAllTargets` and keeps the full list. If the bound can't be
+    // narrowed to a real line (null/empty, or nothing matched), fall back to every line rather than
+    // rendering a dead, empty picker.
+    const scopedLineCodes = bound.canViewAllTargets ? null : bound.lineCodes;
+    if (scopedLineCodes && scopedLineCodes.size > 0) {
+      const scoped = SALES_LINES.filter((line) => scopedLineCodes.has(line.code));
+      if (scoped.length > 0) {
+        availableLines = scoped;
+        selectedLine =
+          requestedLine && scoped.some((line) => line.code === requestedLine) ? requestedLine : scoped[0].code;
+      }
+    }
 
     // Scope FIRST, then filter by the selected line, THEN roll up. Rolling up before scoping would
     // render a correct-looking grid above whole-line summary cards — an aggregate leak.
@@ -140,7 +163,7 @@ export default async function PortalTargetsPage({
       title="Targets"
     >
       <TargetsWorkspace
-        lines={SALES_LINES}
+        lines={availableLines}
         periods={periods}
         selectedLine={selectedLine}
         selectedPeriod={selectedPeriod}
