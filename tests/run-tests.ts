@@ -24,6 +24,7 @@ import { runNotificationConfidenceGateTests } from "./notification-confidence-ga
 import { runOpenAiClientTests } from "./openai-client.test.ts";
 import { runEmailAiAssistTests } from "./email-ai-assist.test.ts";
 import { runSosAiSuggestRetryTests } from "./sos-ai-suggest-retry.test.ts";
+import { runTransactionalEmailNotUnsubscribableTests } from "./transactional-email-not-unsubscribable.test.ts";
 import { runEmployeeImportAlertRecipientTests } from "./employee-import-alert-recipients.test.ts";
 import { runAttendanceAlertNoEmailTests } from "./attendance-alert-no-email.test.ts";
 import { runForceLogoutHrIdCasingTests } from "./force-logout-hr-id-casing.test.ts";
@@ -738,6 +739,7 @@ async function runTest(name: string, execute: () => void | Promise<void>) {
   }
 }
 
+await runTest("transactional email survives an unsubscribe (password reset must never be withheld)", runTransactionalEmailNotUnsubscribableTests);
 await runTest("i18n config", runI18nConfigTests);
 await runTest("i18n Cairo date boundary (currentCairoDateOnlyIso EEST/EET rollover)", runI18nCairoDateBoundaryTests);
 await runTest("portal target dedup (med-rep achievement sum-distinct, not max, not naive-sum)", runPortalTargetDedupTests);

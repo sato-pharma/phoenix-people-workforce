@@ -1,3 +1,4 @@
+import { TRANSACTIONAL_EMAIL_TYPES } from "@/lib/email/transactional-types";
 import { NextResponse } from "next/server";
 
 import { addEmailSuppression } from "@/lib/email/suppression";
@@ -7,7 +8,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // Auth/password notification types are transactional and must never be unsubscribable.
-const nonUnsubscribableTypes = new Set(["password_reset", "user_created", "password_setup"]);
+// Shared with the SEND path (send-phoenix-email.ts) so the two cannot drift: refusing to
+// unsubscribe these is only half the promise — the send path must also ignore an unsubscribe
+// made from some other email when delivering them.
+const nonUnsubscribableTypes = TRANSACTIONAL_EMAIL_TYPES;
 
 function landingPage(message: string, status: number) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Unsubscribe</title><style>body{font-family:Arial,Helvetica,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}main{max-width:420px;padding:32px;text-align:center}h1{color:#f97316;font-size:20px;margin:0 0 12px}p{font-size:14px;line-height:1.6;color:#cbd5e1}</style></head><body><main><h1>Phoenix Workforce</h1><p>${message}</p></main></body></html>`;
