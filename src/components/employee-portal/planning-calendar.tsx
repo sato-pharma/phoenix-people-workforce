@@ -616,14 +616,21 @@ export function PlanningCalendar({
         ) : (
         <>
         <div className="overflow-hidden rounded-sm bg-white shadow-lg ring-1 ring-slate-200/60">
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] border-b-2 border-orange-500 bg-slate-900">
+          {/* FRIDAY is the only narrow column. Friday is off for everyone
+              (isFieldWorkforceFriday, unconditional), but SATURDAY is a full working day
+              for the Medical Rep / District Manager population this calendar plans for —
+              their weekend is Friday-only (isFieldWorkforceFridayOnlyTitle), and the week
+              runs Sat-Wed full days. Saturday therefore carries real plan chips and must
+              get an equal 1fr share like Sun-Thu; only Friday shrinks. Keep this template
+              identical on the header row and the day grid below or the columns misalign. */}
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] border-b-2 border-orange-500 bg-slate-900">
             {weekdays.map((weekday) => (
               <div className="px-2 py-2.5 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-300" key={weekday}>
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] divide-x divide-y divide-slate-100">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] divide-x divide-y divide-slate-100">
             {weeks.flat().map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];

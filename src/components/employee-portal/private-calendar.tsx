@@ -937,17 +937,24 @@ export function PrivateCalendar({
       <div className="space-y-6">
         {/* ── Calendar Grid ── */}
         <section className={panelClass}>
-          {/* Fri/Sat are the weekend for this org and stay empty almost every week —
-              give them a fixed minimal width instead of an equal 1fr share so the
-              working days (Sun-Thu) get the room. */}
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] bg-slate-950">
+          {/* FRIDAY is the only narrow column — do not shrink Saturday back.
+              Friday is off for everyone (isFieldWorkforceFriday is unconditional), so it
+              stays empty almost every week and gets a fixed minimal width. SATURDAY is
+              NOT the weekend for the population this calendar reports on: Medical Rep and
+              District (Sales) Manager have a Friday-only weekend
+              (isFieldWorkforceFridayOnlyTitle) and work Sat-Wed as full days, so Saturday
+              carries real activity chips AND is the day `no_activity_recorded` exceptions
+              fire on — see the weekly-off note in src/lib/private-calendar/logic.ts. It
+              needs an equal 1fr share like Sun-Thu. Keep this template identical on the
+              header row and the day grid below or the columns misalign. */}
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] bg-slate-950">
             {weekdays.map((weekday) => (
               <div key={weekday} className="px-1 py-3 text-center text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">
                 {weekday}
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_56px] divide-x divide-y divide-slate-100">
+          <div className="grid grid-cols-[repeat(5,minmax(0,1fr))_56px_minmax(0,1fr)] divide-x divide-y divide-slate-100">
             {weeks.flatMap((week) => week).map((day, index) => {
               const date = day.date;
               const dayItems = date ? itemsByDay.get(date) ?? [] : [];
