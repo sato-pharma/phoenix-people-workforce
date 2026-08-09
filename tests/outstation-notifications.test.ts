@@ -116,24 +116,32 @@ export function runOutstationNotificationsTests() {
     "a nearest-brick match is an approximation and must always ship its confidence",
   );
 
-  // submitOutstationRequest now makes the system decision itself: accepted -> push to
-  // payroll + Super Admin/CEO alert; a rejected_by_system decision persists the request
-  // and notifies the employee (no throw).
+  // REVERSED 2026-08-09 by owner decision ("do not reject any expense, you flag to admin and he
+  // decides"). submitOutstationRequest used to make the rejection decision itself and mail the
+  // employee about it; the two assertions below therefore required exactly what is now forbidden.
+  //
+  // The system still runs every check and still records every failure — it just holds the claim
+  // for a Super Admin instead of refusing it. So the submit path sends ONE mail, the
+  // awaiting-approval one, and a rejection notice can now only come from a human's decision in
+  // the queue (notifyOutstationDecision is still called there — see the reject-path pin below).
   const submitDecisionSlice = functionSlice(service, "async function submitOutstationRequest");
   assert.match(
     submitDecisionSlice,
     /notifyOutstationSubmitted\(/,
-    "an accepted submit fires the employee's submit confirmation",
+    "every submit fires the employee's submit confirmation",
   );
-  assert.match(
+  assert.doesNotMatch(
     submitDecisionSlice,
     /notifyOutstationDecision\(/,
-    "a system-rejected submit notifies the employee",
+    "no rejection mail may be sent at submit time — only a Super Admin's own decision sends one",
   );
-  assert.match(
+  // Quoted form on purpose: this forbids WRITING the status, not naming it. The submit path's own
+  // comments explain why the rejection was removed, and a bare-word match would fail on the
+  // explanation — punishing the documentation instead of the behaviour.
+  assert.doesNotMatch(
     submitDecisionSlice,
-    /rejected_by_system/,
-    "a failed decision persists as rejected_by_system rather than throwing",
+    /["']rejected_by_system["']/,
+    "the submit path must not reject: the system flags and a human decides",
   );
 
   // REVERSED 2026-08-08 by owner decision: no submit path auto-accepts any more. Every claim waits

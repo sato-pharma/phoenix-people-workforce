@@ -9,8 +9,25 @@ import {
   type OutstationDecisionInput,
 } from "../src/lib/outstation/decision.ts";
 
+/** The body of one top-level function, so a pin can target the submit path alone. */
+function functionSlice(src: string, declaration: string) {
+  const start = src.indexOf(declaration);
+  assert.notEqual(start, -1, `expected to find ${declaration}`);
+  const rest = src.slice(start + declaration.length);
+  const nextExport = rest.indexOf("\nexport ");
+  const nextFn = rest.indexOf("\nasync function ");
+  const ends = [nextExport, nextFn].filter((i) => i !== -1);
+  const end = ends.length > 0 ? Math.min(...ends) : rest.length;
+  return rest.slice(0, end);
+}
+
 // The system decision engine: distance floor + governorate rule + DM/TM campaign
 // cap + ticket evidence -> accepted_by_system / held_for_review / rejected_by_system.
+//
+// NOTE the split of responsibility since the owner's 2026-08-09 rule: the engine still
+// CLASSIFIES a breach as a rejection, because that is what the rule says about the claim. What
+// changed is that the live submit path no longer ACTS on it — it flags for a Super Admin. The
+// engine is the analysis; the human is the decision.
 export function runOutstationDecisionTests() {
   const base: OutstationDecisionInput = {
     actualDistanceKm: 120,
@@ -378,15 +395,55 @@ export function runOutstationDecisionTests() {
     /const campaignHoldReason = campaignRule\?\.kind === "hold" \? campaignRule\.reason : null;/,
     "a campaign HOLD must be kept separate from a campaign rejection",
   );
-  assert.match(
-    serviceSource,
-    /reviewHoldReasons = systemRejectionReason\s*\n?\s*\?\s*\[\]\s*\n?\s*:\s*\[\s*\n?\s*campaignHoldReason,/,
-    "the campaign hold must join reviewHoldReasons, so the claim lands in the pending queue rather than being rejected",
-  );
   assert.doesNotMatch(
     serviceSource,
     /campaignRejectionReason = campaignRuleOutcome\(/,
     "the campaign outcome must not be collapsed straight back into a rejection reason",
+  );
+
+  // ── Owner rule, 2026-08-09: THE SYSTEM FLAGS, IT NEVER REJECTS ──────────────────────────────
+  // Every automated check still runs and every failure is still recorded — but a failure now
+  // holds the claim for a Super Admin instead of refusing it. `rejected_by_system` must not be
+  // reachable from the submit path at all; only a human rejects, as `rejected_by_admin`.
+  //
+  // Pinned against the SUBMIT SLICE rather than the whole file, because the admin reject path
+  // lower down is a human decision and must keep working.
+  const submitSlice = functionSlice(serviceSource, "export async function submitOutstationRequest");
+  assert.doesNotMatch(
+    submitSlice,
+    /["']rejected_by_system["']/,
+    "submitOutstationRequest must never write rejected_by_system — the system flags, a human rejects",
+  );
+  assert.doesNotMatch(
+    submitSlice,
+    /notifyOutstationDecision\(/,
+    "no rejection email may be sent at submit time — the only rejection notice is one a Super Admin chose to send",
+  );
+  assert.match(
+    submitSlice,
+    /const workflowStatus = "submitted";/,
+    "every submission lands in the pending queue, unconditionally",
+  );
+  // Each rule's failure reason must actually reach the approver. A rule that is neither enforced
+  // nor surfaced has been deleted, not relaxed — that is the failure mode this rule change could
+  // easily become.
+  for (const [flag, why] of [
+    ["eligibilityFlagReason", "a distance/governorate failure"],
+    ["campaignRejectionReason", "a confirmed campaign-rule breach"],
+    ["campaignHoldReason", "double-visit evidence that is not in yet"],
+    ["gpsAccuracyHoldReason", "a GPS fix outside the policy limit"],
+    ["offlineSyncHoldReason", "a late offline sync"],
+  ] as const) {
+    assert.match(
+      submitSlice,
+      new RegExp(`reviewHoldReasons = \\[[^\\]]*${flag}`, "s"),
+      `${why} must still reach the approver via reviewHoldReasons — relaxed, not deleted`,
+    );
+  }
+  assert.match(
+    submitSlice,
+    /eligibilityFlagReason\s*=\s*\n?\s*calculation\.eligibilityStatus === "not_eligible"/,
+    "a not_eligible calculation must become a flag, not a rejection",
   );
   assert.match(
     serviceSource,
