@@ -20,6 +20,7 @@
 
 import { writeAuditLog } from "@/lib/admin/audit";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { CrmContactKind } from "@/lib/crm/contact-taxonomy";
 
 export type DoctorCoverageGradeTier = "A" | "B" | "C";
@@ -28,7 +29,23 @@ export type ScoredContactKind = Extract<CrmContactKind, "sp" | "hcp">;
 
 export type DoctorCoverageNorms = Record<ScoredContactKind, Record<DoctorCoverageGradeTier, number>>;
 
+/**
+ * Per-viewer line scope: canonical hr id → the line ids that viewer covers.
+ *
+ * A line-scoped role (PM / GPM / NSM) is normally bound to the single line on their employee
+ * record. Ahmed Sharaf (B-155) manages brands across two lines, so the owner asked for him to see
+ * Pedia AND Anti Infective (2026-08-09). Editing his employee record would be the wrong fix — his
+ * line really is Pedia, and that field feeds payroll and org structure — so the exception lives
+ * here, scoped to this board alone.
+ *
+ * Keys are canonicalised with `normalizeHrIdForAccess`, so "B-155"/"b-155"/"B155" are one entry.
+ * An override REPLACES which lines a line-scoped viewer sees. It can never widen a team-scoped or
+ * self-scoped viewer, and never grants access to a role that has none — the role check runs first.
+ */
+export type DoctorCoverageLineOverrides = Record<string, number[]>;
+
 export type DoctorCoverageConfig = {
+  lineOverrides: DoctorCoverageLineOverrides;
   norms: DoctorCoverageNorms;
   updatedAt: string | null;
   updatedBy: string | null;
@@ -45,6 +62,7 @@ export const DEFAULT_DOCTOR_COVERAGE_NORMS: DoctorCoverageNorms = {
 };
 
 export const DEFAULT_DOCTOR_COVERAGE_CONFIG: DoctorCoverageConfig = {
+  lineOverrides: {},
   norms: DEFAULT_DOCTOR_COVERAGE_NORMS,
   updatedAt: null,
   updatedBy: null,
@@ -76,6 +94,10 @@ function isConfigSchemaMissing(error: unknown): boolean {
     message.includes("doctor_coverage_config") ||
     message.includes("could not find the table") ||
     message.includes("schema cache") ||
+    // A COLUMN this build expects but the target database has not migrated yet — e.g. an
+    // environment running ahead of its migrations. Treated exactly like a missing table: fall back
+    // to the shipped defaults rather than breaking every board.
+    (message.includes("column") && message.includes("does not exist")) ||
     (message.includes("relation") && message.includes("does not exist"))
   );
 }
@@ -93,6 +115,25 @@ function mapNorms(raw: unknown): DoctorCoverageNorms {
   return out;
 }
 
+/**
+ * Read stored overrides defensively: a malformed entry is dropped, never thrown on. A viewer whose
+ * entry is dropped falls back to the line on their employee record — narrower, never wider.
+ */
+function mapLineOverrides(raw: unknown): DoctorCoverageLineOverrides {
+  const record = asRecord(raw);
+  const out: DoctorCoverageLineOverrides = {};
+  for (const [key, value] of Object.entries(record)) {
+    const hrKey = normalizeHrIdForAccess(key);
+    if (!hrKey) continue;
+    if (!Array.isArray(value)) continue;
+    const lineIds = Array.from(
+      new Set(value.map((entry) => Number(entry)).filter((id) => Number.isInteger(id) && id > 0)),
+    ).sort((a, b) => a - b);
+    if (lineIds.length > 0) out[hrKey] = lineIds;
+  }
+  return out;
+}
+
 const CONFIG_CACHE_MS = 30_000;
 let configCache: { config: DoctorCoverageConfig; fetchedAt: number } | null = null;
 
@@ -106,16 +147,26 @@ export async function getDoctorCoverageConfig(): Promise<DoctorCoverageConfig> {
   try {
     const { data, error } = await getSupabaseAdmin()
       .from("doctor_coverage_config")
-      .select("norms,updated_by,updated_at")
+      .select("norms,line_overrides,updated_by,updated_at")
       .eq("id", true)
       .maybeSingle();
     if (error) {
       if (isConfigSchemaMissing(error)) return DEFAULT_DOCTOR_COVERAGE_CONFIG;
       throw error;
     }
-    const row = data as { norms: unknown; updated_by: string | null; updated_at: string | null } | null;
+    const row = data as {
+      line_overrides: unknown;
+      norms: unknown;
+      updated_at: string | null;
+      updated_by: string | null;
+    } | null;
     const config: DoctorCoverageConfig = row
-      ? { norms: mapNorms(row.norms), updatedAt: row.updated_at ?? null, updatedBy: row.updated_by ?? null }
+      ? {
+          lineOverrides: mapLineOverrides(row.line_overrides),
+          norms: mapNorms(row.norms),
+          updatedAt: row.updated_at ?? null,
+          updatedBy: row.updated_by ?? null,
+        }
       : DEFAULT_DOCTOR_COVERAGE_CONFIG;
     configCache = { config, fetchedAt: Date.now() };
     return config;
@@ -177,33 +228,89 @@ export function validateDoctorCoverageNorms(input: unknown): DoctorCoverageNorms
 }
 
 /**
- * Persist new norms. Writes an audit row (same posture as the probation config editor) because
- * this silently changes what every role's coverage % means, and a later "why did coverage jump"
- * needs to be answerable.
+ * Validate an incoming line-override payload. Accepts `{ "B-155": [1, 2] }` in any hr-id casing and
+ * canonicalises the keys. An empty line list is rejected rather than stored: an empty array would
+ * scope that viewer to NO lines, and a silently empty board is the worst possible failure here —
+ * indistinguishable from a territory that genuinely has no activity.
+ */
+export function validateDoctorCoverageLineOverrides(input: unknown): DoctorCoverageLineOverrides {
+  const issues: string[] = [];
+  const record = asRecord(input);
+  const out: DoctorCoverageLineOverrides = {};
+  for (const [rawKey, rawValue] of Object.entries(record)) {
+    const hrKey = normalizeHrIdForAccess(rawKey);
+    if (!hrKey) {
+      issues.push(`"${rawKey}" is not a usable HR ID.`);
+      continue;
+    }
+    if (!Array.isArray(rawValue)) {
+      issues.push(`${rawKey}: give a list of line ids, e.g. [1, 2].`);
+      continue;
+    }
+    const lineIds = Array.from(new Set(rawValue.map((entry) => Number(entry))));
+    if (lineIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      issues.push(`${rawKey}: line ids must be whole positive numbers.`);
+      continue;
+    }
+    if (lineIds.length === 0) {
+      issues.push(`${rawKey}: pick at least one line, or remove the row entirely to use their own line.`);
+      continue;
+    }
+    out[hrKey] = lineIds.sort((a, b) => a - b);
+  }
+  if (issues.length > 0) throw new DoctorCoverageConfigValidationError(issues);
+  return out;
+}
+
+/**
+ * Persist new norms, and optionally new line overrides. Writes an audit row (same posture as the
+ * probation config editor) because this silently changes what every role's coverage % means, and a
+ * later "why did coverage jump" needs to be answerable.
+ *
+ * `lineOverrides` is optional: omitting it leaves the stored overrides untouched, so an editor that
+ * only changes the norms cannot wipe the scope exceptions as a side effect.
  */
 export async function updateDoctorCoverageNorms(input: {
   norms: unknown;
+  lineOverrides?: unknown;
   actorLoginId: string | null;
 }): Promise<DoctorCoverageConfig> {
   const norms = validateDoctorCoverageNorms(input.norms);
   const previous = await getDoctorCoverageConfig();
+  // Omitted → keep what is stored. Only an explicit payload replaces the scope exceptions.
+  const lineOverrides =
+    input.lineOverrides === undefined
+      ? previous.lineOverrides
+      : validateDoctorCoverageLineOverrides(input.lineOverrides);
   const updatedAt = new Date().toISOString();
 
   const { error } = await getSupabaseAdmin()
     .from("doctor_coverage_config")
-    .upsert({ id: true, norms, updated_by: input.actorLoginId ?? null, updated_at: updatedAt }, { onConflict: "id" });
+    .upsert(
+      {
+        id: true,
+        line_overrides: lineOverrides,
+        norms,
+        updated_at: updatedAt,
+        updated_by: input.actorLoginId ?? null,
+      },
+      { onConflict: "id" },
+    );
   if (error) throw new Error(error.message);
 
   clearDoctorCoverageConfigCache();
 
+  const overrideCount = Object.keys(lineOverrides).length;
   await writeAuditLog({
     actorLoginId: input.actorLoginId ?? null,
     entityType: "doctor_coverage_config",
     entityId: "singleton",
-    newValues: { norms },
-    oldValues: { norms: previous.norms },
-    summary: `Doctor Coverage visit norms updated (SP A/B/C = ${norms.sp.A}/${norms.sp.B}/${norms.sp.C}, HCP A/B/C = ${norms.hcp.A}/${norms.hcp.B}/${norms.hcp.C})`,
+    newValues: { lineOverrides, norms },
+    oldValues: { lineOverrides: previous.lineOverrides, norms: previous.norms },
+    summary:
+      `Doctor Coverage settings updated (SP A/B/C = ${norms.sp.A}/${norms.sp.B}/${norms.sp.C}, ` +
+      `HCP A/B/C = ${norms.hcp.A}/${norms.hcp.B}/${norms.hcp.C}, ${overrideCount} line override(s))`,
   });
 
-  return { norms, updatedAt, updatedBy: input.actorLoginId ?? null };
+  return { lineOverrides, norms, updatedAt, updatedBy: input.actorLoginId ?? null };
 }

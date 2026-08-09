@@ -18,7 +18,17 @@ import { getSfeDoctorCoverage, resolveCoverageMonth } from "@/lib/crm/sfe-doctor
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PageProps = { searchParams?: Promise<{ month?: string }> };
+// Filters ride in the URL, like the month, so every change re-runs the server-side gate.
+type PageProps = {
+  searchParams?: Promise<{
+    grade?: string;
+    kind?: string;
+    month?: string;
+    rep?: string;
+    search?: string;
+    status?: string;
+  }>;
+};
 
 export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   const access = await resolveAccessContextFromPage();
@@ -27,7 +37,15 @@ export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   // unreachable page should behave as if it does not exist for that role.
   if (scope.kind === "none") redirect("/admin");
 
-  const month = resolveCoverageMonth((await searchParams)?.month);
+  const params = await searchParams;
+  const month = resolveCoverageMonth(params?.month);
+  const filters = {
+    grade: params?.grade,
+    kind: params?.kind,
+    repKey: params?.rep,
+    search: params?.search,
+    status: params?.status,
+  };
 
   // Data fetch and JSX stay separated (react-hooks/error-boundaries: JSX must not be constructed
   // inside try/catch). Same rose fallback posture as the SFE command center — a data failure
@@ -35,7 +53,7 @@ export default async function DoctorCoveragePage({ searchParams }: PageProps) {
   let board: Awaited<ReturnType<typeof getSfeDoctorCoverage>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getSfeDoctorCoverage({ month, scope });
+    board = await getSfeDoctorCoverage({ filters, month, scope });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
   }

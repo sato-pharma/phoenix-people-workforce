@@ -121,6 +121,39 @@ export function runDoctorCoverageScopeTests() {
   // ── self scope ────────────────────────────────────────────────────────────────────────────────
   assert.deepEqual(agentsFor("Medical Rep", "REP-1"), ["REP-1"], "a Medical Rep sees only their own panel");
 
+  // ── multi-line override ───────────────────────────────────────────────────────────────────────
+  // Owner 2026-08-09: Ahmed Sharaf (B-155) is recorded on Pedia but covers Anti Infective too.
+  // In the fixture, NSM-1 sits on line 1 and CNS-REP on line 2.
+  const scopeWithOverride = (lineOverrides: Record<string, number[]>, role = "Product Manager", hrId = "NSM-1") =>
+    resolveDoctorCoverageScope({ role, viewerHrId: hrId, employees: tree(), lineOverrides });
+
+  const twoLines = scopeWithOverride({ nsm1: [1, 2] });
+  assert.equal(twoLines.kind, "agents");
+  if (twoLines.kind === "agents") {
+    assert.ok(
+      twoLines.agentHrIds.includes("CNS-REP"),
+      "an override to lines 1+2 pulls in the OTHER line's reps — that is the whole point of it",
+    );
+    assert.ok(twoLines.label.includes("+"), `the label must NAME both lines, got "${twoLines.label}"`);
+  }
+  assert.ok(
+    !agentsFor("Product Manager", "NSM-1").includes("CNS-REP"),
+    "without the override the same viewer stays on their own line — the override is the only thing widening them",
+  );
+
+  // An override must never rescue a role with no access, nor widen a team-scoped viewer.
+  assert.equal(
+    scopeWithOverride({ nsm1: [1, 2, 3] }, "Talent Acquisition").kind,
+    "none",
+    "a line override cannot grant access to a role that has none — the role check runs first",
+  );
+  const dmWithOverride = scopeWithOverride({ dm1: [1, 2, 3] }, "District Manager", "DM-1");
+  assert.deepEqual(
+    dmWithOverride.kind === "agents" ? [...dmWithOverride.agentHrIds].sort() : [],
+    ["REP-1", "REP-2"],
+    "a line override must not widen a TEAM-scoped viewer — a DM still sees exactly their own reps",
+  );
+
   // ── fail closed, never wider ──────────────────────────────────────────────────────────────────
   assert.equal(
     resolveDoctorCoverageScope({ role: "District Manager", viewerHrId: null, employees: tree() }).kind,

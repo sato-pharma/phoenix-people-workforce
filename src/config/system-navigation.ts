@@ -917,6 +917,11 @@ const employeePortalNavigationSectionSeeds = [
       // this list is UX only, and is held identical to DOCTOR_COVERAGE_PORTAL_ROLES by
       // tests/doctor-coverage-scope.test.ts — it cannot be widened here without the test failing.
       { href: "/employee-portals/doctor-coverage", icon: Stethoscope, label: "Doctor Coverage", permissions: [{ resource: "crm_visits" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
+      // The norms editor, portal twin of /admin/doctor-coverage-settings. Only the portal-mode
+      // roles holding crm_visits:update: PM, GPM and Marketing Manager are redirected out of the
+      // admin shell, so the admin route is unreachable for them. Super Admin and SFE Manager use
+      // the admin entry instead.
+      { href: "/employee-portals/doctor-coverage-settings", icon: SlidersHorizontal, label: "Doctor Coverage Settings", permissions: [{ action: "update", resource: "crm_visits" }], roles: ["Product Manager", "Group Product Manager", "Marketing Manager"] },
       // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.

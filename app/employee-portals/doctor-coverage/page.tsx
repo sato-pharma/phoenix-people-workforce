@@ -16,7 +16,18 @@ import { getSfeDoctorCoverage, resolveCoverageMonth } from "@/lib/crm/sfe-doctor
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PageProps = { searchParams?: Promise<{ month?: string }> };
+// Filters ride in the URL, like the month, so every change re-runs the server-side access gate
+// instead of narrowing a payload already delivered to the browser.
+type PageProps = {
+  searchParams?: Promise<{
+    grade?: string;
+    kind?: string;
+    month?: string;
+    rep?: string;
+    search?: string;
+    status?: string;
+  }>;
+};
 
 export default async function PortalDoctorCoveragePage({ searchParams }: PageProps) {
   const access = await resolveAuthenticatedPageAccess();
@@ -36,13 +47,21 @@ export default async function PortalDoctorCoveragePage({ searchParams }: PagePro
     return shell(<EmployeePortalEmptyState message={scope.reason} title="Not available for your role" />);
   }
 
-  const month = resolveCoverageMonth((await searchParams)?.month);
+  const params = await searchParams;
+  const month = resolveCoverageMonth(params?.month);
+  const filters = {
+    grade: params?.grade,
+    kind: params?.kind,
+    repKey: params?.rep,
+    search: params?.search,
+    status: params?.status,
+  };
 
   // Fetch and JSX stay separated (react-hooks/error-boundaries: no JSX inside try/catch).
   let board: Awaited<ReturnType<typeof getSfeDoctorCoverage>> | null = null;
   let loadError: string | null = null;
   try {
-    board = await getSfeDoctorCoverage({ month, scope });
+    board = await getSfeDoctorCoverage({ filters, month, scope });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Doctor coverage data is unavailable.";
   }

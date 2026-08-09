@@ -36,9 +36,12 @@ export async function PATCH(request: Request) {
     const access = await resolveAccessContext(request);
     await assertPermission(access, "crm_visits", "update");
 
-    const body = (await request.json()) as { norms?: unknown };
+    const body = (await request.json()) as { lineOverrides?: unknown; norms?: unknown };
     const config = await updateDoctorCoverageNorms({
       norms: body?.norms,
+      // Absent → stored overrides are left alone. An editor that only touches the norms must not
+      // wipe the per-viewer line exceptions as a side effect.
+      lineOverrides: body?.lineOverrides,
       actorLoginId: access.loginId ?? access.hrId ?? null,
     });
     return NextResponse.json({ config });
