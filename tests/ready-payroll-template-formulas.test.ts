@@ -9,6 +9,14 @@ const salaryImportSource = readFileSync(
   new URL("../src/lib/payroll/salary-import.ts", import.meta.url),
   "utf8",
 );
+// The proration arithmetic moved out of the route so it could be tested by
+// behaviour rather than by matching its source text — see
+// tests/ready-payroll-proration.test.ts. These source assertions stay only to
+// pin the wiring that still lives in the route.
+const readyProrationSource = readFileSync(
+  new URL("../src/lib/payroll/ready-proration.ts", import.meta.url),
+  "utf8",
+);
 
 export function runReadyPayrollTemplateFormulaTests() {
   assert.match(
@@ -18,8 +26,8 @@ export function runReadyPayrollTemplateFormulaTests() {
   );
 
   assert.match(
-    templateRouteSource,
-    /function calculateBaseProrationDeduction/,
+    readyProrationSource,
+    /export function calculateBaseProrationDeduction/,
     "Ready payroll must calculate a cached base-salary proration deduction.",
   );
 
@@ -48,8 +56,8 @@ export function runReadyPayrollTemplateFormulaTests() {
   );
 
   assert.match(
-    templateRouteSource,
-    /function calculateBaseLifecycleProrationDeduction/,
+    readyProrationSource,
+    /export function calculateBaseLifecycleProrationDeduction/,
     "Ready payroll must prorate final-month salary through the last working date.",
   );
 
@@ -66,9 +74,26 @@ export function runReadyPayrollTemplateFormulaTests() {
   );
 
   assert.match(
+    readyProrationSource,
+    /daysInMonth - hireDay \+ 1/,
+    "Ready payroll proration must include the hire date, counted against the real month length.",
+  );
+
+  // This assertion used to read /30 - hireDay \+ 1/ and its message asserted a
+  // "fixed 30-day month" was correct. That is the defect it was meant to guard:
+  // a 28-day February can never satisfy `endDay >= 30`, so a leaver dated 28 Feb
+  // who worked every day was charged 2 days of salary. Pin the absence of the
+  // hardcoded divisor so it cannot come back.
+  assert.doesNotMatch(
+    readyProrationSource,
+    /\/ 30\)|\/30\)|>= 30\b|Math\.min\(30\b/,
+    "Ready payroll proration must never reintroduce a hardcoded 30-day month.",
+  );
+
+  assert.doesNotMatch(
     templateRouteSource,
-    /30 - hireDay \+ 1/,
-    "Ready payroll proration must include the hire date using a fixed 30-day month.",
+    /\$\{baseSalary\}\/30/,
+    "The workbook's Other Deductions formula must divide by the real month length, not a literal 30 — the sheet recalculates client-side and would otherwise disagree with the stored figure.",
   );
 
   assert.match(

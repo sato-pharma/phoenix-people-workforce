@@ -45,6 +45,8 @@ import { runDeadMansSwitchTests } from "./dead-mans-switch.test.ts";
 import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.ts";
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
+import { runCspHeaderTests } from "./csp-headers.test.ts";
+import { runReadyPayrollProrationTests } from "./ready-payroll-proration.test.ts";
 import { runReadyPayrollTemplateFormulaTests } from "./ready-payroll-template-formulas.test.ts";
 import { runPhoenixHrReplyTemplateTests } from "./phoenix-hr-reply-template.test.ts";
 import { runPlatformMetricsTests } from "./platform-metrics.test.ts";
@@ -787,6 +789,8 @@ await runTest("automated payroll Executive Summary Dashboard (headcount + value 
 await runTest("automated payroll assembleRows + reconcile (each deduction counted exactly once)", runAutomatedPayrollAssembleTests);
 await runTest("automated payroll population diff (silent-disappearance guard)", runAutomatedPayrollPopulationDiffTests);
 await runTest("automated payroll data quality (a missing field must never become a default that pays money)", runAutomatedPayrollDataQualityTests);
+await runTest("content security policy headers (wasm + maps + onesignal)", runCspHeaderTests);
+await runTest("ready payroll proration (real month length, not a fixed 30)", runReadyPayrollProrationTests);
 await runTest("ready payroll template formulas", runReadyPayrollTemplateFormulaTests);
 await runTest("payroll engine hardening", runPayrollEngineHardeningTests);
 await runTest("phoenix hr reply template", runPhoenixHrReplyTemplateTests);
