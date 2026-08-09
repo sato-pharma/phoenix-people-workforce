@@ -1,0 +1,487 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Employee-portal + executive team performance, sourced from Source of Sales + Targets.
+//
+// The sales performance surfaces (NSM DSMs view, NSM Med Reps view, the RM regional
+// roll-up, and the CEO company-wide med-rep / DSM roll-ups) used to read per-row sales
+// AND targets from `sales_records` (view v_employee_portal_sales). This module
+// re-sources ALL of them from the SAME engine the /sales-vs-target page already uses:
+//
+//   • ACTUALS come from Source of Sales (indirect, priced at factory price) unioned
+//     with Direct Orders — attributed down line → area → rep seat → DM seat by seat
+//     occupancy as of the period end (owner rule: "today's geography always").
+//   • TARGETS come from au.monthly_targets (per line × area × product × month).
+//
+// Both arrive together as AchievementRow[] via loadVsTargetRange → the DB function
+// au.f_monthly_achievement. We deliberately do NOT re-derive attribution or the
+// achievement math here — a second definition of "achievement" is exactly how two
+// screens start quoting different numbers for the same month. Every surface below is a
+// different SLICE and GROUPING of one loaded window, so they all reconcile with each
+// other and with /sales-vs-target.
+//
+// FIRST MONTH = JULY 2026. The engine is hard-floored at SALES_VS_TARGET_FLOOR
+// ("2026-07") in both TS and SQL, so the period picker never offers an earlier month.
+//
+// COVERAGE-AWARE ACHIEVEMENT. Achievement % is covered-actual ÷ target, i.e. only the
+// actual that sits on a key that HAS a target counts toward the percentage (identical
+// to VsTargetTotals/sealTotals). A rep with real sales but no target for a product
+// shows those sales with a 0 target and does not inflate the %. Figures shown as
+// "Sales" are the FULL actual (what they sold), same as the vs-target page.
+//
+// HEADLINE ≠ SUM OF THE LEADERBOARD. Line / team / region / company totals come from
+// ALL scoped rows (via the engine's totalRows), NOT the sum of the leaderboard. A
+// meaningful slice of a line's actual has no resolved rep or DM seat — Direct Orders
+// spread across regions, and vacant seats. Footing the headline to the leaderboard
+// would silently drop that value (up to ~39% of a line's actual in July 2026) and make
+// these pages disagree with /sales-vs-target, which totals the same way.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { AccessContext } from "@/lib/auth/permissions";
+import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
+import type { AchievementRow } from "@/lib/sales/monthly-targets";
+import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
+import {
+  SALES_VS_TARGET_FLOOR,
+  loadVsTargetRange,
+  salesVsTargetPeriods,
+  totalRows,
+} from "@/lib/sales/vs-target";
+import { filterRowsForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
+
+import type {
+  CompanyDsmPerformanceData,
+  CompanyDsmPerformanceLine,
+  CompanyMedRepPerformanceData,
+  CompanyMedRepPerformanceLine,
+  DsmTeamMemberData,
+  DsmTeamMemberProductData,
+  DsmTeamPerformanceData,
+  NsmDsmPerformanceData,
+  RmRegionalPerformanceData,
+} from "./service";
+
+const PERIOD_RE = /^\d{4}-\d{2}$/;
+
+/** Line display label + NSM identity for one sales line, supplied by the directory. */
+export type SosCompanyLineMeta = {
+  lineId: number | null;
+  lineName: string;
+  nsmName: string | null;
+  nsmHrId: string | null;
+};
+
+/**
+ * Normalize a requested period (single, comma-separated list, or array) into an
+ * ordered, de-duplicated list of valid YYYY-MM strings. Local copy so this module
+ * does not import a value back out of service.ts (which imports this module).
+ */
+function normalizePeriods(requested: string | string[] | null | undefined): string[] {
+  const raw = Array.isArray(requested)
+    ? requested
+    : typeof requested === "string"
+      ? requested.split(",")
+      : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const entry of raw) {
+    const value = String(entry ?? "").trim();
+    if (!PERIOD_RE.test(value) || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+/** Running accumulator for one rep or one DM, plus its per-product breakdown. */
+type MemberAgg = {
+  hrId: string;
+  /** Full actual value sold — covered + uncovered. Shown as "Sales". */
+  fullActual: number;
+  /** Actual value that sits on a key WITH a target — the only actual the % uses. */
+  coveredActual: number;
+  target: number;
+  units: number;
+  /** For the rep grain: the DM seat this rep's rows resolved to (first seen). */
+  dmHrId: string | null;
+  products: Map<string, { sales: number; coveredSales: number; target: number; units: number }>;
+};
+
+type Grain = "rep" | "dm";
+
+/** Load the whole achievement window (July floor → current Cairo month), area-merged. */
+async function loadWindowRows(): Promise<AchievementRow[]> {
+  const { current } = salesVsTargetPeriods();
+  return applyAchievementAreaMerges(await loadVsTargetRange(SALES_VS_TARGET_FLOOR, current));
+}
+
+/**
+ * Periods that actually carry sales, newest first.
+ *
+ * Excludes months that exist only because a FUTURE target was loaded (e.g.
+ * August/September Pedia targets with no upload yet). Summing those into an "all
+ * periods" view would divide real sales by targets for months nobody has sold in.
+ */
+function activePeriodsOf(rows: AchievementRow[]): string[] {
+  return Array.from(new Set(rows.filter((row) => row.hasActual).map((row) => row.period))).sort(
+    (a, b) => b.localeCompare(a),
+  );
+}
+
+/** Load the window scoped to ONE viewer's bound (NSM line, DSM areas, rep self, …). */
+async function loadScopedRows(
+  ctx: AccessContext,
+): Promise<{ rows: AchievementRow[]; activePeriods: string[] }> {
+  const bound = await resolveVsTargetBound(ctx);
+  const rows = filterRowsForBound(await loadWindowRows(), bound);
+  return { rows, activePeriods: activePeriodsOf(rows) };
+}
+
+/** Restrict window rows to the active periods, then to the selected periods (if any). */
+function selectRows(
+  rows: AchievementRow[],
+  activePeriods: string[],
+  requested: string | string[] | null | undefined,
+): AchievementRow[] {
+  const active = new Set(activePeriods);
+  const selected = normalizePeriods(requested).filter((period) => active.has(period));
+  const base = rows.filter((row) => active.has(row.period));
+  return selected.length > 0 ? base.filter((row) => selected.includes(row.period)) : base;
+}
+
+/** Fold rows into one accumulator per rep (repHrId) or per DM (dmHrId). */
+function aggregate(rows: AchievementRow[], grain: Grain): Map<string, MemberAgg> {
+  const map = new Map<string, MemberAgg>();
+  for (const row of rows) {
+    const hrId = grain === "rep" ? row.repHrId : row.dmHrId;
+    if (!hrId) continue; // rows with no resolved occupant belong at area level, not here
+    let agg = map.get(hrId);
+    if (!agg) {
+      agg = { hrId, fullActual: 0, coveredActual: 0, target: 0, units: 0, dmHrId: null, products: new Map() };
+      map.set(hrId, agg);
+    }
+    const target = row.targetValue ?? 0;
+    agg.fullActual += row.actualValue;
+    agg.units += row.actualUnits;
+    agg.target += target;
+    if (row.hasTarget) agg.coveredActual += row.actualValue;
+    if (grain === "rep" && row.dmHrId && !agg.dmHrId) agg.dmHrId = row.dmHrId;
+
+    const productCode = row.productCode || "UNKNOWN";
+    let product = agg.products.get(productCode);
+    if (!product) {
+      product = { sales: 0, coveredSales: 0, target: 0, units: 0 };
+      agg.products.set(productCode, product);
+    }
+    product.sales += row.actualValue;
+    product.units += row.actualUnits;
+    product.target += target;
+    if (row.hasTarget) product.coveredSales += row.actualValue;
+  }
+  return map;
+}
+
+/** Turn one accumulator into the DsmTeamMemberData shape the pages already render. */
+function toMember(
+  agg: MemberAgg,
+  employeeNames: Map<string, string>,
+  productNames: Map<string, string>,
+  managerHrId: string | null,
+  managerName: string | null,
+): DsmTeamMemberData {
+  const products: DsmTeamMemberProductData[] = Array.from(agg.products.entries())
+    .map(([code, product]) => ({
+      achievementPercent: product.target > 0 ? (product.coveredSales / product.target) * 100 : 0,
+      family: "",
+      product: productNames.get(code.toUpperCase()) ?? code,
+      sales: product.sales,
+      target: product.target,
+      units: product.units,
+    }))
+    .sort((a, b) => b.sales - a.sales);
+
+  return {
+    achievementPercent: agg.target > 0 ? (agg.coveredActual / agg.target) * 100 : 0,
+    hrId: agg.hrId,
+    name: employeeNames.get(agg.hrId) ?? "Unnamed employee",
+    managerHrId,
+    managerName,
+    position: 0,
+    products,
+    totalSales: agg.fullActual,
+    totalTarget: agg.target,
+  };
+}
+
+/** Sort by achievement (sales as tiebreaker) and assign 1-based positions. */
+function rankMembers(members: DsmTeamMemberData[]): DsmTeamMemberData[] {
+  return members
+    .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
+    .map((member, index) => ({ ...member, position: index + 1 }));
+}
+
+/** How each member's manager (DM for reps, NSM for DMs) is resolved. */
+type ManagerResolver = (agg: MemberAgg) => { managerHrId: string | null; managerName: string | null };
+
+/** Ranked member list for a set of rows at the given grain. Pure. */
+function membersFromRows(
+  rows: AchievementRow[],
+  grain: Grain,
+  employeeNames: Map<string, string>,
+  productNames: Map<string, string>,
+  managerFor: ManagerResolver,
+): DsmTeamMemberData[] {
+  const aggMap = aggregate(rows, grain);
+  return rankMembers(
+    Array.from(aggMap.values()).map((agg) => {
+      const manager = managerFor(agg);
+      return toMember(agg, employeeNames, productNames, manager.managerHrId, manager.managerName);
+    }),
+  );
+}
+
+/** A rep's manager is the DM seat its rows resolved to. */
+function repManagerResolver(employeeNames: Map<string, string>): ManagerResolver {
+  return (agg) => ({
+    managerHrId: agg.dmHrId,
+    managerName: agg.dmHrId ? employeeNames.get(agg.dmHrId) ?? null : null,
+  });
+}
+
+/** A DM's manager is the line's NSM (fixed per line). */
+function dmManagerResolver(nsmHrId: string | null, nsmName: string | null): ManagerResolver {
+  return () => ({ managerHrId: nsmHrId, managerName: nsmName });
+}
+
+/**
+ * Line/team/region/company HEADLINE totals from ALL given rows, coverage-aware (via the
+ * engine's totalRows). NOT the sum of the leaderboard — see the file header.
+ */
+function headlineTotals(rows: AchievementRow[]): {
+  sales: number;
+  target: number;
+  achievementPercent: number;
+} {
+  const totals = totalRows(rows);
+  return {
+    sales: totals.actualValue,
+    target: totals.targetValue,
+    achievementPercent: totals.achievementValue != null ? totals.achievementValue * 100 : 0,
+  };
+}
+
+// ── NSM portal views ──────────────────────────────────────────────────────────
+
+/**
+ * NSM view: every DISTRICT MANAGER on the NSM's line, rolled up from Source of Sales
+ * + Targets. Backs /employee-portals/dsms-performance.
+ */
+export async function buildNsmDsmPerformanceFromSos(
+  ctx: AccessContext,
+  requested: string | string[] | null | undefined,
+): Promise<NsmDsmPerformanceData> {
+  const { rows, activePeriods } = await loadScopedRows(ctx);
+  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+
+  const used = selectRows(rows, activePeriods, requested);
+  const nsmHrId = ctx.hrId ? String(ctx.hrId) : null;
+  const nsmName = nsmHrId ? employeeNames.get(nsmHrId) ?? null : null;
+
+  const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsmHrId, nsmName));
+  const totals = headlineTotals(used);
+
+  return {
+    dsms,
+    periods: activePeriods,
+    lineAchievementPercent: totals.achievementPercent,
+    dsmCount: dsms.length,
+    lineTotalSales: totals.sales,
+    lineTotalTarget: totals.target,
+  };
+}
+
+/**
+ * NSM view: every MEDICAL REP on the NSM's line, each tagged with its DM (for the
+ * "grouped by DSM" product section), rolled up from Source of Sales + Targets. Backs
+ * /employee-portals/med-reps-performance (DSM viewers get their own team via the bound).
+ */
+export async function buildDsmTeamPerformanceFromSos(
+  ctx: AccessContext,
+  requested: string | string[] | null | undefined,
+): Promise<DsmTeamPerformanceData> {
+  const { rows, activePeriods } = await loadScopedRows(ctx);
+  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+
+  const used = selectRows(rows, activePeriods, requested);
+  const members = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
+  const totals = headlineTotals(used);
+
+  return {
+    members,
+    periods: activePeriods,
+    teamAchievementPercent: totals.achievementPercent,
+    teamMemberCount: members.length,
+    teamTotalSales: totals.sales,
+    teamTotalTarget: totals.target,
+  };
+}
+
+// ── CEO company-wide roll-ups ───────────────────────────────────────────────────
+// Built from ONE unscoped window load, then split by line code. Company totals cover
+// exactly the reported lines' rows, so the per-line blocks foot to the company headline
+// and both foot to the sum of every NSM's own view.
+
+/** All window rows restricted to the reported line codes, plus their active periods. */
+async function loadCompanyRows(lineCodes: Set<string>): Promise<{
+  rows: AchievementRow[];
+  activePeriods: string[];
+}> {
+  const relevant = (await loadWindowRows()).filter((row) => row.lineCode != null && lineCodes.has(row.lineCode));
+  return { rows: relevant, activePeriods: activePeriodsOf(relevant) };
+}
+
+/**
+ * CEO / Super Admin / SFE Manager: company-wide MEDICAL REP performance, one block per
+ * line, from Source of Sales + Targets. `lineMetaByCode` carries the directory-derived
+ * line label and NSM identity for each line code.
+ */
+export async function buildCompanyMedRepPerformanceFromSos(
+  requested: string | string[] | null | undefined,
+  lineMetaByCode: Map<string, SosCompanyLineMeta>,
+): Promise<CompanyMedRepPerformanceData> {
+  const { rows, activePeriods } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
+  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const used = selectRows(rows, activePeriods, requested);
+
+  const lines: CompanyMedRepPerformanceLine[] = [];
+  for (const [lineCode, meta] of lineMetaByCode) {
+    const lineRows = used.filter((row) => row.lineCode === lineCode);
+    const members = membersFromRows(lineRows, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
+    if (members.length === 0) continue;
+    const totals = headlineTotals(lineRows);
+    lines.push({
+      lineId: meta.lineId,
+      lineName: meta.lineName,
+      nsmName: meta.nsmName,
+      performance: {
+        members,
+        periods: activePeriods,
+        teamAchievementPercent: totals.achievementPercent,
+        teamMemberCount: members.length,
+        teamTotalSales: totals.sales,
+        teamTotalTarget: totals.target,
+      },
+    });
+  }
+  lines.sort((a, b) => b.performance.teamTotalSales - a.performance.teamTotalSales);
+
+  const company = headlineTotals(used);
+  return {
+    lines,
+    periods: activePeriods,
+    companyTotalSales: company.sales,
+    companyTotalTarget: company.target,
+    companyAchievementPercent: company.achievementPercent,
+    repCount: lines.reduce((sum, line) => sum + line.performance.teamMemberCount, 0),
+    lineCount: lines.length,
+  };
+}
+
+/**
+ * CEO / Super Admin / SFE Manager: company-wide DISTRICT MANAGER performance, one block
+ * per line, from Source of Sales + Targets.
+ */
+export async function buildCompanyDsmPerformanceFromSos(
+  requested: string | string[] | null | undefined,
+  lineMetaByCode: Map<string, SosCompanyLineMeta>,
+): Promise<CompanyDsmPerformanceData> {
+  const { rows, activePeriods } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
+  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const used = selectRows(rows, activePeriods, requested);
+
+  const lines: CompanyDsmPerformanceLine[] = [];
+  for (const [lineCode, meta] of lineMetaByCode) {
+    const lineRows = used.filter((row) => row.lineCode === lineCode);
+    const dsms = membersFromRows(
+      lineRows,
+      "dm",
+      employeeNames,
+      productNames,
+      dmManagerResolver(meta.nsmHrId, meta.nsmName),
+    );
+    if (dsms.length === 0) continue;
+    const totals = headlineTotals(lineRows);
+    lines.push({
+      lineId: meta.lineId,
+      lineName: meta.lineName,
+      nsmName: meta.nsmName,
+      performance: {
+        dsms,
+        periods: activePeriods,
+        lineAchievementPercent: totals.achievementPercent,
+        dsmCount: dsms.length,
+        lineTotalSales: totals.sales,
+        lineTotalTarget: totals.target,
+      },
+    });
+  }
+  lines.sort((a, b) => b.performance.lineTotalSales - a.performance.lineTotalSales);
+
+  const company = headlineTotals(used);
+  return {
+    lines,
+    periods: activePeriods,
+    companyTotalSales: company.sales,
+    companyTotalTarget: company.target,
+    companyAchievementPercent: company.achievementPercent,
+    dsmCount: lines.reduce((sum, line) => sum + line.performance.dsmCount, 0),
+    lineCount: lines.length,
+  };
+}
+
+// ── RM regional roll-up ─────────────────────────────────────────────────────────
+
+/**
+ * Regional Manager region roll-up (districts + top reps), from Source of Sales + Targets.
+ *
+ * Line rows are built at both grains, then narrowed to the RM's region set exactly as
+ * before — `isInRegion` is the directory-derived membership test the caller supplies
+ * (region membership comes from the RM's own management subtree, never their coarse
+ * region label). DSM positions stay line-wide, matching the previous behaviour. Region
+ * totals are the coverage-aware headline over the region's DM rows.
+ */
+export async function buildRmRegionalPerformanceFromSos(
+  requested: string | string[] | null | undefined,
+  lineCodes: Set<string>,
+  isInRegion: (hrId: string | null | undefined) => boolean,
+  nsm: { hrId: string | null; name: string | null },
+): Promise<RmRegionalPerformanceData> {
+  const relevantAll = await loadWindowRows();
+  const relevant =
+    lineCodes.size > 0
+      ? relevantAll.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode))
+      : relevantAll;
+  const activePeriods = activePeriodsOf(relevant);
+  const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
+  const used = selectRows(relevant, activePeriods, requested);
+
+  const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name))
+    .filter((dsm) => isInRegion(dsm.hrId))
+    .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
+
+  const topReps = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames))
+    .filter((rep) => isInRegion(rep.hrId) || isInRegion(rep.managerHrId))
+    .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
+
+  // Region totals: the coverage-aware headline over rows whose DM is in the region — by
+  // construction the union of the districts kept above.
+  const region = headlineTotals(used.filter((row) => isInRegion(row.dmHrId)));
+
+  return {
+    dsms,
+    topReps,
+    periods: activePeriods,
+    regionAchievementPercent: region.achievementPercent,
+    dsmCount: dsms.length,
+    regionTotalSales: region.sales,
+    regionTotalTarget: region.target,
+  };
+}
