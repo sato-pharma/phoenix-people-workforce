@@ -1,4 +1,4 @@
-// Two pre-closing checks over the Source-of-Sales product mapping.
+// Three pre-closing checks over the Source-of-Sales product mapping.
 //
 // WHY THIS EXISTS. Between 2026-06-25 and 2026-08-09 every Pharma Overseas CNS row was matched
 // by ITEM CODE rather than by product name, and two of those codes were wrong: item 7520
@@ -28,11 +28,21 @@
 // bottles of Rispadex syrup for seven straight months is not a sales fact, it is a mapping bug.
 // This is the check that would have caught the incident in week one.
 //
-// Both helpers key their maps by NESTED Map, never by a joined string. An earlier revision
+// CHECK 3 (added 2026-08-09) catches a THIRD, unrelated failure mode: one distributor code
+// stored under two different exact-case spellings — "DIRECT" and "Direct" both live in
+// production today, on different lines. Nothing here loses or double-counts a unit (every
+// consumer keys off the raw string, so a case split just means the same source is split across
+// two buckets), but any consumer that compares distributor_code across periods WITHOUT
+// normalizing case reads a mid-year case change as one source vanishing and a stranger arriving
+// — that is exactly what made the Monthly Closing export's Source Coverage sheet falsely report
+// DIRECT as "missing" every month Pedia's Direct rows happened to post as "Direct". Report-only,
+// like the other two: which spelling survives is a business call this script cannot make.
+//
+// All three helpers key their maps by NESTED Map, never by a joined string. An earlier revision
 // joined on a separator and split it back out; one stray character in that separator silently
 // mis-attributed every finding, and it cost a debugging cycle here. Keys stay structured.
 //
-// Read-only: two SELECTs, no writes.
+// Read-only: three SELECTs, no writes.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -57,6 +67,15 @@ export type ZeroSalesFinding = {
   productCode: string;
   productPctOfLine: number;
   productUnitsElsewhere: number;
+};
+
+export type DistributorRow = { distributor_code: string | null };
+
+export type CaseVariantFinding = {
+  /** Upper-cased identity every variant below collapses to. */
+  canonicalUpper: string;
+  /** Every exact-case spelling actually seen, sorted. Always 2+. */
+  variants: string[];
 };
 
 /** An alias that is only digits is the distributor's item code; anything else is a name. */
@@ -179,6 +198,33 @@ export function findZeroSalesGaps(
   );
 }
 
+/**
+ * CHECK 3 — one distributor code stored under two or more different exact-case spellings.
+ * Everything downstream that keys off distributor_code without normalizing case (Source Coverage
+ * did not, until this same commit) reads the two spellings as unrelated sources. Fed by the
+ * distributor registry, the product aliases, AND the imported rows, so this catches a case split
+ * the moment it is registered — it does not wait for a sale to land under the new spelling first.
+ */
+export function findCaseVariantDistributorCodes(
+  codes: readonly (string | null | undefined)[],
+): CaseVariantFinding[] {
+  const byUpper = new Map<string, Set<string>>();
+  for (const raw of codes) {
+    const code = String(raw ?? "").trim();
+    if (!code) continue;
+    const seen = byUpper.get(code.toUpperCase()) ?? new Set<string>();
+    seen.add(code);
+    byUpper.set(code.toUpperCase(), seen);
+  }
+
+  const out: CaseVariantFinding[] = [];
+  for (const [canonicalUpper, variants] of byUpper) {
+    if (variants.size < 2) continue;
+    out.push({ canonicalUpper, variants: [...variants].sort() });
+  }
+  return out.sort((a, b) => a.canonicalUpper.localeCompare(b.canonicalUpper));
+}
+
 function projectRef(url: string | undefined): string {
   const m = /https:\/\/([a-z0-9]+)\.supabase\.co/i.exec(url ?? "");
   return m ? m[1] : "unknown";
@@ -223,7 +269,13 @@ async function main() {
       .select("distributor_code,official_line,product_code,qty")
       .range(from, to),
   );
-  console.log(`[sos-mapping] read ${aliases.length} active aliases and ${sales.length} imported rows`);
+  const distributors = await fetchAll<DistributorRow>((from, to) =>
+    supabase.from("source_of_sales_distributors").select("distributor_code").range(from, to),
+  );
+  console.log(
+    `[sos-mapping] read ${aliases.length} active aliases, ${sales.length} imported rows, ` +
+      `${distributors.length} registered distributors`,
+  );
 
   const duplicates = findDuplicateItemCodes(aliases);
   console.log(
@@ -254,9 +306,26 @@ async function main() {
     console.log("   bug until proven otherwise — a real distributor does not sell zero of a product it stocks.");
   }
 
+  const caseVariants = findCaseVariantDistributorCodes([
+    ...distributors.map((d) => d.distributor_code),
+    ...aliases.map((a) => a.distributor_code),
+    ...sales.map((s) => s.distributor_code),
+  ]);
   console.log(
-    `\n[sos-mapping] done — ${duplicates.length} duplicate-code case(s), ${gaps.length} zero-sales case(s). ` +
-      "Report only; nothing fails the build.",
+    `\n[sos-mapping] CHECK 3 — one distributor code under two+ exact-case spellings: ${caseVariants.length} case(s)`,
+  );
+  for (const c of caseVariants) {
+    console.log(`   ${c.canonicalUpper.padEnd(10)} spellings in use: ${c.variants.join(", ")}`);
+  }
+  if (caseVariants.length) {
+    console.log("   Never legitimate — pick one spelling. Merging means re-stamping every historical row to the");
+    console.log("   surviving code AND copying that code's product aliases across, or every row falls back to");
+    console.log("   item-code matching. Needs the owner's explicit choice of which spelling survives.");
+  }
+
+  console.log(
+    `\n[sos-mapping] done — ${duplicates.length} duplicate-code case(s), ${gaps.length} zero-sales case(s), ` +
+      `${caseVariants.length} case-variant code(s). Report only; nothing fails the build.`,
   );
 }
 
