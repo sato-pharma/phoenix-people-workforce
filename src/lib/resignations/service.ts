@@ -916,7 +916,6 @@ async function updateEmployeeLifecycleFallback(
     "payroll_eligible",
     "resignation_date",
     "crm_id",
-    "crm_username",
   ];
   const payload: Record<string, unknown> = {
     employment_status: input.employeeStatus,
@@ -926,14 +925,26 @@ async function updateEmployeeLifecycleFallback(
     organogram_visible: false,
     payroll_eligible: false,
     resignation_date: input.submittedDate,
-    // A leaver releases their CRM identity so the replacement hire can inherit it (owner
-    // rule, 2026-08-05). employees_crm_id_unique_idx / employees_crm_username_unique_idx are
-    // unique across ALL employees regardless of employment_status, and the employee-import
-    // validator maps crm_id -> hr_id with no active-only filter (unlike the org-seat map
-    // beside it), so a leaver who kept these blocked their own successor's master import
-    // with "CRM ID 1399 is already assigned to HR_ID B-97". 30 leavers were holding one.
+    // A leaver releases their CRM SLOT so the replacement hire can inherit it (owner rule,
+    // 2026-08-05). employees_crm_id_unique_idx is unique across ALL employees regardless of
+    // employment_status, and the employee-import validator maps crm_id -> hr_id with no
+    // active-only filter (unlike the org-seat map beside it), so a leaver who kept it blocked
+    // their own successor's master import with "CRM ID 1399 is already assigned to HR_ID B-97".
+    // 30 leavers were holding one.
     crm_id: null,
-    crm_username: null,
+    // crm_username is deliberately NOT cleared. It used to be, and that silently destroyed visit
+    // attribution: the CRM sync stamps agent_hr_id ONCE at sync time via override -> crm_id ->
+    // crm_username, and the mirror runs a day or more behind the visit date, so clearing both
+    // automatic tiers on resignation day turned every not-yet-synced visit — including ones the
+    // person genuinely performed while still employed — into a permanent NULL. Measured on
+    // production 2026-08-09: all 56 departed employees had crm_username NULL, stranding 587
+    // visits dated on or before their own last working day. It also made isAttributableOn()'s
+    // escape hatch unreachable — that guard allows a post-exit row only when the record carries
+    // the employee's own CRM label, and the label it compares against IS crm_username.
+    // Keeping it does not reintroduce the import conflict above: a replacement inherits the
+    // numeric slot under their OWN display name (see slots 1102/1395/1399, each carrying two
+    // people's names in their history), so employees_crm_username_unique_idx only fires if one
+    // person's exact CRM name is handed to somebody else — which should be refused anyway.
     updated_at: new Date().toISOString(),
   };
 
