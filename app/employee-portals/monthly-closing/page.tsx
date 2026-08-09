@@ -34,13 +34,18 @@ export default async function PortalMonthlyClosingPage({
   await assertPermission(access, "sales", "read");
 
   const params = await searchParams;
-  const periodRaw = params.period;
-  const period = typeof periodRaw === "string" ? periodRaw : Array.isArray(periodRaw) ? periodRaw[0] : null;
+  const first = (value: string | string[] | undefined) =>
+    typeof value === "string" ? value : Array.isArray(value) ? value[0] : null;
+  const period = first(params.period);
+  // Almost every viewer holds exactly one line and never sends this. It exists for the manager who
+  // legitimately covers more than one (a Product Manager carrying a line_scope_override). The loader
+  // refuses any line outside that viewer's own scope, so this is a selection, never a widening.
+  const line = first(params.line);
 
   let result: Awaited<ReturnType<typeof loadPortalMonthlyClosing>> | null = null;
   let loadError: string | null = null;
   try {
-    result = await loadPortalMonthlyClosing({ access, period });
+    result = await loadPortalMonthlyClosing({ access, line, period });
   } catch (error) {
     loadError = error instanceof Error ? error.message : "Failed to load Monthly Closing.";
   }
@@ -67,11 +72,21 @@ export default async function PortalMonthlyClosingPage({
         />
       ) : result.awaitingPublish || result.availablePeriods.length === 0 || !result.matrix ? (
         <EmployeePortalEmptyState
-          message={`No month has been published for ${result.line} yet. Your monthly closing will appear here once it is published.`}
+          message={
+            // A viewer who covers several lines needs to know the OTHER ones are still there — an
+            // unpublished line must not read as "you have no closing at all". Reached only by asking
+            // for a specific line, since with no `?line=` the loader already prefers a published one,
+            // and the picker only ever offers published lines — so there is no control to point at
+            // here, just the fact that the other line is waiting.
+            result.availableLines.length > 0
+              ? `No month has been published for ${result.line} yet. Already published for you: ${result.availableLines.join(", ")}.`
+              : `No month has been published for ${result.line} yet. Your monthly closing will appear here once it is published.`
+          }
           title="Awaiting publish"
         />
       ) : (
         <PortalMonthlyClosingView
+          availableLines={result.availableLines}
           availablePeriods={result.availablePeriods}
           line={result.line}
           matrix={result.matrix}

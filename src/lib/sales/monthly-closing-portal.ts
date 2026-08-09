@@ -8,8 +8,13 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import {
+  bridgeEmployeeLineToOfficial,
   canonicalizeRegionName,
+  canViewHeadOfficeLine,
+  isHeadOfficeLine,
   isRestrictedProductCode,
+  normalizeLineKey,
+  OFFICIAL_LINE_VALUES,
   resolveSalesAccessScope,
 } from "@/lib/sales/access-scope";
 import { getWeeklyProductScopeCodes } from "@/lib/sales/weekly/access";
@@ -90,7 +95,67 @@ export type PortalClosingScope = {
    * null for every other role and whenever the seat map couldn't answer (region bound then stands).
    */
   areaCodes: Set<string> | null;
+  /**
+   * EVERY product line this viewer may open, in display order — normally just their own, but a
+   * per-user `line_scope_override` (a Product Manager covering both Pedia and Anti Infective) or a
+   * head-office oversight role (Marketing Manager) legitimately spans more than one.
+   *
+   * `line` above is the DEFAULT pick from this list, kept so single-line callers read unchanged.
+   * Anything that loads figures must state which line it means rather than assuming `line`, or it
+   * silently serves one line's matrix against another line's rows — see pickPortalClosingLine.
+   */
+  allowedLines: string[];
 };
+
+/**
+ * Choose which line a portal closing read should load, and which lines the picker may offer.
+ *
+ * Pure — the whole point. The IO around it (who is allowed what, what is published) is resolved by
+ * the callers; this function owns the one rule that matters and is therefore unit-tested directly:
+ *
+ *   A REQUESTED LINE IS NEVER SILENTLY SUBSTITUTED.
+ *
+ * That is not a style preference. `buildPortalClosingWorkbook` rebuilds the exported matrix with
+ * `rebuildMatrixFromRows(matrix, rows, { preserveTargets: true })` — sales come from the rows but
+ * the COLUMNS and the TARGETS come from the matrix skeleton. Hand it a Pedia skeleton next to Anti
+ * Infective rows and the workbook comes out with Pedia's products, Pedia's targets, and the Anti
+ * Infective sales dropped on the floor, with nothing anywhere on the sheet saying so. Refusing
+ * (line: null) degrades the export to the rows-only workbook, which is honest; substituting does not.
+ */
+export type PortalClosingLineChoice = {
+  /** The line to load. null when the viewer may not open the requested line at all. */
+  line: string | null;
+  /** Allowed lines that have at least one published month — what the line picker offers. */
+  availableLines: string[];
+  /** True when a line was requested and refused. Callers must not fall back to another line. */
+  refused: boolean;
+};
+
+export function pickPortalClosingLine(input: {
+  requestedLine?: string | null;
+  allowedLines: readonly string[];
+  /** Allowed lines with ≥1 published period. Publication is per (line, period). */
+  publishedLines: readonly string[];
+}): PortalClosingLineChoice {
+  const allowed = input.allowedLines.map((value) => value.trim()).filter(Boolean);
+  const publishedKeys = new Set(input.publishedLines.map(normalizeLineKey));
+  // Intersection in ALLOWED order, so the picker lists lines the way the viewer's scope does.
+  const availableLines = allowed.filter((value) => publishedKeys.has(normalizeLineKey(value)));
+
+  const requested = String(input.requestedLine ?? "").trim();
+  if (requested) {
+    const match = allowed.find((value) => normalizeLineKey(value) === normalizeLineKey(requested));
+    // Outside the viewer's scope ⇒ refuse. Never fall through to allowed[0].
+    if (!match) return { line: null, availableLines, refused: true };
+    // In scope but unpublished ⇒ still THIS line, so the caller reports "awaiting publish" for the
+    // line that was actually asked for rather than for some other line the viewer also holds.
+    return { line: match, availableLines, refused: false };
+  }
+
+  // Nothing requested: prefer a line that actually has something to show, else the first allowed
+  // line so the caller can say which line is awaiting publication.
+  return { line: availableLines[0] ?? allowed[0] ?? null, availableLines, refused: false };
+}
 
 /** Resolve the viewer's line from the employee directory (any role). */
 async function resolveEmployeeLineName(access: AccessContext): Promise<string | null> {
@@ -124,18 +189,52 @@ export async function resolvePortalClosingScope(
   // own region label — so prefer it when the seat map answered.
   const areaCodes = salesScope.allowedAreaCodes;
 
+  // WHICH LINES, from the same engine that decides it everywhere else in sales. It already folds in
+  // the per-user `line_scope_override` (a PM covering Pedia + Anti Infective) and the fixed
+  // head-office oversight set (Marketing Manager), and it returns SoS official line names — the
+  // spelling `listPublishedPeriodsForLine` and the closing RPCs expect, which the raw employee
+  // label is not guaranteed to be.
+  //
+  // `allowedLineNames === null` means COMPANY scope: every line. Materialising that as the official
+  // line list is the faithful reading and widens nothing — the alternative, falling back to the
+  // viewer's own employee line, is actively wrong for the one role that lands here that way. A
+  // Marketing Manager carries sales_scope_override = COMPANY while sitting on the Head Office line,
+  // so an own-line fallback resolves her to a line that is confidential, carries no product sales
+  // and is never published — which is why her Line Sales Pacing card reported "not published yet
+  // for Head Office" instead of the lines she actually oversees.
+  const allowedLines = (
+    salesScope.allowedLineNames ? [...salesScope.allowedLineNames] : [...OFFICIAL_LINE_VALUES]
+  )
+    // Head Office is a confidential LINE (CEO / Super Admin only), the same lock class the details
+    // loader applies. Nobody else may open it, whatever their scope says.
+    .filter((candidate) => !isHeadOfficeLine(candidate) || canViewHeadOfficeLine(access.role));
+
+  // The viewer's own line stays the default when they hold it, so a single-line manager's every
+  // existing read resolves to exactly the line it resolved to before.
+  const ownLine = bridgeEmployeeLineToOfficial(line);
+  const defaultLine =
+    allowedLines.find((candidate) => normalizeLineKey(candidate) === normalizeLineKey(ownLine)) ??
+    allowedLines[0] ??
+    null;
+
   if (PRODUCT_SCOPED_CLOSING_ROLES.has(access.role)) {
     const hrKey = canonicalHrIdKey(
       resolveEmployeeIdentityId(access) ?? access.hrId ?? access.loginId ?? null,
     );
     const productCodes = await getWeeklyProductScopeCodes(hrKey);
     // No explicit assignment → fall back to showing their full line (null = whole line, no column filter).
-    return { line, productCodes: productCodes.size > 0 ? productCodes : null, regionNames, areaCodes };
+    return {
+      line: defaultLine,
+      allowedLines,
+      productCodes: productCodes.size > 0 ? productCodes : null,
+      regionNames,
+      areaCodes,
+    };
   }
 
   // Territory roles: DM/RM are narrowed to their own areas (seat map) or, failing that, their own
   // region; NSM is line-scoped so both bounds are null ⇒ the whole line.
-  return { line, productCodes: null, regionNames, areaCodes };
+  return { line: defaultLine, allowedLines, productCodes: null, regionNames, areaCodes };
 }
 
 function sumCells(cells: MonthlyClosingCell[]): MonthlyClosingCell {
@@ -409,6 +508,12 @@ export function applyRegionScope(
 export type PortalClosingResult = {
   matrix: MonthlyClosingMatrix | null;
   line: string | null;
+  /**
+   * Every line this viewer may open that has at least one published month — the line picker's
+   * options. One entry (or none) for the ordinary single-line manager, so the picker stays hidden
+   * for everyone it was hidden for before.
+   */
+  availableLines: string[];
   /** Published periods available to this viewer's line (newest first). */
   availablePeriods: string[];
   selectedPeriod: string | null;
@@ -426,18 +531,42 @@ export type PortalClosingResult = {
  */
 export async function loadPortalMonthlyClosing(input: {
   access: AccessContext;
+  /**
+   * Which of the viewer's allowed lines to load. Omit for their default line — the behaviour every
+   * single-line caller had before this existed. A line OUTSIDE their scope is refused (null matrix),
+   * never quietly swapped for one that is inside it: see pickPortalClosingLine for why a substituted
+   * skeleton silently corrupts the exported workbook's products and targets.
+   */
+  line?: string | null;
   period?: string | null;
 }): Promise<PortalClosingResult> {
   const scope = await resolvePortalClosingScope(input.access);
-  if (!scope.line) {
-    return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  if (scope.allowedLines.length === 0) {
+    return { matrix: null, line: null, availableLines: [], availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
   }
 
-  const publishedPeriods = await listPublishedPeriodsForLine(scope.line);
+  // Publication is per (line, period), so "which lines can this viewer even open" is one read per
+  // allowed line — at most three (the Marketing oversight set), one for everybody else.
+  const publishedByLine = await Promise.all(
+    scope.allowedLines.map(async (line) => ({ line, periods: await listPublishedPeriodsForLine(line) })),
+  );
+  const { availableLines, line: selectedLine, refused } = pickPortalClosingLine({
+    allowedLines: scope.allowedLines,
+    publishedLines: publishedByLine.filter((entry) => entry.periods.length > 0).map((entry) => entry.line),
+    requestedLine: input.line,
+  });
+  if (refused || !selectedLine) {
+    return { matrix: null, line: null, availableLines, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  }
+
+  const publishedPeriods = publishedByLine.find(
+    (entry) => normalizeLineKey(entry.line) === normalizeLineKey(selectedLine),
+  )?.periods ?? [];
   if (publishedPeriods.length === 0) {
     return {
       matrix: null,
-      line: scope.line,
+      line: selectedLine,
+      availableLines,
       availablePeriods: [],
       selectedPeriod: null,
       awaitingPublish: true,
@@ -447,11 +576,11 @@ export async function loadPortalMonthlyClosing(input: {
   const requested = String(input.period ?? "").trim();
   const selectedPeriod = publishedPeriods.includes(requested) ? requested : publishedPeriods[0];
 
-  const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line, period: selectedPeriod });
+  const raw = await loadMonthlyClosingWithStoreSplit({ line: selectedLine, period: selectedPeriod });
   // Lock the line and restrict the month selector to published months only.
   const locked: MonthlyClosingMatrix = {
     ...raw,
-    availableLines: [scope.line],
+    availableLines: [selectedLine],
     availablePeriods: publishedPeriods,
   };
   // Always strip confidential products first; territory roles (productCodes === null) would
@@ -462,7 +591,8 @@ export async function loadPortalMonthlyClosing(input: {
 
   return {
     matrix,
-    line: scope.line,
+    line: selectedLine,
+    availableLines,
     availablePeriods: publishedPeriods,
     selectedPeriod,
     awaitingPublish: false,
@@ -535,18 +665,27 @@ export function scopeMatrixToRegions(
  */
 export async function loadPortalLiveMonthly(input: {
   access: AccessContext;
+  /** Which allowed line to read. Omit for the viewer's default line. Refused if out of scope. */
+  line?: string | null;
   period?: string | null;
 }): Promise<PortalClosingResult> {
   const scope = await resolvePortalClosingScope(input.access);
-  if (!scope.line) {
-    return { matrix: null, line: null, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+  // Publication-free by design (that is this function's whole purpose), so every allowed line is
+  // selectable — `publishedLines` is the allowed set itself, not a narrowing.
+  const { availableLines, line: selectedLine, refused } = pickPortalClosingLine({
+    allowedLines: scope.allowedLines,
+    publishedLines: scope.allowedLines,
+    requestedLine: input.line,
+  });
+  if (refused || !selectedLine) {
+    return { matrix: null, line: null, availableLines, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
   }
 
-  const raw = await loadMonthlyClosingWithStoreSplit({ line: scope.line, period: input.period ?? null });
+  const raw = await loadMonthlyClosingWithStoreSplit({ line: selectedLine, period: input.period ?? null });
   const availablePeriods: string[] = raw.availablePeriods ?? [];
 
   if (availablePeriods.length === 0) {
-    return { matrix: null, line: scope.line, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
+    return { matrix: null, line: selectedLine, availableLines, availablePeriods: [], selectedPeriod: null, awaitingPublish: false };
   }
 
   const selectedPeriod =
@@ -560,7 +699,8 @@ export async function loadPortalLiveMonthly(input: {
 
   return {
     matrix,
-    line: scope.line,
+    line: selectedLine,
+    availableLines,
     availablePeriods,
     selectedPeriod,
     awaitingPublish: false,

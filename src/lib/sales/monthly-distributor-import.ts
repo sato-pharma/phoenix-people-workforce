@@ -10,6 +10,7 @@ import {
   isHeadOfficeLine,
   RESTRICTED_PRODUCT_CODES,
 } from "@/lib/sales/access-scope";
+import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import {
   allocateDirectToOperationalRegions,
   applyOperationalRegions,
@@ -3919,7 +3920,24 @@ export function rebuildMatrixFromRows(
 
   const regions: MonthlyClosingRegionGroup[] = matrix.regions.map((region) => {
     const areas = region.areas
-      .filter((area) => !area.isDirect)
+      // ONLY the synthetic "Direct orders (company)" pseudo-area, which has no geography and no
+      // invoice rows to rebuild from. NOT the raw `area.isDirect` flag: since July 2026's direct
+      // orders were restated to area grain that flag is also true for REAL areas which merely
+      // absorbed some hand-mapped direct money, and dropping those deletes the area outright —
+      // its invoice sales AND its target — from every sheet built on this matrix. Measured on
+      // production Anti Infective 2026-07, the raw flag removed 11 real areas (Dakahlia 1/2/3,
+      // Kafr El-Sheikh 1, Minia 1/2, Qena 2, Behira 2, Menoufia 2, Cairo East 2, Port said -
+      // Domiat) and with them 7,159.8 target units of 17,007.8 — so a Product Manager's exported
+      // Target vs Achievement sheet showed 9,848 as the whole line's target and an achievement %
+      // inflated against it, with nothing on the sheet saying anything was missing. Pedia was
+      // untouched, which is exactly why this stayed invisible. See ./closing-direct-area.ts:
+      // "Question 1 is this function. Never use the raw flag for it."
+      //
+      // Their direct portion still does not appear here, and must not: rows carrying `is_direct`
+      // come back with `includedInClosing === false` and are skipped above, so this matrix is
+      // invoice-rows-only for every area alike. That is the Total sheet's stated contract —
+      // direct is reported on its own line because it never arrives as an invoice.
+      .filter((area) => !isSyntheticDirectArea(area))
       .map((area) => {
         const cells = matrix.columns.map((column, columnIndex) =>
           cellFor(area.areaCode, column.productCode, area.cells[columnIndex]));
