@@ -11,6 +11,7 @@ type SupabaseQueryResult = {
 };
 type SupabaseQuery = PromiseLike<SupabaseQueryResult> & {
   eq: (column: string, value: unknown) => SupabaseQuery;
+  ilike: (column: string, pattern: string) => SupabaseQuery;
   in: (column: string, values: readonly unknown[]) => SupabaseQuery;
   or: (filters: string) => SupabaseQuery;
   order: (column: string, options?: { ascending?: boolean }) => SupabaseQuery;
@@ -131,7 +132,9 @@ async function maybeFetchByBatchIds<T>(supabase: SupabaseClient, table: string, 
 }
 
 function directRowsFilter(query: SupabaseQuery) {
-  return query.or("distributor_code.eq.DIRECT,is_direct.eq.true,region_code.eq.NATIONAL");
+  // ilike (no wildcards) on distributor_code so a stray casing variant (e.g. 'Direct') still
+  // matches -- a case-sensitive eq here once meant 35 rows never surfaced as "Direct rows" at all.
+  return query.or("distributor_code.ilike.DIRECT,is_direct.eq.true,region_code.eq.NATIONAL");
 }
 
 function uniqueValues(values: unknown[]) {
@@ -158,8 +161,8 @@ async function buildSnapshot(supabase: SupabaseClient) {
     maybeFetchByBatchIds<Record<string, unknown>>(supabase, "source_of_sales_import_rows", directBatchIds),
     maybeFetchByBatchIds<Record<string, unknown>>(supabase, "source_of_sales_import_summaries", directBatchIds),
     maybeFetchByBatchIds<Record<string, unknown>>(supabase, "monthly_sales_runs", directBatchIds),
-    countRows(supabase, "source_of_sales_import_batches", (query) => query.eq("distributor_code", "DIRECT")),
-    countRows(supabase, "source_of_sales_import_rows", (query) => query.eq("distributor_code", "DIRECT")),
+    countRows(supabase, "source_of_sales_import_batches", (query) => query.ilike("distributor_code", "DIRECT")),
+    countRows(supabase, "source_of_sales_import_rows", (query) => query.ilike("distributor_code", "DIRECT")),
     countRows(supabase, "source_of_sales_import_rows", (query) => query.eq("is_direct", true)),
     countRows(supabase, "source_of_sales_import_rows", (query) => query.eq("area_code", "DIRECT")),
     countRows(supabase, "source_of_sales_import_rows", (query) => query.eq("region_code", "NATIONAL")),

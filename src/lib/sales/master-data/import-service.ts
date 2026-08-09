@@ -31,15 +31,19 @@ export type MasterImportResult = {
 };
 
 // System sales distributors that live in CODE, not in the user's uploaded distributor master:
-//   • "Direct" — the company-direct channel (region-only; sale value taken straight from the sheet's
-//     Value column — see DIRECT_TEMPLATE in monthly-distributor-import.ts).
+//   • "DIRECT" — the company-direct channel (region-only; sale value taken straight from the sheet's
+//     Value column — see DIRECT_TEMPLATE in monthly-distributor-import.ts). Must stay uppercase: the
+//     upload pipeline always writes rows as normalizeCode(...)'d uppercase, so a mixed-case registry
+//     value here is an attractive nuisance for any manual/ad hoc insert that copies it verbatim
+//     (that's exactly how 35 July-2026 rows landed as 'Direct' instead of 'DIRECT' and silently
+//     dropped out of phx_direct_sales_reconciliation — see the 2026-08-10 case-insensitivity migration).
 //   • "EG-BR" — EGD Branch (parent EG), coded template only.
 // These are code-defined and are NOT in the user's distributor-master file, so the add-only master
 // import + a data reset would silently drop them (exactly how "Direct" vanished from the Upload Sales
 // dropdown after the 2026-06-08 reset). They are re-ensured after every distributor-master import.
 // Idempotent; mirror of their seed migrations.
 const SYSTEM_DISTRIBUTORS = [
-  { distributor_code: "Direct", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
+  { distributor_code: "DIRECT", distributor_name: "Direct (Company)", normalized_distributor_name: "direct (company)" },
   { distributor_code: "EG-BR", distributor_name: "EGD Branch", normalized_distributor_name: "egd branch" },
   // Tender channels — separate distributors so tender/hospital sales stay distinct from the
   // distributor's regular pharmacy file. Each has a code-defined raw profile in normalizer/profiles.ts.
