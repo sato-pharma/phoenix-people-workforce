@@ -279,6 +279,24 @@ export async function saveMappings(mappings: MappingInput[], options?: SaveMappi
     saved += data?.length ?? 0;
   }
   if (territoryRows.length) {
+    // Re-pointing an alias must REPLACE its target, and the replacement has to happen BEFORE the
+    // upsert. `source_of_sales_territory_aliases_one_active_target` is UNIQUE (normalized_alias,
+    // target_type) WHERE active, while the upsert's conflict key includes target_code — so aiming an
+    // existing alias at a different brick does not conflict, it INSERTS, and the partial index then
+    // rejects it outright: "duplicate key value ... (beiala elhamol, brick) already exists". The
+    // save fails wholesale and the mapping screen cannot be cleared at all.
+    //
+    // Deactivating every active row for these aliases first is safe because the upsert immediately
+    // re-activates the one that matches (alias, type, code); only a genuinely superseded target is
+    // left inactive. One extra round trip for the whole batch, not one per alias.
+    const territoryKeys = [...haveTerr];
+    const { error: supersedeError } = await supabase
+      .from("source_of_sales_territory_aliases")
+      .update({ active: false })
+      .in("normalized_alias", territoryKeys)
+      .eq("target_type", "brick")
+      .eq("active", true);
+    if (supersedeError) throw failed("territory aliases (superseding the previous target)", supersedeError);
     const { data, error } = await supabase.from("source_of_sales_territory_aliases").upsert(territoryRows, { onConflict: "normalized_alias,target_type,target_code" }).select("id");
     if (error) throw failed("territory aliases", error);
     saved += data?.length ?? 0;
@@ -405,20 +423,20 @@ export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: s
   const brickIds = new Set((refs.bricks ?? []).map((b) => normalizeCodeKey(b.brickId)));
   if (!brickIds.has(code)) throw new Error(`Brick ID "${code}" not found in master.`);
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase.from("source_of_sales_territory_aliases").upsert(
-    { alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "mapping-database" },
-    { onConflict: "normalized_alias,target_type,target_code" },
-  );
-  if (error) throw new Error(`Failed to save territory alias: ${error.message}`);
 
-  // Re-pointing an alias must REPLACE it, not add a second target.
+  // Re-pointing an alias must REPLACE it, not add a second target — and the replacement has to
+  // happen BEFORE the upsert.
   //
-  // The upsert's conflict key includes target_code, so pointing an existing alias at a different
-  // brick does not conflict — it INSERTS. The alias then has two active rows, and buildAliasIndex
-  // deliberately drops an alias that resolves ambiguously, so the edit silently makes the alias
-  // resolve to NOTHING: strictly worse than before it was edited, with no error shown.
+  // The upsert's conflict key includes target_code, so aiming an existing alias at a different brick
+  // does not conflict: it INSERTS. That used to leave the alias with two active rows, which
+  // buildAliasIndex drops as ambiguous — the edit silently made the alias resolve to NOTHING. The
+  // partial unique index `one_active_target` UNIQUE (normalized_alias, target_type) WHERE active now
+  // prevents that second row, so the same insert fails loudly instead. Superseding afterwards can
+  // therefore never run: the statement it was meant to follow has already errored.
   //
-  // Deactivating AFTER the upsert (never before) means the alias is never momentarily unresolvable.
+  // Deactivating first opens a sub-second window where the alias resolves to nothing, which is why
+  // this deliberately deactivates ONLY the targets being replaced, and does it immediately before
+  // the upsert that restores one.
   const { error: supersedeError } = await supabase
     .from("source_of_sales_territory_aliases")
     .update({ active: false })
@@ -429,6 +447,12 @@ export async function upsertTerritoryAlias(input: { actorLoginId: string; raw: s
   if (supersedeError) {
     throw new Error(`Failed to supersede the previous territory alias target: ${supersedeError.message}`);
   }
+
+  const { error } = await supabase.from("source_of_sales_territory_aliases").upsert(
+    { alias: raw, normalized_alias: key, target_type: "brick", target_code: code, active: true, source_file: "mapping-database" },
+    { onConflict: "normalized_alias,target_type,target_code" },
+  );
+  if (error) throw new Error(`Failed to save territory alias: ${error.message}`);
 
   await writeAuditLog({
     actorLoginId: input.actorLoginId,
