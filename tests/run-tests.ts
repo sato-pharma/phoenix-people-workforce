@@ -54,6 +54,7 @@ import { runPayrollEngineHardeningTests } from "./payroll-engine-hardening.test.
 import { runPayrollSheetMappingTests } from "./payroll-sheet-mapping.test.ts";
 import { runPayrollWorkflowTests } from "./payroll-workflow.test.ts";
 import { runCspHeaderTests } from "./csp-headers.test.ts";
+import { runMoneyPathSilentFailureTests } from "./money-path-silent-failures.test.ts";
 import { runReadyPayrollProrationTests } from "./ready-payroll-proration.test.ts";
 import { runReadyPayrollTemplateFormulaTests } from "./ready-payroll-template-formulas.test.ts";
 import { runPhoenixHrReplyTemplateTests } from "./phoenix-hr-reply-template.test.ts";
@@ -797,6 +798,7 @@ await runTest("notification config drift guard", runConfigDriftTests);
 await runTest("residence geocode policy (a failed geocode must never null a stored coordinate)", runResidenceGeocodePolicyTests);
 await runTest("outstation fuel policy (an unmeasurable car distance must block, a measured 0 must not)", runOutstationFuelPolicyTests);
 await runTest("dead-man's-switch (Healthchecks.io ping helper)", runDeadMansSwitchTests);
+await runTest("money path silent failures (a confident zero is worse than an error)", runMoneyPathSilentFailureTests);
 await runTest("payroll sheet mapping", runPayrollSheetMappingTests);
 await runTest("payroll workflow", runPayrollWorkflowTests);
 await runTest("automated payroll split (Part 1/2 freeze + FP-in-Part-1 + reconcile)", runAutomatedPayrollSplitTests);
