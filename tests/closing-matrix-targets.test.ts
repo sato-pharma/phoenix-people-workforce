@@ -177,8 +177,8 @@ export function runClosingMatrixTargetsTests() {
     assert.equal(ca1.cells[0].targetValue, null, "a row-level slice must not claim a target");
     assert.equal(ca1.cells[0].achievement, null, "…nor a fake achievement %");
 
-    // Direct rows and the company total are dropped — Direct orders are not distributor invoice
-    // rows, so no row-level filter can apply to them.
+    // The synthetic company Direct row and the company total are dropped — Direct orders are not
+    // distributor invoice rows, so no row-level filter can apply to them.
     const withDirect = injectDirectIntoMatrix(skeleton, [
       { productCode: "P1", regionCode: "CA", salesUnits: 7, salesValue: 70 },
     ]);
@@ -191,6 +191,56 @@ export function runClosingMatrixTargetsTests() {
     assert.equal(rebuiltFromDirect.directNational, null);
     assert.equal(rebuiltFromDirect.grandTotal.rowTotal.salesValue, 250,
       "the grand total covers the filtered distributor rows only");
+
+    // ── A REAL area that merely ABSORBED direct money is NOT the synthetic Direct row ──
+    //
+    // Since July 2026's direct orders were restated to area grain, `isDirect` is true for real
+    // areas too — Dakahlia 1 is still Dakahlia 1. This filter used to read that raw flag, so those
+    // areas were deleted outright, invoice sales AND target, from every sheet built on the rebuilt
+    // matrix — which is the one buildPortalClosingWorkbook always uses. Measured on production Anti
+    // Infective 2026-07: 11 of 49 areas gone, taking 7,159.8 of the line's 17,007.8 target units, so
+    // a Product Manager's Target vs Achievement sheet announced 9,848 as the whole line's target and
+    // an achievement % inflated against it. Nothing on the sheet said anything was missing, and
+    // Pedia was unaffected — which is precisely why it stayed invisible.
+    const withRealDirect = build([
+      { areaCode: "CA1", productCode: "P1", targetUnits: 50, targetValue: 500 },
+      { areaCode: "D11", productCode: "P1", targetUnits: 40, targetValue: 400 },
+    ]);
+    for (const area of withRealDirect.regions.flatMap((r) => r.areas)) {
+      // Exactly what the restatement leaves behind: a real, named, geographic area whose cells
+      // happen to include hand-mapped direct money.
+      if (area.areaCode === "D11") area.isDirect = true;
+    }
+    const keptReal = rebuildMatrixFromRows(
+      withRealDirect,
+      [row("CA1", 25, 250), row("D11", 12, 120)],
+      { preserveTargets: true },
+    );
+    const d11 = keptReal.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "D11");
+    assert.ok(
+      d11,
+      "a real area that absorbed direct money SURVIVES the rebuild — dropping it deletes a live "
+        + "territory, and its target, from the exported Closing Matrix",
+    );
+    assert.equal(d11.cells[0].targetValue, 400, "and it keeps its own target");
+    assert.equal(d11.cells[0].salesValue, 120, "its sales re-sum from its invoice rows, like every other area");
+    assert.equal(
+      keptReal.grandTotal.cells[0].targetValue,
+      900,
+      "so the line's total target is the WHOLE line (500 + 400), not only the areas free of direct money",
+    );
+
+    // Both kinds in one matrix: the real area stays, the synthetic company row still goes.
+    const bothKinds = injectDirectIntoMatrix(withRealDirect, [
+      { productCode: "P1", regionCode: "CA", salesUnits: 7, salesValue: 70 },
+    ]);
+    const survivors = rebuildMatrixFromRows(bothKinds, [row("D11", 12, 120)], { preserveTargets: true })
+      .regions.flatMap((r) => r.areas);
+    assert.ok(survivors.some((a) => a.areaCode === "D11"), "the real direct-carrying area is kept");
+    assert.ok(
+      survivors.every((a) => a.areaCode.trim().toUpperCase() !== "DIRECT"),
+      "while the synthetic 'Direct orders (company)' pseudo-area is still dropped",
+    );
 
     // Excluded-only filter: every row is excluded from the closing, so the closing matrix is
     // honestly zero — never a whole-month number next to an excluded-only Data sheet.

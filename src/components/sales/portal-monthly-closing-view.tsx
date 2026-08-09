@@ -33,17 +33,25 @@ import {
 
 type Props = {
   matrix: MonthlyClosingMatrix | null;
-  /** Locked display line, resolved server-side from the viewer's HR_ID. */
+  /** The line on show — resolved server-side, and one of `availableLines`. */
   line: string;
-  /** Published months for this viewer's line (newest first). */
+  /**
+   * Every line this viewer may open that has a published month. One entry for the ordinary
+   * single-line manager (the Line box stays locked); more only for someone who genuinely covers
+   * several, e.g. a Product Manager carrying a line_scope_override.
+   */
+  availableLines: string[];
+  /** Published months for the line on show (newest first). */
   availablePeriods: string[];
   selectedPeriod: string | null;
 };
 
 const monthSelectClassName =
   "h-11 w-44 rounded border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
+const lineSelectClassName =
+  "h-11 w-52 rounded border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
 
-export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selectedPeriod }: Props) {
+export function PortalMonthlyClosingView({ matrix, line, availableLines, availablePeriods, selectedPeriod }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -89,7 +97,21 @@ export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selec
   function onSelectPeriod(next: string) {
     if (!next || next === selectedPeriod) return;
     setFilter(emptyMonthlyClosingFilter);
-    const query = new URLSearchParams({ period: next });
+    // Carry the line so switching months does not silently drop a multi-line viewer back onto
+    // their default line.
+    const query = new URLSearchParams({ line, period: next });
+    startTransition(() => router.push(`${pathname}?${query.toString()}`));
+  }
+
+  // Re-runs the scoped SERVER load for the new line rather than filtering client-side: the two
+  // lines have different areas, different products and different targets, so there is nothing on
+  // this page to filter — the matrix has to be fetched under the viewer's scope for that line. The
+  // month is deliberately NOT carried over; published months differ per line, and the loader falls
+  // back to the newest published month of whichever line is now selected.
+  function onSelectLine(next: string) {
+    if (!next || next === line) return;
+    setFilter(emptyMonthlyClosingFilter);
+    const query = new URLSearchParams({ line: next });
     startTransition(() => router.push(`${pathname}?${query.toString()}`));
   }
 
@@ -164,15 +186,31 @@ export function PortalMonthlyClosingView({ matrix, line, availablePeriods, selec
 
   return (
     <div className="space-y-4">
-      {/* Locked line + published-month picker */}
+      {/* Line (locked, or a picker for a genuinely multi-line viewer) + published-month picker */}
       <div className="flex flex-col gap-3 rounded border border-slate-200 bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)] sm:flex-row sm:items-end sm:justify-between">
         <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1">
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Line</span>
-            <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
-              {line}
-            </div>
-          </div>
+            {/* Stays the read-only box for everyone who holds one line — which is almost everyone.
+                It becomes a picker only when the server resolved more than one PUBLISHED line for
+                this viewer, so the control cannot offer a line they may not open. */}
+            {availableLines.length > 1 ? (
+              <SearchableSelect
+                className={lineSelectClassName}
+                disabled={isPending}
+                onChange={(event) => onSelectLine(event.target.value)}
+                value={line}
+              >
+                {availableLines.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </SearchableSelect>
+            ) : (
+              <div className="flex h-11 items-center rounded border border-slate-200 bg-slate-50 px-3.5 text-sm font-semibold text-slate-900">
+                {line}
+              </div>
+            )}
+          </label>
           <label className="flex flex-col gap-1">
             <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Month</span>
             {availablePeriods.length > 1 ? (

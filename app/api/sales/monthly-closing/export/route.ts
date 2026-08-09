@@ -427,16 +427,27 @@ export async function POST(request: Request) {
     //   — narrows by line/region/area/product and strips confidential columns, publish-gated, the
     //   exact matrix their portal screen shows.
     // - Marketing Manager (MARKETING_OVERSIGHT_LINE_ROLES): she oversees THREE lines at once
-    //   (Anti Infective/Pedia/CNS — see access-scope.ts), which the single-line portal model can't
-    //   represent, so loadPortalMonthlyClosing always returns null for her. Her actual boundary is
-    //   WHICH lines, not which areas/regions/products within one — resolveSalesAccessScope already
-    //   enforces that on `details.rows` (fail-closed to her 3-line allowlist, confidential-stripped).
-    //   The unscoped company matrix for `details.line` alone is therefore safe to use as the
-    //   skeleton: its SHAPE (which areas/products exist) carries no figures — every cell is about
-    //   to be rebuilt from her own already-scoped rows below, exactly like the other branch.
+    //   (Anti Infective/Pedia/CNS — see access-scope.ts). Her actual boundary is WHICH lines, not
+    //   which areas/regions/products within one — resolveSalesAccessScope already enforces that on
+    //   `details.rows` (fail-closed to her 3-line allowlist, confidential-stripped). The unscoped
+    //   company matrix for `details.line` alone is therefore safe to use as the skeleton: its SHAPE
+    //   (which areas/products exist) carries no figures — every cell is about to be rebuilt from her
+    //   own already-scoped rows below, exactly like the other branch. She keeps her own branch
+    //   because it also skips the publication gate, which is deliberate for her.
+    //
+    // `line: details.line` on the second branch IS LOAD-BEARING, not tidying. The skeleton is not
+    // decoration: buildPortalClosingWorkbook rebuilds it with `preserveTargets: true`, so the
+    // workbook's PRODUCT COLUMNS and every TARGET come from the skeleton while only the sales come
+    // from the rows. Resolve the skeleton from the viewer's default line rather than the line being
+    // exported, and a two-line manager — a Product Manager holding Pedia + Anti Infective through
+    // line_scope_override — exporting his second line gets the FIRST line's products and the FIRST
+    // line's targets wrapped around the second line's rows, with the exported sales silently dropped
+    // because they have no column to land in. Nothing on the sheet would say so.
+    // loadPortalMonthlyClosing REFUSES a line outside the caller's scope instead of substituting a
+    // different one, so the worst case is the honest rows-only workbook below, never a mislabelled one.
     const scopedMatrix = MARKETING_OVERSIGHT_LINE_ROLES.has(access.role)
       ? await loadMonthlyClosingWithStoreSplit({ line: details.line, period: details.period }).catch(() => null)
-      : (await loadPortalMonthlyClosing({ access, period: details.period }).catch(() => null))?.matrix ?? null;
+      : (await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null))?.matrix ?? null;
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
