@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 const JOB_NAME = "ireports360-visits-reconcile";
 
@@ -29,7 +30,7 @@ function isAuthorized(request: Request) {
   // against production-grade data. Requiring NODE_ENV === "development" makes the bypass
   // impossible anywhere it is actually deployed.
   if (!secret) return process.env.NODE_ENV === "development";
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 async function runReconcile() {

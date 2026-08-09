@@ -716,6 +716,7 @@ import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 import { runEarlyBirdsScopeTests } from "./early-birds-scope.test.ts";
 import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
+import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1720,6 +1721,10 @@ await runTest(
 await runTest(
   "api error redaction (Postgres text never reaches the client; our own prose still does)",
   runApiErrorInfrastructureRedactionTests,
+);
+await runTest(
+  "schema-shape default ACLs (the loaded gun is an error; the unfixable supabase_admin row stays a warning)",
+  runSchemaShapeDefaultAclTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -6,6 +6,7 @@ import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { processBackgroundJobs } from "@/lib/background-jobs/worker";
 import { notifyBackgroundJobsRun } from "@/lib/notifications/background-jobs-digest";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export const maxDuration = 300;
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 export async function GET(request: Request) {

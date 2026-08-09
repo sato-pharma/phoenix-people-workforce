@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ function isCronAuthorized(request: Request) {
   // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
   // real local machine without it may bypass an unset CRON_SECRET during development.
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 async function runNotificationOutbox(limit: number) {

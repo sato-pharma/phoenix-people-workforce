@@ -126,6 +126,54 @@ for (const file of files) {
   }
 }
 
+// 5. No migration may hand anon/authenticated a schema-wide DEFAULT privilege on `public`.
+// This is the statement that caused the 2026-08-06 leak. Six ad-hoc backup tables were born
+// readable by anon — nobody granted anything, the schema default did it — and 412 customer names
+// were reachable with the public anon key for two days. 20260809130000 and 20260809180000 revoked
+// those defaults; this rule stops a future migration quietly granting them back, which would
+// reopen the hole for every table created afterwards without touching a single existing table
+// (and so without any other check noticing).
+//
+// Only GRANT is rejected. REVOKE on the same objects is the fix and must stay allowed.
+//
+// The 2026-07-11 baseline is exempt, and is the reason this rule exists. It is a pg_dump of
+// production as it stood that day, so it faithfully records the four
+// `ALTER DEFAULT PRIVILEGES ... GRANT ALL ON TABLES TO anon/authenticated` lines that Supabase
+// ships by default — the very statements that made the zz_backup_* tables readable. Rewriting a
+// historical snapshot to satisfy a lint would make it stop describing what the database actually
+// was. It is neutralised by 20260809130000 + 20260809180000 revoking those defaults, not by
+// editing the dump.
+const DEFAULT_ACL_EXEMPT = new Set(['20260711135352_phoenix_production_schema_baseline.sql']);
+for (const file of files) {
+  if (!/^\d{14}_/.test(file) || DEFAULT_ACL_EXEMPT.has(file)) continue;
+
+  const raw = fs.readFileSync(path.join(MIGRATIONS_DIR, file), 'utf8');
+  // Same comment-stripping rationale as rule 4: the rollback instructions in
+  // 20260809130000/20260809180000 are commented-out GRANTs and must not trip this.
+  const sql = raw
+    .split('\n')
+    .map((line) => {
+      const idx = line.indexOf('--');
+      return idx >= 0 ? line.slice(0, idx) : line;
+    })
+    .join('\n')
+    .replace(/\s+/g, ' ');
+
+  // `alter default privileges [for role X] in schema public grant ... to ... anon|authenticated`
+  const grantsDefaultToBrowserRole =
+    /\balter\s+default\s+privileges\b[^;]*\bin\s+schema\s+public\b[^;]*\bgrant\b[^;]*\bto\b[^;]*\b(anon|authenticated)\b/i.test(sql);
+
+  if (grantsDefaultToBrowserRole) {
+    fail(
+      `"${file}" GRANTs a schema-wide DEFAULT privilege on \`public\` to anon or authenticated. ` +
+      'That is the exact statement behind the 2026-08-06 exposure: every table created afterwards is ' +
+      'born readable with the public anon key, no existing table changes, and nothing else notices. ' +
+      'Grant on the specific table instead (grant select on table public.<t> to authenticated;) and ' +
+      'enable RLS on it.'
+    );
+  }
+}
+
 // Summary
 const total = files.length;
 if (errors === 0 && warnings === 0) {

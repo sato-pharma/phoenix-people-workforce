@@ -5,6 +5,7 @@ import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runReconciliationChecks } from "@/lib/reconciliation/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 const JOB_NAME = "reconciliation-check";
 
@@ -21,7 +22,7 @@ function isAuthorized(request: Request) {
   // developer machine. Anything less would leave this route callable unauthenticated wherever
   // CRON_SECRET is unset — including staging, which is a 1:1 clone of production data.
   if (!secret) return process.env.NODE_ENV === "development";
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 async function runReconciliation() {

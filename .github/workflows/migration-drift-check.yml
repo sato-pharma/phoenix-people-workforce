@@ -123,3 +123,46 @@ jobs:
         if: ${{ always() && env.HAS_PRODUCTION_SUPABASE_KEY != 'true' }}
         run: |
           echo "::warning::PRODUCTION_SUPABASE_SERVICE_ROLE_KEY is not set — production migration drift and schema shape were NOT checked. Only staging was verified. Add the secret (production project ref ozucdzovmcqvepbozvqf) to enable the production legs."
+
+      # ── Tell a human. This is the step whose absence caused the incident. ──────────────
+      #
+      # On 2026-08-06 this workflow detected the leak correctly and said so in plain words:
+      #   [schema-shape] ERROR exposed_without_rls: 6 table(s) are reachable by anon/authenticated
+      #   with RLS DISABLED ... zz_backup_sos_july_ro001_price_20260806, ...
+      # It repeated that on 08-07 and 08-08. Every run went red. Nobody saw it, because a failing
+      # scheduled workflow notifies no one — GitHub emails the run author, and a cron run has none.
+      # The leak was found on 08-09 by an unrelated manual audit, three days and 412 exposed
+      # customer names later.
+      #
+      # A detector nobody reads is not a detector. This posts to the owner's Telegram on failure.
+      #
+      # Failure-only, deliberately: a daily "all clear" is how an alert becomes furniture, which is
+      # the exact failure mode being fixed here.
+      #
+      # Uses curl against the Bot API rather than the app's sendTelegramNotification() — a workflow
+      # runner has no app runtime, no database and no service-role client. TELEGRAM_BOT_TOKEN is
+      # already an Actions secret (shared with the app). TELEGRAM_ALERT_CHAT_ID must be added; it is
+      # the owner's own chat id, readable from public.telegram_links in production.
+      #
+      # `continue-on-error` so a notification outage can never mask the security result itself —
+      # the job's red/green must depend on the checks, never on Telegram being up.
+      - name: Notify Telegram on failure
+        if: ${{ failure() }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. The database posture check FAILED and reached nobody, which is the condition this step exists to prevent."
+            exit 0
+          fi
+          TEXT=$(printf '🔴 *Database posture check FAILED*\n\nMigration drift / schema shape is red on staging or production.\n\nThis is the check that found six anon-readable backup tables on 2026-08-06 and went unread for three days.\n\n[Open the run](%s)' "$RUN_URL")
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "parse_mode=Markdown" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /dev/null -w 'telegram sendMessage HTTP %{http_code}\n'
