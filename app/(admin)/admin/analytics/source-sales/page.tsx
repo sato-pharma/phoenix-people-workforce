@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { SourceSalesDashboard } from "@/components/analytics/dashboards/source-sales-dashboard";
+import { TerritorySyncPanel } from "@/components/sales/territory/territory-sync-panel";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { resolveAnalyticsViewerScope } from "@/lib/analytics/scope";
@@ -18,8 +19,12 @@ export default async function SourceSalesAnalyticsPage({ searchParams }: { searc
   if (!canViewAdminCoreAnalytics(access.role)) redirect("/admin/analytics");
   const scope = await resolveAnalyticsViewerScope(access);
   const resolvedParams = await searchParams;
+  const canSync = access.role === "Super Admin" || access.scope === "system";
 
   return (
-    <SourceSalesDashboard searchParams={resolvedParams} role={access.role} scope={scope} mountRoot="/admin/analytics" />
+    <div className="space-y-4">
+      {canSync && <TerritorySyncPanel canRun />}
+      <SourceSalesDashboard searchParams={resolvedParams} role={access.role} scope={scope} mountRoot="/admin/analytics" />
+    </div>
   );
 }
