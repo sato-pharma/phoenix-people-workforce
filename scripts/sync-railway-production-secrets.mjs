@@ -122,12 +122,33 @@ function main() {
   const railEnv = process.env.RAILWAY_ENVIRONMENT || "production";
   const projectId = process.env.RAILWAY_PROJECT_ID?.trim();
   const serviceName = process.env.RAILWAY_SERVICE_NAME?.trim() || process.env.RAILWAY_SERVICE_ID?.trim();
-  const railwayToken = process.env.RAILWAY_TOKEN?.trim();
+  // Railway has TWO kinds of credential and the CLI treats them as different variables:
+  //
+  //   RAILWAY_TOKEN     — a PROJECT token, minted per project+environment
+  //                       (project → Settings → Tokens). Implies its own project.
+  //   RAILWAY_API_TOKEN — an ACCOUNT/team token (Account Settings → Tokens).
+  //                       Works across projects; requires --project to target one.
+  //
+  // Putting an account token in RAILWAY_TOKEN fails in a way that reads like an expired
+  // credential but is not. Verified 2026-08-09 against the CLI: a junk value yields
+  // "Invalid RAILWAY_TOKEN", whereas a well-formed token with no project access yields
+  // "Unauthorized ... and has access to the resource" — which is exactly what every run of this
+  // workflow reported. That distinction is the whole diagnosis, and missing it cost a day: with
+  // every variable failing, no secret could be rotated into production, which silently froze
+  // ATTENDANCE_AGENT_TOKEN and stopped attendance data reaching payroll for ten days.
+  //
+  // This script passes --project/--service/--environment explicitly, which is the account-token
+  // pattern, so accept either and prefer the account token when both are present.
+  const accountToken = process.env.RAILWAY_API_TOKEN?.trim();
+  const projectToken = process.env.RAILWAY_TOKEN?.trim();
+  const railwayToken = accountToken || projectToken;
+  const tokenVarName = accountToken ? "RAILWAY_API_TOKEN" : "RAILWAY_TOKEN";
 
   if (!railwayToken) {
-    console.error("[sync-railway-production-secrets] RAILWAY_TOKEN is required.");
+    console.error("[sync-railway-production-secrets] RAILWAY_API_TOKEN or RAILWAY_TOKEN is required.");
     process.exit(1);
   }
+  console.log(`[sync-railway-production-secrets] credential supplied via ${tokenVarName}; kind is auto-detected`);
   if (!projectId) {
     console.error("[sync-railway-production-secrets] RAILWAY_PROJECT_ID is required.");
     process.exit(1);
@@ -140,6 +161,57 @@ function main() {
   const npmCommand = process.platform === "win32" ? "npx.cmd" : "npx";
   const cliArgsBase = ["--yes", "@railway/cli@latest", "variable", "set"];
   const commonArgs = ["--skip-deploys", "--service", serviceName, "--environment", railEnv, "--project", projectId];
+
+  // Which variable name the CLI actually accepted. Deliberately starts null even when
+  // RAILWAY_API_TOKEN was the one supplied: pre-seeding it would collapse the retry list to one
+  // entry and defeat the fallback below. Set on the first successful command, then reused — so the
+  // retry costs one extra invocation per run, not one per variable.
+  let workingTokenVar = null;
+
+  function railwayEnv(varName) {
+    return {
+      ...process.env,
+      // Set the credential under ONE name and blank the other, so the CLI cannot fall back to a
+      // stale ambient value and mis-classify the token.
+      RAILWAY_API_TOKEN: varName === "RAILWAY_API_TOKEN" ? railwayToken : "",
+      RAILWAY_TOKEN: varName === "RAILWAY_TOKEN" ? railwayToken : "",
+      RAILWAY_PROJECT_ID: projectId,
+      RAILWAY_SERVICE_NAME: serviceName,
+      RAILWAY_ENVIRONMENT: railEnv,
+    };
+  }
+
+  /**
+   * Runs the Railway CLI, trying the credential as an ACCOUNT token and then as a PROJECT token.
+   *
+   * The owner cannot reasonably be expected to know which kind they minted — Railway offers both
+   * from different screens and the failure mode is indistinguishable from expiry ("Unauthorized",
+   * not "Invalid"). Rather than demand the right one, try both and remember which worked.
+   */
+  function runRailway(cliArgs) {
+    const order = workingTokenVar ? [workingTokenVar] : ["RAILWAY_API_TOKEN", "RAILWAY_TOKEN"];
+    let last = null;
+    for (const varName of order) {
+      last = spawnSync(npmCommand, cliArgs, {
+        cwd: process.cwd(),
+        env: railwayEnv(varName),
+        stdio: "pipe",
+        encoding: "utf8",
+      });
+      if (last.status === 0) {
+        if (!workingTokenVar) {
+          workingTokenVar = varName;
+          console.log(`[sync-railway-production-secrets] credential accepted as ${varName}`);
+        }
+        return last;
+      }
+      const message = `${last.stderr || ""}${last.stdout || ""}`;
+      // Only an auth rejection is worth retrying under the other name. A genuine failure (bad
+      // value, missing service) would fail identically both ways and must not be masked.
+      if (!/Unauthorized|Invalid RAILWAY/i.test(message)) return last;
+    }
+    return last;
+  }
 
   let updated = 0;
   let skipped = 0;
@@ -173,18 +245,7 @@ function main() {
       continue;
     }
 
-    const result = spawnSync(npmCommand, cliArgs, {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        RAILWAY_TOKEN: railwayToken,
-        RAILWAY_PROJECT_ID: projectId,
-        RAILWAY_SERVICE_NAME: serviceName,
-        RAILWAY_ENVIRONMENT: railEnv,
-      },
-      stdio: "pipe",
-      encoding: "utf8",
-    });
+    const result = runRailway(cliArgs);
 
     if (result.status !== 0) {
       const stderr = (result.stderr || "").trim();
