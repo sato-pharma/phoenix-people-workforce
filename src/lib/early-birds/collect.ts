@@ -72,9 +72,22 @@ export async function collectEarlyBirdsInputs(input: {
   const throughIso = todayIso < input.period.endIso ? todayIso : input.period.endIso;
   const managerKey = normalizeHrIdForAccess(input.managerHrId);
 
-  const directory = await getEmployeeDirectoryRows({ includeInactive: true }).catch(() => []);
+  // Resigned people are OFF the board. Not greyed out, not listed last as ineligible — absent.
+  //
+  // This used to read `includeInactive: true` and rely on the eligibility rules to push leavers to
+  // the bottom with a "Not active at period end" reason. That was wrong for a board a whole
+  // district looks at: the owner's reaction to seeing resignations ranked among his reps was
+  // immediate, and he is right. A leaderboard is a list of people you can still recognise.
+  //
+  // The trade-off, stated rather than hidden: a rep who resigns mid-fortnight drops out of the
+  // LIVE preview for that fortnight. Snapshots already closed are unaffected — their candidates are
+  // frozen rows in early_birds_candidates, not recomputed from the directory.
+  const directory = await getEmployeeDirectoryRows().catch(() => []);
   const team = directory.filter(
-    (row) => isMedicalRepDirectoryEmployee(row) && normalizeHrIdForAccess(row.managerHrId) === managerKey,
+    (row) =>
+      isMedicalRepDirectoryEmployee(row) &&
+      isActiveDirectoryEmployee(row) &&
+      normalizeHrIdForAccess(row.managerHrId) === managerKey,
   );
 
   const periodDays = earlyBirdsPeriodDays(input.period, throughIso);

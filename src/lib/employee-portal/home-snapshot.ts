@@ -11,7 +11,11 @@ import {
   getRmRegionalPerformance,
   type EmployeePortalShellData,
 } from "@/lib/employee-portal/service";
-import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
+import {
+  getEmployeeDirectoryRows,
+  isActiveDirectoryEmployee,
+  type EmployeeDirectoryRow,
+} from "@/lib/employees/employee-directory";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
@@ -33,6 +37,33 @@ export const DV_FOCUS_ROLES = new Set([
   "Group Product Manager",
   "Training Manager",
 ]);
+
+/**
+ * Resigned people are OFF the daily CRM board — not greyed out, not listed red as "did not
+ * submit". Absent.
+ *
+ * The rosters handed to getNsmCrmCompliance come from the sales-performance services
+ * (getDsmTeamPerformance / national / regional), which are membership-by-sales-history and
+ * legitimately keep a leaver who booked sales in the period. A compliance board is a different
+ * question — "who started work today" — and a leaver can only ever answer it in red. B-97 Nada
+ * Elsharkawy sat on her manager's red list for six weeks after resigning on 2026-06-28.
+ *
+ * Guarded on a NON-EMPTY directory on purpose: getEmployeeDirectoryRows is called with
+ * `.catch(() => [])` at every one of these call sites, and filtering against an empty active-set
+ * would erase the whole roster — which this board renders as "nobody on your team submitted
+ * today", a confident lie. A failed directory read must degrade to unfiltered, never to empty.
+ */
+export function activeRosterOnly<T extends { hrId: string }>(
+  roster: readonly T[],
+  directoryRows: readonly EmployeeDirectoryRow[],
+): T[] {
+  const key = (value?: string | null) => (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const activeKeys = new Set(
+    directoryRows.filter(isActiveDirectoryEmployee).map((row) => key(row.hrId)).filter(Boolean),
+  );
+  if (activeKeys.size === 0) return [...roster];
+  return roster.filter((row) => activeKeys.has(key(row.hrId)));
+}
 
 export type UpcomingMarketingActivity = { id: string; requestCode: string; payDate: string; estimatedCost: number };
 
@@ -233,7 +264,10 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       // Manager anchors med reps only (getDsmTeamPerformance runs in "dsm-direct" mode), and the
       // board is uncapped so nobody on a team this size drops off the ranking.
       const crmInput = {
-        reps: (team.members ?? []).map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+        reps: activeRosterOnly(
+          (team.members ?? []).map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+          directoryRows,
+        ),
         dsms: [],
         limit: Number.POSITIVE_INFINITY,
       };
@@ -303,8 +337,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
 
       // CRM first-visit compliance over the full line roster (all reps + DSMs), not just the top 10.
       const crmInput = {
-        reps: repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
-        dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+        reps: activeRosterOnly(
+          repMembers.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+          directoryRows,
+        ),
+        dsms: activeRosterOnly(
+          dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+          directoryRows,
+        ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(
@@ -367,8 +407,14 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
       // not just the top 10 shown in the leaderboard. getNsmCrmCompliance is roster-driven, so
       // passing the region-scoped roster reuses it as-is without widening access.
       const crmInput = {
-        reps: regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
-        dsms: dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+        reps: activeRosterOnly(
+          regional.topReps.map((m) => ({ hrId: m.hrId, name: display(m.hrId, m.name) })),
+          directoryRows,
+        ),
+        dsms: activeRosterOnly(
+          dsms.map((d) => ({ hrId: d.hrId, name: d.name })),
+          directoryRows,
+        ),
       };
       const crm = await getNsmCrmCompliance(crmInput).catch((error: unknown) => {
         logPortalFailure(
