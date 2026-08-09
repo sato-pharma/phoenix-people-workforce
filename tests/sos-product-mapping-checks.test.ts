@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 
 import {
+  findCaseVariantDistributorCodes,
   findDuplicateItemCodes,
   findZeroSalesGaps,
   isItemCode,
@@ -142,5 +143,40 @@ export function runSosProductMappingCheckTests() {
     pedia.some((g) => g.line !== "Pedia"),
     false,
     "findings must be scoped to their own line",
+  );
+
+  // ---- CHECK 3 ----
+  // The real 2026-08-09 finding: "DIRECT" and "Direct" both live in production (Anti Infective
+  // kept posting DIRECT while Pedia's July rows arrived as Direct), and separately "OFFICE" and
+  // "Office" — Marcyrl's registered code is "Office", but 30 of its product aliases were stored
+  // as "OFFICE". Fed from all three tables at once (registry + aliases + sales), the way main()
+  // actually calls this.
+  const variantCodes = [
+    "Direct", "DIRECT", "DIRECT", // registry has none of these; aliases + sales carry both cases
+    "Office", "Office", "OFFICE", // registry + sales say "Office"; aliases say "OFFICE"
+    "EP-BK", "EP-PHS", // a genuinely different code pair — must NOT be reported as a case variant
+    "PS", "PS", "IS",
+    null, "", "  ", // must never crash or count as a code
+  ];
+  const variants = findCaseVariantDistributorCodes(variantCodes);
+  assert.equal(variants.length, 2, "exactly the two real case splits — DIRECT/Direct and OFFICE/Office — must be found");
+
+  const direct = variants.find((v) => v.canonicalUpper === "DIRECT");
+  assert.ok(direct, "the DIRECT/Direct split must be reported");
+  assert.deepEqual(direct.variants, ["DIRECT", "Direct"], "both exact-case spellings must be named, sorted");
+
+  const office = variants.find((v) => v.canonicalUpper === "OFFICE");
+  assert.ok(office, "the OFFICE/Office split must be reported even though it never diverged in the registry or sales — only the aliases");
+  assert.deepEqual(office.variants, ["OFFICE", "Office"]);
+
+  assert.equal(
+    variants.some((v) => v.canonicalUpper === "EP-BK" || v.canonicalUpper === "EP-PHS"),
+    false,
+    "EP-BK and EP-PHS are two different strings, not a case variant of one code — this check must stay silent about them",
+  );
+  assert.equal(
+    findCaseVariantDistributorCodes(["PS", "PS", "IS"]).length,
+    0,
+    "a code repeated with consistent casing is the normal case and must not be reported",
   );
 }

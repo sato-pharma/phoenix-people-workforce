@@ -21,6 +21,7 @@
 // to bricks. This module answers whether the upload happened at all.
 
 import { normalizeLineKey } from "@/lib/sales/access-scope";
+import { normalizeCodeKey } from "@/lib/sales/normalizer/resolvers";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 
 /** Mirrors the confidential exclusion baked into both closing RPCs. */
@@ -136,7 +137,12 @@ export function aggregateCoverage(
       ? row.directValue
       : row.effectiveUnits * (input.factoryPriceByProduct.get(productCode) ?? 0);
 
-    const sourceKey = row.distributorCode.trim() || "(unknown source)";
+    // Normalized the same way resolvers.ts keys a distributor code during import — case (and
+    // Arabic-digit) drift between periods must not read as two different sources. This is the
+    // exact shape of the 2026-07 bug: "DIRECT" fed Anti Infective while "Direct" fed Pedia that
+    // same month, and the un-normalized key made each look like it vanished while a stranger
+    // "arrived" in its place, on a line that had not actually lost anything.
+    const sourceKey = normalizeCodeKey(row.distributorCode) || "(unknown source)";
     bump(isCurrent ? aggregates.sourcesCur : aggregates.sourcesPrev, sourceKey, row.totalQty, value);
 
     if (row.isDirect) {
@@ -277,7 +283,9 @@ export async function loadMonthlySourceCoverage(
   let latestUploadAt: string | null = null;
   for (const row of batchesResult.data ?? []) {
     const typed = row as { distributor_code?: unknown; distributor_name?: unknown; period?: unknown; created_at?: unknown };
-    const code = String(typed.distributor_code ?? "").trim();
+    // Same normalization as the sourceKey above, so a name registered under one case of a code
+    // (e.g. a batch stamped "Direct") is still found when the aggregate key is "DIRECT".
+    const code = normalizeCodeKey(typed.distributor_code);
     const name = String(typed.distributor_name ?? "").trim();
     if (code && name && !sourceNameByCode.has(code)) sourceNameByCode.set(code, name);
     const batchPeriod = String(typed.period ?? "");

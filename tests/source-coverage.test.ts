@@ -55,7 +55,7 @@ export function runSourceCoverageTests() {
 
   assert.equal(aggregates.sourcesPrev.get("PS")?.value, 800, "distributor rows are valued effective units × factory price — the matrix RPC's own basis");
   assert.equal(aggregates.sourcesPrev.get("PS")?.units, 10, "the confidential LA003 row bumps neither units nor value — it is outside the closing headline");
-  assert.equal(aggregates.sourcesPrev.get("Direct")?.value, 500, "direct rows carry their submitted value, never a factory-price recompute");
+  assert.equal(aggregates.sourcesPrev.get("DIRECT")?.value, 500, "direct rows carry their submitted value, never a factory-price recompute — key is upper-cased the same way resolvers.ts normalizes a distributor code");
   assert.equal(aggregates.sourcesPrev.get("MC")?.value, 0, "an unpriced product contributes 0, matching the RPC's coalesce(factory_price, 0)");
   assert.equal(aggregates.sourcesPrev.get("MC")?.rows, 1, "…but its rows still count, so the source reads present rather than missing");
   assert.equal(aggregates.sourcesPrev.has("RM"), false, "a row outside the two compared months is ignored entirely");
@@ -90,4 +90,25 @@ export function runSourceCoverageTests() {
   assert.equal(creditByKey.get("SF-T")?.status, "present", "a credit-note-only source (negative value) still has rows and must not read as missing");
   assert.equal(creditByKey.get("SF-T")?.prevValue, -722.93, "values keep their sign and 2dp rounding");
   assert.equal(creditByKey.get("EPX")?.status, "new", "rows this month with none last month is 'new', not 'present'");
+
+  // ── case-variant distributor codes must read as ONE source, not two ──────
+  // The actual 2026-07 production bug: Anti Infective kept posting "DIRECT" while Pedia's July
+  // Direct rows arrived as "Direct" — same channel, different casing, on different lines. An
+  // un-normalized key made the sheet report "DIRECT" as MISSING (understating every total) and
+  // "Direct" as a brand-new, unexplained source, when the channel never actually stopped
+  // reporting anything.
+  const caseVariantRows: CoverageFactRow[] = [
+    factRow({ period: "2026-06", distributorCode: "DIRECT", isDirect: true, regionCode: "GZ", totalQty: 5, directValue: 500 }),
+    factRow({ period: "2026-07", distributorCode: "Direct", isDirect: true, regionCode: "GZ", totalQty: 4, directValue: 400 }),
+  ];
+  const caseVariantAggregates = aggregateCoverage(caseVariantRows, {
+    period: "2026-07",
+    prevPeriod: "2026-06",
+    factoryPriceByProduct: prices,
+  });
+  assert.equal(caseVariantAggregates.sourcesPrev.size, 1, "DIRECT and Direct must collapse into a single aggregate key");
+  assert.equal(caseVariantAggregates.sourcesCur.get("DIRECT")?.value, 400, "the normalized key is upper-case, matching how resolvers.ts keys a distributor code everywhere else");
+  const caseVariantSources = classifyCoverage(caseVariantAggregates.sourcesPrev, caseVariantAggregates.sourcesCur, (key) => key);
+  assert.equal(caseVariantSources.length, 1, "one logical source must produce one row, not a false 'missing' plus an unrelated false 'new'");
+  assert.equal(caseVariantSources[0]?.status, "present", "a mid-month case change must read as the same source continuing, never as one source vanishing while a stranger appears");
 }
