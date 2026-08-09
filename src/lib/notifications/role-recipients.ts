@@ -29,6 +29,7 @@ export const notificationRoleKeys = [
   "attendance_ingestion_alert",
   "marketing_sla_reminder",
   "resignation_workflow_alert",
+  "employee_import_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -130,6 +131,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "ireports360_sync_notify",
     label: "iReports360 sync notify",
     description: "Notifies after every iReports360 CRM sync/reconcile run, success or failure.",
+    roles: ["Super Admin"],
+    enabled: true,
+  },
+  employee_import_alert: {
+    key: "employee_import_alert",
+    label: "Employee import alert",
+    description:
+      "Oversight audience for a completed employee import. The admin who ran the import is always notified in addition to these roles — they are told the outcome of their own action, so removing every role here does not silence them.",
     roles: ["Super Admin"],
     enabled: true,
   },

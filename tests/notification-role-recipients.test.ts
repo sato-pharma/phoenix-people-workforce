@@ -37,14 +37,17 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // the leaver's manager chain. Enabled on purpose: resignation notifications had
   // been silently dropping every message for seven weeks before this landed.
   resignation_workflow_alert: { roles: ["Super Admin", "Talent Acquisition"], enabled: true },
+  // 15th key, added 2026-08-09. Oversight audience for a completed employee import; the
+  // admin who ran the import is notified in addition to these roles, from the route itself.
+  employee_import_alert: { roles: ["Super Admin"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 14, "expected exactly the 14 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 15, "expected exactly the 15 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 14 keys",
+    "notificationRoleKeys set does not match the confirmed 15 keys",
   );
 
   for (const key of notificationRoleKeys) {

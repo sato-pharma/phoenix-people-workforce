@@ -81,6 +81,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   attendance_ingestion_alert: SYSTEM_HEALTH_MODULE,
   marketing_sla_reminder: "Marketing Requests",
   resignation_workflow_alert: "Resignations",
+  employee_import_alert: "Employees",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
