@@ -40,14 +40,19 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   // 15th key, added 2026-08-09. Oversight audience for a completed employee import; the
   // admin who ran the import is notified in addition to these roles, from the route itself.
   employee_import_alert: { roles: ["Super Admin"], enabled: true },
+  // 16th key, added 2026-08-09/10. Payroll workflow_updated and salary_upload_imported are
+  // ops events about a BATCH, not a person, so the same fail-closed-on-no-subject bug applied
+  // (0 recipients, every channel skipped — 8 + 1 events in production, all NULL employee_hr_id).
+  // Owner-set audience: company-scope holders of the payroll permission.
+  payroll_workflow_alert: { roles: ["Super Admin", "CEO", "Finance Manager"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 15, "expected exactly the 15 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 16, "expected exactly the 16 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 15 keys",
+    "notificationRoleKeys set does not match the confirmed 16 keys",
   );
 
   for (const key of notificationRoleKeys) {
