@@ -14,6 +14,8 @@ import type {
   VacantPositionImportRecord,
 } from "@/lib/imports/employee-import-types";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
+import { logError } from "@/lib/observability/log";
 import { closeVacancyOnHire } from "@/lib/employees/vacancy-closer";
 import { normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
@@ -1232,6 +1234,37 @@ export async function POST(request: Request) {
       warnings: dryRunResult.validationWarnings,
     };
 
+    // Who hears that an import landed: the admin who ran it, plus Super Admin for oversight
+    // (owner decision 2026-08-09).
+    //
+    // These have to be passed EXPLICITLY. The employee_import.* policy uses
+    // recipientStrategy: ["permission_based"], and permission_based resolves an audience by
+    // scope-matching candidates against the notification's SUBJECT. An import is an ops event
+    // about a FILE, not about a person, so there is no subject — and `if (!subject) continue`
+    // (policy.ts) then discards every candidate, including the company-scope Super Admin/CEO
+    // bypass that sits a few lines below it. The result was a fail-closed skip on every channel:
+    // this notification reached nobody at all, on every import, while recording
+    // "no exact authorized recipient was resolved" as though it were a permissions failure.
+    //
+    // metadata.moduleOwnerHrIds is the supported way to name recipients for a subject-less ops
+    // notification; permission_based consumes it directly and still requires each named person
+    // to hold `imports:import`, so this names an audience without widening authorization.
+    const { recipients: importOversightRecipients, warnings: importAlertWarnings } =
+      await resolveNotificationPersonRecipients("employee_import_alert", "Employee import alert recipients");
+    if (importAlertWarnings.length > 0) {
+      logError("Employee import alert recipient resolution warned", {
+        labels: { event: "employee_import_alert_recipients_warning" },
+        error: new Error(importAlertWarnings.join("; ")),
+      });
+    }
+    const importAlertHrIds = Array.from(
+      new Set(
+        [access.hrId, ...importOversightRecipients.map((recipient) => recipient.hrId)]
+          .map((hrId) => String(hrId ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+
     await createSystemNotification({
       actionUrl: "/employees",
       actorId: access.loginId ?? access.hrId ?? access.role,
@@ -1258,6 +1291,7 @@ export async function POST(request: Request) {
         accessUsersCreated: response.accessUsersCreated,
         idempotencyKey: `employee-import:${file.name}:${Date.now()}`,
         importedEmployees: response.importedEmployees,
+        moduleOwnerHrIds: importAlertHrIds,
         warnings: response.warnings.length,
       },
       module: "employee_import",
