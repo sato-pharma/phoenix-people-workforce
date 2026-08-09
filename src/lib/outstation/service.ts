@@ -30,10 +30,12 @@ import {
 import { classifyOutstationExpenseEligibility } from "@/lib/outstation/classification";
 import { resolveGovernorate } from "@/lib/geo/egypt-locations";
 import {
-  CAMPAIGN_RULE_ROLES,
-  MAX_CAMPAIGN_VISITS,
+  outstationCampaignRuleOutcome,
+  outstationDvEvidenceWindowClosed,
   outstationTicketEvidenceRejection,
+  type OutstationCampaignRuleOutcome,
 } from "@/lib/outstation/decision";
+import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { formatPhoenixDateTime, formatPhoenixLongDate } from "@/lib/i18n/format";
 import {
@@ -275,7 +277,7 @@ async function resolveOutstationWorkloadPayload(params: {
   // "no activity" and the decision engine judged real trips against a workload of zero.
   //
   // The campaign-visit cap deliberately KEEPS the double-visit source. That rule (rule 3 in
-  // decision.ts, and campaignRuleRejection here) rejects on "campaign DOUBLE-visits" and on
+  // decision.ts, reached through campaignRuleOutcome here) rejects on "campaign DOUBLE-visits" and on
   // "no double-visit activity". Feeding it the CRM read would break it both ways: solo campaign
   // visits would inflate campaignVisits into spurious auto-rejections, and solo visits would
   // satisfy the totalDvVisits > 0 test, silently fail-opening a live rejection rule.
@@ -573,23 +575,34 @@ function recommendationForResult(params: {
 
 // Campaign-visit cap (#11): a TRAVELING expense for a District/Training Manager needs
 // at least one double-visit and at most 2 campaign visits (the rest regular). Meeting /
-// other expense types and all other roles are unaffected. Thresholds are shared with the
-// pure decision engine (decision.ts) so there is a single source of truth.
-function campaignRuleRejection(input: {
+// other expense types and all other roles are unaffected.
+//
+// The RULE itself lives in decision.ts and is called, not copied — a second implementation of a
+// live rejection rule is how the two drift apart. This function only feeds it the two things it
+// cannot work out for itself: the counts off the double-visit evidence, and whether the CRM has
+// had a fair chance to record that evidence yet (outstationDvEvidenceWindowClosed).
+//
+// Same-day submissions are the case this exists for. Reps enter their visits through and after
+// the working day, so a trip claimed on its own morning ALWAYS reads zero double-visits — that is
+// a missing measurement, not proof of no field work, and it is now a HOLD for review rather than
+// an automatic rejection.
+function campaignRuleOutcome(input: {
   role: string;
   expenseType: OutstationExpenseType;
   evidence: DoubleVisitExpenseWorkloadEvidence;
-}): string | null {
-  if (input.expenseType !== "traveling" || !CAMPAIGN_RULE_ROLES.has(input.role)) return null;
+  tripEndDate: string;
+}): OutstationCampaignRuleOutcome {
   const campaignVisits = input.evidence.campaignVisits ?? 0;
-  const totalDvVisits = campaignVisits + (input.evidence.regularVisits ?? 0);
-  if (totalDvVisits <= 0) {
-    return "No double-visit activity was recorded for this trip; a traveling expense for this role requires field double-visits.";
-  }
-  if (campaignVisits > MAX_CAMPAIGN_VISITS) {
-    return `A traveling expense allows at most ${MAX_CAMPAIGN_VISITS} campaign double-visits; this trip has ${campaignVisits}. The rest must be regular visits.`;
-  }
-  return null;
+  return outstationCampaignRuleOutcome({
+    campaignVisits,
+    dvEvidenceWindowClosed: outstationDvEvidenceWindowClosed({
+      cairoTodayIso: cairoTodayIso(),
+      tripEndDate: input.tripEndDate,
+    }),
+    expenseType: input.expenseType,
+    role: input.role,
+    totalDvVisits: campaignVisits + (input.evidence.regularVisits ?? 0),
+  });
 }
 
 async function getEmployeeIdentity(access: AccessContext) {
@@ -1556,11 +1569,18 @@ export async function submitOutstationRequest(
     tripEndDate: calculation.tripEndDate,
     tripStartDate: calculation.tripStartDate,
   });
-  const campaignRejectionReason = campaignRuleRejection({
+  const campaignRule = campaignRuleOutcome({
     role: calculation.employeeRole,
     expenseType: calculation.expenseType,
     evidence: workloadPayload.workload_evidence_snapshot,
+    tripEndDate: calculation.tripEndDate,
   });
+  const campaignRejectionReason = campaignRule?.kind === "reject" ? campaignRule.reason : null;
+  // A claim whose double-visit evidence has not been written to the CRM yet is HELD, not rejected.
+  // It joins reviewHoldReasons below, so it persists as `submitted` and lands in the pending
+  // approvals queue with the reason on it, instead of being decided against the employee on a
+  // record that does not exist yet.
+  const campaignHoldReason = campaignRule?.kind === "hold" ? campaignRule.reason : null;
   // Ticket attachments: train/bus requests MUST carry ticket evidence, and the uploaded
   // files are persisted to the request (previously the manager flow discarded them
   // entirely — only a boolean count was sent). Car uses the live photo instead.
@@ -1606,11 +1626,12 @@ export async function submitOutstationRequest(
       ? `This offline capture synced ${Math.round(offlineSyncDelayHours)} hours after it was taken, beyond the ${offlineSyncLimitHours}-hour policy window, so it is held for Super Admin review before it moves to payroll.`
       : null;
 
-  // System decision: reject on failed eligibility (distance / governorate) or the DM/TM
-  // campaign rule; HOLD for Super Admin review when a governorate could not be confirmed,
-  // when an offline claim arrived without its mandated ticket, or when a policy limit was
-  // exceeded; otherwise accept. Rejected AND held requests are PERSISTED (not thrown) so
-  // the employee sees them in their expense list, and a Super Admin can decide/override.
+  // System decision: reject on failed eligibility (distance / governorate) or a CONFIRMED DM/TM
+  // campaign-rule breach; HOLD for Super Admin review when the trip's double-visit evidence is
+  // not in the CRM yet, when a governorate could not be confirmed, when an offline claim arrived
+  // without its mandated ticket, or when a policy limit was exceeded; otherwise accept. Rejected
+  // AND held requests are PERSISTED (not thrown) so the employee sees them in their expense list,
+  // and a Super Admin can decide/override.
   const systemRejectionReason =
     calculation.eligibilityStatus === "not_eligible"
       ? calculation.eligibilityReason
@@ -1622,6 +1643,7 @@ export async function submitOutstationRequest(
   const reviewHoldReasons = systemRejectionReason
     ? []
     : [
+        campaignHoldReason,
         calculation.governorateReviewRequired ? governorateReviewReason : null,
         ticketEvidenceRejection ? offlineTicketHoldReason : null,
         gpsAccuracyHoldReason,
@@ -1670,7 +1692,11 @@ export async function submitOutstationRequest(
     allowance_breakdown_json: JSON.stringify(calculation.allowanceBreakdown),
     attachment_count: uploadedTicketAttachments.length,
     approval_reason: decisionReason,
-    approval_recommendation: calculation.approvalRecommendation,
+    // A held claim can never be an `auto_approve` recommendation: the approvals screen would show
+    // "recommended: auto approve" beside a reason saying the request is held, and the two readings
+    // contradict each other on the one screen where the money decision is made.
+    approval_recommendation:
+      reviewHoldReasons.length > 0 ? "manager_review" : calculation.approvalRecommendation,
     area: calculation.employeeArea,
     calculation_status: decisionStatus,
     captured_accuracy_meters: calculation.capturedAccuracyMeters,

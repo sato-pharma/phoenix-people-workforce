@@ -3,12 +3,14 @@ import { readFileSync } from "node:fs";
 
 import {
   decideOutstationRequest,
+  outstationCampaignRuleOutcome,
+  outstationDvEvidenceWindowClosed,
   outstationTicketEvidenceRejection,
   type OutstationDecisionInput,
 } from "../src/lib/outstation/decision.ts";
 
 // The system decision engine: distance floor + governorate rule + DM/TM campaign
-// cap + ticket evidence -> accepted_by_system / rejected_by_system.
+// cap + ticket evidence -> accepted_by_system / held_for_review / rejected_by_system.
 export function runOutstationDecisionTests() {
   const base: OutstationDecisionInput = {
     actualDistanceKm: 120,
@@ -22,6 +24,10 @@ export function runOutstationDecisionTests() {
     requiresTicketAttachment: false,
     campaignVisits: 0,
     totalDvVisits: 0,
+    // Default the whole existing suite to a CLOSED evidence window, so every pre-existing
+    // assertion below keeps asserting what it always did. The open-window behaviour is the new
+    // thing and is tested explicitly in its own block.
+    dvEvidenceWindowClosed: true,
   };
 
   // Happy path: far enough, different governorate, non-DM/TM role -> accepted.
@@ -157,6 +163,133 @@ export function runOutstationDecisionTests() {
     );
   }
 
+  // 3b. The double-visit EVIDENCE WINDOW. Reps enter their visits into iReports through and
+  // after the working day, so a trip claimed on its own morning always reads zero double-visits.
+  // That is a missing measurement, not proof of no field work, and it auto-rejected two genuine
+  // Training Manager claims on 2026-08-09. Inside the window a zero HOLDS; once it closes the
+  // rejection is back.
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "2026-08-09", tripEndDate: "2026-08-09" }),
+    false,
+    "a trip claimed on its own day is still inside the evidence window",
+  );
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "2026-08-10", tripEndDate: "2026-08-09" }),
+    false,
+    "the day after the trip is still inside the window — visits are still being saved after midnight",
+  );
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "2026-08-11", tripEndDate: "2026-08-09" }),
+    true,
+    "two days after the trip the window is closed and an empty record is a real zero",
+  );
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "2026-08-09", tripEndDate: "2026-09-01" }),
+    false,
+    "a trip that has not happened yet cannot have evidence",
+  );
+  // Fail CLOSED: an unreadable date must never switch a live rejection rule off.
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "2026-08-11", tripEndDate: "" }),
+    true,
+    "an unparseable trip date fails closed (window treated as closed), it does not disable the rule",
+  );
+  assert.equal(
+    outstationDvEvidenceWindowClosed({ cairoTodayIso: "not-a-date", tripEndDate: "2026-08-09" }),
+    true,
+    "an unparseable today fails closed too",
+  );
+
+  for (const role of ["District Manager", "Training Manager"]) {
+    const sameDay = decideOutstationRequest({
+      ...base,
+      role,
+      expenseType: "traveling",
+      totalDvVisits: 0,
+      campaignVisits: 0,
+      dvEvidenceWindowClosed: false,
+    });
+    assert.equal(
+      sameDay.status,
+      "held_for_review",
+      `${role} claiming on the trip day is HELD, not rejected, when the CRM has no double-visits yet`,
+    );
+    assert.match(
+      sameDay.reason,
+      /not in the CRM yet/i,
+      `${role} hold reason says the evidence is not in yet, not that he did no double-visits`,
+    );
+    assert.doesNotMatch(
+      sameDay.reason,
+      /No double-visit activity was recorded/i,
+      `${role} must not be told he did no double-visits while the evidence window is open`,
+    );
+    // Once the window closes the original rejection is unchanged.
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 0,
+        campaignVisits: 0,
+        dvEvidenceWindowClosed: true,
+      }).status,
+      "rejected_by_system",
+      `${role} with a genuinely empty double-visit record still rejects once the window has closed`,
+    );
+    // Over the cap rejects INSIDE the window too: a partial count already above the cap can only
+    // grow as more visits are entered, so waiting cannot change the answer.
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 5,
+        campaignVisits: 3,
+        dvEvidenceWindowClosed: false,
+      }).status,
+      "rejected_by_system",
+      `${role} over the campaign cap still rejects while the evidence window is open`,
+    );
+    // A trip with real double-visits is unaffected by the window either way.
+    assert.equal(
+      decideOutstationRequest({
+        ...base,
+        role,
+        expenseType: "traveling",
+        totalDvVisits: 5,
+        campaignVisits: 2,
+        dvEvidenceWindowClosed: false,
+      }).status,
+      "accepted_by_system",
+      `${role} with real double-visits is accepted regardless of the window`,
+    );
+  }
+
+  // The open window must not fail-open the rule for anyone it never covered.
+  assert.equal(
+    outstationCampaignRuleOutcome({
+      campaignVisits: 0,
+      dvEvidenceWindowClosed: false,
+      expenseType: "traveling",
+      role: "Medical Rep",
+      totalDvVisits: 0,
+    }),
+    null,
+    "a Medical Rep is outside the campaign rule, window open or closed",
+  );
+  assert.equal(
+    outstationCampaignRuleOutcome({
+      campaignVisits: 0,
+      dvEvidenceWindowClosed: false,
+      expenseType: "meeting",
+      role: "District Manager",
+      totalDvVisits: 0,
+    }),
+    null,
+    "a meeting expense is outside the campaign rule, window open or closed",
+  );
+
   // 4. Ticket evidence for train/bus.
   assert.equal(
     decideOutstationRequest({ ...base, transportationType: "train", requiresTicketAttachment: true, hasTicketAttachments: false }).status,
@@ -224,6 +357,36 @@ export function runOutstationDecisionTests() {
     serviceSource,
     /gpsAccuracyThresholdMeters/,
     "the admin-editable GPS accuracy threshold must be enforced, not decorative",
+  );
+
+  // The campaign rule is the one that auto-rejected two genuine same-day claims. The submit path
+  // must CALL the shared rule (not keep a second copy that can drift back), must decide the
+  // evidence window from the trip's own end date, and must route a hold into reviewHoldReasons —
+  // which is what makes the request persist as `submitted` instead of `rejected_by_system`.
+  assert.match(
+    serviceSource,
+    /outstationCampaignRuleOutcome\(/,
+    "submitOutstationRequest must apply the shared campaign rule, not re-implement it",
+  );
+  assert.match(
+    serviceSource,
+    /outstationDvEvidenceWindowClosed\(\{\s*\n?\s*cairoTodayIso: cairoTodayIso\(\),\s*\n?\s*tripEndDate: input\.tripEndDate,/,
+    "the evidence window must be resolved from the trip's end date against the Cairo calendar day",
+  );
+  assert.match(
+    serviceSource,
+    /const campaignHoldReason = campaignRule\?\.kind === "hold" \? campaignRule\.reason : null;/,
+    "a campaign HOLD must be kept separate from a campaign rejection",
+  );
+  assert.match(
+    serviceSource,
+    /reviewHoldReasons = systemRejectionReason\s*\n?\s*\?\s*\[\]\s*\n?\s*:\s*\[\s*\n?\s*campaignHoldReason,/,
+    "the campaign hold must join reviewHoldReasons, so the claim lands in the pending queue rather than being rejected",
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /campaignRejectionReason = campaignRuleOutcome\(/,
+    "the campaign outcome must not be collapsed straight back into a rejection reason",
   );
   assert.match(
     serviceSource,
