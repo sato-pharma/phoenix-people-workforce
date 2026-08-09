@@ -1824,6 +1824,9 @@ async function sendNotificationEmailDirect(input: NotificationEmailInput): Promi
     // Per-address one-click token only for single-recipient sends; fan-outs go to internal
     // staff (manager chain / HR inbox) and use the mailto fallback.
     headers: listUnsubscribeHeaders(input.notificationType, fanout ? undefined : finalTo[0]),
+    // Lets the send path tell a password reset from a newsletter, so a recipient's
+    // unsubscribe cannot withhold their own account-recovery mail.
+    notificationType: input.notificationType,
     html: renderHtml(input, delivery.policy),
     idempotencyKey: requestId,
     origin,

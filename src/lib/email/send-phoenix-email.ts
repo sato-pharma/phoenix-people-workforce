@@ -1,4 +1,5 @@
 
+import { isRecipientPreferenceSuppression, isTransactionalEmailType } from "@/lib/email/transactional-types";
 import { phoenixEmailSignatureHostedUrl } from "@/emails/phoenix-email-layout";
 import { isForceTestingDelivery, isProductionRuntime, systemEmail, systemIdentity } from "@/config/system-settings";
 import { assertReachableEmailImage, isNonDeliverableEmail } from "@/lib/email/email-safety";
@@ -32,6 +33,13 @@ export type SendPhoenixEmailAttachment = {
 
 export type SendPhoenixEmailInput = {
   attachments?: SendPhoenixEmailAttachment[];
+  /**
+   * The notification type being sent. Only used to decide whether a recipient's own
+   * unsubscribe may withhold this mail: transactional types (password reset / account setup)
+   * are how somebody gets back into their account, so an unsubscribe from something else must
+   * not block them. Hard bounces and complaints still suppress everything.
+   */
+  notificationType?: string | null;
   bcc?: string[];
   /**
    * Internal use only, set exclusively by confidence-gate.ts's approveHeldNotification when
@@ -148,23 +156,37 @@ export async function assertReachablePhoenixEmailImage(url = phoenixEmailSignatu
   return assertReachableEmailImage(url, { blockLocalAssets: true });
 }
 
-async function loadSuppressedRecipients(emails: string[]): Promise<Set<string>> {
+async function loadSuppressedRecipients(
+  emails: string[],
+  options?: { notificationType?: string | null },
+): Promise<Set<string>> {
   const suppressed = new Set<string>();
   if (emails.length === 0) return suppressed;
   const normalized = emails.map((e) => e.trim().toLowerCase());
+  // A transactional email is how somebody gets back INTO their account. An unsubscribe from
+  // something else must not withhold it — the unsubscribe page explicitly promises "You will
+  // still receive account and security emails", and before this it was not true: one click on
+  // a birthday or SLA mail permanently blocked that person's password-reset link.
+  //
+  // Hard bounces and complaints still suppress everything, transactional included: those are
+  // the provider telling us the address is undeliverable or that we are burning our sending
+  // reputation, not a preference the recipient expressed.
+  const transactional = isTransactionalEmailType(options?.notificationType);
   try {
     const supabase = getSupabaseAdmin();
     // O(1)-per-address lookup against the durable suppression list (PK on address),
     // honouring expiry (soft bounces auto-recover).
     const { data, error } = await supabase
       .from("email_suppressions")
-      .select("address,expires_at")
+      .select("address,expires_at,reason")
       .in("address", normalized);
     if (error) throw error;
     const now = Date.now();
-    for (const row of (data ?? []) as Array<{ address: string; expires_at: string | null }>) {
+    for (const row of (data ?? []) as Array<{ address: string; expires_at: string | null; reason: string | null }>) {
       const active = !row.expires_at || Date.parse(row.expires_at) > now;
-      if (active) suppressed.add(row.address.trim().toLowerCase());
+      if (!active) continue;
+      if (transactional && isRecipientPreferenceSuppression(row.reason)) continue;
+      suppressed.add(row.address.trim().toLowerCase());
     }
     return suppressed;
   } catch {
@@ -246,7 +268,7 @@ export async function sendPhoenixEmail(input: SendPhoenixEmailInput): Promise<Se
   }
 
   const allCandidates = [...baseTo, ...(input.cc ?? []), ...(input.bcc ?? [])];
-  const suppressed = await loadSuppressedRecipients(allCandidates);
+  const suppressed = await loadSuppressedRecipients(allCandidates, { notificationType: input.notificationType });
 
   const to = removeSuppressed(baseTo, suppressed);
   if (to.length === 0) {
