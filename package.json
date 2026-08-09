@@ -89,6 +89,7 @@
     "check:migrations-applied": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-migrations-applied.ts",
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
     "check:db-timezone": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-db-timezone.ts",
+    "check:sos-product-mapping": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sos-product-mapping.ts",
     "check:secret-pins": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-secret-pins.ts",
     "check:unbacked": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-unbacked-branches.ts",
     "check:routes": "node scripts/check-routes.mjs",

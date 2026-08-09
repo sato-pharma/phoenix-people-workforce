@@ -103,6 +103,12 @@ export type NavigationSection = {
   label: string;
 };
 
+// Section headings below are the REAL titles for every role. The SFE Manager's flat, headless
+// sidebar (PR #1625, 2026-08-02) is produced by subtracting them at render time — see
+// `flatSidebarRoles` / `usesFlatSidebar` in @/lib/navigation/active-path. They are not blanked
+// here because `label` is also the Modules Control catalog's `sectionLabel`, the sidebar search
+// key and the drag-handle aria text, none of which should read as an empty string.
+
 type NavigationSectionItemSeed = Omit<NavigationSectionItem, "moduleId"> & {
   moduleId?: string;
 };
@@ -215,10 +221,11 @@ const adminNavigationSectionSeeds = [
       // needs the same exclusion. Keep this list in step with the dedicated entries above.
       { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager"] },
     ],
-    // Title removed on owner instruction (2026-08-02) — the entries name themselves, so the
-    // section heading only repeated the button below it. Empty string, not a deleted key: the
-    // label is required by NavigationSection and is also the collapse/pin key.
-    label: "",
+    // Heading restored on owner instruction (2026-08-08). It was blanked for the SFE Manager on
+    // 2026-08-02, where this section resolves to a single button; Super Admin and CEO see several
+    // rows here, so they get the title (and the collapse toggle) back. SFE Manager still sees no
+    // heading — see flatSidebarRoles.
+    label: "Command Center",
   },
   {
     id: "ceo-probation",
@@ -256,9 +263,18 @@ const adminNavigationSectionSeeds = [
         label: "Employee 360",
         permissions: [{ resource: "employee_profile", action: "read" }],
       },
-      // PM Product Master moved into the Marketing & ROI hub (2026-08-02) — see
-      // marketingRoiPageItems. Its roles (Super Admin / CEO / SFE Manager) are all on that hub's
-      // button, so nobody loses a route by the move.
+      // Restored to its own row on 2026-08-08. It was folded into the Marketing & ROI hub on
+      // 2026-08-02 during the SFE rebuild; the SFE Manager still reaches it there (he is excluded
+      // here), but Super Admin and CEO get the direct row back. It remains a card in
+      // marketingRoiPageItems, so no role loses a route either way.
+      {
+        href: "/admin/pm-products",
+        icon: Package,
+        label: "PM Product Master",
+        excludedRoles: ["SFE Manager"],
+        permissions: [{ resource: "employee_profile", action: "read" }],
+        roles: ["Super Admin", "CEO"],
+      },
     ],
     label: "Employee 360",
   },
@@ -281,9 +297,11 @@ const adminNavigationSectionSeeds = [
       { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", roles: adminShellEmployeeRoles },
       { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles },
     ],
-    // Title removed on owner instruction (2026-08-02) — same as the other section headings; the
-    // two buttons name themselves. Header row is hidden for an empty label.
-    label: "",
+    // This section was born headless (it postdates the pre-2026-08-02 sidebar, so it has no
+    // "before" to restore). Given a title on 2026-08-08 so it is not the one unlabelled block
+    // left floating among the restored headings — which is the exact look being undone here.
+    // SFE Manager still sees no heading — see flatSidebarRoles.
+    label: "My Requests",
   },
   {
     id: "approvals-hub",
@@ -377,10 +395,33 @@ const adminNavigationSectionSeeds = [
         label: "All Marketing Requests",
         roles: ["Super Admin", "SFE Manager"],
       },
+      // Restored on 2026-08-08. It was pulled out of the hub onto the sidebar deliberately (it is
+      // the ROI source of truth, and burying it one click inside a hub of four competing ROI cards
+      // was the discoverability problem the module set out to fix), then folded back in on
+      // 2026-08-02 by the SFE rebuild. The role list mirrors assertMarketingAdminPageAccess({
+      // allowCompanyOversight: true }) minus the SFE Manager, who keeps reaching it as a card in
+      // marketingRoiPageItems. Row-level visibility is still scoped per viewer inside
+      // getMarketingRoiReport; this widens nothing.
+      {
+        href: "/admin/marketing-roi-tracker",
+        icon: Target,
+        label: "ROI Tracker",
+        excludedRoles: ["SFE Manager"],
+        roles: [
+          "Super Admin",
+          "CEO",
+          "Marketing Manager",
+          "Product Manager",
+          "Group Product Manager",
+          "Finance Manager",
+          "Financial Advisor",
+        ],
+      },
     ],
-    // Title removed on owner instruction (2026-08-02). It repeated the button beneath it
-    // word-for-word; the header row is hidden for an empty label.
-    label: "",
+    // Heading restored on owner instruction (2026-08-08). It repeated the single button beneath
+    // it in the SFE Manager's sidebar, but this section carries three rows for Super Admin, so
+    // the title is doing real work there. SFE Manager still sees no heading — see flatSidebarRoles.
+    label: "Marketing & ROI",
   },
 
   // ── Tier 4: HR & People ───────────────────────────────────────────────────────
@@ -417,16 +458,26 @@ const adminNavigationSectionSeeds = [
         ],
       },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], excludedRoles: ["Marketing Manager", "CEO"] },
-      // Probation collapsed to ONE button (2026-08-02): the case list, decision dashboard,
-      // analytics and settings are cards in probationPageItems now. Each card keeps the role list
-      // its own page gate uses, so collapsing them changes who can reach what by nothing.
-      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager", "CEO"] },
-      // Workforce Compliance moved into the CRM hub — it is judged on CRM visit activity, so it
-      // belongs beside the visit data rather than under this section.
+      // Probation was collapsed to ONE hub button on 2026-08-02 during the SFE rebuild. The four
+      // rows below were restored on 2026-08-08 for every role except the SFE Manager, who keeps
+      // the hub (the entry directly after these). They stay cards in probationPageItems too, so
+      // the hub still works for him and no page became unreachable in either direction.
+      { href: "/probation", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], excludedRoles: ["Marketing Manager", "CEO", "SFE Manager"] },
+      { href: "/probation/dashboard", icon: LayoutDashboard, label: "Probation Dashboard", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
+      { href: "/probation/analytics", icon: Activity, label: "Probation Analytics", permissions: [{ resource: "probation", action: "read" }], roles: ["Super Admin", "Training Manager", "Marketing Manager"] },
+      { href: "/admin/probation-settings", icon: Settings2, label: "Probation Settings", permissions: [{ resource: "probation", action: "update" }], roles: ["Super Admin"] },
+      // The SFE Manager's copy. `roles` alone would not keep it off Super Admin's sidebar — the
+      // system-administrator workspace bypasses role gating but still honours excludedRoles (see
+      // getSections) — so Super Admin is named explicitly or he would see the hub AND the four
+      // rows above.
+      { href: "/admin/probation-tools", icon: Hourglass, label: "Probation", permissions: [{ resource: "probation" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin"] },
+      // Restored on 2026-08-08. Moved into the CRM hub on 2026-08-02 because it is judged on CRM
+      // visit activity; it stays a card there for the SFE Manager, who is excluded here.
+      { href: "/admin/field-workforce-compliance", icon: ClipboardCheck, label: "Workforce Compliance", permissions: [{ resource: "hr_calendar" }], excludedRoles: ["SFE Manager"] },
     ],
-    // Title removed on owner instruction (2026-08-02), same treatment as Command Center: the
-    // header row is hidden for an empty label, and the items below still render.
-    label: "",
+    // Heading restored on owner instruction (2026-08-08), same treatment as Command Center.
+    // SFE Manager still sees no heading — see flatSidebarRoles.
+    label: "People Management",
   },
   // Collapsed to a single standalone sidebar button that opens the Recruitment &
   // Hiring hub (app/(admin)/admin/recruitment-hiring/page.tsx, items in
@@ -584,7 +635,16 @@ const adminNavigationSectionSeeds = [
     // wider than the workspace's own because the hub also carries WFC (hr_calendar) and
     // double-visit analytics — gating the button on the workspace grant alone would hide the hub
     // from roles that hold one of the other two. Each card still carries its own gate.
-    items: [{ href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }] }],
+    // Super Admin's direct link to the workspace, restored 2026-08-08 — before the 2026-08-02 SFE
+    // rebuild this section was exactly this one row, Super-Admin-only, opening the workspace with
+    // no hub in between. The hub below keeps every other role (including the SFE Manager, who owns
+    // CRM) on the 2026-08-02 behaviour, so nobody's route is withdrawn. Super Admin is excluded
+    // from the hub by name because the system-administrator workspace ignores `roles`/permissions
+    // but honours excludedRoles — without it he would see two "CRM" rows.
+    items: [
+      { href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] },
+      { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin"] },
+    ],
     label: "CRM",
   },
 

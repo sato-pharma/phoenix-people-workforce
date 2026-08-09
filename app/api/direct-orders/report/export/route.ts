@@ -22,6 +22,7 @@ export const maxDuration = 60;
 const SCOPE_LABEL: Record<string, string> = {
   all: "All direct orders (company-wide)",
   hierarchy: "Your region / management line",
+  line: "Your product line, every region",
   own: "Your own direct orders",
 };
 

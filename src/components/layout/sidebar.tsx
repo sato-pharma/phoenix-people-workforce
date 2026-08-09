@@ -36,6 +36,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  ArrowUpRight,
   ChevronRight,
   GripVertical,
   PanelLeftClose,
@@ -61,7 +62,7 @@ import {
 import { systemAssets, systemIdentity, systemUiText } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { type NavigationMode, type PhoenixRole } from "@/lib/auth/permissions";
-import { getActiveHref, getSections, type PermissionLookup } from "@/lib/navigation/active-path";
+import { getActiveHref, getSections, usesFlatSidebar, type PermissionLookup } from "@/lib/navigation/active-path";
 import { subscribeNavBadge } from "@/lib/nav-badge-store";
 import { cn } from "@/lib/utils";
 
@@ -390,10 +391,17 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
  */
 const PREMIUM_NAV_HREF = "/admin/sfe-command-center";
 
-// One row style for every tab. A section that collapses to a single visible entry still skips
-// the redundant header-plus-one-tab chrome (see SortableSectionBlock below), but it no longer
-// renders differently: the tinted icon box and the "opens a hub" arrow were removed on owner
-// instruction (2026-08-02) so hub buttons and ordinary links read as one family.
+// `standalone` marks an item that IS its section (a section that collapsed to exactly one visible
+// entry — see the single-item branch in SortableSectionBlock below). It skips the redundant
+// section-header-plus-one-tab chrome and instead renders directly as a button, with a tinted icon
+// box + a small "opens a hub" arrow so it still reads as different from an ordinary
+// single-destination link.
+//
+// Flattened on 2026-08-02 (PR #1625) so every row read as one family — an SFE-only brief that
+// silently applied to every admin role, leaving Super Admin and CEO unable to tell a button that
+// opens a hub of eight pages from one that opens a single page. Restored 2026-08-08 for every role
+// that is not on the flat sidebar; the caller decides via `usesFlatSidebar`, so the SFE Manager
+// still gets the uniform look.
 function NavRow({
   active,
   dark,
@@ -404,6 +412,7 @@ function NavRow({
   pinned = false,
   onTogglePin,
   rail,
+  standalone = false,
 }: {
   active: boolean;
   dark: boolean;
@@ -414,6 +423,7 @@ function NavRow({
   pinned?: boolean;
   onTogglePin?: () => void;
   rail: boolean;
+  standalone?: boolean;
 }) {
   const Icon = item.icon;
   // The one tab that outranks the rest. Keyed on href rather than a nav-config flag so the
@@ -456,17 +466,21 @@ function NavRow({
         <span
           className={cn(
             "relative flex h-9 w-9 shrink-0 items-center justify-center transition-colors duration-150",
-            // `standalone` no longer changes the icon: hub buttons and ordinary links render
-            // identically, so every tab reads as one family. Only `premium` and `active` differ.
+            // `premium` outranks everything; then the active state; then `standalone`, which tints
+            // the icon box so a hub button reads as different from a single-destination link.
             premium
               ? "bg-[linear-gradient(180deg,#FDBA74_0%,#F97316_55%,#EA580C_100%)] text-white shadow-[0_10px_22px_rgba(249,115,22,0.45)] ring-1 ring-white/25"
               : dark
                 ? active
                   ? "bg-[linear-gradient(180deg,#FB923C_0%,#F97316_100%)] text-white shadow-[0_8px_16px_rgba(249,115,22,0.32)]"
-                  : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
+                  : standalone
+                    ? "bg-orange-500/15 text-[#F8B56B] ring-1 ring-orange-400/30 group-hover:ring-orange-400/50"
+                    : "bg-white/5 text-slate-400 ring-1 ring-white/10 group-hover:text-[#F8B56B] group-hover:ring-white/20"
                 : active
                   ? "bg-[#F97316] text-white shadow-[0_8px_16px_rgba(249,115,22,0.28)]"
-                  : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
+                  : standalone
+                    ? "bg-orange-50 text-[#F97316] ring-1 ring-orange-200 group-hover:ring-orange-300"
+                    : "bg-white text-[#64748B] ring-1 ring-[#EBE4DA] group-hover:text-[#F97316] group-hover:ring-[#FDBA74]",
           )}
         >
           <Icon className="h-4 w-4" />
@@ -482,6 +496,12 @@ function NavRow({
             >
               {item.label}
             </span>
+            {standalone && (
+              <ArrowUpRight
+                aria-hidden="true"
+                className={cn("h-3.5 w-3.5 shrink-0", dark ? "text-orange-400/70" : "text-orange-500/70")}
+              />
+            )}
             <ApprovalNavBadge compact={false} navBadge={item.navBadge} />
           </span>
         )}
@@ -573,6 +593,7 @@ function SortableSectionBlock({
   activeHref,
   collapsedSectionIds,
   dragDisabled,
+  flatSidebar,
   isAdmin,
   itemOrder,
   navInstanceId,
@@ -590,6 +611,8 @@ function SortableSectionBlock({
   activeHref: string | null;
   collapsedSectionIds: Set<string>;
   dragDisabled: boolean;
+  /** True for roles on the flat sidebar (SFE Manager): no headings, no hub-button styling. */
+  flatSidebar: boolean;
   isAdmin: boolean;
   itemOrder: string[] | null;
   navInstanceId: string;
@@ -638,7 +661,7 @@ function SortableSectionBlock({
   // A section that resolves to exactly one visible item (e.g. a module hub like
   // "Admin Tools") IS that item — a collapsible header repeating the same label
   // above a single tab reads as a redundant extra click. Skip the header/collapse
-  // chrome entirely and render just the item.
+  // chrome entirely and render just the item, styled via NavRow's `standalone`
   // treatment so it still reads as different from an ordinary single-destination
   // link. Section-level drag-to-reorder still works via the same overlay-on-hover
   // grip handle SortableNavRow uses for items.
@@ -665,6 +688,7 @@ function SortableSectionBlock({
           onTogglePin={() => onTogglePin(soleItem.href)}
           pinned={pinnedSet.has(soleItem.href)}
           rail={false}
+          standalone={!flatSidebar}
         />
       </div>
     );
@@ -788,6 +812,9 @@ function SidebarNav({
   scrollable?: boolean;
 }) {
   const isAdmin = mode === "admin";
+  // The SFE Manager keeps the flat sidebar built for him on 2026-08-02 — no section headings and
+  // no hub-button styling. Every other role had both restored on 2026-08-08 (owner instruction).
+  const flatSidebar = usesFlatSidebar(currentRole);
   const [isClientReady, setIsClientReady] = useState(false);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -1122,6 +1149,7 @@ function SidebarNav({
                 activeHref={activeHref}
                 collapsedSectionIds={collapsedSectionIds}
                 dragDisabled={dragDisabled}
+                flatSidebar={flatSidebar}
                 isAdmin={isAdmin}
                 itemOrder={savedItemOrder?.[section.id] ?? null}
                 navInstanceId={navInstanceId}

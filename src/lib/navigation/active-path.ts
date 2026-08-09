@@ -27,6 +27,29 @@ export type PermissionLookup = Partial<Record<`${PermissionResource}:${Permissio
 type PermissionLookupKey = keyof PermissionLookup;
 export type ModuleIdLookup = readonly string[] | null | undefined;
 
+/**
+ * Roles that keep the FLAT sidebar look built for the SFE Manager on 2026-08-02 (PR #1625):
+ * no section headings, and hub buttons styled exactly like ordinary links.
+ *
+ * That rebuild was an SFE-only brief, but `NavigationSection.label` and the row styling are
+ * shared with every admin role, so it flattened all of them. In the SFE session each affected
+ * section resolved to exactly one button, so dropping the heading only removed a repeat of the
+ * button beneath it. On Super Admin and CEO those same sections hold several rows, so it left
+ * them as loose unlabelled buttons — and because the label doubles as the collapse/pin key,
+ * those sections could no longer be collapsed either.
+ *
+ * Owner instruction 2026-08-08: leave the SFE Manager's sidebar exactly as it is, and give
+ * Super Admin, CEO and every other admin role their headings and hub styling back.
+ *
+ * Lives here rather than in system-navigation so `getSections` can apply it without pulling that
+ * config (and its lucide icon graph) into this deliberately dependency-free module.
+ */
+export const flatSidebarRoles: readonly PhoenixRole[] = ["SFE Manager"];
+
+export function usesFlatSidebar(role?: PhoenixRole) {
+  return Boolean(role && flatSidebarRoles.includes(role));
+}
+
 // ── Visibility gating (mirrors the server permission matrix) ─────────────────
 export function permissionAllowed(
   lookup: PermissionLookup | undefined,
@@ -90,7 +113,7 @@ export function getSections(
   // not "you lack rights": another role's personal command center is noise on a Super Admin's
   // sidebar, and the bypass silently overrode the one mechanism for saying so. No item excluded
   // Super Admin before this, so honouring it hides nothing that used to show.
-  const visible = isSystemAdministratorWorkspace
+  const gated = isSystemAdministratorWorkspace
     ? dedupeSectionsByHref(
         sections
           .map((section) => ({
@@ -111,6 +134,13 @@ export function getSections(
           ),
         }))
         .filter((section) => section.items.length > 0);
+
+  // Section headings are role-scoped (see flatSidebarRoles): the SFE Manager keeps the flat,
+  // headless sidebar; every other role keeps its titles. Applied here — after gating, before
+  // ordering — so all three return paths below are covered by one pass.
+  const visible = usesFlatSidebar(role)
+    ? gated.map((section) => ({ ...section, label: "" }))
+    : gated;
 
   // When an explicit, ordered module list is supplied (a Modules Control assignment
   // for this user/role/position/line), honor that order so admins can curate BOTH

@@ -253,7 +253,14 @@ export async function resolveDirectOrderReportShareLink(input: {
   const all = await getDirectOrderReport({
     ...systemAccessContext,
     hrId: creatorHrId,
-    role: scope === "all" ? "Super Admin" : scope === "hierarchy" ? "Regional Manager" : "District Manager",
+    role:
+      scope === "all"
+        ? "Super Admin"
+        : scope === "line"
+          ? "National Sales Manager"
+          : scope === "hierarchy"
+            ? "Regional Manager"
+            : "District Manager",
     scope: scope === "all" ? "system" : "self",
   } as AccessContext);
 
