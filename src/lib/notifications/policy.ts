@@ -154,7 +154,13 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
   "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
-  "resignations.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "resignations", priority: "high", recipientStrategy: ["manager_chain", "permission_based"], telegramAllowed: true },
+  // Owner-set 2026-08-09: a resignation is told to Super Admin and Talent Acquisition ONLY —
+  // deliberately not the CEO, and deliberately not the leaver's manager chain. The emitter
+  // supplies those people explicitly via metadata.moduleOwnerHrIds (resolved from the
+  // admin-editable `resignation_workflow_alert` role policy), which permission_based consumes
+  // directly; `manager_chain` was removed so a resignation never fans out up the org chart.
+  // Explicit recipients still have to hold `resignations` permission to survive canAccess.
+  "resignations.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "resignations", priority: "high", recipientStrategy: ["permission_based"], telegramAllowed: true },
   "system.announcement": { channels: ["in_app", "email", "push"], recipientStrategy: ["employee"] },
   // Live sender (telegram-operations.ts) passes explicit channels and doesn't consult this
   // entry today, but kept push-inclusive here too in case a future caller relies on policy
@@ -252,7 +258,12 @@ type RecipientCandidate = {
   role: PhoenixRole | null;
 };
 
-function isActiveEmployee(employee: EmployeeRecipientRow | null | undefined) {
+/**
+ * Eligibility as a notification RECIPIENT. Exported so the rule is testable
+ * directly: treating a resignation's SUBJECT with this same predicate is what
+ * silently killed every resignation notification (see candidateByHrId).
+ */
+export function isActiveEmployee(employee: EmployeeRecipientRow | null | undefined) {
   const status = cleanText(employee?.employment_status).toLowerCase();
   return !status || status === "active" || status === "on_leave";
 }
@@ -308,7 +319,26 @@ async function authUserByHrId(hrId: string | null | undefined): Promise<AuthReci
   }
 }
 
-async function candidateByHrId(hrId: string | null | undefined): Promise<RecipientCandidate | null> {
+/**
+ * Options for looking a person up as a notification participant.
+ *
+ * `includeInactive` exists for one specific, narrow case: the SUBJECT a
+ * notification is about. A resignation, termination or exit notification is by
+ * definition about somebody who has just stopped being active, so applying the
+ * active-employee filter to the subject makes the subject unresolvable at
+ * exactly the moment the notification matters.
+ *
+ * This must NEVER be used for a RECIPIENT. Recipients still come from
+ * activeAuthCandidates()/employeeByHrId() with the active filter intact, so a
+ * departed person is never mailed and the fail-closed governance guard keeps
+ * its full strength.
+ */
+type RecipientLookupOptions = { includeInactive?: boolean };
+
+async function candidateByHrId(
+  hrId: string | null | undefined,
+  options?: RecipientLookupOptions,
+): Promise<RecipientCandidate | null> {
   const normalized = cleanHrId(hrId);
   if (!normalized) return null;
 
@@ -324,7 +354,8 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
     ]);
     if (employeeError) throw employeeError;
     const employee = employeeData as EmployeeRecipientRow | null;
-    if (!employee || !isActiveEmployee(employee)) return null;
+    if (!employee) return null;
+    if (!options?.includeInactive && !isActiveEmployee(employee)) return null;
     const role = roleFrom(auth?.role);
     const candidate = { auth, employee, role };
     return { ...candidate, recipient: recipientFromCandidate(candidate) };
@@ -339,8 +370,11 @@ async function candidateByHrId(hrId: string | null | undefined): Promise<Recipie
   }
 }
 
-async function employeeByHrId(hrId: string | null | undefined): Promise<NotificationRecipient | null> {
-  return (await candidateByHrId(hrId))?.recipient ?? null;
+async function employeeByHrId(
+  hrId: string | null | undefined,
+  options?: RecipientLookupOptions,
+): Promise<NotificationRecipient | null> {
+  return (await candidateByHrId(hrId, options))?.recipient ?? null;
 }
 
 async function candidatesByHrIds(hrIds: string[]): Promise<Map<string, RecipientCandidate>> {
@@ -424,8 +458,14 @@ async function activeAuthCandidates() {
   }
 }
 
-async function managerFor(hrId: string | null | undefined) {
-  const employee = await employeeByHrId(hrId);
+/**
+ * The manager(s) of `hrId`. `options` applies ONLY to looking up `hrId` itself —
+ * the person the chain starts from, who may legitimately be inactive (a leaver).
+ * The manager returned is always resolved with the active filter intact, because
+ * the manager is the RECIPIENT.
+ */
+async function managerFor(hrId: string | null | undefined, options?: RecipientLookupOptions) {
+  const employee = await employeeByHrId(hrId, options);
   if (!employee?.hrId) return [];
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -435,6 +475,7 @@ async function managerFor(hrId: string | null | undefined) {
       .maybeSingle();
     if (error) throw error;
     const managerHrId = (data as { manager_hr_id?: string | null } | null)?.manager_hr_id;
+    // No options here on purpose: a departed manager must not be notified.
     const manager = await employeeByHrId(managerHrId);
     return manager ? [manager] : [];
   } catch (error) {
@@ -454,7 +495,9 @@ async function managerChainFor(hrId: string | null | undefined, maxDepth = 4) {
   let current = cleanHrId(hrId);
 
   for (let depth = 0; depth < maxDepth && current; depth += 1) {
-    const managers = await managerFor(current);
+    // Only the first hop is the subject (who may be a leaver); every hop after
+    // that is a manager already resolved under the active filter.
+    const managers = await managerFor(current, depth === 0 ? { includeInactive: true } : undefined);
     const manager = managers[0];
     const managerHrId = cleanHrId(manager?.hrId);
     if (!managerHrId || visited.has(managerHrId)) break;
@@ -540,7 +583,14 @@ async function permissionBasedRecipients(input: ResolveNotificationRecipientsInp
 export async function resolveNotificationRecipientsWithGovernance(input: ResolveNotificationRecipientsInput): Promise<NotificationRecipientResolution> {
   const policy = resolveNotificationPolicy(input);
   const subjectHrId = cleanHrId(input.subjectHrId || metadataText(input.metadata, ["employeeHrId", "subjectHrId", "requestOwnerHrId"]));
-  const subject = subjectHrId ? await candidateByHrId(subjectHrId) : null;
+  // The SUBJECT may be inactive — a resignation/termination notification is about
+  // somebody who has just stopped being active. Resolving the subject under the
+  // active filter returned null for every resignation, which emptied BOTH
+  // manager_chain (nothing to walk from) and permission_based (`if (!subject)
+  // continue` skips every candidate, including company-scope Super Admin/CEO),
+  // so the fail-closed guard skipped all four channels. Recipients are still
+  // resolved with the active filter, so nobody departed is ever notified.
+  const subject = subjectHrId ? await candidateByHrId(subjectHrId, { includeInactive: true }) : null;
   const recipients: NotificationRecipient[] = [];
   const warnings: NotificationRecipientGovernanceWarning[] = [];
 
@@ -551,7 +601,7 @@ export async function resolveNotificationRecipientsWithGovernance(input: Resolve
       if (employee) recipients.push(employee);
       else warnings.push({ code: "recipient_not_resolved", detail: `${strategy} was not resolved.`, strategy });
     } else if (strategy === "direct_manager") {
-      const managers = await managerFor(subjectHrId);
+      const managers = await managerFor(subjectHrId, { includeInactive: true });
       if (managers.length > 0) recipients.push(...managers);
       else warnings.push({ code: "direct_manager_missing", detail: "Direct manager could not be resolved.", strategy });
     } else if (strategy === "manager_chain") {

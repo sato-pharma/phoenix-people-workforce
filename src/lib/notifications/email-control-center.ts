@@ -80,6 +80,7 @@ const ROLE_RECIPIENTS_MODULE: Record<NotificationRoleKey, string> = {
   ireports360_sync_notify: SYSTEM_HEALTH_MODULE,
   attendance_ingestion_alert: SYSTEM_HEALTH_MODULE,
   marketing_sla_reminder: "Marketing Requests",
+  resignation_workflow_alert: "Resignations",
 };
 
 const EMAIL_NOTIFICATIONS_MODULE: Record<EmailNotificationType, string> = {
