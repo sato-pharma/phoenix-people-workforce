@@ -6,6 +6,7 @@ import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-syn
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 const JOB_NAME = "ireports360-visits-live-sync";
 
@@ -24,7 +25,7 @@ function isAuthorized(request: Request) {
   // against production-grade data. Requiring NODE_ENV === "development" makes the bypass
   // impossible anywhere it is actually deployed.
   if (!secret) return process.env.NODE_ENV === "development";
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 async function runSync() {

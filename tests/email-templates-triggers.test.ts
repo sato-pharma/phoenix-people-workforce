@@ -98,6 +98,16 @@ export function runEmailTemplatesTriggersTests() {
   // Vercel auto-attaches the CRON_SECRET bearer; the route enforces it.
   const processRoute = readFileSync("app/api/notifications/process/route.ts", "utf8");
   assert.match(processRoute, /searchParams\.get\("limit"\)/, "the drain route must accept a limit param");
-  assert.match(processRoute, /authorization"\) === `Bearer \$\{secret\}`/, "the drain route must authenticate cron via CRON_SECRET");
+  // Pinned to the CONSTANT-TIME form on purpose. This assertion used to require the literal
+  // `authorization") === `Bearer ${secret}`` — a plain string compare, which short-circuits on the
+  // first wrong byte and so leaks how much of the secret's prefix was right. The route now uses
+  // bearerSecretMatches (src/lib/security/constant-time.ts, timingSafeEqual). Matching the new
+  // call keeps the original intent — the drain route must authenticate cron via CRON_SECRET —
+  // while also making a silent regression back to `===` fail here.
+  assert.match(
+    processRoute,
+    /bearerSecretMatches\(\s*request\.headers\.get\("authorization"\)\s*,\s*secret\s*\)/,
+    "the drain route must authenticate cron via CRON_SECRET, compared in constant time",
+  );
   
 }

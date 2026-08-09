@@ -8,6 +8,7 @@ import { runScheduledNotificationProcessing } from "@/lib/notifications/schedule
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ function isAuthorized(request: Request) {
   // Every Vercel environment (production, preview, `vercel dev`) sets VERCEL — only a
   // real local machine without it may bypass an unset CRON_SECRET during development.
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 function cleanHrId(value: string | null | undefined) {

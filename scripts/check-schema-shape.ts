@@ -70,6 +70,25 @@ export type SchemaShape = {
   tables_rls_disabled: string[];
   tables_without_primary_key: string[];
   tables_rls_enabled_without_policy: string[];
+  /**
+   * Schema-wide DEFAULT privileges that hand anon/authenticated access to objects not yet
+   * created. `tables_exposed_without_rls` can only see a table that already exists and is
+   * already exposed; this sees the loaded gun.
+   *
+   * Optional on purpose: the RPC only returns it once
+   * 20260809181000_ci_schema_shape_default_acl.sql is applied, and this script runs against
+   * production and staging independently. Treat `undefined` as "the RPC predates this check"
+   * and stay silent rather than inventing a violation.
+   */
+  default_acl_leaks?: DefaultAclLeak[];
+};
+
+/** One (granting role, object type, grantee) triple from pg_default_acl in schema public. */
+export type DefaultAclLeak = {
+  granting_role: string;
+  obj_type: string;
+  grantee: string;
+  privs: string;
 };
 
 export type Violation = { severity: "error" | "warning"; code: string; message: string };
@@ -92,6 +111,49 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
         `public anon key can read them in full: ${exposed.join(", ")}. ` +
         `Fix by enabling RLS and adding policies, or by revoking the grant.`,
     });
+  }
+
+  // --- The security invariant, one step earlier -------------------------------
+  // `exposed_without_rls` above fires only once an exposed table EXISTS. On 2026-08-06 six
+  // ad-hoc backup tables were born readable because schema-wide default privileges granted
+  // anon everything on every new table in `public`; nobody granted anything. This catches
+  // that state before the next table inherits it.
+  //
+  // supabase_admin is a WARNING, not an error, and that distinction is load-bearing: a
+  // pg_default_acl row can only be altered by a member of the role that owns it, and the
+  // migration runner (postgres) is not a member of supabase_admin. Making it an error would
+  // mean a permanently red check nobody can fix — which is precisely how the daily drift
+  // check became background noise and this leak sat unseen for three days.
+  if (shape.default_acl_leaks && shape.default_acl_leaks.length > 0) {
+    const describe = (l: DefaultAclLeak) => `${l.granting_role}/${l.obj_type} -> ${l.grantee} (${l.privs})`;
+    const fixable = shape.default_acl_leaks.filter((l) => l.granting_role !== "supabase_admin");
+    const residual = shape.default_acl_leaks.filter((l) => l.granting_role === "supabase_admin");
+
+    if (fixable.length > 0) {
+      v.push({
+        severity: "error",
+        code: "default_acl_grants_browser_roles",
+        message:
+          `${fixable.length} schema-wide DEFAULT privilege(s) in public still grant anon/authenticated, ` +
+          `so every object created from now on is born reachable with the public anon key: ` +
+          `${fixable.map(describe).join("; ")}. ` +
+          `Fix with: alter default privileges in schema public revoke all on <tables|sequences> ` +
+          `from anon, authenticated;`,
+      });
+    }
+
+    if (residual.length > 0) {
+      v.push({
+        severity: "warning",
+        code: "default_acl_supabase_admin_residual",
+        message:
+          `${residual.length} default privilege(s) owned by supabase_admin still grant ` +
+          `anon/authenticated: ${residual.map(describe).join("; ")}. ` +
+          `Not alterable from the migration runner (that needs membership in supabase_admin). ` +
+          `It only fires for objects created BY supabase_admin in public — in practice ` +
+          `\`create extension ... with schema public\`, so install extensions into \`extensions\`.`,
+      });
+    }
   }
 
   // --- Fault 1: the grant wipe ------------------------------------------------

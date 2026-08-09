@@ -5,6 +5,7 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { expireStaleHeldDirectOrders } from "@/lib/direct-orders/service";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ export const maxDuration = 60;
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 /**

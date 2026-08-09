@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isProductionRuntime } from "@/config/system-settings";
 import { rotateDirectOrderSheetToken } from "@/lib/direct-orders/sheet-token-rotation";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 /**

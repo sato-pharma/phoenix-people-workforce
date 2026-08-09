@@ -6,6 +6,7 @@ import { runDirectOrderProbationSweep } from "@/lib/direct-orders/pharmacy-proba
 import { sendDirectOrderPhantomReport } from "@/lib/direct-orders/phantom-report";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export const maxDuration = 120;
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 /**

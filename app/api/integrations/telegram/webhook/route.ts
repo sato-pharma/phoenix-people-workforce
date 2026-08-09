@@ -1,10 +1,9 @@
-import { timingSafeEqual } from "crypto";
-
 import { NextResponse } from "next/server";
 
 import { linkTelegramConnection } from "@/lib/notifications/settings";
 import { sendTelegramNotification, telegramWebhookSecretToken } from "@/lib/notifications/telegram";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { secretMatches } from "@/lib/security/constant-time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,15 +17,6 @@ function extractStartToken(text: string | null | undefined) {
 // connect link -- distinct from any other un-handled text, which stays silently ignored.
 function isBareStartCommand(text: string | null | undefined) {
   return /^\/start(?:@\w+)?\s*$/.test(String(text ?? "").trim());
-}
-
-// Constant-time secret comparison (mirrors src/lib/auth/session-token.ts) to avoid
-// leaking the secret via timing. Length check first, then timingSafeEqual on Buffers.
-function secretMatches(received: string | null, expected: string) {
-  if (!received) return false;
-  const receivedBuffer = Buffer.from(received);
-  const expectedBuffer = Buffer.from(expected);
-  return receivedBuffer.length === expectedBuffer.length && timingSafeEqual(receivedBuffer, expectedBuffer);
 }
 
 // A token that is structurally invalid / expired / already used will NEVER succeed on

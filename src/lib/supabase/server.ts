@@ -1,3 +1,24 @@
+// NOTE (2026-08-09): `import "server-only"` belongs at the top of this file and CANNOT be added
+// yet. It was tried and it fails the build, which is the tripwire working — this module is
+// already reachable from the browser bundle graph:
+//
+//   src/lib/supabase/server.ts
+//     <- src/lib/auth/permissions.ts          (imports getSupabaseAdmin for the matrix cache)
+//       <- src/lib/employees/job-function.ts
+//         <- src/lib/weekly-planning/plan-v1.ts
+//           <- src/components/employee-portal/plans-workspace.tsx   ("use client")
+//   ...and again via src/config/system-navigation.ts <- sidebar.tsx / topbar.tsx
+//
+// The SERVICE-ROLE KEY ITSELF DOES NOT LEAK: it is read inside getSupabaseAdmin() at call time,
+// never at module scope, and SUPABASE_SERVICE_ROLE_KEY is not a NEXT_PUBLIC_ var, so the bundler
+// replaces it with undefined in browser output and the function is never called there. What is
+// wrong is the graph, not the key — and a graph like this is the precondition for the leak, not
+// the leak.
+//
+// The fix is to split src/lib/auth/permissions.ts: the pure role/scope logic that client
+// components legitimately need (canAccess tables, role lists, scopeForRole) into a client-safe
+// module, leaving the DB-backed matrix cache here on the server. That is a focused refactor with
+// its own blast radius, not a line to sneak into a security PR. Do it, then add the import.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getRequiredEnv, getOptionalEnv } from "@/lib/env";
 

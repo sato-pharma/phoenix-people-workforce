@@ -12,6 +12,7 @@ import { getInboundIntakeAnalytics, shouldAlertIntakeSpike } from "@/lib/recruit
 import { notifyInboundIntakeSpike, notifyWhatsAppIntakeUnhealthy } from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { bearerSecretMatches } from "@/lib/security/constant-time";
 
 const DEFAULT_SPIKE_THRESHOLD = 8;
 
@@ -46,7 +47,7 @@ export const maxDuration = 120;
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
-  return request.headers.get("authorization") === `Bearer ${secret}`;
+  return bearerSecretMatches(request.headers.get("authorization"), secret);
 }
 
 class RecruitmentIntakePollError extends Error {
