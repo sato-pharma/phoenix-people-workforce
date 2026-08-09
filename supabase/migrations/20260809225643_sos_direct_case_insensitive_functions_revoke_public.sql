@@ -1,0 +1,10 @@
+-- No-op placeholder. This version was applied directly to production (apply_migration) while
+-- iterating on the neighboring migration below, before check:migrations' secdef-revoke-guard
+-- test made clear the revoke/grant belongs in the SAME file as the CREATE FUNCTION it protects.
+-- Its statements (revoke/grant execute on phx_direct_sales_reconciliation,
+-- sos_backfill_import_rows_from_customer_map, sos_count_reconcilable_import_rows) were folded
+-- into 20260809224356_sos_direct_distributor_code_case_insensitive.sql instead, which already
+-- ran them once live -- replaying them here too would just be a harmless idempotent duplicate,
+-- so this file is kept empty rather than re-run them. Exists only so the local migration set has
+-- a file for every version production's ledger actually recorded (list_migrations shows this
+-- version as applied); nothing to execute.
