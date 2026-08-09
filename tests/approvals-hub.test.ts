@@ -440,7 +440,7 @@ export function runApprovalsHubTests() {
     // "Other Approvals" (residual combined inbox) and the Marketing Requests Inbox also live
     // in Approvals Hub now (owner request), not in My Workspace / Marketing & ROI.
     assert.match(hubBody, /approvals-hub.*Other Approvals/, "Other Approvals (residual combined hub) lives inside the Approvals Hub section");
-    assert.match(hubBody, /marketing-requests\/inbox.*Marketing Requests Inbox/, "the Marketing Requests Inbox lives inside the Approvals Hub section, under its renamed label");
+    assert.match(hubBody, /marketing-requests\/inbox.*Marketing Inbox/, "the Marketing Requests Inbox lives inside the Approvals Hub section, under its renamed label");
   }
   const myWorkspaceMatch = portalLayout.match(/title: "My Workspace",\s*items: \[([\s\S]*?)\],\s*\}/);
   assert.ok(myWorkspaceMatch, "My Workspace section body is present");
@@ -466,12 +466,14 @@ export function runApprovalsHubTests() {
     );
   }
 
-  // The rename applies to the portal route's own page heading too (not the separate admin-shell
-  // "Approval Inbox" at /admin/marketing-requests/inbox, which is untouched).
+  // The page heading deliberately stays LONG. Only the nav surfaces get the short label — the
+  // sidebar column is ~117px behind a pending badge, a page heading has the full width — so
+  // "Marketing Inbox" in the sidebar and "Marketing Requests Inbox" on the page is the owner's
+  // intent (2026-08-09), not drift. Do not "fix" these back into a match.
   const portalInboxPage = readFileSync("app/employee-portals/marketing-requests/inbox/page.tsx", "utf8");
-  assert.match(portalInboxPage, /title="Marketing Requests Inbox"/, "the portal inbox page's own heading matches the renamed sidebar label");
+  assert.match(portalInboxPage, /title="Marketing Requests Inbox"/, "the portal inbox page keeps the full heading; only the nav label is shortened");
   assert.doesNotMatch(portalInboxPage, /title="Approval Inbox"/, "the old page title is fully replaced, not left alongside the new one");
-  assert.match(navRegistry, /fullLabel: "Marketing Requests Inbox"/, "the nav registry's full label matches the rename too (bottom-nav/quick-nav consistency)");
+  assert.match(navRegistry, /fullLabel: "Marketing Inbox"/, "the nav registry's full label matches the rename too (bottom-nav/quick-nav consistency)");
 
   // The Training Manager's own section leads the sidebar (owner request) — ahead of "My Workspace".
   // For non-TM roles the Training Manager section is empty and dropped by the items.length filter,

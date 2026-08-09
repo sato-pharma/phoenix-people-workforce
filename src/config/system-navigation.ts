@@ -126,6 +126,11 @@ function moduleIdPart(value: string) {
     .replace(/_{2,}/g, "_");
 }
 
+// NOTE: the derived id embeds the LABEL, so renaming an item's label changes its moduleId — and
+// moduleIds are persisted in sidebar_module_assignments. If that table ever holds rows for the item
+// being renamed, its saved curation stops matching and the item silently disappears for those
+// people; pin the OLD id via the item's explicit `moduleId` (see withModuleIds below) in that case.
+// Checked before the 2026-08-09 label renames: the table was empty, so nothing needed pinning.
 function defaultModuleId(mode: NavigationMode, section: NavigationSectionSeed, item: NavigationSectionItemSeed) {
   const prefix = mode === "employee-portal" ? "portal" : "admin";
   const labelPart = moduleIdPart(item.label);
@@ -306,10 +311,10 @@ const adminNavigationSectionSeeds = [
   {
     id: "approvals-hub",
     items: [
-      { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
+      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       // "Other Approvals" is not a heading, so the only way to take the phrase off his sidebar is
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
       // only (getAwaitingMyActionItems), and the SFE Manager holds none of those grants — it was
@@ -832,10 +837,10 @@ const employeePortalNavigationSectionSeeds = [
   {
     id: "approvals-hub",
     items: [
-      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Vacation Approvals", permissions: [{ resource: "leave", action: "read" }], roles: vacationApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
+      { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: vacationApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: excuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "Direct Orders Approvals", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
+      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -925,7 +930,7 @@ const employeePortalNavigationSectionSeeds = [
       // All four sales roles now shipped (Medical Rep, District Manager, Regional Manager,
       // National Sales Manager) — see TERRITORY_DRILLDOWN_ROLES in
       // src/lib/sales/territory/service.ts, the server-side gate this list must match.
-      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Territory & Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
+      { href: "/employee-portals/territory-drilldown", icon: MapPinned, label: "Sales Drilldown", permissions: [{ resource: "sales" }], roles: ["Medical Rep", "District Manager", "Regional Manager", "National Sales Manager"] },
       // Portal-shell counterpart of /sales/territory-management — same component, own-scope data.
       // Medical Rep is deliberately excluded: this compares MULTIPLE areas' bricks against each
       // other, which is a District-Manager-and-up decision, not a single rep's own area view.

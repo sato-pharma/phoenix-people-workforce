@@ -63,10 +63,10 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   { label: "Coaching", fullLabel: "Coaching Reports", href: "/employee-portals/coaching", icon: ClipboardCheck, flags: ["showMyCoachingTab", "showTeamCoachingTab"] },
   { label: "Plans", fullLabel: "Weekly / Monthly Plan", href: "/employee-portals/plans", icon: CalendarDays, flags: ["showPlansTab"] },
   { label: "Planning", fullLabel: "Planning Calendar", href: "/employee-portals/plans/calendar", icon: CalendarClock, flags: ["showPlanningCalendarTab"] },
-  { label: "Vacation", fullLabel: "Vacation Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
+  { label: "Vacation", fullLabel: "Leave Approvals", href: "/employee-portals/approvals/vacation", icon: CalendarDays, flags: ["showVacationApprovalsTab"] },
   { label: "Excuses", fullLabel: "Excuse Approvals", href: "/employee-portals/approvals/excuse", icon: CalendarClock, flags: ["showExcuseApprovalsTab"] },
   { label: "Plan Appr", fullLabel: "Plan Approvals", href: "/employee-portals/approvals/plan", icon: CalendarRange, flags: ["showPlanApprovalsTab"] },
-  { label: "DO Appr", fullLabel: "Direct Orders Approvals", href: "/employee-portals/approvals/direct-orders", icon: Inbox, flags: ["showDirectOrdersApprovalsTab"] },
+  { label: "DO Appr", fullLabel: "D.Orders Approval", href: "/employee-portals/approvals/direct-orders", icon: Inbox, flags: ["showDirectOrdersApprovalsTab"] },
   { label: "Approvals", fullLabel: "Other Approvals", href: "/employee-portals/approvals-hub", icon: Inbox, flags: ["showActionsTab"] },
   { label: "Payslips", fullLabel: "Payslips", href: "/employee-portals/payslips", icon: FileText },
   { label: "Deductions", fullLabel: "Deductions", href: "/employee-portals/deductions", icon: ReceiptText },
@@ -92,7 +92,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Two DIFFERENT modules whose full names both start with "Territory" — the short `label` is all
   // the bottom nav shows, so they must not both read "Territory" there. Drilldown is the
   // geography-rooted sales tree; Management is the brick-allocation / rep-residence map.
-  { label: "Drilldown", fullLabel: "Territory & Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
+  { label: "Drilldown", fullLabel: "Sales Drilldown", href: "/employee-portals/territory-drilldown", icon: MapPinned, flags: ["showTerritoryDrilldownTab"] },
   { label: "CRM", fullLabel: "CRM", href: "/employee-portals/crm", icon: Database, flags: ["showCrmMasterTab"] },
   { label: "Territory", fullLabel: "Territory Management", href: "/employee-portals/territory-management", icon: Waypoints, flags: ["showTerritoryManagementTab"] },
   { label: "Targets", fullLabel: "Targets", href: "/employee-portals/targets", icon: Target, flags: ["showTargetsTab"] },
@@ -113,7 +113,7 @@ export const PORTAL_NAV_REGISTRY: PortalNavEntry[] = [
   // Marketing Requests
   { label: "Validation", fullLabel: "Customer Validation", href: "/employee-portals/marketing-requests/validation", icon: ShieldCheck, flags: ["showMarketingRequestsTab"] },
   { label: "Marketing", fullLabel: "Marketing Requests", href: "/employee-portals/marketing-requests", icon: Send, flags: ["showMarketingRequestsTab"] },
-  { label: "Inbox", fullLabel: "Marketing Requests Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
+  { label: "Inbox", fullLabel: "Marketing Inbox", href: "/employee-portals/marketing-requests/inbox", icon: Inbox, flags: ["showMarketingInboxTab"] },
   { label: "All", fullLabel: "All Marketing Requests", href: "/employee-portals/marketing-requests/all", icon: ClipboardList, flags: ["showMarketingAllRequestsTab"] },
   { label: "Control", fullLabel: "Marketing Control", href: "/employee-portals/marketing-requests/control", icon: Settings2, flags: ["showMarketingControlTab"] },
   { label: "Customers", fullLabel: "Customer Database", href: "/employee-portals/marketing-requests/customer-database", icon: Database, flags: ["showMarketingCustomerDatabaseTab"] },

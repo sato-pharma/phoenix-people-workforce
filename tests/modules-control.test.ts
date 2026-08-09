@@ -74,13 +74,13 @@ export function runModulesControlTests() {
   // Modules Control must refuse to assign a module whose required permission the target's role
   // does not hold. This used to be exercised via "Sales Queue" (sales:import); that module was
   // retired 2026-08-02 and its approval workflow moved into the Sales Import workspace, leaving no
-  // admin sidebar module requiring sales:import at all. "Direct Orders Approvals"
+  // admin sidebar module requiring sales:import at all. "D.Orders Approval"
   // (direct_orders:approve) is the equivalent fixture — an uncollapsed admin module carrying a
   // permission Medical Rep still lacks — so the blocking path stays covered.
   const gatedModule = catalog.find(
-    (module) => module.label === "Direct Orders Approvals" && module.navigationMode === "admin",
+    (module) => module.label === "D.Orders Approval" && module.navigationMode === "admin",
   );
-  assert.ok(gatedModule, "Direct Orders Approvals module exists");
+  assert.ok(gatedModule, "D.Orders Approval module exists");
   assert.throws(
     () => validateModuleAssignmentList({
       catalog,
@@ -91,7 +91,7 @@ export function runModulesControlTests() {
       targetKey: "a-9",
       targetType: "user",
     }),
-    /Blocked: A-9 is Medical Rep\. Direct Orders Approvals requires direct_orders:approve\./,
+    /Blocked: A-9 is Medical Rep\. D\.Orders Approval requires direct_orders:approve\./,
     "invalid drag/drop is blocked before any database write can be attempted",
   );
 

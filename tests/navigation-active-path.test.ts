@@ -6,6 +6,7 @@ import {
   isActivePath,
   permissionAllowed,
   type PermissionLookup,
+  resolveDeepestActiveHref,
   roleAllowed,
   roleNotExcluded,
 } from "../src/lib/navigation/active-path.ts";
@@ -351,6 +352,75 @@ export function runNavigationActivePathTests() {
       employeePortalHrefsFor(role),
       ["/employee-portals/approvals/vacation", "/employee-portals/approvals/excuse"],
       `${role} submits requests and must not see the approval links`,
+    );
+  }
+
+  // ── Employee-portal sidebar: exactly ONE row highlights, the deepest one ────────────────────
+  // Reported 2026-08-09: opening Direct Orders Report lit BOTH "Direct Orders Report" and its
+  // parent "Direct Orders". The portal used a bare prefix test with a hand-kept list of parent
+  // hrefs pinned to exact-match, and /employee-portals/direct-orders was never added to that list.
+  {
+    const portalRoot = "/employee-portals";
+    const exactOnly = new Set([portalRoot]);
+    // A representative slice of the real portal sidebar, including both parent/child pairs.
+    const hrefs = [
+      portalRoot,
+      "/employee-portals/direct-orders",
+      "/employee-portals/direct-orders/report",
+      "/employee-portals/plans",
+      "/employee-portals/plans/calendar",
+      "/employee-portals/marketing-requests",
+      "/employee-portals/marketing-requests/inbox",
+      "/employee-portals/team-calendar",
+    ];
+
+    // The headline assertion: the child wins outright, so the parent row is NOT active.
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/direct-orders/report", hrefs, exactOnly),
+      "/employee-portals/direct-orders/report",
+      "Direct Orders Report must be the active row, not its parent Direct Orders",
+    );
+    // Same rule for the two parent/child pairs that used to need hardcoded exceptions.
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/plans/calendar", hrefs, exactOnly),
+      "/employee-portals/plans/calendar",
+      "Planning Calendar wins over its Weekly / Monthly Plan parent",
+    );
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/marketing-requests/inbox", hrefs, exactOnly),
+      "/employee-portals/marketing-requests/inbox",
+      "Marketing Inbox wins over its Marketing Requests parent",
+    );
+
+    // A parent on its OWN page still lights up.
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/direct-orders", hrefs, exactOnly),
+      "/employee-portals/direct-orders",
+      "Direct Orders stays active on its own page",
+    );
+    // A detail route with no sidebar row of its own lights its nearest ancestor — what those pages want.
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/direct-orders/DO-2026-001", hrefs, exactOnly),
+      "/employee-portals/direct-orders",
+      "a direct-order detail page keeps its parent row lit",
+    );
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/team-calendar/visits/A-9/2026-08-09", hrefs, exactOnly),
+      "/employee-portals/team-calendar",
+      "a team-calendar visit detail page keeps Team Calendar lit",
+    );
+
+    // The portal root is exact-only: destinations with no row of their own must not leave
+    // "Command Center" lit behind them.
+    assert.equal(
+      resolveDeepestActiveHref(portalRoot, hrefs, exactOnly),
+      portalRoot,
+      "Command Center is active on the portal root itself",
+    );
+    assert.equal(
+      resolveDeepestActiveHref("/employee-portals/profile", hrefs, exactOnly),
+      null,
+      "a portal page with no sidebar row of its own leaves Command Center unlit",
     );
   }
 }

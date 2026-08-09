@@ -62,6 +62,7 @@ import type { EmployeePortalShellData } from "@/lib/employee-portal/service";
 import type { EmployeePortalNavVisibility } from "@/lib/employee-portal/navigation";
 import { isEmployeePortalHrefCurated } from "@/lib/employee-portal/module-curation";
 import { isEmployeePortalOwnedRoute } from "@/lib/employee-portal/routes";
+import { resolveDeepestActiveHref } from "@/lib/navigation/active-path";
 import { systemAssets } from "@/config/system-settings";
 
 const EMPLOYEE_SIDEBAR_COLLAPSED_KEY = "phoenix-employee-sidebar-collapsed";
@@ -102,13 +103,27 @@ function navIconClass(active: boolean) {
     : "text-[#25314A]/76 group-hover:text-[#F05A1A]";
 }
 
-function isEmployeePortalNavItemActive(pathname: string, href: string) {
-  const hrefPath = href.split("#")[0];
-  if (hrefPath === "/employee-portals") return pathname === hrefPath;
-  if (hrefPath === "/employee-portals/plans") return pathname === hrefPath;
-  if (hrefPath === "/employee-portals/training-manager") return pathname === hrefPath;
-  if (hrefPath === "/employee-portals/marketing-requests") return pathname === hrefPath;
-  return pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
+/**
+ * Hub roots that must never stay lit on a child route, even when NO deeper sidebar row matches it.
+ * Only the portal root qualifies: /employee-portals/profile (and a few other destinations) have no
+ * sidebar row of their own, so without this "Command Center" would light up while you sit on them.
+ * Every other parent is handled by longest-match below and needs no entry here.
+ */
+const EXACT_ONLY_PORTAL_HREFS = new Set(["/employee-portals"]);
+
+/**
+ * The ONE active sidebar row for a path — the deepest matching href wins.
+ *
+ * The rule itself lives in src/lib/navigation/active-path.ts (React-free, so the Node test harness
+ * can exercise it; this component imports next/navigation at module scope and cannot be imported
+ * there). See resolveDeepestActiveHref for why longest-match replaced the old hand-kept list.
+ */
+function resolveActivePortalHref(pathname: string, sections: readonly EmployeePortalNavSection[]) {
+  return resolveDeepestActiveHref(
+    pathname,
+    sections.flatMap((section) => section.items.map((item) => item.href)),
+    EXACT_ONLY_PORTAL_HREFS,
+  );
 }
 
 type EmployeePortalNavProps = {
@@ -269,11 +284,11 @@ function buildEmployeePortalSections({
     {
       title: "Approvals Hub",
       items: [
-        ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Vacation Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
+        ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Leave Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
-        ...(showDirectOrdersApprovalsTab ? [{ href: "/employee-portals/approvals/direct-orders", label: "Direct Orders Approvals", icon: ReceiptText, navBadge: "direct-orders-approvals-pending" as const }] : []),
-        ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Requests Inbox", icon: Inbox, navBadge: "marketing-approvals-pending" as const }] : []),
+        ...(showDirectOrdersApprovalsTab ? [{ href: "/employee-portals/approvals/direct-orders", label: "D.Orders Approval", icon: ReceiptText, navBadge: "direct-orders-approvals-pending" as const }] : []),
+        ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Inbox", icon: Inbox, navBadge: "marketing-approvals-pending" as const }] : []),
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox, navBadge: "approvals-hub-pending" as const }] : []),
       ],
     },
@@ -295,7 +310,7 @@ function buildEmployeePortalSections({
         ...(showSalesAnalyticsTab ? [{ href: "/employee-portals/sales-analytics", label: "Sales Analytics", icon: Activity }] : []),
         ...(showBusinessReviewS1Tab ? [{ href: "/employee-portals/business-review-s1", label: "S1 Business Review", icon: ChartColumnBig }] : []),
         ...(showDoctorCoverageTab ? [{ href: "/employee-portals/doctor-coverage", label: "Doctor Coverage", icon: Stethoscope }] : []),
-        ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Territory & Sales Drilldown", icon: MapPinned }] : []),
+        ...(showTerritoryDrilldownTab ? [{ href: "/employee-portals/territory-drilldown", label: "Sales Drilldown", icon: MapPinned }] : []),
         // Territory Management (brick allocation + rep-residence map) — a DIFFERENT module from the
         // Drilldown above. The page and its API routes already existed and were scope-guarded, but
         // no sidebar entry was ever added, so DM/RM/NSM could only reach it by typing the URL.
@@ -520,6 +535,8 @@ function EmployeePortalMenu({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  // Resolved once for the whole menu, not per row: only the deepest matching href is active.
+  const activeHref = resolveActivePortalHref(pathname, sections);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setPendingHref(null), 0);
@@ -574,7 +591,7 @@ function EmployeePortalMenu({
           )}
           <div className={isMobile ? "space-y-1" : "space-y-0.5"}>
             {section.items.map((item) => {
-              const active = isEmployeePortalNavItemActive(pathname, item.href);
+              const active = item.href.split("#")[0] === activeHref;
               const pending = isPending && pendingHref === item.href;
               return (
                 <Link
@@ -911,8 +928,9 @@ export function EmployeePortalSidebar({
   const collapsed = fallbackCollapsed ?? persistedCollapsed;
 
   const sections = applyModuleCuration(buildEmployeePortalSections(visibility), effectiveModuleIds);
+  const shellActiveHref = resolveActivePortalHref(pathname, sections);
   const activeSectionTitle = sections.find((section) =>
-    section.items.some((item) => isEmployeePortalNavItemActive(pathname, item.href)),
+    section.items.some((item) => item.href.split("#")[0] === shellActiveHref),
   )?.title;
 
   const toggleCollapsed = () => {
