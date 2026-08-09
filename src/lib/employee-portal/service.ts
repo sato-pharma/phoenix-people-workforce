@@ -26,6 +26,7 @@ import {
   employeeMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
 import { isEmployeePortalBetaNavEnabled } from "@/lib/employee-portal/navigation";
+import { logError } from "@/lib/observability/log";
 import {
   buildCompanyDsmPerformanceFromSos,
   buildCompanyMedRepPerformanceFromSos,
@@ -293,9 +294,34 @@ type PortalSalesNormalized = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Deliberate no-op: informational traces that would be noise in production.
+ * NEVER route a failed query through this — use logPortalFailure.
+ */
 function logPortalDebug(message: string, payload?: unknown) {
   void message;
   void payload;
+}
+
+/**
+ * A portal query that FAILED, as opposed to one that legitimately returned nothing.
+ *
+ * Every one of these used to go through logPortalDebug, which discards its arguments. The
+ * caller then returned an empty array, so a failed payslip or sales read rendered as
+ * "no payslips" / no sales — identical to the honest empty state, and invisible in logs,
+ * Sentry and app_error_events alike. An employee looking at an empty Payslips tab had no way
+ * to tell "you have none" from "we could not read them", and neither did anyone supporting
+ * them.
+ *
+ * This does not change what the employee SEES — the callers still degrade to empty, so one
+ * transient failure cannot blank the whole portal — but the failure is now diagnosable
+ * instead of silent.
+ */
+function logPortalFailure(message: string, payload?: unknown) {
+  logError(`employee-portal: ${message}`, {
+    labels: { event: "employee_portal_query_failed" },
+    error: payload,
+  });
 }
 
 function resolvePortalSalesLineFilter(
@@ -944,7 +970,7 @@ async function fetchSalaryTrend(
       .eq("hr_id", normalizedHrId);
     const { data, error } = await baseQuery;
     if (error) {
-      logPortalDebug("salary history query error", { error, hrId: normalizedHrId });
+      logPortalFailure("salary history query error", { error, hrId: normalizedHrId });
       return [];
     }
 
@@ -979,7 +1005,7 @@ async function fetchSalaryTrend(
       .sort((left, right) => left.year * 12 + left.month - (right.year * 12 + right.month))
       .slice(-6);
   } catch (error) {
-    logPortalDebug("salary history query error", { error, hrId: normalizedHrId });
+    logPortalFailure("salary history query error", { error, hrId: normalizedHrId });
     return [];
   }
 }
@@ -1187,7 +1213,7 @@ async function fetchPortalPayslips(hrId: string): Promise<PortalPayrollRecord[]>
 
     return mapped;
   } catch (error) {
-    logPortalDebug("payroll query exception", { error, hr_id: normalizedHrId });
+    logPortalFailure("payroll query exception", { error, hr_id: normalizedHrId });
     return [];
   }
 }
@@ -1287,7 +1313,7 @@ async function fetchPortalSalesRecords(
     });
     return mergePortalSalesRecords([...directRecords, ...continuityRecords]);
   } catch (error) {
-    logPortalDebug("sales query exception", { error, hr_ids: queryHrIds });
+    logPortalFailure("sales query exception", { error, hr_ids: queryHrIds });
     return [];
   }
 }
@@ -1347,7 +1373,7 @@ async function fetchPreviousSeatHrIdsForReplacement(
       ),
     );
   } catch (error) {
-    logPortalDebug("sales continuity vacancy lookup failed", { currentHrId, error });
+    logPortalFailure("sales continuity vacancy lookup failed", { currentHrId, error });
     return [];
   }
 }
@@ -1427,7 +1453,7 @@ async function fetchPortalSalesSeatContinuityRecords({
         ),
       );
   } catch (error) {
-    logPortalDebug("sales continuity query failed", { currentHrIds, error });
+    logPortalFailure("sales continuity query failed", { currentHrIds, error });
     return [];
   }
 }
@@ -3083,7 +3109,7 @@ async function fetchOpenVacancySummaryForScope({
       openVacancies: uniqueRows.length,
     };
   } catch (error) {
-    logPortalDebug("open vacancy summary query failed", error);
+    logPortalFailure("open vacancy summary query failed", error);
     return {
       districtManagerVacancies: 0,
       groupProductManagerVacancies: 0,

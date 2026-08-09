@@ -96,20 +96,53 @@ function isMissingColumnError(error: unknown, columnName: string) {
   );
 }
 
-export function isPayrollSchemaMissing(error: unknown) {
-  const message = payrollErrorMessage(error).toLowerCase();
+/** SQLSTATEs that genuinely mean "this object is not there". */
+const PAYROLL_SCHEMA_MISSING_SQLSTATES = new Set([
+  "42P01", // undefined_table
+  "42883", // undefined_function
+  "42703", // undefined_column
+]);
 
+/** PostgREST's own "not in the schema cache" codes. */
+const PAYROLL_SCHEMA_MISSING_PGRST_CODES = new Set([
+  "PGRST202", // function not found
+  "PGRST205", // table not found
+]);
+
+/**
+ * True only when payroll's tables/functions are genuinely ABSENT — the case the callers
+ * deliberately degrade to an empty result for, because there is nothing to show yet.
+ *
+ * THE BUG THIS FIXES: this used to return true whenever the error message merely CONTAINED a
+ * payroll table name. "permission denied for table salary_records" (42501) contains it. So
+ * does a statement timeout on a query that touches it, and so does any RLS or grant change.
+ * Every one of those was classified as "schema missing" and degraded to an empty result —
+ * which the payroll dashboard renders as EGP 0.
+ *
+ * A confident zero on a payroll screen is worse than an error. Nobody investigates a number.
+ *
+ * Now: trust the error CODE when there is one. A code we recognise as "missing" means missing;
+ * any OTHER code (42501 insufficient_privilege, 57014 query_canceled, …) is a real failure and
+ * must surface rather than silently become zero. Only when no code is available do we fall
+ * back to message shapes — and only to ones that actually assert absence, never to a bare
+ * table name.
+ */
+export function isPayrollSchemaMissing(error: unknown) {
+  const code = payrollErrorCode(error).trim().toUpperCase();
+  if (code) {
+    return (
+      PAYROLL_SCHEMA_MISSING_SQLSTATES.has(code) ||
+      PAYROLL_SCHEMA_MISSING_PGRST_CODES.has(code)
+    );
+  }
+
+  const message = payrollErrorMessage(error).toLowerCase();
   return (
-    message.includes("salary_batches") ||
-    message.includes("salary_records") ||
-    message.includes("salary_flags") ||
-    message.includes("phx_create_salary_batch") ||
-    message.includes("phx_replace_salary_batch") ||
-    message.includes("phx_delete_salary_batch") ||
     message.includes("could not find the table") ||
     message.includes("could not find the function") ||
     message.includes("schema cache") ||
-    (message.includes("relation") && message.includes("does not exist"))
+    (message.includes("does not exist") &&
+      (message.includes("relation") || message.includes("function") || message.includes("table")))
   );
 }
 

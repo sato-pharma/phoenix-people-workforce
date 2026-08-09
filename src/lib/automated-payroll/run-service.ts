@@ -694,9 +694,26 @@ export async function confirmPart2(
   // record what this run newly OVERPAID. Doing it in this order means a run
   // that both recovers an old debt and creates a new one leaves the ledger in
   // the right state instead of immediately re-consuming its own fresh entry.
-  const recoveredCompacts = Array.from(carryForwardByCompact.keys()).filter(
-    (compact) => (carryForwardByCompact.get(compact) ?? 0) > 0,
-  );
+  //
+  // Derive what was recovered from the ASSEMBLED ROWS, not from the ledger map.
+  //
+  // carryForwardByCompact is the list of outstanding debts — it is scoped only by
+  // "unapplied, not from this run", with no population filter. The money is only actually
+  // charged inside assembleRows, which iterates the run's members; loadRunContext has
+  // already stripped excluded employees, and a departed employee is no longer in the
+  // population at all. So marking every key in that map as applied settled debts for people
+  // this run never deducted from — the balance was written off, silently, which is precisely
+  // the loss the carry-forward ledger exists to prevent.
+  //
+  // Held rows are the worse case: they DO assemble (so the deduction appears on the sheet)
+  // but publishToPayslips drops them (`rows.filter((entry) => !entry.onHold)`), so no salary
+  // record is ever written while the debt already reads as settled.
+  //
+  // AssembledRow.carriedForwardApplied is set by assembleRows for exactly this purpose.
+  const recoveredCompacts = rows
+    .filter((entry) => entry.carriedForwardApplied > 0 && !entry.onHold)
+    .map((entry) => entry.compact)
+    .filter((compact): compact is string => Boolean(compact));
   const carryForwardRecovered = await markCarryForwardApplied({ runId, appliedCompacts: recoveredCompacts });
   const carryForwardRecorded = await recordOverpaidCarryForward({
     runId,
