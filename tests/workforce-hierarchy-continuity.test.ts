@@ -353,24 +353,41 @@ export function runWorkforceHierarchyContinuityTests() {
   // -- Wiring assertions (the service modules cannot be imported under the test
   //    runner because they pull in env-bound Supabase clients, so we lock the
   //    integration points via source text — mirroring tests/vacation-module).
+  //
+  //    The sales PERFORMANCE views (NSM DSMs / Med Reps, CEO company, RM regional) no
+  //    longer group members with the TS seat-continuity resolver. They source actuals
+  //    AND targets from the Source-of-Sales achievement engine, which attributes each
+  //    row to the rep/DM seat OCCUPANT as of the period end (au.occupancy_history) — so
+  //    seat continuity is owned by the DB engine, not re-derived here. These assertions
+  //    lock that wiring so nobody silently reverts the performance views to sales_records.
   const portalServiceSource = readFileSync(
     new URL("../src/lib/employee-portal/service.ts", import.meta.url),
     "utf8",
   );
   assert.match(
     portalServiceSource,
-    /resolveSeatGrouping\(emp, \{/,
-    "Performance views must group members via the seat-continuity resolver",
+    /buildNsmDsmPerformanceFromSos\(access/,
+    "DSMs Performance must source from the Source-of-Sales achievement engine",
   );
   assert.match(
     portalServiceSource,
-    /resolveNsmVacantDsmSeat\(directory, lineScope/,
-    "Performance views must resolve the single open DSM vacancy fallback",
+    /buildDsmTeamPerformanceFromSos\(access/,
+    "Med Reps Performance must source from the Source-of-Sales achievement engine",
+  );
+
+  const sosPerformanceSource = readFileSync(
+    new URL("../src/lib/employee-portal/sos-team-performance.ts", import.meta.url),
+    "utf8",
   );
   assert.match(
-    portalServiceSource,
-    /orphanFallback:/,
-    "Seat grouping must pass the orphaned-to-NSM vacancy fallback",
+    sosPerformanceSource,
+    /loadVsTargetRange\(/,
+    "Performance views must load actuals + targets from the shared achievement engine",
+  );
+  assert.match(
+    sosPerformanceSource,
+    /grain === "rep" \? row\.repHrId : row\.dmHrId/,
+    "Members must be attributed to the engine-resolved rep/DM seat occupant",
   );
 
   const vacationServiceSource = readFileSync(

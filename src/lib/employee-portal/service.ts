@@ -24,9 +24,17 @@ import { daysBetweenDateOnly } from "@/lib/date-only";
 import {
   createPortalSalesLineScope,
   employeeMatchesPortalSalesScope,
-  salesRecordMatchesPortalSalesScope,
 } from "@/lib/employee-portal/sales-scope";
 import { isEmployeePortalBetaNavEnabled } from "@/lib/employee-portal/navigation";
+import {
+  buildCompanyDsmPerformanceFromSos,
+  buildCompanyMedRepPerformanceFromSos,
+  buildDsmTeamPerformanceFromSos,
+  buildNsmDsmPerformanceFromSos,
+  buildRmRegionalPerformanceFromSos,
+  type SosCompanyLineMeta,
+} from "@/lib/employee-portal/sos-team-performance";
+import { SALES_LINES, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
 import { getEmployeeDirectory, type EmployeeDirectoryData, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   isDateWithinLifecycleRiskWindow,
@@ -37,13 +45,11 @@ import {
 import { classifyEmployeeNode } from "@/lib/workforce-classification";
 import { salesRecordMatchesSeatContinuity } from "@/lib/workforce/seat-lifecycle";
 import {
-  formatVacantSeatLabel,
   lineScopeIncludesEmployee,
   normalizeRegionLabel,
   isWithinManagerHierarchy,
   regionsWithinManagerHierarchy,
   reportsToManagerSeat,
-  resolveSeatGrouping,
   sameWorkforceLine,
   selectVacantManagerSeat,
   type ResolvedVacantSeat,
@@ -4290,309 +4296,16 @@ export async function getDsmTeamPerformance(
     if (!currentUser?.hrId) return null;
 
     const currentRole = normalizeRole(currentUser.role);
-    const isDsm = currentRole === "District Manager";
-    const isNsm = currentRole === "National Sales Manager";
-    
-    if (!isDsm && !isNsm) return null;
+    if (currentRole !== "District Manager" && currentRole !== "National Sales Manager") return null;
 
-    const currentHrId = normalizeHrId(currentUser.hrId);
-    if (!currentHrId) return null;
-
-    const directory = await getEmployeeDirectory().catch(() => null);
-    if (!directory) return null;
-
-    const dsmCanonical = toCanonicalPortalHrId(currentHrId);
-    const currentEmployee = findDirectoryEmployeeByHrId(directory, currentHrId);
-    const lineScope = createPortalSalesLineScope({
-      fallbackLine: currentUser.line,
-      lineId: currentEmployee?.lineId ?? null,
-      lineName: currentEmployee?.lineName ?? null,
-    });
-
-    return await buildTeamPerformanceForScope({
-      directory,
-      lineScope,
-      mode: isNsm ? "nsm-line" : "dsm-direct",
-      anchorCanonical: dsmCanonical,
-      period: options.period ?? null,
-    });
+    // Sales AND targets now come from Source of Sales via the shared achievement engine
+    // (see sos-team-performance.ts), not from sales_records. Scope is applied inside the
+    // builder by resolveVsTargetBound — a line bound for an NSM, an area bound for a DSM —
+    // so these numbers reconcile exactly with the /sales-vs-target page.
+    return await buildDsmTeamPerformanceFromSos(access, options.period ?? null);
   } catch {
     return null;
   }
-}
-
-/**
- * Shared team-performance builder (med-rep grain) — the single implementation behind the
- * DSM team view and NSM line view (getDsmTeamPerformance) AND the company-wide executive
- * rollup (getCompanyMedRepPerformance). "dsm-direct" = direct reports of the anchor DSM;
- * "nsm-line" = every med-rep on the line, seat-continuity aware. One code path keeps the
- * CEO's company numbers reconciled exactly with what each NSM/DSM sees.
- */
-async function buildTeamPerformanceForScope(input: {
-  directory: EmployeeDirectoryData;
-  lineScope: ReturnType<typeof createPortalSalesLineScope>;
-  mode: "dsm-direct" | "nsm-line";
-  /** Canonical anchor: the DSM (dsm-direct) or the line's NSM (nsm-line); null when the NSM seat is vacant. */
-  anchorCanonical: string | null;
-  period?: string | string[] | null;
-}): Promise<DsmTeamPerformanceData> {
-  // Local aliases keep the body below byte-identical to the pre-refactor implementation.
-  const { directory, lineScope } = input;
-  const isNsm = input.mode === "nsm-line";
-  const dsmCanonical = input.anchorCanonical;
-
-    const scopedDsmRows = isNsm
-      ? directory.employees.filter(
-          (emp) =>
-            isDistrictManagerEmployee(emp) &&
-            employeeMatchesPortalSalesScope(emp, lineScope),
-        )
-      : [];
-    const scopedDsmCanonicalIds = new Set(
-      scopedDsmRows
-        .map((emp) => toCanonicalPortalHrId(emp.hrId))
-        .filter((hrId): hrId is string => Boolean(hrId)),
-    );
-
-    // Fallback seat-continuity: the single open DSM seat under this NSM/line (if
-    // exactly one), used to group orphaned reps whose continuity marker was lost.
-    const vacantDsmSeat = isNsm
-      ? resolveNsmVacantDsmSeat(directory, lineScope, dsmCanonical)
-      : { seat: null, ambiguous: false };
-    if (vacantDsmSeat.ambiguous) {
-      logPortalDebug(
-        "med-reps-performance: multiple open DSM seats; orphaned reps left under NSM (canonical seat field needed)",
-        { nsm: dsmCanonical },
-      );
-    }
-
-    // Find target employees based on role
-    // NSM sees all Med Reps in their line
-    // DSM sees only their direct reports
-    const medRepRows = directory.employees.filter((emp) => {
-      if (!isMedicalRepDirectoryEmployee(emp)) return false;
-
-      if (isNsm) {
-        return employeeMatchesPortalSalesScope(emp, lineScope);
-      }
-      
-      const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
-      return managerCanonical && dsmCanonical && managerCanonical === dsmCanonical;
-    });
-
-    // Build hrId variant → canonical lookup for attributing sales rows
-    const hrIdToCanonical = new Map<string, string>();
-    const canonicalToName = new Map<string, string>();
-    medRepRows.forEach((emp) => {
-      const canonical = toCanonicalPortalHrId(emp.hrId);
-      const normalized = normalizeHrId(emp.hrId);
-      if (canonical) {
-        if (normalized) hrIdToCanonical.set(normalized, canonical);
-        hrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.displayName);
-      }
-    });
-
-    const medRepHrIds = medRepRows.map((emp) => emp.hrId).filter(Boolean) as string[];
-
-    const empty: DsmTeamPerformanceData = {
-      members: [],
-      periods: [],
-      teamAchievementPercent: 0,
-      teamMemberCount: 0,
-      teamTotalSales: 0,
-      teamTotalTarget: 0,
-    };
-    if (medRepHrIds.length === 0 && (!isNsm || scopedDsmRows.length === 0)) return empty;
-
-    // Fetch all sales records without period filter (used for period list + all-periods view)
-    // For NSMs, fetch scoped people by HR ID so stale auth line values cannot pull another line.
-    const nsmSalesHrIds = Array.from(
-      new Set([...medRepHrIds, ...scopedDsmRows.map((emp) => emp.hrId).filter(Boolean)]),
-    ) as string[];
-    const fetchedRecords = isNsm
-      ? await fetchPortalSalesRecords(nsmSalesHrIds, {})
-      : await fetchPortalSalesRecords(medRepHrIds, {});
-    const scopedMedRepCanonicalIds = new Set(
-      medRepRows
-        .map((emp) => toCanonicalPortalHrId(emp.hrId))
-        .filter((hrId): hrId is string => Boolean(hrId)),
-    );
-    const allRecords = isNsm
-      ? fetchedRecords.filter((record) => {
-          const recordCanonical = toCanonicalPortalHrId(record.hrId);
-          const managerCanonical = toCanonicalPortalHrId(record.managerHrId);
-          const belongsToScopedRep =
-            Boolean(recordCanonical && scopedMedRepCanonicalIds.has(recordCanonical));
-          const belongsToScopedDsm = Boolean(
-            (recordCanonical && scopedDsmCanonicalIds.has(recordCanonical)) ||
-              (managerCanonical && scopedDsmCanonicalIds.has(managerCanonical)),
-          );
-
-          return (
-            (belongsToScopedRep || belongsToScopedDsm) &&
-            salesRecordMatchesPortalSalesScope(record, lineScope)
-          );
-        })
-      : fetchedRecords;
-
-    // Available periods (newest first)
-    const periods = Array.from(new Set(allRecords.map((r) => r.period).filter(Boolean)))
-      .sort((a, b) => b.localeCompare(a));
-
-    // Filter records by period in memory if requested. Supports a single period, several
-    // comma-separated periods, or none (all periods) — mirrors buildDsmPerformanceForLineScope.
-    const selectedPeriods = normalizeTeamComparisonPeriods(input.period ?? null);
-    const records = selectedPeriods.length > 0
-      ? allRecords.filter((r) => selectedPeriods.includes(r.period))
-      : allRecords;
-
-    // Pass 1 — accumulate sales and build per-key distinct target sets
-    // Target key: canonical rep ID::territory::period::product → sum of DISTINCT targets
-    const salesByRepProduct = new Map<string, { sales: number; units: number; family: string }>();
-    const targetSetByKey = new Map<string, Set<number>>();
-    const targetKeyToRepProduct = new Map<string, { repId: string; product: string }>();
-    
-    // Global line totals (will include vacant areas if NSM)
-    let teamTotalSales = 0;
-    const globalTargetSetByKey = new Map<string, Set<number>>();
-
-    records.forEach((record) => {
-      const salesVal = record.salesValue;
-      const targetVal = record.targetValue;
-      const period = record.period || "unknown";
-      const product = record.product || "Unknown";
-      const territory = record.territory || "Unassigned";
-
-      // Always add to line totals
-      teamTotalSales += salesVal;
-      // Target key for the entire line: territory::period::product
-      // We use territory because vacant areas are usually identified by territory
-      const lineTargetKey = `${territory}::${period}::${product}`;
-      addDistinctTargetValue(globalTargetSetByKey, lineTargetKey, targetVal);
-
-      // Attribute to member if linked
-      const normalized = normalizeHrId(record.hrId);
-      if (!normalized) return;
-      const canonical = hrIdToCanonical.get(normalized);
-      if (!canonical) return;
-
-      const family = record.family || "";
-      const rpKey = `${canonical}::${product}`;
-      const existing = salesByRepProduct.get(rpKey) ?? { sales: 0, units: 0, family };
-      salesByRepProduct.set(rpKey, {
-        sales: existing.sales + salesVal,
-        units: existing.units + record.salesUnits,
-        family: family || existing.family,
-      });
-
-      const targetKey = `${canonical}::${territory}::${period}::${product}`;
-      addDistinctTargetValue(targetSetByKey, targetKey, targetVal);
-      targetKeyToRepProduct.set(targetKey, { repId: canonical, product });
-    });
-
-    // Calculate team total target by summing distinct targets per line key
-    let teamTotalTarget = 0;
-    globalTargetSetByKey.forEach((set) => {
-      teamTotalTarget += sumDistinctTargetValues(set);
-    });
-
-    // Pass 2 — aggregate targets by (repId::product), summing distinct per key
-    const targetByRepProduct = new Map<string, number>();
-    targetSetByKey.forEach((set, key) => {
-      const rp = targetKeyToRepProduct.get(key);
-      if (!rp) return;
-      const k = `${rp.repId}::${rp.product}`;
-      targetByRepProduct.set(k, (targetByRepProduct.get(k) ?? 0) + sumDistinctTargetValues(set));
-    });
-
-    // Pass 3 — build per-member data (include all med reps, even those with no sales)
-    const membersMap = new Map<string, DsmTeamMemberData>();
-    medRepRows.forEach((emp) => {
-      const canonical = toCanonicalPortalHrId(emp.hrId);
-      if (!canonical) return;
-      // Seat-continuity-aware grouping: when this rep's DSM resigned and has not
-      // been replaced, group them under the vacant DSM seat instead of under the
-      // upward-reassigned NSM — first via the pending-replacement marker, then via
-      // the single open DSM vacancy fallback. Otherwise grouping is unchanged.
-      // See src/lib/workforce/hierarchy-resolver.ts.
-      const grouping = resolveSeatGrouping(emp, {
-        vacantSeatTitle: "DSM seat",
-        orphanFallback: {
-          isOrphanToNsm: isNsm && toCanonicalPortalHrId(emp.managerHrId) === dsmCanonical,
-          vacantSeat: vacantDsmSeat.seat,
-        },
-      });
-      const seatHrId =
-        grouping.isVacant && !grouping.seatKeyIsSynthetic
-          ? toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId
-          : grouping.seatHrId;
-      membersMap.set(canonical, {
-        achievementPercent: 0,
-        hrId: canonical,
-        name: emp.displayName,
-        managerHrId: seatHrId,
-        managerName: grouping.seatName,
-        position: 0,
-        products: [],
-        totalSales: 0,
-        totalTarget: 0,
-      });
-    });
-
-    const allRepIds = new Set(
-      Array.from(salesByRepProduct.keys()).map((k) => k.split("::")[0]),
-    );
-    allRepIds.forEach((repId) => {
-      const entry = membersMap.get(repId);
-      if (!entry) return;
-
-      const productKeys = Array.from(salesByRepProduct.keys()).filter((k) =>
-        k.startsWith(`${repId}::`),
-      );
-      const products: DsmTeamMemberProductData[] = productKeys
-        .map((k) => {
-          const product = k.slice(`${repId}::`.length);
-          const salesData = salesByRepProduct.get(k) ?? { sales: 0, units: 0, family: "" };
-          const target = targetByRepProduct.get(k) ?? 0;
-          const achievement = target > 0 ? (salesData.sales / target) * 100 : 0;
-          return {
-            achievementPercent: achievement,
-            family: salesData.family,
-            product,
-            sales: salesData.sales,
-            target,
-            units: salesData.units,
-          };
-        })
-        .sort((a, b) => b.sales - a.sales);
-
-      const totalSales = products.reduce((sum, p) => sum + p.sales, 0);
-      const totalTarget = products.reduce((sum, p) => sum + p.target, 0);
-      const achievementPercent = totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0;
-
-      membersMap.set(repId, { ...entry, products, totalSales, totalTarget, achievementPercent });
-    });
-
-    // Sort by achievement (then by sales as tiebreaker) and assign positions
-    const members: DsmTeamMemberData[] = Array.from(membersMap.values())
-      .sort(
-        (a, b) =>
-          b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales,
-      )
-      .map((m, i) => ({ ...m, position: i + 1 }));
-
-    const teamAchievementPercent =
-      teamTotalTarget > 0 ? (teamTotalSales / teamTotalTarget) * 100 : 0;
-
-    return {
-      members,
-      periods,
-      teamAchievementPercent,
-      teamMemberCount: members.length,
-      teamTotalSales,
-      teamTotalTarget,
-    };
 }
 
 export type CompanyMedRepPerformanceLine = {
@@ -4616,11 +4329,43 @@ export type CompanyMedRepPerformanceData = {
 };
 
 /**
+ * Directory-derived line label + NSM identity for every sales line that has field staff.
+ * Keyed by the canonical target line code (cns / pedia / anti_infective). "Head Office"
+ * and any line that does not resolve to a target line code drop out. Shared by the two
+ * company SoS roll-ups so each line block carries the same name the NSM's own view uses.
+ */
+function buildSosCompanyLineMeta(directory: EmployeeDirectoryData): Map<string, SosCompanyLineMeta> {
+  const meta = new Map<string, SosCompanyLineMeta>();
+  for (const emp of directory.employees) {
+    if (!isMedicalRepDirectoryEmployee(emp) && !isDistrictManagerEmployee(emp)) continue;
+    const lineCode = resolveTargetLineCode(emp.lineName);
+    if (!lineCode || meta.has(lineCode)) continue;
+    const lineScope = createPortalSalesLineScope({
+      fallbackLine: emp.lineName,
+      lineId: emp.lineId ?? null,
+      lineName: emp.lineName ?? null,
+    });
+    const nsmEmployee = directory.employees.find(
+      (candidate) =>
+        isNationalSalesManagerDirectoryEmployee(candidate) &&
+        employeeMatchesPortalSalesScope(candidate, lineScope),
+    );
+    meta.set(lineCode, {
+      lineId: emp.lineId ?? null,
+      lineName: emp.lineName ?? SALES_LINES.find((line) => line.code === lineCode)?.label ?? lineCode,
+      nsmName: nsmEmployee?.displayName ?? null,
+      nsmHrId: nsmEmployee?.hrId ?? null,
+    });
+  }
+  return meta;
+}
+
+/**
  * Company-wide medical-rep performance rollup for the executive admin surface (CEO /
- * Super Admin). Runs the SAME line builder the NSM's Med Reps Performance view uses for
- * every line that has medical reps, so company totals reconcile exactly with the per-line
- * NSM views — seat-continuity included. Gated on company scope + executive role, NOT
- * canSeeEmployee (which stays manager-scoped).
+ * Super Admin / SFE Manager). Sourced from Source of Sales + Targets via the shared
+ * achievement engine (see sos-team-performance.ts), one block per line, so company
+ * totals reconcile exactly with each NSM's own Med Reps Performance view and with
+ * /sales-vs-target. Gated on company scope + executive role, NOT canSeeEmployee.
  */
 export async function getCompanyMedRepPerformance(
   access: AccessContext,
@@ -4636,65 +4381,7 @@ export async function getCompanyMedRepPerformance(
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
 
-    const lineInfoByKey = new Map<string, { lineId: number | null; lineName: string }>();
-    directory.employees.forEach((emp) => {
-      if (!isMedicalRepDirectoryEmployee(emp)) return;
-      const lineId = emp.lineId ?? null;
-      const lineName = emp.lineName ?? null;
-      if (lineId == null && !lineName) return;
-      const key = `${lineId ?? ""}::${(lineName ?? "").trim().toLowerCase()}`;
-      if (!lineInfoByKey.has(key)) {
-        lineInfoByKey.set(key, { lineId, lineName: lineName ?? `Line ${lineId}` });
-      }
-    });
-
-    const lineBlocks = await Promise.all(
-      Array.from(lineInfoByKey.values()).map(async (info) => {
-        const lineScope = createPortalSalesLineScope({
-          fallbackLine: info.lineName,
-          lineId: info.lineId,
-          lineName: info.lineName,
-        });
-        const nsmEmployee = directory.employees.find(
-          (emp) =>
-            isNationalSalesManagerDirectoryEmployee(emp) &&
-            employeeMatchesPortalSalesScope(emp, lineScope),
-        );
-        const performance = await buildTeamPerformanceForScope({
-          directory,
-          lineScope,
-          mode: "nsm-line",
-          anchorCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
-          period: options.period ?? null,
-        });
-        return {
-          lineId: info.lineId,
-          lineName: info.lineName,
-          nsmName: nsmEmployee?.displayName ?? null,
-          performance,
-        };
-      }),
-    );
-
-    const lines = lineBlocks
-      .filter((line) => line.performance.members.length > 0)
-      .sort((a, b) => b.performance.teamTotalSales - a.performance.teamTotalSales);
-
-    const companyTotalSales = lines.reduce((sum, line) => sum + line.performance.teamTotalSales, 0);
-    const companyTotalTarget = lines.reduce((sum, line) => sum + line.performance.teamTotalTarget, 0);
-    const periods = Array.from(new Set(lines.flatMap((line) => line.performance.periods))).sort((a, b) =>
-      b.localeCompare(a),
-    );
-
-    return {
-      lines,
-      periods,
-      companyTotalSales,
-      companyTotalTarget,
-      companyAchievementPercent: companyTotalTarget > 0 ? (companyTotalSales / companyTotalTarget) * 100 : 0,
-      repCount: lines.reduce((sum, line) => sum + line.performance.teamMemberCount, 0),
-      lineCount: lines.length,
-    };
+    return await buildCompanyMedRepPerformanceFromSos(options.period ?? null, buildSosCompanyLineMeta(directory));
   } catch {
     return null;
   }
@@ -5239,23 +4926,10 @@ export async function getNsmDsmPerformance(
     const currentRole = normalizeRole(currentUser.role);
     if (currentRole !== "National Sales Manager") return null;
 
-    const directory = await getEmployeeDirectory().catch(() => null);
-    if (!directory) return null;
-
-    const currentEmployee = findDirectoryEmployeeByHrId(directory, currentUser.hrId);
-    const lineScope = createPortalSalesLineScope({
-      fallbackLine: currentUser.line,
-      lineId: currentEmployee?.lineId ?? null,
-      lineName: currentEmployee?.lineName ?? null,
-    });
-
-    return await buildDsmPerformanceForLineScope({
-      directory,
-      lineScope,
-      nsmCanonical: toCanonicalPortalHrId(currentUser.hrId),
-      managerName: currentUser.name ?? "National Sales Manager",
-      period: options.period ?? null,
-    });
+    // The DSM roll-up is now sourced from Source of Sales + Targets via the shared
+    // achievement engine (see sos-team-performance.ts), not from sales_records. The
+    // builder scopes to the NSM's line through resolveVsTargetBound.
+    return await buildNsmDsmPerformanceFromSos(access, options.period ?? null);
   } catch {
     return null;
   }
@@ -5303,11 +4977,6 @@ export async function getRmRegionalPerformance(
     if (!rmCanonical) return null;
 
     const currentEmployee = findDirectoryEmployeeByHrId(directory, currentUser.hrId);
-    const lineScope = createPortalSalesLineScope({
-      fallbackLine: currentUser.line,
-      lineId: currentEmployee?.lineId ?? null,
-      lineName: currentEmployee?.lineName ?? null,
-    });
 
     // The RM's region set, derived from their subtree (never their own coarse region label).
     // Empty means we cannot place the RM in any region: fail CLOSED rather than showing the
@@ -5341,319 +5010,22 @@ export async function getRmRegionalPerformance(
         )
       : undefined;
 
-    const [linePerformance, lineTeam] = await Promise.all([
-      buildDsmPerformanceForLineScope({
-        directory,
-        lineScope,
-        nsmCanonical: lineNsm ? toCanonicalPortalHrId(lineNsm.hrId) : null,
-        managerName: lineNsm?.displayName ?? currentEmployee?.lineName ?? "National Sales Manager",
-        period: options.period ?? null,
-      }),
-      buildTeamPerformanceForScope({
-        directory,
-        lineScope,
-        mode: "nsm-line",
-        anchorCanonical: lineNsm ? toCanonicalPortalHrId(lineNsm.hrId) : null,
-        period: options.period ?? null,
-      }).catch(() => null),
-    ]);
+    // Sales + targets now come from Source of Sales via the shared achievement engine
+    // (see sos-team-performance.ts). The RM's whole line is built at DSM and rep grain,
+    // then narrowed to the RM's region set with the same directory-derived `isInRegion`
+    // test — region membership never uses the RM's coarse region label. `lineNsm` labels
+    // the DSM nodes' manager and is otherwise unused now that seat-continuity attribution
+    // lives in the engine.
+    const lineCode = resolveTargetLineCode(currentEmployee?.lineName);
+    const lineCodes = lineCode ? new Set([lineCode]) : new Set<string>();
 
-    // Districts inside the RM's regions. Vacant-seat nodes carry a synthetic key
-    // ("vacant-seat:<code>") that never maps to a directory row, so they are dropped here rather
-    // than silently attributed to the wrong region.
-    const dsms = linePerformance.dsms
-      .filter((dsm) => isInRegion(dsm.hrId))
-      .slice()
-      .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
-
-    const topReps = (lineTeam?.members ?? [])
-      .filter((member) => isInRegion(member.hrId) || isInRegion(member.managerHrId))
-      .slice()
-      .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
-
-    // Region totals are the sum of the districts kept above — by construction the RM's region
-    // total is Σ(its districts), which is itself a subset-sum of the line total the NSM sees.
-    const regionTotalSales = dsms.reduce((sum, dsm) => sum + dsm.totalSales, 0);
-    const regionTotalTarget = dsms.reduce((sum, dsm) => sum + dsm.totalTarget, 0);
-
-    return {
-      dsms,
-      topReps,
-      periods: linePerformance.periods,
-      regionAchievementPercent: regionTotalTarget > 0 ? (regionTotalSales / regionTotalTarget) * 100 : 0,
-      dsmCount: dsms.length,
-      regionTotalSales,
-      regionTotalTarget,
-    };
+    return await buildRmRegionalPerformanceFromSos(options.period ?? null, lineCodes, isInRegion, {
+      hrId: lineNsm?.hrId ?? null,
+      name: lineNsm?.displayName ?? null,
+    });
   } catch {
     return null;
   }
-}
-
-/**
- * Shared line-level DSM performance builder — the single implementation behind BOTH the
- * NSM portal view (getNsmDsmPerformance) and the company-wide executive rollup
- * (getCompanyDsmPerformance). Keeping one code path is what guarantees the CEO's company
- * numbers reconcile exactly with the per-line numbers each NSM sees.
- */
-async function buildDsmPerformanceForLineScope(input: {
-  directory: EmployeeDirectoryData;
-  lineScope: ReturnType<typeof createPortalSalesLineScope>;
-  /** Canonical HR_ID of the line's NSM (orphan-rep seat fallback anchor); null when the NSM seat is vacant. */
-  nsmCanonical: string | null;
-  /** Display name used as the DSM nodes' manager label (the line's NSM, or a line label when vacant). */
-  managerName: string;
-  period?: string | string[] | null;
-}): Promise<NsmDsmPerformanceData> {
-  const { directory, lineScope, nsmCanonical, managerName } = input;
-
-    const dsmRows = directory.employees.filter((emp) => {
-      return (
-        isDistrictManagerEmployee(emp) &&
-        employeeMatchesPortalSalesScope(emp, lineScope)
-      );
-    });
-
-    // Map to identify which DSM a sales record belongs to
-    // For NSM viewing DSMs, we look at the manager_hr_id of the records
-    const dsmHrIdToCanonical = new Map<string, string>();
-    const canonicalToName = new Map<string, string>();
-    dsmRows.forEach((emp) => {
-      const canonical = toCanonicalPortalHrId(emp.hrId);
-      const normalized = normalizeHrId(emp.hrId);
-      if (canonical) {
-        if (normalized) dsmHrIdToCanonical.set(normalized, canonical);
-        dsmHrIdToCanonical.set(canonical, canonical);
-        canonicalToName.set(canonical, emp.displayName);
-      }
-    });
-    const dsmCanonicalIds = new Set(dsmHrIdToCanonical.values());
-
-    // Fallback seat-continuity: the single open DSM seat under this NSM/line, used
-    // when an orphaned rep's continuity marker was lost.
-    const vacantDsmSeat = resolveNsmVacantDsmSeat(directory, lineScope, nsmCanonical);
-    if (vacantDsmSeat.ambiguous) {
-      logPortalDebug(
-        "dsms-performance: multiple open DSM seats; orphaned reps left unattributed (canonical seat field needed)",
-        { nsm: nsmCanonical },
-      );
-    }
-
-    // Seat-continuity-aware med-rep -> DSM mapping. Reps whose DSM resigned and
-    // has not yet been replaced are attributed to the vacant DSM seat (via the
-    // pending marker first, then the single open DSM vacancy fallback) rather than
-    // dropped or rolled up to the NSM, so their district still appears in the
-    // DSMs performance view. See src/lib/workforce/hierarchy-resolver.ts.
-    const medRepToDsmCanonical = new Map<string, string>();
-    const medRepCanonicalToRawHrId = new Map<string, string>();
-    const vacantSeatLabelByCanonical = new Map<string, string>();
-    directory.employees.forEach((emp) => {
-      if (!isMedicalRepDirectoryEmployee(emp)) return;
-      if (!employeeMatchesPortalSalesScope(emp, lineScope)) return;
-
-      const repCanonical = toCanonicalPortalHrId(emp.hrId);
-      if (!repCanonical) return;
-      medRepCanonicalToRawHrId.set(repCanonical, emp.hrId);
-
-      const grouping = resolveSeatGrouping(emp, {
-        vacantSeatTitle: "DSM seat",
-        orphanFallback: {
-          isOrphanToNsm: toCanonicalPortalHrId(emp.managerHrId) === nsmCanonical,
-          vacantSeat: vacantDsmSeat.seat,
-        },
-      });
-
-      if (grouping.isVacant && grouping.seatHrId) {
-        const seatKey = grouping.seatKeyIsSynthetic
-          ? grouping.seatHrId
-          : toCanonicalPortalHrId(grouping.seatHrId) ?? grouping.seatHrId;
-        medRepToDsmCanonical.set(repCanonical, seatKey);
-        dsmCanonicalIds.add(seatKey);
-        if (!vacantSeatLabelByCanonical.has(seatKey)) {
-          vacantSeatLabelByCanonical.set(
-            seatKey,
-            grouping.seatName ?? formatVacantSeatLabel(emp, "DSM seat"),
-          );
-        }
-        return;
-      }
-
-      const managerCanonical = toCanonicalPortalHrId(emp.managerHrId);
-      if (!managerCanonical || !dsmCanonicalIds.has(managerCanonical)) return;
-      medRepToDsmCanonical.set(repCanonical, managerCanonical);
-    });
-
-    const resolveDsmForSalesRecord = (record: PortalSalesNormalized) => {
-      const managerCanonical = toCanonicalPortalHrId(record.managerHrId);
-      if (managerCanonical && dsmCanonicalIds.has(managerCanonical)) {
-        return managerCanonical;
-      }
-
-      const recordCanonical = toCanonicalPortalHrId(record.hrId);
-      if (recordCanonical && dsmCanonicalIds.has(recordCanonical)) {
-        return recordCanonical;
-      }
-
-      return recordCanonical ? medRepToDsmCanonical.get(recordCanonical) ?? null : null;
-    };
-
-    // Fetch by scoped HR IDs so stale app_auth_users.line values do not leak other lines.
-    // Sales rows key off the rep's RAW hr_id (e.g. "B-100"), so the query must use
-    // that raw form rather than medRepToDsmCanonical's hyphen-stripped keys — those
-    // are only for in-memory matching and never match the stored hr_id.
-    const salesQueryHrIds = Array.from(
-      new Set([
-        ...dsmRows.map((emp) => emp.hrId),
-        ...Array.from(medRepToDsmCanonical.keys()).map(
-          (canonical) => medRepCanonicalToRawHrId.get(canonical) ?? canonical,
-        ),
-      ]),
-    );
-    const fetchedRecords =
-      salesQueryHrIds.length > 0
-        ? await fetchPortalSalesRecords(salesQueryHrIds, {})
-        : [];
-    const allRecords = fetchedRecords
-      .map((record) => ({ dsmCanonical: resolveDsmForSalesRecord(record), record }))
-      .filter(
-        (entry): entry is { dsmCanonical: string; record: PortalSalesNormalized } =>
-          Boolean(entry.dsmCanonical) &&
-          salesRecordMatchesPortalSalesScope(entry.record, lineScope),
-      );
-
-    // Available periods
-    const periods = Array.from(new Set(allRecords.map(({ record }) => record.period).filter(Boolean)))
-      .sort((a, b) => b.localeCompare(a));
-
-    const selectedPeriods = normalizeTeamComparisonPeriods(input.period ?? null);
-    const records = selectedPeriods.length > 0
-      ? allRecords.filter(({ record }) => selectedPeriods.includes(record.period))
-      : allRecords;
-
-    const salesByDsmProduct = new Map<string, { sales: number; units: number; family: string }>();
-    const dsmTargetSetByKey = new Map<string, Set<number>>();
-
-    let lineTotalSales = 0;
-    const globalTargetSetByKey = new Map<string, Set<number>>();
-
-    records.forEach(({ dsmCanonical, record }) => {
-      const salesVal = record.salesValue;
-      const targetVal = record.targetValue;
-      const period = record.period || "unknown";
-      const product = record.product || "Unknown";
-      const territory = record.territory || "Unassigned";
-
-      lineTotalSales += salesVal;
-      const lineTargetKey = `${territory}::${period}::${product}`;
-      addDistinctTargetValue(globalTargetSetByKey, lineTargetKey, targetVal);
-
-      const family = record.family || "";
-      const dpKey = `${dsmCanonical}::${product}`;
-      const existing = salesByDsmProduct.get(dpKey) ?? { sales: 0, units: 0, family };
-      salesByDsmProduct.set(dpKey, {
-        sales: existing.sales + salesVal,
-        units: existing.units + record.salesUnits,
-        family: family || existing.family,
-      });
-
-      // DSM target: manager::territory::period::product — sum of distinct targets
-      const dsmTargetKey = `${dsmCanonical}::${territory}::${period}::${product}`;
-      addDistinctTargetValue(dsmTargetSetByKey, dsmTargetKey, targetVal);
-    });
-
-    let lineTotalTarget = 0;
-    globalTargetSetByKey.forEach((set) => {
-      lineTotalTarget += sumDistinctTargetValues(set);
-    });
-
-    // Aggregate DSM product targets (sum of distinct targets per key)
-    const dsmProductTargets = new Map<string, number>();
-    dsmTargetSetByKey.forEach((set, key) => {
-      const parts = key.split("::");
-      const dsmId = parts[0];
-      const product = parts[3];
-      const k = `${dsmId}::${product}`;
-      dsmProductTargets.set(k, (dsmProductTargets.get(k) ?? 0) + sumDistinctTargetValues(set));
-    });
-
-    // Build DSM data objects
-    const dsmsMap = new Map<string, DsmTeamMemberData>();
-    dsmRows.forEach((emp) => {
-      const canonical = toCanonicalPortalHrId(emp.hrId);
-      if (!canonical) return;
-      dsmsMap.set(canonical, {
-        achievementPercent: 0,
-        hrId: canonical,
-        name: emp.displayName,
-        managerHrId: null, // NSM is the manager
-        managerName,
-        position: 0,
-        products: [],
-        totalSales: 0,
-        totalTarget: 0,
-      });
-    });
-
-    // Surface vacant DSM seats as their own district node so the reps attributed
-    // to them above are not silently dropped from the line view.
-    vacantSeatLabelByCanonical.forEach((label, seatCanonical) => {
-      if (dsmsMap.has(seatCanonical)) return;
-      dsmsMap.set(seatCanonical, {
-        achievementPercent: 0,
-        hrId: seatCanonical,
-        name: label,
-        managerHrId: null, // NSM is the manager
-        managerName,
-        position: 0,
-        products: [],
-        totalSales: 0,
-        totalTarget: 0,
-      });
-    });
-
-    const activeDsmIds = new Set(Array.from(salesByDsmProduct.keys()).map(k => k.split("::")[0]));
-    activeDsmIds.forEach(dsmId => {
-      const entry = dsmsMap.get(dsmId);
-      if (!entry) return;
-
-      const productKeys = Array.from(salesByDsmProduct.keys()).filter(k => k.startsWith(`${dsmId}::`));
-      const products: DsmTeamMemberProductData[] = productKeys.map(k => {
-        const product = k.slice(`${dsmId}::`.length);
-        const s = salesByDsmProduct.get(k)!;
-        const t = dsmProductTargets.get(k) ?? 0;
-        return {
-          achievementPercent: t > 0 ? (s.sales / t) * 100 : 0,
-          family: s.family,
-          product,
-          sales: s.sales,
-          target: t,
-          units: s.units
-        };
-      }).sort((a, b) => b.sales - a.sales);
-
-      const totalSales = products.reduce((sum, p) => sum + p.sales, 0);
-      const totalTarget = products.reduce((sum, p) => sum + p.target, 0);
-      dsmsMap.set(dsmId, {
-        ...entry,
-        products,
-        totalSales,
-        totalTarget,
-        achievementPercent: totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0
-      });
-    });
-
-    const dsms = Array.from(dsmsMap.values())
-      .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales)
-      .map((d, i) => ({ ...d, position: i + 1 }));
-
-    return {
-      dsms,
-      periods,
-      lineAchievementPercent: lineTotalTarget > 0 ? (lineTotalSales / lineTotalTarget) * 100 : 0,
-      dsmCount: dsms.length,
-      lineTotalSales,
-      lineTotalTarget
-    };
 }
 
 export type CompanyDsmPerformanceLine = {
@@ -5697,66 +5069,7 @@ export async function getCompanyDsmPerformance(
     const directory = await getEmployeeDirectory().catch(() => null);
     if (!directory) return null;
 
-    // Distinct lines that actually have District Managers (Head Office naturally drops out).
-    const lineInfoByKey = new Map<string, { lineId: number | null; lineName: string }>();
-    directory.employees.forEach((emp) => {
-      if (!isDistrictManagerEmployee(emp)) return;
-      const lineId = emp.lineId ?? null;
-      const lineName = emp.lineName ?? null;
-      if (lineId == null && !lineName) return;
-      const key = `${lineId ?? ""}::${(lineName ?? "").trim().toLowerCase()}`;
-      if (!lineInfoByKey.has(key)) {
-        lineInfoByKey.set(key, { lineId, lineName: lineName ?? `Line ${lineId}` });
-      }
-    });
-
-    const lineBlocks = await Promise.all(
-      Array.from(lineInfoByKey.values()).map(async (info) => {
-        const lineScope = createPortalSalesLineScope({
-          fallbackLine: info.lineName,
-          lineId: info.lineId,
-          lineName: info.lineName,
-        });
-        const nsmEmployee = directory.employees.find(
-          (emp) =>
-            isNationalSalesManagerDirectoryEmployee(emp) &&
-            employeeMatchesPortalSalesScope(emp, lineScope),
-        );
-        const performance = await buildDsmPerformanceForLineScope({
-          directory,
-          lineScope,
-          nsmCanonical: nsmEmployee ? toCanonicalPortalHrId(nsmEmployee.hrId) : null,
-          managerName: nsmEmployee?.displayName ?? `${info.lineName} (NSM seat vacant)`,
-          period: options.period ?? null,
-        });
-        return {
-          lineId: info.lineId,
-          lineName: info.lineName,
-          nsmName: nsmEmployee?.displayName ?? null,
-          performance,
-        };
-      }),
-    );
-
-    const lines = lineBlocks
-      .filter((line) => line.performance.dsms.length > 0)
-      .sort((a, b) => b.performance.lineTotalSales - a.performance.lineTotalSales);
-
-    const companyTotalSales = lines.reduce((sum, line) => sum + line.performance.lineTotalSales, 0);
-    const companyTotalTarget = lines.reduce((sum, line) => sum + line.performance.lineTotalTarget, 0);
-    const periods = Array.from(new Set(lines.flatMap((line) => line.performance.periods))).sort((a, b) =>
-      b.localeCompare(a),
-    );
-
-    return {
-      lines,
-      periods,
-      companyTotalSales,
-      companyTotalTarget,
-      companyAchievementPercent: companyTotalTarget > 0 ? (companyTotalSales / companyTotalTarget) * 100 : 0,
-      dsmCount: lines.reduce((sum, line) => sum + line.performance.dsmCount, 0),
-      lineCount: lines.length,
-    };
+    return await buildCompanyDsmPerformanceFromSos(options.period ?? null, buildSosCompanyLineMeta(directory));
   } catch {
     return null;
   }
