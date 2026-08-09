@@ -160,6 +160,7 @@ import { runWeeklyPlansConcurrencyTests } from "./weekly-plans-concurrency.test.
 import { runWeeklyPlansHardeningTests } from "./weekly-plans-hardening.test.ts";
 import { runWeeklyPlanCalendarOwnerScopeTests } from "./weekly-plan-calendar-owner-scope.test.ts";
 import { runWeeklyPlansPermissionScopeTests } from "./weekly-plans-permission-scope.test.ts";
+import { runWeeklyPlanVisibilityTests } from "./weekly-plan-visibility.test.ts";
 import { runWeeklyPlansDriftCheckTests } from "./weekly-plans-drift-check.test.ts";
 import { runWeeklyPlanManagerGapTests } from "./weekly-plan-manager-gap.test.ts";
 import { runActionCenterWeeklyPlansTests } from "./action-center-weekly-plans.test.ts";
@@ -947,6 +948,7 @@ await runTest("weekly plans concurrency", runWeeklyPlansConcurrencyTests);
 await runTest("weekly plans hardening", runWeeklyPlansHardeningTests);
 await runTest("weekly plan calendar owner scope (title eligibility, cross-line/hierarchy visible)", runWeeklyPlanCalendarOwnerScopeTests);
 await runTest("weekly plans permission scope", runWeeklyPlansPermissionScopeTests);
+await runTest("weekly plan visibility (manager-chain + company-wide roles)", runWeeklyPlanVisibilityTests);
 await runTest("weekly plans drift check", runWeeklyPlansDriftCheckTests);
 await runTest("weekly plan manager gap listing (stuck-approval detection)", runWeeklyPlanManagerGapTests);
 await runTest("action center weekly plans (approver inbox)", runActionCenterWeeklyPlansTests);

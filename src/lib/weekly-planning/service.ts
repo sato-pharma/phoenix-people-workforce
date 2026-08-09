@@ -76,6 +76,11 @@ import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
 import { createSystemNotification, type NotificationDeliveryStatus } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { buildPlanEmailTable } from "@/lib/weekly-planning/email-table";
+import {
+  isPlanOwnerWithinViewerManagementChain,
+  resolvePlanViewerScope,
+  type PlanViewerScope,
+} from "@/lib/weekly-planning/plan-visibility";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
   buildEmployeePlanPeriod,
@@ -727,12 +732,22 @@ function isHrReviewer(access: AccessContext, _employee: EmployeeDirectoryRow | n
   return access.role === "Super Admin";
 }
 
-function canViewPlan(access: AccessContext, employee: EmployeeDirectoryRow | null, plan: PlanHeaderRow) {
+function canViewPlan(
+  access: AccessContext,
+  employee: EmployeeDirectoryRow | null,
+  plan: PlanHeaderRow,
+  scope: PlanViewerScope | null = null,
+) {
   if (access.role === "Super Admin" || access.scope === "system") return true;
   if (hrIdsMatch(access.hrId, plan.employee_hr_id)) return true;
   if (hrIdsMatch(access.hrId, plan.manager_hr_id)) return true;
   if (access.role === "CEO") return true;
-  return isHrReviewer(access, employee) && ["final_approved", "hr_acknowledged"].includes(plan.status);
+  if (isHrReviewer(access, employee) && ["final_approved", "hr_acknowledged"].includes(plan.status)) return true;
+  // Skip-level visibility: scope is the viewer's precomputed downward management chain
+  // (resolvePlanViewerScope), built ONCE per request by the caller. Callers that never
+  // compute it (none today) simply pass nothing and this branch stays inert.
+  if (scope && isPlanOwnerWithinViewerManagementChain(plan.employee_hr_id, scope)) return true;
+  return false;
 }
 
 function assertPlanOwner(access: AccessContext, plan: PlanHeaderRow) {
@@ -960,6 +975,16 @@ async function currentEmployee(access: AccessContext) {
   const directory = await getEmployeeDirectory();
   const viewerHrId = normalizeHrId(access.hrId);
   return directory.employees.find((employee) => normalizeHrId(employee.hrId) === viewerHrId) ?? null;
+}
+
+// Same lookup as currentEmployee, but keeps the full directory instead of discarding it —
+// callers that also need resolvePlanViewerScope (skip-level plan visibility) get it for the
+// price of a lookup they were already paying, with no extra query.
+async function currentEmployeeWithDirectory(access: AccessContext) {
+  const directory = await getEmployeeDirectory();
+  const viewerHrId = normalizeHrId(access.hrId);
+  const employee = directory.employees.find((row) => normalizeHrId(row.hrId) === viewerHrId) ?? null;
+  return { directory, employee };
 }
 
 // Guards createEmployeePlan against spawning a second, unlinked header for a
@@ -1666,8 +1691,9 @@ export async function listPlanComments(
 ): Promise<{ canComment: boolean; comments: EmployeePlanComment[]; schemaReady: boolean }> {
   await assertPermission(access, "weekly_plans", "update");
   const plan = await loadPlanRow(planId);
-  const employee = await currentEmployee(access);
-  if (!canViewPlan(access, employee, plan)) {
+  const { directory, employee } = await currentEmployeeWithDirectory(access);
+  const viewerScope = resolvePlanViewerScope(access, directory.employees);
+  if (!canViewPlan(access, employee, plan, viewerScope)) {
     throw new Error("Forbidden: you cannot view this plan's conversation.");
   }
   try {
@@ -1749,8 +1775,9 @@ export async function addPlanComment(access: AccessContext, planId: string, inpu
   // canComment: true. Read is the floor; canViewPlan is the real authorization.
   await assertPermission(access, "weekly_plans", "read");
   const plan = await loadPlanRow(planId);
-  const employee = await currentEmployee(access);
-  if (!canViewPlan(access, employee, plan)) {
+  const { directory, employee } = await currentEmployeeWithDirectory(access);
+  const viewerScope = resolvePlanViewerScope(access, directory.employees);
+  if (!canViewPlan(access, employee, plan, viewerScope)) {
     throw new Error("Forbidden: you cannot comment on this plan.");
   }
   const { data, error } = await getSupabaseAdmin()
@@ -1803,7 +1830,8 @@ export async function getEmployeePlansWorkspace(access: AccessContext): Promise<
     const loadedRows = (data ?? []) as PlanHeaderRow[];
     const hasMorePlans = loadedRows.length > WORKSPACE_PLAN_LIMIT;
     const cappedRows = loadedRows.slice(0, WORKSPACE_PLAN_LIMIT);
-    const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan));
+    const viewerScope = resolvePlanViewerScope(access, directory.employees);
+    const visible = cappedRows.filter((plan) => canViewPlan(access, employee, plan, viewerScope));
     const plans = visible.map(mapPlan).map((plan) => ({
       ...plan,
       employeeDisplayName: directoryByHrId.get(normalizeHrId(plan.employeeHrId))?.displayName || plan.employeeName,

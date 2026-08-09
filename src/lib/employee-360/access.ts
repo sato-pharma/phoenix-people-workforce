@@ -7,11 +7,11 @@
 // payroll/directory/other sensitive surfaces and must stay narrow).
 //
 // Scope per role (owner-confirmed 2026-07-18; Talent Acquisition narrowed to
-// Medical Reps only 2026-07-26):
+// Medical Reps only 2026-07-26; Marketing Manager added to line scope 2026-08-09):
 //   CEO · SFE Manager · Super Admin (+ system)  → whole company
 //   Training Manager · Talent Acquisition       → all Medical Reps + self only
 //   Regional Manager                            → their full multi-level hierarchy + self
-//   National Sales Manager · Product Manager · Group Product Manager → their line + self
+//   National Sales Manager · Product Manager · Group Product Manager · Marketing Manager → their line + self
 //   District Manager · Manager                  → their direct team + self
 //   Medical Rep · everyone else                 → self only
 //
@@ -29,6 +29,7 @@ import { canonicalHrIdKey, hrIdsMatch } from "@/lib/hr-id";
 import {
   isWithinManagerHierarchy,
   lineScopeIncludesEmployee,
+  sameWorkforceDepartment,
   type SeatContinuitySubject,
 } from "@/lib/workforce/hierarchy-resolver";
 
@@ -112,6 +113,7 @@ const LINE_SCOPED_ROLES = new Set<PhoenixRole>([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  "Marketing Manager",
 ]);
 
 /** Build the reusable scope lookups from the full directory for one viewer. */
@@ -208,16 +210,28 @@ export function canViewEmployee360Subject(
     });
   }
 
-  // NSM / PM / GPM: their line(s). A line_scope_override (e.g. a Group PM spanning
-  // multiple lines) replaces the own-single-line rule with its explicit line set.
+  // NSM / PM / GPM / Marketing Manager: their line(s). A line_scope_override (e.g. a
+  // Group PM or Marketing Manager spanning multiple lines) replaces the own-single-line
+  // rule with its explicit line set — always department-safe, so an override only ever
+  // widens WHICH lines are visible, never which department (mirrors the vacation
+  // module's LINE scope; see hierarchy-resolver.ts).
   if (
     role === "National Sales Manager" ||
     role === "Product Manager" ||
-    role === "Group Product Manager"
+    role === "Group Product Manager" ||
+    role === "Marketing Manager"
   ) {
     if (scope.allowedLineKeys) {
+      if (!scope.viewer) return false;
       const subjectLine = String(subject.lineName ?? "").trim().toLowerCase();
-      return subjectLine !== "" && scope.allowedLineKeys.has(subjectLine);
+      return (
+        subjectLine !== "" &&
+        scope.allowedLineKeys.has(subjectLine) &&
+        sameWorkforceDepartment(
+          { departmentId: scope.viewer.departmentId, departmentName: scope.viewer.departmentName },
+          { departmentId: subject.departmentId, departmentName: subject.departmentName },
+        )
+      );
     }
     if (!scope.viewer) return false;
     return lineScopeIncludesEmployee(

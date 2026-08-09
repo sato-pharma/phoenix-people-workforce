@@ -7,6 +7,7 @@ import {
   canViewEmployee360Subject,
   isCompany360Viewer,
   resolveEmployee360VisibleRows,
+  type Employee360Scope,
 } from "../src/lib/employee-360/access.ts";
 
 // Locks the owner-confirmed Employee 360 viewer scope (2026-07-18):
@@ -172,5 +173,47 @@ export async function runEmployee360AccessTests() {
     canViewEmployee360Subject(dmSubject, rows.find((r) => r.hrId === "R3")!, scopeDmA),
     false,
     "DM-A may NOT open the sibling DM's rep",
+  );
+
+  // ── Marketing Manager: their line(s) + self, via an optional line_scope_override
+  // (mirrors NSM/PM/GPM — added 2026-08-09). Real case: a Marketing Manager sits on
+  // the Head Office line (4) while the Product/Group Product Managers they oversee
+  // sit on the real business lines, so without an override they match nobody; with
+  // one, they must see their own-department PM on that line but never a Sales
+  // employee who merely happens to share the same overridden line number. ──
+  const mktMgr = row("MKM-1", "Marketing Manager", null, 4, 2); // Head-Office line, Marketing dept
+  const mktPm = row("PM-M1", "Product Manager", "MKM-1", 2, 2); // Marketing PM, line-2 (collides with NSM-P's Sales line-2)
+  const rowsWithMarketing = [...rows, mktMgr, mktPm];
+
+  // No override configured (ctx() carries no loginId, so resolveViewerAllowedLines
+  // short-circuits to null under the test runner — see scope-visibility.ts) — falls
+  // back to the viewer's own single Head-Office line, which matches nobody.
+  const mktMgrDefault = new Set(
+    (await resolveEmployee360VisibleRows(rowsWithMarketing, ctx("Marketing Manager", "MKM-1", "line"))).map((r) => r.hrId),
+  );
+  assert.deepEqual(
+    mktMgrDefault,
+    new Set<string>(),
+    "Marketing Manager without an override falls back to their own Head-Office line, which matches nobody",
+  );
+
+  // With an override: hand-build the Employee360Scope directly (bypassing
+  // buildEmployee360Scope, which is DB-backed for the override fetch) to exercise
+  // the override branch without a live Supabase call.
+  const mktMgrOverrideScope: Employee360Scope = {
+    viewer: mktMgr,
+    byCanonicalHrId: new Map(),
+    allowedLineKeys: new Set(["line-2"]),
+  };
+  const mktMgrCtx = ctx("Marketing Manager", "MKM-1", "line");
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, mktPm, mktMgrOverrideScope),
+    true,
+    "Marketing Manager with a line override sees their own Marketing PM on that line",
+  );
+  assert.equal(
+    canViewEmployee360Subject(mktMgrCtx, rows.find((r) => r.hrId === "RP1")!, mktMgrOverrideScope),
+    false,
+    "Marketing Manager's override must NOT cross into a Sales employee who merely shares the overridden line",
   );
 }

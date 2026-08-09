@@ -70,7 +70,9 @@ export function runWeeklyPlanApproverUiParityTests() {
   );
   assert.match(
     addComment,
-    /canViewPlan\(access, employee, plan\)/,
-    "addPlanComment must still authorize on plan participation",
+    /canViewPlan\(access, employee, plan, viewerScope\)/,
+    "addPlanComment must still authorize on plan participation — now also passing the viewer's " +
+      "resolved skip-level scope, so a manager who can now SEE a report's plan can also comment " +
+      "on it (deliberate: view and comment widen together, decision authority is untouched)",
   );
 }
