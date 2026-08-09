@@ -43,7 +43,7 @@ export default async function PortalDirectOrdersPage() {
         <DirectOrderPortalSubmit products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
       ) : (
         <p className="rounded border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
-          Your role cannot submit direct orders. Approvers review them under Approvals Hub &gt; Direct Orders Approvals.
+          Your role cannot submit direct orders. Approvers review them under Approvals Hub &gt; D.Orders Approval.
         </p>
       )}
     </EmployeePortalPageShell>

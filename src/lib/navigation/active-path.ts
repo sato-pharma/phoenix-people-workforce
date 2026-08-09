@@ -190,3 +190,36 @@ export function getActiveHref(
     .sort((left, right) => right.href.split("?")[0].length - left.href.split("?")[0].length);
   return matches[0]?.href ?? null;
 }
+
+/**
+ * The ONE active nav row for a path, resolved from a bare href list: the DEEPEST match wins.
+ *
+ * The employee-portal sidebar builds its own sections (buildEmployeePortalSections in
+ * employee-portal-layout.tsx) rather than NavigationSection, so it cannot use getActiveHref above —
+ * but it needs the identical longest-match rule. Without it a plain prefix test lights every
+ * ancestor too: /employee-portals/direct-orders/report highlighted "Direct Orders Report" AND its
+ * parent "Direct Orders" at once. The portal's previous guard was a hand-kept list of parent hrefs
+ * pinned to exact-match, and /direct-orders was simply never added to it.
+ *
+ * `exactOnlyHrefs` covers hub roots that must not stay lit on a child route even when nothing
+ * deeper matches — the portal root is one, because destinations like /employee-portals/profile have
+ * no sidebar row of their own and would otherwise leave "Command Center" lit.
+ *
+ * A route with no row of its own still lights its nearest ancestor, which is what detail pages want.
+ */
+export function resolveDeepestActiveHref(
+  pathname: string,
+  hrefs: readonly string[],
+  exactOnlyHrefs: ReadonlySet<string> = new Set<string>(),
+): string | null {
+  let best: string | null = null;
+  for (const href of hrefs) {
+    const hrefPath = href.split("#")[0].split("?")[0];
+    const matches = exactOnlyHrefs.has(hrefPath)
+      ? pathname === hrefPath
+      : pathname === hrefPath || pathname.startsWith(`${hrefPath}/`);
+    if (!matches) continue;
+    if (best === null || hrefPath.length > best.length) best = hrefPath;
+  }
+  return best;
+}
