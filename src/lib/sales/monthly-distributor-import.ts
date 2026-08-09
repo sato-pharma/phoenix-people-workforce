@@ -3866,9 +3866,18 @@ export type MatrixRebuildRow = {
  *  - Only rows feeding the closing are summed (Data still lists excluded rows; the CLOSING
  *    matrix has always meant included-only). An Excluded-only filter therefore yields a zero
  *    matrix, which is true: no closing sales exist in that slice.
- *  - Targets and achievement become null. Targets are set per area & product for the whole
- *    company; a distributor-sliced actual against a whole-company target would manufacture a
+ *  - Targets and achievement become null BY DEFAULT. Targets are set per area & product for the
+ *    whole company; a distributor-sliced actual against a whole-company target would manufacture a
  *    fake achievement %. Blank reads as "—", never as a lie.
+ *
+ *    EXCEPTION — `preserveTargets`. The portal export rebuilds not to slice by distributor but to
+ *    make the Matrix tie to the raw-row Data sheet (store split moves sales between a city's areas,
+ *    so the store-split matrix and the pre-split rows disagree cell-by-cell). There the whole of the
+ *    viewer's scope IS present, so each area x product cell's sales DO correspond to that cell's
+ *    target and the achievement is honest. When `preserveTargets` is set, each rebuilt cell keeps
+ *    its skeleton cell's targetUnits/targetValue (achievement re-derives from the rebuilt sales),
+ *    so the exported Closing Matrix and Target vs Achievement sheets carry real targets instead of
+ *    blanks. Callers slicing by a row-level filter (the admin filtered export) must leave it off.
  *  - Direct (company channel) rows, Direct – National and the company total are dropped. Direct
  *    orders are not distributor invoice rows, so no row-level filter can apply to them.
  *  - Areas keep their row even at zero — the place skeleton is the filtered matrix's, so "this
@@ -3877,7 +3886,9 @@ export type MatrixRebuildRow = {
 export function rebuildMatrixFromRows(
   matrix: MonthlyClosingMatrix,
   rows: MatrixRebuildRow[],
+  options?: { preserveTargets?: boolean },
 ): MonthlyClosingMatrix {
+  const preserveTargets = options?.preserveTargets === true;
   const sums = new Map<string, { salesUnits: number; salesValue: number }>();
   rows.forEach((row) => {
     if (!row.includedInClosing) return;
@@ -3888,13 +3899,21 @@ export function rebuildMatrixFromRows(
     sums.set(key, entry);
   });
 
-  const cellFor = (areaCode: string, productCode: string): MonthlyClosingCell => {
+  // `skeleton` is the cell from the (already viewer-scoped) input matrix for this area x product —
+  // the only place the target lives, since the rows carry no target dimension. Rebuilt sales
+  // replace its sales; its target is kept only when `preserveTargets` is set.
+  const cellFor = (areaCode: string, productCode: string, skeleton?: MonthlyClosingCell): MonthlyClosingCell => {
     const found = sums.get(`${normalizeCode(areaCode)} ${normalizeCode(productCode)}`);
     const cell = emptyClosingCell();
     if (found) {
       cell.salesUnits = found.salesUnits;
       cell.salesValue = found.salesValue;
     }
+    if (preserveTargets && skeleton) {
+      cell.targetUnits = skeleton.targetUnits;
+      cell.targetValue = skeleton.targetValue;
+    }
+    // roundedClosingCell re-derives achievement from the (rebuilt) sales over the kept target.
     return roundedClosingCell(cell);
   };
 
@@ -3902,7 +3921,8 @@ export function rebuildMatrixFromRows(
     const areas = region.areas
       .filter((area) => !area.isDirect)
       .map((area) => {
-        const cells = matrix.columns.map((column) => cellFor(area.areaCode, column.productCode));
+        const cells = matrix.columns.map((column, columnIndex) =>
+          cellFor(area.areaCode, column.productCode, area.cells[columnIndex]));
         return { ...area, cells, rowTotal: sumClosingRowTotal(cells) };
       });
     const subtotalCells = matrix.columns.map((_column, columnIndex) => {

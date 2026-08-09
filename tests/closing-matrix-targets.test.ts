@@ -197,4 +197,52 @@ export function runClosingMatrixTargetsTests() {
     const excludedOnly = rebuildMatrixFromRows(skeleton, [row("CA1", 9, 90, false)]);
     assert.equal(excludedOnly.grandTotal.rowTotal.salesValue, 0);
   }
+
+  // ── preserveTargets — the PORTAL export path ────────────────────────────────
+  // The employee-portal closing export rebuilds the matrix from the viewer's own rows so the
+  // Matrix ties to the Data sheet (the store split moves sales between a city's areas). That is
+  // NOT a distributor slice — the whole of the viewer's scope is present — so each cell's target
+  // really does belong beside its rebuilt sales. Without `preserveTargets` the exported Closing
+  // Matrix and Target vs Achievement sheets came out with EVERY target blank (an NSM downloading
+  // the Anti Infective closing got a file with no target and no achievement); with it, the target
+  // survives and achievement re-derives from the rebuilt sales.
+  {
+    const skeleton = build([
+      { areaCode: "CA1", productCode: "P1", targetUnits: 50, targetValue: 500 },
+      { areaCode: "CA2", productCode: "P1", targetUnits: 100, targetValue: 1000 },
+    ]);
+    const row = (areaCode: string, qty: number, salesValue: number) =>
+      ({ areaCode, includedInClosing: true, productCode: "P1", qty, salesValue });
+
+    const rebuilt = rebuildMatrixFromRows(
+      skeleton,
+      [row("CA1", 30, 300), row("CA2", 40, 400)],
+      { preserveTargets: true },
+    );
+    const ca1 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA1")!;
+    const ca2 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA2")!;
+
+    assert.equal(ca1.cells[0].salesValue, 300, "sales are still re-summed from the rows");
+    assert.equal(ca1.cells[0].targetValue, 500, "the skeleton's target is KEPT, not nulled");
+    assert.equal(ca1.cells[0].targetUnits, 50);
+    assert.equal(ca1.cells[0].achievement, 300 / 500, "achievement re-derives from the rebuilt sales over the kept target");
+
+    // Roll-ups carry the kept targets, so the whole-line total is measurable again.
+    assert.equal(rebuilt.grandTotal.rowTotal.targetValue, 1500, "grand total target = 500 + 1000");
+    assert.equal(rebuilt.grandTotal.rowTotal.salesValue, 700, "grand total sales = 300 + 400");
+    assert.equal(rebuilt.grandTotal.rowTotal.achievement, 700 / 1500, "grand achievement re-derives from the sums");
+
+    // An area with a target but no rows must read as 0 sales against its real target (0% achieved),
+    // never as a blank — a genuine miss must be visible.
+    const partial = rebuildMatrixFromRows(skeleton, [row("CA1", 30, 300)], { preserveTargets: true });
+    const partialCa2 = partial.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA2")!;
+    assert.equal(partialCa2.cells[0].salesValue, 0, "no rows for CA2 ⇒ zero sales");
+    assert.equal(partialCa2.cells[0].targetValue, 1000, "…but its target is still shown");
+    assert.equal(partialCa2.cells[0].achievement, 0, "0 sales against a real target is 0% achieved, not blank");
+
+    // The default (admin filtered) path is UNCHANGED — targets still go null there.
+    const adminDefault = rebuildMatrixFromRows(skeleton, [row("CA1", 30, 300)]);
+    const adminCa1 = adminDefault.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA1")!;
+    assert.equal(adminCa1.cells[0].targetValue, null, "without the flag, a rebuilt cell still claims no target");
+  }
 }
