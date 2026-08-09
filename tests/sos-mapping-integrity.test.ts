@@ -42,11 +42,46 @@ export function runSosMappingIntegrityTests() {
       "a failed supersede must surface — leaving two active rows is what breaks the alias",
     );
 
-    // Order matters: upsert first, then deactivate the others. Deactivating first would leave the
-    // alias with zero active rows if the upsert then failed.
+    // Order matters, and it REVERSED on 2026-08-01.
+    //
+    // This assertion used to require the opposite — supersede AFTER the upsert, so the alias was
+    // never momentarily unresolvable. That was correct only while two active rows could coexist.
+    // Migration 20260801112000_territory_alias_single_active_target added
+    // UNIQUE (normalized_alias, target_type) WHERE active, and from that moment the upsert that was
+    // supposed to run first is the very statement the index rejects:
+    //   "duplicate key value violates unique constraint ... (beiala elhamol, brick) already exists"
+    // The supersede could then never run, because the statement it followed had already thrown.
+    // Re-pointing any alias with an existing active target became impossible from the UI.
     assert.ok(
-      fn.indexOf(".upsert(") < fn.indexOf('.neq("target_code", code)'),
-      "supersede must run AFTER the upsert so the alias is never momentarily unresolvable",
+      fn.indexOf('.neq("target_code", code)') < fn.indexOf(".upsert("),
+      "supersede must run BEFORE the upsert — the partial unique index rejects a second active row, " +
+        "so an upsert-first order can never reach the supersede at all",
+    );
+  }
+
+  // ── 1b. The BULK save path supersedes too ──────────────────────────────────
+  // saveMappings writes the same table from the import mapping screen, and had no supersede at all.
+  // That is the path the owner actually hit: every attempt to save a territory whose alias already
+  // pointed somewhere failed outright, so the screen could not be cleared and the import was stuck.
+  {
+    const mapping = read("src/lib/sales/normalizer/mapping.ts");
+    const start = mapping.indexOf("if (territoryRows.length)");
+    assert.ok(start >= 0, "saveMappings must still write territory aliases");
+    const block = mapping.slice(start, start + 1600);
+
+    assert.match(
+      block,
+      /\.update\(\{ active: false \}\)/,
+      "the bulk save must deactivate the previous active target, or re-pointing an alias throws",
+    );
+    assert.match(
+      block,
+      /\.in\("normalized_alias", territoryKeys\)/,
+      "supersede the whole batch in one statement — one round trip per alias crosses the Atlantic each time",
+    );
+    assert.ok(
+      block.indexOf(".update({ active: false })") < block.indexOf(".upsert("),
+      "the bulk supersede must run BEFORE the upsert, same as the single-alias path",
     );
   }
 
