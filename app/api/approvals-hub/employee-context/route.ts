@@ -4,6 +4,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { assertCanViewEmployeeAttendance, getEmployeeAttendanceData } from "@/lib/attendance/employee-attendance";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "Forbidden." }, { status: 403 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Context unavailable" },
+      { error: clientSafeErrorMessage(error, "Context unavailable") },
       { status: 500 },
     );
   }

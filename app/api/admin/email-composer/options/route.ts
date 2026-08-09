@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailComposerOptions, searchComposerEmployees } from "@/lib/email/email-composer-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email composer options." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Email composer options failed to load.";
+    const message = clientSafeErrorMessage(error, "Email composer options failed to load.");
     return NextResponse.json({ error: "composer_options_failed", message }, { status: 500 });
   }
 }

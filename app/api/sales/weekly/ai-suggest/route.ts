@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { aiSuggest, hasAiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,8 +32,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: { suggestions } });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "AI suggestion failed." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "AI suggestion failed.") }, { status: 500 });
   }
 }

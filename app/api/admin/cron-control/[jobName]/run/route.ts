@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { runCronJobNow } from "@/lib/cron-control/service";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ jo
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { ok: false, error: error instanceof Error ? error.message : "Failed to trigger cron job." },
+      { ok: false, error: clientSafeErrorMessage(error, "Failed to trigger cron job.") },
       { status: 500 },
     );
   }

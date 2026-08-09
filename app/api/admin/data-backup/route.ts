@@ -7,6 +7,7 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { enqueueBackgroundJob } from "@/lib/background-jobs/service";
 import { DATA_BACKUP_EXPORT_JOB } from "@/lib/background-jobs/worker";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -78,11 +79,11 @@ export async function GET(request: NextRequest) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") },
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Data backup export failed.";
+    const message = clientSafeErrorMessage(error, "Data backup export failed.");
     if (message.includes("Forbidden")) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
@@ -122,11 +123,11 @@ export async function POST(request: NextRequest) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") },
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Failed to enqueue data backup.";
+    const message = clientSafeErrorMessage(error, "Failed to enqueue data backup.");
     return NextResponse.json({ error: "server_error", message }, { status: 500 });
   }
 }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/admin/modules-control";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,13 +32,13 @@ function modulesControlApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return {
       code: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       status: 403,
     };
   }
   return {
     code: "modules_control_failed",
-    message: error instanceof Error ? error.message : "Modules Control request failed.",
+    message: clientSafeErrorMessage(error, "Modules Control request failed."),
     status: 500,
   };
 }

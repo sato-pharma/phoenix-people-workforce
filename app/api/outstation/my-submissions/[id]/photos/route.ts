@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getOwnOutstationSubmissionPhotos } from "@/lib/outstation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function GET(
     const photos = await getOwnOutstationSubmissionPhotos(access, id);
     return NextResponse.json(photos);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load the photos.";
+    const message = clientSafeErrorMessage(error, "Unable to load the photos.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_submission_photos_failed",

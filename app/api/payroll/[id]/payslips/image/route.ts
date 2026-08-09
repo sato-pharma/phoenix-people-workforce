@@ -13,6 +13,7 @@ import {
 import type { SalaryBatch, SalaryRecord } from "@/lib/payroll/types";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { filterPayslipRecords, isPublishedPayslipStatus, periodLabel } from "../route";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -404,7 +405,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to export payslip.";
+    const message = clientSafeErrorMessage(error, "Failed to export payslip.");
     const responseMessage = isDevelopment ? message : "Failed to export payslip.";
 
     if (isForbiddenError(error)) {

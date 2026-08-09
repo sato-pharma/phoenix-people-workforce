@@ -21,6 +21,7 @@ import {
 } from "@/lib/email-templates/service";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -230,7 +231,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ s
       );
     }
     return NextResponse.json(
-      { ok: false, message: error instanceof Error ? error.message : "Failed to update the email control center." },
+      { ok: false, message: clientSafeErrorMessage(error, "Failed to update the email control center.") },
       { status: 500 },
     );
   }

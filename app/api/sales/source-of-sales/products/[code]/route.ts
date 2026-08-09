@@ -8,6 +8,7 @@ import {
   updateSourceOfSalesProduct,
   type SourceOfSalesProductInput,
 } from "@/lib/sales/monthly-distributor-import";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ async function productInputFromRequest(request: Request): Promise<SourceOfSalesP
 function errorResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+      { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
       { status: 403 },
     );
   }
@@ -37,7 +38,7 @@ function errorResponse(error: unknown, fallback: string) {
     );
   }
   return NextResponse.json(
-    { success: false, error: error instanceof Error ? error.message : fallback },
+    { success: false, error: clientSafeErrorMessage(error, fallback) },
     { status: 500 },
   );
 }

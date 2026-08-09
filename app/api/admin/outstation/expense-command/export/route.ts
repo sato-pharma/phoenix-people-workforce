@@ -12,6 +12,7 @@ import { getOutstationExpenseCommandData } from "@/lib/outstation/expense-comman
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -98,11 +99,11 @@ export async function GET(request: Request) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") },
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Failed to export outstation expenses.";
+    const message = clientSafeErrorMessage(error, "Failed to export outstation expenses.");
     return NextResponse.json({ error: "outstation_expense_export_failed", message }, { status: 500 });
   }
 }

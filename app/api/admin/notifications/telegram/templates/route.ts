@@ -10,6 +10,7 @@ import {
   type TelegramTemplateWorkflowKey,
 } from "@/lib/notifications/telegram-templates";
 import { TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ function templateErrorResponse(error: unknown, fallback: string) {
   if (error instanceof TelegramTemplateError) {
     return NextResponse.json({ error: error.code, message: error.message }, { status: 400 });
   }
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   return NextResponse.json({ error: "telegram_template_error", message }, { status: 500 });
 }
 

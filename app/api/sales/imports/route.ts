@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { listSalesHistory, listSalesQueue } from "@/lib/sales/service";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to load sales imports.",
+        error: clientSafeErrorMessage(error, "Failed to load sales imports."),
       },
       { status: 500 },
     );

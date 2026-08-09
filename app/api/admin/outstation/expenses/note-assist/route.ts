@@ -10,6 +10,7 @@ import {
   type ExpenseNoteOutcome,
 } from "@/lib/outstation/expense-note-assist";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_note_failed",
-        message: error instanceof Error ? error.message : "The note could not be written.",
+        message: clientSafeErrorMessage(error, "The note could not be written."),
       },
       { status: isForbiddenError(error) ? 403 : 500 },
     );

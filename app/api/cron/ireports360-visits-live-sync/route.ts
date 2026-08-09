@@ -5,6 +5,7 @@ import { runLiveIReports360Sync } from "@/lib/crm/sync";
 import { notifyIReports360SyncResult } from "@/lib/notifications/ireports360-sync-digest";
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 const JOB_NAME = "ireports360-visits-live-sync";
 
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
     return await withDeadMansSwitch("phoenix-ireports360-live-sync", () => runSync());
   } catch (error) {
     logError("iReports360 live visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    const message = error instanceof Error ? error.message : "iReports360 live visits sync failed.";
+    const message = clientSafeErrorMessage(error, "iReports360 live visits sync failed.");
     return NextResponse.json({ error: "ireports360_live_visits_sync_failed", message }, { status: 500 });
   }
 }

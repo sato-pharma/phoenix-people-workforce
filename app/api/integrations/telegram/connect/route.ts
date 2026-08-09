@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { createTelegramConnectionToken } from "@/lib/notifications/settings";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ data, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to create Telegram connection link.";
+    const message = clientSafeErrorMessage(error, "Unable to create Telegram connection link.");
     return NextResponse.json({ error: "telegram_connect_failed", message }, { status: 500 });
   }
 }

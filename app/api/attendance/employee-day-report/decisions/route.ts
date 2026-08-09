@@ -6,6 +6,7 @@ import {
 } from "@/lib/attendance/employee-day-report";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
  * Same Super Admin gate as the page itself (app/(admin)/attendance/employee-day-report/page.tsx).
  */
 function errorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unexpected error.";
+  const message = clientSafeErrorMessage(error, "Unexpected error.");
   const forbidden = message.startsWith("Forbidden:");
   return NextResponse.json(
     { error: forbidden ? "forbidden" : "invalid_request", message },

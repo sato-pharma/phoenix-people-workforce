@@ -8,6 +8,7 @@ import {
   toPortalWeeklyScopeView,
   type PortalWeeklyFilters,
 } from "@/lib/sales/weekly/portal-weekly-dashboard";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,14 +74,14 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to load weekly sales dashboard.",
+        error: clientSafeErrorMessage(error, "Failed to load weekly sales dashboard."),
       },
       { status: 500 },
     );

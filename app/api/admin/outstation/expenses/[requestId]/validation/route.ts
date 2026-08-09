@@ -4,6 +4,7 @@ import { assertOutstationExpenseApprovalReviewAccess } from "@/lib/auth/permissi
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getOutstationClaimValidation } from "@/lib/outstation/expense-claim-validation";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function GET(
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_claim_validation_failed",
-        message: error instanceof Error ? error.message : "Unable to load the claim validation.",
+        message: clientSafeErrorMessage(error, "Unable to load the claim validation."),
       },
       { status: isForbiddenError(error) ? 403 : 500 },
     );

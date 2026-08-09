@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { lockPeriod, reopenPeriod } from "@/lib/sales/monthly-sales-run";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,11 +29,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: run });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Lock action failed." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Lock action failed.") }, { status: 500 });
   }
 }

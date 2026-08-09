@@ -6,6 +6,7 @@ import { createManagerExpenseAsAdmin } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to add manual outstation expense.";
+    const message = clientSafeErrorMessage(error, "Failed to add manual outstation expense.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_create_failed",

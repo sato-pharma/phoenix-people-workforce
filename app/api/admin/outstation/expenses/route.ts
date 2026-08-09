@@ -17,6 +17,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
         return NextResponse.json(
           {
             error: "invalid_period",
-            message: error instanceof Error ? error.message : "Payroll period is invalid.",
+            message: clientSafeErrorMessage(error, "Payroll period is invalid."),
           },
           { status: 400 },
         );
@@ -73,7 +74,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ expenses, reports });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load expenses.";
+    const message = clientSafeErrorMessage(error, "Unable to load expenses.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
       saved: expenses.length + requestDecisions.applied,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save expense approvals.";
+    const message = clientSafeErrorMessage(error, "Unable to save expense approvals.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

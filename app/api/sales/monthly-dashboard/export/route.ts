@@ -7,6 +7,7 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMonthlySalesDashboardWorkbook } from "@/lib/sales/monthly-dashboard-workbook";
 import { getSalesDashboard } from "@/lib/sales/service";
 import type { SalesDashboardFilters } from "@/lib/sales/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,12 +93,12 @@ export async function GET(request: Request) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to export monthly sales dashboard." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to export monthly sales dashboard.") },
       { status: 500 },
     );
   }

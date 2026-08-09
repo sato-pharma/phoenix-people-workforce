@@ -7,6 +7,7 @@ import {
   sendTemplateTestEmail,
   type EmailTemplatePayload,
 } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    const message = error instanceof Error ? error.message : "Test email failed.";
+    const message = clientSafeErrorMessage(error, "Test email failed.");
     return NextResponse.json({ error: "email_template_test_failed", message }, { status: 500 });
   }
 }

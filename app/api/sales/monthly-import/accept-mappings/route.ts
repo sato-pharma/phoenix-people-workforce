@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { addCustomerMapRow } from "@/lib/sales/normalizer/customer-map";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
         accepted += 1;
         results.push({ customerCode, distributorCode, ok: true });
       } catch (error) {
-        results.push({ customerCode, distributorCode, error: error instanceof Error ? error.message : "Failed to map this customer.", ok: false });
+        results.push({ customerCode, distributorCode, error: clientSafeErrorMessage(error, "Failed to map this customer."), ok: false });
       }
     }
 
@@ -84,11 +85,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Forbidden.", success: false }, { status: 403 });
+      return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden."), success: false }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ code: error.code, error: error.message, success: false }, { status: error.status });
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to accept mappings.", success: false }, { status: 500 });
+    return NextResponse.json({ error: clientSafeErrorMessage(error, "Failed to accept mappings."), success: false }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { markInternalMessageRead } from "@/lib/internal-messages/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error: "message_read_failed",
-        message: error instanceof Error ? error.message : "Unable to mark message as read.",
+        message: clientSafeErrorMessage(error, "Unable to mark message as read."),
       },
       { status: 400 },
     );

@@ -6,6 +6,7 @@ import { IReports360ApiError } from "@/lib/crm/client";
 import { isIReports360Configured } from "@/lib/crm/config";
 import { getIReports360RepDayVisits } from "@/lib/crm/rep-day";
 import { loadSingleEmployeeDayPunchSummary } from "@/lib/attendance/punch-minutes";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({
       error: "field_workforce_visits_failed",
-      message: error instanceof Error ? error.message : "Visit lookup failed.",
+      message: clientSafeErrorMessage(error, "Visit lookup failed."),
       success: false,
     }, { status: 500 });
   }

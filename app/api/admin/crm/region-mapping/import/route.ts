@@ -7,6 +7,7 @@ import { bulkImportCrmRegionBrickMappings, type CrmRegionBulkImportInputRow } fr
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "region_mapping_import_failed", message: error instanceof Error ? error.message : "Region mapping import failed.", success: false },
+      { error: "region_mapping_import_failed", message: clientSafeErrorMessage(error, "Region mapping import failed."), success: false },
       { status: 500 },
     );
   }

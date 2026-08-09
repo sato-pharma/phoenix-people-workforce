@@ -4,6 +4,7 @@ import { notifyReconciliationBreach } from "@/lib/notifications/reconciliation-b
 import { logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runReconciliationChecks } from "@/lib/reconciliation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 const JOB_NAME = "reconciliation-check";
 
@@ -33,7 +34,7 @@ async function runReconciliation() {
       error,
       labels: { job: JOB_NAME },
     });
-    return { delivered: 0, reason: error instanceof Error ? error.message : "unknown error", skipped: true };
+    return { delivered: 0, reason: clientSafeErrorMessage(error, "unknown error"), skipped: true };
   });
 
   return NextResponse.json({ success: true, notification, report });
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
     return await withDeadMansSwitch("phoenix-reconciliation-check", () => runReconciliation());
   } catch (error) {
     logError("Reconciliation check failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    const message = error instanceof Error ? error.message : "Reconciliation check failed.";
+    const message = clientSafeErrorMessage(error, "Reconciliation check failed.");
     return NextResponse.json({ error: "reconciliation_check_failed", message }, { status: 500 });
   }
 }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getPlanPrefill } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind } from "@/lib/weekly-planning/plan-v1";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     const prefill = await getPlanPrefill(access, kind, anchor);
     return NextResponse.json({ data: prefill, success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load plan prefill.";
+    const message = clientSafeErrorMessage(error, "Unable to load plan prefill.");
     const forbidden = isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:");
     return NextResponse.json(
       { error: forbidden ? "forbidden" : "plan_prefill_error", message, success: false },

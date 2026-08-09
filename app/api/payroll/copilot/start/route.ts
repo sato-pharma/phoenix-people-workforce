@@ -9,6 +9,7 @@ import {
 import { CopilotError, startRun } from "@/lib/payroll/copilot/service";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
     try {
       assertValidPayrollPeriod(month, year);
     } catch (error) {
-      throw new CopilotError(error instanceof Error ? error.message : "Invalid payroll period.", 400);
+      throw new CopilotError(clientSafeErrorMessage(error, "Invalid payroll period."), 400);
     }
 
     const view = await startRun({ month, year }, resolveCopilotActor(access));

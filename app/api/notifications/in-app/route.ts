@@ -8,6 +8,7 @@ import {
   markInAppNotificationRead,
 } from "@/lib/notifications/in-app";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: notifications, success: true });
   } catch (error) {
     console.error("GET /api/notifications/in-app failed", error);
-    const message = error instanceof Error ? error.message : "Unable to load notifications.";
+    const message = clientSafeErrorMessage(error, "Unable to load notifications.");
     return NextResponse.json({ error: "notification_load_failed", message }, { status: 500 });
   }
 }
@@ -51,7 +52,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ data: await markInAppNotificationRead(access, id), success: true });
   } catch (error) {
     console.error("PATCH /api/notifications/in-app failed", error);
-    const message = error instanceof Error ? error.message : "Unable to update notification.";
+    const message = clientSafeErrorMessage(error, "Unable to update notification.");
     return NextResponse.json({ error: "notification_update_failed", message }, { status: 500 });
   }
 }

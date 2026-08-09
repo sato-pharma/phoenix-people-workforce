@@ -4,6 +4,7 @@ import { CvExtractionError, extractCandidateFieldsFromCv } from "@/lib/recruitme
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { assertSameOriginMutation, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 import { isForbiddenError } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", success: false },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), success: false },
         { status: 403 },
       );
     }
@@ -54,7 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
               : 502;
       return NextResponse.json({ error: error.code, message: error.message, success: false }, { status });
     }
-    const message = error instanceof Error ? error.message : "CV extraction failed.";
+    const message = clientSafeErrorMessage(error, "CV extraction failed.");
     return NextResponse.json({ error: "ai_failed", message, success: false }, { status: 500 });
   }
 }

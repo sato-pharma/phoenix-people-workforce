@@ -9,6 +9,7 @@ import {
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ManagerExpenseAdminInput } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -120,7 +121,7 @@ export async function PATCH(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update outstation expense.";
+    const message = clientSafeErrorMessage(error, "Failed to update outstation expense.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_update_failed",
@@ -160,7 +161,7 @@ export async function DELETE(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete outstation expense.";
+    const message = clientSafeErrorMessage(error, "Failed to delete outstation expense.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_expense_delete_failed",

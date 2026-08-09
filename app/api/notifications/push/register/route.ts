@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { upsertPushSubscription } from "@/lib/notifications/settings";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: result, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to register push subscription.";
+    const message = clientSafeErrorMessage(error, "Unable to register push subscription.");
     return NextResponse.json({ error: "push_register_failed", message }, { status: 500 });
   }
 }

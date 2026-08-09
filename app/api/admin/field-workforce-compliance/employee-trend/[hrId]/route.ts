@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getFieldWorkforceComplianceEmployeeTrend } from "@/lib/field-workforce-compliance/live-snapshots";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       error: "field_workforce_employee_trend_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance employee trend could not be loaded.",
+      message: clientSafeErrorMessage(error, "Field Workforce Compliance employee trend could not be loaded."),
       success: false,
     }, { status: 500 });
   }

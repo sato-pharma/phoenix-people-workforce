@@ -7,6 +7,7 @@ import { lifecycleRiskWindows } from "@/lib/lifecycle-risk/metrics";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -196,7 +197,7 @@ export async function GET(request: Request) {
     return await runContractRenewalNotifications(request);
   } catch (error) {
     console.error(error, { tags: { cron: "contract-renewals" } });
-    const message = error instanceof Error ? error.message : "Contract renewal notification run failed.";
+    const message = clientSafeErrorMessage(error, "Contract renewal notification run failed.");
     return NextResponse.json({ error: "contract_renewal_notifications_failed", message }, { status: 500 });
   }
 }

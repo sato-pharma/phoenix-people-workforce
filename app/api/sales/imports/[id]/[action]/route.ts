@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { deleteSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
@@ -78,7 +79,7 @@ export async function POST(request: Request, context: RouteContext) {
       {
         success: false,
         error:
-          error instanceof Error ? error.message : "Sales import action failed.",
+          clientSafeErrorMessage(error, "Sales import action failed."),
       },
       { status: 500 },
     );

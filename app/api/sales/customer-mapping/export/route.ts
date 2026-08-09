@@ -7,6 +7,7 @@ import { loadCustomerMapping } from "@/lib/sales/customer-mapping";
 import { buildCustomerMappingWorkbook } from "@/lib/sales/customer-mapping-export";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,12 +54,12 @@ export async function POST(request: Request) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to export Customer Mapping." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to export Customer Mapping.") },
       { status: 500 },
     );
   }

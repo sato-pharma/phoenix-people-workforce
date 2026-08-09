@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildMarketingRoiViewSalesWorkbook } from "@/lib/export/marketing-roi-workbook";
@@ -15,7 +15,7 @@ export const maxDuration = 60;
 
 function exportApiError(error: unknown) {
   if (isForbiddenError(error)) {
-    return { code: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", status: 403 };
+    return { code: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), status: 403 };
   }
   const message = error instanceof Error ? error.message : String(error ?? "");
   const normalized = message.toLowerCase();

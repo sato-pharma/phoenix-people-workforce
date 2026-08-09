@@ -6,6 +6,7 @@ import { loadCustomerDirectoryRows, type CustomerDirectoryFilters } from "@/lib/
 import { NextResponse } from "next/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -124,12 +125,12 @@ export async function POST(request: Request) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to export Customer Directory." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to export Customer Directory.") },
       { status: 500 },
     );
   }

@@ -6,12 +6,13 @@ import { getEmployeePlansWorkspace, type EmployeePlan } from "@/lib/weekly-plann
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { hrIdsMatch } from "@/lib/hr-id";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unable to export weekly/monthly plans.";
+  const message = clientSafeErrorMessage(error, "Unable to export weekly/monthly plans.");
   return NextResponse.json(
     {
       error: isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:")

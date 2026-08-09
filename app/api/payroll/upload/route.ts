@@ -19,6 +19,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "invalid_payroll_period",
-          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          message: clientSafeErrorMessage(error, "Payroll period is invalid."),
         },
         { status: 400 },
       );
@@ -192,7 +193,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Payroll upload failed.";
+    const message = clientSafeErrorMessage(error, "Payroll upload failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

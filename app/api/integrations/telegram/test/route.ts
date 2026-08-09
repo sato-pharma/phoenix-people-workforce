@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: result, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to send Telegram test notification.";
+    const message = clientSafeErrorMessage(error, "Unable to send Telegram test notification.");
     return NextResponse.json({ error: "telegram_test_failed", message }, { status: 500 });
   }
 }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/outstation/expenses";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "invalid_period",
-          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          message: clientSafeErrorMessage(error, "Payroll period is invalid."),
         },
         { status: 400 },
       );
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to import expenses to payroll.";
+    const message = clientSafeErrorMessage(error, "Unable to import expenses to payroll.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

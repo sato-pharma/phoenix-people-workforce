@@ -7,6 +7,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { canExportSosDashboard } from "@/lib/sales/access-scope";
 import { buildAndEmailSosBiReport } from "@/lib/sales/sos-report-delivery";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to send the Source-of-Sales report." },
+      { error: clientSafeErrorMessage(error, "Failed to send the Source-of-Sales report.") },
       { status: 500 },
     );
   }

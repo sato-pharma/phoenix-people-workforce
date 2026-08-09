@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
 import { getMarketingRoiBusinessOptions, getMarketingRoiBusinessRows, getMarketingRoiCohorts } from "@/lib/marketing-requests/roi-business-report-service";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export const maxDuration = 60;
 // mutation, no new attribution logic; composes the existing ROI report + Explain ROI services.
 function marketingRoiBusinessReportApiError(error: unknown) {
   if (isForbiddenError(error)) {
-    return { code: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", status: 403 };
+    return { code: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), status: 403 };
   }
   if (isStatementTimeoutError(error)) return { ...STATEMENT_TIMEOUT_API_ERROR };
 

@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googleReverseGeocode } from "@/lib/google-maps/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unable to resolve captured location.";
+      clientSafeErrorMessage(error, "Unable to resolve captured location.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "reverse_geocode_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

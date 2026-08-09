@@ -7,6 +7,7 @@ import { buildActivityRange, getActivityUserSummaries } from "@/lib/activity/ser
 import { buildPhoenixTableWorkbook, type ExportColumn, type ExportRow } from "@/lib/export/table-workbook";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
       );
     }
     if (isForbiddenError(error)) {
-      return NextResponse.json({ error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") }, { status: 403 });
     }
     console.error("[activity] export error", error);
     return NextResponse.json({ error: "server_error", message: "Failed to export activity." }, { status: 500 });

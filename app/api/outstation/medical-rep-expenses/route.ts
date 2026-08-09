@@ -6,6 +6,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { submitMedicalRepSimpleExpenseRequest } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ request: requestRecord });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to submit expense request.";
+    const message = clientSafeErrorMessage(error, "Unable to submit expense request.");
     const status = medicalRepExpenseStatus(error);
     return NextResponse.json(
       {

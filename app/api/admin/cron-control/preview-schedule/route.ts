@@ -10,6 +10,7 @@ import {
 } from "@/lib/cron-control/cron-expression";
 import { listCronJobs } from "@/lib/cron-control/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { valid: false, error: error instanceof Error ? error.message : "Failed to preview schedule." },
+      { valid: false, error: clientSafeErrorMessage(error, "Failed to preview schedule.") },
       { status: 500 },
     );
   }

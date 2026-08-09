@@ -7,6 +7,7 @@ import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-allocation";
 import { commitOfficeAllocation } from "@/lib/sales/office-upload";
 import { confirmStep } from "@/lib/sales/monthly-sales-run";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,11 +54,11 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Office commit failed." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Office commit failed.") }, { status: 500 });
   }
 }

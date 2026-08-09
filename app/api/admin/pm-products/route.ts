@@ -10,6 +10,7 @@ import {
 } from "@/lib/employee-360/pm-products";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey } from "@/lib/hr-id";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
   try {
     await setPmProductCodes(body.hrId, body.productCodes, ctx.hrId ?? "");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "save_failed";
+    const message = clientSafeErrorMessage(error, "save_failed");
     // Surface the "table not migrated yet" case clearly.
     return NextResponse.json({ error: "save_failed", message }, { status: 409 });
   }

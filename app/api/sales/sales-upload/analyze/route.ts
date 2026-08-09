@@ -6,6 +6,7 @@ import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales
 import { removeSalesUploadObject, resolveUploadedSpreadsheet } from "@/lib/sales/monthly-import-request";
 import { analyzeMonthlyUpload } from "@/lib/sales/sales-upload";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,8 +47,8 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ success: true, data: result.preview, reconciliation: result.reconciliation, breakdowns: result.breakdowns, needsPeriod: result.needsPeriod, validation: result.validation, isRegionOnly: result.isRegionOnly ?? false });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to analyze the sheet.") }, { status: 500 });
   } finally {
     // Analyze never persists, so always delete the temp Storage object once we're done with it.
     await removeSalesUploadObject(cleanupStoragePath);

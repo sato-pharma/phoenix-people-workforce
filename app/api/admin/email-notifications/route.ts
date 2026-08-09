@@ -12,6 +12,7 @@ import {
   type EmailNotificationType,
   type EmailRecipientMode,
 } from "@/lib/notifications/email";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email notification settings." }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Email notification settings failed.";
+    const message = clientSafeErrorMessage(error, "Email notification settings failed.");
     return NextResponse.json({ error: "email_notifications_failed", message }, { status: 500 });
   }
 }
@@ -100,7 +101,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to update email notification settings." }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Email notification settings failed.";
+    const message = clientSafeErrorMessage(error, "Email notification settings failed.");
     return NextResponse.json({ error: "email_notifications_failed", message }, { status: 500 });
   }
 }

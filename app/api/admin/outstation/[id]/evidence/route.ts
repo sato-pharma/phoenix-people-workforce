@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { releaseOutstationRequestWithoutEvidence } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +58,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_evidence_release_failed",
-        message: error instanceof Error ? error.message : "Unable to release the request.",
+        message: clientSafeErrorMessage(error, "Unable to release the request."),
       },
       { status: evidenceReleaseStatus(error) },
     );

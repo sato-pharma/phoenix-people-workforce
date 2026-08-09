@@ -9,6 +9,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { sanitizeStorageSegment, vacationAttachmentBucket } from "@/lib/vacation/service";
 import { assertVacationRouteRateLimit } from "@/lib/vacation/route-guards";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", success: false },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), success: false },
         { status: 403 },
       );
     }
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json(
-      { error: "upload_url_failed", message: error instanceof Error ? error.message : "Could not create an upload URL.", success: false },
+      { error: "upload_url_failed", message: clientSafeErrorMessage(error, "Could not create an upload URL."), success: false },
       { status: 500 },
     );
   }

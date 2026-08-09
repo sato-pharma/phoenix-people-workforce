@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { replaceWeeklyProductScope } from "@/lib/sales/weekly/access";
 import { loadWeeklyProductScopeAdmin } from "@/lib/sales/weekly/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,13 +49,13 @@ export async function PUT(request: Request) {
 
 function mapError(error: unknown) {
   if (isForbiddenError(error)) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
   }
   if (error instanceof SalesWorkflowError) {
     return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
   }
   return NextResponse.json(
-    { success: false, error: error instanceof Error ? error.message : "Failed to update product access." },
+    { success: false, error: clientSafeErrorMessage(error, "Failed to update product access.") },
     { status: 500 },
   );
 }

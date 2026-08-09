@@ -5,6 +5,7 @@ import { googleDirectionsRoute } from "@/lib/google-maps/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getResidenceLocationForEmployee } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
       routePolyline: directions.polyline,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Distance calculation failed.";
+    const message = clientSafeErrorMessage(error, "Distance calculation failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "distance_calc_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

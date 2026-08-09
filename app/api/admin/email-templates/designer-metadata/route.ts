@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
 import { EMPLOYEE_VARIABLE_SOURCES, listEmailCustomVariables } from "@/lib/email-templates/custom-variables";
 import { emailTemplateKeys, getEmailTemplateCategoryOptions, getEmailTemplateDesignerCatalog, getEmailTemplateRoutingOptions } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email template designer metadata." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Email template designer metadata failed to load.";
+    const message = clientSafeErrorMessage(error, "Email template designer metadata failed to load.");
     return NextResponse.json({ error: "designer_metadata_failed", message }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { saveMappings, type MappingInput } from "@/lib/sales/normalizer/mapping";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,10 +47,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to save mappings." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to save mappings.") },
       { status: 500 },
     );
   }

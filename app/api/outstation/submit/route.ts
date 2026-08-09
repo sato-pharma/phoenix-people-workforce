@@ -14,6 +14,7 @@ import type {
   OutstationTransportationType,
 } from "@/lib/outstation/types";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to submit outstation request.";
+    const message = clientSafeErrorMessage(error, "Unable to submit outstation request.");
     const status = outstationSubmitStatus(error);
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_submit_failed", message },

@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError, logInfo } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { drainInboundIntake } from "@/lib/recruitment/inbound/intake-worker";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
       error,
       labels: { event: "cron_failed", job: "inbound-intake" },
     });
-    const message = error instanceof Error ? error.message : "Inbound intake worker failed.";
+    const message = clientSafeErrorMessage(error, "Inbound intake worker failed.");
     return NextResponse.json({ error: "inbound_intake_failed", message }, { status: 500 });
   }
 }

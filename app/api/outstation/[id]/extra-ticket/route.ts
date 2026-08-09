@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { addExtraTicketsToOwnOutstationRequest } from "@/lib/outstation/service";
 import { parseOutstationTicketAttachmentDataUrl } from "@/lib/outstation/car-evidence-storage";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,7 +76,7 @@ export async function POST(
 
     return NextResponse.json({ request: result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to add the extra ticket.";
+    const message = clientSafeErrorMessage(error, "Unable to add the extra ticket.");
     const status = extraTicketStatus(error);
     return NextResponse.json(
       {

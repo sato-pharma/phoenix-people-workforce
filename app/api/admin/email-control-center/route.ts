@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmailControlCenterSnapshot } from "@/lib/notifications/email-control-center";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to load the email control center." },
+      { message: clientSafeErrorMessage(error, "Failed to load the email control center.") },
       { status: 500 },
     );
   }

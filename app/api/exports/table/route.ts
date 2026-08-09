@@ -7,6 +7,7 @@ import {
   type ExportRow,
 } from "@/lib/export/table-workbook";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Export failed." },
+      { error: clientSafeErrorMessage(error, "Export failed.") },
       { status: 500 },
     );
   }

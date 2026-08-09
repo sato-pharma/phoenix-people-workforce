@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { bulkDecideEmployeePlans } from "@/lib/weekly-planning/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     const failed = results.filter((r) => !r.ok);
     return NextResponse.json({ data: results, failed: failed.length, success: true, total: planIds.length });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Batch decision failed.";
+    const message = clientSafeErrorMessage(error, "Batch decision failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "batch_decision_failed", message, success: false },
       { status: isForbiddenError(error) ? 403 : 400 },

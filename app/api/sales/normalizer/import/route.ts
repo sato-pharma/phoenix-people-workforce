@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isPostgresUniqueViolation } from "@/lib/sales/contracts";
 import { normalizeUploadedFile, persistNormalizedBatch } from "@/lib/sales/normalizer/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: { ...persisted, exceptions: result.exceptions.length } });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     // DB backstop (source_of_sales_one_validated_batch_per_period): a validated batch for this
     // distributor + month already exists. Direct import skips the in-app dedup, so surface it clearly
@@ -48,6 +49,6 @@ export async function POST(request: Request) {
     if (isPostgresUniqueViolation(error)) {
       return NextResponse.json({ success: false, error: "A validated sheet for this distributor and month is already imported. Delete it on Source of Sales first, then retry." }, { status: 409 });
     }
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to import." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to import.") }, { status: 500 });
   }
 }

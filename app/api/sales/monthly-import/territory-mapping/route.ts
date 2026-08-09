@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { importSosTerritoryMappingWorkbook } from "@/lib/sales/sos-mapping-templates";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,13 +53,13 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ success: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to import the territory mapping." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to import the territory mapping.") },
       { status: 500 },
     );
   }

@@ -4,6 +4,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { importCustomerMap } from "@/lib/sales/normalizer/customer-map";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,13 +48,13 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ success: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to import the customer mapping." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to import the customer mapping.") },
       { status: 500 },
     );
   }

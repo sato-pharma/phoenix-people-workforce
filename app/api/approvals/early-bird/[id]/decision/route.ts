@@ -8,6 +8,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { decideEarlyBirdsCandidate } from "@/lib/early-birds/decisions";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
       );
     }
-    const message = error instanceof Error ? error.message : "The decision could not be recorded.";
+    const message = clientSafeErrorMessage(error, "The decision could not be recorded.");
     if (message.startsWith("Forbidden:")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
     return NextResponse.json({ error: "failed", message }, { status: 500 });
   }

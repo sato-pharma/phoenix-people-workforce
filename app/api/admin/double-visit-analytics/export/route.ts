@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { buildDoubleVisitExportWorkbook, getDoubleVisitDashboardData } from "@/lib/double-visit-analytics/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({
       error: "double_visit_export_failed",
-      message: error instanceof Error ? error.message : "Double Visit export failed.",
+      message: clientSafeErrorMessage(error, "Double Visit export failed."),
     }, { status: 500 });
   }
 }

@@ -11,18 +11,19 @@ import {
   type WeeklyAliasKind,
 } from "@/lib/sales/weekly/product-aliases";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function mapError(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
   }
   if (error instanceof SalesWorkflowError) {
     return NextResponse.json({ success: false, error: error.message, code: error.code, details: error.details }, { status: error.status });
   }
-  return NextResponse.json({ success: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
+  return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, fallback) }, { status: 500 });
 }
 
 export async function GET(request: Request) {

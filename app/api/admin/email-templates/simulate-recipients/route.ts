@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { simulateTemplateRecipients, type EmailTemplatePayload } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to simulate email recipients." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Recipient simulation failed.";
+    const message = clientSafeErrorMessage(error, "Recipient simulation failed.");
     return NextResponse.json({ error: "recipient_simulation_failed", message }, { status: 500 });
   }
 }

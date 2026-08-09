@@ -5,6 +5,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { getActiveBricksForTemplateReference } from "@/lib/crm/region-brick";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { getAllCrmCustomersForTemplate } from "@/lib/crm/customer-brick";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -186,7 +187,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "customer_mapping_template_failed", message: error instanceof Error ? error.message : "Failed to build the customer mapping template.", success: false },
+      { error: "customer_mapping_template_failed", message: clientSafeErrorMessage(error, "Failed to build the customer mapping template."), success: false },
       { status: 500 },
     );
   }

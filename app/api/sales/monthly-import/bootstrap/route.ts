@@ -5,6 +5,7 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { learnFromCleanedFile } from "@/lib/sales/normalizer/service";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,10 +56,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to learn from the file." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to learn from the file.") },
       { status: 500 },
     );
   }

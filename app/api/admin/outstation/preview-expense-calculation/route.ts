@@ -5,6 +5,7 @@ import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { previewManagerExpenseCalculation } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { OutstationTransportationType } from "@/lib/outstation/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,7 +80,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ preview });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to preview calculation.";
+      clientSafeErrorMessage(error, "Failed to preview calculation.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "preview_failed",

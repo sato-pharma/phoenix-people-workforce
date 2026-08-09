@@ -7,12 +7,13 @@ import {
   updateEmployeePlan,
   type EmployeePlanItemInput,
 } from "@/lib/weekly-planning/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unable to update plan.";
+  const message = clientSafeErrorMessage(error, "Unable to update plan.");
   if (isWeeklyPlanRpcError(error)) {
     return NextResponse.json(
       { error: `weekly_plan_${error.code}`, message: error.message, success: false },

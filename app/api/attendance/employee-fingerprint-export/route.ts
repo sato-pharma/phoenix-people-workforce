@@ -5,7 +5,7 @@ import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-rep
 import { assertCanViewEmployeeAttendance } from "@/lib/attendance/employee-attendance";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }

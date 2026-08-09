@@ -10,7 +10,7 @@ import {
   parseCompanyVacationReportFilters,
 } from "@/lib/vacation/company-vacation-report-filters";
 import { getCompanyVacationReport } from "@/lib/vacation/company-vacation-report";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -45,7 +45,7 @@ function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json({
       error: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       success: false,
     }, { status: 403 });
   }

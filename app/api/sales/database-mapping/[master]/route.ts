@@ -6,6 +6,7 @@ import { stripRestrictedMasterProductRows } from "@/lib/sales/access-scope";
 import { isMasterKey } from "@/lib/sales/master-data/definitions";
 import { listMasterRows } from "@/lib/sales/master-data/list";
 import { addSingleMasterRow } from "@/lib/sales/master-data/import-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,12 +32,12 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to load master rows." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to load master rows.") },
       { status: 500 },
     );
   }
@@ -68,12 +69,12 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to add row." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to add row.") },
       { status: 500 },
     );
   }

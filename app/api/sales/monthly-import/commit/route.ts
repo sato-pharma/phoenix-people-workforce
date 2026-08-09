@@ -6,6 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { removeSalesUploadObject, resolveSalesUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,12 +60,12 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Forbidden.", success: false }, { status: 403 });
+      return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden."), success: false }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ code: error.code, details: error.details, error: error.message, success: false }, { status: error.status });
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Sales import failed.", success: false }, { status: 500 });
+    return NextResponse.json({ error: clientSafeErrorMessage(error, "Sales import failed."), success: false }, { status: 500 });
   } finally {
     await removeSalesUploadObject(cleanupStoragePath);
   }

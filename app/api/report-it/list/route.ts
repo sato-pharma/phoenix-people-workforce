@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { listReports } from "@/lib/report-it/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const isForbidden = message.startsWith("Forbidden:");
   if (isForbidden) return NextResponse.json({ error: message }, { status: 403 });
   if (message.toLowerCase().includes("authentication")) return NextResponse.json({ error: message }, { status: 401 });

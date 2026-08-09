@@ -7,6 +7,7 @@ import { bulkImportCrmCustomerBrickMappings, type CrmCustomerBulkImportInputRow 
 import { excelCellText, loadExcelWorkbook } from "@/lib/uploads/exceljs-rows";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "customer_mapping_import_failed", message: error instanceof Error ? error.message : "Customer mapping import failed.", success: false },
+      { error: "customer_mapping_import_failed", message: clientSafeErrorMessage(error, "Customer mapping import failed."), success: false },
       { status: 500 },
     );
   }

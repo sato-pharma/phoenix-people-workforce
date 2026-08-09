@@ -11,6 +11,7 @@ import {
 import { getInboundIntakeAnalytics, shouldAlertIntakeSpike } from "@/lib/recruitment/inbound/intake-analytics";
 import { notifyInboundIntakeSpike, notifyWhatsAppIntakeUnhealthy } from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 const DEFAULT_SPIKE_THRESHOLD = 8;
 
@@ -143,7 +144,7 @@ export async function GET(request: Request) {
       error,
       labels: { event: "cron_failed", job: "recruitment-email-intake" },
     });
-    const message = error instanceof Error ? error.message : "Recruitment email-intake poll failed.";
+    const message = clientSafeErrorMessage(error, "Recruitment email-intake poll failed.");
     return NextResponse.json(
       {
         error: "recruitment_email_intake_failed",

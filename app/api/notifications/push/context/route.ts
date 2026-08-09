@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: { hrId }, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to resolve push context.";
+    const message = clientSafeErrorMessage(error, "Unable to resolve push context.");
     return NextResponse.json({ error: "push_context_failed", message }, { status: 500 });
   }
 }

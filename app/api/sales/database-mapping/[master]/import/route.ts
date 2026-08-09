@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { isMasterKey } from "@/lib/sales/master-data/definitions";
 import { importMasterWorkbook } from "@/lib/sales/master-data/import-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
@@ -51,7 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Master import failed." },
+      { success: false, error: clientSafeErrorMessage(error, "Master import failed.") },
       { status: 500 },
     );
   }

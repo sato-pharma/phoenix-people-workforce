@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { SOS_MAPPING_XLSX_CONTENT_TYPE, buildSosProductMappingTemplate } from "@/lib/sales/sos-mapping-templates";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,13 +25,13 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to build the product mapping template." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to build the product mapping template.") },
       { status: 500 },
     );
   }

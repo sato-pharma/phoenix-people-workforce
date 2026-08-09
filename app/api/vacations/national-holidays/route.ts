@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getConfirmedNationalHolidays } from "@/lib/vacation/national-holidays";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
     const result = await getConfirmedNationalHolidays({ month, year });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load Egyptian national holidays.";
+    const message = clientSafeErrorMessage(error, "Unable to load Egyptian national holidays.");
     if (isForbiddenError(error) || message.toLowerCase().includes("forbidden")) {
       return NextResponse.json({ error: "forbidden", message, success: false }, { status: 403 });
     }

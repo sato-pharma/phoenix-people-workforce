@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { STATEMENT_TIMEOUT_API_ERROR, isStatementTimeoutError, toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, isStatementTimeoutError, STATEMENT_TIMEOUT_API_ERROR, toApiError } from "@/lib/http/api-errors";
 import { parseRoiFilterState } from "@/lib/marketing-requests/roi-report-service";
 import { getMarketingRoiTracker, type MarketingRequestOrigin } from "@/lib/marketing-requests/roi-tracker-service";
 
@@ -16,7 +16,7 @@ function roiTrackerApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return {
       code: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       status: 403,
     };
   }

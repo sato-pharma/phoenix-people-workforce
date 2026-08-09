@@ -10,12 +10,13 @@ import {
 } from "@/lib/employees/employee-photo";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function errorStatus(error: unknown): { message: string; status: number } {
-  const message = error instanceof Error ? error.message : "Unexpected error.";
+  const message = clientSafeErrorMessage(error, "Unexpected error.");
   if (isForbiddenError(error)) return { message, status: 403 };
   const lower = message.toLowerCase();
   if (lower.includes("not authenticat") || lower.includes("unauthenticat")) {

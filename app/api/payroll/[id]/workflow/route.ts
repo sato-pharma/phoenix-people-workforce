@@ -9,6 +9,7 @@ import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payrol
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,7 +149,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Workflow action failed.";
+    const message = clientSafeErrorMessage(error, "Workflow action failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ success: false, error: message }, { status: 403 });
     }

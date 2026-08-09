@@ -4,6 +4,7 @@ import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { assertCanViewEmployeeActivity, buildActivityRange, getUserTimeline } from "@/lib/activity/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ timeline });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") }, { status: 403 });
     }
     console.error("[activity] timeline error", error);
     return NextResponse.json({ error: "server_error", message: "Failed to load activity timeline." }, { status: 500 });

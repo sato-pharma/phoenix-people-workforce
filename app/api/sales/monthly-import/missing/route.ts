@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { RESTRICTED_PRODUCT_CODES, canViewRestrictedProducts } from "@/lib/sales/access-scope";
 import { normalizeUploadedFile, summarizePreview } from "@/lib/sales/normalizer/service";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,10 +71,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: summarizePreview(distributorCode, distributorName, result, products, excludeProductCodes) });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to analyze the sheet." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to analyze the sheet.") },
       { status: 500 },
     );
   }

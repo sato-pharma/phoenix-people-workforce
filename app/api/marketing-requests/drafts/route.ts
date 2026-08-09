@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { logAppError } from "@/lib/error-monitor/service";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import {
   createMarketingRequestDraft,
   getMarketingRequestDraftWorkspace,
@@ -63,7 +63,7 @@ function marketingDraftApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return {
       code: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       status: 403,
     };
   }

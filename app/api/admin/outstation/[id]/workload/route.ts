@@ -6,6 +6,7 @@ import {
   retryOutstationWorkloadCapture,
   setOutstationWorkloadManually,
 } from "@/lib/outstation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,7 +80,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_workload_repair_failed",
-        message: error instanceof Error ? error.message : "Unable to repair the workload.",
+        message: clientSafeErrorMessage(error, "Unable to repair the workload."),
       },
       { status: workloadRepairStatus(error) },
     );

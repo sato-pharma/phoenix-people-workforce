@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWeeklyPlanRpcError, reassignWeeklyPlanManager } from "@/lib/weekly-planning/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 // (reassignWeeklyPlanManager): this only changes WHO owns the pending manager step, never decides
 // the plan in place.
 function jsonError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unable to reassign plan approver.";
+  const message = clientSafeErrorMessage(error, "Unable to reassign plan approver.");
   const lower = message.toLowerCase();
   if (isWeeklyPlanRpcError(error)) {
     return NextResponse.json(

@@ -6,6 +6,7 @@ import { buildHrCalendarEvents } from "@/lib/hr-calendar/calendar-logic";
 import { isBirthdayEligibleEmployee } from "@/lib/notifications/birthday-eligibility";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -137,7 +138,7 @@ export async function GET(request: Request) {
     return await runBirthdayNotifications(request);
   } catch (error) {
     console.error(error, { tags: { cron: "birthday-notifications" } });
-    const message = error instanceof Error ? error.message : "Birthday notification run failed.";
+    const message = clientSafeErrorMessage(error, "Birthday notification run failed.");
     return NextResponse.json({ error: "birthday_notifications_failed", message }, { status: 500 });
   }
 }

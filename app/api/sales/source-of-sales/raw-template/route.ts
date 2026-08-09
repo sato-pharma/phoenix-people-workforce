@@ -5,6 +5,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildRawDistributorTemplate } from "@/lib/sales/raw-template";
 import { SOS_MAPPING_XLSX_CONTENT_TYPE } from "@/lib/sales/sos-mapping-templates";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,10 +43,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to build the raw template." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to build the raw template.") },
       { status: 500 },
     );
   }

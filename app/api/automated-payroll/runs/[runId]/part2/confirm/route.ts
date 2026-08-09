@@ -7,6 +7,7 @@ import {
   OVERPAID_ACK_REQUIRED,
 } from "@/lib/automated-payroll/run-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     // explicitly that re-confirming with an acknowledgment is a valid next step,
     // so it can prompt instead of just showing a red error. Every other
     // Conflict (notably a split mismatch = calculation bug) stays a plain error.
-    const message = error instanceof Error ? error.message : "";
+    const message = clientSafeErrorMessage(error, "");
     if (message.includes(DATA_QUALITY_ACK_REQUIRED)) {
       return NextResponse.json(
         {

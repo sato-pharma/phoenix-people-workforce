@@ -5,6 +5,7 @@ import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getRepTripVisitWorkload } from "@/lib/crm/visit-workload";
 import { canViewEmployeeExpenseScope } from "@/lib/outstation/expenses";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +64,7 @@ export async function GET(request: Request) {
       );
     }
     return NextResponse.json(
-      { error: "visit_workload_failed", message: error instanceof Error ? error.message : "CRM visit workload lookup failed." },
+      { error: "visit_workload_failed", message: clientSafeErrorMessage(error, "CRM visit workload lookup failed.") },
       { status: 500 },
     );
   }

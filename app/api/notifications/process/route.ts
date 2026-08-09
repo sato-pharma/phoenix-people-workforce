@@ -5,6 +5,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { runScheduledNotificationProcessing } from "@/lib/notifications/scheduled-processing";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 
     return await runNotificationOutbox(limit);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Notification processing failed.";
+    const message = clientSafeErrorMessage(error, "Notification processing failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
     return await withDeadMansSwitch("phoenix-process-notifications", () => runNotificationOutbox(limit));
   } catch (error) {
     console.error(error, { tags: { cron: "notification-outbox-drain" } });
-    const message = error instanceof Error ? error.message : "Notification processing failed.";
+    const message = clientSafeErrorMessage(error, "Notification processing failed.");
     return NextResponse.json({ error: "notification_process_failed", message }, { status: 500 });
   }
 }

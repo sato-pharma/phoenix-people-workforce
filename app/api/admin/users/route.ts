@@ -11,7 +11,7 @@ import {
   updateAccessUserStatus,
   upsertAccessUser,
 } from "@/lib/admin/access-control";
-import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,13 +28,13 @@ function adminApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return {
       code: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       status: 403,
     };
   }
   return {
     code: "access_control_failed",
-    message: error instanceof Error ? error.message : "Access control request failed.",
+    message: clientSafeErrorMessage(error, "Access control request failed."),
     status: 500,
   };
 }

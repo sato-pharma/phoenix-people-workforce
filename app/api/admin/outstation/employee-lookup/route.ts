@@ -5,6 +5,7 @@ import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
       status: data.employment_status,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Employee lookup failed.";
+    const message = clientSafeErrorMessage(error, "Employee lookup failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "lookup_error", message },
       { status: isForbiddenError(error) ? 403 : 500 },

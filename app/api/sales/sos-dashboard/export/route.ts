@@ -5,6 +5,7 @@ import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { canExportSosDashboard } from "@/lib/sales/access-scope";
 import { buildSosBiWorkbook } from "@/lib/sales/sos-bi-workbook";
 import { getSosDashboard, type SosDashboardFilters } from "@/lib/sales/sos-dashboard";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
       });
     }
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Export failed." }),
+      JSON.stringify({ error: clientSafeErrorMessage(error, "Export failed.") }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

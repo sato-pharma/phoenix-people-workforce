@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getPortalSosDashboard, isPortalSosRole } from "@/lib/sales/portal-sos-dashboard";
 import { buildSosDashboardWorkbook } from "@/lib/sales/sos-dashboard-export";
 import type { SosDashboardFilters } from "@/lib/sales/sos-dashboard";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, error: "Forbidden." }, { status: 403 });
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Export failed." },
+      { success: false, error: clientSafeErrorMessage(error, "Export failed.") },
       { status: 500 },
     );
   }

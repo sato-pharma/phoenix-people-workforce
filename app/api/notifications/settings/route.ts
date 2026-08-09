@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getNotificationSettings, saveNotificationPreferences } from "@/lib/notifications/settings";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: await getNotificationSettings(access), success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to load notification settings.";
+    const message = clientSafeErrorMessage(error, "Unable to load notification settings.");
     return NextResponse.json({ error: "notification_settings_load_failed", message }, { status: 500 });
   }
 }
@@ -36,7 +37,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ data, success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Unable to save notification settings.";
+    const message = clientSafeErrorMessage(error, "Unable to save notification settings.");
     return NextResponse.json({ error: "notification_settings_save_failed", message }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { getDeployTimeline } from "@/lib/error-monitor/service";
 import { getCurrentReleaseTag } from "@/lib/error-monitor/derived-status";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to load deploy timeline." },
+      { message: clientSafeErrorMessage(error, "Failed to load deploy timeline.") },
       { status: 500 },
     );
   }

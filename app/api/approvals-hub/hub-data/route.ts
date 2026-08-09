@@ -16,6 +16,7 @@ import type { ResignationRecord } from "@/lib/resignations/types";
 import type { EmployeeExcuseRequest } from "@/lib/excuses/service";
 import type { OutstationExpenseRequest } from "@/lib/outstation/types";
 import type { ContractRow } from "@/lib/contracts/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,7 +142,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ items: page, total, limit, offset });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to fetch hub data" },
+      { error: clientSafeErrorMessage(error, "Failed to fetch hub data") },
       { status: 500 },
     );
   }

@@ -4,6 +4,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { setCrmRegionBrickResolution, type CrmRegionResolutionAction } from "@/lib/crm/region-brick";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to resolve this CRM region.";
+    const message = clientSafeErrorMessage(error, "Failed to resolve this CRM region.");
     return NextResponse.json({ error: "resolve_region_failed", message, success: false }, { status: 400 });
   }
 }
