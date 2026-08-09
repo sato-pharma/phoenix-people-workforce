@@ -1710,7 +1710,7 @@ await runTest(
   runEarlyBirdsPeriodTests,
 );
 await runTest(
-  "early birds scoring (GPS is a quality weight not a filter, an after-midnight save is paperwork not a 02:25 start, and two brilliant mornings is not a fortnight)",
+  "early birds scoring (only a real GPS check-in is a start time, an after-midnight save is paperwork not a 02:25 start, and two brilliant mornings is not a fortnight)",
   runEarlyBirdsScoringTests,
 );
 await runTest(
