@@ -142,6 +142,27 @@ try {
     -TimeoutSec $TimeoutSeconds
   Write-Log "Scheduled sync completed: $($response | ConvertTo-Json -Compress -Depth 8)"
 } catch {
-  Write-Log "Scheduled sync failed: $($_.Exception.Message)"
+  # Log the RESPONSE BODY, not just "(500) Internal Server Error".
+  #
+  # Invoke-RestMethod throws on a non-2xx and discards the body, so a failing sync recorded only
+  # the status line — which says nothing about WHY. The agent returns a JSON error describing the
+  # actual fault (device/SDK/upload), and without it the operator is left guessing at a 500 exactly
+  # as they were left guessing at "Agent not reachable" while the device sat off the network for
+  # nine days.
+  $detail = $_.Exception.Message
+  $resp = $null
+  if ($_.Exception -is [System.Net.WebException]) { $resp = $_.Exception.Response }
+  elseif ($_.Exception.PSObject.Properties.Name -contains "Response") { $resp = $_.Exception.Response }
+  if ($resp) {
+    try {
+      $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+      $bodyText = $reader.ReadToEnd()
+      $reader.Close()
+      if ($bodyText) { $detail = "$detail | agent said: $bodyText" }
+    } catch {
+      # Body unreadable — the status line above is still logged.
+    }
+  }
+  Write-Log "Scheduled sync failed: $detail"
   throw
 }
