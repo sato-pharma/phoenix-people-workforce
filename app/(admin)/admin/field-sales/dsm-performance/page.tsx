@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
 import {
   assertPermission,
@@ -216,6 +217,13 @@ export default async function CompanyDsmPerformancePage({
               </div>
             ))}
           </div>
+
+          {/* Reconciliation: Company Sales includes Direct Orders + vacant seats no DSM below carries */}
+          <PerformanceReconciliationNote
+            className="mt-3"
+            totalLabel="Company Sales"
+            unattributedSales={data.companyUnattributedSales}
+          />
         </div>
 
         {/* ── Achievement distribution (all DSMs, company-wide) ── */}
@@ -288,6 +296,10 @@ export default async function CompanyDsmPerformancePage({
             </div>
             <div className="space-y-5 p-4 sm:p-6">
               <TeamLeaderboardTable members={line.performance.dsms} />
+              <PerformanceReconciliationNote
+                totalLabel="Line Sales"
+                unattributedSales={line.performance.unattributedSales}
+              />
               <details className="group">
                 <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-orange-600 hover:text-orange-700">
                   Product depth — {line.lineName} DSMs

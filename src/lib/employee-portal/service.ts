@@ -4249,6 +4249,13 @@ export type DsmTeamPerformanceData = {
   teamMemberCount: number;
   teamTotalSales: number;
   teamTotalTarget: number;
+  /**
+   * Sales inside `teamTotalSales` that no member row carries — Direct Orders spread across
+   * regions + vacant seats. `teamTotalSales = Σ(members.totalSales) + unattributedSales`,
+   * so the UI can show a reconciliation line that makes the header foot to the leaderboard.
+   */
+  unattributedSales: number;
+  unattributedTarget: number;
 };
 
 /**
@@ -4324,6 +4331,13 @@ export type CompanyMedRepPerformanceData = {
   companyTotalSales: number;
   companyTotalTarget: number;
   companyAchievementPercent: number;
+  /**
+   * Sales inside `companyTotalSales` that no rep row carries — Direct Orders spread across
+   * regions + vacant seats, company-wide. `companyTotalSales = Σ(all rep sales) +
+   * companyUnattributedSales`. Each line block foots the same way via its own performance.
+   */
+  companyUnattributedSales: number;
+  companyUnattributedTarget: number;
   repCount: number;
   lineCount: number;
 };
@@ -4550,6 +4564,13 @@ export type NsmDsmPerformanceData = {
   dsmCount: number;
   lineTotalSales: number;
   lineTotalTarget: number;
+  /**
+   * Sales inside `lineTotalSales` that no DSM row carries — Direct Orders spread across
+   * regions + vacant seats. `lineTotalSales = Σ(dsms.totalSales) + unattributedSales`,
+   * so the UI can show a reconciliation line that makes the header foot to the leaderboard.
+   */
+  unattributedSales: number;
+  unattributedTarget: number;
 };
 
 export type NsmTeamExpensesDsmSummary = {
@@ -5044,6 +5065,13 @@ export type CompanyDsmPerformanceData = {
   companyTotalSales: number;
   companyTotalTarget: number;
   companyAchievementPercent: number;
+  /**
+   * Sales inside `companyTotalSales` that no DSM row carries — Direct Orders spread across
+   * regions + vacant seats, company-wide. `companyTotalSales = Σ(all DSM sales) +
+   * companyUnattributedSales`. Each line block foots the same way via its own performance.
+   */
+  companyUnattributedSales: number;
+  companyUnattributedTarget: number;
   dsmCount: number;
   lineCount: number;
 };

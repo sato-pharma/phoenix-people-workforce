@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { TrendingUp, Trophy, Users } from "lucide-react";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -103,6 +104,7 @@ export default async function MedRepsPerformancePage({
     teamMemberCount,
     teamTotalSales,
     teamTotalTarget,
+    unattributedSales,
   } = data;
 
   const validPeriod =
@@ -212,6 +214,13 @@ export default async function MedRepsPerformancePage({
               </div>
             ))}
           </div>
+
+          {/* Reconciliation: Line Sales includes Direct Orders + vacant seats no rep below carries */}
+          <PerformanceReconciliationNote
+            className="mt-3 rounded-md"
+            totalLabel="Line Sales"
+            unattributedSales={unattributedSales}
+          />
         </Card>
 
         {/* ── Achievement Distribution Bar ── */}
