@@ -1,6 +1,7 @@
 import { unstable_cache } from "next/cache.js";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeHrId, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdLookupKeys } from "@/lib/hr-id";
 import {
   ACTIVE_VIEW_CAP_SECONDS,
   cappedDwellSeconds,
@@ -864,7 +865,10 @@ export async function getUserTimeline(targetHrId: string, range: ActivityRange):
     fetchAll(
       "app_sessions",
       "id,login_id,hr_id,role,created_at,last_seen_at,revoked_at,revoked_reason,idle_expires_at,absolute_expires_at,ip,user_agent",
-      (q) => q.eq("hr_id", hrId).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
+      // app_sessions stores the display spelling, not the lower-cased key — see
+      // forceLogoutUser. Filtering it by `hrId` (lower-cased) returned zero rows,
+      // so this timeline showed a user's events with no sessions at all.
+      (q) => q.in("hr_id", hrIdLookupKeys(targetHrId)).gte("created_at", range.fromIso).lte("created_at", range.toIso).order("created_at", { ascending: false }),
       SESSION_FETCH_CAP,
     ),
     fetchAll(
@@ -1044,7 +1048,30 @@ export async function getActivityUserSummaries(range: ActivityRange): Promise<Us
 
 // ── Admin actions ─────────────────────────────────────────────────────────────
 
-/** Revoke every active session for an HR ID immediately (force-logout). */
+/**
+ * Revoke every active session for an HR ID immediately (force-logout).
+ *
+ * `app_sessions.hr_id` stores the value VERBATIM as it was supplied at login
+ * (see createAppSession in @/lib/auth/app-sessions), which in production means
+ * the uppercase display spelling — measured 2026-08-09: 2,627 uppercase rows,
+ * 549 mixed-case, and NOT ONE lowercase row out of 3,176.
+ *
+ * `normalizeHrId` lower-cases, and PostgREST `.eq` is case-sensitive, so the
+ * previous `.eq("hr_id", normalized)` matched ZERO rows for EVERY user. Force
+ * logout returned `{ revokedCount: 0 }` alongside a success response: the admin
+ * saw the action succeed, and ~1,900 live sessions across 34 users stayed valid.
+ * A security control that reports success while doing nothing is worse than one
+ * that is missing, because nobody goes looking for a second way to do it.
+ *
+ * Matching every accepted spelling (raw / lower / upper / canonical, via the
+ * shared hrIdLookupKeys) fixes it without assuming a casing convention this
+ * table has never actually enforced.
+ *
+ * DO NOT copy this to activity_events: that table stores the LOWERCASE form
+ * (23,967 of 23,967 rows), so its own `.eq(normalized)` is already correct.
+ * The two tables genuinely disagree, and "normalise everything one way" breaks
+ * whichever side you do not look at.
+ */
 export async function forceLogoutUser(hrId: string, reason: string): Promise<{ revokedCount: number }> {
   const normalized = normalizeHrId(hrId);
   if (!normalized) throw new Error("Invalid HR ID");
@@ -1052,7 +1079,7 @@ export async function forceLogoutUser(hrId: string, reason: string): Promise<{ r
   const { data, error } = await supabase
     .from("app_sessions")
     .update({ revoked_at: new Date().toISOString(), revoked_reason: `admin_force_logout: ${reason}` })
-    .eq("hr_id", normalized)
+    .in("hr_id", hrIdLookupKeys(hrId))
     .is("revoked_at", null)
     .select("id");
   if (error) throw new Error(`Force logout failed: ${error.message}`);
