@@ -129,6 +129,31 @@ export function resolveEarlyBirdsScopeFrom(
     return { districts: [], viewerHrIdKey: null, isCompanyWide: false, scopeLabel: "your team" };
   }
 
+  // A National Sales Manager is scoped by LINE, and is checked FIRST because he is never a
+  // district himself.
+  //
+  // Order matters here. Districts are inferred from "who manages a medical rep", and an ACTING DM
+  // can still carry the job title "Medical Representative" — B-1 holds SEAT-AIF-ADM-UE-1 while
+  // titled a rep. The moment her manager row was repaired to point at the Anti-Infective NSM, the
+  // NSM started matching the "viewer is himself a district" test below and saw exactly one
+  // district: himself. Checking the line branch first makes that structurally impossible.
+  //
+  // The deeper fix is to derive districts from au_v_org_tree (the declared source of truth for org
+  // structure) instead of from job titles and employees.manager_hr_id. That is a larger change; this
+  // ordering closes the hole meanwhile.
+  if (viewerLineId !== null && access.role === "National Sales Manager") {
+    const onMyLine = new Set(
+      Array.from(districtKeys).filter((districtKey) => lineIdByKey.get(districtKey) === viewerLineId),
+    );
+    onMyLine.delete(viewerKey);
+    return {
+      districts: Array.from(onMyLine, toDistrict).sort(byName),
+      viewerHrIdKey: viewerKey,
+      isCompanyWide: false,
+      scopeLabel: "your line",
+    };
+  }
+
   // A District Manager sees his own district and nothing else.
   if (districtKeys.has(viewerKey)) {
     return {
@@ -152,23 +177,6 @@ export function resolveEarlyBirdsScopeFrom(
       viewerHrIdKey: viewerKey,
       isCompanyWide: false,
       scopeLabel: "your team",
-    };
-  }
-
-  // A National Sales Manager is scoped by LINE, not by the reporting tree.
-  //
-  // The tree cannot carry this: all six Anti-Infective districts report to the CEO rather than to
-  // the Anti-Infective NSM, so a subtree walk returns nothing for him while returning six for the
-  // CNS NSM. Line membership is the axis the business actually runs on.
-  if (viewerLineId !== null && access.role === "National Sales Manager") {
-    const onMyLine = new Set(
-      Array.from(districtKeys).filter((districtKey) => lineIdByKey.get(districtKey) === viewerLineId),
-    );
-    return {
-      districts: Array.from(onMyLine, toDistrict).sort(byName),
-      viewerHrIdKey: viewerKey,
-      isCompanyWide: false,
-      scopeLabel: "your line",
     };
   }
 
