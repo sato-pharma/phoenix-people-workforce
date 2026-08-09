@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, RefreshCw, Send, Table2 } from "lucide-react";
+import { AlertTriangle, CalendarRange, CheckCircle2, Download, EyeOff, Loader2, Lock, LockOpen, RefreshCw, Send, Table2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
@@ -50,6 +50,9 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const [filter, setFilter] = useState<MonthlyClosingFilter>(emptyMonthlyClosingFilter);
   const [published, setPublished] = useState<boolean | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [locked, setLocked] = useState<boolean | null>(null);
+  const [lockedAt, setLockedAt] = useState<string | null>(null);
+  const [isLocking, setIsLocking] = useState(false);
   const [tab, setTab] = useState<"matrix" | "details">("matrix");
 
   const selectedLine = matrix?.line ?? "";
@@ -125,6 +128,57 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
       cancelled = true;
     };
   }, [canPublish, selectedLine, selectedPeriod]);
+
+  useEffect(() => {
+    if (!canPublish || !selectedLine || !selectedPeriod) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const query = new URLSearchParams({ line: selectedLine, period: selectedPeriod });
+        const response = await fetch(`/api/sales/monthly-closing/lock?${query.toString()}`, { cache: "no-store" });
+        const payload = (await response.json()) as { locked?: boolean; lock?: { lockedAt?: string } | null };
+        if (!cancelled) {
+          setLocked(Boolean(payload.locked));
+          setLockedAt(payload.lock?.lockedAt ?? null);
+        }
+      } catch {
+        // Fail SAFE the same way the publish check does, and note which way "safe" points: an
+        // unreadable lock state is shown as UNLOCKED, never as locked. Claiming a month is
+        // protected when the check failed would be the one lie this feature cannot afford.
+        if (!cancelled) {
+          setLocked(null);
+          setLockedAt(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canPublish, selectedLine, selectedPeriod]);
+
+  async function toggleLock() {
+    if (!selectedLine || !selectedPeriod) return;
+    setIsLocking(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/sales/monthly-closing/lock", {
+        body: JSON.stringify({ line: selectedLine, period: selectedPeriod }),
+        headers: { "Content-Type": "application/json" },
+        method: locked ? "DELETE" : "POST",
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to update lock state.");
+      }
+      const payload = (await response.json()) as { lock?: { lockedAt?: string } | null };
+      setLocked(!locked);
+      setLockedAt(locked ? null : payload.lock?.lockedAt ?? new Date().toISOString());
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to update lock state.");
+    } finally {
+      setIsLocking(false);
+    }
+  }
 
   async function togglePublish() {
     if (!selectedLine || !selectedPeriod) return;
@@ -236,6 +290,9 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
             <AdminInsightChip>Line: {selectedLine || "None"}</AdminInsightChip>
             <AdminInsightChip>Month: {selectedPeriod || "No validated data"}</AdminInsightChip>
             <AdminInsightChip tone="slate">Products: {filteredMatrix?.columns.length ?? 0}</AdminInsightChip>
+            {canPublish && locked ? (
+              <AdminInsightChip tone="orange">Locked — numbers frozen</AdminInsightChip>
+            ) : null}
             {canPublish && published !== null ? (
               <AdminInsightChip tone={published ? "orange" : "slate"}>
                 {published ? "Published to portal" : "Not published"}
@@ -297,6 +354,28 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
               {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               Refresh
             </Button>
+            {canPublish ? (
+              <Button
+                className="gap-2"
+                disabled={isLocking || !selectedLine || !selectedPeriod}
+                onClick={() => void toggleLock()}
+                title={
+                  locked
+                    ? `Locked${lockedAt ? ` ${new Date(lockedAt).toLocaleString("en-GB", { timeZone: "Africa/Cairo" })}` : ""} — nothing can change this month's numbers, including imports and direct database work. Click to unlock.`
+                    : "Freeze this month so nothing can change its numbers afterwards — imports, migrations and direct database work included."
+                }
+                variant={locked ? "default" : "secondary"}
+              >
+                {isLocking ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : locked ? (
+                  <Lock className="h-4 w-4" />
+                ) : (
+                  <LockOpen className="h-4 w-4" />
+                )}
+                {locked ? "Locked" : "Lock month"}
+              </Button>
+            ) : null}
             {canPublish ? (
               <Button
                 className="gap-2"
