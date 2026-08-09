@@ -32,14 +32,19 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   ireports360_sync_notify: { roles: ["Super Admin"], enabled: true },
   attendance_ingestion_alert: { roles: ["Super Admin"], enabled: true },
   marketing_sla_reminder: { roles: [], enabled: false },
+  // 14th key, added 2026-08-09 with the resignation-notification fix. Owner-set
+  // audience: Super Admin + Talent Acquisition — deliberately NOT the CEO and NOT
+  // the leaver's manager chain. Enabled on purpose: resignation notifications had
+  // been silently dropping every message for seven weeks before this landed.
+  resignation_workflow_alert: { roles: ["Super Admin", "Talent Acquisition"], enabled: true },
 };
 
 export function runNotificationRoleRecipientsTests() {
-  assert.equal(notificationRoleKeys.length, 13, "expected exactly the 13 confirmed notification-role keys");
+  assert.equal(notificationRoleKeys.length, 14, "expected exactly the 14 confirmed notification-role keys");
   assert.deepEqual(
     [...notificationRoleKeys].sort(),
     Object.keys(EXPECTED).sort(),
-    "notificationRoleKeys set does not match the confirmed 13 keys",
+    "notificationRoleKeys set does not match the confirmed 14 keys",
   );
 
   for (const key of notificationRoleKeys) {

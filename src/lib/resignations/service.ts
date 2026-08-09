@@ -7,7 +7,7 @@ import { getEmployeeDirectory, getEmployeeDirectoryRows, invalidateEmployeeDirec
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { assertResignationWorkflowTransition } from "@/lib/employee-lifecycle/workflow";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
@@ -388,12 +388,29 @@ async function notifyResignationWorkflow(
   // to populate them — a directory failure must never block the resignation notification.
   let resignationDetail: Awaited<ReturnType<typeof getEmployeeDirectoryRows>>[number] | null = null;
   try {
-    const directory = await getEmployeeDirectoryRows();
+    // includeInactive: by the time this fires the employee is already 'resigned', so the
+    // default active-only directory omits them and every template token above degrades to
+    // "—"/"Team" — an email about a named person that cannot name their job or manager.
+    const directory = await getEmployeeDirectoryRows({ includeInactive: true });
     resignationDetail =
       directory.find((row) => normalizeHrId(row.hrId) === normalizeHrId(record.employeeHrId)) ?? null;
   } catch {
     resignationDetail = null;
   }
+
+  // Who hears about a resignation is an owner decision, not an org-chart inference:
+  // Super Admin + Talent Acquisition only (2026-08-09). Resolved from the admin-editable
+  // `resignation_workflow_alert` role policy and passed explicitly, so permission_based
+  // targets exactly these people instead of inferring an audience from the subject's scope.
+  const { recipients: alertRecipients, warnings: alertWarnings } =
+    await resolveNotificationPersonRecipients("resignation_workflow_alert", "Resignation workflow recipients");
+  if (alertWarnings.length > 0) {
+    logError("Resignation workflow recipient resolution warned", {
+      labels: { event: "resignation_workflow_recipients_warning", hr_id: record.employeeHrId },
+      error: new Error(alertWarnings.join("; ")),
+    });
+  }
+  const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
   await createSystemNotification({
     actionUrl,
     actorId: "system",
@@ -426,6 +443,7 @@ async function notifyResignationWorkflow(
       effectiveDate: record.effectiveDate,
       employeeHrId: record.employeeHrId,
       idempotencyKey: `resignation:${record.employeeHrId}:${record.status}:${record.effectiveDate}`,
+      moduleOwnerHrIds,
       status: record.status,
     },
     module: "resignations",

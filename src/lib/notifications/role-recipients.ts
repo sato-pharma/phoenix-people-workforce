@@ -28,6 +28,7 @@ export const notificationRoleKeys = [
   "ireports360_sync_notify",
   "attendance_ingestion_alert",
   "marketing_sla_reminder",
+  "resignation_workflow_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -130,6 +131,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     label: "iReports360 sync notify",
     description: "Notifies after every iReports360 CRM sync/reconcile run, success or failure.",
     roles: ["Super Admin"],
+    enabled: true,
+  },
+  resignation_workflow_alert: {
+    key: "resignation_workflow_alert",
+    label: "Resignation workflow alert",
+    description:
+      "Who is told when a resignation is submitted or changes state. Owner-set 2026-08-09: Super Admin and Talent Acquisition only — deliberately NOT the CEO and NOT the leaver's manager chain. Editable here rather than in code.",
+    roles: ["Super Admin", "Talent Acquisition"],
     enabled: true,
   },
   attendance_ingestion_alert: {
