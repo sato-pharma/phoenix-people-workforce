@@ -1,5 +1,25 @@
+// Deliberately NOT using PortalResponsiveDataList, and deliberately NOT a client component.
+//
+// This rendered nothing but the shell's "Loading workspace" spinner in every environment, from the
+// day it shipped. PortalResponsiveDataList is "use client" and takes getKey/renderCard/renderTable
+// as props; functions cannot cross the server→client boundary, so the RSC payload failed to
+// serialize and the page never mounted.
+//
+// "use client" here is NOT the fix — every other caller of that helper can do it, this file cannot.
+// It needs SectionHead from portal-command-center (a server hub that imports every command center)
+// and SOURCE_BADGE from crm-first-visit-board (which imports the Supabase-backed
+// nsm-crm-compliance), so the directive drags rls-server.ts into the client bundle and the route
+// 500s on `Can't resolve 'child_process' / 'fs' / 'net' / 'tls'`. Verified both ways.
+//
+// So the responsive split is inlined below — the same markup PortalResponsiveDataList produces
+// (`divide-y divide-slate-100 md:hidden` cards, then the desktop table), with nothing but elements
+// crossing the boundary.
+//
+// Nothing catches this class of bug without opening the page: typecheck and `next build` pass, and
+// the route still answers HTTP 200 because the static shell streams before the boundary fails.
+
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
-import { PortalDesktopTable, PortalResponsiveDataList } from "@/components/employee-portal/portal-primitives";
+import { PortalDesktopTable } from "@/components/employee-portal/portal-primitives";
 import { SOURCE_BADGE } from "@/components/employee-portal/dashboards/crm-first-visit-board";
 import type { EarlyBirdsRepProfile, EarlyBirdsRepScore } from "@/lib/early-birds/types";
 import { formatPercent, formatPoints, formatStartClock } from "./early-birds-format";
@@ -48,14 +68,15 @@ export function EarlyBirdsRepTable({
           </span>
         }
       />
-      <PortalResponsiveDataList<EarlyBirdsRepScore>
-        empty={<p className="bg-white px-5 py-6 text-sm text-slate-500">No reps in scope for this fortnight.</p>}
-        getKey={(score) => score.hrIdKey}
-        items={scores}
-        renderCard={(score, index) => {
-          const badge = SOURCE_BADGE[dominantSource(score)];
-          return (
-            <div className="bg-white px-4 py-3">
+      {scores.length === 0 ? (
+        <p className="bg-white px-5 py-6 text-sm text-slate-500">No reps in scope for this fortnight.</p>
+      ) : (
+        <>
+          <div className="divide-y divide-slate-100 md:hidden">
+            {scores.map((score, index) => {
+              const badge = SOURCE_BADGE[dominantSource(score)];
+              return (
+                <div className="bg-white px-4 py-3" key={score.hrIdKey}>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] font-black text-slate-400">{index + 1}</span>
                 <p className="whitespace-nowrap text-sm font-bold text-slate-900" dir="auto">
@@ -83,15 +104,15 @@ export function EarlyBirdsRepTable({
                   </div>
                 ))}
               </div>
-              {!score.eligible && (
-                <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-amber-700">
-                  {reasonText(score.ineligibleReasons)}
-                </p>
-              )}
-            </div>
-          );
-        }}
-        renderTable={() => (
+                  {!score.eligible && (
+                    <p className="mt-2 whitespace-nowrap text-[11px] font-semibold text-amber-700">
+                      {reasonText(score.ineligibleReasons)}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
           <PortalDesktopTable minWidth="1100px">
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -150,8 +171,8 @@ export function EarlyBirdsRepTable({
               </tbody>
             </table>
           </PortalDesktopTable>
-        )}
-      />
+        </>
+      )}
     </div>
   );
 }
