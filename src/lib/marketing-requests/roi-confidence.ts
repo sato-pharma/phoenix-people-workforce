@@ -127,7 +127,24 @@ export function draftCaptureConfidence(input: DraftCaptureInput): RoiConfidence 
   return { band: bandOf(score), factors, score, weakest };
 }
 
-export function roiConfidenceOf(row: RoiTrackerRow): RoiConfidence {
+/**
+ * The narrow slice of a tracker row `roiConfidenceOf` actually reads.
+ *
+ * Declared structurally so the score can be computed SERVER-side from facts a caller has already
+ * assembled (the Case File builds its own product and target-pharmacy lists) without first
+ * materialising a full `RoiTrackerRow`. Every `RoiTrackerRow` satisfies it, so no caller changes.
+ */
+export type RoiConfidenceInput = {
+  dataCoverage: RoiTrackerRow["dataCoverage"];
+  payDate: string | null;
+  /** Only `.length` is read — one entry per target pharmacy. */
+  pharmacies: readonly unknown[];
+  products: ReadonlyArray<{ forecastQty: number }>;
+  roiWindow: string | null;
+  suspectPharmacyCount: number;
+};
+
+export function roiConfidenceOf(row: RoiConfidenceInput): RoiConfidence {
   const pharmacyCount = row.pharmacies.length;
   const verified = pharmacyCount - row.suspectPharmacyCount;
 

@@ -14,8 +14,14 @@
 // "does this request contest invoice lines with another one, and which".
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Statuses whose money is not committed, so they cannot contest anything. */
-const INERT_STATUSES = new Set(["draft", "rejected"]);
+/**
+ * Statuses whose money is not committed, so they cannot contest anything.
+ *
+ * Exported because it is also the right exclusion set for any "what have we already spent on this
+ * customer" figure: an abandoned draft and a refused request are not spend, and counting them
+ * inflates the number an approver weighs the next request against.
+ */
+export const INERT_MARKETING_REQUEST_STATUSES: ReadonlySet<string> = new Set(["draft", "rejected"]);
 
 export type OverlapCandidate = {
   requestId: string;
@@ -77,7 +83,7 @@ export function findRequestOverlaps(subject: OverlapCandidate, others: OverlapCa
   const overlaps: RequestOverlap[] = [];
   for (const other of others) {
     if (other.requestId === subject.requestId) continue;
-    if (INERT_STATUSES.has(other.status)) continue;
+    if (INERT_MARKETING_REQUEST_STATUSES.has(other.status)) continue;
 
     const sharedPharmacyIds = other.pharmacyIds.filter((id) => subjectPharmacies.has(id));
     if (sharedPharmacyIds.length === 0) continue;
