@@ -1626,34 +1626,41 @@ export async function submitOutstationRequest(
       ? `This offline capture synced ${Math.round(offlineSyncDelayHours)} hours after it was taken, beyond the ${offlineSyncLimitHours}-hour policy window, so it is held for Super Admin review before it moves to payroll.`
       : null;
 
-  // System decision: reject on failed eligibility (distance / governorate) or a CONFIRMED DM/TM
-  // campaign-rule breach; HOLD for Super Admin review when the trip's double-visit evidence is
-  // not in the CRM yet, when a governorate could not be confirmed, when an offline claim arrived
-  // without its mandated ticket, or when a policy limit was exceeded; otherwise accept. Rejected
-  // AND held requests are PERSISTED (not thrown) so the employee sees them in their expense list,
-  // and a Super Admin can decide/override.
-  const systemRejectionReason =
-    calculation.eligibilityStatus === "not_eligible"
-      ? calculation.eligibilityReason
-      : campaignRejectionReason;
+  /**
+   * The system FLAGS, it never REJECTS. (Owner rule, 2026-08-09.)
+   *
+   * Every automated check still runs and every failure is still recorded in full — what changed is
+   * who acts on it. A failed check now HOLDS the claim for Super Admin review carrying its reason,
+   * instead of deciding against the employee on its own. `rejected_by_system` is no longer
+   * reachable from this path; only a human rejects, as `rejected_by_admin`.
+   *
+   * The rule was set after the double-visit check auto-rejected four genuine same-day claims. The
+   * lesson generalised: every one of these checks reads a signal that can be MISSING rather than
+   * false — an unwritten CRM record, an unmeasured distance, an unresolved governorate, a ticket
+   * an offline capture could not carry. The system cannot tell "this is wrong" from "I could not
+   * see it yet", so it must not be the one to refuse a person's money.
+   *
+   * Held claims are PERSISTED (never thrown), so the employee sees the claim in his list with the
+   * reason on it, and the approvals queue shows the Super Admin exactly what to look at.
+   */
+  const eligibilityFlagReason =
+    calculation.eligibilityStatus === "not_eligible" ? calculation.eligibilityReason : null;
   const governorateReviewReason =
     "Your residence or destination governorate could not be confirmed automatically, so this request is held for Super Admin review before it moves to payroll.";
   const offlineTicketHoldReason =
     "This train or bus claim was captured offline and could not carry its ticket attachment, so it is held for Super Admin review before it moves to payroll.";
-  const reviewHoldReasons = systemRejectionReason
-    ? []
-    : [
-        campaignHoldReason,
-        calculation.governorateReviewRequired ? governorateReviewReason : null,
-        ticketEvidenceRejection ? offlineTicketHoldReason : null,
-        gpsAccuracyHoldReason,
-        offlineSyncHoldReason,
-      ].filter((reason): reason is string => Boolean(reason));
-  const decisionStatus = systemRejectionReason
-    ? "rejected_by_system"
-    : reviewHoldReasons.length > 0
-      ? "submitted"
-      : "accepted_by_system";
+  // Ordered worst-first: the flag most likely to decide the outcome is the one the approver
+  // should read first, and this list is joined into the reason the queue renders.
+  const reviewHoldReasons = [
+    eligibilityFlagReason,
+    campaignRejectionReason,
+    campaignHoldReason,
+    calculation.governorateReviewRequired ? governorateReviewReason : null,
+    ticketEvidenceRejection ? offlineTicketHoldReason : null,
+    gpsAccuracyHoldReason,
+    offlineSyncHoldReason,
+  ].filter((reason): reason is string => Boolean(reason));
+  const decisionStatus = reviewHoldReasons.length > 0 ? "submitted" : "accepted_by_system";
   /**
    * Where the request sits in the WORKFLOW — deliberately separate from what the automated
    * calculation concluded, which stays in `calculation_status`.
@@ -1663,17 +1670,17 @@ export async function submitOutstationRequest(
    * 21 of 29 live claims into payroll staging before anyone could look at them — and left the
    * approvals queue holding only the handful the automated checks had refused to clear.
    *
-   * Everything that is not a system rejection is therefore `submitted`, so it lands in the pending
-   * queue. `calculation_status` still records `accepted_by_system` vs `submitted`, so "passed every
-   * automated check" stays distinguishable from "held because a check could not run" — the
-   * distinction is preserved, it just no longer decides where the money goes.
+   * Everything is therefore `submitted`, so it lands in the pending queue. `calculation_status`
+   * still records `accepted_by_system` vs `submitted`, so "passed every automated check" stays
+   * distinguishable from "flagged by one" — the distinction is preserved, it just no longer
+   * decides where the money goes.
+   *
+   * Since the owner's 2026-08-09 flag-never-reject rule this is unconditional: no submission
+   * produces `rejected_by_system` any more, so there is nothing left for it to branch on.
    */
-  const workflowStatus = decisionStatus === "rejected_by_system" ? decisionStatus : "submitted";
-  const decisionReason = systemRejectionReason
-    ? systemRejectionReason
-    : reviewHoldReasons.length > 0
-      ? reviewHoldReasons.join(" ")
-      : calculation.approvalReason;
+  const workflowStatus = "submitted";
+  const decisionReason =
+    reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : calculation.approvalReason;
 
   let uploadedTicketAttachments: OutstationTicketAttachmentMetadata[] = [];
   if (ticketAttachmentInputs.length > 0) {
@@ -1826,15 +1833,12 @@ export async function submitOutstationRequest(
         )
       : data.notes,
   });
-  if (decisionStatus === "rejected_by_system") {
-    // Persisted, employee notified, no payroll push. Super Admin can override later.
-    await notifyOutstationDecision({ comment: decisionReason, decision: "reject", request: submitted });
-    return submitted;
-  }
-  // Everything that is not a system rejection now WAITS (owner decision 2026-08-08) — whether it
-  // passed every automated check or was held because one could not run. Nothing is pushed to
-  // payroll from here any more; only an explicit approval in the queue moves money, which is what
-  // makes the evidence gate, the workload gate and the CRM claim checks worth reading.
+  // Every submission now WAITS — whether it passed every automated check or was flagged by one
+  // (owner decisions 2026-08-08 and 2026-08-09). Nothing is pushed to payroll from here, and
+  // nothing is refused from here either; only an explicit human decision in the queue does either,
+  // which is what makes the evidence gate, the workload gate and the CRM claim checks worth
+  // reading. The submit-time rejection email is gone with the submit-time rejection: the only
+  // rejection notice an employee can now receive is one a Super Admin actually chose to send.
   await notifyOutstationSubmitted(submitted, {
     heldForReview: true,
     reviewReason: reviewHoldReasons.length > 0 ? reviewHoldReasons.join(" ") : null,

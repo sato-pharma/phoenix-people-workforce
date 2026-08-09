@@ -59,10 +59,16 @@ export function runOutstationSubmissionWaitsForApprovalTests() {
 
   // ── 2. A clean submission must persist as pending, not as accepted ──────────
   const submitSlice = functionSlice(service, "export async function submitOutstationRequest");
+  // STRENGTHENED 2026-08-09 by owner decision ("do not reject any expense, you flag to admin and
+  // he decides"): this used to allow one exception — `decisionStatus === "rejected_by_system"`
+  // kept its own status. The submit path can no longer produce that verdict at all, so the
+  // conditional is gone and EVERY submission lands in the pending queue. The intent is unchanged
+  // and now absolute; outstation-decision.test.ts pins the other half, that no rule was deleted
+  // in the process.
   assert.match(
     submitSlice,
-    /const workflowStatus\s*=\s*decisionStatus === "rejected_by_system"\s*\?\s*decisionStatus\s*:\s*"submitted"/,
-    "a clean submission must persist as `submitted` so it lands in the pending queue",
+    /const workflowStatus\s*=\s*"submitted";/,
+    "every submission must persist as `submitted` so it lands in the pending queue",
   );
   assert.match(
     submitSlice,
