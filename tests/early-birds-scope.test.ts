@@ -173,4 +173,38 @@ export function runEarlyBirdsScopeTests() {
     assert.equal(assertDistrictInScope(cns, "B-118")?.hrIdKey, "b118");
     assert.equal(assertDistrictInScope(cns, null)?.hrIdKey, "b118", "no district named falls back to the first in scope");
   }
+
+  // ── An unreadable directory is DISTINGUISHABLE from an empty one ────────────────
+  {
+    // resolveEarlyBirdsScope used to end in `.catch(() => [])`, so a database outage produced the
+    // same shape as an honest empty scope: zero districts, scopeLabel "your team". The board then
+    // told a National Sales Manager with six districts that none reported to him. It fooled a live
+    // debugging session with the real data on screen; it would fool a manager at 08:00.
+    //
+    // The scope object must therefore carry WHY it is empty, and an honest empty scope must not
+    // claim an outage.
+    const outage = resolveEarlyBirdsScopeFrom([], viewer("AI-0008", "National Sales Manager"));
+    assert.deepEqual(outage.districts, [], "no directory means no districts — still fails closed");
+    assert.equal(
+      outage.directoryUnavailable,
+      true,
+      "an empty directory must be reported as an OUTAGE, not as an empty scope the viewer can believe",
+    );
+
+    const populated = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("AI-0008", "National Sales Manager"));
+    assert.equal(
+      populated.directoryUnavailable,
+      false,
+      "a scope resolved from a real directory must never claim the directory was unavailable",
+    );
+
+    // The honest-empty case: the directory WAS read, and this viewer genuinely owns nothing in it.
+    const genuinelyEmpty = resolveEarlyBirdsScopeFrom(DIRECTORY, viewer("NOBODY", "Manager"));
+    assert.deepEqual(genuinelyEmpty.districts, []);
+    assert.equal(
+      genuinelyEmpty.directoryUnavailable,
+      false,
+      "an empty scope over a healthy directory is an ANSWER, and must not be reported as an outage",
+    );
+  }
 }
