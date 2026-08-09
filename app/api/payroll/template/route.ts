@@ -15,6 +15,12 @@ import { getApprovedExpenseTotalsForPayroll } from "@/lib/outstation/expenses";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { calculatePayrollParts, payrollPaymentModeLabel, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
+import {
+  calculateBaseLifecycleProrationDeduction,
+  payrollDaysInMonth,
+  payrollMonthMatches,
+  prorationEndDay,
+} from "@/lib/payroll/ready-proration";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
 
@@ -153,16 +159,6 @@ function resolvePayrollSplit(input: {
   };
 }
 
-function payrollMonthMatches(value: string | null, month: number, year: number) {
-  if (!value) return false;
-  const date = parseDateOnly(value);
-  return Boolean(
-    date &&
-      date.getFullYear() === year &&
-      date.getMonth() + 1 === month,
-  );
-}
-
 function normalizePayrollHrId(value: string | null | undefined) {
   const text = String(value ?? "").trim();
   return text ? text.toUpperCase() : null;
@@ -225,11 +221,6 @@ async function getPayrollTemplateEmployees(
   return [...activeEmployees, ...terminalEmployees];
 }
 
-function payrollHireDay(value: string | null) {
-  const date = parseDateOnly(value);
-  return date ? date.getDate() : null;
-}
-
 function payrollExcelDateOnly(value: string | null) {
   const date = parseDateOnly(value);
   if (!date) return "";
@@ -242,47 +233,6 @@ function payrollExcelDateOnly(value: string | null) {
   ));
 }
 
-export function calculateBaseProrationDeduction(
-  baseSalary: number,
-  hireDate: string | null,
-  month: number,
-  year: number,
-) {
-  if (!payrollMonthMatches(hireDate, month, year)) return 0;
-
-  const hireDay = payrollHireDay(hireDate);
-  if (!hireDay) return 0;
-
-  const eligibleDays = Math.max(0, 30 - hireDay + 1);
-  return money(Math.max(0, baseSalary - (baseSalary / 30) * eligibleDays));
-}
-
-function prorationStartDay(hireDate: string | null, month: number, year: number) {
-  return payrollMonthMatches(hireDate, month, year) ? payrollHireDay(hireDate) ?? 1 : 1;
-}
-
-function prorationEndDay(lastWorkingDate: string | null, month: number, year: number) {
-  if (!payrollMonthMatches(lastWorkingDate, month, year)) return 30;
-  const lastWorkingDay = payrollHireDay(lastWorkingDate) ?? 30;
-  return Math.min(30, Math.max(1, lastWorkingDay));
-}
-
-function calculateBaseLifecycleProrationDeduction(
-  baseSalary: number,
-  hireDate: string | null,
-  lastWorkingDate: string | null,
-  month: number,
-  year: number,
-) {
-  const startDay = prorationStartDay(hireDate, month, year);
-  const endDay = prorationEndDay(lastWorkingDate, month, year);
-
-  if (startDay <= 1 && endDay >= 30) return 0;
-
-  const eligibleDays = Math.max(0, endDay - startDay + 1);
-  return money(Math.max(0, baseSalary - (baseSalary / 30) * eligibleDays));
-}
-
 function otherDeductionsFormula(
   row: PayrollTemplateRow,
   rowNumber: number,
@@ -291,13 +241,17 @@ function otherDeductionsFormula(
 ) {
   const baseSalary = cellRef(rowNumber, 11);
   const hireDate = cellRef(rowNumber, 10);
+  // Must match payrollDaysInMonth exactly: the workbook recalculates these
+  // formulas client-side, so a server-only fix would leave the downloaded sheet
+  // disagreeing with the figure Ready Payroll stored.
+  const daysInMonth = payrollDaysInMonth(month, year);
 
   if (payrollMonthMatches(row.lastWorkingDate, month, year)) {
     const endDay = prorationEndDay(row.lastWorkingDate, month, year);
-    return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
+    return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
   }
 
-  return `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/30)*MAX(0,30-DAY(${hireDate})+1))),2),0)`;
+  return `IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${daysInMonth}-DAY(${hireDate})+1))),2),0)`;
 }
 
 function monthName(month: number) {
@@ -1124,9 +1078,9 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Fuel", exampleAllowances.fuelAllowance],
     ["Net Salary", { formula: "B5+B6+B7" }],
     ["Basic Salary", { formula: "B5*70%" }],
-    ["Payroll Standard Days", 30],
+    ["Payroll Calendar Days", payrollDaysInMonth(month, year)],
     ["Base Daily Rate", { formula: "B5/B10" }],
-    ["Example Hire-Day-20 Deduction", { formula: "B5-((B5/B10)*(30-20+1))" }],
+    ["Example Hire-Day-20 Deduction", { formula: "B5-((B5/B10)*(B10-20+1))" }],
   ]);
 
   forCells(sheet, 3, 1, 12, 1, (cell) => {
@@ -1251,7 +1205,7 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Policy note", "", "", "", "", "", "", ""],
     ["Change Year/Month in B3:B4. Month days and weekday names recalculate automatically.", "", "", "", "", "", "", ""],
     ["Change First Day / Last Day in B14:C16. Working days and totals recalculate immediately.", "", "", "", "", "", "", ""],
-    ["Ready payroll uses a fixed 30-day month. Partial-month hire deduction is calculated on Base Salary only and is written into Other Deductions.", "", "", "", "", "", "", ""],
+    [`Ready payroll prorates on the actual calendar days in the month (${payrollDaysInMonth(month, year)} this month). Partial-month hire deduction is calculated on Base Salary only and is written into Other Deductions.`, "", "", "", "", "", "", ""],
   ]);
   sheet.mergeCells("A19:H19");
   sheet.mergeCells("A20:H20");
@@ -1300,7 +1254,7 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Basic Salary", "Base Salary x 70%."],
     ["Gross Salary", "Base Salary + Social Insurance + Employment Income Tax."],
     ["Ready Sheet Formulas", "Ready payroll rows use Excel formulas for Gross Salary, Net Salary, Total Additions, Governmental Deductions, Other Deductions proration, Total Deductions, Month Salary, First Part, and Second Part."],
-    ["Partial Month Hires", "Payroll uses a fixed 30-day month. If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / 30) x eligible days). Hire day is included."],
+    ["Partial Month Hires", "Payroll prorates on the actual calendar days in the payroll month (28, 29, 30 or 31). If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / days in month) x eligible days). Hire day is included."],
     ["First Part", "One Part: Month Salary minus Expenses and Incentive. Two Parts: MIN(Month Salary minus Expenses and Incentive, Base Salary x 70%, Base Salary - Other Deductions) so low final dues are paid fully in First Part."],
     ["Second Part", "Expenses and Incentive always pay in Second Part. Two Parts also includes any remaining Month Salary after First Part. Never below 0."],
     ["Ready Sheet Sorting", "Ready payroll rows are ordered in four blocks: One Part, already hired Two Parts, current-month Two Parts new hires, then current-month resignations. Rows inside each block are sorted from oldest to newest by the relevant date."],

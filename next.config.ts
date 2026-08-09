@@ -31,7 +31,20 @@ const contentSecurityPolicy = [
   // which hangs OneSignal.init() until it times out — confirmed in production 2026-07-23
   // (console: "Loading the script '.../sync/.../web' violates ... script-src"), which meant
   // push never worked at all, on any device, despite every other piece being correctly wired.
-  `script-src 'self' 'unsafe-inline' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com https://api.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
+  //
+  // 'wasm-unsafe-eval' is required for the Maps JavaScript API's vector renderer, which
+  // compiles a WebAssembly module. Without it production threw
+  // "CompileError: call to WebAssembly.instantiate() blocked by CSP" on every page that
+  // renders a map — /employee-portals/submit-expense and /admin/outstation/expense-command
+  // — which was 1,992 of 2,236 logged client errors (89%) over the 14 days to 2026-08-09.
+  // It only ever broke in production because 'unsafe-eval' (appended below outside
+  // production) already implies wasm compilation, so dev and preview looked fine.
+  // 'wasm-unsafe-eval' permits WebAssembly compilation ONLY — it does not re-enable
+  // eval() of JavaScript, so this does not widen the JS execution surface.
+  // Google documents it as a CSP requirement for the Maps JS API, same source as the
+  // style-src/font-src entries below:
+  // https://developers.google.com/maps/documentation/javascript/content-security-policy
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://maps.googleapis.com https://maps.gstatic.com https://cdn.onesignal.com https://api.onesignal.com${isProduction ? "" : " 'unsafe-eval'"}`,
   // fonts.googleapis.com: the Maps JavaScript API (loaded above for outstation expense
   // heatmaps/location review — see src/lib/google-maps/browser.ts) injects its own
   // <link rel="stylesheet"> for the "Google Sans" font used by its UI controls
