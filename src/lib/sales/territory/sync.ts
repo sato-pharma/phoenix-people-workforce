@@ -19,10 +19,12 @@ export const TERRITORY_SYNC_MAX_MONTHS = 24;
 // floating-point noise in the effective-units product (qty * (1 - discount)).
 const RECONCILE_EPSILON = 0.01;
 
-// Refresh the rollups for at most this many batches at once. The re-stamp usually touches a
-// handful of batches; the cap stops a rare wide sync (e.g. a mass brick move) from firing dozens
-// of concurrent RPCs at a database every round trip already crosses the Atlantic to reach.
-const REFRESH_CONCURRENCY = 4;
+// The whole sync (re-stamp + every affected batch's rollup rebuild) runs server-side in ONE
+// transaction (phx_sync_sos_run), so it needs a request timeout far longer than the 15s default —
+// a large first backlog can take a minute. Because it is one transaction, a client abort rolls the
+// whole thing back rather than leaving import_rows re-stamped but rollups stale (the 2026-08-09
+// half-applied-timeout incident).
+const SYNC_REQUEST_TIMEOUT_MS = 170_000;
 
 const AUDIT_ENTITY_TYPE = "territory_sync";
 
@@ -88,73 +90,45 @@ export function parseReconciliationRow(row: RawReconciliationRow): TerritorySync
   };
 }
 
-/** Chunk an array into fixed-size groups. Pure. */
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
 /**
  * Re-stamp every historical import row to today's geography (from the active customer map),
  * rebuild the rollups for exactly the batches that moved, then prove the drilldown's rollup now
- * equals the raw source. This is the bulk, set-based sibling of applyHistoricalReconciliation
- * (normalizer/customer-map.ts) — same re-stamp columns, same refresh trio — run once across all
- * mappings instead of once per customer.
+ * equals the raw source.
  *
- * Mutates shared Source-of-Sales data that the monthly closing also reads, so the caller MUST
- * gate this to the admin account (see the API route). Throws if a rollup refresh fails, so a
- * partial, inconsistent state is never left silently in place.
+ * The re-stamp AND the rollup rebuilds run inside one server-side function (phx_sync_sos_run) —
+ * therefore one transaction and one round trip. That is what makes it safe: a client timeout on a
+ * large backlog rolls the whole thing back instead of committing the re-stamp but not the rollup
+ * refresh (the half-applied state the earlier per-call orchestration left on 2026-08-09). It
+ * mutates shared Source-of-Sales data the monthly closing also reads; the API route decides who
+ * may run it.
  */
 export async function syncTerritoryData(input: {
   periods: string[];
   actorLoginId: string;
 }): Promise<TerritorySyncReport> {
   const startedAt = Date.now();
-  const supabase = getSupabaseAdmin();
   const periods = input.periods;
 
-  // 1) Set-based re-stamp of import_rows from the active customer_map.
-  const { data: restampData, error: restampError } = await supabase.rpc(
-    "phx_sync_sos_restamp_import_rows",
-    { p_periods: periods },
-  );
-  if (restampError) {
-    throw new Error(`Territory sync failed while re-stamping geography: ${restampError.message}`);
+  // 1) Re-stamp + rebuild the affected batches' rollups atomically, server-side, in one call. The
+  //    long request timeout matches the function's own statement_timeout; because it is one
+  //    transaction, an abort cannot leave a half-applied state.
+  const runClient = getSupabaseAdmin({ requestTimeoutMs: SYNC_REQUEST_TIMEOUT_MS });
+  const { data: runData, error: runError } = await runClient.rpc("phx_sync_sos_run", {
+    p_periods: periods,
+  });
+  if (runError) {
+    throw new Error(`Territory sync failed: ${runError.message}`);
   }
-  const restampRow = (Array.isArray(restampData) ? restampData[0] : restampData) as
-    | { updated_rows?: number; affected_batch_ids?: unknown }
+  const runRow = (Array.isArray(runData) ? runData[0] : runData) as
+    | { restamped_rows?: number; refreshed_batches?: number }
     | null
     | undefined;
-  const restampedRows = toNumber(restampRow?.updated_rows);
-  const affectedBatchIds = Array.isArray(restampRow?.affected_batch_ids)
-    ? restampRow!.affected_batch_ids.map((id) => String(id)).filter(Boolean)
-    : [];
+  const restampedRows = toNumber(runRow?.restamped_rows);
+  const refreshedBatches = toNumber(runRow?.refreshed_batches);
 
-  // 2) Rebuild the canonical refresh trio for exactly the touched batches — refreshing all three
-  //    (not just the two the drilldown reads) keeps the monthly closing and marketing ROI facts
-  //    consistent with the moved geography instead of introducing a fresh skew.
-  let refreshedBatches = 0;
-  for (const group of chunk(affectedBatchIds, REFRESH_CONCURRENCY)) {
-    await Promise.all(
-      group.map(async (batchId) => {
-        const [fact, directory, roi] = await Promise.all([
-          supabase.rpc("phx_refresh_sos_fact_rollup", { p_batch_id: batchId }),
-          supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
-          supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
-        ]);
-        const rollupError = fact.error ?? directory.error ?? roi.error;
-        if (rollupError) {
-          throw new Error(
-            `Territory sync re-stamped ${restampedRows} row(s) but rollup refresh failed for batch ${batchId}: ${rollupError.message}. Re-run Sync to retry.`,
-          );
-        }
-      }),
-    );
-    refreshedBatches += group.length;
-  }
+  const supabase = getSupabaseAdmin();
 
-  // 3) Read-only reconciliation proof across the same window.
+  // 2) Read-only reconciliation proof across the same window.
   const { data: reconData, error: reconError } = await supabase.rpc("phx_sync_sos_reconciliation", {
     p_periods: periods,
   });
