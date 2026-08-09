@@ -24,6 +24,7 @@ import { runNotificationConfidenceGateTests } from "./notification-confidence-ga
 import { runOpenAiClientTests } from "./openai-client.test.ts";
 import { runEmailAiAssistTests } from "./email-ai-assist.test.ts";
 import { runSosAiSuggestRetryTests } from "./sos-ai-suggest-retry.test.ts";
+import { runForceLogoutHrIdCasingTests } from "./force-logout-hr-id-casing.test.ts";
 import { runResignationNotificationSubjectTests } from "./resignation-notification-subject.test.ts";
 import { runNotificationGovernanceHardeningTests } from "./notification-governance-hardening.test.ts";
 import { runBirthdayEligibilityTests } from "./birthday-eligibility.test.ts";
@@ -758,6 +759,7 @@ await runTest("email governance", runEmailGovernanceTests);
 await runTest("openai client", runOpenAiClientTests);
 await runTest("email ai assist", runEmailAiAssistTests);
 await runTest("sos ai-suggest retry/backoff", runSosAiSuggestRetryTests);
+await runTest("force logout HR_ID casing (app_sessions stores UPPER, activity_events stores lower)", runForceLogoutHrIdCasingTests);
 await runTest("resignation notification subject (a leaver is still a valid SUBJECT, never a recipient)", runResignationNotificationSubjectTests);
 await runTest("notification governance hardening", runNotificationGovernanceHardeningTests);
 await runTest("birthday eligibility (on_leave included, terminal excluded, birth_date required)", runBirthdayEligibilityTests);
