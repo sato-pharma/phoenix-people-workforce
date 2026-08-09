@@ -43,6 +43,8 @@ alter table public.notification_role_policies
     'ireports360_sync_notify',
     'attendance_ingestion_alert',
     'marketing_sla_reminder',
+    'resignation_workflow_alert',
+    'employee_import_alert',
     'payroll_workflow_alert'
   ));
 
