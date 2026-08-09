@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { getLiveActivity } from "@/lib/activity/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Failed to load live activity";
+    const message = clientSafeErrorMessage(error, "Failed to load live activity");
     return NextResponse.json({ message }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -280,7 +281,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to generate template.";
+    const message = clientSafeErrorMessage(error, "Unable to generate template.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
@@ -538,7 +539,7 @@ export async function POST(request: Request) {
         existingLoginIds.add(normalizedLoginId);
       } catch (error) {
         failed += 1;
-        const rowError = error instanceof Error ? error.message : "Unknown error";
+        const rowError = clientSafeErrorMessage(error, "Unknown error");
         const message = `Failed to create/update user: ${rowError}`;
         errors.push(`Row ${row.row}: ${message}`);
         rowResults.push({
@@ -576,7 +577,7 @@ export async function POST(request: Request) {
       dashboard: await getAccessControlDashboard(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bulk user upload failed.";
+    const message = clientSafeErrorMessage(error, "Bulk user upload failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

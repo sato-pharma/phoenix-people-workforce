@@ -10,6 +10,7 @@ import {
   listCustomerMapPage,
   previewHistoricalReconciliation,
 } from "@/lib/sales/normalizer/customer-map";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,12 +21,12 @@ function actor(access: Awaited<ReturnType<typeof resolveAccessContext>>): string
 
 function fail(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
   }
   if (error instanceof SalesWorkflowError) {
     return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
   }
-  return NextResponse.json({ success: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
+  return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, fallback) }, { status: 500 });
 }
 
 // GET — paginated + searchable customer→brick rows for one distributor (Mapping Database, Monthly).

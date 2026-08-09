@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { captureOutstationLocation } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unable to capture current location.";
+      clientSafeErrorMessage(error, "Unable to capture current location.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_capture_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

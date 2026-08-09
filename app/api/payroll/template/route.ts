@@ -23,6 +23,7 @@ import {
 } from "@/lib/payroll/ready-proration";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1638,7 +1639,7 @@ export async function GET(request: Request) {
         return NextResponse.json(
           {
             error: "invalid_payroll_period",
-            message: error instanceof Error ? error.message : "Payroll period is invalid.",
+            message: clientSafeErrorMessage(error, "Payroll period is invalid."),
           },
           { status: 400 },
         );
@@ -1665,7 +1666,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error: "invalid_payroll_period",
-          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          message: clientSafeErrorMessage(error, "Payroll period is invalid."),
         },
         { status: 400 },
       );
@@ -1690,7 +1691,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Payroll template request failed.";
+    const message = clientSafeErrorMessage(error, "Payroll template request failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

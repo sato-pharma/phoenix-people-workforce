@@ -9,6 +9,7 @@ import type {
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to calculate outstation expense.";
+    const message = clientSafeErrorMessage(error, "Unable to calculate outstation expense.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_calculation_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

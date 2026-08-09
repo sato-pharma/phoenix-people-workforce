@@ -7,6 +7,7 @@ import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { runScheduledIReports360Sync } from "@/lib/crm/sync";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 const JOB_NAME = "ireports360-visits-sync";
 
@@ -106,7 +107,7 @@ export async function GET(request: Request) {
     return await withDeadMansSwitch("phoenix-ireports360-sync", () => runSync());
   } catch (error) {
     logError("iReports360 visits sync failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    const message = error instanceof Error ? error.message : "iReports360 visits sync failed.";
+    const message = clientSafeErrorMessage(error, "iReports360 visits sync failed.");
     return NextResponse.json({ error: "ireports360_visits_sync_failed", message }, { status: 500 });
   }
 }

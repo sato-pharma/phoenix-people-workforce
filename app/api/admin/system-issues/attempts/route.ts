@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { loadUserAttemptsSnapshot } from "@/lib/error-monitor/system-issues";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to load user attempt summary." },
+      { message: clientSafeErrorMessage(error, "Failed to load user attempt summary.") },
       { status: 500 },
     );
   }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/field-workforce-compliance/live-snapshots";
 import { FieldWorkforcePreviewError } from "@/lib/field-workforce-compliance/preview";
 import { getLatestVisitsSyncRuns } from "@/lib/visits-report/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,7 +91,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       error: "field_workforce_live_view_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance data could not be computed.",
+      message: clientSafeErrorMessage(error, "Field Workforce Compliance data could not be computed."),
       success: false,
     }, { status: 500 });
   }

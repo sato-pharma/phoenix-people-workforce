@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { executeReset, type ResetScope } from "@/lib/admin/data-reset";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,11 +52,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden" },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden") },
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Reset failed.";
+    const message = clientSafeErrorMessage(error, "Reset failed.");
     return NextResponse.json({ error: "server_error", message }, { status: 500 });
   }
 }

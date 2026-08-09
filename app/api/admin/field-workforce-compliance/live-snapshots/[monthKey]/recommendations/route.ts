@@ -14,6 +14,7 @@ import {
   saveFieldWorkforceRecommendationDecisionForLiveMonth,
 } from "@/lib/field-workforce-compliance/recommendations";
 import type { FieldWorkforceDecisionStatus } from "@/lib/field-workforce-compliance/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,7 +79,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       error: "field_workforce_recommendations_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance recommendations failed.",
+      message: clientSafeErrorMessage(error, "Field Workforce Compliance recommendations failed."),
       success: false,
     }, { status: 500 });
   }
@@ -169,7 +170,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       error: "field_workforce_decision_update_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance decision update failed.",
+      message: clientSafeErrorMessage(error, "Field Workforce Compliance decision update failed."),
       success: false,
     }, { status: 500 });
   }

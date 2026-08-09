@@ -20,6 +20,7 @@ import {
 import { sendPhoenixEmail } from "@/lib/email/send-phoenix-email";
 import { buildPhoenixHrReplyEmail } from "@/lib/email/phoenix-hr-reply-template";
 import { emailNotificationsEnabled } from "@/lib/notifications/email";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,7 +133,7 @@ export async function POST(request: Request) {
       signatureImageWarning = signatureImageCheck.warning ?? null;
     } catch (error) {
       signatureImageVerified = false;
-      signatureImageWarning = error instanceof Error ? error.message : "Signature image check failed.";
+      signatureImageWarning = clientSafeErrorMessage(error, "Signature image check failed.");
       console.error("[email-reply/send] signature image check failed (sending anyway):", signatureImageWarning);
     }
 
@@ -196,7 +197,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to send HR emails." }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Email send failed.";
+    const message = clientSafeErrorMessage(error, "Email send failed.");
     return NextResponse.json({ error: "email_send_failed", message }, { status: 500 });
   }
 }

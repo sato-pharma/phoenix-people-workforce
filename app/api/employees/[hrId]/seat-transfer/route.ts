@@ -8,12 +8,13 @@ import {
   type SeatTransferInput,
 } from "@/lib/employees/seat-transfer";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function apiError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Seat transfer failed.";
+  const message = clientSafeErrorMessage(error, "Seat transfer failed.");
   const lowered = message.toLowerCase();
   if (isForbiddenError(error) || lowered.startsWith("forbidden")) {
     return { message, status: 403 };

@@ -8,6 +8,7 @@ import { stripRestrictedMasterProductRows } from "@/lib/sales/access-scope";
 import { getMasterDefinition, requiredReferenceMasters, type MasterKey, type MasterRowRecord } from "@/lib/sales/master-data/definitions";
 import { buildMasterWorkbook } from "@/lib/sales/master-data/export-workbook";
 import { listMasterRows } from "@/lib/sales/master-data/list";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,12 +58,12 @@ export async function GET(request: Request, context: RouteContext) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to export master sheet." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to export master sheet.") },
       { status: 500 },
     );
   }

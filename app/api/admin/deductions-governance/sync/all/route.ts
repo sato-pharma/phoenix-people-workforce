@@ -7,6 +7,7 @@ import { syncAttendanceDeviceDeductionCandidates } from "@/lib/deductions-govern
 import { syncFieldWorkforceApprovedDecisions } from "@/lib/deductions-governance/connectors/field-workforce-compliance";
 import { syncVacationWithoutBalanceDeductionCandidates } from "@/lib/deductions-governance/connectors/vacation";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
   if (isForbiddenError(error)) {
     return NextResponse.json({ success: false, message: (error as Error).message }, { status: 403 });
   }
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("not authenticated")) return NextResponse.json({ success: false, message }, { status: 401 });
   if (lower.includes("forbidden")) return NextResponse.json({ success: false, message }, { status: 403 });

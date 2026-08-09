@@ -5,7 +5,7 @@ import { getMonthlyAttendanceSummary, resolveSummaryMonth } from "@/lib/attendan
 import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json(
-      { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+      { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
       { status: 403 },
     );
   }

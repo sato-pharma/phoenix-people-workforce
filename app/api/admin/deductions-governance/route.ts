@@ -24,6 +24,7 @@ import {
   type DeductionSourceModule,
   type DeductionType,
 } from "@/lib/deductions-governance/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ function jsonError(error: unknown, fallback: string, defaultStatus = 500) {
       { status: 403 },
     );
   }
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const lower = message.toLowerCase();
   if (lower.includes("not authenticated")) {
     return NextResponse.json({ message, success: false }, { status: 401 });

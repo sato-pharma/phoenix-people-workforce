@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const forbidden = isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:");
   return NextResponse.json(
     { error: forbidden ? "forbidden" : "private_calendar_error", message, success: false },

@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { pingBrevoApiKey } from "@/lib/email/brevo-keepalive";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "brevo-keepalive" },
       error,
     });
-    const message = error instanceof Error ? error.message : "Brevo keepalive failed.";
+    const message = clientSafeErrorMessage(error, "Brevo keepalive failed.");
     return NextResponse.json({ error: "brevo_keepalive_failed", message }, { status: 500 });
   }
 }

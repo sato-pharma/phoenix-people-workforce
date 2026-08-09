@@ -4,6 +4,7 @@ import { assertPermission, normalizeHrIdForAccess } from "@/lib/auth/permissions
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { canViewEmployeeExpenseScope } from "@/lib/outstation/expenses";
 import { getDoubleVisitExpenseWorkloadEvidence } from "@/lib/double-visit-analytics/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ export async function GET(request: Request) {
     }
     return NextResponse.json({
       error: "double_visit_workload_evidence_failed",
-      message: error instanceof Error ? error.message : "Double Visit workload evidence lookup failed.",
+      message: clientSafeErrorMessage(error, "Double Visit workload evidence lookup failed."),
     }, { status: 500 });
   }
 }

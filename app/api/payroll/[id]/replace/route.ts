@@ -9,6 +9,7 @@ import { getSalaryBatchById, isPayrollSchemaMissing, replaceSalaryBatch } from "
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -113,7 +114,7 @@ export async function POST(
 
     return NextResponse.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Payroll replace failed.";
+    const message = clientSafeErrorMessage(error, "Payroll replace failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

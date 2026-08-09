@@ -7,6 +7,7 @@ import { saveCoverageSnapshot } from "@/lib/sales/import-coverage";
 import { importSourceOfSalesFile } from "@/lib/sales/source-of-sales-upload";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { salesSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
@@ -142,7 +143,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Sales validation failed.",
+        error: clientSafeErrorMessage(error, "Sales validation failed."),
       },
       { status: 500 },
     );

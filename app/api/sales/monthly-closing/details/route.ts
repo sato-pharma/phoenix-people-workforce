@@ -7,6 +7,7 @@ import {
   listMonthlyClosingLines,
   listMonthlyClosingPeriods,
 } from "@/lib/sales/monthly-distributor-import";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,7 +69,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
@@ -76,7 +77,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to load Monthly Closing details.",
+        error: clientSafeErrorMessage(error, "Failed to load Monthly Closing details."),
       },
       { status: 500 },
     );

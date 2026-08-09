@@ -7,6 +7,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { writeAuditLog } from "@/lib/admin/audit";
 import { forceLogoutUser } from "@/lib/activity/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (isForbiddenError(error)) {
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Force logout failed";
+    const message = clientSafeErrorMessage(error, "Force logout failed");
     return NextResponse.json({ message }, { status: 500 });
   }
 }

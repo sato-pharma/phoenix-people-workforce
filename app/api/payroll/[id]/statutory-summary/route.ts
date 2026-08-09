@@ -7,6 +7,7 @@ import { buildStatutorySummaryRows } from "@/lib/payroll/exports/statutory-summa
 import { autoSizeColumns, MONEY_FMT, PHOENIX_ORANGE, styleDataRow, styleHeaderRow } from "@/lib/payroll/exports/excel-style";
 import { getStatutoryConfigForPeriod } from "@/lib/payroll/statutory/config";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,7 +90,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Statutory summary export failed.";
+    const message = clientSafeErrorMessage(error, "Statutory summary export failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

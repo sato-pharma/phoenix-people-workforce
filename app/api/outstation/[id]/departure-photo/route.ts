@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { captureOutstationDeparturePhoto } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -86,7 +87,7 @@ export async function POST(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to save the departure photo.";
+    const message = clientSafeErrorMessage(error, "Unable to save the departure photo.");
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_departure_photo_failed",

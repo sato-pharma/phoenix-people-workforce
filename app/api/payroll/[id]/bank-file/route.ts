@@ -11,6 +11,7 @@ import {
 } from "@/lib/payroll/exports/bank-file";
 import { autoSizeColumns, MONEY_FMT, PHOENIX_ORANGE, styleDataRow, styleHeaderRow } from "@/lib/payroll/exports/excel-style";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -66,7 +67,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Bank-file export failed.";
+    const message = clientSafeErrorMessage(error, "Bank-file export failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

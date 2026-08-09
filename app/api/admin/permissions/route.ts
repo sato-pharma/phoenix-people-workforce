@@ -7,7 +7,7 @@ import {
 } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { upsertRolePermissionOverride } from "@/lib/admin/access-control";
-import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,14 +24,14 @@ function permissionsApiError(error: unknown) {
   if (isForbiddenError(error)) {
     return {
       code: "forbidden",
-      message: error instanceof Error ? error.message : "Forbidden.",
+      message: clientSafeErrorMessage(error, "Forbidden."),
       status: 403,
     };
   }
 
   return {
     code: "permissions_failed",
-    message: error instanceof Error ? error.message : "Permissions request failed.",
+    message: clientSafeErrorMessage(error, "Permissions request failed."),
     status: 500,
   };
 }

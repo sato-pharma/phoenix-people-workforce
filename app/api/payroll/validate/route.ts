@@ -9,6 +9,7 @@ import { getPayrollSalarySourcesByHrId } from "@/lib/payroll/salary-source";
 import { findSalaryBatchForPeriod, payrollPeriodConflictForBatch } from "@/lib/payroll/service";
 import { upsertPayrollResignationCandidates } from "@/lib/resignations/service";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: "invalid_payroll_period",
-          message: error instanceof Error ? error.message : "Payroll period is invalid.",
+          message: clientSafeErrorMessage(error, "Payroll period is invalid."),
         },
         { status: 400 },
       );
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to validate payroll uploads." }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Salary validation failed.";
+    const message = clientSafeErrorMessage(error, "Salary validation failed.");
     return NextResponse.json({ error: "salary_validation_failed", message }, { status: 500 });
   }
 }

@@ -13,6 +13,7 @@ import {
 } from "@/lib/notifications/telegram-admin";
 import { countTelegramOnboardingTargets, runTelegramOnboardingCampaign } from "@/lib/notifications/telegram-onboarding";
 import { provisionTelegramBot } from "@/lib/notifications/telegram";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: await getTelegramAdminControlCenter(access), success: true });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Telegram admin data failed.";
+    const message = clientSafeErrorMessage(error, "Telegram admin data failed.");
     return NextResponse.json({ error: "telegram_admin_failed", message }, { status: 500 });
   }
 }
@@ -55,7 +56,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "invalid_action", message: "Unsupported Telegram admin update." }, { status: 400 });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Telegram admin update failed.";
+    const message = clientSafeErrorMessage(error, "Telegram admin update failed.");
     return NextResponse.json({ error: "telegram_admin_update_failed", message }, { status: 500 });
   }
 }
@@ -107,7 +108,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_action", message: "Unsupported Telegram admin action." }, { status: 400 });
   } catch (error) {
     if (isForbiddenError(error)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    const message = error instanceof Error ? error.message : "Telegram admin action failed.";
+    const message = clientSafeErrorMessage(error, "Telegram admin action failed.");
     return NextResponse.json({ error: "telegram_admin_action_failed", message }, { status: 500 });
   }
 }

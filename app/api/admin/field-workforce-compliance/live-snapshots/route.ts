@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { listRecentFieldWorkforceComplianceMonths } from "@/lib/field-workforce-compliance/live-snapshots";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       error: "field_workforce_months_list_failed",
-      message: error instanceof Error ? error.message : "Field Workforce Compliance months could not be listed.",
+      message: clientSafeErrorMessage(error, "Field Workforce Compliance months could not be listed."),
       success: false,
     }, { status: 500 });
   }

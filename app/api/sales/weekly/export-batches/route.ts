@@ -3,6 +3,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { buildBatchesExportWorkbook } from "@/lib/sales/weekly/export-batches-workbook";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
       return new Response(JSON.stringify({ error: error.message }), { status: error.status, headers: { "Content-Type": "application/json" } });
     }
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Export failed." }),
+      JSON.stringify({ error: clientSafeErrorMessage(error, "Export failed.") }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

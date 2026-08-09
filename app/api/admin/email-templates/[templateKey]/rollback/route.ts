@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { EmailTemplateValidationError, rollbackEmailTemplate } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function POST(request: Request, context: RouteContext) {
         { status: 400 },
       );
     }
-    const message = error instanceof Error ? error.message : "Email template rollback failed.";
+    const message = clientSafeErrorMessage(error, "Email template rollback failed.");
     return NextResponse.json({ error: "email_template_rollback_failed", message }, { status: 500 });
   }
 }

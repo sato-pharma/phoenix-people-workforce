@@ -7,6 +7,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { listCustomerMap } from "@/lib/sales/normalizer/customer-map";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
         { headers: { "Retry-After": String(error.retryAfterSeconds) }, status: 429 },
       );
     }
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Export failed." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Export failed.") }, { status: 500 });
   }
 }

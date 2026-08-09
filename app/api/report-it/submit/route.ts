@@ -5,6 +5,7 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { hrIdLookupKeys } from "@/lib/hr-id";
 import { submitReport } from "@/lib/report-it/service";
 import type { ReportItPayload } from "@/lib/report-it/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ function isForbidden(error: unknown): boolean {
 }
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   if (isForbidden(error)) return NextResponse.json({ error: message }, { status: 403 });
   if (message.toLowerCase().includes("authentication")) return NextResponse.json({ error: message }, { status: 401 });
   return NextResponse.json({ error: message }, { status: 400 });

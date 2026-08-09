@@ -5,6 +5,7 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { setUnmappedCrmIdentityResolution } from "@/lib/crm/admin";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import type { UnmappedCrmResolutionAction } from "@/lib/visits-report/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to resolve this CRM identity.";
+    const message = clientSafeErrorMessage(error, "Failed to resolve this CRM identity.");
     return NextResponse.json({ error: "resolve_identity_failed", message, success: false }, { status: 400 });
   }
 }

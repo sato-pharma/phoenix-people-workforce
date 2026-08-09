@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { deleteAttendanceException, reviewAttendanceException } from "@/lib/attendance/exceptions";
 import { assertSystemAdministratorWorkspaceAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError, validationError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, validationError } from "@/lib/http/api-errors";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json(
-      { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+      { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
       { status: 403 },
     );
   }

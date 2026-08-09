@@ -5,7 +5,7 @@ import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-rep
 import { resolveAttendanceScopeHrIds } from "@/lib/attendance/employee-attendance";
 import { assertFingerprintReportPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 
@@ -19,7 +19,7 @@ function filename() {
 function apiResponse(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
     return NextResponse.json(
-      { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+      { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
       { status: 403 },
     );
   }

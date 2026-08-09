@@ -6,6 +6,7 @@ import {
   sendInternalMessage,
 } from "@/lib/internal-messages/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ function stringField(value: unknown) {
 }
 
 function messageError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Message request failed.";
+  const message = clientSafeErrorMessage(error, "Message request failed.");
   const unauthenticated = message.toLowerCase().includes("authentication is required");
   return {
     message,

@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
 import { createOutstationEvidenceSignedUrls } from "@/lib/outstation/car-evidence-storage";
 import { getOutstationRequestById } from "@/lib/outstation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       tickets,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load attachments.";
+    const message = clientSafeErrorMessage(error, "Unable to load attachments.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "attachments_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

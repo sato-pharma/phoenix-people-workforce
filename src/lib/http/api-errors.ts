@@ -30,6 +30,58 @@ export function conflictError(message: string, code = "conflict") {
   return new ApiError(409, code, message);
 }
 
+/**
+ * True when a thrown value came from INFRASTRUCTURE (PostgREST/Postgres, Supabase Auth/Storage/
+ * Functions, Node socket errors) rather than from our own domain code.
+ *
+ * This exists because message text alone cannot tell the two apart, and getting it wrong leaks
+ * the schema to the caller. A PostgrestError reading `relation "public.salary_records" does not
+ * exist` matches toApiError's "does not exist" branch and would be handed back as a 404 naming a
+ * real table; `invalid input syntax for type uuid: "abc"` matches the "invalid " branch and
+ * becomes a 400 naming a real column type. `instanceof Error` is not a filter either —
+ * supabase-js >= 2 makes PostgrestError a genuine Error subclass (verified against 2.110.8).
+ *
+ * Hand-authored domain errors (`throw new Error("Vacation request was not found.")`) carry no
+ * machine `code`/`details`/`hint`, so they are NOT infrastructure and keep their message. That is
+ * the whole point: the user still gets the sentence we wrote for them, and never the one Postgres
+ * wrote for us.
+ */
+export function isInfrastructureError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  // Our own ApiError is deliberate, already-sanitized output — never treat it as infrastructure.
+  if (error instanceof ApiError) return false;
+
+  const candidate = error as { code?: unknown; details?: unknown; hint?: unknown; name?: unknown };
+
+  // PostgREST's signature fields. Nothing we throw by hand sets these.
+  if (candidate.details != null || candidate.hint != null) return true;
+
+  // Supabase error classes: PostgrestError, AuthError/AuthApiError, StorageApiError, Functions*Error.
+  const name = typeof candidate.name === "string" ? candidate.name : "";
+  if (/^(Postgrest|Auth|Storage|Functions)[A-Za-z]*Error$/.test(name)) return true;
+
+  // SQLSTATE ("42P01", "23505"), PostgREST codes ("PGRST202") and Node errnos ("ECONNREFUSED").
+  // Our own codes are lower_snake_case ("internal_error"), so they never match.
+  const code = candidate.code;
+  if (typeof code === "string" && /^(PGRST\d+|[0-9A-Z]{5}|E[A-Z]{3,})$/.test(code)) return true;
+
+  return false;
+}
+
+/**
+ * The message that may safely be shown to an API caller.
+ *
+ * Drop-in replacement for the `error instanceof Error ? error.message : fallback` idiom. Behaviour
+ * is identical for every hand-authored error; it differs ONLY when the error came from
+ * infrastructure, which is exactly the case that must not be echoed. The real text is still
+ * available to the server log via describeUnexpectedError.
+ */
+export function clientSafeErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (isInfrastructureError(error)) return fallbackMessage;
+  if (error instanceof Error) return error.message || fallbackMessage;
+  return fallbackMessage;
+}
+
 /** Extract a human/loggable message from any thrown value — Error OR a plain
  *  PostgREST error object (`{ message, code, details, hint }`, which is NOT an Error). */
 export function errorMessageOf(error: unknown): string {
@@ -82,6 +134,22 @@ export function toApiError(error: unknown, fallbackMessage: string) {
 
   if (error instanceof SyntaxError) {
     return validationError("Request body must be valid JSON.");
+  }
+
+  // Infrastructure errors are classified BEFORE the keyword branches below, never after.
+  // Those branches match on message text, and a Postgres message reading `relation "public.x"
+  // does not exist` or `invalid input syntax for type uuid` matches them — which is how raw
+  // schema detail used to leave as a 404 or a 400. The caller's own fallbackMessage is what the
+  // client sees; describeUnexpectedError(error) still carries the real code/details/hint to logs.
+  if (isInfrastructureError(error)) {
+    if (isStatementTimeoutError(error)) {
+      return new ApiError(
+        STATEMENT_TIMEOUT_API_ERROR.status,
+        STATEMENT_TIMEOUT_API_ERROR.code,
+        STATEMENT_TIMEOUT_API_ERROR.message,
+      );
+    }
+    return new ApiError(500, "internal_error", fallbackMessage);
   }
 
   if (error instanceof Error) {

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { googlePlaceDetails, googlePlacesAutocomplete, hasGoogleServerKey } from "@/lib/google-maps/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { assertMarketingOnBehalfAccess } from "@/lib/marketing-requests/service";
 
 export const runtime = "nodejs";
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }

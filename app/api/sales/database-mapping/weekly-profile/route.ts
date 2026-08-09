@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { deactivateWeeklyColumnProfile, saveWeeklyColumnProfile, type WeeklyColumnProfileInput } from "@/lib/sales/weekly/weekly-column-profile-admin";
 import { listEditableWeeklyContracts } from "@/lib/sales/weekly/weekly-column-profile-store";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +19,12 @@ function actor(access: Awaited<ReturnType<typeof resolveAccessContext>>): string
 
 function fail(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
   }
   if (error instanceof SalesWorkflowError) {
     return NextResponse.json({ success: false, error: error.message, code: error.code }, { status: error.status });
   }
-  return NextResponse.json({ success: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
+  return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, fallback) }, { status: 500 });
 }
 
 export async function GET(request: Request) {

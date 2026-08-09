@@ -9,6 +9,7 @@ import {
   type SupportRequestListFilter,
   type SupportRequestStatus,
 } from "@/lib/support-requests/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function GET(request: Request) {
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Support requests failed to load.";
+    const message = clientSafeErrorMessage(error, "Support requests failed to load.");
     return NextResponse.json({ error: "support_requests_load_failed", message }, { status: 400 });
   }
 }
@@ -68,7 +69,7 @@ export async function PATCH(request: Request) {
         { status: 403 },
       );
     }
-    const message = error instanceof Error ? error.message : "Support request update failed.";
+    const message = clientSafeErrorMessage(error, "Support request update failed.");
     return NextResponse.json({ error: "support_request_update_failed", message }, { status: 400 });
   }
 }

@@ -12,6 +12,7 @@ import {
   loadExcelWorkbook,
 } from "@/lib/uploads/exceljs-rows";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,7 +100,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to import employees." }, { status: 403 });
     }
 
-    const message = error instanceof Error ? error.message : "Employee import dry run failed.";
+    const message = clientSafeErrorMessage(error, "Employee import dry run failed.");
     return NextResponse.json({ error: "employee_import_dry_run_failed", message }, { status: 500 });
   }
 }

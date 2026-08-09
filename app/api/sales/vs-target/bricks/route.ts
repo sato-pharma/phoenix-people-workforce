@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { isValidVsTargetPeriod, loadBrickSales, rollupBricks } from "@/lib/sales/vs-target";
 import { filterBricksForBound, resolveVsTargetBound } from "@/lib/sales/vs-target-scope";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,12 +45,12 @@ export async function GET(request: Request) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to load bricks." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to load bricks.") },
       { status: 500 },
     );
   }

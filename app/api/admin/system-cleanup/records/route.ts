@@ -5,9 +5,10 @@ import {
   parseCleanupFilters,
 } from "@/lib/admin/system-cleanup";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 function errorResponse(error: unknown) {
-  const message = error instanceof Error ? error.message : "System cleanup records failed to load.";
+  const message = clientSafeErrorMessage(error, "System cleanup records failed to load.");
   if (isForbiddenError(error)) {
     return NextResponse.json({ error: "forbidden", message }, { status: 403 });
   }

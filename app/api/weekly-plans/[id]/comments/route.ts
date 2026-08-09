@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { addPlanComment, listPlanComments } from "@/lib/weekly-planning/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const forbidden = isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:");
   return NextResponse.json(
     { error: forbidden ? "forbidden" : "plan_comment_error", message, success: false },

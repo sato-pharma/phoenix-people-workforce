@@ -8,6 +8,7 @@ import {
   saveEmailTemplate,
   type EmailTemplatePayload,
 } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function GET(request: Request, context: RouteContext) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email templates." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Email template failed to load.";
+    const message = clientSafeErrorMessage(error, "Email template failed to load.");
     return NextResponse.json({ error: "email_template_failed", message }, { status: 500 });
   }
 }
@@ -59,7 +60,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         { status: 400 },
       );
     }
-    const message = error instanceof Error ? error.message : "Email template update failed.";
+    const message = clientSafeErrorMessage(error, "Email template update failed.");
     return NextResponse.json({ error: "email_template_update_failed", message }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { hasAiKey, type AiUnknown } from "@/lib/sales/normalizer/ai-suggest";
 import { autoAcceptMin, partitionAutoApply } from "@/lib/sales/normalizer/auto-apply";
 import { suggestCustomerBricks } from "@/lib/sales/normalizer/customer-suggest";
 import { saveMappings } from "@/lib/sales/normalizer/mapping";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Auto-map failed." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Auto-map failed.") }, { status: 500 });
   }
 }

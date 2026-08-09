@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { listHeldOutstationRequests } from "@/lib/outstation/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: isForbiddenError(error) ? "forbidden" : "outstation_held_requests_failed",
-        message: error instanceof Error ? error.message : "Unable to load held outstation requests.",
+        message: clientSafeErrorMessage(error, "Unable to load held outstation requests."),
       },
       { status: isForbiddenError(error) ? 403 : 500 },
     );

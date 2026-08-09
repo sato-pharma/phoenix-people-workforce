@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { relocateBrick } from "@/lib/sales/master-data/import-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,12 +50,12 @@ export async function POST(request: Request, context: RouteContext) {
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to relocate brick." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to relocate brick.") },
       { status: 500 },
     );
   }

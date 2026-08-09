@@ -8,6 +8,7 @@ import {
   type EmployeePlanReturnNoteInput,
 } from "@/lib/weekly-planning/service";
 import type { EmployeePlanAction } from "@/lib/weekly-planning/plan-v1";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ const decisionActions = new Set<EmployeePlanAction>([
 ]);
 
 function jsonError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unable to decide plan.";
+  const message = clientSafeErrorMessage(error, "Unable to decide plan.");
   if (isWeeklyPlanRpcError(error)) {
     return NextResponse.json(
       { error: `weekly_plan_${error.code}`, message: error.message, success: false },

@@ -5,6 +5,7 @@ import { getDeployRevision } from "@/lib/observability/deploy-identity";
 import { logWarning } from "@/lib/observability/log";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { auditWorkflowRegistryModules } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 // Readiness probe: verifies the process can actually serve requests — required config is
 // present AND Supabase is reachable with a cheap head query. Returns 503 (not ready) when
@@ -46,7 +47,7 @@ export async function GET() {
       databaseOk = true;
     }
   } catch (error) {
-    databaseError = error instanceof Error ? error.message : "supabase unreachable";
+    databaseError = clientSafeErrorMessage(error, "supabase unreachable");
   }
 
   // Which workflow modules the loader cannot load.
@@ -70,7 +71,7 @@ export async function GET() {
       });
     }
   } catch (error) {
-    registryCheckError = error instanceof Error ? error.message : "registry unreadable";
+    registryCheckError = clientSafeErrorMessage(error, "registry unreadable");
   }
 
   const ready = missingEnv.length === 0 && databaseOk;

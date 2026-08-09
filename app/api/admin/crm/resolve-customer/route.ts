@@ -4,6 +4,7 @@ import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { canUseAdminCrmWorkspace } from "@/lib/crm/admin-access";
 import { setCrmCustomerBrickResolution, type CrmCustomerResolutionAction } from "@/lib/crm/customer-brick";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to resolve this CRM customer.";
+    const message = clientSafeErrorMessage(error, "Failed to resolve this CRM customer.");
     return NextResponse.json({ error: "resolve_customer_failed", message, success: false }, { status: 400 });
   }
 }

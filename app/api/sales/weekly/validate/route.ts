@@ -6,6 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { removeSalesUploadObjects, resolveWeeklyUploadRequest } from "@/lib/sales/monthly-import-request";
 import { importWeeklySalesFile } from "@/lib/sales/weekly/service";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (error instanceof SalesWorkflowError) {
       return NextResponse.json(
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Validation failed." },
+      { success: false, error: clientSafeErrorMessage(error, "Validation failed.") },
       { status: 500 },
     );
   } finally {

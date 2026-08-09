@@ -8,6 +8,7 @@ import {
   loadWeeklyPosRegionMappingAdmin,
 } from "@/lib/sales/weekly/pos-region-mappings";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
 
 function mapError(error: unknown, fallback: string) {
   if (isForbiddenError(error)) {
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
   }
   if (error instanceof SalesWorkflowError) {
     return NextResponse.json(
@@ -78,5 +79,5 @@ function mapError(error: unknown, fallback: string) {
       { status: error.status },
     );
   }
-  return NextResponse.json({ success: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
+  return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, fallback) }, { status: 500 });
 }

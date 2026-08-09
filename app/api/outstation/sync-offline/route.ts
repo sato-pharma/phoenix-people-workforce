@@ -12,6 +12,7 @@ import type {
   OutstationExpenseType,
   OutstationTransportationType,
 } from "@/lib/outstation/types";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unable to sync offline outstation request.";
+      clientSafeErrorMessage(error, "Unable to sync offline outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_sync_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

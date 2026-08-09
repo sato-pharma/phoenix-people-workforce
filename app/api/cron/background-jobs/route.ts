@@ -5,6 +5,7 @@ import { logCronUnauthorized, logError } from "@/lib/observability/log";
 import { withDeadMansSwitch } from "@/lib/observability/dead-mans-switch";
 import { processBackgroundJobs } from "@/lib/background-jobs/worker";
 import { notifyBackgroundJobsRun } from "@/lib/notifications/background-jobs-digest";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     logError("Background job worker failed", { labels: { event: "cron_failed", job: "background-jobs" }, error });
-    const message = error instanceof Error ? error.message : "Background job processing failed.";
+    const message = clientSafeErrorMessage(error, "Background job processing failed.");
     await notifyBackgroundJobsRun({ errorMessage: message, status: "failed" }).catch((notifyError: unknown) => {
       logError("Failed to send background-jobs failure notification", { error: notifyError, labels: { job: "background-jobs" } });
     });

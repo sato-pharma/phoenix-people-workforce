@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { resolveAccessContext } from "@/lib/auth/server";
 import { searchInternalMessageRecipients } from "@/lib/internal-messages/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: "recipient_search_failed",
-        message: error instanceof Error ? error.message : "Recipient search failed.",
+        message: clientSafeErrorMessage(error, "Recipient search failed."),
       },
       { status: 400 },
     );

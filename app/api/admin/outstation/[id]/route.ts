@@ -10,6 +10,7 @@ import {
 } from "@/lib/outstation/service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWorkflowRegistryTransitionError } from "@/lib/workflow-registry/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function GET(
     }
     return NextResponse.json({ request: requestRow });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load outstation request.";
+    const message = clientSafeErrorMessage(error, "Unable to load outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_request_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },
@@ -88,7 +89,7 @@ export async function POST(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to approve outstation request.";
+    const message = clientSafeErrorMessage(error, "Unable to approve outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_approval_failed", message, success: false },
       { status: outstationWorkflowStatus(error) },
@@ -132,7 +133,7 @@ export async function PATCH(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to reject outstation request.";
+    const message = clientSafeErrorMessage(error, "Unable to reject outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_rejection_failed", message, success: false },
       { status: outstationWorkflowStatus(error) },
@@ -167,7 +168,7 @@ export async function DELETE(
       success: true,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to delete outstation request.";
+    const message = clientSafeErrorMessage(error, "Unable to delete outstation request.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_delete_failed", message, success: false },
       { status: outstationWorkflowStatus(error) },

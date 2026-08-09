@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { detectDistributorFromBuffer } from "@/lib/sales/distributor-detection";
 import { SALES_IMPORT_BUCKET } from "@/lib/sales/monthly-import-request";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,8 +44,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ data: detection, success: true });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ error: error instanceof Error ? error.message : "Forbidden.", success: false }, { status: 403 });
+      return NextResponse.json({ error: clientSafeErrorMessage(error, "Forbidden."), success: false }, { status: 403 });
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Distributor detection failed.", success: false }, { status: 500 });
+    return NextResponse.json({ error: clientSafeErrorMessage(error, "Distributor detection failed."), success: false }, { status: 500 });
   }
 }

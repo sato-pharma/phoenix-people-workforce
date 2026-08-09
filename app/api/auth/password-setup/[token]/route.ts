@@ -6,6 +6,7 @@ import {
   isApiRateLimitError,
   rateLimitIdentity,
 } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,7 +56,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, warning: result.bridgeWarning });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Password setup failed.";
+    const message = clientSafeErrorMessage(error, "Password setup failed.");
     return NextResponse.json({ error: "password_setup_failed", message }, { status: 400 });
   }
 }

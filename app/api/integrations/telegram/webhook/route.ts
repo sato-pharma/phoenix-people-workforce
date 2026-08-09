@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { linkTelegramConnection } from "@/lib/notifications/settings";
 import { sendTelegramNotification, telegramWebhookSecretToken } from "@/lib/notifications/telegram";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,7 +81,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Telegram webhook failed.";
+    const message = clientSafeErrorMessage(error, "Telegram webhook failed.");
     if (isPermanentTokenError(error)) {
       // Ack so Telegram does not retry a permanently-failing update.
       return NextResponse.json({ ok: true, ignored: true, reason: message });

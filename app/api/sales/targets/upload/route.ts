@@ -9,6 +9,7 @@ import {
 } from "@/lib/sales/monthly-targets";
 import { parseTargetsWorkbook } from "@/lib/sales/targets-template";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,8 +61,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, mode: "commit", totalRows: rows.length, upserted, errors });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to process the targets sheet." }, { status: 500 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to process the targets sheet.") }, { status: 500 });
   }
 }

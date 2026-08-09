@@ -6,6 +6,7 @@ import {
   listSupportRequestsForViewer,
   type SupportRequestAttachment,
 } from "@/lib/support-requests/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ function normaliseAttachments(value: unknown): SupportRequestAttachment[] {
 }
 
 function errorResponse(error: unknown, fallback = "Support request failed.") {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const unauthenticated = message
     .toLowerCase()
     .includes("authentication is required");

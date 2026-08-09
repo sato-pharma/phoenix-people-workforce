@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { jsonError, resolveAccessContext } from "@/lib/automated-payroll/http";
 import { confirmPart1, DATA_QUALITY_ACK_REQUIRED } from "@/lib/automated-payroll/run-service";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ run
     // client an acknowledged re-confirm is a valid next step so it can prompt
     // with the names, rather than showing a dead-end red error. Same contract as
     // the Part 2 overpayment gate.
-    const message = error instanceof Error ? error.message : "";
+    const message = clientSafeErrorMessage(error, "");
     if (message.includes(DATA_QUALITY_ACK_REQUIRED)) {
       return NextResponse.json(
         {

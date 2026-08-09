@@ -5,6 +5,7 @@ import { systemAccessContext } from "@/lib/auth/permissions";
 import { runDirectOrderProbationSweep } from "@/lib/direct-orders/pharmacy-probation";
 import { sendDirectOrderPhantomReport } from "@/lib/direct-orders/phantom-report";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "direct-orders-probation" },
       error,
     });
-    const message = error instanceof Error ? error.message : "Probation sweep failed.";
+    const message = clientSafeErrorMessage(error, "Probation sweep failed.");
     return NextResponse.json({ error: "probation_sweep_failed", message }, { status: 500 });
   }
 }

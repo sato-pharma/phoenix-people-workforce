@@ -40,6 +40,7 @@ import {
   rejectUntrustedForwardedOrigin,
   trustedOriginForRedirect,
 } from "@/lib/security/origins";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -349,7 +350,7 @@ export async function POST(request: Request) {
     if (!skipBridge) try {
       supabaseSession = await createSupabaseAuthSession(user.loginId, password);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to create Supabase auth session.";
+      const message = clientSafeErrorMessage(error, "Failed to create Supabase auth session.");
       const shouldRepairBridge =
         !user.authUserId ||
         !user.authEmail ||
@@ -389,17 +390,13 @@ export async function POST(request: Request) {
             supabaseSession = await createSupabaseAuthSession(user.loginId, password);
           } catch (retryError) {
             const retryMessage =
-              retryError instanceof Error
-                ? retryError.message
-                : "Failed to create Supabase auth session after bridge repair.";
+              clientSafeErrorMessage(retryError, "Failed to create Supabase auth session after bridge repair.");
 
             supabaseBridgeWarning = retryMessage;
           }
         } catch (repairError) {
           supabaseBridgeWarning =
-            repairError instanceof Error
-              ? repairError.message
-              : "Failed to repair Supabase auth bridge.";
+            clientSafeErrorMessage(repairError, "Failed to repair Supabase auth bridge.");
         }
       }
     } // end if (!skipBridge)

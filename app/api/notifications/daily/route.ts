@@ -24,6 +24,7 @@ import { runExcuseDriftCheck } from "@/lib/excuses/drift-check";
 import { pruneExpiredRateLimitBuckets } from "@/lib/security/api-rate-limit";
 import { pruneOldAppErrorEvents } from "@/lib/error-monitor/service";
 import { runSosMonthlyClosingReportCheck } from "@/lib/sales/sos-report-delivery";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -291,7 +292,7 @@ export async function GET(request: Request) {
     // so it needs its own — this is the single most important case for the external monitor to
     // catch (nothing about this run's outcome would otherwise leave the app at all).
     await pingDeadMansSwitch("phoenix-notify-daily", "fail", error instanceof Error ? error.message : String(error));
-    const message = error instanceof Error ? error.message : "Daily notification run failed.";
+    const message = clientSafeErrorMessage(error, "Daily notification run failed.");
     return NextResponse.json({ error: "daily_notifications_failed", message }, { status: 500 });
   }
 }

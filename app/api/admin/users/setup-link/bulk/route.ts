@@ -4,7 +4,7 @@ import { parseBulkPasswordSetupRequest } from "@/lib/admin/access-validation";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { sendPasswordSetupLink } from "@/lib/auth/password-setup";
-import { toApiError, unauthorizedError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError, unauthorizedError } from "@/lib/http/api-errors";
 import { trustedOriginForRedirect } from "@/lib/security/origins";
 
 export const runtime = "nodejs";
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
         results.push({
           loginId,
           status: "failed",
-          message: error instanceof Error ? error.message : "Delivery failed.",
+          message: clientSafeErrorMessage(error, "Delivery failed."),
         });
       }
     }
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
     const apiError = toApiError(error, "Bulk password setup link failed.");
     if (isForbiddenError(error) || apiError.status === 403) {
       return NextResponse.json(
-        { error: "forbidden", message: error instanceof Error ? error.message : "Forbidden." },
+        { error: "forbidden", message: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }

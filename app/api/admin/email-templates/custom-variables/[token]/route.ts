@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { CustomVariableError, deleteEmailCustomVariable } from "@/lib/email-templates/custom-variables";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     if (error instanceof CustomVariableError) {
       return NextResponse.json({ error: "validation_failed", message: error.message }, { status: 400 });
     }
-    const message = error instanceof Error ? error.message : "Custom variable delete failed.";
+    const message = clientSafeErrorMessage(error, "Custom variable delete failed.");
     return NextResponse.json({ error: "custom_variable_delete_failed", message }, { status: 500 });
   }
 }

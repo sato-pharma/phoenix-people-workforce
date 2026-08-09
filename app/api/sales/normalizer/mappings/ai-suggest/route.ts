@@ -6,6 +6,7 @@ import { aiSuggest, hasAiKey, type AiKind, type AiReferenceAlias, type AiUnknown
 import { suggestCustomerBricks } from "@/lib/sales/normalizer/customer-suggest";
 import { loadSalesReferenceData } from "@/lib/sales/monthly-distributor-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,7 +90,7 @@ export async function POST(request: Request) {
     const suggestions = await aiSuggest(kind, unknowns, candidates, referenceAliases.length ? referenceAliases : undefined);
     return NextResponse.json({ success: true, data: { suggestions } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "AI suggestion failed." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "AI suggestion failed.") }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { isProductionRuntime } from "@/config/system-settings";
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { expireStaleHeldDirectOrders } from "@/lib/direct-orders/service";
 import { logCronUnauthorized, logError } from "@/lib/observability/log";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
       labels: { event: "cron_failed", job: "direct-orders-expire-held" },
       error,
     });
-    const message = error instanceof Error ? error.message : "Expiry sweep failed.";
+    const message = clientSafeErrorMessage(error, "Expiry sweep failed.");
     return NextResponse.json({ error: "expire_held_failed", message }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { getEmailDesignerMetadata } from "@/lib/email/email-designer";
 import { listEmailCustomVariables } from "@/lib/email-templates/custom-variables";
 import { emailTemplateKeys, emailTemplateRecipientRoleOptions } from "@/lib/email-templates/service";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
       const status = error.code === "ai_not_configured" ? 503 : error.code === "ai_rate_limited" ? 429 : 502;
       return NextResponse.json({ error: error.code, message: error.message }, { status });
     }
-    const message = error instanceof Error ? error.message : "AI draft failed.";
+    const message = clientSafeErrorMessage(error, "AI draft failed.");
     return NextResponse.json({ error: "ai_failed", message }, { status: 500 });
   }
 }

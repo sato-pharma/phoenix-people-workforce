@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getCertificationStatus, getDistributorHealth, readinessFromHealth } from "@/lib/sales/distributor-registry";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
     const [health, certification] = await Promise.all([getDistributorHealth(distributor), getCertificationStatus(distributor)]);
     return NextResponse.json({ success: true, health, readiness: readinessFromHealth(health), certification });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Failed to load health." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Failed to load health.") }, { status: 500 });
   }
 }

@@ -5,6 +5,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { loadBrickCentroids } from "@/lib/sales/normalizer/brick-centroids";
 import { clusterUnknownCustomers, type ClusterUnknown } from "@/lib/sales/normalizer/customer-clusters";
 import { resolvePharmacyGeo } from "@/lib/sales/normalizer/pharmacy-geocode";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
     const clusters = clusterUnknownCustomers(unknowns, geoByKey, centroids);
     return NextResponse.json({ success: true, data: { clusters } });
   } catch (error) {
-    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
-    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Clustering failed." }, { status: 500 });
+    if (isForbiddenError(error)) return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
+    return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Clustering failed.") }, { status: 500 });
   }
 }

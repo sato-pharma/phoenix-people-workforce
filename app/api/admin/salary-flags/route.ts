@@ -4,6 +4,7 @@ import { writeAuditLog } from "@/lib/admin/audit";
 import { canAccess } from "@/lib/auth/permissions";
 import { getSalaryFlags, resolveSalaryFlag } from "@/lib/admin/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to load salary flags." },
+      { message: clientSafeErrorMessage(error, "Failed to load salary flags.") },
       { status: 500 },
     );
   }
@@ -58,7 +59,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to resolve salary flag." },
+      { message: clientSafeErrorMessage(error, "Failed to resolve salary flag.") },
       { status: 500 },
     );
   }

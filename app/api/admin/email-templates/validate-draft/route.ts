@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { validateEmailTemplateDraft, type TemplateRecipientPresetSelection } from "@/lib/email/email-designer";
 import type { EmailTemplatePayload } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to validate email templates." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Email template draft validation failed.";
+    const message = clientSafeErrorMessage(error, "Email template draft validation failed.");
     return NextResponse.json({ error: "template_validation_failed", message }, { status: 500 });
   }
 }

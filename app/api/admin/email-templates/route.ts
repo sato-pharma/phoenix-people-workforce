@@ -9,6 +9,7 @@ import {
   getEmailTemplateRoutingOptions,
   getTemplatePlaceholderHints,
 } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const message = error instanceof Error ? error.message : "Email templates failed to load.";
+    const message = clientSafeErrorMessage(error, "Email templates failed to load.");
     return NextResponse.json({ error: "email_templates_failed", message }, { status: 500 });
   }
 }

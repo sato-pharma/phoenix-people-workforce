@@ -9,6 +9,7 @@ import {
   saveEmailCustomVariable,
 } from "@/lib/email-templates/custom-variables";
 import { getTemplatePlaceholderHints } from "@/lib/email-templates/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message: "You do not have access to email template variables." }, { status: 403 });
     }
-    const message = error instanceof Error ? error.message : "Custom variables failed to load.";
+    const message = clientSafeErrorMessage(error, "Custom variables failed to load.");
     return NextResponse.json({ error: "custom_variables_failed", message }, { status: 500 });
   }
 }
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     if (error instanceof CustomVariableError) {
       return NextResponse.json({ error: "validation_failed", message: error.message }, { status: 400 });
     }
-    const message = error instanceof Error ? error.message : "Custom variable save failed.";
+    const message = clientSafeErrorMessage(error, "Custom variable save failed.");
     return NextResponse.json({ error: "custom_variable_save_failed", message }, { status: 500 });
   }
 }

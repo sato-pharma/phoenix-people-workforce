@@ -37,6 +37,7 @@ import {
   planChannelBreakdownStoreSplit,
 } from "@/lib/sales/store-split-channel-breakdown";
 import { applyStoreSplitToMatrix } from "@/lib/sales/store-split-matrix";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -466,12 +467,12 @@ export async function POST(request: Request) {
     }
     if (isForbiddenError(error)) {
       return NextResponse.json(
-        { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+        { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Failed to export Monthly Closing." },
+      { success: false, error: clientSafeErrorMessage(error, "Failed to export Monthly Closing.") },
       { status: 500 },
     );
   }

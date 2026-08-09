@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,7 +157,7 @@ export async function GET(request: Request) {
       types,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Place details lookup failed.";
+    const message = clientSafeErrorMessage(error, "Place details lookup failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "place_details_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

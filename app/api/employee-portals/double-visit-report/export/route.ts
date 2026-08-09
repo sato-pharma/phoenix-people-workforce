@@ -13,6 +13,7 @@ import { buildDoubleVisitReportExportWorkbook, getDoubleVisitReportData } from "
 import { DV_FOCUS_ROLES } from "@/lib/employee-portal/home-snapshot";
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: "double_visit_report_export_failed",
-        message: error instanceof Error ? error.message : "Double Visit Report export failed.",
+        message: clientSafeErrorMessage(error, "Double Visit Report export failed."),
       },
       { status: 500 },
     );

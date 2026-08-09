@@ -11,6 +11,7 @@ import {
   HOLIDAY_CONFIRMATION_LEAD_DAYS,
   type PendingHolidayConfirmation,
 } from "@/lib/vacation/holiday-confirmation";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,7 +133,7 @@ export async function GET(request: Request) {
     return await runHolidayConfirmationReminder(request);
   } catch (error) {
     console.error(error, { tags: { cron: "holiday-confirmation" } });
-    const message = error instanceof Error ? error.message : "Holiday confirmation reminder run failed.";
+    const message = clientSafeErrorMessage(error, "Holiday confirmation reminder run failed.");
     return NextResponse.json({ error: "holiday_confirmation_reminder_failed", message }, { status: 500 });
   }
 }

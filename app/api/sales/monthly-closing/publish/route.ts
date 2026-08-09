@@ -7,6 +7,7 @@ import {
   publishClosing,
   unpublishClosing,
 } from "@/lib/sales/monthly-closing-publication";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,12 +29,12 @@ function forbidNonAdmin(access: Awaited<ReturnType<typeof resolveAccessContext>>
 function mapError(error: unknown) {
   if (isForbiddenError(error)) {
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Forbidden." },
+      { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
       { status: 403 },
     );
   }
   return NextResponse.json(
-    { success: false, error: error instanceof Error ? error.message : "Publish request failed." },
+    { success: false, error: clientSafeErrorMessage(error, "Publish request failed.") },
     { status: 500 },
   );
 }

@@ -7,6 +7,7 @@ import {
 } from "@/lib/admin/system-cleanup";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 function errorStatus(error: unknown) {
   if (isForbiddenError(error)) return 403;
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     }));
   } catch (error) {
     const status = errorStatus(error);
-    const message = error instanceof Error ? error.message : "System cleanup action failed.";
+    const message = clientSafeErrorMessage(error, "System cleanup action failed.");
     return NextResponse.json({ error: errorCode(status), message }, { status });
   }
 }

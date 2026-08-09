@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAllEmployeesFingerprintDeductionsSummary } from "@/lib/attendance/employee-day-report";
 import { resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export async function GET(request: Request) {
     const rows = await getAllEmployeesFingerprintDeductionsSummary({ dateFromIso: dateFrom, dateToIso: dateTo });
     return NextResponse.json({ rows });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected error.";
+    const message = clientSafeErrorMessage(error, "Unexpected error.");
     const forbidden = message.startsWith("Forbidden:");
     return NextResponse.json(
       { error: forbidden ? "forbidden" : "invalid_request", message },

@@ -6,6 +6,7 @@ import { removeSalesUploadObjects, resolveWeeklyUploadRequest } from "@/lib/sale
 import { hasWeeklyVerifyAi, verifyWeeklyUpload } from "@/lib/sales/weekly/ai-verify";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,7 +83,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: result, aiConfigured: hasWeeklyVerifyAi() });
   } catch (error) {
     if (isForbiddenError(error)) {
-      return NextResponse.json({ success: false, error: error instanceof Error ? error.message : "Forbidden." }, { status: 403 });
+      return NextResponse.json({ success: false, error: clientSafeErrorMessage(error, "Forbidden.") }, { status: 403 });
     }
     if (isApiRateLimitError(error)) {
       return NextResponse.json(
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Verification failed." },
+      { success: false, error: clientSafeErrorMessage(error, "Verification failed.") },
       { status: 500 },
     );
   } finally {

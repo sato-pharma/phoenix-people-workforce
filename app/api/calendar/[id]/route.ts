@@ -4,12 +4,13 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { deleteCompanyCalendarEvent, updateCompanyCalendarEvent } from "@/lib/calendar/service";
 import type { CompanyCalendarEventInput } from "@/lib/calendar/logic";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   const forbidden = isForbiddenError(error) || message.toLowerCase().startsWith("forbidden:");
   return NextResponse.json(
     { error: forbidden ? "forbidden" : "calendar_error", message, success: false },

@@ -16,6 +16,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { assertApiRateLimit, isApiRateLimitError, rateLimitIdentity } from "@/lib/security/api-rate-limit";
 import { logError } from "@/lib/observability/log";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
         { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } },
       );
     }
-    const message = error instanceof Error ? error.message : "Sync failed.";
+    const message = clientSafeErrorMessage(error, "Sync failed.");
     if (message.startsWith("Forbidden:")) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }

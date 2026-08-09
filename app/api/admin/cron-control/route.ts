@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { canAccessSystemAdministratorWorkspace } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { listCronJobs } from "@/lib/cron-control/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to load cron jobs." },
+      { message: clientSafeErrorMessage(error, "Failed to load cron jobs.") },
       { status: 500 },
     );
   }

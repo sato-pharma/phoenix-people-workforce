@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { canAccess } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getOperationalMonitoringStats, type MonitoringEventSort } from "@/lib/operations/events";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,7 +76,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Failed to export monitoring security activity." },
+      { message: clientSafeErrorMessage(error, "Failed to export monitoring security activity.") },
       { status: 500 },
     );
   }

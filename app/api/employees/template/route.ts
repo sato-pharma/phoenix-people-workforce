@@ -9,6 +9,7 @@ import { assertPermission, filterEmployeeDirectoryForAccess } from "@/lib/auth/p
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import { resolveEmployeeMasterExportSalary } from "@/lib/employees/employee-master-export";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -632,7 +633,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         error: "employee_export_failed",
-        message: error instanceof Error ? error.message : "Unable to export employee master data.",
+        message: clientSafeErrorMessage(error, "Unable to export employee master data."),
       },
       { status: 500 },
     );

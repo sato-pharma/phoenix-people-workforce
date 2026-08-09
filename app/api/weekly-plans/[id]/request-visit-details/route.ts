@@ -3,12 +3,13 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { isWeeklyPlanRpcError, requestVisitDetails } from "@/lib/weekly-planning/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Unable to request visit details.";
+  const message = clientSafeErrorMessage(error, "Unable to request visit details.");
   if (isWeeklyPlanRpcError(error)) {
     return NextResponse.json(
       { error: `weekly_plan_${error.code}`, message: error.message, success: false },

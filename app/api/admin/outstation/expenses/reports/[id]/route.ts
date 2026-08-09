@@ -13,6 +13,7 @@ import {
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { validateSpreadsheetFile, xlsxSpreadsheetValidation } from "@/lib/uploads/spreadsheets";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export async function DELETE(request: Request, { params }: Params) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to delete expense report.";
+    const message = clientSafeErrorMessage(error, "Unable to delete expense report.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
@@ -144,7 +145,7 @@ export async function PUT(request: Request, { params }: Params) {
       saved: expenses.length,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to replace expense report.";
+    const message = clientSafeErrorMessage(error, "Unable to replace expense report.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }

@@ -6,6 +6,7 @@ import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { buildWeeklyExportWorkbook } from "@/lib/sales/weekly/export-workbook";
 import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -114,7 +115,7 @@ export async function GET(request: Request) {
       return new Response(JSON.stringify({ error: error.message }), { status: error.status, headers: { "Content-Type": "application/json" } });
     }
     return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : "Export failed." }),
+      JSON.stringify({ error: clientSafeErrorMessage(error, "Export failed.") }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

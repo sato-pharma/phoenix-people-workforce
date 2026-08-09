@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertOutstationAdminAccess } from "@/lib/outstation/admin-access";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,7 +76,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ predictions });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Places autocomplete failed.";
+    const message = clientSafeErrorMessage(error, "Places autocomplete failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "places_autocomplete_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

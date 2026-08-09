@@ -4,6 +4,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { getOutstationPolicies, updateOutstationPolicies } from "@/lib/outstation/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
     const policies = await getOutstationPolicies();
     return NextResponse.json({ policies });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to load outstation policy.";
+    const message = clientSafeErrorMessage(error, "Unable to load outstation policy.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_policy_load_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     const policies = await updateOutstationPolicies(Array.isArray(body.rules) ? body.rules : []);
     return NextResponse.json({ policies });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to update outstation policy.";
+    const message = clientSafeErrorMessage(error, "Unable to update outstation policy.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "outstation_policy_update_failed", message },
       { status: isForbiddenError(error) ? 403 : 500 },

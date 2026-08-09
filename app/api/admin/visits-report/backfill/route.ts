@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { syncIReports360Visits } from "@/lib/crm/sync";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     const result = await syncIReports360Visits({ dateFrom, dateTo, trigger: "manual_backfill" });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Visits backfill failed.";
+    const message = clientSafeErrorMessage(error, "Visits backfill failed.");
     return NextResponse.json({ error: "visits_backfill_failed", message, success: false }, { status: 500 });
   }
 }

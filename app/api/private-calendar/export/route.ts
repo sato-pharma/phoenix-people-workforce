@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { buildPrivateCalendarPdf, buildPrivateCalendarWorkbook } from "@/lib/private-calendar/export";
 import { getPrivateCalendarWorkspace } from "@/lib/private-calendar/service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Export failed.";
+    const message = clientSafeErrorMessage(error, "Export failed.");
     return NextResponse.json(
       { error: isForbiddenError(error) ? "forbidden" : "export_failed", message, success: false },
       { status: isForbiddenError(error) ? 403 : 500 },

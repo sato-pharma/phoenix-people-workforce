@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { toApiError } from "@/lib/http/api-errors";
+import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
 import { getMarketingCoverageRequestPharmacies } from "@/lib/marketing-requests/coverage-report-service";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 function pharmaciesApiError(error: unknown) {
   if (isForbiddenError(error)) {
-    return { code: "forbidden", message: error instanceof Error ? error.message : "Forbidden.", status: 403 };
+    return { code: "forbidden", message: clientSafeErrorMessage(error, "Forbidden."), status: 403 };
   }
   const message = error instanceof Error
     ? error.message

@@ -707,6 +707,7 @@ import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
 import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 import { runEarlyBirdsScopeTests } from "./early-birds-scope.test.ts";
 import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
+import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1697,6 +1698,10 @@ await runTest(
 await runTest(
   "departed-agent CRM scan (one-statement distinct, page-walk fallback, no silent empty exclusion)",
   runCrmDepartedAgentScanTests,
+);
+await runTest(
+  "api error redaction (Postgres text never reaches the client; our own prose still does)",
+  runApiErrorInfrastructureRedactionTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { updateAccessUserStatus } from "@/lib/admin/access-control";
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: (error as Error).message }, { status: 403 });
     }
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Bulk action failed." },
+      { message: clientSafeErrorMessage(error, "Bulk action failed.") },
       { status: 500 },
     );
   }

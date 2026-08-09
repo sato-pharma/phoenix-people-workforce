@@ -7,6 +7,7 @@ import { resolveWideReconciliationSlice, runWideIReports360Reconciliation } from
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { syncProbationDvDays } from "@/lib/probation/intelligence/dv-sync";
 import { tickDvCheckboxesFromSync } from "@/lib/probation/feedback-service";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 const JOB_NAME = "ireports360-visits-reconcile";
 
@@ -89,7 +90,7 @@ export async function GET(request: Request) {
     return await withDeadMansSwitch("phoenix-reconcile-visits", () => runReconcile());
   } catch (error) {
     logError("iReports360 wide reconciliation failed", { error, labels: { event: "cron_failed", job: JOB_NAME } });
-    const message = error instanceof Error ? error.message : "iReports360 wide reconciliation failed.";
+    const message = clientSafeErrorMessage(error, "iReports360 wide reconciliation failed.");
     return NextResponse.json({ error: "ireports360_visits_reconcile_failed", message }, { status: 500 });
   }
 }

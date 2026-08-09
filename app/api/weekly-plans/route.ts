@@ -9,12 +9,13 @@ import {
   type EmployeePlanItemInput,
 } from "@/lib/weekly-planning/service";
 import type { EmployeePlanKind } from "@/lib/weekly-planning/plan-v1";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function jsonError(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message : fallback;
+  const message = clientSafeErrorMessage(error, fallback);
   if (isWeeklyPlanRpcError(error)) {
     return NextResponse.json(
       { error: `weekly_plan_${error.code}`, message: error.message, success: false },

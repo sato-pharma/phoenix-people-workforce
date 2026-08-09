@@ -5,6 +5,7 @@ import { assertPermission } from "@/lib/auth/permissions";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { payrollSheetHeaders, payrollSheetValue } from "@/lib/payroll/salary-sheet-fields";
+import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,7 +62,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Payroll download failed.";
+    const message = clientSafeErrorMessage(error, "Payroll download failed.");
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
