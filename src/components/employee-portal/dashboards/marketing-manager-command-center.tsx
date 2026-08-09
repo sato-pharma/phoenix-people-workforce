@@ -31,6 +31,7 @@ import {
   MmRoiSection,
   MmSectionSkeleton,
 } from "@/components/employee-portal/dashboards/mm-intel-sections";
+import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
 import { MmInboxClient } from "@/components/employee-portal/dashboards/mm-inbox-client";
 import type { AccessContext } from "@/lib/auth/permissions";
 import type { PortalHomeSnapshot } from "@/lib/employee-portal/home-snapshot";
@@ -54,7 +55,7 @@ const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; d
 ];
 
 export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval } =
+  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval, earlyBirdWinner } =
     snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
@@ -116,6 +117,8 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
       ) : (totalPending > 0 || plansCount > 0) ? (
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
+
+      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
 
       <MmInboxClient rows={pendingForMe} now={now} />
 
