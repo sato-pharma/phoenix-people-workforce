@@ -95,6 +95,11 @@ const RPCS_REQUIRING_TIMEOUT = [
   "phx_marketing_request_roi_actuals",
   "phx_marketing_request_roi_actuals_v2",
   "phx_marketing_request_view_sales",
+  // The shared sales-lines function both ROI engines above now project from
+  // (20260809020000_marketing_sales_lines_shared_function.sql). It does the actual heavy join
+  // against source_of_sales_import_rows, so it needs its OWN timeout — a caller's timeout does not
+  // extend to it, and listing it here is what stops this guard passing by inheritance.
+  "phx_marketing_request_sales_lines",
   "phx_marketing_roi_customer_dashboard",
   "phx_marketing_roi_latest_validated_period",
   // Bulk sales-detail export: joins source_of_sales_import_rows (the largest table in the

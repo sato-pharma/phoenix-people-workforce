@@ -14,9 +14,42 @@ import { readFileSync, readdirSync } from "node:fs";
 // and phx_marketing_roi_customer_dashboard do not. testCustomerDashboardIsExactOnlyAndLocksDirect
 // BranchGap() below pins the latter as a known, tracked gap rather than silently passing either
 // way.
+//
+// RESHAPED 2026-08-09 by 20260809020000_marketing_sales_lines_shared_function.sql. Two of the paths
+// this file guards — phx_marketing_request_roi_actuals_v2 and phx_marketing_request_view_sales —
+// no longer carry their own copy of the matching rule; they project from the extracted
+// phx_marketing_request_sales_lines. Asserting the predicates inline in each of them would now be
+// asserting the very duplication that was removed, so the predicate checks moved to
+// testSharedSalesLinesCarriesTheOneMatchingRule() and each caller is instead checked for two
+// things: that it DELEGATES to the shared function, and that it does NOT join
+// source_of_sales_import_rows itself (which would mean it had regrown an independent attribution
+// path). The paths that genuinely still compute their own attribution — v1,
+// phx_refresh_marketing_roi_facts, phx_marketing_roi_customer_dashboard — are still checked inline,
+// against the SAME regexes the shared rule is checked against, so a divergence between the shared
+// rule and the independent engines still fails here.
 
 const FALLBACK_CTE_RE = /\b(fallback_bricks|fallback_hits)\s+as\b/i;
 const BRICK_JOIN_RE = /\br\.brick_id\s*=\s*(fb|tp)\.brick_id\b/i;
+
+// The one customer-match attribution rule, as a set of regexes. Since
+// 20260809020000_marketing_sales_lines_shared_function.sql these predicates live in exactly ONE
+// body — public.phx_marketing_request_sales_lines — and phx_marketing_request_roi_actuals_v2 and
+// phx_marketing_request_view_sales project from it instead of each carrying their own copy. The
+// paths that still compute attribution independently (v1, phx_refresh_marketing_roi_facts,
+// phx_marketing_roi_customer_dashboard) must keep matching these inline, which is what proves the
+// shared rule did not quietly diverge from them.
+const EXACT_CUSTOMER_JOIN_RE =
+  /lower\(btrim\(regexp_replace\(coalesce\(r\.client_code,\s*''\),\s*'\\s\+',\s*' ',\s*'g'\)\)\)\s*=\s*tp\.customer_code/i;
+const SHARED_ATTRIBUTION_RES = [
+  EXACT_CUSTOMER_JOIN_RE,
+  /r\.qty\s*\*\s*\(1\s*-\s*coalesce\(r\.discount,\s*0\)\)\s*\*\s*coalesce\(sp\.factory_price,\s*0\)/i,
+  /b\.status\s*=\s*'validated'/i,
+  /r\.validation_state\s*=\s*'valid'/i,
+];
+// A caller that merely PROJECTS the shared function must not join the raw sales table itself —
+// that would mean it had grown a second, independent attribution path again.
+const READS_RAW_SALES_RE = /join\s+public\.source_of_sales_import_rows/i;
+const DELEGATES_RE = /public\.phx_marketing_request_sales_lines\s*\(/i;
 
 // Scanned in this order — archive first, then the live directory — because the archive holds
 // every migration up to the 2026-07-11 baseline cut (its latest filename timestamp is
@@ -78,6 +111,7 @@ function assertNoFallbackLogic(body: string, label: string) {
 
 export function runMarketingRoiAttributionConsistencyTests() {
   testCurrentRoiActualsIsExactOnly();
+  testSharedSalesLinesCarriesTheOneMatchingRule();
   testCurrentRoiActualsV2MatchesV1ExceptMasking();
   testCurrentViewSalesIsExactOnlyAndReconciles();
   testRefreshFactsFixMigrationRemovesFallback();
@@ -100,42 +134,95 @@ function testCurrentRoiActualsIsExactOnly() {
   assert.match(body, /r\.validation_state\s*=\s*'valid'/i, "gates on valid rows");
 }
 
+/**
+ * The extracted rule itself. Every predicate the two ROI engines used to carry separately must be
+ * present here exactly once, together with the Phase-D direct branch and its track_direct_sales
+ * guard. If someone weakens the rule, this is now the single place it shows up.
+ */
+function testSharedSalesLinesCarriesTheOneMatchingRule() {
+  const { body } = resolveLatestFunctionBody("phx_marketing_request_sales_lines");
+  assertNoFallbackLogic(body, "phx_marketing_request_sales_lines");
+
+  for (const shared of SHARED_ATTRIBUTION_RES) {
+    assert.match(body, shared, `shared sales-lines function carries: ${shared}`);
+  }
+  assert.match(
+    body,
+    /upper\(btrim\(sp\.product_code\)\)\s*<>\s*all\(excl\.codes\)/i,
+    "shared function excludes masked product codes from req_products",
+  );
+  assert.match(body, /p_exclude_product_codes\s+text\[\]/i, "shared function accepts p_exclude_product_codes");
+
+  // Both channels, and only those two.
+  assert.match(body, /'retail'::text\s+as\s+channel/i, "shared function emits a retail channel");
+  assert.match(body, /'direct'::text\s+as\s+channel/i, "shared function emits a direct channel");
+  assert.match(body, /req\.track_direct_sales\s*=\s*true/i, "Phase-D direct branch stays gated on track_direct_sales");
+  assert.match(
+    body,
+    /select\s+\*\s+from\s+retail_hits\s+union\s+all\s+select\s+\*\s+from\s+direct_hits/i,
+    "shared function resolves to retail_hits UNION ALL direct_hits only — no other source",
+  );
+
+  // The de-duplication that keeps the wider projection from double-counting a sales row which
+  // matched several target tuples. Losing it silently inflates sum(value) in the actuals RPC.
+  assert.match(
+    body,
+    /distinct\s+on\s*\(\s*tp\.request_id\s*,\s*r\.id\s*\)/i,
+    "retail branch dedupes one row per (request, sales row)",
+  );
+  assert.match(
+    body,
+    /distinct\s+on\s*\(\s*mrph\.request_id\s*,\s*dor\.id\s*\)/i,
+    "direct branch dedupes one row per (request, direct order)",
+  );
+}
+
 function testCurrentRoiActualsV2MatchesV1ExceptMasking() {
   const v1 = resolveLatestFunctionBody("phx_marketing_request_roi_actuals");
   const v2 = resolveLatestFunctionBody("phx_marketing_request_roi_actuals_v2");
+  const shared = resolveLatestFunctionBody("phx_marketing_request_sales_lines");
   assertNoFallbackLogic(v2.body, "phx_marketing_request_roi_actuals_v2");
   assert.match(v2.body, /0::integer\s+as\s+fallback_sales_rows/i, "v2 fallback_sales_rows is hardcoded 0");
 
-  // v2 must carry the masking parameter and apply it only to product resolution.
+  // v2 must carry the masking parameter and hand it straight to the shared rule.
   assert.match(v2.body, /p_exclude_product_codes\s+text\[\]/i, "v2 accepts p_exclude_product_codes");
-  assert.match(v2.body, /upper\(btrim\(sp\.product_code\)\)\s*<>\s*all\(excl\.codes\)/i, "v2 excludes masked product codes from req_products");
+  assert.match(v2.body, DELEGATES_RE, "v2 projects from the shared sales-lines function");
+  assert.match(
+    v2.body,
+    /phx_marketing_request_sales_lines\(\s*p_request_ids\s*,\s*p_exclude_product_codes\s*\)/i,
+    "v2 passes the exclusion list through to the shared rule rather than re-implementing masking",
+  );
+  assert.doesNotMatch(v2.body, READS_RAW_SALES_RE, "v2 must not join the raw sales table itself — it delegates");
 
-  // Same exact-match join predicate as v1 — proves v2 is a masking wrapper, not a different algorithm.
-  const exactJoinPredicate = /lower\(btrim\(regexp_replace\(coalesce\(r\.client_code,\s*''\),\s*'\\s\+',\s*' ',\s*'g'\)\)\)\s*=\s*tp\.customer_code/i;
-  assert.match(v1.body, exactJoinPredicate, "v1 has the exact-match predicate");
-  assert.match(v2.body, exactJoinPredicate, "v2 has the identical exact-match predicate");
-
-  // Same value formula and same validation gates in both.
-  for (const shared of [
-    /r\.qty\s*\*\s*\(1\s*-\s*coalesce\(r\.discount,\s*0\)\)\s*\*\s*coalesce\(sp\.factory_price,\s*0\)/i,
-    /b\.status\s*=\s*'validated'/i,
-    /r\.validation_state\s*=\s*'valid'/i,
-  ]) {
-    assert.match(v1.body, shared, `v1 shares: ${shared}`);
-    assert.match(v2.body, shared, `v2 shares: ${shared}`);
+  // v1 still computes attribution independently, so it must keep the predicates inline; the shared
+  // rule v2 now uses must match those SAME predicates. That is what proves the extraction did not
+  // change the algorithm — it is the old "v1 and v2 agree" check, routed through the shared body.
+  assert.match(v1.body, EXACT_CUSTOMER_JOIN_RE, "v1 has the exact-match predicate");
+  assert.match(shared.body, EXACT_CUSTOMER_JOIN_RE, "the shared rule has the identical exact-match predicate");
+  for (const predicate of SHARED_ATTRIBUTION_RES) {
+    assert.match(v1.body, predicate, `v1 shares: ${predicate}`);
+    assert.match(shared.body, predicate, `shared rule shares: ${predicate}`);
   }
 }
 
 function testCurrentViewSalesIsExactOnlyAndReconciles() {
   const { body } = resolveLatestFunctionBody("phx_marketing_request_view_sales");
   assertNoFallbackLogic(body, "phx_marketing_request_view_sales");
+
+  // View Sales is now a projection of the shared rule, so the exact client_code match and the
+  // validated/valid gates are asserted on that shared body (see
+  // testSharedSalesLinesCarriesTheOneMatchingRule) rather than duplicated here.
+  assert.match(body, DELEGATES_RE, "View Sales projects from the shared sales-lines function");
+  assert.doesNotMatch(body, READS_RAW_SALES_RE, "View Sales must not join the raw sales table itself — it delegates");
+
+  // KNOWN, DELIBERATE GAP: View Sales has never shown Phase-D direct-order sales, so it filters the
+  // shared function to retail. This pins that choice — admitting direct rows here would change what
+  // the View Sales screen and its XLSX export display, and must be a conscious, separate change.
   assert.match(
     body,
-    /lower\(btrim\(regexp_replace\(coalesce\(r\.client_code,\s*''\),\s*'\\s\+',\s*' ',\s*'g'\)\)\)\s*=\s*tp\.customer_code/i,
-    "View Sales uses the same exact client_code match",
+    /channel\s*=\s*'retail'/i,
+    "View Sales stays retail-only (update this lock deliberately if the direct branch is ever admitted)",
   );
-  assert.match(body, /b\.status\s*=\s*'validated'/i, "View Sales gates on validated batch");
-  assert.match(body, /r\.validation_state\s*=\s*'valid'/i, "View Sales gates on valid rows");
   // The function's own comment documents the intent to stay reconciled with roi_actuals.
   assert.match(body, /reconciled/i, "View Sales documents its reconciliation intent with roi_actuals");
 }
