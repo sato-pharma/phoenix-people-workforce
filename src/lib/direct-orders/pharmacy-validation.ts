@@ -212,8 +212,8 @@ export async function requestDirectOrderPharmacyValidation(
     const { data: linked } = await supabaseForOwnership
       .from("direct_order_requests")
       // `status` rides along on the query that was already being made. Every round trip here
-      // crosses the Atlantic (Railway sfo -> Supabase eu-central-1), so the registry gate below
-      // costs nothing rather than doubling the latency of filing evidence.
+      // is a cross-region hop (Railway `europe-west4` -> Supabase `eu-central-1`), so the registry
+      // gate below costs nothing rather than doubling the latency of filing evidence.
       .select("id, requester_hr_id, status")
       .eq("id", linkedRequestId)
       .maybeSingle();

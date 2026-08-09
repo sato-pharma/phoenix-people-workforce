@@ -665,8 +665,9 @@ export async function collectCrmCandidates(input: {
     // employee-filtered, so each pulled the entire company's visits and discarded all but
     // one person's. July 2026: 18,544 visit rows, keyset-paginated 1,000 at a time = 19
     // sequential round trips per scan, 11 scans (10 leavers + the zero-signal check) =
-    // ~209 round trips, every one of them crossing the Atlantic (Railway runs in `sfo`,
-    // Supabase in `eu-central-1`). Postgres answers the month in 61 ms; the cost was
+    // ~209 round trips, every one of them crossing the Atlantic (Railway ran in `sfo` until
+    // 2026-08-09; it is `europe-west4` now, one metro hop from Supabase `eu-central-1` — nearer,
+    // but a round trip is still a round trip). Postgres answers the month in 61 ms; the cost was
     // entirely latency x round trips. That is what ran past the gateway and reported the
     // connector as failed with no warning attached. Now: 19 round trips, once.
     scanVisitsForRangeIncludingDeparted<LeaverVisitRow>({

@@ -97,9 +97,9 @@ export function runEmployee360PortalBrowseTests() {
     indexSource.indexOf("<PeriodFilter") > pickerBranchIdx,
     "the period filter must not sit on the browse list, where it would control nothing",
   );
-  // The expensive load sits behind that return too: every 360 call crosses the Atlantic
-  // (Railway sfo → Supabase eu-central-1), so a browse list that still loads a full profile is a
-  // slow page rendering data it immediately throws away.
+  // The expensive load sits behind that return too: every 360 call is its own cross-region round
+  // trip (Railway `europe-west4` → Supabase `eu-central-1`), so a browse list that still loads a
+  // full profile is a slow page rendering data it immediately throws away.
   assert.ok(
     indexSource.indexOf("getEmployee360Profile(") > pickerBranchIdx,
     "the Employee 360 profile load must happen only after the browse branch has returned",

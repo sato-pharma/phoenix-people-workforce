@@ -210,11 +210,12 @@ export default async function EmployeePortalEmployee360Page({
   // report on /employee-portals/employee-360/[hrId], exactly like the admin surface.
   //
   // Returning here also skips the entire profile / team-health / lifecycle load below, which is
-  // pure waste when no report is rendered — and every one of those calls crosses the Atlantic
-  // (Railway sfo → Supabase eu-central-1), so this is the difference between a slow page and an
-  // instant one. It sits above the !roleCategory check on purpose: a manager whose own job title
-  // is outside the six field-force families still owns their team's reports, and must not be
-  // shown "Not covered by Employee 360" now that there is no self report to fall back on.
+  // pure waste when no report is rendered — and every one of those calls is its own cross-region
+  // round trip (Railway `europe-west4` → Supabase `eu-central-1`), so this is the difference
+  // between a slow page and an instant one. It sits above the !roleCategory check on purpose: a
+  // manager whose own job title is outside the six field-force families still owns their team's
+  // reports, and must not be shown "Not covered by Employee 360" now that there is no self report
+  // to fall back on.
   if (teamRoster.length > 1) {
     return (
       <Shell description="Pick yourself or anyone in your team to open their 360 report." title="Employee 360">
