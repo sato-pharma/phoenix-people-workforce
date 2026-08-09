@@ -93,6 +93,21 @@ function RaceRow({
         <p className="whitespace-nowrap text-sm font-black tabular-nums text-slate-900">
           {formatStartClock(score.medianStartMinutes)}
         </p>
+        {/* No time is ever shown here without saying where it came from — the same rule the CRM
+            master table states: a clock with no GPS behind it is not proof of being on site.
+            Since the 2026-08-09 change only GPS check-ins are ranked, so this badge is GPS or
+            nothing; it stays visible so "no clock" reads as unverified rather than as late. */}
+        <p className="whitespace-nowrap text-[9px] font-bold uppercase tracking-wide">
+          {score.medianStartMinutes === null ? (
+            <span className="text-slate-400" title="No GPS check-in in this fortnight — worked, but no verified start time">
+              No GPS
+            </span>
+          ) : (
+            <span className="text-emerald-700" title={`Median of ${score.gpsVerifiedDays} GPS-verified day${score.gpsVerifiedDays === 1 ? "" : "s"}`}>
+              GPS · {score.gpsVerifiedDays}d
+            </span>
+          )}
+        </p>
         <p className="whitespace-nowrap text-[10px] font-semibold text-slate-400">
           {score.eligible ? `${formatPoints(score.totalScore)} pts` : "Not eligible"}
         </p>

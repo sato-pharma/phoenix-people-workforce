@@ -204,6 +204,21 @@ export function buildEarlyBirdsRanking(input: {
   reps: readonly EarlyBirdsRepContext[];
   facts: readonly EarlyBirdsVisitFact[];
   dailyWinnerHrIdKeys: ReadonlyMap<string, string | null>;
+  /**
+   * `${hrIdKey}|${dateIso}` -> minutes of that rep's first GPS check-in. THE ranking clock.
+   *
+   * Owner decision 2026-08-09, after the times were reported wrong for every rep. The old rule took
+   * the earliest resolved visit time, which falls back to `crm_save_date` when no check-in matched
+   * — and that column is submission time, which this repo's own CRM master table labels "paperwork
+   * time, NOT proof of being on site... often hours later or the next morning". Measured on
+   * production: save time ran a median 57 minutes and a mean 307 minutes behind the GPS check-in,
+   * and a quarter of rep-days were ranked on it, against three quarters ranked on GPS. Two clocks,
+   * one leaderboard.
+   *
+   * Omit it and NO rep has a verified start — the board shows an unranked field rather than
+   * silently falling back to paperwork time.
+   */
+  gpsStartByRepDay?: ReadonlyMap<string, number>;
   /** Clamp for a live preview so future days never count as missed. */
   throughIso?: string;
 }): EarlyBirdsRanking {
@@ -237,18 +252,13 @@ export function buildEarlyBirdsRanking(input: {
 
     for (const dateIso of periodDays) {
       const dayFacts = byDay.get(dateIso) ?? [];
-      let startMinutes: number | null = null;
-      let timeSource: EarlyBirdsDayFact["timeSource"] = "none";
-      for (const fact of dayFacts) {
-        // An after-midnight clock is write-up, not an arrival — see
-        // EARLY_BIRDS_EARLIEST_PLAUSIBLE_START_MINUTES. The visit itself still counts everywhere
-        // else; only its claim to be the day's start is dropped.
-        if (!isPlausibleEarlyBirdsStart(fact.startMinutes)) continue;
-        if (startMinutes === null || fact.startMinutes < startMinutes) {
-          startMinutes = fact.startMinutes;
-          timeSource = fact.timeSource;
-        }
-      }
+      // GPS ONLY. A day with visits but no check-in is real work with no verified start — it keeps
+      // counting for submissions, volume, Regular and Campaign, and contributes no start time.
+      // Paperwork time is never promoted into the ranking, however tempting the gap looks.
+      const gpsStart = input.gpsStartByRepDay?.get(`${rep.hrIdKey}|${dateIso}`);
+      const startMinutes =
+        gpsStart !== undefined && isPlausibleEarlyBirdsStart(gpsStart) ? gpsStart : null;
+      const timeSource: EarlyBirdsDayFact["timeSource"] = startMinutes === null ? "none" : "gps_checkin";
       if (startMinutes !== null) firstStarts.push(startMinutes);
       const wonDay = input.dailyWinnerHrIdKeys.get(dateIso) === rep.hrIdKey;
       if (wonDay) dailyWins += 1;
@@ -269,6 +279,7 @@ export function buildEarlyBirdsRanking(input: {
     const gpsEligibleVisits = repFacts.filter((fact) => fact.gpsEligible).length;
     const gpsVerifiedVisits = repFacts.filter((fact) => fact.timeSource === "gps_checkin").length;
     const gpsShare = gpsEligibleVisits > 0 ? gpsVerifiedVisits / gpsEligibleVisits : null;
+    const gpsVerifiedDays = firstStarts.length;
     const medianStartMinutes = median(firstStarts);
 
     const components: EarlyBirdsComponentScores = {
@@ -305,6 +316,7 @@ export function buildEarlyBirdsRanking(input: {
       campaignVisits,
       gpsEligibleVisits,
       gpsVerifiedVisits,
+      gpsVerifiedDays,
       gpsShare: gpsShare === null ? null : round6(gpsShare),
       dailyWins,
       eligible,

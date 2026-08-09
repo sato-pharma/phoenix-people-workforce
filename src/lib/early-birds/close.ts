@@ -76,6 +76,7 @@ async function closeDistrictPeriod(input: {
     reps: inputs.reps,
     facts: inputs.facts,
     dailyWinnerHrIdKeys: inputs.dailyWinnerHrIdKeys,
+    gpsStartByRepDay: inputs.gpsStartByRepDay,
     throughIso: input.period.endIso,
   });
 

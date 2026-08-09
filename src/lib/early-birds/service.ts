@@ -211,6 +211,7 @@ export async function getEarlyBirdsBoard(input: {
       reps: inputs.reps,
       facts: inputs.facts,
       dailyWinnerHrIdKeys: inputs.dailyWinnerHrIdKeys,
+      gpsStartByRepDay: inputs.gpsStartByRepDay,
       throughIso: inputs.throughIso,
     });
 

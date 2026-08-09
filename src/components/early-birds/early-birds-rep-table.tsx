@@ -94,7 +94,8 @@ export function EarlyBirdsRepTable({
                   ["Median start", formatStartClock(score.medianStartMinutes)],
                   ["Days", `${score.daysWithSubmission}/${score.expectedWorkingDays}`],
                   ["Regular visits", String(score.regularVisits)],
-                  ["GPS-verified", `${score.gpsVerifiedVisits}/${score.gpsEligibleVisits}`],
+                  ["Campaign visits", String(score.campaignVisits)],
+                  ["GPS days", `${score.gpsVerifiedDays}/${score.daysWithSubmission}`],
                   ["First places", String(score.dailyWins)],
                   ["Points", score.eligible ? formatPoints(score.totalScore) : "—"],
                 ].map(([label, value]) => (
@@ -124,7 +125,8 @@ export function EarlyBirdsRepTable({
                   <th className={TH}>Median start</th>
                   <th className={TH}>Visits</th>
                   <th className={TH}>Regular</th>
-                  <th className={TH}>GPS-verified</th>
+                  <th className={TH}>Campaign</th>
+                  <th className={TH}>GPS days</th>
                   <th className={TH}>1st places</th>
                   <th className={TH}>Points</th>
                   <th className={TH}>Status</th>
@@ -148,8 +150,11 @@ export function EarlyBirdsRepTable({
                       <td className={`${TD} font-bold tabular-nums`}>{formatStartClock(score.medianStartMinutes)}</td>
                       <td className={`${TD} tabular-nums`}>{score.totalVisits}</td>
                       <td className={`${TD} tabular-nums`}>{score.regularVisits}</td>
+                      <td className={`${TD} tabular-nums`}>{score.campaignVisits}</td>
+                      {/* DAYS, not visits — a day is what the ranking scores, and a day with no
+                          check-in has no start time at all. */}
                       <td className={`${TD} tabular-nums`}>
-                        {score.gpsVerifiedVisits}/{score.gpsEligibleVisits}
+                        {score.gpsVerifiedDays}/{score.daysWithSubmission}
                         {score.gpsShare !== null && (
                           <span className="ml-1 text-slate-400">({formatPercent(score.gpsShare)})</span>
                         )}
