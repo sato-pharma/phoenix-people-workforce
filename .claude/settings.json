@@ -118,7 +118,19 @@
       "PowerShell(supabase *)",
       "PowerShell(npx supabase *)",
       "PowerShell(pnpm supabase *)",
-      "PowerShell(pnpm dlx supabase *)"
+      "PowerShell(pnpm dlx supabase *)",
+      "Read(./.env*)",
+      "Bash(cat *.env*)",
+      "Bash(type *.env*)",
+      "Bash(head *.env*)",
+      "Bash(tail *.env*)",
+      "Bash(grep *.env*)",
+      "Bash(rg *.env*)",
+      "Bash(sed *.env*)",
+      "Bash(awk *.env*)",
+      "Bash(Get-Content *.env*)",
+      "PowerShell(Get-Content *.env*)",
+      "PowerShell(Select-String *.env*)"
     ],
     "ask": [
       "Bash(git push*)",
@@ -141,17 +153,7 @@
     "deny": [
       "Bash(gh pr merge --auto*)",
       "Bash(vercel deploy*)",
-      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*",
-      "Read(./.env*)",
-      "Bash(cat *.env*)",
-      "Bash(type *.env*)",
-      "Bash(head *.env*)",
-      "Bash(tail *.env*)",
-      "Bash(grep *.env*)",
-      "Bash(rg *.env*)",
-      "Bash(sed *.env*)",
-      "Bash(awk *.env*)",
-      "Bash(Get-Content *.env*)"
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*"
     ]
   }
 }
