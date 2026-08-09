@@ -23,6 +23,7 @@ import { sendTelegramNotification } from "@/lib/notifications/telegram";
 import { isPermanentTelegramDeliveryError } from "@/lib/notifications/telegram-delivery-errors";
 import { sendPushNotification } from "@/lib/notifications/push";
 import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-guard";
+import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
@@ -328,10 +329,21 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // (submitted/assigned/approved/rejected/returned/completed) are untouched.
   const withoutMarketingSlaEmail = enforceMarketingSlaEmailBlock(resolved, input.module, input.eventType);
   // Same hard guarantee for the whole Early Birds module (owner request 2026-08-09): in-app and
-  // Telegram only, never email. Applied last so nothing downstream of the policy table can restore
-  // it -- including the Telegram-failure fallback, which matters here because Telegram failing is
-  // the expected case while managers are still unlinked. See early-birds-channel-guard.ts.
-  return enforceEarlyBirdsEmailBlock(withoutMarketingSlaEmail, input.module);
+  // Telegram only, never email. Nothing downstream of the policy table can restore it --
+  // including the Telegram-failure fallback, which matters here because Telegram failing is the
+  // expected case while managers are still unlinked. See early-birds-channel-guard.ts.
+  const withoutEarlyBirdsEmail = enforceEarlyBirdsEmailBlock(withoutMarketingSlaEmail, input.module);
+  // Same hard guarantee for the attendance ingestion stall alert (owner rule, restated
+  // 2026-08-09): in-app + push only, never email. Two co-operating config values (the call
+  // site's `channels` and the policy.ts entry) were already set that way, and two values that
+  // must agree are exactly what drifts — see attendance-alert-channel-guard.ts.
+  //
+  // MERGE NOTE (2026-08-09): this block and the Early Birds one above arrived from two branches
+  // on the same day, each written as "applied last". They guard disjoint event sets — Early Birds
+  // keys on module alone, this one on module + attendance_agent_ingestion_stalled — so chaining
+  // them preserves both guarantees. Dropping either to keep "last" literally true would silently
+  // restore email for that module.
+  return enforceAttendanceAlertEmailBlock(withoutEarlyBirdsEmail, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

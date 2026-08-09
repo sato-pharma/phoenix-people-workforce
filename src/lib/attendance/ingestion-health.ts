@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { createSystemNotification } from "@/lib/notifications/system";
-import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
+import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import {
   buildAttendanceCalendarContext,
   cairoTodayIso,
@@ -182,6 +182,23 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
       return { notified: false, status: health.status };
     }
 
+    // An alert switched OFF in the admin console must stay SILENT, not fail loudly.
+    //
+    // Without this check the disabled path still built a notification, resolved its recipient
+    // list to [] (resolveNotificationRoleRecipients returns [] when the policy is disabled),
+    // and therefore tripped the fail-closed governance guard — writing one `skipped` row per
+    // channel every single day with
+    //   "Notification skipped because no exact authorized recipient was resolved."
+    // That reads like a broken security control, not an admin preference. It is exactly what
+    // happened here: the alert was disabled on 2026-07-24 and then logged a governance failure
+    // nightly, which cost a full investigation before the cause turned out to be a toggle.
+    //
+    // resolveNotificationRoleEnabled exists for this — it lets a runner short-circuit BEFORE it
+    // emits anything.
+    if (!(await resolveNotificationRoleEnabled("attendance_ingestion_alert"))) {
+      return { notified: false, status: health.status };
+    }
+
     const missedLabel = health.missedWorkingDays >= 99
       ? "no punches have ever been ingested"
       : `${health.missedWorkingDays} working day(s) passed with zero punches ingested`;
@@ -189,6 +206,16 @@ export async function runAttendanceIngestionAlert(): Promise<AttendanceIngestion
       `The fingerprint attendance agent appears to be down: ${missedLabel}. ` +
       `Last successful sync: ${health.lastIngestedLabel}. Payroll attendance data is falling behind.`;
     const superAdminHrIds = await activeSuperAdminHrIds();
+    // Belt and braces: if the policy is enabled but resolves to nobody deliverable, emitting
+    // would once again manufacture a fail-closed "skipped" row that looks like a security
+    // failure. Log the real problem instead of dressing it up as one.
+    if (superAdminHrIds.length === 0) {
+      return {
+        error: "Attendance ingestion alert is enabled but resolved no active recipient.",
+        notified: false,
+        status: health.status,
+      };
+    }
 
     const result = await createSystemNotification({
       actionUrl: "/attendance/device-user-mapping",
