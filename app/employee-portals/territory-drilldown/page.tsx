@@ -6,6 +6,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { DashboardSkeleton } from "@/components/employee-portal/skeleton-templates";
+import { TerritorySyncPanel } from "@/components/sales/territory/territory-sync-panel";
 import { TerritoryTreeExplorer } from "@/components/sales/territory/territory-tree-explorer";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, type AccessContext } from "@/lib/auth/permissions";
@@ -43,6 +44,9 @@ export default async function TerritoryDrilldownPage() {
       errorBoundaryTitle="Territory drilldown unavailable"
       title="Territory & Sales Drilldown"
     >
+      <div className="mb-4">
+        <TerritorySyncPanel canRun={access.role === "Super Admin" || access.scope === "system"} />
+      </div>
       <Suspense fallback={<DashboardSkeleton chartCount={1} kpiCount={0} />}>
         <TerritoryDrilldownContent access={access} />
       </Suspense>

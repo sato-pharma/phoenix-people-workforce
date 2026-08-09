@@ -98,6 +98,46 @@ export type TerritoryBrickPharmacies = {
   pharmacies: TerritoryPharmacy[];
 };
 
+/**
+ * One official_line x period row of the post-sync reconciliation proof: the rebuilt directory
+ * rollup (what the drilldown reads) summed against the raw validated import rows on the same
+ * grain. `reconciled` is true when every measure matches within epsilon.
+ */
+export type TerritorySyncReconciliationRow = {
+  officialLine: string;
+  period: string;
+  rollupTotalQty: number;
+  rawTotalQty: number;
+  rollupEffectiveUnits: number;
+  rawEffectiveUnits: number;
+  rollupRowCount: number;
+  rawRowCount: number;
+  reconciled: boolean;
+};
+
+/**
+ * The result of pressing "Sync": how many historical import rows were re-stamped to today's
+ * geography, how many batches were rebuilt, and the line-by-line proof that the drilldown's
+ * rollup now equals the raw source. `allReconciled` is the single headline the button reports.
+ */
+export type TerritorySyncReport = {
+  periods: string[];
+  restampedRows: number;
+  refreshedBatches: number;
+  reconciliation: TerritorySyncReconciliationRow[];
+  allReconciled: boolean;
+  durationMs: number;
+  syncedAt: string;
+};
+
+/** Last-sync metadata for the read-only freshness badge on the drilldown page. */
+export type TerritorySyncStatus = {
+  lastSyncedAt: string | null;
+  lastSyncedBy: string | null;
+  lastRestampedRows: number | null;
+  lastAllReconciled: boolean | null;
+};
+
 /** The lazy-loaded Tier-2 payload for exactly one Area, fetched on first expand. */
 export type TerritoryAreaPayload = {
   areaCode: string;
