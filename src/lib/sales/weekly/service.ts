@@ -16,6 +16,7 @@ import {
   weeklyDistributorByCode,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
+import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
 import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap } from "@/lib/sales/weekly/decumulate";
 import { resolveWeeklyContractWithSource } from "@/lib/sales/weekly/weekly-column-profile-store";
 import { loadProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
@@ -750,6 +751,23 @@ export async function loadWeeklyDashboard(filters?: {
   weekNumberMode?: WeeklyFilterMode | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
+  /**
+   * Narrow the ROW fetch to these cycle months (first-of-month YYYY-MM-DD), on top of whatever the
+   * week window already selected. Empty/omitted = no narrowing (current behaviour).
+   *
+   * Safe for every aggregate: decumulateRows() groups by (distributorCode, cycleMonth) and those
+   * groups are self-contained — the first week of a cycle de-cumulates against itself — so keeping
+   * WHOLE months can never split a de-cumulation chain. Batch cycle_month is a faithful stand-in for
+   * row cycle_month (verified against production: 0 mismatches across all validated rows).
+   *
+   * NOT a general substitute for `cycleMonths`. `cycleMonths` filters in memory and therefore leaves
+   * the derived option universes (availableMonths / availableWeekNumbers / availableRegions /
+   * availableProducts / availableLines) computed over the FULL history, which is what keeps the
+   * dashboard's dropdowns from collapsing to the current selection. This narrows the fetch itself, so
+   * those option lists come back scoped to the months requested. **Only pass it when the caller
+   * discards the option lists** — as computeWeeklyComparison() does, needing only the aggregates.
+   */
+  narrowRowsToCycleMonths?: string[] | null;
   /** Export only: drop rows whose product is unmapped (no master / no line) from EVERY aggregate. */
   excludeUnmapped?: boolean;
   /** Export only: also return the row-level fact grain (factRows) for the BI workbook's Data sheet. */
@@ -921,11 +939,15 @@ export async function loadWeeklyDashboard(filters?: {
       })
       .map((b) => `${b.distributor_code}||${b.cycle_month ?? ""}`),
   );
-  const batchIdsForRows = allWeeksRequested || scopeIsBoundedProduct
-    ? [...batches.map((b) => String(b.id))]
-    : batches
-        .filter((b) => windowCycleKeys.has(`${b.distributor_code}||${b.cycle_month ?? ""}`))
-        .map((b) => String(b.id));
+  // Opt-in fetch narrowing (see narrowRowsToCycleMonths). Applied AFTER the week-window choice so it
+  // only ever removes batches: a caller that wants one month's aggregates stops paying for the whole
+  // history. Whole months only — see batch-scope.ts for why that is the one safe unit.
+  const batchIdsForRows = narrowBatchesToCycleMonths(
+    allWeeksRequested || scopeIsBoundedProduct
+      ? batches
+      : batches.filter((b) => windowCycleKeys.has(`${b.distributor_code}||${b.cycle_month ?? ""}`)),
+    filters?.narrowRowsToCycleMonths,
+  ).map((b) => String(b.id));
   if (batchIdsForRows.length === 0) return empty();
   const CONCURRENCY = 6;
   const validIds = new Set(batchIdsForRows);

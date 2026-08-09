@@ -266,6 +266,11 @@ async function computeWeeklyComparison(
     prevData = await loadWeeklyDashboard({
       cycleMonths: [previousCycleMonth],
       cycleMonthMode: "include",
+      // This call exists only to read three aggregate maps for ONE month (prevValueByCode below), but
+      // `cycleMonths` alone filters in memory — so it was fetching EVERY validated row of every month,
+      // a second full-history scan running right behind the current-period one. We discard prevData's
+      // option universes entirely, which is exactly the precondition narrowRowsToCycleMonths requires.
+      narrowRowsToCycleMonths: [previousCycleMonth],
       weekNumbers: filters.weekNumbers,
       weekNumberMode: filters.weekNumberMode,
       distributorCodes: filters.distributorCodes,
