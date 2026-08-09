@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { IdentityCard } from "@/components/employee-portal/identity-card";
+import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import {
   ActionStrip,
   DashboardsGrid,
@@ -105,7 +106,15 @@ function RegionKeycards({ rmRegional }: { rmRegional: PortalHomeSnapshot["rmRegi
         }
       />
       {rmRegional ? (
-        <KeycardGrid cards={cards} />
+        <>
+          <KeycardGrid cards={cards} />
+          {/* Region Sales counts vacant-district reps + in-region direct orders no DSM row below carries */}
+          <PerformanceReconciliationNote
+            className="mx-4 mb-4"
+            totalLabel="Region Sales"
+            unattributedSales={rmRegional.unattributedSales}
+          />
+        </>
       ) : (
         <p className="bg-white px-5 py-6 text-sm text-slate-500">
           No region sales data synced for the current period yet.

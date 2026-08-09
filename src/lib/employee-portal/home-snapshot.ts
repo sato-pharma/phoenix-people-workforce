@@ -145,6 +145,8 @@ export type PortalHomeSnapshot = {
         dsmCount: number;
         totalSales: number;
         totalTarget: number;
+        /** Region sales carried by no district row (vacant-DM reps + in-region direct orders). */
+        unattributedSales: number;
         pendingApprovals: number;
         /** Districts (DSMs) inside the RM's region set, ranked by achievement % then sales. */
         dsms: Array<{ hrId: string; name: string; achievementPercent: number; totalSales: number; totalTarget: number }>;
@@ -431,6 +433,7 @@ async function getRoleSpecificExtras(access: AccessContext, role: string, hrId: 
           dsmCount: regional.dsmCount,
           totalSales: regional.regionTotalSales,
           totalTarget: regional.regionTotalTarget,
+          unattributedSales: regional.unattributedSales,
           pendingApprovals: approvals.length,
           dsms,
           topReps,

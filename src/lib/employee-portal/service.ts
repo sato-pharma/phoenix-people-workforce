@@ -4965,6 +4965,14 @@ export type RmRegionalPerformanceData = {
   dsmCount: number;
   regionTotalSales: number;
   regionTotalTarget: number;
+  /**
+   * Sales inside `regionTotalSales` that no district (DSM) row carries — reps whose DM seat
+   * is vacant, plus any in-region Direct Orders. `regionTotalSales = Σ(dsms.totalSales) +
+   * unattributedSales`, so the command center can show a reconciliation line that makes the
+   * region header foot to the districts list. 0 while every district has a seated DM.
+   */
+  unattributedSales: number;
+  unattributedTarget: number;
 };
 
 /**

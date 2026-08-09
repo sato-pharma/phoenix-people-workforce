@@ -496,9 +496,21 @@ export async function buildRmRegionalPerformanceFromSos(
     .filter((rep) => isInRegion(rep.hrId) || isInRegion(rep.managerHrId))
     .sort((a, b) => b.achievementPercent - a.achievementPercent || b.totalSales - a.totalSales);
 
-  // Region totals: the coverage-aware headline over rows whose DM is in the region — by
-  // construction the union of the districts kept above.
-  const region = headlineTotals(used.filter((row) => isInRegion(row.dmHrId)));
+  // Region totals: the coverage-aware headline over rows that belong to this RM's region.
+  // Place each row by its DM when it HAS one (unchanged from before — never moves a total
+  // that already had a district manager), and fall back to the REP when the DM seat is
+  // vacant (dmHrId null). Without that fallback a district whose DM resigned mid-month has
+  // its still-selling reps' sales silently dropped from the region total while those reps
+  // remain in the Top-Reps list — the header then reads LESS than the reps shown under it.
+  // A row with neither a DM nor a rep in the region (Direct Orders parked in "Others")
+  // stays excluded, exactly as before.
+  const rowInRegion = (row: AchievementRow) =>
+    row.dmHrId ? isInRegion(row.dmHrId) : isInRegion(row.repHrId);
+  const region = headlineTotals(used.filter(rowInRegion));
+  // Foot the header to the districts list: the gap is the vacant-seat reps' sales (and any
+  // in-region direct orders) that no DSM row below carries. 0 — and the note hides — while
+  // every district has a seated DM.
+  const { unattributedSales, unattributedTarget } = reconcileUnattributed(region, dsms);
 
   return {
     dsms,
@@ -508,5 +520,7 @@ export async function buildRmRegionalPerformanceFromSos(
     dsmCount: dsms.length,
     regionTotalSales: region.sales,
     regionTotalTarget: region.target,
+    unattributedSales,
+    unattributedTarget,
   };
 }

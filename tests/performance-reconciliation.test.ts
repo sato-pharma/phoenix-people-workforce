@@ -99,4 +99,51 @@ export function runPerformanceReconciliationTests() {
       `${surface} must render the reconciliation note so its header foots to the leaderboard`,
     );
   }
+
+  // ===========================================================================
+  // RM regional roll-up: the region total places a row by its DM, or by the REP when
+  // the DM seat is VACANT — so a resigned-DM district's still-selling reps stay counted
+  // in the region total (and surface as the reconciliation slice) instead of vanishing.
+  // ===========================================================================
+  // Region headline 250,000; the one seated district (a DSM) carries 180,000; the 70,000
+  // gap is a vacant district's reps — counted in the region total via the rep fallback,
+  // shown as the reconciliation line, absent from the district list.
+  const rmRegion = reconcileUnattributed(
+    { sales: 250000, target: 300000 },
+    [{ totalSales: 180000, totalTarget: 220000 }],
+  );
+  assert.equal(rmRegion.unattributedSales, 70000, "RM: region total − seated districts = vacant-seat slice");
+
+  // WIRING: the region filter must fall back to the rep when the DM seat is vacant, never
+  // sum by DM alone (which silently dropped the vacant district's sales — the bug).
+  assert.match(
+    sosSource,
+    /row\.dmHrId \? isInRegion\(row\.dmHrId\) : isInRegion\(row\.repHrId\)/,
+    "RM region total must place a null-DM row by its rep, not drop it",
+  );
+  assert.match(
+    serviceSource,
+    /regionTotalSales: number;[\s\S]*?unattributedSales: number;/,
+    "RmRegionalPerformanceData must expose the region's unattributed slice",
+  );
+
+  const homeSnapshotSource = readFileSync(
+    new URL("../src/lib/employee-portal/home-snapshot.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    homeSnapshotSource,
+    /unattributedSales: regional\.unattributedSales/,
+    "home snapshot must thread the RM region's unattributed slice to the command center",
+  );
+
+  const rmCommandCenterSource = readFileSync(
+    new URL("../src/components/employee-portal/dashboards/rm-command-center.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    rmCommandCenterSource,
+    /PerformanceReconciliationNote/,
+    "RM command center must render the reconciliation note under the region keycards",
+  );
 }
