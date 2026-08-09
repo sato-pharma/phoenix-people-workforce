@@ -134,4 +134,41 @@ export function runDoctorCoverageNormsTests() {
     withUnknown.specialtyMix.some((row) => row.label.includes("unclassified")),
     "and it is flagged as unclassified rather than passing as a normal specialty",
   );
+
+  // ── one rep, one name ─────────────────────────────────────────────────────────────────────────
+  // Production case (DM B-94, 2026-08-09): rep B-164 inherited a VACANT seat, so the mirror holds
+  // "( Nasr City / P )" — a territory with no person in it — for their earlier visits and
+  // "Essam.Youssef ( Dokki / P )" for the later ones. Naming each doctor from its OWN last visit
+  // put the same rep on the board under two labels, one of which named nobody.
+  const renamedRepVisits = [
+    // Older doctor, visited while the seat was still vacant and unnamed.
+    visit({
+      agent_name: "( Nasr City / P )",
+      contact_crm_id: 400,
+      contact_name: "Seen in June",
+      crm_visit_id: 10,
+      visit_date: "2026-06-10",
+    }),
+    // Newer doctor, after the seat was taken over and renamed. Same agent_hr_id throughout.
+    visit({
+      agent_name: "Essam.Youssef ( Dokki / P )",
+      contact_crm_id: 401,
+      contact_name: "Seen in August",
+      crm_visit_id: 11,
+      visit_date: "2026-08-05",
+    }),
+  ];
+  const renamed = buildDoctorCoverageBoard(renamedRepVisits, "2026-08");
+  const namesOnRows = [...new Set(renamed.doctors.map((row) => row.repName))];
+  assert.deepEqual(
+    namesOnRows,
+    ["Essam.Youssef ( Dokki / P )"],
+    "every row for one rep shows that rep's CURRENT name — a doctor last seen in June must not still carry the old vacant-seat label",
+  );
+  assert.ok(
+    !namesOnRows.some((name) => name.trim().startsWith("(")),
+    "a rep label must never be a bare territory with no person in it (owner rule: always human-readable names)",
+  );
+  assert.equal(renamed.reps.length, 1, "both visits share one agent_hr_id, so they roll up to ONE rep row");
+  assert.equal(renamed.reps[0].repName, "Essam.Youssef ( Dokki / P )", "and the rep table agrees with the rows");
 }

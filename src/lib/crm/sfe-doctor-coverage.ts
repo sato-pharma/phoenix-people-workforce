@@ -361,6 +361,19 @@ export function buildDoctorCoverageBoard(
   const currentCairoMonth = monthKeyOfVisitDate(cairoTodayIso());
 
   const contacts = new Map<number, ContactAccumulator>();
+  /**
+   * The rep's CURRENT display name, keyed by repKey and resolved across the WHOLE window — not per
+   * contact.
+   *
+   * `contact.visitsByRep` tracks a name too, but that one is the name as it stood on *that
+   * contact's* last visit, which makes one person appear under two labels on a single board.
+   * Observed in production 2026-08-09 on DM B-94: rep B-164 inherited a vacant seat, so the mirror
+   * holds `( Nasr City / P )` for their visits up to 17 June and `Essam.Youssef ( Dokki / P )`
+   * from 14 June on. The rep table showed the new name while every call-list row for a doctor last
+   * seen in early June showed the old one — and that old one carries no person's name at all, only
+   * a territory, which breaks the standing rule that a name must always be human-readable.
+   */
+  const latestRepName = new Map<string, { date: string; name: string; visitId: number }>();
   let visitsCountedSelectedMonth = 0;
 
   for (const visit of visits) {
@@ -424,6 +437,16 @@ export function buildDoctorCoverageBoard(
     const repKey = repKeyOf(visit);
     const repEntry = contact.visitsByRep.get(repKey);
     const repName = visit.agent_name?.trim() || (visit.agent_hr_id ? visit.agent_hr_id : "Unmapped agent");
+    // Board-level latest-wins, ordered exactly like every other latest-wins tracker here (date,
+    // then crm_visit_id). This is what the rows actually display.
+    const currentName = latestRepName.get(repKey);
+    if (
+      !currentName ||
+      visitDate > currentName.date ||
+      (visitDate === currentName.date && visitId > currentName.visitId)
+    ) {
+      latestRepName.set(repKey, { date: visitDate, name: repName, visitId });
+    }
     if (!repEntry) {
       contact.visitsByRep.set(repKey, { count: 1, latestDate: visitDate, latestVisitId: visitId, repName });
     } else {
@@ -521,7 +544,12 @@ export function buildDoctorCoverageBoard(
       lastVisitDate: contact.lastVisitDate,
       kind,
       repKey: primary?.repKey ?? "crm:0",
-      repName: primary?.repName ?? "Unmapped agent",
+      // WHICH rep owns this doctor is decided per contact (above); what that rep is CALLED is a
+      // board-level fact, so it comes from latestRepName. Using the per-contact name here is what
+      // made one rep appear under two labels — see the note on latestRepName. Falls back to the
+      // per-contact name only if the key is somehow absent, which cannot happen for a rep that
+      // reached visitsByRep.
+      repName: (primary ? latestRepName.get(primary.repKey)?.name : null) ?? primary?.repName ?? "Unmapped agent",
       speciality: contact.latestSpeciality?.speciality ?? null,
       status,
       targetVisits: target,
