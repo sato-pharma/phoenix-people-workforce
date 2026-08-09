@@ -10,6 +10,7 @@ import {
   EARLY_BIRDS_AUTO_APPROVE_AFTER_DAYS,
   EARLY_BIRDS_BACKFILL_PERIODS,
   EARLY_BIRDS_CLOSE_EARLIEST_CAIRO_MINUTES,
+  EARLY_BIRDS_EARLIEST_PERIOD_KEY,
   earlyBirdsAutoApproveDueAtIso,
   isEarlyBirdsAutoApproveDue,
   isEarlyBirdsNationalCrownDue,
@@ -169,6 +170,48 @@ export function runEarlyBirdsDecisionTests() {
       resolveDueEarlyBirdsPeriods({ todayIso: "2027-01-05", minutesSinceMidnight: 600, snapshottedPeriodKeys: settled }),
       [],
       "feeding the results back in makes the next call a no-op",
+    );
+  }
+
+  // ── The sweep must never reach back BEFORE the module existed ───────────────────
+  {
+    // Reproduces production on 2026-08-09, the day before the poller was to be unblocked. The
+    // lookback window is relative to today, so it kept sliding backwards over fortnights that
+    // pre-date the module — and every one looked like a gap the scheduler was built to heal.
+    //
+    // Live state that day: 2026-07-H2 complete (19/19 districts), 2026-07-H1 partial (11/19), and
+    // June entirely absent. Unblocking would have closed 8 + 19 + 19 = 46 districts, sent 46
+    // recommendation emails about work up to ten weeks old, and auto-crowned all 46 five days later.
+    const asItWasOnUnblockDay = resolveDueEarlyBirdsPeriods({
+      todayIso: "2026-08-09",
+      minutesSinceMidnight: 11 * 60,
+      // 2026-07-H2 was the only period every district had a snapshot for.
+      snapshottedPeriodKeys: new Set(["2026-07-H2"]),
+    });
+    assert.deepEqual(
+      asItWasOnUnblockDay,
+      [],
+      "nothing older than the module's first live fortnight may be closed — a fortnight nobody was watching cannot be awarded honestly after the fact",
+    );
+
+    // The floor must not be a blanket off-switch: the first real fortnight still closes.
+    const firstRealClose = resolveDueEarlyBirdsPeriods({
+      todayIso: "2026-08-16",
+      minutesSinceMidnight: 600,
+      snapshottedPeriodKeys: new Set(),
+    });
+    assert.equal(
+      firstRealClose[0]?.periodKey,
+      EARLY_BIRDS_EARLIEST_PERIOD_KEY,
+      "the floor period itself is due the day after it ends — the module starts here, it is not disabled",
+    );
+
+    // The key format is what makes a string compare a date compare. If that ever stops holding,
+    // the floor silently lets everything through.
+    assert.deepEqual(
+      ["2026-07-H1", "2026-08-H1", "2026-06-H2", "2026-07-H2", "2026-10-H1"].sort(),
+      ["2026-06-H2", "2026-07-H1", "2026-07-H2", "2026-08-H1", "2026-10-H1"],
+      "period keys must sort lexicographically in chronological order",
     );
   }
 

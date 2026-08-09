@@ -16,6 +16,24 @@ export const EARLY_BIRDS_CLOSE_EARLIEST_CAIRO_MINUTES = 3 * 60;
 /** How far back a cold start will heal. Older gaps stay gaps — see the note below. */
 export const EARLY_BIRDS_BACKFILL_PERIODS = 4;
 
+/**
+ * The first fortnight this module is allowed to award. Nothing older is ever closed.
+ *
+ * The lookback window alone is not a floor. It is relative to today, so it keeps sliding backwards
+ * over fortnights that existed before the module did — and every one of them looks like an
+ * unfilled gap the scheduler is supposed to heal. Measured on 2026-08-09 the sweep was one tick
+ * away from closing 2026-06-H1, 2026-06-H2 and the rest of 2026-07-H1: 46 districts, 46
+ * recommendation emails to managers about work up to ten weeks old, and 46 automatic crowns five
+ * days later.
+ *
+ * A fortnight nobody was watching at the time cannot be awarded honestly after the fact — the CRM
+ * mirror behind it has been reconciled since, so the ranking would not be the one the manager would
+ * have seen. Leaving a hole is the correct outcome.
+ *
+ * 2026-08-H1 is the first fortnight that closes with the module live and the poller running.
+ */
+export const EARLY_BIRDS_EARLIEST_PERIOD_KEY = "2026-08-H1";
+
 /** Spread a cold start over ticks instead of blocking the CRM probe for minutes. */
 export const EARLY_BIRDS_CLOSE_MAX_PER_TICK = 5;
 
@@ -41,13 +59,20 @@ export function resolveDueEarlyBirdsPeriods(input: {
   minutesSinceMidnight: number;
   snapshottedPeriodKeys: ReadonlySet<string>;
   lookbackPeriods?: number;
+  /** Overridable only so the test can pin the rule without rewriting history every August. */
+  earliestPeriodKey?: string;
 }): EarlyBirdsPeriod[] {
   const lookback = input.lookbackPeriods ?? EARLY_BIRDS_BACKFILL_PERIODS;
+  const earliest = input.earliestPeriodKey ?? EARLY_BIRDS_EARLIEST_PERIOD_KEY;
   const due: EarlyBirdsPeriod[] = [];
 
   for (const period of listRecentEarlyBirdsPeriods(input.todayIso, lookback + 1)) {
     if (!isEarlyBirdsPeriodClosed(period, input.todayIso)) continue;
     if (input.snapshottedPeriodKeys.has(period.periodKey)) continue;
+    // Fixed-width YYYY-MM-Hn sorts lexicographically in true chronological order, so a string
+    // compare IS the date compare here. Pinned by a test, because that stops being true the moment
+    // the key format changes.
+    if (period.periodKey < earliest) continue;
 
     const isFirstDayAfterClose = input.todayIso === addDaysIso(period.endIso, 1);
     if (isFirstDayAfterClose && input.minutesSinceMidnight < EARLY_BIRDS_CLOSE_EARLIEST_CAIRO_MINUTES) {
