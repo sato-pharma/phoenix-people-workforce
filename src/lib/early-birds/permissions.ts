@@ -19,6 +19,15 @@ export type EarlyBirdsScope = {
   /** Company-wide viewers (CEO, SFE, Super Admin) see every district and the national wall. */
   isCompanyWide: boolean;
   scopeLabel: string;
+  /**
+   * True when the employee directory could not be read at all.
+   *
+   * Without this flag an outage is indistinguishable from an honest empty scope: both produce zero
+   * districts, and the board renders "no district reports to you" at a manager who has six. Callers
+   * MUST branch on this before showing any it's-empty copy — a misleading zero is worse than an
+   * error, because nobody investigates a number that looks like an answer.
+   */
+  directoryUnavailable: boolean;
 };
 
 const COMPANY_WIDE_ROLES = new Set([
@@ -65,8 +74,25 @@ export type EarlyBirdsScopeRow = {
   positionTitle: string | null;
 };
 
+/** The scope when the directory cannot be read. Empty, but for a reason the caller must surface. */
+const DIRECTORY_UNAVAILABLE_SCOPE: EarlyBirdsScope = {
+  districts: [],
+  viewerHrIdKey: null,
+  isCompanyWide: false,
+  scopeLabel: "your team",
+  directoryUnavailable: true,
+};
+
 export async function resolveEarlyBirdsScope(access: AccessContext): Promise<EarlyBirdsScope> {
-  const rows = await getEmployeeDirectoryRows().catch(() => []);
+  // This used to be `.catch(() => [])`, which turned a database outage into a board that told a
+  // National Sales Manager "no district reports to you". Fail closed on the data, but never fail
+  // silent on the reason.
+  let rows: readonly EarlyBirdsScopeRow[];
+  try {
+    rows = await getEmployeeDirectoryRows();
+  } catch {
+    return DIRECTORY_UNAVAILABLE_SCOPE;
+  }
   return resolveEarlyBirdsScopeFrom(rows, access);
 }
 
@@ -80,6 +106,12 @@ export function resolveEarlyBirdsScopeFrom(
   rows: readonly EarlyBirdsScopeRow[],
   access: AccessContext,
 ): EarlyBirdsScope {
+  // An employee directory with zero rows is not a state this company can be in — it is what a
+  // failed read, or an upstream `.catch(() => [])`, looks like from here. Report it as an outage
+  // rather than as "you manage nobody", and keep the rule in the pure function so it is testable
+  // without a database.
+  if (rows.length === 0) return DIRECTORY_UNAVAILABLE_SCOPE;
+
   const viewerKey = normalizeHrIdForAccess(access.hrId);
 
   const managerKeyByEmployeeKey = new Map<string, string | null>();
@@ -122,11 +154,18 @@ export function resolveEarlyBirdsScopeFrom(
       viewerHrIdKey: viewerKey,
       isCompanyWide: true,
       scopeLabel: "the company",
+      directoryUnavailable: false,
     };
   }
 
   if (!viewerKey) {
-    return { districts: [], viewerHrIdKey: null, isCompanyWide: false, scopeLabel: "your team" };
+    return {
+      districts: [],
+      viewerHrIdKey: null,
+      isCompanyWide: false,
+      scopeLabel: "your team",
+      directoryUnavailable: false,
+    };
   }
 
   // A National Sales Manager is scoped by LINE, and is checked FIRST because he is never a
@@ -151,6 +190,7 @@ export function resolveEarlyBirdsScopeFrom(
       viewerHrIdKey: viewerKey,
       isCompanyWide: false,
       scopeLabel: "your line",
+      directoryUnavailable: false,
     };
   }
 
@@ -161,6 +201,7 @@ export function resolveEarlyBirdsScopeFrom(
       viewerHrIdKey: viewerKey,
       isCompanyWide: false,
       scopeLabel: "your team",
+      directoryUnavailable: false,
     };
   }
 
@@ -177,6 +218,7 @@ export function resolveEarlyBirdsScopeFrom(
       viewerHrIdKey: viewerKey,
       isCompanyWide: false,
       scopeLabel: "your team",
+      directoryUnavailable: false,
     };
   }
 
@@ -188,6 +230,7 @@ export function resolveEarlyBirdsScopeFrom(
     viewerHrIdKey: viewerKey,
     isCompanyWide: false,
     scopeLabel: owned.size > 1 ? "your line" : "your team",
+    directoryUnavailable: false,
   };
 }
 

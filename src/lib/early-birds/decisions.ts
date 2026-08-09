@@ -77,6 +77,10 @@ export async function listPendingEarlyBirdsRecommendations(
   access: AccessContext,
 ): Promise<EarlyBirdsPendingCandidate[]> {
   const scope = await resolveEarlyBirdsScope(access);
+  // An unreadable directory yields no districts, so this returns nothing either way. That is the
+  // right call for an approvals list — inventing rows we cannot prove the viewer owns would be
+  // worse — and the cost is only a badge that reads 0 until the directory recovers. The board
+  // itself says so out loud; see EarlyBirdsScope.directoryUnavailable.
   if (scope.districts.length === 0) return [];
   return listPendingEarlyBirdsForManagers(scope.districts.map((district) => district.hrId));
 }
@@ -253,6 +257,16 @@ export async function decideEarlyBirdsCandidate(
     if (!snapshot) return { ok: false, error: "failed", message: "That recommendation no longer exists." };
 
     const scope = await resolveEarlyBirdsScope(access);
+    if (scope.directoryUnavailable) {
+      // Ownership is derived from the directory. With the directory down we cannot prove the viewer
+      // owns this district, so we must refuse — but refusing with "that district is not yours"
+      // would accuse a legitimate District Manager of reaching outside his scope during an outage.
+      return {
+        ok: false,
+        error: "failed",
+        message: "The employee directory could not be read, so your district could not be confirmed. Nothing was recorded — please try again in a minute.",
+      };
+    }
     const owns =
       scope.isCompanyWide ||
       scope.districts.some(

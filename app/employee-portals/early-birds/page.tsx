@@ -39,6 +39,16 @@ export default async function PortalEarlyBirdsPage({ searchParams }: PageProps) 
   );
 
   const scope = await resolveEarlyBirdsScope(access);
+  if (scope.directoryUnavailable) {
+    // The employee directory could not be read. Saying "no district reports to you" here would be a
+    // confident lie to a manager who has six, so name the outage instead.
+    return shell(
+      <EmployeePortalEmptyState
+        message="We could not load the employee directory, so your districts cannot be resolved right now. This is a temporary problem on our side, not a change to your team. Please refresh in a minute."
+        title="Your team could not be loaded"
+      />,
+    );
+  }
   if (scope.districts.length === 0) {
     return shell(
       <EmployeePortalEmptyState

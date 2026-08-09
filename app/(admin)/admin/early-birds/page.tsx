@@ -37,6 +37,24 @@ export default async function AdminEarlyBirdsPage({ searchParams }: PageProps) {
     />
   );
 
+  if (scope.directoryUnavailable) {
+    // Distinct from "nothing to rank": the directory read failed, so we do not know what there is
+    // to rank. An amber outage panel, never the grey empty state.
+    return (
+      <div className="space-y-5">
+        {hero}
+        <div className="border border-amber-200 bg-amber-50 px-5 py-4">
+          <p className="text-sm font-bold text-amber-900">The employee directory could not be loaded.</p>
+          <p className="mt-1 text-sm text-amber-800">
+            Districts cannot be resolved until it is readable again, so this board is showing nothing
+            rather than showing an empty ranking that would look like a real result. Refresh in a
+            minute; if it persists, check the database connection.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (scope.districts.length === 0) {
     return (
       <div className="space-y-5">
