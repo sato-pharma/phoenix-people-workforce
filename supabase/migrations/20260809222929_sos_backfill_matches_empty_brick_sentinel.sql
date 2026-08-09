@@ -1,3 +1,15 @@
+-- Filename corrected 2026-08-10, no SQL changed. This fix was originally authored and merged
+-- (PR #1984, commit b7a3dcd0) under filename timestamp 20260810120000, but production applied it
+-- via a direct MCP apply_migration call, whose own clock recorded the ledger row as version
+-- 20260809222929 (confirmed live via list_migrations against ozucdzovmcqvepbozvqf -- it is the
+-- most recently applied migration on that project). check-migrations-applied.ts already tolerates
+-- this exact drift pattern by matching on name as well as version (see its own comment on "the
+-- known MCP apply_migration version-drift pattern"), so this rename fixes no CI failure -- the
+-- drift check was already green. It closes the one thing name-matching does not cover: a raw
+-- `supabase db push` keys strictly on version, so without this rename it would have treated the
+-- old filename as unapplied, re-run this (idempotent but redundant), and written a second,
+-- duplicate ledger row for the same logical migration.
+--
 -- sos_backfill_import_rows_from_customer_map has been a silent no-op since it was written
 -- (20260703090000): its WHERE clause gates on `r.brick_id is null`, but the normalizer never
 -- leaves brick_id NULL for an unresolved row -- it writes '' (empty string). Confirmed at the
