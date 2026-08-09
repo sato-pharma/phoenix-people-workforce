@@ -36,6 +36,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { reconcileUnattributed } from "@/lib/employee-portal/performance-reconciliation";
 import { applyAchievementAreaMerges } from "@/lib/sales/closing-area-merges";
 import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
@@ -287,6 +288,7 @@ export async function buildNsmDsmPerformanceFromSos(
 
   const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsmHrId, nsmName));
   const totals = headlineTotals(used);
+  const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, dsms);
 
   return {
     dsms,
@@ -295,6 +297,8 @@ export async function buildNsmDsmPerformanceFromSos(
     dsmCount: dsms.length,
     lineTotalSales: totals.sales,
     lineTotalTarget: totals.target,
+    unattributedSales,
+    unattributedTarget,
   };
 }
 
@@ -313,6 +317,7 @@ export async function buildDsmTeamPerformanceFromSos(
   const used = selectRows(rows, activePeriods, requested);
   const members = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
   const totals = headlineTotals(used);
+  const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, members);
 
   return {
     members,
@@ -321,6 +326,8 @@ export async function buildDsmTeamPerformanceFromSos(
     teamMemberCount: members.length,
     teamTotalSales: totals.sales,
     teamTotalTarget: totals.target,
+    unattributedSales,
+    unattributedTarget,
   };
 }
 
@@ -357,6 +364,7 @@ export async function buildCompanyMedRepPerformanceFromSos(
     const members = membersFromRows(lineRows, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
     if (members.length === 0) continue;
     const totals = headlineTotals(lineRows);
+    const lineUnattributed = reconcileUnattributed(totals, members);
     lines.push({
       lineId: meta.lineId,
       lineName: meta.lineName,
@@ -368,18 +376,26 @@ export async function buildCompanyMedRepPerformanceFromSos(
         teamMemberCount: members.length,
         teamTotalSales: totals.sales,
         teamTotalTarget: totals.target,
+        unattributedSales: lineUnattributed.unattributedSales,
+        unattributedTarget: lineUnattributed.unattributedTarget,
       },
     });
   }
   lines.sort((a, b) => b.performance.teamTotalSales - a.performance.teamTotalSales);
 
   const company = headlineTotals(used);
+  const companyUnattributed = reconcileUnattributed(
+    company,
+    lines.flatMap((line) => line.performance.members),
+  );
   return {
     lines,
     periods: activePeriods,
     companyTotalSales: company.sales,
     companyTotalTarget: company.target,
     companyAchievementPercent: company.achievementPercent,
+    companyUnattributedSales: companyUnattributed.unattributedSales,
+    companyUnattributedTarget: companyUnattributed.unattributedTarget,
     repCount: lines.reduce((sum, line) => sum + line.performance.teamMemberCount, 0),
     lineCount: lines.length,
   };
@@ -409,6 +425,7 @@ export async function buildCompanyDsmPerformanceFromSos(
     );
     if (dsms.length === 0) continue;
     const totals = headlineTotals(lineRows);
+    const lineUnattributed = reconcileUnattributed(totals, dsms);
     lines.push({
       lineId: meta.lineId,
       lineName: meta.lineName,
@@ -420,18 +437,26 @@ export async function buildCompanyDsmPerformanceFromSos(
         dsmCount: dsms.length,
         lineTotalSales: totals.sales,
         lineTotalTarget: totals.target,
+        unattributedSales: lineUnattributed.unattributedSales,
+        unattributedTarget: lineUnattributed.unattributedTarget,
       },
     });
   }
   lines.sort((a, b) => b.performance.lineTotalSales - a.performance.lineTotalSales);
 
   const company = headlineTotals(used);
+  const companyUnattributed = reconcileUnattributed(
+    company,
+    lines.flatMap((line) => line.performance.dsms),
+  );
   return {
     lines,
     periods: activePeriods,
     companyTotalSales: company.sales,
     companyTotalTarget: company.target,
     companyAchievementPercent: company.achievementPercent,
+    companyUnattributedSales: companyUnattributed.unattributedSales,
+    companyUnattributedTarget: companyUnattributed.unattributedTarget,
     dsmCount: lines.reduce((sum, line) => sum + line.performance.dsmCount, 0),
     lineCount: lines.length,
   };

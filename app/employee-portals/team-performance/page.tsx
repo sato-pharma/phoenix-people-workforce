@@ -8,6 +8,7 @@ import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import {
   TeamAchievementChart,
@@ -73,7 +74,15 @@ export default async function EmployeePortalTeamPerformancePage({
     );
   }
 
-  const { members, periods, teamAchievementPercent, teamMemberCount, teamTotalSales, teamTotalTarget } = data;
+  const {
+    members,
+    periods,
+    teamAchievementPercent,
+    teamMemberCount,
+    teamTotalSales,
+    teamTotalTarget,
+    unattributedSales,
+  } = data;
 
   // Validate requested period
   const validPeriod =
@@ -183,6 +192,13 @@ export default async function EmployeePortalTeamPerformancePage({
             <p className="text-xs text-slate-400 mt-0.5">≥ 90% achievement</p>
           </div>
         </div>
+
+        {/* Reconciliation: Total Sales includes Direct Orders + vacant seats no rep below carries */}
+        <PerformanceReconciliationNote
+          className="mt-4 rounded-xl"
+          totalLabel="Total Sales"
+          unattributedSales={unattributedSales}
+        />
       </Card>
 
       {members.length === 0 ? (

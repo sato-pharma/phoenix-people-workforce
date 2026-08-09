@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
+import { PerformanceReconciliationNote } from "@/components/employee-portal/performance-reconciliation-note";
 import { ScopeBadge } from "@/components/employee-portal/scope-badge";
 import { Card } from "@/components/ui/card";
 import { WorkspaceErrorBoundary } from "@/components/ui/workspace-error-boundary";
@@ -100,7 +101,8 @@ export default async function DsmsPerformancePage({
     );
   }
 
-  const { dsms, periods, lineAchievementPercent, dsmCount, lineTotalSales, lineTotalTarget } = data;
+  const { dsms, periods, lineAchievementPercent, dsmCount, lineTotalSales, lineTotalTarget, unattributedSales } =
+    data;
 
   // Supports a single period, several comma-separated periods, or none (all periods).
   const selectedPeriods = normalizeTeamComparisonPeriods(requestedPeriod).filter((period) =>
@@ -214,6 +216,13 @@ export default async function DsmsPerformancePage({
               </div>
             ))}
           </div>
+
+          {/* Reconciliation: Line Sales includes Direct Orders + vacant seats no DSM below carries */}
+          <PerformanceReconciliationNote
+            className="mt-3 rounded-md"
+            totalLabel="Line Sales"
+            unattributedSales={unattributedSales}
+          />
         </Card>
 
         {/* ── Achievement Distribution Bar ── */}
