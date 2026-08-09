@@ -185,10 +185,10 @@ export function resolveSystemInboxes(): string[] {
  * Production directory: every address the system is allowed to reach, paired with its owner.
  *
  * Uses the 30-second cached, in-flight-deduped employee directory, so the guard adds no query
- * per email — every DB round trip here crosses the Atlantic (Railway sfo ↔ Supabase eu-central-1)
- * and a per-send lookup would be felt. Inactive employees are included deliberately: mail about a
- * leaver (final settlement, resignation acknowledgement) is legitimate, and excluding them would
- * block exactly the workflow that must still run after someone leaves.
+ * per email — every DB round trip here is a cross-region hop (Railway `europe-west4` ↔ Supabase
+ * `eu-central-1`) and a per-send lookup would be felt. Inactive employees are included
+ * deliberately: mail about a leaver (final settlement, resignation acknowledgement) is legitimate,
+ * and excluding them would block exactly the workflow that must still run after someone leaves.
  */
 export async function resolveAssuranceDirectory(): Promise<AssuranceDirectoryEntry[]> {
   const rows = await getEmployeeDirectoryRows({ includeInactive: true });

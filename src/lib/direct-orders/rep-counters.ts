@@ -114,8 +114,8 @@ export async function getDirectOrderRepCounters(access: AccessContext): Promise<
       .select("requested_by_hr_id, status, suggestions_refused"),
     supabase.from("employees").select("hr_id, full_name, job_title, area_name"),
     // Fetched as a set rather than joined, so a rejected order can be tested against it without a
-    // second round trip per row — every one of those crosses the Atlantic (Railway sfo to Supabase
-    // eu-central-1), and this table already makes three.
+    // second round trip per row — every one of those is a cross-region hop (Railway
+    // `europe-west4` to Supabase `eu-central-1`), and this table already makes three.
     supabase.from("direct_order_pharmacies").select("id").eq("verification_status", "rejected"),
   ]);
 
