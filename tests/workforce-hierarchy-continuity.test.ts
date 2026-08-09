@@ -435,8 +435,33 @@ export function runWorkforceHierarchyContinuityTests() {
   );
   assert.match(
     vacationServiceSource,
-    /const visibleEmployees = filterVacationEmployeesForAccess\(access, activeEmployees\);[\s\S]*const visibleEmployeeHrIds = buildVisibleHrIdSet\(visibleEmployees\)/,
+    /const visibleEmployees = await filterVacationEmployeesForAccess\(access, activeEmployees\);[\s\S]*const visibleEmployeeHrIds = buildVisibleHrIdSet\(visibleEmployees\)/,
     "Vacation report must derive the scoped HR ID set from the same visible employee set used for entitlements",
+  );
+  // WP-4: LINE scope must consult the viewer's line_scope_override (e.g. a Marketing
+  // Manager on the Head Office pseudo-line whose override lists the real business
+  // lines their PM/GPM reports sit on) rather than only ever comparing the viewer's
+  // own single line — otherwise a skip-level report on an overridden line stays
+  // invisible even though the override was configured specifically to grant it.
+  assert.match(
+    vacationServiceSource,
+    /async function filterVacationEmployeesForAccess\(/,
+    "filterVacationEmployeesForAccess must be async to await the line-scope override",
+  );
+  assert.match(
+    vacationServiceSource,
+    /import \{ resolveViewerAllowedLines \} from "@\/lib\/auth\/scope-visibility";/,
+    "vacation service must import the line-scope override resolver",
+  );
+  assert.match(
+    vacationServiceSource,
+    /allowedLineKeys[\s\S]*?resolveViewerAllowedLines\(access\)/,
+    "LINE scope must resolve the viewer's line_scope_override",
+  );
+  assert.match(
+    vacationServiceSource,
+    /allowedLineKeys\.has\(employeeLineKey\)[\s\S]*?sameWorkforceDepartment\(currentEmployee, employee\)/,
+    "LINE scope override branch must stay department-safe (never cross into another department on a shared line)",
   );
   assert.match(
     vacationServiceSource,

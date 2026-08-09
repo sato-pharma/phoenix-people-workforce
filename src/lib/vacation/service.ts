@@ -14,6 +14,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
+import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
@@ -531,7 +532,7 @@ function buildVisibleHrIdSet(employees: EmployeeDirectoryRow[]): Set<string> {
   return new Set(ids);
 }
 
-function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
+async function filterVacationEmployeesForAccess(access: AccessContext, employees: EmployeeDirectoryRow[]) {
   const scope = getVacationVisibilityScope(access);
   if (scope === "COMPANY") return employees;
 
@@ -555,6 +556,12 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
   // in LINE scope. Without this, a TM/PM/GPM/NSM would see their own manager's
   // leave data because the manager shares the same product line + department.
   const viewerManagerIds = new Set<string>();
+  // A per-user line_scope_override (e.g. a Group PM or Marketing Manager spanning
+  // several product lines — see src/lib/auth/scope-visibility.ts) replaces the
+  // own-single-line comparison below with its explicit multi-line set. Only
+  // fetched for LINE scope; null when no override is configured, in which case
+  // the own-single-line fallback below is unchanged.
+  let allowedLineKeys: ReadonlySet<string> | null = null;
   if (scope === "LINE") {
     let mgr: EmployeeDirectoryRow | undefined = currentEmployee;
     for (let depth = 0; depth < 12 && mgr?.managerHrId; depth++) {
@@ -562,6 +569,10 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
       if (!mgrId || viewerManagerIds.has(mgrId)) break;
       viewerManagerIds.add(mgrId);
       mgr = employeeByHrId.get(mgrId);
+    }
+    const overrideLines = await resolveViewerAllowedLines(access);
+    if (overrideLines && overrideLines.length > 0) {
+      allowedLineKeys = new Set(overrideLines.map((line) => normalizeLineName(line)).filter(Boolean));
     }
   }
 
@@ -618,6 +629,18 @@ function filterVacationEmployeesForAccess(access: AccessContext, employees: Empl
         })
       ) {
         return true;
+      }
+      // An override only ever widens WHICH of the viewer's own-department lines
+      // are visible — it must still pass sameWorkforceDepartment, never cross
+      // into another department's employees who happen to sit on the same
+      // overridden line (e.g. Sales' NSM chain on a line Marketing also covers).
+      if (allowedLineKeys) {
+        const employeeLineKey = normalizeLineName(employee.lineName);
+        return (
+          employeeLineKey !== "" &&
+          allowedLineKeys.has(employeeLineKey) &&
+          sameWorkforceDepartment(currentEmployee, employee)
+        );
       }
       return (
         employeeLineMatches(employee, currentEmployee) &&
@@ -4711,7 +4734,7 @@ export async function getVacationRequestTimeline(access: AccessContext, requestI
   if (!request) throw new Error("Vacation request was not found.");
 
   const activeEmployees = await getEmployeeDirectoryRows();
-  const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   if (!canSeeVacation(access, request, visibleEmployeeHrIds)) {
     throw new Error("Forbidden: you cannot view this vacation request.");
@@ -5238,7 +5261,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
   const canExport = await canAccess(access, "leave", "export");
   const canReviewAttachments = isAllVacationVisibility(access);
   const activeEmployees = await getEmployeeDirectoryRows();
-  const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: clean, visibleEmployeeHrIds });
 
@@ -5295,7 +5318,7 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
 export async function getVacationPlatformMetricRows(access: AccessContext) {
   await assertPermission(access, "leave", "read");
   const activeEmployees = await getEmployeeDirectoryRows();
-  const visibleEmployees = filterVacationEmployeesForAccess(access, activeEmployees);
+  const visibleEmployees = await filterVacationEmployeesForAccess(access, activeEmployees);
   const visibleEmployeeHrIds = buildVisibleHrIdSet(visibleEmployees);
   const data = await fetchVacationReportRowsFromDatabase({ access, filters: {}, visibleEmployeeHrIds });
 

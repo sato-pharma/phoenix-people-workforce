@@ -41,8 +41,9 @@ export function runWeeklyPlansPermissionScopeTests() {
     "canViewPlan must grant unconditional access to Super Admin",
   );
 
-  // ── canViewPlan: manager match (DSM/NSM/line-manager gate) ────────────────
-  // DSM sees only team plans — the guard is hrIdsMatch(access.hrId, plan.manager_hr_id)
+  // ── canViewPlan: manager match (direct manager gate) ──────────────────────
+  // The plan's literal direct manager always sees it via hrIdsMatch — separate from
+  // the skip-level chain-visibility branch tested below.
   assert.match(
     svc,
     /function canViewPlan[\s\S]{0,600}hrIdsMatch\(access\.hrId, plan\.manager_hr_id\)/,
@@ -54,6 +55,17 @@ export function runWeeklyPlansPermissionScopeTests() {
     svc,
     /isHrReviewer\(access, employee\)[\s\S]{0,200}\["final_approved", "hr_acknowledged"\]/,
     "canViewPlan must restrict HR reviewers to final-stage plans only",
+  );
+
+  // ── canViewPlan: skip-level manager-chain visibility ──────────────────────
+  // A manager's manager (or deeper) must also see the plan, via the viewer's
+  // precomputed downward chain (see src/lib/weekly-planning/plan-visibility.ts) —
+  // not just the literal direct manager checked above. Real case: a Marketing
+  // Manager must see a Product Manager's plan two levels down.
+  assert.match(
+    svc,
+    /function canViewPlan[\s\S]{0,900}isPlanOwnerWithinViewerManagementChain\(plan\.employee_hr_id, scope\)/,
+    "canViewPlan must also grant access when the plan owner is within the viewer's management chain",
   );
 
   // ── assertManagerReviewer: active-employment guard ────────────────────────
