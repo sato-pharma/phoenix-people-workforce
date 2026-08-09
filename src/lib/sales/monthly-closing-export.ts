@@ -3321,7 +3321,12 @@ export async function buildPortalClosingWorkbook(
   // every other sheet exists — same two-step as buildMonthlyClosingWorkbook's Dashboard.
   const dashboard = workbook.addWorksheet(sanitizeSheetName("Dashboard"), { views: [{ showGridLines: false }] });
 
-  const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible);
+  // Rebuild the cells from the raw rows so the Matrix ties to the Data sheet (the store split
+  // moves sales between a city's areas, so the store-split matrix and the pre-split rows disagree
+  // cell-by-cell). `preserveTargets` keeps the scoped matrix's per-area/product targets — the whole
+  // of the viewer's scope is present here, so the achievement is honest — without which the
+  // exported Closing Matrix and Target vs Achievement sheets came out with every target blank.
+  const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible, { preserveTargets: true });
   const { blocks, ref } = planDataLayout(comparison.data);
 
   writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
