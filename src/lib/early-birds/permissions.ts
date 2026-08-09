@@ -55,14 +55,40 @@ function districtsUnder(
   return owned;
 }
 
+/** Directory fields the scope rule actually reads. */
+export type EarlyBirdsScopeRow = {
+  hrId: string;
+  displayName: string;
+  managerHrId: string | null;
+  lineId: number | null;
+  jobTitle: string | null;
+  positionTitle: string | null;
+};
+
 export async function resolveEarlyBirdsScope(access: AccessContext): Promise<EarlyBirdsScope> {
   const rows = await getEmployeeDirectoryRows().catch(() => []);
+  return resolveEarlyBirdsScopeFrom(rows, access);
+}
+
+/**
+ * The scope rule as a pure function of the directory — {@link resolveEarlyBirdsScope} is only the
+ * fetch around it. Split out so the branch ordering can be regression-tested: a bug here silently
+ * shows one line's reps to another line's manager, which is exactly what happened in production
+ * (every NSM was handed the CEO's district).
+ */
+export function resolveEarlyBirdsScopeFrom(
+  rows: readonly EarlyBirdsScopeRow[],
+  access: AccessContext,
+): EarlyBirdsScope {
   const viewerKey = normalizeHrIdForAccess(access.hrId);
 
   const managerKeyByEmployeeKey = new Map<string, string | null>();
   const nameByKey = new Map<string, string>();
   const hrIdByKey = new Map<string, string>();
+  const lineIdByKey = new Map<string, number | null>();
   const districtKeys = new Set<string>();
+  let viewerIsMedicalRep = false;
+  let viewerLineId: number | null = null;
 
   for (const row of rows) {
     const key = normalizeHrIdForAccess(row.hrId);
@@ -70,6 +96,11 @@ export async function resolveEarlyBirdsScope(access: AccessContext): Promise<Ear
     managerKeyByEmployeeKey.set(key, normalizeHrIdForAccess(row.managerHrId));
     nameByKey.set(key, row.displayName);
     hrIdByKey.set(key, row.hrId);
+    lineIdByKey.set(key, typeof row.lineId === "number" ? row.lineId : null);
+    if (key === viewerKey) {
+      viewerIsMedicalRep = isMedicalRepDirectoryEmployee(row);
+      viewerLineId = typeof row.lineId === "number" ? row.lineId : null;
+    }
     if (isMedicalRepDirectoryEmployee(row)) {
       const managerKey = normalizeHrIdForAccess(row.managerHrId);
       if (managerKey) districtKeys.add(managerKey);
@@ -109,8 +140,13 @@ export async function resolveEarlyBirdsScope(access: AccessContext): Promise<Ear
   }
 
   // A Medical Rep sees the district he competes in — his own manager's.
+  //
+  // GATED TO ACTUAL MEDICAL REPS. Without that guard this branch fires for anyone whose manager
+  // happens to manage reps — and every National Sales Manager reports to the CEO, who directly
+  // manages six Anti-Infective reps. All three NSMs were therefore handed the CEO's district
+  // instead of their own line, so a CNS NSM was looking at Anti-Infective reps.
   const viewerManagerKey = managerKeyByEmployeeKey.get(viewerKey) ?? null;
-  if (viewerManagerKey && districtKeys.has(viewerManagerKey)) {
+  if (viewerIsMedicalRep && viewerManagerKey && districtKeys.has(viewerManagerKey)) {
     return {
       districts: [toDistrict(viewerManagerKey)],
       viewerHrIdKey: viewerKey,
@@ -119,8 +155,25 @@ export async function resolveEarlyBirdsScope(access: AccessContext): Promise<Ear
     };
   }
 
-  // Regional / National managers: the districts that genuinely roll up to them. Fails CLOSED —
-  // an empty subtree shows nothing rather than the whole company.
+  // A National Sales Manager is scoped by LINE, not by the reporting tree.
+  //
+  // The tree cannot carry this: all six Anti-Infective districts report to the CEO rather than to
+  // the Anti-Infective NSM, so a subtree walk returns nothing for him while returning six for the
+  // CNS NSM. Line membership is the axis the business actually runs on.
+  if (viewerLineId !== null && access.role === "National Sales Manager") {
+    const onMyLine = new Set(
+      Array.from(districtKeys).filter((districtKey) => lineIdByKey.get(districtKey) === viewerLineId),
+    );
+    return {
+      districts: Array.from(onMyLine, toDistrict).sort(byName),
+      viewerHrIdKey: viewerKey,
+      isCompanyWide: false,
+      scopeLabel: "your line",
+    };
+  }
+
+  // Regional managers: the districts that genuinely roll up to them. Fails CLOSED — an empty
+  // subtree shows nothing rather than the whole company.
   const owned = districtsUnder(viewerKey, managerKeyByEmployeeKey, Array.from(districtKeys));
   return {
     districts: Array.from(owned, toDistrict).sort(byName),

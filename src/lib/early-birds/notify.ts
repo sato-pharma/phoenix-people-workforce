@@ -12,6 +12,7 @@ import { canonicalHrIdKey, normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import type { EarlyBirdsPendingCandidate } from "@/lib/early-birds/decisions";
 import { earlyBirdsReasonSummary } from "@/lib/early-birds/decisions";
+import { formatStartClock } from "@/components/early-birds/early-birds-format";
 
 const EARLY_BIRDS_ACTION_URL = "/employee-portals/approvals/early-bird";
 
@@ -45,6 +46,53 @@ async function resolveChainRecipients(managerHrId: string): Promise<string[]> {
  * Never throws. A notification that cannot be delivered must not roll back a snapshot that was
  * already written — the recommendation still exists in the Approvals Hub either way.
  */
+/**
+ * The evidence, as label/value rows.
+ *
+ * These become `metadataRows` in the house email layout, which renders them as the premium
+ * zebra-striped table (`renderPhoenixMetadataTable`) — striping applied INLINE, because email
+ * clients routinely drop `<style>` and almost none honour `:nth-child`. Reusing that component
+ * rather than hand-rolling a table is what keeps this email looking like every other Phoenix one.
+ *
+ * Order matters: who, then where, then the numbers that justify it, then who he beat. A manager
+ * should be able to approve or reject from the email body alone without opening the board.
+ */
+function buildEarlyBirdsEmailMetrics(candidate: EarlyBirdsPendingCandidate) {
+  const rows: Array<{ label: string; value: string | number }> = [
+    { label: "Recommended", value: candidate.employeeName },
+    { label: "Area", value: candidate.areaName ?? "—" },
+    { label: "Fortnight", value: candidate.periodLabel },
+    { label: "Median first visit", value: formatStartClock(candidate.medianStartMinutes) },
+    { label: "Days submitted", value: `${candidate.daysWithSubmission} of ${candidate.expectedWorkingDays}` },
+    // Stated explicitly: the ranking mixes GPS check-ins with rep-controlled save times, and a
+    // manager approving an award deserves to see which this rests on.
+    {
+      label: "GPS-verified visits",
+      value: `${candidate.gpsVerifiedVisits} of ${candidate.gpsEligibleVisits}`,
+    },
+    { label: "Regular visits", value: candidate.regularVisits },
+    { label: "Days finished first", value: candidate.dailyWins },
+    { label: "Score", value: `${Math.round(candidate.totalScore * 1000)} / 1000` },
+  ];
+
+  if (candidate.candidateRank > 1) {
+    // A second or third recommendation must explain itself, or it reads as the system changing
+    // its mind.
+    rows.push({ label: "Rank offered", value: `#${candidate.candidateRank}` });
+  }
+  for (const [index, runner] of candidate.runnersUp.slice(0, 3).entries()) {
+    rows.push({
+      label: index === 0 ? "Next best" : `Then`,
+      value: `${runner.name} — ${formatStartClock(runner.medianStartMinutes)} · ${Math.round(runner.totalScore * 1000)} pts`,
+    });
+  }
+  for (const rejected of candidate.rejectedSoFar.slice(0, 3)) {
+    rows.push({ label: "Already rejected", value: `${rejected.name}${rejected.reason ? ` — ${rejected.reason}` : ""}` });
+  }
+
+  return rows;
+}
+
 export async function notifyEarlyBirdsRecommendation(candidate: EarlyBirdsPendingCandidate): Promise<void> {
   try {
     const recipients = await resolveChainRecipients(candidate.managerHrId);
@@ -63,8 +111,12 @@ export async function notifyEarlyBirdsRecommendation(candidate: EarlyBirdsPendin
         actionUrl: EARLY_BIRDS_ACTION_URL,
         title: `Early Bird — ${candidate.periodLabel}`,
         message:
-          `${candidate.employeeName} is your recommended Early Bird for ${candidate.periodLabel}. ` +
-          `${earlyBirdsReasonSummary(candidate)}. Confirm or choose the next candidate.`,
+          `${candidate.employeeName} is your recommended Early Bird for ${candidate.periodLabel}.\n\n` +
+          `${earlyBirdsReasonSummary(candidate)}.\n\n` +
+          `The full evidence is below. Confirm him, or reject with a reason and the next-ranked rep ` +
+          `is offered instead.`,
+        // Renders as the house zebra-striped details table.
+        email: { metrics: buildEarlyBirdsEmailMetrics(candidate) },
         metadata: {
           employeeHrId: candidate.employeeHrId,
           earlyBirdsSnapshotId: candidate.snapshotId,
