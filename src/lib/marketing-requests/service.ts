@@ -20,11 +20,18 @@ import { conflictError, forbiddenError, notFoundError, validationError } from "@
 import {
   deleteMarketingEvidencePhotos,
   loadMarketingEvidencePhoto,
-  loadMarketingEvidencePhotosByEntityIds,
   parseMarketingEvidencePhotoDataUrl,
   storeMarketingEvidencePhoto,
 } from "@/lib/marketing-requests/evidence-photo-storage";
 import { marketingRequestNotificationUrl } from "@/lib/marketing-requests/notification-link";
+// Moved out of this file (it was 6,000 lines) so the Case File can share the exact same reads
+// instead of copying them. Behaviour is unchanged for every caller below.
+import {
+  loadMarketingDecisionPharmacies,
+  loadMarketingRequestOverlaps,
+  type MarketingDecisionOverlap,
+  type MarketingDecisionPharmacy,
+} from "@/lib/marketing-requests/request-loaders";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -75,12 +82,6 @@ import type {
   MarketingWorkflowStep,
 } from "@/lib/marketing-requests/types";
 import { getUserProductScopeOverride } from "@/lib/auth/scope-visibility";
-import {
-  describeOverlap,
-  findRequestOverlaps,
-  windowMonths,
-  type OverlapCandidate,
-} from "@/lib/marketing-requests/request-overlap";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pingMarketingRequestSheet } from "@/lib/marketing-requests/sheet-webhook";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -173,24 +174,9 @@ export type MarketingDecisionProductLine = {
   value: number;
 };
 
-/** One target pharmacy exactly as the requester submitted it — never collapsed to a count. */
-export type MarketingDecisionPharmacy = {
-  distributorName: string;
-  distributorPharmacyCode: string;
-  /**
-   * Signed URL for this pharmacy's own retained shop-front photo, or null when none was kept.
-   *
-   * The pharmacy photo is captured and stored on exactly the same rule as the customer's — two of
-   * the three rows that historically claimed unretained proof were pharmacies, not customers — so
-   * not surfacing it would mean storing evidence nobody can ever look at.
-   */
-  evidencePhotoUrl: string | null;
-  notes: string | null;
-  pharmacyCode: string;
-  pharmacyName: string;
-  /** "matched" | "unverified" | ... — an unverified code is the approver's business. */
-  referenceStatus: string;
-};
+// Both now live in request-loaders.ts beside the loader that builds them; re-exported here so every
+// existing `import type { ... } from ".../service"` keeps resolving.
+export type { MarketingDecisionOverlap, MarketingDecisionPharmacy };
 
 export type MarketingRequestDecisionSummary = {
   allowReject: boolean;
@@ -266,13 +252,6 @@ export type MarketingRequestDecisionSummary = {
    * "Return for edit" — this just makes sure they are not approving it blind.
    */
   contestedBy: MarketingDecisionOverlap[];
-};
-
-export type MarketingDecisionOverlap = {
-  requestCode: string;
-  status: string;
-  /** One human sentence naming the consequence — never raw ids. */
-  description: string;
 };
 
 type MarketingControlSettingDbRow = {
@@ -2606,7 +2585,14 @@ function requireMarketingDecisionActor(access: AccessContext) {
   return actorHrId;
 }
 
-async function loadMarketingRequestById(supabase: SupabaseClient, requestId: string) {
+/**
+ * One request, mapped. Throws `marketing_request_not_found` when it does not exist.
+ *
+ * Exported (read-only, and with NO access check of its own) so a composite read surface can load
+ * the same row without re-deriving the mapping. Callers own the gate — never call this in place
+ * of one.
+ */
+export async function loadMarketingRequestById(supabase: SupabaseClient, requestId: string) {
   const { data, error } = await supabase
     .from("marketing_requests")
     .select("*")
@@ -2617,7 +2603,13 @@ async function loadMarketingRequestById(supabase: SupabaseClient, requestId: str
   return mapRequest(data as MarketingRequestDbRow);
 }
 
-async function loadMarketingRequestApprovalSteps(supabase: SupabaseClient, requestId: string) {
+/**
+ * The request's approval steps, mapped — gating AND CC, every status, ordered by sequence.
+ *
+ * Exported (read-only, no access check of its own) so a composite read surface can feed
+ * `buildMarketingApproverChain` without re-deriving the row mapping. Callers own the gate.
+ */
+export async function loadMarketingRequestApprovalSteps(supabase: SupabaseClient, requestId: string) {
   const { data, error } = await supabase
     .from("marketing_request_approval_steps")
     .select("*")
@@ -2627,7 +2619,8 @@ async function loadMarketingRequestApprovalSteps(supabase: SupabaseClient, reque
   return ((data ?? []) as MarketingRequestApprovalStepDbRow[]).map(mapApprovalStep);
 }
 
-async function loadMarketingRequestTypeName(supabase: SupabaseClient, requestTypeId: number) {
+/** The request type's display name, falling back to the neutral "Marketing request". */
+export async function loadMarketingRequestTypeName(supabase: SupabaseClient, requestTypeId: number) {
   const { data, error } = await supabase
     .from("marketing_request_types")
     .select("name")
@@ -3010,171 +3003,6 @@ export async function getMarketingRequestDecisionSummary(
   };
 }
 
-/**
- * Resolve request→pharmacy links into display rows.
- *
- * Best-effort by design: a decision screen must never fail to open because a reference lookup
- * missed. A link that cannot be resolved still returns a row carrying whatever is known, so the
- * approver sees "N pharmacies, one unresolved" rather than silently seeing N-1.
- */
-async function loadMarketingDecisionPharmacies(
-  supabase: SupabaseClient,
-  rows: Array<{ distributor_code_id: string | null; notes: string | null; pharmacy_id: string | null }>,
-): Promise<MarketingDecisionPharmacy[]> {
-  if (rows.length === 0) return [];
-
-  const pharmacyIds = [...new Set(rows.map((row) => row.pharmacy_id).filter((id): id is string => Boolean(id)))];
-  const codeIds = [...new Set(rows.map((row) => row.distributor_code_id).filter((id): id is string => Boolean(id)))];
-
-  const [pharmacyRows, codeRows] = await Promise.all([
-    fetchRowsByIds<{ display_name: string | null; id: string; pharmacy_code: string | null }>(
-      supabase,
-      "marketing_pharmacies",
-      pharmacyIds,
-    ).catch(() => []),
-    fetchRowsByIds<{
-      distributor_id: number | string | null;
-      distributor_pharmacy_code: string | null;
-      id: string;
-      reference_status: string | null;
-    }>(supabase, "marketing_pharmacy_distributor_codes", codeIds).catch(() => []),
-  ]);
-
-  const distributorIds = [...new Set(codeRows.map((row) => row.distributor_id).filter((id) => id !== null && id !== undefined))];
-  const distributorRows = distributorIds.length > 0
-    ? await fetchRowsByIds<{ display_name: string | null; id: number | string }>(
-      supabase,
-      "marketing_distributors",
-      distributorIds as Array<string | number>,
-    ).catch(() => [])
-    : [];
-
-  const pharmacyById = new Map(pharmacyRows.map((row) => [String(row.id), row]));
-  const codeById = new Map(codeRows.map((row) => [String(row.id), row]));
-  const distributorById = new Map(distributorRows.map((row) => [String(row.id), row]));
-
-  // One index read + one batch signing call for every target pharmacy, rather than a pair per row.
-  // Same never-break-the-screen rule as everything else here: a failure yields an empty map, and
-  // each pharmacy then renders as having no retained image.
-  const evidenceByPharmacyId = await loadMarketingEvidencePhotosByEntityIds({
-    entityIds: pharmacyIds,
-    entityType: "pharmacy",
-    supabase,
-  }).catch(() => new Map<string, { capturedAt: string | null; signedUrl: string }>());
-
-  return rows.map((row) => {
-    const pharmacy = row.pharmacy_id ? pharmacyById.get(String(row.pharmacy_id)) : undefined;
-    const code = row.distributor_code_id ? codeById.get(String(row.distributor_code_id)) : undefined;
-    const distributor = code?.distributor_id !== null && code?.distributor_id !== undefined
-      ? distributorById.get(String(code.distributor_id))
-      : undefined;
-
-    return {
-      distributorName: cleanText(distributor?.display_name) ?? "Unknown distributor",
-      distributorPharmacyCode: cleanText(code?.distributor_pharmacy_code) ?? "-",
-      evidencePhotoUrl: row.pharmacy_id
-        ? evidenceByPharmacyId.get(String(row.pharmacy_id))?.signedUrl ?? null
-        : null,
-      notes: cleanText(row.notes),
-      pharmacyCode: cleanText(pharmacy?.pharmacy_code) ?? "-",
-      pharmacyName: cleanText(pharmacy?.display_name) ?? "Unresolved pharmacy",
-      referenceStatus: cleanText(code?.reference_status) ?? "pending",
-    };
-  });
-}
-
-/**
- * Load the pharmacy/product/window footprint of every other live request and return those that
- * would be credited the same invoice lines as `request`.
- *
- * Bounded deliberately: only requests whose window can possibly touch this one's are considered,
- * and inert statuses are dropped by findRequestOverlaps. Attribution matches on exact distributor
- * + pharmacy code + product + period with nothing exclusive about it, so without this check two
- * campaigns can each report the same sale as their own return.
- */
-async function loadMarketingRequestOverlaps(
-  supabase: SupabaseClient,
-  request: MarketingRequest,
-): Promise<MarketingDecisionOverlap[]> {
-  const subjectMonths = windowMonths(request.payDate, request.roiDurationMonths);
-  if (subjectMonths.length === 0) return [];
-
-  const [ownPharmacies, ownProducts] = await Promise.all([
-    supabase.from("marketing_request_pharmacies").select("pharmacy_id").eq("request_id", request.id),
-    supabase.from("marketing_request_products").select("product_id").eq("request_id", request.id),
-  ]);
-  if (ownPharmacies.error) throw ownPharmacies.error;
-  if (ownProducts.error) throw ownProducts.error;
-
-  const pharmacyIds = Array.from(
-    new Set(((ownPharmacies.data ?? []) as Array<{ pharmacy_id: string }>).map((row) => String(row.pharmacy_id ?? "").trim()).filter(Boolean)),
-  );
-  const productIds = Array.from(
-    new Set(((ownProducts.data ?? []) as Array<{ product_id: number | string }>).map((row) => Number(row.product_id))),
-  ).filter((id) => Number.isFinite(id));
-  if (pharmacyIds.length === 0 || productIds.length === 0) return [];
-
-  // Only requests sharing at least one pharmacy can contest — that narrows the candidate set to a
-  // handful before any window maths.
-  const sharedPharmacyLinks = await supabase
-    .from("marketing_request_pharmacies")
-    .select("request_id, pharmacy_id")
-    .in("pharmacy_id", pharmacyIds);
-  if (sharedPharmacyLinks.error) throw sharedPharmacyLinks.error;
-
-  const pharmaciesByRequest = new Map<string, string[]>();
-  for (const row of (sharedPharmacyLinks.data ?? []) as Array<{ request_id: string; pharmacy_id: string }>) {
-    if (row.request_id === request.id) continue;
-    const list = pharmaciesByRequest.get(row.request_id) ?? [];
-    list.push(row.pharmacy_id);
-    pharmaciesByRequest.set(row.request_id, list);
-  }
-  const candidateIds = Array.from(pharmaciesByRequest.keys());
-  if (candidateIds.length === 0) return [];
-
-  const [candidateRows, candidateProducts] = await Promise.all([
-    supabase.from("marketing_requests").select("id, request_code, status, pay_date, roi_duration_months").in("id", candidateIds),
-    supabase.from("marketing_request_products").select("request_id, product_id").in("request_id", candidateIds),
-  ]);
-  if (candidateRows.error) throw candidateRows.error;
-  if (candidateProducts.error) throw candidateProducts.error;
-
-  const productsByRequest = new Map<string, number[]>();
-  for (const row of (candidateProducts.data ?? []) as Array<{ request_id: string; product_id: number | string }>) {
-    const list = productsByRequest.get(row.request_id) ?? [];
-    list.push(Number(row.product_id));
-    productsByRequest.set(row.request_id, list);
-  }
-
-  const others: OverlapCandidate[] = ((candidateRows.data ?? []) as Array<{
-    id: string; request_code: string; status: string; pay_date: string | null; roi_duration_months: number | string;
-  }>).map((row) => ({
-    payDate: row.pay_date,
-    pharmacyIds: pharmaciesByRequest.get(row.id) ?? [],
-    productIds: productsByRequest.get(row.id) ?? [],
-    requestCode: row.request_code,
-    requestId: row.id,
-    roiDurationMonths: Number(row.roi_duration_months) || 1,
-    status: row.status,
-  }));
-
-  return findRequestOverlaps(
-    {
-      payDate: request.payDate,
-      pharmacyIds,
-      productIds,
-      requestCode: request.requestCode,
-      requestId: request.id,
-      roiDurationMonths: request.roiDurationMonths,
-      status: request.status,
-    },
-    others,
-  ).map((overlap) => ({
-    description: describeOverlap(overlap),
-    requestCode: overlap.requestCode,
-    status: overlap.status,
-  }));
-}
 
 export async function decideMarketingRequestWorkflow(
   access: AccessContext,

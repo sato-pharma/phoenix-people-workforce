@@ -33,7 +33,14 @@ const AWAITING_STATUSES = new Set(["draft", "pending_validation", "pending_appro
  * 3. Only once the window is fully covered by validated sales (`dataCoverage === "complete"`) is a
  *    request judgeable. Everything else in flight is still measuring.
  */
-export function roiLifecycleStage(row: RoiTrackerRow, dataFrontier: string | null): RoiLifecycleStage {
+export function roiLifecycleStage(
+  // Structural, not `RoiTrackerRow`, so the SERVER can name a request's stage without first
+  // materialising a full tracker row. The Case File has to state a stage for requests the ROI
+  // engine deliberately never returns (draft / returned / rejected), and every RoiTrackerRow still
+  // satisfies this — no caller changes.
+  row: Pick<RoiTrackerRow, "dataCoverage" | "payDate" | "status">,
+  dataFrontier: string | null,
+): RoiLifecycleStage {
   if (row.status === "rejected") return "rejected";
   if (AWAITING_STATUSES.has(row.status)) return "awaiting_approval";
   if (!row.payDate || (dataFrontier && row.payDate.slice(0, 7) > dataFrontier)) return "approved_unpaid";

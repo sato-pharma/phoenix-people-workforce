@@ -661,6 +661,9 @@ import { runMarketingApproverChainHistoryTests } from "./marketing-approver-chai
 
 import { runMarketingApproverCustomerHistoryTests } from "./marketing-approver-customer-history.test.ts";
 import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence-access.test.ts";
+// Registered beside its marketing siblings rather than appended at the end of the file: every PR
+// appends there, so a branch parked on that anchor conflicts with each one that lands.
+import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1486,6 +1489,11 @@ await runTest(
 await runTest(
   "marketing sales evidence access (company-wide roles only by role; confidential LA003/LA004/SS001 stripped for everyone but CEO/Super Admin)",
   runMarketingSalesEvidenceAccessTests,
+);
+
+await runTest(
+  "marketing request case file (a failed read is never a clean one; a draft/rejected request is never dropped by the ROI status scope; too-early is not zero sales)",
+  runMarketingCaseFileTests,
 );
 
 await runTest(
