@@ -39,6 +39,7 @@
 import { getEmployeeDirectoryRows, isActiveLifecycleStatus } from "@/lib/employees/employee-directory";
 import { isWithinManagerHierarchy, sameWorkforceLine } from "@/lib/workforce/hierarchy-resolver";
 import { doctorCoverageScopeBasisForRole, type DoctorCoverageScopeBasis } from "@/lib/crm/doctor-coverage-roles";
+import { getDoctorCoverageConfig, type DoctorCoverageLineOverrides } from "@/lib/crm/doctor-coverage-config";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { AccessContext } from "@/lib/auth/permissions";
 
@@ -67,6 +68,10 @@ export function resolveDoctorCoverageScope(input: {
   role: string;
   viewerHrId: string | null;
   employees: readonly DoctorCoverageScopeEmployee[];
+  /** Canonical hr id → line ids, from doctor_coverage_config. Applies to LINE-scoped roles only:
+   * it replaces which lines they cover and can never widen a team/self scope or grant access to a
+   * role that has none, because the role check above runs first. */
+  lineOverrides?: DoctorCoverageLineOverrides;
 }): DoctorCoverageScope {
   const basis = doctorCoverageScopeBasisForRole(input.role);
   if (!basis) {
@@ -96,17 +101,43 @@ export function resolveDoctorCoverageScope(input: {
 
   if (basis === "line") {
     // Line identity comes off the viewer's own employee row here (not the org tree) because these
-    // are staff seats with no reports to walk — a Product Manager owns brands, not people. `lineId`
-    // is preferred over `lineName` by sameWorkforceLine, so a renamed line cannot silently empty
-    // the scope.
-    if (viewer.lineId == null && !viewer.lineName?.trim()) {
+    // are staff seats with no reports to walk — a Product Manager owns brands, not people.
+    //
+    // An OVERRIDE wins when one exists. Some managers cover more than one line: Ahmed Sharaf
+    // (B-155) is recorded on Pedia but owns brands on Anti Infective too (owner, 2026-08-09).
+    // Overriding here rather than editing his employee record keeps that field honest for payroll
+    // and org structure, and keeps the exception in one editable place.
+    const override = input.lineOverrides?.[viewerKey];
+    const lineIds = override && override.length > 0 ? override : viewer.lineId != null ? [viewer.lineId] : [];
+
+    if (lineIds.length === 0 && !viewer.lineName?.trim()) {
       return { kind: "none", reason: "No product line is recorded on your employee record, so a whole-line scope cannot be granted." };
     }
+
+    const onScopedLine = (employee: DoctorCoverageScopeEmployee) =>
+      lineIds.length > 0
+        ? employee.lineId != null && lineIds.includes(employee.lineId)
+        : // No usable line id anywhere — fall back to the shared name-based comparison, which is
+          // what a single-line viewer used before overrides existed.
+          sameWorkforceLine(viewer, employee);
+
     const agentHrIds = input.employees
       .filter((employee) => isActiveLifecycleStatus(employee.employmentStatus))
-      .filter((employee) => sameWorkforceLine(viewer, employee))
+      .filter(onScopedLine)
       .map((employee) => employee.hrId);
-    return finalizeAgents(agentHrIds, "line", `${input.role} · ${viewer.lineName?.trim() || "own"} line`);
+
+    // Name every line the viewer actually covers — the owner's rule is that a viewer always sees
+    // whose numbers these are, and "own line" says nothing when the answer is two lines.
+    const lineNames = Array.from(
+      new Set(
+        lineIds
+          .map((id) => input.employees.find((employee) => employee.lineId === id)?.lineName?.trim())
+          .filter((name): name is string => Boolean(name)),
+      ),
+    );
+    const scopeName = lineNames.length > 0 ? lineNames.join(" + ") : viewer.lineName?.trim() || "own";
+    const suffix = lineNames.length > 1 ? "lines" : "line";
+    return finalizeAgents(agentHrIds, "line", `${input.role} · ${scopeName} ${suffix}`);
   }
 
   // ── team scope (District Manager: own reps; Regional Manager: every rep under the region) ──
@@ -175,6 +206,16 @@ export async function getDoctorCoverageScope(access: AccessContext): Promise<Doc
     return { kind: "company", basis: "company", label: `${access.role} · all lines` };
   }
   // includeInactive: the hierarchy map needs every node to stay walkable — see the note above.
-  const employees = await getEmployeeDirectoryRows({ includeInactive: true });
-  return resolveDoctorCoverageScope({ role: access.role, viewerHrId: access.hrId, employees });
+  // Line overrides come from the same cached config the norms do, so this costs no extra read on a
+  // warm cache and degrades to "no overrides" (each viewer's own line) if the table is missing.
+  const [employees, config] = await Promise.all([
+    getEmployeeDirectoryRows({ includeInactive: true }),
+    getDoctorCoverageConfig(),
+  ]);
+  return resolveDoctorCoverageScope({
+    role: access.role,
+    viewerHrId: access.hrId,
+    employees,
+    lineOverrides: config.lineOverrides,
+  });
 }

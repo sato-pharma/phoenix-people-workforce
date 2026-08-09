@@ -770,7 +770,12 @@ const defaultPermissionMatrix: PermissionMap = {
   "Product Manager": {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
-    crm_visits: ["read"],
+    // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
+    // Marketing Manager set the norms themselves). The CRM visit MIRROR stays read-only for
+    // every role — it is a vendor mirror nothing may write. Note the norms are one GLOBAL
+    // setting: an edit here changes the coverage rule for all three lines, not just this
+    // role's own. Owner accepted that trade-off explicitly when granting it.
+    crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -795,7 +800,12 @@ const defaultPermissionMatrix: PermissionMap = {
   "Group Product Manager": {
     direct_orders: ["read", "create", "update", "export"],
     attendance: ["read"],
-    crm_visits: ["read"],
+    // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
+    // Marketing Manager set the norms themselves). The CRM visit MIRROR stays read-only for
+    // every role — it is a vendor mirror nothing may write. Note the norms are one GLOBAL
+    // setting: an edit here changes the coverage rule for all three lines, not just this
+    // role's own. Owner accepted that trade-off explicitly when granting it.
+    crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
     employee_documents: ["read", "export"],
@@ -885,7 +895,12 @@ const defaultPermissionMatrix: PermissionMap = {
   // while HR authority remains blocked.
   "Marketing Manager": {
     attendance: ["read"],
-    crm_visits: ["read"],
+    // `update` = the Doctor Coverage visit-norms editor only (owner, 2026-08-09: PM, GPM and
+    // Marketing Manager set the norms themselves). The CRM visit MIRROR stays read-only for
+    // every role — it is a vendor mirror nothing may write. Note the norms are one GLOBAL
+    // setting: an edit here changes the coverage rule for all three lines, not just this
+    // role's own. Owner accepted that trade-off explicitly when granting it.
+    crm_visits: ["read", "update"],
     early_birds: ["read"],
     overview: [],
     employee_profile: ["read", "update"],

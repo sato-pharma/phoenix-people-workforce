@@ -141,6 +141,35 @@ export type DoctorCoveragePace = {
   tone: "emerald" | "amber" | "rose";
 };
 
+/**
+ * Board filters. Applied to the CLASSIFIED doctor rows, after scope and after the panel rule, so a
+ * filter can only ever narrow what the viewer was already entitled to see — it can never widen it.
+ * Carried in the URL so every change re-runs the server-side access gate (same posture as the month
+ * picker), rather than filtering an already-delivered payload in the browser.
+ */
+export type DoctorCoverageFilters = {
+  /** Grade tier, e.g. "A". Empty/absent = all. */
+  grade?: string;
+  /** Contact kind, "sp" | "hcp". Empty/absent = all. */
+  kind?: string;
+  /** `repKey` of a single rep. Empty/absent = all reps in scope. */
+  repKey?: string;
+  /** "green" | "yellow" | "red". Empty/absent = all. */
+  status?: string;
+  /** Free text over doctor name, specialty and rep name. */
+  search?: string;
+};
+
+/** Which filters are actually in force — surfaced so the board can say so on screen. */
+export type DoctorCoverageAppliedFilters = {
+  active: boolean;
+  grade: string | null;
+  kind: string | null;
+  repKey: string | null;
+  search: string | null;
+  status: string | null;
+};
+
 export type SfeDoctorCoverageBoard = {
   /** Prioritised "go see these next", A-grade and longest-neglected first. Capped at
    * {@link DOCTOR_COVERAGE_CALL_LIST_SIZE}; `callListTotal` reports the uncapped count. */
@@ -155,6 +184,11 @@ export type SfeDoctorCoverageBoard = {
   /** HCP accounts — pharmacies, hospitals, contracts, insurance — counted separately from doctors.
    * Same shape as `specialtyMix`; both are complete (no rank-based "Other" bucket). */
   accountMix: Array<{ doctors: number; label: string }>;
+  /** What the viewer filtered to, echoed back so the UI can show it and offer a clear-all. */
+  appliedFilters: DoctorCoverageAppliedFilters;
+  /** Every rep in scope, for the rep filter dropdown — NOT narrowed by the current filters, so
+   * picking one rep does not remove the others from the picker. */
+  repOptions: Array<{ repKey: string; repName: string }>;
   pace: DoctorCoveragePace;
   reps: DoctorCoverageRepRow[];
   /** Human-readable description of whose data this is ("District Manager · own team"). Empty for
@@ -343,7 +377,7 @@ export function buildDoctorCoverageBoard(
   selectedMonth: string,
   /** Optional so the existing fixture tests keep their two-argument calls. `norms` defaults to the
    * shipped doctor norms, so a fixture that does not care about config behaves exactly as before. */
-  options: { norms?: DoctorCoverageNorms; scopeLabel?: string } = {},
+  options: { filters?: DoctorCoverageFilters; norms?: DoctorCoverageNorms; scopeLabel?: string } = {},
 ): SfeDoctorCoverageBoard {
   const norms = options.norms ?? DEFAULT_DOCTOR_COVERAGE_NORMS;
   const windowMonths: string[] = [];
@@ -461,7 +495,8 @@ export function buildDoctorCoverageBoard(
   }
 
   // ── Classify every contact for the selected month ──────────────────────────────────────────────
-  const doctors: DoctorCoverageDoctorRow[] = [];
+  // `let`, not `const`: the filter block below narrows this in place before every rollup reads it.
+  let doctors: DoctorCoverageDoctorRow[] = [];
   let ungradedContacts = 0;
   // Per-month green/panel counts for the trend, computed with the SAME latest-grade-in-window rule.
   const trendPanel = new Map<string, { green: number; panel: number }>();
@@ -554,6 +589,51 @@ export function buildDoctorCoverageBoard(
       status,
       targetVisits: target,
       visitsThisMonth,
+    });
+  }
+
+  // ── Filters ───────────────────────────────────────────────────────────────────────────────────
+  // Applied here: AFTER scope and AFTER the panel rule, so a filter can only narrow what the viewer
+  // was already entitled to see. Everything below — tiles, rep table, mixes, call list — is computed
+  // from the filtered set, because a filtered board that still showed company totals would be
+  // read as the filter having done nothing.
+  //
+  // `repOptions` is captured from the UNFILTERED rows first: narrowing the picker to the rep you
+  // already picked would make the filter a one-way door with no way back.
+  const repOptions = Array.from(
+    new Map(doctors.map((doctor) => [doctor.repKey, doctor.repName])).entries(),
+    ([repKey, repName]) => ({ repKey, repName }),
+  ).sort((a, b) => a.repName.localeCompare(b.repName));
+
+  const rawFilters = options.filters ?? {};
+  const clean = (value: string | undefined) => value?.trim() || null;
+  const gradeFilter = clean(rawFilters.grade)?.toUpperCase() ?? null;
+  const kindFilter = clean(rawFilters.kind)?.toLowerCase() ?? null;
+  const statusFilter = clean(rawFilters.status)?.toLowerCase() ?? null;
+  const repFilter = clean(rawFilters.repKey);
+  const searchFilter = clean(rawFilters.search);
+  const searchNeedle = searchFilter?.toLowerCase() ?? null;
+
+  const appliedFilters: DoctorCoverageAppliedFilters = {
+    active: Boolean(gradeFilter || kindFilter || statusFilter || repFilter || searchFilter),
+    grade: gradeFilter,
+    kind: kindFilter,
+    repKey: repFilter,
+    search: searchFilter,
+    status: statusFilter,
+  };
+
+  if (appliedFilters.active) {
+    doctors = doctors.filter((doctor) => {
+      if (gradeFilter && doctor.gradeTier !== gradeFilter) return false;
+      if (kindFilter && doctor.kind !== kindFilter) return false;
+      if (statusFilter && doctor.status !== statusFilter) return false;
+      if (repFilter && doctor.repKey !== repFilter) return false;
+      if (searchNeedle) {
+        const haystack = `${doctor.contactName} ${doctor.speciality ?? ""} ${doctor.repName}`.toLowerCase();
+        if (!haystack.includes(searchNeedle)) return false;
+      }
+      return true;
     });
   }
 
@@ -672,6 +752,8 @@ export function buildDoctorCoverageBoard(
 
   return {
     accountMix,
+    appliedFilters,
+    repOptions,
     callList: callListAll.slice(0, DOCTOR_COVERAGE_CALL_LIST_SIZE),
     callListTotal: callListAll.length,
     doctors: doctors.sort((a, b) => {
@@ -731,6 +813,7 @@ export function buildDoctorCoverageBoard(
  * 6-month window, and never by more than three. Company-scoped viewers are unaffected.
  */
 export async function getSfeDoctorCoverage(input: {
+  filters?: DoctorCoverageFilters;
   month?: string;
   scope: DoctorCoverageScope;
 }): Promise<SfeDoctorCoverageBoard> {
@@ -753,5 +836,9 @@ export async function getSfeDoctorCoverage(input: {
   // Norms are admin-editable per kind and grade; getDoctorCoverageConfig never throws and falls
   // back to the shipped defaults, so a missing table or a transient read cannot break the board.
   const { norms } = await getDoctorCoverageConfig();
-  return buildDoctorCoverageBoard(collapsed, month, { norms, scopeLabel: input.scope.label });
+  return buildDoctorCoverageBoard(collapsed, month, {
+    filters: input.filters,
+    norms,
+    scopeLabel: input.scope.label,
+  });
 }

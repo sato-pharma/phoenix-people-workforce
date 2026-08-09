@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { SortableTh, TableSearchInput } from "@/components/ui/sortable-table";
@@ -12,34 +11,13 @@ import type {
   DoctorCoverageStatus,
 } from "@/lib/crm/sfe-doctor-coverage";
 
-// Client half of the Doctor Coverage board: month navigation and the two sortable tables.
+// Client half of the Doctor Coverage board: the two sortable tables.
 // Styling copies the CEO/SFE table vocabulary verbatim (ceo-dv-table.tsx) — flat borders,
 // slate-900 header rows, orange accents; the admin shell forces radius-0 and black thead globally.
-
-export function MonthPicker({ basePath, month }: { basePath: string; month: string }) {
-  const router = useRouter();
-  const [selected, setSelected] = useState(month);
-  return (
-    <div className="flex flex-wrap items-end gap-3">
-      <label className="space-y-1">
-        <span className="block text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">Month</span>
-        <input
-          className="h-9 border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-orange-400"
-          onChange={(event) => setSelected(event.target.value)}
-          type="month"
-          value={selected}
-        />
-      </label>
-      <button
-        className="h-9 border border-slate-200 bg-slate-900 px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white hover:bg-slate-700"
-        onClick={() => router.push(`${basePath}?month=${encodeURIComponent(selected)}`)}
-        type="button"
-      >
-        Apply
-      </button>
-    </div>
-  );
-}
+//
+// MonthPicker lived here until 2026-08-09 and is now doctor-coverage-filter-bar.tsx. It pushed
+// `?month=` ALONE, so changing the month with a filter active silently dropped the filter and the
+// board showed something other than what the controls said. Month and filters must move together.
 
 const REP_THEAD = "px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-white";
 

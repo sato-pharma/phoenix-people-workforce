@@ -1,8 +1,5 @@
-import {
-  DoctorCoverageDoctorTable,
-  DoctorCoverageRepTable,
-  MonthPicker,
-} from "@/components/crm/doctor-coverage-tables";
+import { DoctorCoverageDoctorTable, DoctorCoverageRepTable } from "@/components/crm/doctor-coverage-tables";
+import { DoctorCoverageFilterBar } from "@/components/crm/doctor-coverage-filter-bar";
 import type { SfeDoctorCoverageBoard } from "@/lib/crm/sfe-doctor-coverage";
 
 // Server half of the Doctor Coverage board — shared verbatim by the admin page (SFE Manager +
@@ -59,7 +56,14 @@ export function DoctorCoverageBoard({ board, monthBasePath }: { board: SfeDoctor
   return (
     <div className="border border-slate-200">
       <Section
-        action={<MonthPicker basePath={monthBasePath} month={board.month} />}
+        action={
+          <DoctorCoverageFilterBar
+            applied={board.appliedFilters}
+            basePath={monthBasePath}
+            month={board.month}
+            repOptions={board.repOptions}
+          />
+        }
         description={description}
         title={`Doctor Coverage & Frequency — ${board.monthLabel}`}
       >
