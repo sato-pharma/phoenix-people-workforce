@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
@@ -20,6 +21,7 @@ import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { excelSpreadsheetValidation, validateSpreadsheetFile } from "@/lib/uploads/spreadsheets";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -152,6 +154,22 @@ export async function POST(request: Request) {
     });
 
     const batchHref = payrollBatchHref(result.batch.id);
+    // "salary_upload_imported" is an ops event about a BATCH, not a specific employee — there
+    // is no subject to resolve permission_based against (permissionBasedRecipients bails on
+    // `if (!subject) continue` before it reaches the company/system-scope bypass), so this
+    // reached nobody in production (1 event, NULL employee_hr_id, 2026-07-13). Name the
+    // audience explicitly via the admin-editable payroll_workflow_alert role policy — owner
+    // decision 2026-08-09: Super Admin, CEO, Finance Manager. Each still has to pass
+    // canAccess(context, "payroll", "read") individually.
+    const { recipients: alertRecipients, warnings: alertWarnings } =
+      await resolveNotificationPersonRecipients("payroll_workflow_alert", "Payroll upload alert recipients");
+    if (alertWarnings.length > 0) {
+      logError("Payroll upload alert recipient resolution warned", {
+        labels: { event: "payroll_upload_alert_recipients_warning", batch_id: String(result.batch.id) },
+        error: new Error(alertWarnings.join("; ")),
+      });
+    }
+    const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
     await createSystemNotification({
       actionUrl: batchHref,
       actorId: actor,
@@ -183,6 +201,7 @@ export async function POST(request: Request) {
         ...payrollBatchNotificationMetadata(result.batch.id),
         governanceWarnings: result.governanceWarnings,
         idempotencyKey: `payroll-upload:${result.batch.id}`,
+        moduleOwnerHrIds,
         sensitivity: "payroll",
       },
       module: "payroll",

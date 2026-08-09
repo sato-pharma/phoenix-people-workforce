@@ -4,12 +4,14 @@ import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissi
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import { createSystemNotification } from "@/lib/notifications/system";
+import { resolveNotificationPersonRecipients } from "@/lib/notifications/role-recipients";
 import { isPayrollConflictError } from "@/lib/payroll/errors";
 import { payrollBatchHref, payrollBatchNotificationMetadata } from "@/lib/payroll/links";
 import { runPayrollWorkflow } from "@/lib/payroll/service";
 import type { PayrollWorkflowAction } from "@/lib/payroll/types";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { logError } from "@/lib/observability/log";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -92,6 +94,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     const batchHref = payrollBatchHref(updated.id);
+    // "workflow_updated" is an ops event about a BATCH, not a specific employee — there is no
+    // subject to resolve permission_based against (permissionBasedRecipients bails on
+    // `if (!subject) continue` before it reaches the company/system-scope bypass), so this
+    // reached nobody in production (8 events, all NULL employee_hr_id, last 2026-07-13). Name
+    // the audience explicitly via the admin-editable payroll_workflow_alert role policy —
+    // owner decision 2026-08-09: Super Admin, CEO, Finance Manager. Each still has to pass
+    // canAccess(context, "payroll", "read") individually.
+    const { recipients: alertRecipients, warnings: alertWarnings } =
+      await resolveNotificationPersonRecipients("payroll_workflow_alert", "Payroll workflow alert recipients");
+    if (alertWarnings.length > 0) {
+      logError("Payroll workflow alert recipient resolution warned", {
+        labels: { event: "payroll_workflow_alert_recipients_warning", batch_id: String(updated.id) },
+        error: new Error(alertWarnings.join("; ")),
+      });
+    }
+    const moduleOwnerHrIds = alertRecipients.map((recipient) => recipient.hrId).filter(Boolean);
     await createSystemNotification({
       actionUrl: batchHref,
       actorId: actorIdentity,
@@ -130,6 +148,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         action,
         ...payrollBatchNotificationMetadata(updated.id),
         idempotencyKey: `payroll-workflow:${updated.id}:${updated.status}:${action}`,
+        moduleOwnerHrIds,
         sensitivity: "payroll",
         status: updated.status,
       },

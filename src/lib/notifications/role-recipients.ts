@@ -30,6 +30,7 @@ export const notificationRoleKeys = [
   "marketing_sla_reminder",
   "resignation_workflow_alert",
   "employee_import_alert",
+  "payroll_workflow_alert",
 ] as const;
 
 export type NotificationRoleKey = (typeof notificationRoleKeys)[number];
@@ -155,6 +156,14 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     label: "Attendance ingestion alert",
     description: "Alerts when the fingerprint attendance pipeline appears stalled. Fires from the 5-minute notification outbox processor, not the daily cron.",
     roles: ["Super Admin"],
+    enabled: true,
+  },
+  payroll_workflow_alert: {
+    key: "payroll_workflow_alert",
+    label: "Payroll workflow alert",
+    description:
+      "Who is told when a payroll batch changes state (approve/reject/lock/etc.) or a salary upload is imported. Both are ops events about a batch, not a specific employee, so there is no subject to infer an audience from — recipients are exactly this role list.",
+    roles: ["Super Admin", "CEO", "Finance Manager"],
     enabled: true,
   },
   marketing_sla_reminder: {
