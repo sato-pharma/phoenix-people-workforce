@@ -517,7 +517,7 @@ export type DirectOrderReportRow = {
 };
 
 /** How much of the report the viewer may see (owner-tiered). */
-export type DirectOrderReportScope = "all" | "hierarchy" | "own";
+export type DirectOrderReportScope = "all" | "hierarchy" | "line" | "own";
 
 /** A real distributor customer whose code happens to equal this pharmacy's stored NAME. */
 export type DirectOrderPossibleDistributorMatch = {

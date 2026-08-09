@@ -37,6 +37,7 @@ const STATUS_TONE: Record<string, string> = {
 const SCOPE_LABEL: Record<DirectOrderReportScope, string> = {
   all: "Company-wide (all direct orders)",
   hierarchy: "Your region / management line",
+  line: "Your product line, every region",
   own: "Your own direct orders",
 };
 

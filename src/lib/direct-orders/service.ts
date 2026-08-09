@@ -2510,7 +2510,12 @@ export async function searchDistributorCustomers(
   // The areas this caller may see at all. null = unrestricted (company-tier role).
   const { areas } = await listDirectOrderAreaAndBrickOptions(access);
   const allowedAreaCodes = new Set(areas.map((area) => area.areaCode.toUpperCase()));
-  const unrestricted = resolveDirectOrderReportScope(access) === "all";
+  // "line" (National Sales Manager) counts as unrestricted HERE too: per
+  // listDirectOrderAreaAndBrickOptions's own note, Direct Orders gates NSM on the PRODUCT line
+  // (resolveDirectOrderRequesterLineName), never on geography — an NSM stays nationwide for
+  // customer/pharmacy search even though the report itself narrows to their line.
+  const reportScope = resolveDirectOrderReportScope(access);
+  const unrestricted = reportScope === "all" || reportScope === "line";
   if (!unrestricted && allowedAreaCodes.size === 0) return [];
 
   const supabase = getSupabaseAdmin();
@@ -2613,7 +2618,12 @@ export async function searchDirectOrderPharmacyDirectory(
 
   const { areas } = await listDirectOrderAreaAndBrickOptions(access);
   const allowedAreaCodes = new Set(areas.map((area) => area.areaCode.toUpperCase()));
-  const unrestricted = resolveDirectOrderReportScope(access) === "all";
+  // "line" (National Sales Manager) counts as unrestricted HERE too: per
+  // listDirectOrderAreaAndBrickOptions's own note, Direct Orders gates NSM on the PRODUCT line
+  // (resolveDirectOrderRequesterLineName), never on geography — an NSM stays nationwide for
+  // customer/pharmacy search even though the report itself narrows to their line.
+  const reportScope = resolveDirectOrderReportScope(access);
+  const unrestricted = reportScope === "all" || reportScope === "line";
   if (!unrestricted && allowedAreaCodes.size === 0) return [];
 
   const supabase = getSupabaseAdmin();
@@ -3483,6 +3493,10 @@ async function canViewDirectOrderRequest(
   const requesterKey = canonicalHrIdKey(request.requesterHrId ?? "");
   if (!requesterKey || !viewerKey) return false;
   if (resolveDirectOrderReportScope(access) === "own") return requesterKey === viewerKey;
+  if (resolveDirectOrderReportScope(access) === "line") {
+    const viewerLine = ((await resolveDirectOrderRequesterLineName(access)) ?? "").trim().toLowerCase();
+    return Boolean(viewerLine) && (request.line ?? "").trim().toLowerCase() === viewerLine;
+  }
   return (await resolveVisibleRequesterHrIds(access)).has(requesterKey);
 }
 
@@ -3696,6 +3710,11 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   if (heldScope === "own") {
     const viewer = canonicalHrIdKey(access.hrId ?? "");
     heldRequests = heldRequests.filter((request) => canonicalHrIdKey(request.requesterHrId) === viewer);
+  } else if (heldScope === "line") {
+    const viewerLine = ((await resolveDirectOrderRequesterLineName(access)) ?? "").trim().toLowerCase();
+    heldRequests = viewerLine
+      ? heldRequests.filter((request) => (request.line ?? "").trim().toLowerCase() === viewerLine)
+      : [];
   } else if (heldScope === "hierarchy") {
     const visible = await resolveVisibleRequesterHrIds(access);
     heldRequests = heldRequests.filter((request) => visible.has(canonicalHrIdKey(request.requesterHrId) ?? ""));
@@ -3795,6 +3814,18 @@ const DIRECT_ORDER_LINE_UNRESTRICTED_ROLES = new Set<PhoenixRole>(["Super Admin"
  * The requester's own field line (org `lines.name`, e.g. "CNS"/"Pedia"/"Anti Infective"),
  * or null for an unrestricted role (no line filter — see every product). Fails CLOSED:
  * a restricted role with no resolvable line returns "" (matches nothing), never "see all".
+ *
+ * Two sources, tried in order:
+ *   1. `employees.line_id` (via the directory) — the normal case, for every field role that sits
+ *      inside the line-organized org structure (Medical Rep, District Manager, Regional Manager).
+ *   2. `app_auth_users.line` — National Sales Manager / Product Manager / Group Product Manager sit
+ *      ABOVE that structure, so `employees.line_id` is never set for them; their line lives only on
+ *      the login record. Confirmed live 2026-08-09: all 6 active NSM/PM/GPM accounts had a null
+ *      employee line and a correct `app_auth_users.line` (Pedia/CNS/Anti Infective). Without this
+ *      fallback every one of them failed closed to "" — not "see all", "see nothing" — which meant
+ *      an empty product dropdown (`listDirectOrderProductOptions`) and a blank pharmacy history
+ *      panel (`resolveHistoryVisibility`) on every approval they opened. Neither read as a scope
+ *      bug from the screen; both looked like "there is nothing here".
  */
 async function resolveDirectOrderRequesterLineName(access: AccessContext): Promise<string | null> {
   if (DIRECT_ORDER_LINE_UNRESTRICTED_ROLES.has(access.role)) return null;
@@ -3802,7 +3833,16 @@ async function resolveDirectOrderRequesterLineName(access: AccessContext): Promi
   if (!key) return "";
   const directory = await getEmployeeDirectory();
   const row = directory.employees.find((employee) => canonicalHrIdKey(employee.hrId) === key);
-  return (row?.lineName ?? "").trim();
+  const employeeLine = (row?.lineName ?? "").trim();
+  if (employeeLine) return employeeLine;
+
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
+    .from("app_auth_users")
+    .select("line")
+    .ilike("hr_id", access.hrId ?? "")
+    .maybeSingle();
+  return String((data as { line?: string | null } | null)?.line ?? "").trim();
 }
 
 export type DirectOrderProductOption = {
@@ -4352,8 +4392,18 @@ export async function getDirectOrderApprovalDetail(
 
 // ── Report (premium table + xlsx export), tiered by role/scope ───────────────
 
-// Owner tiering: these roles see EVERY direct order; everyone else sees their own
-// management subtree (RM ≈ their region) down to themselves (DSM/PM ≈ own).
+// Owner tiering, restated explicitly 2026-08-09 after the previous cut left National Sales
+// Manager lumped in with the company-wide roles: EVERY ONE sees their own orders only, except —
+//   National Sales Manager sees his LINE, company-wide (every region, only his product line).
+//   Regional Manager sees his SCOPE (their whole management subtree — "region").
+// District Manager / Product Manager / Group Product Manager stay in the default "own" bucket —
+// deliberately: District Manager maps to "team" in the general sales-scope model
+// (getSalesScope/scopeForRole), but the owner confirmed direct orders stays stricter than that
+// here, matching resolveDirectOrderRequesterLineName's own note on why it can't reuse
+// resolveSalesAccessScope either.
+//
+// Super Admin / CEO / SFE Manager / Finance Manager see EVERY direct order — untouched by the
+// 2026-08-09 change, the owner named only NSM and RM.
 //
 // Finance Manager is here for a structural reason, not as a convenience (owner approved,
 // 2026-08-04). Finance OWNS the sales month — canSetDirectOrderSalesMonth admits B-185 and
@@ -4366,13 +4416,13 @@ const DIRECT_ORDER_REPORT_SEE_ALL_ROLES: PhoenixRole[] = [
   "Super Admin",
   "CEO",
   "SFE Manager",
-  "National Sales Manager",
   "Finance Manager",
 ];
 
 export function resolveDirectOrderReportScope(access: AccessContext): DirectOrderReportScope {
   if (access.scope === "system" || DIRECT_ORDER_REPORT_SEE_ALL_ROLES.includes(access.role)) return "all";
-  // Regional Managers see their whole subtree ("region"); DSM/PM effectively see own.
+  if (access.role === "National Sales Manager") return "line";
+  // Regional Managers see their whole subtree ("region"); DSM/PM/GPM/everyone else see own.
   return access.role === "Regional Manager" ? "hierarchy" : "own";
 }
 
@@ -4481,6 +4531,14 @@ export async function getDirectOrderReport(
   } else if (scope === "hierarchy") {
     const visible = await resolveVisibleRequesterHrIds(access);
     requests = requests.filter((request) => visible.has(canonicalHrIdKey(request.requesterHrId) ?? ""));
+  } else if (scope === "line") {
+    // National Sales Manager: every region, only their own product line. Fails CLOSED like every
+    // other tier here — a line that cannot be resolved (see resolveDirectOrderRequesterLineName)
+    // means zero rows, never the whole company.
+    const viewerLine = ((await resolveDirectOrderRequesterLineName(access)) ?? "").trim().toLowerCase();
+    requests = viewerLine
+      ? requests.filter((request) => (request.line ?? "").trim().toLowerCase() === viewerLine)
+      : [];
   }
 
   const stepsByReq = await loadStepsForRequests(requests.map((request) => request.id));
