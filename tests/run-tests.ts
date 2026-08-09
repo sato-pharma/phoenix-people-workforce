@@ -33,6 +33,7 @@ import { runBirthdayEligibilityTests } from "./birthday-eligibility.test.ts";
 import { runUnifiedNotificationsTests } from "./unified-notifications.test.ts";
 import { runNotificationStepRunnerTests } from "./notification-step-runner.test.ts";
 import { runPayslipEmailBlockTests } from "./payslip-email-block.test.ts";
+import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
@@ -779,6 +780,7 @@ await runTest("notification step runner (per-step timeout budget + overlap guard
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
 await runTest("marketing SLA email block (SLA reminders never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
+await runTest("active roster only (resigned reps never reach a board)", runActiveRosterOnlyTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
 await runTest("email admin control center", runEmailAdminControlCenterTests);
