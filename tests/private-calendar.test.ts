@@ -724,8 +724,8 @@ export function runPrivateCalendarTests() {
   assert.match(privateCalendarUiSource, /lg:grid-cols-2 2xl:grid-cols-3/, "private calendar timeline must render below the calendar as a responsive card grid");
   assert.match(
     privateCalendarUiSource,
-    /grid-cols-\[repeat\(5,minmax\(0,1fr\)\)_56px_56px\]/,
-    "the Fri/Sat weekend columns must use a fixed minimal width instead of an equal 1fr share",
+    /grid-cols-\[repeat\(5,minmax\(0,1fr\)\)_56px_minmax\(0,1fr\)\]/,
+    "only FRIDAY is the narrow fixed column — Saturday is a working day for the Medical Rep / District Manager population (Friday-only weekend, isFieldWorkforceFridayOnlyTitle), so it must get an equal 1fr share like Sun–Thu, not a fixed 56px weekend width",
   );
   assert.doesNotMatch(
     privateCalendarUiSource,
