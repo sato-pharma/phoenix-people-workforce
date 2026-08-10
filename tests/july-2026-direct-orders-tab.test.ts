@@ -29,7 +29,7 @@ import { selectJulyDirectRowsForScope } from "../src/lib/sales/monthly-closing-e
 //      October-Zayed on 2026-08-09 (sheetRow 234) and to Alex Center on 2026-08-10 (sheetRow 235),
 //      7,000.00 EGP each. On 2026-08-10 he added a further 500 at 14 EGP to October-Zayed, which
 //      RAISED sheetRow 234 in place to 1,000 units / 14,000.00 EGP rather than adding a row —
-//      Pedia is now 35 rows / 6,620 units / 1,059,259.65 EGP. Each production row landed in the
+//      Pedia is now 35 rows / 6,908 units / 1,127,259.65 EGP. Each production row landed in the
 //      same operation, so this file and source_of_sales_fact_rollup still agree to the piastre.
 //      The production rows were replaced in the same operation, and that is the rule a restatement
 //      must follow — this file and source_of_sales_fact_rollup move together or the closing stops
@@ -40,8 +40,8 @@ import { selectJulyDirectRowsForScope } from "../src/lib/sales/monthly-closing-e
 //      price would have inflated it by tens of thousands of EGP. The dataset must keep carrying
 //      its own submitted value, so we pin rows where the two genuinely disagree.
 
-const TOTAL_VALUE = 1208548.15;
-const TOTAL_UNITS = 8740;
+const TOTAL_VALUE = 1276548.15;
+const TOTAL_UNITS = 9028;
 
 /** The owner's 2026-08-06 Anti-Infective restatement, as it now stands in production. */
 const ANTI_INFECTIVE_VALUE = 149288.5;
@@ -54,16 +54,20 @@ const ANTI_INFECTIVE_ROWS = 16;
  *   2026-08-10  Alex Center    (sheetRow 235)  +500 units / +7,000.00 EGP  (new row)
  *   2026-08-10  October-Zayed  (sheetRow 234)  +500 units / +7,000.00 EGP  (RAISED that row in
  *                                              place to 1,000 units / 14,000.00 EGP)
- * giving 35 rows / 6,620 units / EGP 1,059,259.65, matching source_of_sales_fact_rollup. The row
- * count stays 35 because the last addition grew an existing area×product row instead of adding one.
+ * and then a Lacto 1 Advance direct sale to Gharbia 2 (Mahalla):
+ *   2026-08-10  Gharbia 2 (Mahalla) (sheetRow 214) +288 units / +68,000.00 EGP (RAISED that row in
+ *                                              place to 888 units / 209,900.00 EGP)
+ * giving 35 rows / 6,908 units / EGP 1,127,259.65, matching source_of_sales_fact_rollup. The row
+ * count stays 35 because the last two additions grew an existing area×product row instead of adding
+ * one — which is also the grain source_of_sales_fact_rollup aggregates to.
  *
  * These three numbers are not decoration. resolveJulyDirectByArea merges this overlay ONLY when its
  * total equals the database's to within 0.01 — otherwise it falls back to region-only and Pedia's
  * area detail disappears with no error. So the overlay, import_rows and fact_rollup have to be
  * changed in one operation, and this test is what catches it when they are not.
  */
-const PEDIA_VALUE = 1059259.65;
-const PEDIA_UNITS = 6620;
+const PEDIA_VALUE = 1127259.65;
+const PEDIA_UNITS = 6908;
 const PEDIA_ROWS = 35;
 
 export function runJuly2026DirectOrdersTabTests() {
@@ -80,12 +84,12 @@ export function runJuly2026DirectOrdersTabTests() {
   assert.equal(
     totalValue,
     TOTAL_VALUE,
-    "July direct value must still equal the 1,208,548.15 sitting in production for period 2026-07 (149,288.50 AI + 1,059,259.65 Pedia — restated 2026-08-07, +7,000.00 Ivyronc to October-Zayed 2026-08-09, +7,000.00 Ivyronc to Alex Center 2026-08-10, +7,000.00 more Ivyronc to October-Zayed 2026-08-10)",
+    "July direct value must still equal the 1,276,548.15 sitting in production for period 2026-07 (149,288.50 AI + 1,127,259.65 Pedia — restated 2026-08-07, +7,000.00 Ivyronc to October-Zayed 2026-08-09, +7,000.00 Ivyronc to Alex Center 2026-08-10, +7,000.00 more Ivyronc to October-Zayed 2026-08-10, +68,000.00 Lacto 1 Advance to Gharbia 2 (Mahalla) 2026-08-10)",
   );
   assert.equal(
     totalUnits,
     TOTAL_UNITS,
-    "July direct units must still equal the 8,740 reported for the month (2,120 AI + 6,620 Pedia — restated 2026-08-07, +500 Ivyronc to October-Zayed 2026-08-09, +500 Ivyronc to Alex Center 2026-08-10, +500 more Ivyronc to October-Zayed 2026-08-10)",
+    "July direct units must still equal the 9,028 reported for the month (2,120 AI + 6,908 Pedia — restated 2026-08-07, +500 Ivyronc to October-Zayed 2026-08-09, +500 Ivyronc to Alex Center 2026-08-10, +500 more Ivyronc to October-Zayed 2026-08-10, +288 Lacto 1 Advance to Gharbia 2 (Mahalla) 2026-08-10)",
   );
 
   // ── the 2026-08-06 Anti-Infective restatement ──────────────────────────────
@@ -128,9 +132,9 @@ export function runJuly2026DirectOrdersTabTests() {
   assert.equal(
     sumValue(pedia),
     PEDIA_VALUE,
-    "Pedia must now carry 1,059,259.65 — the 33 restated 2026-08-07 hand rows plus both Ivyronc rows, with October-Zayed's raised to 14,000.00, matching source_of_sales_fact_rollup",
+    "Pedia must now carry 1,127,259.65 — the 33 restated 2026-08-07 hand rows, both Ivyronc rows with October-Zayed's raised to 14,000.00, and Gharbia 2 (Mahalla) raised to 209,900.00, matching source_of_sales_fact_rollup",
   );
-  assert.equal(sumUnits(pedia), PEDIA_UNITS, "Pedia must now carry 6,620 units (5,120 restated 2026-08-07 + 500 Ivyronc 2026-08-09 + 500 Ivyronc 2026-08-10 + 500 more to October-Zayed 2026-08-10)");
+  assert.equal(sumUnits(pedia), PEDIA_UNITS, "Pedia must now carry 6,908 units (5,120 restated 2026-08-07 + 500 Ivyronc 2026-08-09 + 500 Ivyronc 2026-08-10 + 500 more to October-Zayed 2026-08-10 + 288 Lacto 1 Advance to Gharbia 2 (Mahalla) 2026-08-10)");
 
   // D16 organogram override (Kafr El-Sheikh 1) — region=AB per hand sheet, NOT canonical D1 crosswalk
   const d16 = pedia.find((r) => r.areaCode === "D16");
@@ -279,7 +283,7 @@ function runJulyDirectScopeTests() {
       null,
     ),
   );
-  assert.equal(total(all), 1208548.15, "an unfiltered export must still carry the whole month, both lines — 149,288.50 AI + 1,059,259.65 Pedia (restated 2026-08-07, +7,000.00 Ivyronc to October-Zayed 2026-08-09, +7,000.00 Ivyronc to Alex Center 2026-08-10, +7,000.00 more to October-Zayed 2026-08-10) = 1,208,548.15");
+  assert.equal(total(all), TOTAL_VALUE, "an unfiltered export must still carry the whole month, both lines — 149,288.50 AI + 1,127,259.65 Pedia (restated 2026-08-07, +7,000.00 Ivyronc to October-Zayed 2026-08-09, +7,000.00 Ivyronc to Alex Center 2026-08-10, +7,000.00 more to October-Zayed 2026-08-10, +68,000.00 Lacto 1 Advance to Gharbia 2 (Mahalla) 2026-08-10) = 1,276,548.15");
 
   // Delta (2) arrived with the 2026-08-06 Anti-Infective restatement; it is untouched.
   const delta2 = selectJulyDirectRowsForScope(
