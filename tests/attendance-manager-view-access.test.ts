@@ -57,11 +57,39 @@ export async function runAttendanceManagerViewAccessTests() {
     true,
   );
 
-  // Finance Manager has company scope — whole company.
+  // ── Finance Manager: SELF ONLY (owner, 2026-08-10: "so he only sees himself") ────────────────
+  // He holds attendance:read/export and scopeForRole gives the role "company", so the old
+  // `context.scope === "company"` arm admitted him to EVERY employee's punch-and-deduction data —
+  // /api/attendance/employee-fingerprint-export?hrId=<anyone> returned any one of 114 people's full
+  // workbook by URL. Nothing linked there for him; it was reachable by typing it.
   assert.equal(
     canViewEmployeeAttendanceReport(ctx({ hrId: "F-1", role: "Finance Manager", scope: "company" }), { hrId: "B-155", managerHrId: "A-8" }),
-    true,
+    false,
+    "the Finance Manager must NOT see an unrelated employee's attendance",
   );
+  // Not even his own direct reports — this is what separates the owner's instruction from simply
+  // deleting the company arm, which would have left him the manager fallback below.
+  assert.equal(
+    canViewEmployeeAttendanceReport(ctx({ hrId: "F-1", role: "Finance Manager", scope: "company" }), { hrId: "A-1", managerHrId: "F-1" }),
+    false,
+    "self-only means self-only: even a direct report of the Finance Manager is denied",
+  );
+  // …but his OWN report is untouched. The self check runs before the carve-out, which is the whole
+  // reason /workspace/fingerprint-report still works for him.
+  assert.equal(
+    canViewEmployeeAttendanceReport(ctx({ hrId: "F-1", role: "Finance Manager", scope: "company" }), { hrId: "F-1", managerHrId: null }),
+    true,
+    "the Finance Manager keeps his own attendance report in full",
+  );
+  // The roles that legitimately keep whole-company attendance must be unaffected — this is the
+  // negative control that fires if the carve-out is ever implemented by deleting a shared arm.
+  for (const role of ["Super Admin", "CEO", "SFE Manager", "Training Manager"] as const) {
+    assert.equal(
+      canViewEmployeeAttendanceReport(ctx({ hrId: "X-1", role, scope: "company" }), { hrId: "B-155", managerHrId: "A-8" }),
+      true,
+      `${role} keeps whole-company attendance visibility`,
+    );
+  }
 
   // Guest / no-scope — denied even for self.
   assert.equal(canViewEmployeeAttendanceReport(ctx({ source: "guest" }), { hrId: "A-8", managerHrId: null }), false);
@@ -79,10 +107,24 @@ export async function runAttendanceManagerViewAccessTests() {
     null,
     "system scope must see the whole company",
   );
+  // `scope: "company"` on its own NO LONGER grants whole-company attendance (changed 2026-08-10).
+  // scopeForRole returns "company" for exactly Super Admin, CEO and Finance Manager; the first two
+  // are named explicitly in the bypass, and the third must be self-only — so the scope arm was
+  // admitting one role by accident and nobody by design. Asserted through a named role rather than
+  // a bare scope, because a bare `scope: "company"` context now correctly falls to the
+  // direct-report path, which needs Supabase and is not unit-testable here.
   assert.equal(
-    await resolveAttendanceScopeHrIds(ctx({ scope: "company" })),
+    await resolveAttendanceScopeHrIds(ctx({ hrId: "C-1", role: "CEO", scope: "company" })),
     null,
-    "company scope must see the whole company",
+    "the CEO must still see the whole company",
+  );
+  // The Finance Manager's list is HIS OWN HR_ID — not null (which means no restriction at all), and
+  // not his direct reports. This is the list-side half of the self-only carve-out; holding a role
+  // out of one function but not the other is a hole.
+  assert.deepEqual(
+    await resolveAttendanceScopeHrIds(ctx({ hrId: "B-185", role: "Finance Manager", scope: "company" })),
+    ["B-185"],
+    "the Finance Manager's attendance scope must be exactly himself",
   );
   assert.equal(
     await resolveAttendanceScopeHrIds(ctx({ hrId: "S-1", role: "Super Admin", scope: "line" })),
