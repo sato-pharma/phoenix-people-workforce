@@ -3326,7 +3326,17 @@ export async function buildPortalClosingWorkbook(
   // cell-by-cell). `preserveTargets` keeps the scoped matrix's per-area/product targets — the whole
   // of the viewer's scope is present here, so the achievement is honest — without which the
   // exported Closing Matrix and Target vs Achievement sheets came out with every target blank.
-  const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible, { preserveTargets: true });
+  // `includeDirect` because this workbook's job is to hand the reader their own Monthly Closing
+  // screen, and that screen has direct folded into the area rows. Without it the Closing Matrix,
+  // Target vs Achievement and the headline were all invoice-only while the screen was not, so a
+  // manager's export was short its whole share of the month's direct sales and said nothing.
+  // The area rows already render STATIC (they arrive `isDirect` from the scoped matrix, which
+  // rebuildMatrixFromRows preserves), so the folded money cannot be recalculated away by a live
+  // SUMIFS over the Calc sheet — that sheet holds distributor invoice lines only.
+  const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible, {
+    includeDirect: true,
+    preserveTargets: true,
+  });
   const { blocks, ref } = planDataLayout(comparison.data);
 
   writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
@@ -3340,7 +3350,36 @@ export async function buildPortalClosingWorkbook(
     salesUnits: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
     salesValue: rebuiltMatrix.grandTotal.rowTotal.salesValue,
   };
-  writeTotalSheet(workbook, headline, { ...details, rows: visible }, "Data");
+  // The direct now folded into the headline above. The Data sheet cannot show it — direct reaches
+  // the closing from the Direct Orders module, never as a distributor invoice line — so without
+  // this the Total sheet's Difference would open up by exactly the direct amount and read as an
+  // unexplained gap. `national` stays zero: a portal viewer is geography-scoped and
+  // scopeMatrixToAreaCodes/RegionNames null `directNational`, so no un-placed direct reaches them.
+  // Derived as (with direct) minus (without), NOT by summing the direct rows: a direct row whose
+  // area or product is absent from this viewer's skeleton is never placed in a cell, so counting it
+  // here would open the Difference by exactly the money that never made it onto the sheet. Same
+  // reasoning as the admin path, which derives `placed` as grand total minus the retail channel.
+  const invoiceOnly = rebuildMatrixFromRows(matrix, visible, { preserveTargets: true });
+  const placedDirect = {
+    units: headline.salesUnits
+      - invoiceOnly.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+    value: headline.salesValue - invoiceOnly.grandTotal.rowTotal.salesValue,
+  };
+  writeTotalSheet(
+    workbook,
+    headline,
+    { ...details, rows: visible },
+    "Data",
+    false,
+    { qty: 0, value: 0 },
+    {
+      national: { units: 0, value: 0 },
+      placed: {
+        units: Number(placedDirect.units.toFixed(6)),
+        value: Number(placedDirect.value.toFixed(2)),
+      },
+    },
+  );
   if (confidential.length > 0) {
     writeRawDataSheet(
       workbook,
