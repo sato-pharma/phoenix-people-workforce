@@ -12,14 +12,35 @@ import { normalizeAliasKey, normalizeCodeKey } from "@/lib/sales/normalizer/reso
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Office allocation — the "office" channel reports product UNITS with no geography. Its units are
-// distributed to bricks using how every other channel sold the same products that period:
-//   Step 1 (region): split each product's office units across REGIONS by that product's region share
-//                    across ALL confirmed channels INCLUDING Direct.
-//   Step 2 (brick):  inside each region, split that region's office units across BRICKS by that
-//                    product's brick share among only BRICK-carrying channels (excludes Direct).
-// A product with no key anywhere (or a region with only region-level/Direct sales) falls to NATIONAL.
+// Office allocation — the "office" channel reports product UNITS with no geography. Something has
+// to decide where they went, and THE OWNER'S RULE (2026-08-10) is:
+//
+//   "Office must be imported LAST. Take the line's total sales, work out each AREA's contribution
+//    to it, and spread the Office units by that contribution."
+//
+//   Step 1 (area):  ONE blended share per area = that area's share of the line's NON-Office VALUE,
+//                   where value is units × the MASTER factory price (his words: "neglect the
+//                   values, you take units and × factory in master database"). The same share is
+//                   applied to EVERY product — deliberately NOT per product, so a product's office
+//                   units can land in an area that sold none of it. He accepted that consequence.
+//   Step 2 (brick): inside each area, split that area's slice across its BRICKS pro-rata on the
+//                   same blended base. His rule stops at the area; this only exists because the
+//                   rows and the rollup key on brick_id, and it leaves every AREA total identical.
+//
+// Excluding Office from the denominator is what keeps it non-circular — and it is why Office must
+// be imported last: the shares are wrong until every other distributor for that line+period is in.
+//
+// Validated against his own July 2026 CNS closing: feeding his share column through this rule
+// reproduces his Stores column to 96 units in 42,838 (0.22%). Weighting by UNITS instead of value
+// is four times further out, which is how "value, not units" was settled.
+//
+// A period with no non-Office sales anywhere falls to NATIONAL.
 // Office is a SEPARATE layer: rows carry distributor_code='Office', value = qty × factory price.
+//
+// PREVIOUSLY (before 2026-08-10) this split each product's units per product, region-then-brick,
+// weighted by that product's own unit share. That placed Office differently in every area and was
+// the single largest difference between Phoenix and the owner's manual closing — worth 6,075 units
+// of area error on July CNS alone.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const OFFICE_DISTRIBUTOR_CODE = "Office";
@@ -52,27 +73,75 @@ function reconcile(slices: AllocationSlice[], target: number): AllocationSlice[]
   return rounded.filter((s) => s.units !== 0);
 }
 
-// Two-step split for ONE product's office units. Returns slices keyed by brick (real geography) or the
-// NATIONAL bucket. Pure — unit-tested without a database.
-function allocateProduct(
-  units: number,
-  regionShareForProduct: OfficeRegionShare[],
-  brickShareForProduct: OfficeBrickShare[],
-): AllocationSlice[] {
-  if (!(units > 0)) return [];
+/**
+ * The blended weights the owner's rule runs on. Built ONCE per file, from every non-Office brick
+ * row in the period, and then applied unchanged to every product — that "one share for all
+ * products" is the rule, not a shortcut.
+ *
+ * `areaShare` is the area's share of the line's NON-Office VALUE (units × master factory price).
+ * `brickWithinArea` is each brick's share of its own area's units, used only to land the area slice
+ * on real bricks; it never changes an area total.
+ */
+export type OfficeAreaWeights = {
+  totalValue: number;
+  areaShare: Map<string, number>;
+  brickWithinArea: Map<string, { brickId: string; areaCode: string; regionCode: string; share: number }[]>;
+};
 
-  const regionTotal = regionShareForProduct.reduce((acc, r) => acc + (r.units > 0 ? r.units : 0), 0);
-  // No sales anywhere this period (across all channels incl. Direct) → cannot be placed → NATIONAL.
-  if (!(regionTotal > 0)) {
-    return reconcile([{ brickId: "", areaCode: "", regionCode: NATIONAL, units }], units);
+/**
+ * Build the area weights. `priceOf` returns the MASTER factory price for a product code — the value
+ * basis the owner named explicitly; the stored row value is never used.
+ *
+ * Deliberately fed from `brickShare` (brick-carrying channels) and NOT `regionShare`: regionShare
+ * includes Direct, which carries no area, and the owner's contribution is distributor sell-out.
+ */
+export function buildOfficeAreaWeights(
+  brickShare: OfficeBrickShare[],
+  priceOf: (productCode: string) => number,
+): OfficeAreaWeights {
+  const areaValue = new Map<string, number>();
+  const areaUnits = new Map<string, number>();
+  const brickUnits = new Map<string, { brickId: string; areaCode: string; regionCode: string; units: number }>();
+
+  for (const b of brickShare) {
+    if (!(b.units > 0) || !b.areaCode) continue;
+    const price = priceOf(b.productCode);
+    areaValue.set(b.areaCode, (areaValue.get(b.areaCode) ?? 0) + b.units * (price > 0 ? price : 0));
+    areaUnits.set(b.areaCode, (areaUnits.get(b.areaCode) ?? 0) + b.units);
+    const existing = brickUnits.get(b.brickId);
+    if (existing) existing.units += b.units;
+    else brickUnits.set(b.brickId, { brickId: b.brickId, areaCode: b.areaCode, regionCode: b.regionCode, units: b.units });
   }
 
-  const bricksByRegion = new Map<string, OfficeBrickShare[]>();
-  for (const b of brickShareForProduct) {
-    if (!(b.units > 0)) continue;
-    const list = bricksByRegion.get(b.regionCode) ?? [];
-    list.push(b);
-    bricksByRegion.set(b.regionCode, list);
+  const totalValue = [...areaValue.values()].reduce((acc, v) => acc + v, 0);
+  const areaShare = new Map<string, number>();
+  if (totalValue > 0) {
+    for (const [area, value] of areaValue) if (value > 0) areaShare.set(area, value / totalValue);
+  }
+
+  const brickWithinArea = new Map<string, { brickId: string; areaCode: string; regionCode: string; share: number }[]>();
+  for (const b of brickUnits.values()) {
+    const denom = areaUnits.get(b.areaCode) ?? 0;
+    if (!(denom > 0)) continue;
+    const list = brickWithinArea.get(b.areaCode) ?? [];
+    list.push({ brickId: b.brickId, areaCode: b.areaCode, regionCode: b.regionCode, share: b.units / denom });
+    brickWithinArea.set(b.areaCode, list);
+  }
+
+  return { totalValue, areaShare, brickWithinArea };
+}
+
+/**
+ * Spread ONE product's office units using the blended weights. Returns slices keyed by brick, or the
+ * NATIONAL bucket when the period has no non-Office sales to weight on at all.
+ * Pure — unit-tested without a database.
+ */
+function allocateProduct(units: number, weights: OfficeAreaWeights): AllocationSlice[] {
+  if (!(units > 0)) return [];
+
+  // Nothing sold anywhere this period → cannot be placed → NATIONAL.
+  if (!(weights.totalValue > 0) || weights.areaShare.size === 0) {
+    return reconcile([{ brickId: "", areaCode: "", regionCode: NATIONAL, units }], units);
   }
 
   const sliceMap = new Map<string, AllocationSlice>();
@@ -82,20 +151,23 @@ function allocateProduct(
     else sliceMap.set(key, { ...slice });
   };
 
-  for (const region of regionShareForProduct) {
-    if (!(region.units > 0)) continue;
-    const regionUnits = units * (region.units / regionTotal);
-    if (!(regionUnits > 0)) continue;
+  for (const [areaCode, share] of weights.areaShare) {
+    const areaUnitsForProduct = units * share;
+    if (!(areaUnitsForProduct > 0)) continue;
 
-    const bricks = bricksByRegion.get(region.regionCode) ?? [];
-    const brickTotal = bricks.reduce((acc, b) => acc + b.units, 0);
-    if (!(brickTotal > 0)) {
-      // Region has region-level sales (e.g. only Direct sold there) but no brick detail → NATIONAL.
-      addSlice(NATIONAL, { brickId: "", areaCode: "", regionCode: NATIONAL, units: regionUnits });
+    const bricks = weights.brickWithinArea.get(areaCode) ?? [];
+    if (bricks.length === 0) {
+      // Area carries value but no brick detail — should not happen, both come from brickShare.
+      addSlice(NATIONAL, { brickId: "", areaCode: "", regionCode: NATIONAL, units: areaUnitsForProduct });
       continue;
     }
     for (const b of bricks) {
-      addSlice(b.brickId, { brickId: b.brickId, areaCode: b.areaCode, regionCode: b.regionCode, units: regionUnits * (b.units / brickTotal) });
+      addSlice(b.brickId, {
+        brickId: b.brickId,
+        areaCode: b.areaCode,
+        regionCode: b.regionCode,
+        units: areaUnitsForProduct * b.share,
+      });
     }
   }
 
@@ -160,22 +232,16 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
     };
   }
 
-  // Index the contribution base + references for fast per-product lookup.
-  const regionByProduct = new Map<string, OfficeRegionShare[]>();
-  for (const r of input.regionShare) {
-    const key = normalizeCodeKey(r.productCode);
-    const list = regionByProduct.get(key) ?? [];
-    list.push(r);
-    regionByProduct.set(key, list);
-  }
-  const brickByProduct = new Map<string, OfficeBrickShare[]>();
-  for (const b of input.brickShare) {
-    const key = normalizeCodeKey(b.productCode);
-    const list = brickByProduct.get(key) ?? [];
-    list.push(b);
-    brickByProduct.set(key, list);
-  }
+  // Index the references for fast per-product lookup.
   const productByCode = new Map(input.references.products.map((p) => [normalizeCodeKey(p.productCode), p]));
+
+  // The owner's rule: ONE blended set of area weights for the whole file, built from every
+  // non-Office brick row in the period and weighted by units × MASTER factory price. Built once
+  // here, then applied unchanged to every product.
+  const weights = buildOfficeAreaWeights(
+    input.brickShare,
+    (productCode) => productByCode.get(normalizeCodeKey(productCode))?.factoryPrice ?? 0,
+  );
   const brickById = new Map((input.references.bricks ?? []).map((b) => [b.brickId, b]));
 
   const parsedRows: ParsedDistributorRow[] = [];
@@ -189,7 +255,7 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
     const officialLine = reference?.line || "Unknown";
     const productName = reference?.productName || product.productName || product.productCode;
 
-    const slices = allocateProduct(product.units, regionByProduct.get(codeKey) ?? [], brickByProduct.get(codeKey) ?? []);
+    const slices = allocateProduct(product.units, weights);
     let sentToNational = false;
 
     for (const slice of slices) {
