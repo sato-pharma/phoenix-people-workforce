@@ -13,9 +13,15 @@ export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
 
-    // Phase 1 is reserved for the admin account. Server-side enforcement — the sidebar
-    // link is UX only, never the boundary.
-    if (access.role !== "Super Admin" && access.scope !== "system") {
+    // View access mirrors the page (app/(admin)/sales/monthly-closing/page.tsx): Super Admin/system
+    // AND SFE Manager. This route is that workspace's reload feed — the page already server-renders
+    // this exact matrix for SFE Manager and his export already delivers the full workbook, so leaving
+    // only this feed Super-Admin-only 403'd his Refresh / line change on screen (owner report,
+    // 2026-08-10). Admitting him leaks no confidential data by construction: listMonthlyClosingLines
+    // excludes the Head Office line for every viewer and the closing RPCs exclude the restricted
+    // codes in SQL. Server-side enforcement — the sidebar link is UX only, never the boundary.
+    // Publishing and locking stay Super-Admin-only in their own routes (publish|lock/route.ts).
+    if (access.role !== "Super Admin" && access.scope !== "system" && access.role !== "SFE Manager") {
       return NextResponse.json(
         { success: false, error: "Forbidden: Monthly Closing is restricted to the admin account." },
         { status: 403 },
