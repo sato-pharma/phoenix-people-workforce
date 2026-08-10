@@ -47,7 +47,20 @@ function uniqueCount(values: Array<string | null>) {
 }
 
 export function canAccessHeadOffice(access: AccessContext) {
-  return access.role === "Super Admin" || access.role === "CEO" || access.scope === "system";
+  return (
+    access.role === "Super Admin" ||
+    access.role === "CEO" ||
+    // Finance Manager added 2026-08-10 (owner). He IS head-office staff (line "Office", line_id 4),
+    // so without this the company organogram he was just granted would show him the four sales
+    // lines and hide his own department — the one part of the tree he sits in.
+    //
+    // Named by ROLE, never `access.scope === "company"`. The scope shortcut would hand Head Office
+    // to every current and future company-scope role in one edit; tests/organogram-godmode.test.ts
+    // keeps Marketing Manager / Training Manager / Talent Acquisition pinned to `false` at the
+    // helper's default company scope precisely so that shortcut fails loudly if anyone reaches for it.
+    access.role === "Finance Manager" ||
+    access.scope === "system"
+  );
 }
 
 // Head Office (line_id = 4) serves all lines and is CEO/Super-Admin-only. Detect
@@ -103,7 +116,12 @@ export function canAccessCompanyOrganogram(access: AccessContext) {
     // has TWO gates: the matrix grant admits him past the first, and without this he fell to the
     // final `redirect("/employee-portals")` — granted on paper, still bounced in practice.
     // Read-only company view; seat and vacancy mutations are gated separately.
-    access.role === "SFE Manager"
+    access.role === "SFE Manager" ||
+    // Finance Manager added 2026-08-10 (owner) — the SECOND role to hit the two-gate trap described
+    // directly above, for the same reason and with the same fix. `organogram: ["read"]` alone gets
+    // him past gate one and straight into the redirect. He additionally passes canAccessHeadOffice
+    // (unlike the SFE Manager), because he is head-office staff himself.
+    access.role === "Finance Manager"
   );
 }
 

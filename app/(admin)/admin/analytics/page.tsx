@@ -25,6 +25,18 @@ const SALES_ANALYTICS_BROAD_ROLES = [
   "SFE Manager",
 ] as const satisfies readonly PhoenixRole[];
 
+// The Finance Manager passes canViewAdminCoreAnalytics (added 2026-08-10 for full-scope Monthly
+// Closing) but holds `sales` only — no `weekly_sales`. Two separate lists are needed because this
+// hub filters tiles LOCALLY rather than by the shared predicate:
+//   * offer him only the two `sales`-resource tiles, or the hub renders for him with zero cards;
+//   * keep him off the Weekly tile, because /admin/analytics/weekly-sales asserts weekly_sales:read
+//     and would 403 — a guaranteed dead link, the exact class of defect
+//     tests/sfe-manager-nav-dead-links.test.ts exists to catch.
+const SALES_ANALYTICS_SALES_RESOURCE_ROLES = [
+  ...SALES_ANALYTICS_BROAD_ROLES,
+  "Finance Manager",
+] as const satisfies readonly PhoenixRole[];
+
 const MODULES = [
   {
     href: "/admin/analytics/source-sales",
@@ -35,7 +47,7 @@ const MODULES = [
       "Compare distributors, channels, and periods.",
     badge: "SoS",
     accent: "#2563EB",
-    roles: SALES_ANALYTICS_BROAD_ROLES,
+    roles: SALES_ANALYTICS_SALES_RESOURCE_ROLES,
   },
   {
     href: "/admin/analytics/monthly-closing",
@@ -46,7 +58,7 @@ const MODULES = [
       "manager hierarchy, and territory drill-down.",
     badge: "Closing",
     accent: "#059669",
-    roles: SALES_ANALYTICS_BROAD_ROLES,
+    roles: SALES_ANALYTICS_SALES_RESOURCE_ROLES,
   },
   {
     href: "/admin/analytics/weekly-sales",

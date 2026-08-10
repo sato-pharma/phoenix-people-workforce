@@ -15,6 +15,25 @@ function assertPayslipCenterAccess(access: AccessContext) {
   }
 }
 
+/**
+ * Who may generate and download the rendered PDF payslip DOCUMENT for another employee.
+ *
+ * Deliberately narrower than assertPayslipCenterAccess above: reading the figures on screen and
+ * carrying a signed-looking document out of the building are different acts. The CEO passes the
+ * Center's own guard and must NOT pass this one.
+ *
+ * Finance Manager added 2026-08-10 (owner) — he already holds payslips:["read","export"] and
+ * getPayrollScope returns COMPANY, so the Center's data was already fully open to him; the PDF was
+ * the one thing still hardcoded to Super Admin.
+ *
+ * Exported and used by BOTH the API route and the admin page, which is the point: those two used to
+ * carry the same `access.role === "Super Admin"` literal in two files, and a literal duplicated
+ * across a boundary is how a UI button and its route drift apart.
+ */
+export function canExportPayslipDocument(access: Pick<AccessContext, "role">): boolean {
+  return access.role === "Super Admin" || access.role === "Finance Manager";
+}
+
 type SalaryRecordLookupRow = {
   area: string | null;
   batch_id: string;

@@ -1,4 +1,4 @@
-import { getFingerprintAttendanceReport } from "@/lib/attendance/fingerprint-report";
+import { getFingerprintAttendanceReport, type FingerprintPolicyDetailRow } from "@/lib/attendance/fingerprint-report";
 import { getAttendanceExceptions } from "@/lib/attendance/exceptions";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { compactDeductionHrId } from "@/lib/deductions-governance/service";
@@ -12,6 +12,16 @@ import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees
 import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
 
 export type EmployeeAttendanceSummary = {
+  /**
+   * NOT absence. This counts days whose status is "Single punch" — the employee was at the device
+   * but only one scan was recorded. A genuinely absent day produces no punch row at all, so it is
+   * not in this report's rows and cannot be counted here.
+   *
+   * Named `absentDays` since before this note and left alone deliberately: renaming it would touch
+   * every consumer for no behavioural gain. Label it honestly in the UI instead — calling a
+   * single-punch day "absent" is the same class of error as the August 2026 fabricated-absence
+   * defect, where an ingestion outage was reported as a 100% absence rate.
+   */
   absentDays: number;
   completeDays: number;
   deductionDays: number;
@@ -37,8 +47,35 @@ export type EmployeeAttendanceData = {
     recommendedAction: string;
     status: string;
     timeLong: string;
+    // ── Added 2026-08-10 ───────────────────────────────────────────────────────────────────────
+    // Every field below was ALREADY fetched by the getFingerprintAttendanceReport call in this
+    // function and then thrown away: the mapper kept 10 of the report's 24 columns. Surfacing them
+    // costs no extra query and no extra round trip.
+    //
+    // Additive and role-blind on purpose. The owner asked for a richer view for ONE person, but a
+    // service that returns a different SHAPE depending on who is asking is how "granted on paper,
+    // bounced in practice" bugs are born — so the data widens for every caller and only the
+    // rendering differs. Consumers that do not read these keys are unaffected.
+    approvedExcuse: string;
+    approvedLeave: string;
+    crmActivity: string;
+    /** EGP. The money consequence of the row, which the day list previously showed only as days. */
+    deductionValue: string;
+    earlyLeaveMinutes: string;
+    graceMinutes: string;
+    /** Set when an approved Am/Pm-only vacation halved the required-minutes window for this day. */
+    halfDayVacationPart?: "am_only" | "pm_only";
+    scheduledEnd: string;
+    scheduledStart: string;
+    validTime: string;
+    weeklyPlan: string;
   }>;
   summary: EmployeeAttendanceSummary;
+  /**
+   * Which attendance policy judged each day, and over what window — "why was I marked late?"
+   * answered without asking HR. Already returned by the same report call; previously discarded.
+   */
+  policyDetails: FingerprintPolicyDetailRow[];
 };
 
 async function getHrConfirmedDeductionDates(hrId: string): Promise<Set<string>> {
@@ -101,17 +138,28 @@ export async function getEmployeeAttendanceData(
     if (deductionConfirmed) summary.deductionDays++;
 
     return {
+      approvedExcuse: row.approvedExcuse,
+      approvedLeave: row.approvedLeave,
+      crmActivity: row.crmActivity,
       date: row.date,
       deductionConfirmed,
       deductionDays: row.deductionDays,
+      deductionValue: row.deductionValue,
+      earlyLeaveMinutes: row.earlyLeaveMinutes,
       firstPunch: row.actualFirstPunch,
+      graceMinutes: row.graceMinutes,
+      halfDayVacationPart: row.halfDayVacationPart,
       hasException: row.hasException ?? false,
       lastPunch: row.actualLastPunch,
       lateMinutes: row.lateMinutes,
       rawDate,
       recommendedAction: row.recommendedAction,
+      scheduledEnd: row.scheduledEnd,
+      scheduledStart: row.scheduledStart,
       status: row.status,
       timeLong: row.timeLong,
+      validTime: row.validTime,
+      weeklyPlan: row.weeklyPlan,
     };
   });
 
@@ -119,6 +167,7 @@ export async function getEmployeeAttendanceData(
     dateFrom,
     dateTo,
     pendingDisputes: disputesData.length,
+    policyDetails: reportData.policyDetails ?? [],
     rows,
     summary,
   };

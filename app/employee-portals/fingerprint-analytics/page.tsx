@@ -60,6 +60,7 @@ export default async function FingerprintAnalyticsPage() {
       dateFrom,
       dateTo,
       pendingDisputes: 0,
+      policyDetails: [],
       rows: [],
       summary: {
         absentDays: 0,

@@ -667,13 +667,41 @@ const defaultPermissionMatrix: PermissionMap = {
     payslips: ["read", "export"],
     deductions: ["read", "export"],
     weekly_plans: ["read", "export"],
-    // NO `sales` grant (owner, 2026-08-10). The grant passed the permission gate but getSalesScope
-    // has no Finance Manager branch, so it fell to NONE — every Source-of-Sales query returned zero
-    // rows and the page showed an empty table with no explanation. Rather than widen him to
-    // company-wide sales, the section is dropped: system-navigation's "Source of Sales" row is
-    // permission-gated with no role list, so removing this key is what hides it. His direct-order
-    // visibility is unaffected (DIRECT_ORDER_REPORT_SEE_ALL_ROLES), and booking a sales month
-    // asserts `direct_orders:read`, never `sales`.
+    // RESTORED 2026-08-10 (owner), together with the `case "Finance Manager": return "COMPANY"` arm
+    // in getSalesScope below. **These two must never be separated.** The grant was removed earlier
+    // the same day because it passed this permission gate while getSalesScope fell through to NONE:
+    // every Source-of-Sales query returned zero rows and the page showed an empty table with no
+    // explanation. The grant is not the fix — the grant PLUS the scope arm is.
+    //
+    // COMPANY specifically, not a narrower scope: his employees.line_name is "Office", which
+    // bridgeEmployeeLineToOfficial maps to "Head Office" (sales/official-lines.ts), and every line
+    // filter drops Head Office. At any scope below COMPANY his available-line list resolves EMPTY
+    // and the Monthly Closing export 403s on every line.
+    //
+    // NO `import`. That single action is the upload/publish workspace's key — it gates
+    // /sales/monthly-closing, /sales/upload, /sales/mapping-database and eight more, plus the
+    // "Monthly Closing" hub card. He CONSUMES the closing; he does not produce or publish it.
+    //
+    // Restricted products stay hidden: canViewRestrictedProducts is CEO + Super Admin only and is
+    // untouched. That costs him nothing on the closing — every LA003/LA004/SS001 row sits on the
+    // Head Office line, which listMonthlyClosingLines excludes for EVERYONE including the CEO, so
+    // his workbook matches the CEO's exactly. It does bite on Source of Sales, where Head Office is
+    // ~80% of company value; sos-dashboard-impl.tsx labels that on the figure itself.
+    sales: ["read", "export"],
+    // Organogram (owner, 2026-08-10). The grant alone is NOT sufficient and never was: the page has
+    // TWO gates, and canAccessCompanyOrganogram in src/lib/reports/organogram.ts is the second one.
+    // He is named there explicitly, and in canAccessHeadOffice — he is head-office staff, so without
+    // the latter his own department is invisible in the very view he was granted.
+    organogram: ["read"],
+    // Resignations — READ ONLY (owner, 2026-08-10). Company-wide with no scope work needed:
+    // isCompanyResignationReader (src/lib/resignations/service.ts) already short-circuits on
+    // access.scope === "company", which this role has.
+    //
+    // Deliberately NOT create/update/approve. Acting on a resignation needs two further levers he
+    // does not have and is not getting: a Workflow Registry row (a DB edit; the module is
+    // fail-closed and currently lists Super Admin / CEO / Talent Acquisition), and a company-scope
+    // branch in canSeeEmployee — which has none, so today he can only act on his own record.
+    resignations: ["read"],
     support_requests: ["read", "create"],
     workflow_registry: ["read"],
     report_it: ["read", "create", "export"],
@@ -1369,6 +1397,22 @@ export function getSalesScope(context: Pick<AccessContext, "role"> & { salesScop
     case "SFE Manager":
     case "CEO":
     case "Super Admin":
+    // Finance Manager added 2026-08-10 (owner) as the second half of the restored `sales` grant
+    // above — see the long note on that key. This arm is not optional garnish: the grant WITHOUT it
+    // is precisely the bug that got the grant removed earlier the same day, because a role that
+    // falls to the NONE default below gets fail-closed EMPTY line/region/area sets, and every
+    // consumer reads an empty set as "no rows" rather than "no access". The page then renders a
+    // confident empty table.
+    //
+    // It must be COMPANY rather than LINE: his employees.line_name is "Office" → "Head Office",
+    // which every line filter drops, so any bounded scope resolves his available-line list to empty.
+    //
+    // Deliberately the switch arm and NOT app_auth_users.sales_scope_override: AccessContext carries
+    // no salesScopeOverride field, so every caller passing a bare context takes this switch and
+    // would never see a DB value; and the Access Control Manager renders the role's scope from
+    // getSalesScope({ role }) with no override, so a DB-only grant would display as NONE while the
+    // holder actually had COMPANY. This is role policy, not per-person data.
+    case "Finance Manager":
       // Company-wide commercial oversight. Restricted products stay hidden unless the role
       // is explicitly allowed by canViewRestrictedProducts.
       return "COMPANY";

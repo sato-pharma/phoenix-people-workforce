@@ -131,7 +131,24 @@ export async function POST(request: Request) {
     // access — it was previously the ONLY place CEO fell through to the scoped-role branch below,
     // which is built for District/Regional/National Sales Manager and PM/GPM and returns a
     // different, lesser workbook that does not match what CEO's own access already permits.
-    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager" || access.role === "CEO") {
+    // Finance Manager added 2026-08-10 (owner): full-scope Monthly Closing, ANY line, ALWAYS —
+    // including periods that were never published. This branch is the only one that delivers that.
+    // The scoped branch below routes through loadPortalMonthlyClosing, which is publication-gated:
+    // on an unpublished (line, period) it returns matrix: null and the route silently degrades to
+    // buildClosingDetailsWorkbook — Data + Total sheets only, HTTP 200, nothing on screen or in the
+    // file saying why. Even when published it omits Retail/Direct, Store Split, Channel
+    // Comparison/Breakdown, Source Coverage and July Direct.
+    //
+    // Like the CEO note above, this does not widen him: getSalesScope already returns COMPANY for
+    // the role, and the confidential/Head-Office locks named at the top of this comment are
+    // untouched — canViewRestrictedProducts stays CEO + Super Admin only. On the closing that costs
+    // him nothing, because every restricted row sits on Head Office and listMonthlyClosingLines
+    // excludes Head Office for everyone, the CEO included.
+    //
+    // APPEND ONLY. tests/sfe-manager-nav-dead-links.test.ts pins the first three terms of this
+    // disjunction as a literal source substring, so adding to the end keeps it green while
+    // reordering breaks it. Do not refactor this into a named predicate without moving that test.
+    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager" || access.role === "CEO" || access.role === "Finance Manager") {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
       // The combined matrix AND its two halves. The channel tabs need retail-without-direct and

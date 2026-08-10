@@ -377,6 +377,7 @@ export async function WorkspaceFingerprintReportPage() {
           dateFrom,
           dateTo,
           pendingDisputes: 0,
+          policyDetails: [],
           rows: [],
           summary: {
             absentDays: 0,

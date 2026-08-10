@@ -41,6 +41,7 @@ export default async function EmployeeAttendancePage() {
       dateFrom,
       dateTo,
       pendingDisputes: 0,
+      policyDetails: [],
       rows: [],
       summary: { absentDays: 0, completeDays: 0, deductionDays: 0, exceptionDays: 0, lateDays: 0, shortDays: 0, totalRows: 0 },
     };

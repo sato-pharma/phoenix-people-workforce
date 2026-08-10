@@ -14,6 +14,7 @@ import { runErrorMonitorUserAttemptsTests } from "./error-monitor-user-attempts.
 import { runGcpMetricsTests } from "./gcp-metrics.test.ts";
 import { runWeeklySystemHealthDigestTests } from "./weekly-system-health-digest.test.ts";
 import { runNavigationActivePathTests } from "./navigation-active-path.test.ts";
+import { runFinanceManagerSixModuleAccessTests } from "./finance-manager-six-module-access.test.ts";
 import { runSidebarLabelWidthTests } from "./sidebar-label-width.test.ts";
 import { runAutomatedPayrollPageWidthTests } from "./automated-payroll-page-width.test.ts";
 import { runWorkspaceSingleHeroTests } from "./workspace-single-hero.test.ts";
@@ -768,6 +769,10 @@ await runTest("error monitor per-user attempts (30d default window + real-accoun
 await runTest("gcp-metrics service health reader (availability/latency/instances + {available:false} guard)", runGcpMetricsTests);
 await runTest("weekly system health digest", runWeeklySystemHealthDigestTests);
 await runTest("navigation active path", runNavigationActivePathTests);
+await runTest(
+  "finance manager six-module access (sales scope + grant as one change, full closing workbook, organogram two-gate + head office, resignations read-only, line-scoped calendar, payslip document export)",
+  runFinanceManagerSixModuleAccessTests,
+);
 await runTest("automated payroll pages render full width", runAutomatedPayrollPageWidthTests);
 await runTest("sidebar labels never clip (no ellipsis, no wrap)", runSidebarLabelWidthTests);
 await runTest("workspace pages render exactly one hero", runWorkspaceSingleHeroTests);

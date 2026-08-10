@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { canAccess, getPayrollScope } from "@/lib/auth/permissions";
+import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getPayslipCenterEmployeeOptions, searchPayslipCenter } from "@/lib/payroll/payslip-center";
 import { formatEmployeeDisplayName } from "@/lib/utils";
@@ -59,7 +60,9 @@ export default async function AdminPayslipsCenterPage(
     searchPayslipCenter(access, searchParams.employee),
   ]);
   const latestNet = data.rows[0] ? formatMoney(data.rows[0].netSalary) : "-";
-  const canExportPayslipImage = access.role === "Super Admin";
+  // Same predicate the API route enforces — never a second role literal. The button and its route
+  // must agree, and the CEO deliberately fails both while still reading this page.
+  const canExportPayslipImage = canExportPayslipDocument(access);
   const employeeSummary = data.employees[0]
     ? `${formatEmployeeDisplayName(data.employees[0].fullName)} - ${data.employees[0].jobTitle} - ${data.employees[0].line}`
     : "Matching payslip history";

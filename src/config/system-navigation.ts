@@ -400,6 +400,55 @@ const adminNavigationSectionSeeds = [
     label: "Leave Management",
   },
 
+  // ── Finance Manager's own rows (owner, 2026-08-10) ────────────────────────────
+  // Four modules he was granted that have no sidebar route of their own for him. Each is a
+  // dedicated one-item section rather than a card on a shared hub, for the reason the Leave
+  // Management section above already documents: the hubs that host these modules
+  // (People Management, Attendance, Payroll Management) all carry excludedRoles: ["Finance Manager"]
+  // because every OTHER card on them is closed to him — putting him back on a hub to reach one card
+  // would hand him a page that renders one tile and a heading he was deliberately removed from.
+  //
+  // `excludedRoles: ["Super Admin"]` on every one of them is mandatory, not decorative: the
+  // system-administrator workspace bypasses `roles` entirely but still honours excludedRoles, so
+  // without it Super Admin gains a duplicate row beside the hub card he already has.
+  //
+  // `permissions` mirrors each destination's own guard so a visible row can never bounce the person
+  // who presses it — except the calendar, whose page gate is purely role-based (same as
+  // finance-command-center and finance-leave-management above), so a permission there would be a
+  // gate the page does not actually check.
+  {
+    id: "finance-resignations",
+    items: [
+      { href: "/resignations", icon: FileSpreadsheet, label: "Resignations", permissions: [{ resource: "resignations", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Resignations",
+  },
+  {
+    id: "finance-events-calendar",
+    items: [
+      { href: "/admin/company-calendar", icon: CalendarDays, label: "Events Calendar", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Events Calendar",
+  },
+  {
+    id: "finance-payslips-center",
+    items: [
+      { href: "/admin/payslips-center", icon: ScrollText, label: "Payslips Center", permissions: [{ resource: "payslips", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Payslips Center",
+  },
+  {
+    id: "finance-fingerprint-report",
+    items: [
+      // His OWN attendance only (owner: "only himself"). The page behind this
+      // (WorkspaceFingerprintReportPage) is hard-bound to access.hrId and takes no employee
+      // selector — it has existed unlinked for some time, so this row is a route to an existing
+      // self-scoped surface, not a new access surface.
+      { href: "/workspace/fingerprint-report", icon: Fingerprint, label: "Fingerprint Report", permissions: [{ resource: "attendance", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Fingerprint Report",
+  },
+
   // ── Tier 1b: Admin Tools ──────────────────────────────────────────────────────
   // Collapsed to a single sidebar entry that opens the Admin Tools hub
   // (app/(admin)/admin/admin-tools/page.tsx), which renders the individual tools
@@ -877,7 +926,12 @@ const adminNavigationSectionSeeds = [
       // module-card grid (app/(analytics)/admin/analytics/page.tsx). That page's
       // MODULES list has been extended with the 4 field-dashboard cards and now
       // filters cards per-role, so it doubles as this section's hub directly.
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager"] },
+      // Finance Manager added 2026-08-10 (owner) alongside canViewAdminCoreAnalytics — without this
+      // row the analytics tree he now passes has no door, and /admin/analytics/monthly-closing
+      // /details is the only page in the product that renders his Monthly Closing Export button.
+      // The hub itself only offers him the two `sales`-resource tiles; Weekly is withheld because he
+      // holds no weekly_sales grant and that page would 403.
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"] },
     ],
     label: "Sales Analytics",
   },
@@ -1494,7 +1548,10 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "SoS Analytics",
     description: "Source of Sales analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
+    // Finance Manager added 2026-08-10 (owner) — command-palette parity with the hub tile. The two
+    // lists are separate (this one feeds Cmd+K, app/(admin)/admin/analytics/page.tsx feeds the hub
+    // cards), so they must move together or the module is reachable from one and not the other.
+    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"],
   },
   {
     href: "/admin/analytics/monthly-closing",
@@ -1502,7 +1559,9 @@ export const salesAnalyticsPageItems: readonly AdminToolsPageItem[] = [
     label: "Closing Analytics",
     description: "Monthly closing analytics dashboard.",
     permissions: [{ resource: "sales" }],
-    roles: ["Super Admin", "CEO", "SFE Manager"],
+    // Finance Manager added 2026-08-10 (owner). Weekly Analytics below is deliberately NOT widened:
+    // it gates on weekly_sales, which he does not hold, so offering it would be a guaranteed 403.
+    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"],
   },
   {
     href: "/admin/analytics/weekly-sales",
@@ -2254,6 +2313,14 @@ export const peopleManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Resignations",
     description: "Track and process employee resignations.",
     permissions: [{ resource: "resignations" }],
+    // Finance Manager excluded 2026-08-10 (owner) — he reaches this page through his OWN sidebar
+    // row (the finance-resignations section) instead. Without this exclusion the card would ALSO
+    // fold into his Cmd+K palette under a "People Management" heading, because hubPageItemGroups
+    // re-admits every card a viewer's role allows regardless of whether the parent hub row is
+    // hidden. That heading is one he was deliberately removed from, and this is the exact mechanism
+    // that kept "Archived ROI Tracking" and "/admin/deductions" one keystroke away after their hubs
+    // were hidden.
+    excludedRoles: ["Finance Manager"],
   },
   {
     href: "/admin/weekly-plans",
