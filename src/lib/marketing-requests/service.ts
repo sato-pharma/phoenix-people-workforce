@@ -4673,6 +4673,27 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const narrowToOwnRequests = (requests: MarketingRequest[]) =>
     scopeTrackingToOwnRequests ? requests.filter(ownsMarketingRequest) : requests;
 
+  /**
+   * The Approved list is the ONE exception to the narrowing above, and only for the role that has
+   * to act on it.
+   *
+   * uploadMarketingFinanceEvidence names Finance Manager as the only non-owner allowed to attach the
+   * money transfer proof, and `<EvidenceUpload>` — the sole UI for it — renders on this list and
+   * nowhere else. Narrowing it to his own submissions made that grant unreachable in the product:
+   * he is not in marketingCreatorRoles, so he can never submit a request, so `approvedRequests` was
+   * provably ALWAYS empty for him and the proof could only be attached by hand-crafting a POST.
+   * He is the terminal `finance_execution` rung (owner, 2026-08-10) — attaching the payment proof is
+   * the execution artifact, so this list is his work queue, not a personal history.
+   *
+   * Deliberately the Approved list ONLY, and deliberately keyed on the role rather than on
+   * companyMarketingRoles: Drafts / Returned / In-approval stay personal for him too (he has none by
+   * construction), and the CEO / SFE Manager / Marketing Manager keep the personal narrowing that
+   * stops every request in the company flooding their own workspace.
+   */
+  const executesApprovedMarketingRequests = access.role === "Finance Manager";
+  const narrowApprovedToActionableRequests = (requests: MarketingRequest[]) =>
+    executesApprovedMarketingRequests ? requests : narrowToOwnRequests(requests);
+
   const passesHierarchyCheck = (row: MarketingRequestDbRow) =>
     canSeeMarketingRequest(access, row, employeeRows);
 
@@ -4698,7 +4719,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .filter(passesProductFilter)
       .map(mapRequest),
   );
-  const approvedRequests = narrowToOwnRequests(
+  const approvedRequests = narrowApprovedToActionableRequests(
     ((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[])
       .filter(passesHierarchyCheck)
       .filter(passesProductFilter)

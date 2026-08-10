@@ -10,7 +10,19 @@ import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup 
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_ROI_ROLES = ["Super Admin", "CEO", "SFE Manager", "District Manager"] as const;
+// MUST stay in step with the sidebar button's own `roles` list (the `workspace-marketing-requests`
+// section in src/config/system-navigation.ts). Finance Manager and Financial Advisor were added to
+// that list so the admin-shell finance roles had a route to ROI Tracker at all, but this gate was
+// never updated to match — so the button rendered for them and then redirected them straight back
+// out to /overview. Fixed 2026-08-10 while activating the Finance Manager account.
+const MARKETING_ROI_ROLES = [
+  "Super Admin",
+  "CEO",
+  "SFE Manager",
+  "District Manager",
+  "Finance Manager",
+  "Financial Advisor",
+] as const;
 
 export default async function MarketingRoiPage() {
   const access = await resolveAccessContextFromPage();

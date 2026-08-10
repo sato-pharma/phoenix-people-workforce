@@ -1,12 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import {
   DIRECT_ORDER_REPORT_STATUS_OPTIONS,
   filterDirectOrderReportRows,
 } from "@/lib/direct-orders/report-filters";
+import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
+
+// The report is mounted only by app/(admin)/admin/direct-orders/report/page.tsx, so the detail
+// route is unambiguous. It matters that every row can reach it: the request detail page is the
+// ONLY place DirectOrderSalesMonthControl renders, and booking an approved order into a sales
+// month is Finance's job (canSetDirectOrderSalesMonth). Until this link existed the report could
+// tell Finance which orders were unbooked and give them no way to open one — they had to copy an
+// id out of the table and hand-assemble the URL.
+const DIRECT_ORDER_DETAIL_BASE = "/admin/direct-orders";
 
 const STATUS_TONE: Record<string, string> = {
   approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
@@ -151,7 +161,7 @@ export function DirectOrderReportWorkspace({
   // month is Finance-owned and set per order, so until someone picks one the value is real,
   // committed, and absent from every sales number. Nothing else in the module says so.
   const unbooked = useMemo(() => {
-    const orders = rows.filter((r) => r.status === "approved" && !r.salesMonth);
+    const orders = rows.filter((r) => showsAwaitingFinanceMonth(r.status, r.salesMonth));
     return { count: orders.length, value: orders.reduce((s, r) => s + (r.salesValue || 0), 0) };
   }, [rows]);
 
@@ -229,7 +239,7 @@ export function DirectOrderReportWorkspace({
             {unbooked.count.toLocaleString("en-US")}{" "}
             {unbooked.count === 1 ? "direct order" : "direct orders"} worth {money(unbooked.value)} EGP
             {" "}are approved but are not in Source of Sales yet. Finance sets the sales month on each
-            order&apos;s own page.
+            order&apos;s own page — use the Book month link on its row.
           </div>
         </div>
       ) : null}
@@ -268,6 +278,9 @@ export function DirectOrderReportWorkspace({
         <table className="min-w-full border-collapse text-left text-sm">
           <thead className="bg-slate-900 text-white">
             <tr>
+              <th className="whitespace-nowrap px-3 py-2 text-left text-[11px] font-black uppercase tracking-wider">
+                Open
+              </th>
               {COLUMNS.map((col) => (
                 <th
                   key={String(col.key)}
@@ -285,6 +298,14 @@ export function DirectOrderReportWorkspace({
           <tbody>
             {filtered.map((row, index) => (
               <tr key={row.id} className={index % 2 ? "bg-slate-50" : "bg-white"}>
+                <td className="whitespace-nowrap px-3 py-1.5 text-left">
+                  <Link
+                    className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                    href={`${DIRECT_ORDER_DETAIL_BASE}/${row.id}`}
+                  >
+                    {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
+                  </Link>
+                </td>
                 {COLUMNS.map((col) => (
                   <td
                     key={String(col.key)}
@@ -297,7 +318,7 @@ export function DirectOrderReportWorkspace({
             ))}
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={COLUMNS.length + 1} className="px-3 py-8 text-center text-slate-400">
                   No direct orders match your filters.
                 </td>
               </tr>

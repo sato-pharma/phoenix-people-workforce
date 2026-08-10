@@ -42,17 +42,22 @@ const marketingAdminCompanyOversightRoles = new Set<PhoenixRole>([
 ]);
 
 /**
- * The Approval Inbox additionally admits the CEO, who holds `ceo_approval` — sequence 4 of the
- * live chain (Manager → SFE Validation → Marketing Review → CEO Approval) and the LAST required
- * rung, so nothing is ever approved without them.
+ * The Approval Inbox admits the roles that hold a rung on the live chain and land in the admin
+ * shell — today the CEO (`ceo_approval`) and the Finance Manager (`finance_execution`).
  *
- * Deliberately its own set rather than folding the CEO into the workflow roles above: the CEO
- * decides marketing spend, they do not run customer validation, bulk upload, or the raw customer
- * database (live photos, addresses, phone numbers). And deliberately not reusing
- * `allowCompanyOversight` either — the finance roles in that set hold no rung on the chain, so
- * an inbox is not theirs to open.
+ * Deliberately its own set rather than folding them into the workflow roles above: they decide and
+ * execute marketing spend, they do not run customer validation, bulk upload, or the raw customer
+ * database (live photos, addresses, phone numbers).
+ *
+ * Finance Manager added 2026-08-10 (owner: "Ahmed is the next step after CEO — the finance person
+ * who executes transactions after CEO approval"). Until then this set was CEO-only, and the comment
+ * here justified that by saying the finance roles "hold no rung on the chain, so an inbox is not
+ * theirs to open." That reason expired the moment `finance_execution` was activated and pointed at
+ * this role: he is now the LAST rung, exactly the position the header above says must never be left
+ * without a route. Note this is still NOT `allowCompanyOversight` — Financial Advisor sits in that
+ * set and holds no rung, so it stays out.
  */
-const marketingAdminApprovalInboxRoles = new Set<PhoenixRole>(["CEO"]);
+const marketingAdminApprovalInboxRoles = new Set<PhoenixRole>(["CEO", "Finance Manager"]);
 
 export type MarketingAdminPageOptions = {
   customerDatabase?: boolean;

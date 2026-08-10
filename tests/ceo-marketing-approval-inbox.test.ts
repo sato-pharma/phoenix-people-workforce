@@ -103,6 +103,27 @@ export function runCeoMarketingApprovalInboxTests() {
     "the CEO must reach /workspace/marketing-requests/decision — seeing the request without deciding it is not approval",
   );
 
+  // ── The same three doors, for the rung BELOW the CEO ─────────────────────────────────────────
+  // `finance_execution` was activated and pointed at Finance Manager on 2026-08-10, making him the
+  // terminal rung: nothing is executed without him. He is admin-shell only (resolveNavigationMode
+  // pins him to "admin"), so he needs exactly the same three doors the CEO needed, and for exactly
+  // the same reason. Door 1 is asserted above via canAccessMarketingAdminPage; doors 2 and 3 here.
+  //
+  // This is the regression that shipped and had to be found by audit: the page gate, the sidebar
+  // roles and the workspace gate are three separate lists, and a rung-holder missing from any ONE
+  // of them has no working route — a visible button that redirects, or a queue with no link to it.
+  const financeAdminHrefs = adminHrefsFor("Finance Manager");
+  assert.equal(
+    financeAdminHrefs.includes(ADMIN_INBOX_HREF),
+    true,
+    "the Finance Manager must see the Marketing Approval Inbox in the admin sidebar — an unreachable page is the same as no page",
+  );
+  assert.equal(
+    canAccessAdminShellEmployeeWorkspacePage("Finance Manager", workspaceMarketingRoles),
+    true,
+    "the Finance Manager must reach /workspace/marketing-requests/decision to execute the rung he holds",
+  );
+
   // ── The inbox flag is a scalpel, not a widening ──────────────────────────────────────────────
   // The CEO approves marketing spend; they do not run customer validation, bulk upload, or the raw
   // customer database (live photos, addresses, phone numbers). Those pages call the guard with no
@@ -127,13 +148,28 @@ export function runCeoMarketingApprovalInboxTests() {
       `${role} still reaches the approval inbox`,
     );
   }
-  // allowCompanyOversight stays read-only ROI surfaces: it must not become a second inbox key for
-  // the finance roles, which hold no rung on the chain.
+  // allowCompanyOversight stays read-only ROI surfaces: it must not become a second inbox key for a
+  // role that holds no rung on the chain.
+  //
+  // Finance Manager now holds BOTH keys, and only for the reason this whole file exists: on
+  // 2026-08-10 the owner activated `finance_execution` and pointed it at that role ("Ahmed is the
+  // next step after CEO"), which makes him the LAST rung. Until then he was oversight-only and this
+  // assertion read `false`.
+  //
+  // Financial Advisor is what still proves the two keys are distinct: it sits in the oversight set
+  // and holds no rung, so the inbox must stay shut for it. If that ever flips to true without a rung
+  // being activated for it, `approvalInbox` has decayed into a company-oversight alias.
   assert.equal(canAccessMarketingAdminPage("Finance Manager", { allowCompanyOversight: true }), true);
   assert.equal(
     canAccessMarketingAdminPage("Finance Manager", { approvalInbox: true }),
+    true,
+    "the Finance Manager executes the terminal finance_execution rung, so his own queue must open",
+  );
+  assert.equal(canAccessMarketingAdminPage("Financial Advisor", { allowCompanyOversight: true }), true);
+  assert.equal(
+    canAccessMarketingAdminPage("Financial Advisor", { approvalInbox: true }),
     false,
-    "approvalInbox is the CEO's rung, not a company-oversight alias",
+    "approvalInbox is a rung-holder's key, not a company-oversight alias",
   );
 
   // ── The workspace gate now trusts an explicit allowedRoles list — verify it did not fail open ─
