@@ -223,10 +223,12 @@ export function runNavigationActivePathTests() {
 
   // Note: /admin/people-management deliberately isn't in this list — unlike the
   // other consolidated hubs, several of its cards (Vacancies Report, Contract
-  // Renewal, Resignations) have no role restriction, so e.g. Finance Manager
-  // legitimately reaches the hub even though Employees/Weekly Plans/HR Support
+  // Renewal, Resignations) have no role restriction, so a role can legitimately
+  // reach the hub even though Employees/Weekly Plans/HR Support
   // Requests within it stay Super-Admin/Talent-Acquisition-only via their own
-  // per-card gates. "Other Approvals" moved to the sidebar's Approvals Hub
+  // per-card gates. (Finance Manager used to be the example named here; the owner
+  // took that hub off his sidebar on 2026-08-10 — it is asserted the other way
+  // below now.) "Other Approvals" moved to the sidebar's Approvals Hub
   // section, and Organogram/Probation/Workforce Compliance moved to direct
   // sidebar links under People Management — none are cards here anymore.
   const sensitiveHrHrefs = ["/admin/recruitment-hiring"] as const;
@@ -285,6 +287,36 @@ export function runNavigationActivePathTests() {
   const financeAdmin = adminHrefsFor("Finance Manager");
   assertIncludesAll(financeAdmin, ["/admin/payroll-management"], "Finance Manager must see payroll ownership");
   assertExcludesAll(financeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "Finance Manager must not see HR-owned or owner-only modules");
+
+  // ── The seven rows the owner took off B-185's sidebar on 2026-08-10 ──────────────────────────
+  // Every one of these was reachable because of a grant he still legitimately holds and still
+  // needs elsewhere (employee_profile:read is a portal floor, leave:read drives the two approval
+  // rows he keeps, attendance:read feeds payroll, crm_visits:read feeds the manager activity
+  // view), so none of them can be re-hidden by trimming the permission matrix — they are held out
+  // by name in system-navigation.ts, which is exactly what a well-meaning "the gate already covers
+  // this" cleanup would undo. Sidebar removal is a navigation decision, not a revocation: the page
+  // guards still admit him by URL, deliberately.
+  assertExcludesAll(
+    financeAdmin,
+    [
+      "/employee-360",
+      "/admin/approvals-hub",
+      "/admin/marketing-roi",
+      "/admin/marketing-roi-tracker",
+      "/admin/people-management",
+      "/attendance",
+      "/admin/crm-tools",
+    ],
+    "Finance Manager's sidebar must stay trimmed to his finance remit (owner, 2026-08-10)",
+  );
+  // The other half of that instruction: the trim must not touch the rungs he actually executes.
+  // Marketing Approval Inbox is the terminal finance_execution step (see
+  // ceo-marketing-approval-inbox.test.ts), and he decides leave/excuse for OF-0001, A-1 and A-4.
+  assertIncludesAll(
+    financeAdmin,
+    ["/admin/marketing-requests/inbox", "/admin/approvals/vacation", "/admin/approvals/excuse"],
+    "the sidebar trim must not remove a duty the Finance Manager actually holds",
+  );
 
   const ceoAdmin = adminHrefsFor("CEO");
   assertIncludesAll(
