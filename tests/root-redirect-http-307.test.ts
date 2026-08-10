@@ -61,7 +61,7 @@ export function runRootRedirectHttp307Tests() {
   );
   assert.equal(
     resolveRootRedirectPath(signedTokenForRole("Finance Manager")),
-    "/admin/outstation/expense-command",
+    "/admin/finance-command-center",
     "a role with a bespoke landing path keeps it — the proxy must not flatten everyone to /admin",
   );
 }

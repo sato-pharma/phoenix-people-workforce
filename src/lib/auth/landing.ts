@@ -17,7 +17,10 @@ export function resolveLandingPathForRole(role: string | null | undefined) {
   if (normalized === "hr specialist" || normalized === "hr manager") return "/admin";
   // Admin-shell employee roles land in their personal /workspace home rather than the org-wide
   // /admin marketing module. Marketing Manager uses the employee portal alongside PM/GPM.
-  if (normalized === "finance manager") return "/admin/outstation/expense-command";
+  // His own command center, peer to the CEO's and the SFE Manager's. He previously landed on
+  // /admin/outstation/expense-command — one module of a job that spans payroll, direct orders,
+  // marketing execution, expenses and leave. Outstation is still one click away in the sidebar.
+  if (normalized === "finance manager") return "/admin/finance-command-center";
   if (normalized === "sfe manager") return "/admin/sfe-command-center";
   // Financial Advisor's job is executing the marketing finance step — land on its workspace inbox.
   if (normalized === "financial advisor") return "/workspace/marketing-requests/inbox";

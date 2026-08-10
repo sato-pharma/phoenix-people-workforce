@@ -30,6 +30,27 @@ export const SALES_DASHBOARD_CACHE_TAGS = [
   "analytics-sos", "analytics-closing", "analytics-weekly",
 ] as const;
 
+/**
+ * The Finance Command Center's cache tag (src/lib/finance/command-center.ts reads it from here).
+ *
+ * Declared HERE rather than imported from the cache that owns it — the opposite of the two tags
+ * above — for a build reason, not a stylistic one. This module is transitively reachable from a
+ * client bundle (employee-directory -> crm/reads -> attendance -> monthly-attendance-summary), and
+ * the finance service pulls automated-payroll -> payroll/service -> supabase/rls-server, which is
+ * server-only. Importing the tag from there drags that whole chain into the browser build and
+ * fails it outright. A bare string constant has no such gravity, so the dependency points the
+ * other way.
+ *
+ * Deliberately NOT folded into SALES_DASHBOARD_CACHE_TAGS: nothing on that dashboard is
+ * sales-derived, and the Finance Manager holds no `sales` grant at all. What moves its numbers is
+ * payroll being confirmed, an expense being decided, and leave changing state — so it is busted by
+ * those modules instead, all of which already call invalidateExecutiveDashboardCache today.
+ */
+export const FINANCE_DASHBOARD_CACHE_TAG = "finance-dashboard";
+
+/** Modules whose changes move a figure on the Finance Command Center. */
+const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
+
 export function invalidateExecutiveDashboardCache(
   reason: string,
   modules: ExecutiveDashboardModule[] = [],
@@ -50,6 +71,13 @@ export function invalidateExecutiveDashboardCache(
     // route busted this tag, so every other mutation path went stale silently.
     if (uniqueModules.includes("leave")) {
       revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
+    }
+    // The Finance Command Center's numbers come from committed payroll, decided expenses and
+    // leave steps. Without this its 300s TTL is the only thing between a confirmed payroll run
+    // and the finance manager seeing it — on a landing page whose whole job is "what is waiting
+    // on you", five minutes of staleness is five minutes of a queue he thinks he has cleared.
+    if (uniqueModules.some((module) => FINANCE_DASHBOARD_MODULES.includes(module))) {
+      revalidateTag(FINANCE_DASHBOARD_CACHE_TAG, "max");
     }
   } catch (error) {
     console.warn("Executive dashboard route revalidation failed.", {

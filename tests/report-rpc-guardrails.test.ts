@@ -111,6 +111,10 @@ const RPCS_REQUIRING_TIMEOUT = [
   "phx_vacation_report_rows",
   "phx_monthly_closing_matrix",
   "phx_monthly_closing_direct",
+  // Finance Command Center — assembles the whole landing payload (payroll actuals, direct orders,
+  // outstation, marketing, leave) in one call, and it is a LANDING page: losing the timeout means
+  // the Finance Manager's first screen after login is an HTTP 500, not a slow section.
+  "phx_finance_command_center",
 ] as const;
 
 function testEveryHeavyReportRpcKeepsItsTimeout() {

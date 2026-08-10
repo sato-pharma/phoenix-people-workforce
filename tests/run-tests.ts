@@ -728,6 +728,7 @@ import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts"
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
+import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1750,6 +1751,10 @@ await runTest(
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",
   runTerritorySyncTests,
+);
+await runTest(
+  "finance command center (deductions from committed payroll only; one round trip; unbooked predicate parity)",
+  runFinanceCommandCenterTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
