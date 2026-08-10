@@ -57,6 +57,16 @@ const ADMIN_CORE_ANALYTICS_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole
   "Super Admin",
   "CEO",
   "SFE Manager",
+  // Finance Manager added 2026-08-10 (owner) for full-scope Monthly Closing. This set is what gets
+  // him a PAGE: /admin/analytics/monthly-closing/details is the only surface outside the
+  // Super-Admin/SFE upload workspace that renders the Export XLSX button, and that workspace is
+  // correctly closed to him (it needs sales:import, which he must never hold).
+  //
+  // He holds sales:read + sales:export and getSalesScope returns COMPANY, so every page in this
+  // tier answers with real company-wide data rather than the empty table that got the grant pulled
+  // on 2026-08-10. He is deliberately NOT in ADMIN_DETAILED_ANALYTICS_ROLES below — Executive
+  // Comparison and Cross-Source Reconciliation stay CEO / Super Admin.
+  "Finance Manager",
 ]);
 
 export function canViewAdminCoreAnalytics(role: PhoenixRole): boolean {

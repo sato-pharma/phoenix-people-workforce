@@ -362,7 +362,28 @@ export function runNavigationActivePathTests() {
   // Report It is now a direct row instead of a click inside Pharmacovigilance.
   assertIncludesAll(
     financeAdmin,
-    ["/admin/marketing-requests/inbox", "/admin/finance-leave-management", "/admin/report-it/new"],
+    [
+      "/admin/marketing-requests/inbox",
+      "/admin/finance-leave-management",
+      "/admin/report-it/new",
+      // ── Six modules added 2026-08-10 (owner) ────────────────────────────────────────────────
+      // Each of these needed MORE than a matrix grant, and this list is what proves the extra
+      // half landed. /organogram in particular is the trap: `organogram: ["read"]` alone gets him
+      // past the page's first gate and straight into its redirect, because canAccessCompanyOrganogram
+      // is a role allow-list that does not honour company scope. The other four had no sidebar row
+      // for him at all — their host hubs (People Management, Attendance, Payroll Management) each
+      // carry excludedRoles: ["Finance Manager"], so a grant alone gave him a page with no route.
+      "/organogram",
+      "/resignations",
+      "/admin/company-calendar",
+      "/admin/payslips-center",
+      "/workspace/fingerprint-report",
+      // Monthly Closing: /admin/analytics is the only route to the Export XLSX button, since the
+      // upload workspace that also renders it needs sales:import, which he must never hold.
+      "/admin/analytics",
+      // Source of Sales returns with the restored `sales` grant — owner decision, 2026-08-10.
+      "/sales/source-of-sales-tools",
+    ],
     "the sidebar trim must not remove a duty the Finance Manager actually holds",
   );
 
@@ -397,6 +418,14 @@ export function runNavigationActivePathTests() {
       "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
       "/admin/outstation/expenses/dashboard",
       "/admin/outstation/expenses",
+      // Resignations, added 2026-08-10 with the grant. He reaches the page through his OWN sidebar
+      // row, so the People Management card must stay excluded — otherwise hubPageItemGroups folds
+      // it back into his Cmd+K under a "People Management" heading he was removed from, which is
+      // exactly how "Archived ROI Tracking" and "/admin/deductions" survived their hubs being hidden.
+      "/resignations",
+      // Weekly Analytics: he passes canViewAdminCoreAnalytics but holds no weekly_sales grant, so
+      // this card would be a guaranteed 403. The two sales-resource analytics cards below are his.
+      "/admin/analytics/weekly-sales",
     ],
     "Finance Manager's hub cards must stay trimmed (owner, 2026-08-10)",
   );

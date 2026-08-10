@@ -734,6 +734,12 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   // unreachable in practice only because resignations:read is held solely by Super Admin, CEO and
   // Talent Acquisition, all of whom isCompanyResignationReader short-circuits — masked by the
   // narrow grant, not by any scoping. Keep this before widening resignations:read.
+  //
+  // Checked against that warning on 2026-08-10, when the owner granted resignations:["read"] to the
+  // Finance Manager: the widening is safe for exactly the stated reason. scopeForRole returns
+  // "company" for that role, so isCompanyResignationReader short-circuits on him too and he never
+  // reaches the fallback below. The unsafe widening remains a grant to a role whose scope is NOT
+  // company — that role would land in canSeeEmployee here, which is the path this guard protects.
   const canSeeLegacyResignation = (hrId: string) => {
     if (isCompanyResignationReader(scopedAccess)) return true;
     // loadHistoricalResignedEmployees selects no manager_hr_id, so prefer the directory row that

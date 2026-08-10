@@ -660,7 +660,24 @@ export function SosDashboard({
         <>
           {/* KPI grid — command-center tiles; each carries its month-over-month delta when a prior month exists */}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <KpiTile emphasis label="Total Value" icon={<Banknote className="h-4 w-4" />} value={compactEGP(summary.totalValue)} sub={formatCurrency(summary.totalValue)} delta={deltas?.totalValue} />
+            {/* The caveat belongs ON the number, not 500 lines below it in the footnote. A viewer who
+                cannot reveal restricted products is also outside canViewHeadOfficeLine (identical
+                membership: CEO + Super Admin), and the Head Office line carries the overwhelming
+                majority of company value — measured 2026-08-10, this headline reads ~20% of the true
+                company total for such a viewer. Stating that beside the figure is the difference
+                between a scoped number and a wrong one. One line, no wrap, no ellipsis. */}
+            <KpiTile
+              emphasis
+              label="Total Value"
+              icon={<Banknote className="h-4 w-4" />}
+              value={compactEGP(summary.totalValue)}
+              sub={
+                canRevealRestricted
+                  ? formatCurrency(summary.totalValue)
+                  : `${formatCurrency(summary.totalValue)} — excludes Head Office`
+              }
+              delta={deltas?.totalValue}
+            />
             <KpiTile label="Total Units" icon={<Boxes className="h-4 w-4" />} value={formatNumber(summary.totalUnits)} sub="invoiced units" delta={deltas?.totalUnits} />
             <KpiTile label="Avg Price / Unit" icon={<Gauge className="h-4 w-4" />} value={compactEGP(summary.avgPricePerUnit)} sub="value ÷ units" delta={deltas?.avgPricePerUnit} />
             <KpiTile label="Distributors" icon={<Truck className="h-4 w-4" />} value={formatNumber(summary.distributorCount)} sub="active channels" delta={deltas?.distributorCount} />
@@ -1179,8 +1196,9 @@ export function SosDashboard({
             {priorLabel ? ` (compared with ${priorLabel})` : ""}.{" "}
             {data?.restrictedRevealed
               ? "Confidential products (LA003 / LA004 / SS001) are included in this view."
-              : "Confidential products are excluded by default" +
-                (canRevealRestricted ? " — use the toggle above to reveal them." : ".")}
+              : canRevealRestricted
+                ? "Confidential products are excluded by default — use the toggle above to reveal them."
+                : "Confidential products (LA003 / LA004 / SS001) and the whole Head Office line are excluded from this view, so every total above is lower than the company total."}
           </p>
         </>
       ) : null}

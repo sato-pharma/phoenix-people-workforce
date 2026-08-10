@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isDevelopment } from "@/lib/env";
+import { canExportPayslipDocument } from "@/lib/payroll/payslip-center";
 import { getSalaryBatchExport } from "@/lib/payroll/service";
 import {
   payrollMoneyHeaders,
@@ -354,9 +355,13 @@ export async function GET(
     const access = await resolveAccessContext(request);
     await assertPermission(access, "payslips", "export");
 
-    if (access.role !== "Super Admin") {
+    // Shared predicate, not a role literal: the admin page derives its own button visibility from
+    // this same function, so the two cannot drift. See canExportPayslipDocument for why this is
+    // narrower than Payslips Center page access (the CEO reads the Center but must not carry the
+    // document out).
+    if (!canExportPayslipDocument(access)) {
       return NextResponse.json(
-        { error: "forbidden", message: "Only Super Admin can export payslips." },
+        { error: "forbidden", message: "You are not allowed to export payslip documents." },
         { status: 403 },
       );
     }
