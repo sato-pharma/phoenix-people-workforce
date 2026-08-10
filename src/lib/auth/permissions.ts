@@ -625,7 +625,21 @@ const defaultPermissionMatrix: PermissionMap = {
     // (getPendingVacationApprovalStepForActor), so a company-scoped role cannot decide anyone
     // else's leave. The Workflow Registry `leave_requests` module is a SECOND, fail-closed gate
     // and must name this role too, or the decision 403s after passing this one.
-    leave: ["read", "export", "update", "approve"],
+    //
+    // `create` added 2026-08-10 — a BUG FIX, not a widening. The "Request Vacation" row under My
+    // Requests is shown to every adminShellEmployeeRole, but its page guard
+    // (requireAdminShellEmployeeWorkspaceAccess with action "create") is a PERMISSION check, and
+    // he was the only one of the four without the grant. Pressing his own Request Vacation row
+    // silently redirected him to /admin/outstation/expense-command — and an admin-shell role has
+    // no employee portal, so he had no way to file leave anywhere on the system. SFE Manager,
+    // Financial Advisor and Talent Acquisition all already held it.
+    //
+    // Scope is exactly self-service: getVacationRequestPageData, createVacationRequest,
+    // resubmitVacationRequest, and the attachment upload URL. It cannot reach company vacation
+    // administration — canManageVacationRecords additionally requires leave:DELETE (which he does
+    // not hold) plus isAllVacationVisibility, and assertVacationAdminManagement re-checks that
+    // same visibility — so `create` on its own moves nothing there.
+    leave: ["read", "create", "export", "update", "approve"],
     // Read + export ONLY (owner, 2026-08-10) — deliberately NOT allActions. He keeps everything
     // finance actually needs: the payroll page (with getPayrollScope === COMPANY), the BANK
     // TRANSFER FILE and the statutory summary (both gated on `export`), and the Automated Payroll

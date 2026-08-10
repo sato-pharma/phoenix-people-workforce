@@ -153,7 +153,10 @@ function withModuleIds(
 }
 
 const hrAuthorityNavigationRoles = ["Super Admin", "Talent Acquisition"] as const satisfies readonly PhoenixRole[];
-const companyPayrollNavigationRoles = ["Super Admin", "Finance Manager"] as const satisfies readonly PhoenixRole[];
+// Single consumer: the "Payroll Report" (/payroll) card in payrollManagementPageItems. Finance
+// Manager was dropped on 2026-08-10 (owner) — his payroll:read/export grant stays, because the
+// Automated Payroll finance sheets and the bank transfer file both need it; only this card goes.
+const companyPayrollNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
 const systemAdministratorNavigationRoles = ["Super Admin"] as const satisfies readonly PhoenixRole[];
 // Confirmed Vacation/Excuse approver roles that land in the ADMIN shell. Portal-shell
 // approvers (District/Regional/National Sales Manager, PM/GPM, Marketing Manager, Manager)
@@ -304,7 +307,14 @@ const adminNavigationSectionSeeds = [
   {
     id: "my-requests",
     items: [
-      { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", roles: adminShellEmployeeRoles },
+      // The permission mirrors the page's own guard (requireAdminShellEmployeeWorkspaceAccess with
+      // action "create"). This row was role-only until 2026-08-10, and the two gates disagreed:
+      // the Finance Manager was the one adminShellEmployeeRole without leave:create, so the row
+      // rendered for him and then bounced him to his landing page with no message. He was granted
+      // the permission (see permissions.ts) so the row now works — this gate is the belt: a future
+      // role added to adminShellEmployeeRoles without leave:create simply does not see the row,
+      // instead of seeing a button that throws them out.
+      { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles },
       { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles },
     ],
     // This section was born headless (it postdates the pre-2026-08-02 sidebar, so it has no
@@ -1850,7 +1860,12 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions Governance",
     description: "Review and govern payroll deduction decisions.",
     permissions: [{ resource: "deductions", action: "read" }],
-    excludedRoles: ["CEO"],
+    // Finance Manager excluded 2026-08-10 (owner). deductions:read is what admitted him and it
+    // has to stay — the Deductions card below it and the payroll surfaces he keeps both read it —
+    // so this card goes by name. He is not a deductions-governance decision actor either
+    // (isDeductionsGovernanceDecisionActor returns false for the role), so the page was
+    // read-only for him regardless.
+    excludedRoles: ["CEO", "Finance Manager"],
   },
   {
     href: "/admin/deductions",
@@ -2172,7 +2187,10 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     label: "Outstation Policy",
     description: "Configure outstation expense policy rules.",
     permissions: [{ resource: "outstation", action: "update" }],
-    roles: ["Super Admin", "Finance Manager"],
+    // Finance Manager dropped 2026-08-10 (owner). He keeps outstation:update — it is what lets him
+    // act on the expense claims themselves — but configuring the POLICY that scores them is not
+    // his call. Expense Command Center, the card he actually works from, is unaffected.
+    roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
