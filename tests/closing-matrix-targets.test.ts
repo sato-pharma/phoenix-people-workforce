@@ -248,6 +248,84 @@ export function runClosingMatrixTargetsTests() {
     assert.equal(excludedOnly.grandTotal.rowTotal.salesValue, 0);
   }
 
+  // ── includeDirect — the PORTAL export must hand the reader their own SCREEN ──
+  //
+  // The portal's Monthly Closing screen carries July 2026's direct orders folded into the AREA
+  // rows. The exported workbook rebuilds its matrix from invoice rows, and a direct row always
+  // arrives `includedInClosing: false` — so every direct EGP was dropped from the Closing Matrix,
+  // the Target vs Achievement sheet and the headline. Silently: buildPortalClosingWorkbook also
+  // left writeTotalSheet's `directInMatrix` at its zero default, so the one line that would have
+  // named the gap never printed. The owner found it as "the frontend is accurate but the export is
+  // missing data". July's exposure is 1,059,259.65 EGP (Pedia) and 149,288.50 (Anti Infective).
+  {
+    const skeleton = build([{ areaCode: "CA1", productCode: "P1", targetUnits: 50, targetValue: 500 }]);
+    const invoiceRow = {
+      areaCode: "CA1", includedInClosing: true, productCode: "P1", qty: 25, salesValue: 250,
+    };
+    // Exactly the shape loadMonthlyClosingDetails returns for direct: never "in closing", flagged
+    // isDirect, and carrying the FACT area (sheetAreaCode) the closing RPCs book against.
+    const directRow = {
+      areaCode: "CA1", includedInClosing: false, isDirect: true, productCode: "P1",
+      qty: 10, salesValue: 140, sheetAreaCode: "CA1",
+    };
+
+    const withoutDirect = rebuildMatrixFromRows(skeleton, [invoiceRow, directRow], { preserveTargets: true });
+    assert.equal(
+      withoutDirect.grandTotal.rowTotal.salesValue,
+      250,
+      "the DEFAULT stays invoice-only — the admin row-level-filtered export depends on direct being absent",
+    );
+
+    const withDirect = rebuildMatrixFromRows(
+      skeleton,
+      [invoiceRow, directRow],
+      { includeDirect: true, preserveTargets: true },
+    );
+    const ca1Direct = areaOf(withDirect, "CA1");
+    assert.equal(
+      ca1Direct.cells[0].salesValue,
+      390,
+      "the portal export folds direct into the AREA cell (250 invoice + 140 direct) — the number the "
+        + "manager's screen shows, and the assertion that fails without includeDirect",
+    );
+    assert.equal(ca1Direct.cells[0].salesUnits, 35, "…and its units (25 + 10)");
+    assert.equal(
+      withDirect.grandTotal.rowTotal.salesValue,
+      390,
+      "so the headline the Total sheet reconciles against carries the direct money",
+    );
+    assert.equal(ca1Direct.cells[0].targetValue, 500, "folding direct in must not cost the area its target");
+
+    // The Total sheet states the bridge as (with direct) − (without). That derivation — rather than
+    // summing the direct rows — is what keeps Difference at zero when a direct row names an area the
+    // viewer's skeleton does not carry: it is never placed in a cell, so it must not be bridged.
+    const strayArea = { ...directRow, areaCode: "ZZ9", sheetAreaCode: "ZZ9" };
+    const withStray = rebuildMatrixFromRows(
+      skeleton,
+      [invoiceRow, strayArea],
+      { includeDirect: true, preserveTargets: true },
+    );
+    assert.equal(
+      withStray.grandTotal.rowTotal.salesValue,
+      250,
+      "a direct row outside the scoped skeleton is not placed — so the bridge must not count it either",
+    );
+
+    // Direct is keyed by the FACT area, because that is where the on-screen matrix placed it.
+    const rebooked = { ...directRow, areaCode: "CA2", sheetAreaCode: "CA1" };
+    const byFact = rebuildMatrixFromRows(skeleton, [rebooked], { includeDirect: true, preserveTargets: true });
+    assert.equal(
+      areaOf(byFact, "CA1").cells[0].salesValue,
+      140,
+      "direct lands on its FACT area (sheetAreaCode), not the brick-resolved one — see closing-row-area.ts",
+    );
+    assert.equal(
+      areaOf(byFact, "CA2").cells[0].salesValue,
+      0,
+      "…and not on the resolved area, which would move a hand-apportioned row between territories",
+    );
+  }
+
   // ── preserveTargets — the PORTAL export path ────────────────────────────────
   // The employee-portal closing export rebuilds the matrix from the viewer's own rows so the
   // Matrix ties to the Data sheet (the store split moves sales between a city's areas). That is

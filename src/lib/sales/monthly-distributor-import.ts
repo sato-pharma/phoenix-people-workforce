@@ -3854,6 +3854,12 @@ export type MatrixRebuildRow = {
   productCode: string;
   qty: number;
   salesValue: number;
+  // Only read under `includeDirect`. Direct rows always arrive `includedInClosing: false`, so the
+  // flag is the only way to tell them from a row a filter excluded. `sheetAreaCode` is the FACT
+  // area — the one every closing RPC books against, and the one the on-screen matrix placed this
+  // direct money in. See ./closing-row-area.ts.
+  isDirect?: boolean;
+  sheetAreaCode?: string;
 };
 
 /**
@@ -3879,21 +3885,37 @@ export type MatrixRebuildRow = {
  *    its skeleton cell's targetUnits/targetValue (achievement re-derives from the rebuilt sales),
  *    so the exported Closing Matrix and Target vs Achievement sheets carry real targets instead of
  *    blanks. Callers slicing by a row-level filter (the admin filtered export) must leave it off.
- *  - Direct (company channel) rows, Direct – National and the company total are dropped. Direct
- *    orders are not distributor invoice rows, so no row-level filter can apply to them.
+ *  - Direct (company channel) rows, Direct – National and the company total are dropped BY DEFAULT.
+ *    Direct orders are not distributor invoice rows, so no row-level filter can apply to them.
+ *
+ *    EXCEPTION — `includeDirect`. The portal export must show the reader the same numbers their
+ *    Monthly Closing screen shows, and that screen has direct folded into the area rows. Dropping
+ *    it there did not read as a filter — it read as MISSING SALES: a manager's July workbook was
+ *    short its whole share of 1,059,259.65 EGP (Pedia) / 149,288.50 (Anti Infective), with nothing
+ *    on any sheet saying so, because the Total sheet's direct bridge was left at its zero default
+ *    too. When set, direct rows are folded into their area x product cell keyed by the FACT area.
+ *    The caller MUST then also state the folded figure on the Total sheet (`directInMatrix`), or
+ *    the workbook silently stops tying to its own Data sheet, which lists invoice lines only.
  *  - Areas keep their row even at zero — the place skeleton is the filtered matrix's, so "this
  *    distributor sold nothing in Mansoura" stays visible instead of vanishing.
  */
 export function rebuildMatrixFromRows(
   matrix: MonthlyClosingMatrix,
   rows: MatrixRebuildRow[],
-  options?: { preserveTargets?: boolean },
+  options?: { preserveTargets?: boolean; includeDirect?: boolean },
 ): MonthlyClosingMatrix {
   const preserveTargets = options?.preserveTargets === true;
+  const includeDirect = options?.includeDirect === true;
   const sums = new Map<string, { salesUnits: number; salesValue: number }>();
   rows.forEach((row) => {
-    if (!row.includedInClosing) return;
-    const key = `${normalizeCode(row.areaCode)} ${normalizeCode(row.productCode)}`;
+    // Direct rows always come back `includedInClosing: false`, so they are reached only here.
+    const directRow = includeDirect && row.isDirect === true;
+    if (!row.includedInClosing && !directRow) return;
+    // Invoice rows keep the resolved area they have always been keyed by; only direct is keyed by
+    // the FACT area, which is where the on-screen matrix put it. Changing the invoice key would
+    // move a hand-apportioned customer's rows between areas — a different bug, not this one.
+    const areaCode = directRow ? (row.sheetAreaCode ?? row.areaCode) : row.areaCode;
+    const key = `${normalizeCode(areaCode)} ${normalizeCode(row.productCode)}`;
     const entry = sums.get(key) ?? { salesUnits: 0, salesValue: 0 };
     entry.salesUnits += row.qty;
     entry.salesValue += row.salesValue;
@@ -3933,10 +3955,11 @@ export function rebuildMatrixFromRows(
       // untouched, which is exactly why this stayed invisible. See ./closing-direct-area.ts:
       // "Question 1 is this function. Never use the raw flag for it."
       //
-      // Their direct portion still does not appear here, and must not: rows carrying `is_direct`
-      // come back with `includedInClosing === false` and are skipped above, so this matrix is
-      // invoice-rows-only for every area alike. That is the Total sheet's stated contract —
-      // direct is reported on its own line because it never arrives as an invoice.
+      // Whether their direct PORTION appears is `includeDirect`, decided by the caller above:
+      // off (the admin row-level-filtered export) leaves this matrix invoice-rows-only for every
+      // area alike, which is that workbook's stated contract — direct is reported on its own line
+      // because it never arrives as an invoice. On (the portal export) folds it back in, because
+      // that workbook's contract is instead to show the reader their own screen.
       .filter((area) => !isSyntheticDirectArea(area))
       .map((area) => {
         const cells = matrix.columns.map((column, columnIndex) =>
