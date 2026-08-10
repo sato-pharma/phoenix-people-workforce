@@ -13,11 +13,13 @@ import {
 import {
   adminNavigationSections,
   employeePortalNavigationSections,
+  hubPageItemGroups,
   payrollManagementPageItems,
   type NavigationSection,
   type NavigationSectionItem,
 } from "../src/config/system-navigation.ts";
 import {
+  adminShellEmployeeRoles,
   permissionActions,
   permissionMatrix,
   permissionResources,
@@ -53,6 +55,24 @@ function adminHrefsFor(role: PhoenixRole): string[] {
 function employeePortalHrefsFor(role: PhoenixRole): string[] {
   return getSections(employeePortalNavigationSections, "employee-portal", lookupForRole(role), role)
     .flatMap((navSection) => navSection.items.map((navItem) => navItem.href));
+}
+
+// The sidebar collapses most sections into one hub button, so the modules themselves live in
+// hubPageItemGroups — rendered as cards on the hub page AND folded back into the Cmd+K palette by
+// command-palette.tsx, with exactly these three gates. adminHrefsFor cannot see them, so a card
+// removal has to be asserted here or it is not asserted at all.
+function hubCardHrefsFor(role: PhoenixRole): string[] {
+  const lookup = lookupForRole(role);
+  return hubPageItemGroups.flatMap((group) =>
+    group.items
+      .filter(
+        (hubItem) =>
+          permissionAllowed(lookup, hubItem.permissions) &&
+          roleAllowed(role, hubItem.roles) &&
+          roleNotExcluded(role, hubItem.excludedRoles),
+      )
+      .map((hubItem) => hubItem.href),
+  );
 }
 
 function assertIncludesAll(actual: readonly string[], expected: readonly string[], message: string) {
@@ -316,6 +336,52 @@ export function runNavigationActivePathTests() {
     financeAdmin,
     ["/admin/marketing-requests/inbox", "/admin/approvals/vacation", "/admin/approvals/excuse"],
     "the sidebar trim must not remove a duty the Finance Manager actually holds",
+  );
+
+  // Three hub CARDS the owner removed on 2026-08-10. They never appeared in the sidebar — they are
+  // cards on a hub page and Cmd+K entries — so adminHrefsFor cannot see them and only
+  // hubCardHrefsFor can catch a regression. Each was reachable through a grant he keeps:
+  // payroll:read (Automated Payroll finance sheets, bank transfer file), deductions:read (the
+  // Deductions card he keeps), outstation:update (acting on the expense claims themselves).
+  const financeHubCards = hubCardHrefsFor("Finance Manager");
+  assertExcludesAll(
+    financeHubCards,
+    ["/payroll", "/admin/deductions-governance", "/admin/outstation/policy"],
+    "Finance Manager's hub cards must stay trimmed (owner, 2026-08-10)",
+  );
+  assertIncludesAll(
+    financeHubCards,
+    ["/admin/outstation/expense-command"],
+    "Expense Command Center is the outstation card he actually works from — it must survive",
+  );
+
+  // ── A visible sidebar row must never bounce the person who presses it ────────────────────────
+  // "Request Vacation" under My Requests is shown to every adminShellEmployeeRole, but its page
+  // guard (requireAdminShellEmployeeWorkspaceAccess with action "create") is a PERMISSION check.
+  // On 2026-08-10 the Finance Manager was the one role in that list without leave:create, so the
+  // row rendered for him and then redirected him to his landing page with no message — and an
+  // admin-shell role has no employee portal, so he could not file leave anywhere on the system.
+  //
+  // Fixed on both sides: he was granted leave:create, and the row now carries the same permission
+  // its guard checks. This asserts the two gates agree for EVERY role in the list, so adding a
+  // fifth admin-shell role without leave:create fails here instead of shipping a button that
+  // throws the user out.
+  const VACATION_REQUEST_HREF = "/workspace/leave-management/vacation-request";
+  for (const shellRole of adminShellEmployeeRoles) {
+    const rowIsShown = adminHrefsFor(shellRole).includes(VACATION_REQUEST_HREF);
+    const guardWouldAdmit = lookupForRole(shellRole)["leave:create"] === true;
+    assert.equal(
+      rowIsShown,
+      guardWouldAdmit,
+      `${shellRole}: the Request Vacation row and its leave:create page guard must agree — ` +
+        `row shown=${rowIsShown}, guard admits=${guardWouldAdmit}. A row shown without the grant is a button that redirects.`,
+    );
+  }
+  // And the specific account this started from must actually be able to file leave.
+  assert.equal(
+    lookupForRole("Finance Manager")["leave:create"],
+    true,
+    "B-185 is an active employee with no employee portal — losing leave:create leaves him no way to request vacation at all",
   );
 
   const ceoAdmin = adminHrefsFor("CEO");
