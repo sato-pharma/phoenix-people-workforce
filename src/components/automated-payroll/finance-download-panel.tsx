@@ -66,8 +66,11 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
     window.location.href = `/api/automated-payroll/finance/cib-download?month=${month}&year=${year}&scope=${scope}`;
   };
 
+  // max-w-[1600px], not max-w-3xl: this shell is copied from automated-payroll-wizard.tsx and the
+  // width was never updated with it, so the page rendered in a 768px column with ~1000px of dead
+  // gutter on a normal desktop. Every other surface in this module uses 1600px.
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6">
       <AdminPageHero
         eyebrow="Payroll"
         title="Automated Payroll — Finance"
