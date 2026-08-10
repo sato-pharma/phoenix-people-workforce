@@ -32,6 +32,7 @@ import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
 const MIGRATION_PATHS = [
   "supabase/migrations/20260810170000_phx_finance_command_center.sql",
   "supabase/migrations/20260811010000_finance_command_center_direct_orders_marketing_depth.sql",
+  "supabase/migrations/20260811020000_finance_command_center_parts_and_channels.sql",
 ] as const;
 
 /** The definition currently in the database — the last CREATE OR REPLACE wins. */

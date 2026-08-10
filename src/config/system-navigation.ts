@@ -86,6 +86,22 @@ export type NavigationSectionItem = {
   roles?: readonly PhoenixRole[];
   permissions?: readonly NavigationPermission[];
   /**
+   * Per-role display-label override, resolved in `getSections` (active-path.ts). This item's
+   * `label` stays the canonical one — used for the derived `moduleId` (see the note above
+   * `defaultModuleId`), search, and every role that has no entry here. Add a role only when that
+   * role's own name for the module genuinely differs; do not use this to rename an item wholesale
+   * — that is what editing `label` itself is for.
+   *
+   * First use (2026-08-11, owner instruction): the "Payroll — Finance" item is shared by four
+   * roles (CEO, Financial Advisor, Finance Manager, Super Admin), but the sibling "Automated
+   * Payroll" wizard item in the same section is `roles: ["Super Admin"]` only — so only Super
+   * Admin ever sees both rows and needs "— Finance" to tell them apart. For CEO, Financial Advisor
+   * and Finance Manager it is the only payroll row in this section, so the suffix is pure noise.
+   * The owner asked to drop it for the Finance Manager specifically; CEO and Financial Advisor
+   * keep the existing label unless they ask too.
+   */
+  labelByRole?: Partial<Record<PhoenixRole, string>>;
+  /**
    * Active-route matching hints (consumed by `isActivePath` in
    * `@/lib/navigation/active-path`). `exact` highlights the item ONLY when the
    * pathname equals its href base (prevents a parent route from staying active on
@@ -643,6 +659,7 @@ const adminNavigationSectionSeeds = [
         href: "/admin/automated-payroll/finance",
         icon: ScrollText,
         label: "Payroll — Finance",
+        labelByRole: { "Finance Manager": "Payroll" },
         roles: ["CEO", "Financial Advisor", "Finance Manager", "Super Admin"],
       },
     ],

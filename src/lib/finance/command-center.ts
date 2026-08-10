@@ -25,21 +25,16 @@ import { logError } from "@/lib/observability/log";
  * of candidate estimates against 25,577.65 EGP actually committed, 1.4%).
  */
 
+/**
+ * Net and gross only. Deduction figures are deliberately absent from this whole module — owner
+ * instruction 2026-08-10: the word must not appear anywhere on his overview.
+ */
 export type FinanceCommittedMonth = {
   period: string;
   status: string | null;
   employees: number;
   net: number;
   gross: number;
-  /** What payroll actually deducted — NOT what the detection engines suggested. */
-  deductions: number;
-  /** Tax + insurance. Reported apart from HR deductions so neither figure implies the other. */
-  governmental: number;
-  crm: number;
-  fingerprint: number;
-  unpaid_vacation: number;
-  loans: number;
-  other: number;
 };
 
 export type FinancePayrollRun = {
@@ -50,9 +45,35 @@ export type FinancePayrollRun = {
   published: boolean;
   part2_confirmed_at: string | null;
   rows_in_run: number;
-  decided_deductions: number;
+  /** In the run but held out of the payout — never reaches a bank file until cleared. */
+  on_hold_count: number;
   expenses_paid: number;
   incentive: number;
+};
+
+/**
+ * First payment vs second. `one_part` settles entirely in Part 1; everything else (including a
+ * NULL, which normalizePayrollPaymentMode defaults to `two_parts`) carries into Part 2.
+ */
+export type FinancePayrollParts = {
+  firstOnlyCount: number;
+  firstOnlyNet: number;
+  bothPartsCount: number;
+  bothPartsNet: number;
+};
+
+/**
+ * How the money physically leaves: two bank files and the cash desk. Exhaustive and
+ * non-overlapping — anyone not on a named bank is Treasury — so the three always reconcile to the
+ * standing net beside them.
+ */
+export type FinancePayoutChannels = {
+  fabCount: number;
+  fabNet: number;
+  cibCount: number;
+  cibNet: number;
+  treasuryCount: number;
+  treasuryNet: number;
 };
 
 export type FinanceStatusSlice = { status: string; count: number; value: number };
@@ -64,8 +85,17 @@ export type FinanceCommandCenterData = {
     payrollEligible: number;
     standingNet: number;
     standingGross: number;
+    /** Month boundaries are Africa/Cairo, never UTC — a 31st-of-the-month resignation is this month's. */
+    resignedThisMonth: number;
+    leavingThisMonth: number;
+    leaversTotal: number;
   };
-  payroll: { committed: FinanceCommittedMonth[]; runs: FinancePayrollRun[] };
+  payroll: {
+    committed: FinanceCommittedMonth[];
+    runs: FinancePayrollRun[];
+    parts: FinancePayrollParts;
+    channels: FinancePayoutChannels;
+  };
   /**
    * The direct-order money pipeline: approved → booked into a sales month → injected into Source
    * of Sales → collected → paid. Only the booking hop is his exclusive duty, but the rest is the
@@ -145,8 +175,16 @@ const cachedFinanceCommandCenter = unstable_cache(
 function emptyData(): FinanceCommandCenterData {
   return {
     generatedAt: new Date().toISOString(),
-    headcount: { activeEmployees: 0, payrollEligible: 0, standingNet: 0, standingGross: 0 },
-    payroll: { committed: [], runs: [] },
+    headcount: {
+      activeEmployees: 0, leaversTotal: 0, leavingThisMonth: 0, payrollEligible: 0,
+      resignedThisMonth: 0, standingGross: 0, standingNet: 0,
+    },
+    payroll: {
+      channels: { cibCount: 0, cibNet: 0, fabCount: 0, fabNet: 0, treasuryCount: 0, treasuryNet: 0 },
+      committed: [],
+      parts: { bothPartsCount: 0, bothPartsNet: 0, firstOnlyCount: 0, firstOnlyNet: 0 },
+      runs: [],
+    },
     directOrders: {
       approvedCount: 0, approvedValue: 0, awaitingCount: 0, awaitingOldest: null, awaitingValue: 0,
       bookedCount: 0, bookedValue: 0, byStatus: [], collectedCount: 0, heldCount: 0, heldValue: 0,

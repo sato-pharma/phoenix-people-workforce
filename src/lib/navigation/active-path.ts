@@ -50,6 +50,17 @@ export function usesFlatSidebar(role?: PhoenixRole) {
   return Boolean(role && flatSidebarRoles.includes(role));
 }
 
+/**
+ * Resolve an item's DISPLAYED label for `role` — the per-role override from `labelByRole` if one
+ * is set for this role, else the item's own canonical `label`. `moduleId` is derived from the
+ * canonical label alone, at config-build time (see `defaultModuleId` in system-navigation.ts), so
+ * this never fragments one item into several moduleIds across roles.
+ */
+function resolveItemLabel(item: NavigationSectionItem, role?: PhoenixRole): string {
+  const override = role && item.labelByRole?.[role];
+  return override ?? item.label;
+}
+
 // ── Visibility gating (mirrors the server permission matrix) ─────────────────
 export function permissionAllowed(
   lookup: PermissionLookup | undefined,
@@ -135,12 +146,23 @@ export function getSections(
         }))
         .filter((section) => section.items.length > 0);
 
+  // Per-role item label overrides (`labelByRole`), resolved once here so every downstream
+  // consumer of getSections — sidebar, search, command palette, Modules Control catalog — agrees
+  // on what this role calls the item. Applied to the already-gated set: an item hidden from a
+  // role never needs its label resolved for that role.
+  const relabelled = gated.map((section) => ({
+    ...section,
+    items: section.items.map((item) =>
+      item.labelByRole ? { ...item, label: resolveItemLabel(item, role) } : item,
+    ),
+  }));
+
   // Section headings are role-scoped (see flatSidebarRoles): the SFE Manager keeps the flat,
   // headless sidebar; every other role keeps its titles. Applied here — after gating, before
   // ordering — so all three return paths below are covered by one pass.
   const visible = usesFlatSidebar(role)
-    ? gated.map((section) => ({ ...section, label: "" }))
-    : gated;
+    ? relabelled.map((section) => ({ ...section, label: "" }))
+    : relabelled;
 
   // When an explicit, ordered module list is supplied (a Modules Control assignment
   // for this user/role/position/line), honor that order so admins can curate BOTH

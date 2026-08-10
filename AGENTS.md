@@ -215,15 +215,25 @@ automatically; the local branch and worktree survive and still need approval to 
 
 ## 7. Validation
 
-Match validation to blast radius, and **validate once per task, not once per step.** Make all the
-edits first with no checks in between; when the task's code is finished, run the matching tier below
-**once**.
+**Validate ONLY when the owner says so. Never on your own judgement.**
 
-`pnpm run check:harden` runs **once before you push** — not before every local commit. A commit on a
-feature branch ships nowhere, and CI re-runs the identical content (`validate` + `lint` +
+No lint, no typecheck, no tests, no build until he says the work is done. Not between edits, not
+"once per task", not because a change feels finished — **he decides when the work is finished, not
+you.** This replaced "validate once per task, not once per step" on 2026-08-10 at his instruction:
+that wording still left the agent deciding where a task ended, so the gate kept firing while he was
+mid-iteration. He iterates in long sessions and often changes one file many times; re-validating
+work that is about to change again proves nothing and costs him minutes of a 16GB machine he is
+still typing on.
+
+Verifying a UI change in the browser is NOT validation and needs no permission — reload and look.
+That is seconds, and it is how defects actually get found.
+
+When he says done, match the tier below to the blast radius and run it **once**.
+
+`pnpm run check:harden` then runs **once before you push** — not before every local commit. A commit
+on a feature branch ships nowhere, and CI re-runs the identical content (`validate` + `lint` +
 `typecheck` jobs, all required status checks) on the PR head commit and blocks the merge if it is
-red. Hardening each intermediate commit therefore buys nothing and costs a full `next build` every
-time. Migrations and production deploys still get their own run immediately before the action,
+red. Migrations and production deploys still get their own run immediately before the action,
 because those are not covered by a PR's CI.
 
 | Change type | Minimum validation |
