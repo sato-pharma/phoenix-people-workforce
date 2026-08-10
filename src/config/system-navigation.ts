@@ -12,6 +12,7 @@ import {
   ChartNoAxesColumnIncreasing,
   ClipboardCheck,
   ClipboardList,
+  Clock,
   Download,
   Columns3,
   Database,
@@ -111,7 +112,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-approvals-pending" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
+  navBadge?: "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -340,8 +341,13 @@ const adminNavigationSectionSeeds = [
       // the permission (see permissions.ts) so the row now works — this gate is the belt: a future
       // role added to adminShellEmployeeRoles without leave:create simply does not see the row,
       // instead of seeing a button that throws them out.
-      { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles },
-      { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles },
+      // Finance Manager excluded 2026-08-10 (owner) from both rows below: they are folded into his
+      // own consolidated "Leave Management" button instead (see the finance-leave-management
+      // section and financeLeaveManagementVacationItems/financeLeaveManagementExcuseItems). Every
+      // other adminShellEmployeeRole is unaffected — this is a navigation move, not a revocation;
+      // he keeps leave:create and reaches the identical page through the new button.
+      { href: "/workspace/leave-management/vacation-request", icon: CalendarCheck, label: "Request Vacation", permissions: [{ resource: "leave", action: "create" }], roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
+      { href: "/workspace/excuses", icon: CalendarClock, label: "Submit Excuse", roles: adminShellEmployeeRoles, excludedRoles: ["Finance Manager"] },
     ],
     // This section was born headless (it postdates the pre-2026-08-02 sidebar, so it has no
     // "before" to restore). Given a title on 2026-08-08 so it is not the one unlabelled block
@@ -352,8 +358,11 @@ const adminNavigationSectionSeeds = [
   {
     id: "approvals-hub",
     items: [
-      { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
-      { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
+      // Finance Manager excluded 2026-08-10 (owner) from both rows below, same reason as the two
+      // "My Requests" rows above: folded into his consolidated "Leave Management" button. He keeps
+      // leave:approve and reaches the identical pages through the new button.
+      { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, excludedRoles: ["Finance Manager"], navBadge: "vacation-approvals-pending" },
+      { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, excludedRoles: ["Finance Manager"], navBadge: "excuse-approvals-pending" },
       // "Weekly / Monthly Plan Approvals" measured 191px against a 118px budget — the worst clip in
       // either shell, and unfixable by geometry: no sensible rail width fits 191px beside an icon
       // and a pending badge. Shortened to match its siblings in this section (Leave Approvals /
@@ -371,6 +380,24 @@ const adminNavigationSectionSeeds = [
       { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["SFE Manager", "Finance Manager"], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
+  },
+
+  // Finance-Manager-only consolidated Vacation + Excuse workspace (owner instruction, 2026-08-10).
+  // Replaces his individual "Request Vacation"/"Submit Excuse" rows (My Requests) and "Leave
+  // Approvals"/"Excuse Approvals" rows (Approvals Hub) with one button — those four rows carry
+  // excludedRoles: ["Finance Manager"] above; every other role keeps them exactly as before. The
+  // hub page (app/(admin)/admin/finance-leave-management/page.tsx) splits the same five actions
+  // into "Vacations" and "Excuses" — see financeLeaveManagementVacationItems /
+  // financeLeaveManagementExcuseItems below. excludedRoles carries Super Admin/CEO even though
+  // `roles` alone already keeps CEO off this row — Super Admin's system-administrator workspace
+  // bypasses `roles` but still honours excludedRoles (see getSections), so without it Super Admin
+  // would see this Finance-only button as well as his own existing "Leave Management" row.
+  {
+    id: "finance-leave-management",
+    items: [
+      { href: "/admin/finance-leave-management", icon: CalendarDays, label: "Leave Management", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Leave Management",
   },
 
   // ── Tier 1b: Admin Tools ──────────────────────────────────────────────────────
@@ -635,7 +662,13 @@ const adminNavigationSectionSeeds = [
         // payroll:read admits him to the hub, but every card in payrollManagementPageItems is
         // gated tighter, so it renders empty for him. Payroll is not in his remit; his own
         // payslip lives in the employee portal.
-        excludedRoles: ["SFE Manager"],
+        //
+        // Finance Manager excluded 2026-08-10 (owner). His real payroll surface is the separate
+        // "Payroll — Finance" row under Automated Payroll (/admin/automated-payroll/finance,
+        // unaffected by this change) — this hub's cards were otherwise Super-Admin/CEO-gated and
+        // rendered nothing for him except "Deductions", which is now excluded by name too (see
+        // payrollManagementPageItems below).
+        excludedRoles: ["SFE Manager", "Finance Manager"],
         permissions: [{ resource: "payroll" }, { resource: "payslips" }, { resource: "deductions", action: "read" }],
       },
     ],
@@ -671,12 +704,18 @@ const adminNavigationSectionSeeds = [
   // Collapsed to a single standalone sidebar button that opens the Outstation
   // Expenses hub (app/(admin)/admin/outstation-expenses/page.tsx, items in
   // outstationExpensesPageItems below) — same pattern as the other consolidated
-  // sections above. All six items shared roles drawn from the same three-role
-  // set (Super Admin / Finance Manager / CEO), so the button's gate is that union.
+  // sections above. The items' roles are drawn from the same two-role set
+  // (Super Admin / CEO), so the button's gate is that union.
+  //
+  // Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+  // This is the whole section, not a card: he is the only item in it, so the "Outstation Expenses"
+  // block leaves his sidebar entirely. His matrix lost the `outstation` key in the same change and
+  // OUTSTATION_EXPENSES_ROLES in the hub page dropped him too, so the row, the hub and the pages
+  // behind it all close together — a sidebar list alone is UX, never the boundary.
   {
     id: "expenses-outstation",
     items: [
-      { href: "/admin/outstation-expenses", icon: Radar, label: "Outstation Expenses", roles: ["Super Admin", "Finance Manager", "CEO"] },
+      { href: "/admin/outstation-expenses", icon: Radar, label: "Outstation Expenses", roles: ["Super Admin", "CEO"] },
     ],
     label: "Outstation Expenses",
   },
@@ -776,7 +815,18 @@ const adminNavigationSectionSeeds = [
   {
     id: "sales-direct-orders",
     items: [
-      { href: "/sales/direct-orders-tools", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }] },
+      // navBadge added 2026-08-10 (owner: builds 1-3, no emails). Counts APPROVED orders still
+      // carrying no sales month — the Finance Manager's one exclusive duty, and the only queue in
+      // the product with no chaser of any kind behind it (the approved-order email fires once, at
+      // CEO approval, and nothing mentions the order again). The owner declined a reminder email,
+      // so this badge IS the chase: it follows him onto every page and only clears when the queue
+      // does.
+      //
+      // Safe on the roles that share this row. The row is permission-gated only, so SFE/CEO/sales
+      // managers reach it too — but getDirectOrderUnbookedBadge returns 0 to anyone who cannot
+      // actually book a month, so it lights up for B-185 and Super Admin alone. A badge that
+      // another role cannot clear is how people learn to ignore badges.
+      { href: "/sales/direct-orders-tools", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], navBadge: "direct-orders-unbooked" },
     ],
     label: "Direct Orders",
   },
@@ -878,7 +928,17 @@ const adminNavigationSectionSeeds = [
   // hub re-filters per-card with each card's real gate.
   {
     id: "pharmacovigilance",
-    items: [{ href: "/admin/pharmacovigilance", icon: ShieldAlert, label: "Pharmacovigilance" }],
+    items: [
+      // Finance Manager excluded 2026-08-10 (owner): "Report It" is the only card this hub ever
+      // showed him ("Reports Dashboard" inside it is Super Admin only), so it is pulled out onto
+      // its own direct tab below instead of one click inside a single-card hub — same treatment as
+      // "Marketing Inbox" (see the workspace-marketing-requests section above).
+      { href: "/admin/pharmacovigilance", icon: ShieldAlert, label: "Pharmacovigilance", excludedRoles: ["Finance Manager"] },
+      // excludedRoles carries Super Admin for the same reason as the finance-leave-management
+      // section above: `roles` alone does not stop the system-administrator workspace bypass, and
+      // Super Admin already reaches this page via the hub row he keeps.
+      { href: "/admin/report-it/new", icon: ShieldAlert, label: "Report It", roles: ["Finance Manager"], excludedRoles: ["Super Admin"] },
+    ],
     label: "Pharmacovigilance",
   },
 ] as const satisfies readonly NavigationSectionSeed[];
@@ -1247,6 +1307,58 @@ export const leaveManagementPageItems: readonly AdminToolsPageItem[] = [
     description: "Configure vacation policy and entitlement rules.",
     permissions: [{ resource: "leave", action: "update" }],
     roles: hrAuthorityNavigationRoles,
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+// ── Finance Leave Management hub (app/(admin)/admin/finance-leave-management/page.tsx) ──────────
+// Finance-Manager-only (owner instruction, 2026-08-10). Consolidates the exact same destinations
+// his "My Requests" and "Approvals Hub" rows used to point at directly — see
+// excludedRoles: ["Finance Manager"] on those four rows in adminNavigationSectionSeeds above —
+// into one page, split into "Vacations" and "Excuses". Every item below is deliberately
+// roles: ["Finance Manager"]: unlike the shared hubs elsewhere in this file, this hub has exactly
+// one audience.
+export const financeLeaveManagementVacationItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/workspace/leave-management/vacation-request",
+    icon: CalendarCheck,
+    label: "Request Vacation",
+    description: "Submit your own vacation request.",
+    permissions: [{ resource: "leave", action: "create" }],
+    roles: ["Finance Manager"],
+  },
+  {
+    href: "/admin/approvals/vacation",
+    icon: ClipboardCheck,
+    label: "Vacation Approvals",
+    description: "Vacation requests waiting on your response, and your response history.",
+    permissions: [{ resource: "leave", action: "read" }],
+    roles: ["Finance Manager"],
+  },
+  {
+    href: "/leave-management/vacation-report",
+    icon: FileSpreadsheet,
+    label: "Vacation Report",
+    description: "Vacation balances and history for your visible scope.",
+    permissions: [{ resource: "leave" }],
+    roles: ["Finance Manager"],
+  },
+] as const satisfies readonly AdminToolsPageItem[];
+
+export const financeLeaveManagementExcuseItems: readonly AdminToolsPageItem[] = [
+  {
+    href: "/workspace/excuses",
+    icon: CalendarClock,
+    label: "Submit Excuse",
+    description: "Submit your own excuse request.",
+    roles: ["Finance Manager"],
+  },
+  {
+    href: "/admin/approvals/excuse",
+    icon: Clock,
+    label: "Excuse Approvals",
+    description: "Excuse requests waiting on your response, and your response history.",
+    permissions: [{ resource: "leave", action: "read" }],
+    roles: ["Finance Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -1911,6 +2023,12 @@ export const payrollManagementPageItems: readonly AdminToolsPageItem[] = [
     label: "Deductions",
     description: "New unified source of truth for every payroll deduction (Phase 1 preview — feeds nothing live yet).",
     permissions: [{ resource: "deductions", action: "read" }],
+    // Finance Manager excluded 2026-08-10 (owner), same reasoning as Deductions Governance above:
+    // deductions:read is what admitted him and it has to stay — it feeds surfaces he keeps — so
+    // the card goes by name, on the hub AND in the command palette. hubPageItemGroups folds every
+    // hub card the viewer's role admits back into Cmd+K regardless of the parent hub row, so
+    // hiding /admin/payroll-management from his sidebar alone would not have hidden this card.
+    excludedRoles: ["Finance Manager"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
 
@@ -2185,7 +2303,10 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     label: "Expense Command Center",
     description: "Outstation expense command center — overview of activity and queues.",
     permissions: [{ resource: "outstation", action: "read" }],
-    roles: ["Super Admin", "Finance Manager", "CEO"],
+    // Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+    // The `outstation` key is gone from his matrix as well, so the permission gate closes this card
+    // independently — both are listed because a future role list edit must not silently reopen it.
+    roles: ["Super Admin", "CEO"],
   },
   {
     href: "/admin/outstation/expense-command?tab=queue",
@@ -2193,7 +2314,11 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     label: "Expense Requests",
     description: "Review and approve pending outstation expense requests.",
     permissions: [{ resource: "outstation", action: "approve" }],
-    roles: ["Super Admin", "Finance Manager"],
+    // Finance Manager removed 2026-08-10 (owner). He never actually saw this card — he held
+    // outstation read/export/update but never `approve`, and items need permission AND role — so
+    // the role list had been claiming an authority the gate denied. Both are now consistent:
+    // outstation approval is the HR Manager's, per executionOnlyOutstationRoles.
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
@@ -2201,7 +2326,9 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     label: "Add Manual Expense",
     description: "Manually add an outstation expense on behalf of an employee.",
     permissions: [{ resource: "outstation", action: "approve" }],
-    roles: ["Super Admin", "Finance Manager"],
+    // Finance Manager removed 2026-08-10 (owner), same reason as the queue card above: he never
+    // held `outstation:approve`, so this card was already dark for him.
+    roles: ["Super Admin"],
   },
   {
     href: "/admin/outstation/expenses/dashboard",
@@ -2225,9 +2352,9 @@ export const outstationExpensesPageItems: readonly AdminToolsPageItem[] = [
     label: "Outstation Policy",
     description: "Configure outstation expense policy rules.",
     permissions: [{ resource: "outstation", action: "update" }],
-    // Finance Manager dropped 2026-08-10 (owner). He keeps outstation:update — it is what lets him
-    // act on the expense claims themselves — but configuring the POLICY that scores them is not
-    // his call. Expense Command Center, the card he actually works from, is unaffected.
+    // Finance Manager dropped 2026-08-10 (owner) — first from this card alone, then from the whole
+    // module later the same day ("exclude him 100% from outstation or expenses"). The `outstation`
+    // key no longer exists in his matrix, so nothing on this hub reaches him by any route.
     roles: ["Super Admin"],
   },
 ] as const satisfies readonly AdminToolsPageItem[];
@@ -2501,6 +2628,7 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
 // sidebar row, not just the collapsed hub buttons that replaced them.
 export const hubPageItemGroups: readonly { label: string; items: readonly AdminToolsPageItem[] }[] = [
   { items: leaveManagementPageItems, label: "Leave Management" },
+  { items: [...financeLeaveManagementVacationItems, ...financeLeaveManagementExcuseItems], label: "Leave Management" },
   { items: sourceOfSalesPageItems, label: "Source of Sales" },
   { items: salesAnalyticsPageItems, label: "Sales Analytics" },
   { items: masterDataPageItems, label: "Master Data" },

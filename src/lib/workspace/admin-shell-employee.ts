@@ -16,6 +16,7 @@ import { canAccessAdminShellEmployeeWorkspacePage } from "@/lib/workspace/admin-
 // import them directly). Re-exported here so existing call sites keep their import path.
 export {
   canAccessAdminShellEmployeeWorkspacePage,
+  workspaceExpenseDashboardRoles,
   workspaceMarketingRoles,
 } from "@/lib/workspace/admin-shell-employee-roles";
 

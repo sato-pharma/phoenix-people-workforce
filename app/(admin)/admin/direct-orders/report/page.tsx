@@ -11,7 +11,19 @@ import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminDirectOrdersReportPage() {
+export default async function AdminDirectOrdersReportPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // `?unbooked=1` opens the report already narrowed to approved orders with no sales month. Read
+  // here rather than with useSearchParams inside the workspace, which would put the whole table
+  // behind a Suspense boundary for one boolean. Both of the Finance Manager's routes into this
+  // page carry it — the sidebar badge and his command center's queue row.
+  const params = (await searchParams) ?? {};
+  const unbookedParam = params.unbooked;
+  const initialUnbookedOnly = (Array.isArray(unbookedParam) ? unbookedParam[0] : unbookedParam) === "1";
+
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders/report");
   const rows = await getDirectOrderReport(access);
@@ -28,7 +40,7 @@ export default async function AdminDirectOrdersReportPage() {
         icon={<BarChart3 className="h-3.5 w-3.5" />}
       />
       {canShare ? <ReportShareLinksPanel productionUrl={systemDeployment.productionUrl} /> : null}
-      <DirectOrderReportWorkspace rows={rows} scope={scope} />
+      <DirectOrderReportWorkspace initialUnbookedOnly={initialUnbookedOnly} rows={rows} scope={scope} />
     </div>
   );
 }

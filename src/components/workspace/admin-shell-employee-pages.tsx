@@ -95,6 +95,7 @@ import {
 import type { VacationReportFilters } from "@/lib/vacation/types";
 import {
   requireAdminShellEmployeeWorkspaceAccess,
+  workspaceExpenseDashboardRoles,
   workspaceMarketingRoles,
 } from "@/lib/workspace/admin-shell-employee";
 
@@ -613,7 +614,14 @@ export async function WorkspaceOrganogramPage() {
 }
 
 export async function WorkspaceExpenseDashboardPage() {
-  const access = await requireAdminShellEmployeeWorkspaceAccess({ resource: "expenses" });
+  // allowedRoles is explicit ONLY to keep the Finance Manager out (owner, 2026-08-10: "exclude him
+  // 100% from outstation or expenses"). He keeps a bare `expenses:read` because that permission also
+  // gates every /api/marketing-requests/** route he needs for the finance_execution rung, so the
+  // default resource check alone would have let him in here. See workspaceExpenseDashboardRoles.
+  const access = await requireAdminShellEmployeeWorkspaceAccess({
+    allowedRoles: workspaceExpenseDashboardRoles,
+    resource: "expenses",
+  });
   if (canonicalHrIdKey(access.hrId) === "a-3") redirect("/workspace");
   const data = await getMedicalRepPortalData(access, {
     includePortalOverview: false,

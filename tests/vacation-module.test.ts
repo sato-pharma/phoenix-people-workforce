@@ -144,6 +144,23 @@ export function runVacationModuleTests() {
       `${label} must not reference the dead leave engine (use the v2_vacation_* tables)`,
     );
   }
+  // Finance Manager narrowed from COMPANY to TEAM scope 2026-08-10 (owner): he was seeing every
+  // employee's vacation report company-wide — names, hire dates, balances, managers, across every
+  // department — when his real remit is himself plus the 3 head-office staff who report to him
+  // (OF-0001, A-1, A-4). TEAM is the same direct-reports-only scope District Manager/Manager use.
+  // Regression guard: if a future edit moves the role back into the COMPANY case (or removes it
+  // from TEAM), this must fail.
+  assert.doesNotMatch(
+    serviceSource,
+    /case "Finance Manager":\s*\n\s*return "COMPANY";/,
+    "Finance Manager must not be scoped to company-wide vacation report visibility",
+  );
+  assert.match(
+    serviceSource,
+    /case "Finance Manager":\s*\n\s*return "TEAM";/,
+    "Finance Manager must be scoped to TEAM (self + direct reports) vacation report visibility",
+  );
+
   assert.match(parallelApprovalMigrationSource, /create table if not exists public\.v2_vacation_approval_steps/);
   assert.match(parallelApprovalMigrationSource, /step_key in \('direct_manager', 'manager_of_manager', 'hr'\)/);
   assert.match(parallelApprovalMigrationSource, /status in \('pending', 'approved', 'rejected'\)/);

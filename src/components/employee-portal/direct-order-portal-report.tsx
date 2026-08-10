@@ -148,7 +148,15 @@ export function DirectOrderPortalReport({
 
   // The same object the Export button posts, so the file and the metric cards below can only
   // ever describe one population.
-  const filters = useMemo(() => ({ search, statuses: [...statusFilter] }), [search, statusFilter]);
+  // `unbookedOnly` is pinned false here on purpose: the "Awaiting month" chip is an admin-shell
+  // control for the one person who can clear that queue (canSetDirectOrderSalesMonth admits B-185
+  // and Super Admin), and no portal role can book a month. Behaviour on this screen is therefore
+  // exactly what it was before the filter existed. If a sales role ever needs to see which of their
+  // own approved orders are still uncounted, add the chip here too — the predicate already works.
+  const filters = useMemo(
+    () => ({ search, statuses: [...statusFilter], unbookedOnly: false }),
+    [search, statusFilter],
+  );
 
   const filtered = useMemo(() => {
     const out = filterDirectOrderReportRows(rows, filters);

@@ -17,6 +17,7 @@ import {
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
 import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-center";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
+import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import type {
   FinanceCommandCenterView,
   FinanceCommittedMonth,
@@ -91,6 +92,36 @@ function ageLabel(iso: string | null, emptyText: string) {
   if (days === null) return emptyText;
   if (days === 0) return "Oldest: today";
   return `Oldest: ${days} ${days === 1 ? "day" : "days"} old`;
+}
+
+/**
+ * How loud the unbooked-direct-orders figure should be, given how long the oldest one has waited.
+ *
+ * ONE definition, three consumers — the "Direct orders unbooked" tile, the "Direct orders awaiting a
+ * sales month" queue row, and the "Awaiting a month" pipeline stat. Before this, all three simply
+ * went rose the moment the count passed zero, which meant a queue cleared the same afternoon looked
+ * exactly as alarming as one seven days old, and nothing on the page could tell him which he had.
+ *
+ * This is what replaces an escalation email. The owner declined extra email (2026-08-10), so the
+ * pressure has to live on the screen: normal turnaround is quiet, day 4 turns amber, and the
+ * threshold turns it red — the same none/due/overdue vocabulary and the same slaTone() the approval
+ * badges use, so "late" means one thing across the product.
+ */
+function unbookedTone(count: number, oldestIso: string | null): "emerald" | "slate" | "amber" | "rose" {
+  if (count === 0) return "emerald";
+  const tone = slaTone(daysSince(oldestIso) ?? 0, APPROVALS_SLA_THRESHOLDS.directOrderMonth);
+  return tone === "overdue" ? "rose" : tone === "due" ? "amber" : "slate";
+}
+
+/**
+ * The queue-row variant: same decision, minus `emerald`, which QueueRow has no accent for. Safe
+ * because the row only renders when the count is above zero — but expressed as a fallback rather
+ * than a cast, so a future caller that renders it at zero degrades to `slate` instead of failing
+ * a lookup and rendering an unstyled border.
+ */
+function unbookedQueueTone(count: number, oldestIso: string | null): "slate" | "amber" | "rose" {
+  const tone = unbookedTone(count, oldestIso);
+  return tone === "rose" ? "rose" : tone === "amber" ? "amber" : "slate";
 }
 
 // ── Tiles ────────────────────────────────────────────────────────────────────
@@ -178,10 +209,16 @@ function QueueRow({
  * A single figure in a pipeline strip.
  *
  * Renders its zero rather than hiding it — owner's rule for this page: "relevant even if empty, no
- * data now, tomorrow will be populated." Both modules here are mid-lifecycle (the receivables
- * columns are populated on 0 of 24 direct orders today), and a stage that disappears when empty
- * teaches the reader it does not exist. `muted` greys an untouched stage so an empty pipeline still
- * reads as a pipeline, not as a row of failures.
+ * data now, tomorrow will be populated." A stage that disappears when empty teaches the reader it
+ * does not exist. `muted` greys an untouched stage so an empty pipeline still reads as a pipeline,
+ * not as a row of failures. Booked and In-Source-of-Sales are the live example: both sit at 0 of 24
+ * direct orders today, and both are one action away from filling.
+ *
+ * The rule has a limit, and the receivables columns were where it was found. "Collected" and "Still
+ * outstanding" used to sit at the end of the direct-orders pipeline under exactly this reasoning —
+ * but nothing in the product can write paid_amount or remaining_amount, so their tomorrow never
+ * existed. The owner removed them on 2026-08-10. Show an empty stage that CAN fill; delete one that
+ * cannot, or the zero is not a stage, it is a false promise.
  */
 function PipelineStat({
   label,
@@ -593,7 +630,7 @@ export function FinanceCommandCenter({
             icon={<ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />}
             label="Direct orders unbooked"
             sub={ageLabel(data.directOrders.awaitingOldest, "All booked")}
-            tone={data.directOrders.awaitingCount > 0 ? "rose" : "emerald"}
+            tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
             value={egp(data.directOrders.awaitingValue)}
           />
           <MetricTile
@@ -639,11 +676,14 @@ export function FinanceCommandCenter({
             {data.directOrders.awaitingCount > 0 ? (
               <QueueRow
                 count={data.directOrders.awaitingCount}
-                href="/admin/direct-orders/report"
+                // ?unbooked=1 opens the report already narrowed to exactly these orders. Landing on
+                // all 24 rows and asking him to find the three that need him is how the queue on
+                // this very card went unworked for seven days.
+                href="/admin/direct-orders/report?unbooked=1"
                 icon={<ReceiptText aria-hidden="true" className="h-4 w-4" />}
                 label="Direct orders awaiting a sales month"
                 meta={`You are the only person who can book these · ${ageLabel(data.directOrders.awaitingOldest, "")}`}
-                tone="rose"
+                tone={unbookedQueueTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
                 value={egpExact(data.directOrders.awaitingValue)}
               />
             ) : null}
@@ -796,10 +836,20 @@ export function FinanceCommandCenter({
             Direct order report
           </Link>
         }
-        description="Approved · booked into a month · into Source of Sales · collected · paid. Only you can book the month."
+        description="Approved · booked into a month · into Source of Sales. Only you can book the month."
         title="Direct orders"
       >
-        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {/* Two changes here, both from the owner on 2026-08-10 ("no collection tracking, remove the
+            tiles"). The Collected and Still-outstanding tiles are gone, so the grid is xl:grid-cols-4
+            rather than 6, and the description above no longer promises "collected · paid" — the
+            pipeline now ends where Phoenix's knowledge ends.
+
+            Those two tiles read paid_amount / remaining_amount, which NOTHING in the codebase
+            writes: there is no screen, route or service that records a pharmacy paying, so both were
+            permanently EGP 0 and always would have been. That is NOT the empty-stage case
+            PipelineStat documents below — that rule keeps a stage visible because tomorrow it fills.
+            These two had no tomorrow. */}
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
           <PipelineStat
             label="Approved"
             sub={`${n(data.directOrders.approvedCount)} orders`}
@@ -810,7 +860,7 @@ export function FinanceCommandCenter({
             label="Awaiting a month"
             muted={data.directOrders.awaitingCount === 0}
             sub={`${n(data.directOrders.awaitingCount)} yours to book`}
-            tone={data.directOrders.awaitingCount > 0 ? "rose" : "slate"}
+            tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
             value={egp(data.directOrders.awaitingValue)}
           />
           <PipelineStat
@@ -824,20 +874,6 @@ export function FinanceCommandCenter({
             muted={data.directOrders.injectedCount === 0}
             sub="orders injected"
             value={n(data.directOrders.injectedCount)}
-          />
-          <PipelineStat
-            label="Collected"
-            muted={data.directOrders.paidTotal === 0}
-            sub={`${n(data.directOrders.collectedCount)} payments in`}
-            tone="emerald"
-            value={egp(data.directOrders.paidTotal)}
-          />
-          <PipelineStat
-            label="Still outstanding"
-            muted={data.directOrders.remainingTotal === 0}
-            sub="unpaid balance"
-            tone={data.directOrders.remainingTotal > 0 ? "amber" : "slate"}
-            value={egp(data.directOrders.remainingTotal)}
           />
         </div>
         <div className="grid gap-2 border-t border-slate-100 px-5 pb-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -858,7 +894,7 @@ export function FinanceCommandCenter({
             label="Oldest unbooked"
             muted={data.directOrders.awaitingCount === 0}
             sub={data.directOrders.awaitingCount > 0 ? "since approval" : "nothing waiting"}
-            tone={data.directOrders.awaitingCount > 0 ? "rose" : "slate"}
+            tone={unbookedTone(data.directOrders.awaitingCount, data.directOrders.awaitingOldest)}
             value={
               daysSince(data.directOrders.awaitingOldest) === null
                 ? "—"

@@ -197,8 +197,13 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "decision",
             name: "Approve / reject",
-            actor: "Finance admin",
-            role: "Super Admin / Finance Manager / CEO",
+            actor: "HR Manager",
+            // Corrected 2026-08-10. This read "Super Admin / Finance Manager / CEO" and was wrong in
+            // both directions: adminOutstationRoles has only ever been Super Admin, and Finance
+            // Manager/CEO were read-only. Finance Manager is now out of the module entirely (owner:
+            // "exclude him 100% from outstation or expenses"). This string is rendered in the
+            // Workflow Control UI, so a stale role here reads as policy.
+            role: "Super Admin (HR Manager)",
             statusProduced: "approved | rejected",
             notificationRecipients: n("Employee (submitter) — on rejection only"),
             fyiRecipients: n("Employee (submitter) — on rejection only"),
@@ -228,8 +233,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "admin_review",
             name: "Admin reviews & approves/rejects",
-            actor: "Finance admin",
-            role: "Super Admin / Finance Manager / CEO",
+            actor: "HR Manager",
+            // Corrected 2026-08-10 — see the `decision` step above for why.
+            role: "Super Admin (HR Manager)",
             statusProduced: "approved | rejected",
             notificationRecipients: n("Employee (submitter) — on rejection only"),
             fyiRecipients: n("Employee (submitter) — on rejection only"),
@@ -281,8 +287,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "approve",
             name: "Approve for payroll",
-            actor: "Finance admin",
-            role: "Super Admin / Finance Manager",
+            actor: "HR Manager",
+            // Corrected 2026-08-10 — see the `decision` step earlier in this module.
+            role: "Super Admin (HR Manager)",
             statusProduced: "approved",
             notificationRecipients: [],
             emailRecipients: [],
@@ -298,8 +305,9 @@ export const WORKFLOW_CONTROL_DOMAINS: readonly WorkflowControlDomain[] = [
           {
             id: "add_to_payroll",
             name: "Add to payroll",
-            actor: "Finance admin",
-            role: "Super Admin / Finance Manager",
+            actor: "HR Manager",
+            // Corrected 2026-08-10 — see the `decision` step earlier in this module.
+            role: "Super Admin (HR Manager)",
             statusProduced: "added_to_payroll",
             notificationRecipients: [],
             emailRecipients: [],

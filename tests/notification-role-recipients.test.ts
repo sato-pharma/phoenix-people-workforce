@@ -26,7 +26,8 @@ const EXPECTED: Record<string, { roles: string[]; enabled: boolean }> = {
   weekly_system_health_digest: { roles: ["Super Admin"], enabled: true },
   probation_weekly_dv_digest: { roles: ["CEO", "Super Admin", "SFE Manager", "Training Manager"], enabled: false },
   field_workforce_compliance_digest: { roles: ["Super Admin"], enabled: true },
-  outstation_sla_reminder: { roles: ["Super Admin", "Finance Manager", "CEO"], enabled: false },
+  // Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+  outstation_sla_reminder: { roles: ["Super Admin", "CEO"], enabled: false },
   resignation_sla_reminder: { roles: ["Super Admin"], enabled: true },
   weekly_plans_drift_alert: { roles: ["Super Admin"], enabled: true },
   excuse_drift_alert: { roles: ["Super Admin"], enabled: true },

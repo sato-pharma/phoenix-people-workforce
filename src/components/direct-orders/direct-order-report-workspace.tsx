@@ -121,12 +121,22 @@ function KpiCard({ label, value, tone }: { label: string; value: string; tone?: 
 export function DirectOrderReportWorkspace({
   rows,
   scope,
+  initialUnbookedOnly = false,
 }: {
   rows: DirectOrderReportRow[];
   scope: DirectOrderReportScope;
+  /**
+   * Deep-link default, read from `?unbooked=1` by the page (a server component) rather than by
+   * useSearchParams here — that would put this whole workspace behind a Suspense boundary for one
+   * boolean. Set by the Finance Manager's two routes into this page: the sidebar badge and the
+   * "Direct orders awaiting a sales month" row on his command center, so both land him on exactly
+   * the orders he has to act on instead of all 24 with the answer somewhere inside.
+   */
+  initialUnbookedOnly?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [unbookedOnly, setUnbookedOnly] = useState(initialUnbookedOnly);
   const [sortKey, setSortKey] = useState<keyof DirectOrderReportRow>("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [exporting, setExporting] = useState(false);
@@ -134,7 +144,10 @@ export function DirectOrderReportWorkspace({
 
   // The same object the Export button posts, so the file and the KPI cards below can only ever
   // describe one population.
-  const filters = useMemo(() => ({ search, statuses: [...statusFilter] }), [search, statusFilter]);
+  const filters = useMemo(
+    () => ({ search, statuses: [...statusFilter], unbookedOnly }),
+    [search, statusFilter, unbookedOnly],
+  );
 
   const filtered = useMemo(() => {
     const out = filterDirectOrderReportRows(rows, filters);
@@ -258,6 +271,27 @@ export function DirectOrderReportWorkspace({
           placeholder="Search requester, product, pharmacy, area…"
           className="w-72 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
         />
+        {/* Finance's own slice, and the reason this control exists: booking approved orders into a
+            sales month is one person's entire job here, and until now it was the one question this
+            report could not be asked. Same chip geometry as the status chips beside it — a
+            square-cornered one-off next to nine rounded ones would read as a rendering fault — but
+            amber rather than slate when active, because it narrows on a DIFFERENT axis than status
+            and composes with them rather than replacing them. Amber matches the unbooked banner
+            already sitting above these chips.
+
+            Placed before the status chips and separated by a rule: it is the first question asked
+            of this report far more often than any single status is. */}
+        <button
+          type="button"
+          onClick={() => setUnbookedOnly((prev) => !prev)}
+          aria-pressed={unbookedOnly}
+          className={`rounded-full px-3 py-1 text-xs font-bold ring-1 ${
+            unbookedOnly ? "bg-amber-500 text-white ring-amber-500" : "bg-white text-amber-700 ring-amber-300"
+          }`}
+        >
+          Awaiting month
+        </button>
+        <span aria-hidden="true" className="mx-1 h-5 w-px bg-slate-200" />
         {DIRECT_ORDER_REPORT_STATUS_OPTIONS.map((option) => (
           <button
             key={option.key}

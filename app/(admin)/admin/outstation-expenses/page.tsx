@@ -10,13 +10,15 @@ import { permissionAllowed, roleAllowed, roleNotExcluded, type PermissionLookup 
 
 export const dynamic = "force-dynamic";
 
-const OUTSTATION_EXPENSES_ROLES = ["Super Admin", "Finance Manager", "CEO"] as const;
+// Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+// This is the page guard, not the sidebar — it is what stops him reaching the hub by typing the URL
+// after the nav row was pulled.
+const OUTSTATION_EXPENSES_ROLES = ["Super Admin", "CEO"] as const;
 
 export default async function OutstationExpensesPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Every card here is gated to Super Admin/Finance Manager/CEO — match the
-  // sidebar button's own gate directly.
+  // Every card here is gated to Super Admin/CEO — match the sidebar button's own gate directly.
   if (!(OUTSTATION_EXPENSES_ROLES as readonly string[]).includes(access.role)) {
     redirect("/employee-portals");
   }

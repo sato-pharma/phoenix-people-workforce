@@ -1,4 +1,7 @@
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
+// Pure, JSX-free threshold module (it says so at the top of the file, and the plain-TS test loader
+// imports it directly) — so a server service can use it without dragging a component in.
+import { APPROVALS_SLA_THRESHOLDS, slaTone } from "@/components/approvals-hub/sla-thresholds";
 import { ceoHrIds } from "@/lib/employees/role-lookup";
 import type { AccessContext, PhoenixRole } from "@/lib/auth/permissions";
 import { assertPermission, normalizeHrId, resolveEmployeeIdentityId, systemAccessContext } from "@/lib/auth/permissions";
@@ -4797,6 +4800,65 @@ export const DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = "B-185";
 export function canSetDirectOrderSalesMonth(access: AccessContext): boolean {
   if (access.scope === "system" || access.role === "Super Admin") return true;
   return canonicalHrIdKey(access.hrId) === canonicalHrIdKey(DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID);
+}
+
+/**
+ * Sidebar badge for the unbooked queue: approved orders carrying no sales month.
+ *
+ * WHY THIS EXISTS. The approved-order email fires once, at CEO approval, and then nothing ever
+ * mentions the order again — direct orders is the only queue-bearing module with no SLA chaser
+ * (there are 16 notification keys; none is a direct-order one). The owner does not want another
+ * email, so the chase has to be ambient: a count that follows him onto every page and does not
+ * clear itself. Measured on 2026-08-10 production: 43,925.50 EGP had been approved and unbooked
+ * for 7 days with nothing on any screen he was not already looking at.
+ *
+ * GATED ON THE ABILITY TO CLEAR IT. The Direct Orders sidebar row is shared with every role
+ * holding `direct_orders:read` — sales managers, SFE, CEO. Returning a count to them would light a
+ * red badge on a job they are structurally forbidden from doing (canSetDirectOrderSalesMonth admits
+ * B-185 and Super Admin, nobody else), and a badge you cannot clear is noise that teaches people to
+ * ignore badges. So this returns 0 for everyone who is not the setter.
+ *
+ * CHEAP BY CONSTRUCTION. NavBadge polls every 30s, so this must not become another
+ * countDirectOrderAwaiting — that delegates to getDirectOrderWorkspaceData, which loads the whole
+ * workspace (see the note above it and in geo-names.ts). Two scalar columns, filtered in Postgres.
+ *
+ * The predicate is the same one `showsAwaitingFinanceMonth` uses in types.ts and
+ * `phx_finance_command_center` uses in SQL — status approved AND no month. Three languages, one
+ * rule; if this ever disagrees with the dashboard the badge is lying about the dashboard's own
+ * number.
+ */
+export async function getDirectOrderUnbookedBadge(
+  access: AccessContext,
+): Promise<{ count: number; overdue: boolean }> {
+  await assertPermission(access, "direct_orders", "read");
+  if (!canSetDirectOrderSalesMonth(access)) return { count: 0, overdue: false };
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_requests")
+    .select("decided_at")
+    .eq("status", "approved")
+    .is("sales_month", null);
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{ decided_at: string | null }>;
+  if (rows.length === 0) return { count: 0, overdue: false };
+
+  // Age from the APPROVAL, not from submission: the clock on Finance only starts once the order
+  // is his to act on. A request that sat three weeks in the approval chain is not his backlog.
+  let oldest = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    const at = row.decided_at ? new Date(row.decided_at).getTime() : Number.NaN;
+    if (Number.isFinite(at) && at < oldest) oldest = at;
+  }
+  const ageDays = Number.isFinite(oldest)
+    ? Math.max(0, Math.floor((Date.now() - oldest) / 86_400_000))
+    : 0;
+
+  return {
+    count: rows.length,
+    overdue: slaTone(ageDays, APPROVALS_SLA_THRESHOLDS.directOrderMonth) === "overdue",
+  };
 }
 
 /**

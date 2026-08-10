@@ -229,7 +229,11 @@ function verifyScopeHelpers() {
   expectScope("Medical Rep expenses scope is SELF", getExpensesScope(contextFor("Medical Rep")), "SELF");
   expectScope("District Manager expenses scope is TEAM", getExpensesScope(contextFor("District Manager")), "TEAM");
   expectScope("Manager expenses scope is TEAM", getExpensesScope(contextFor("Manager")), "TEAM");
-  expectScope("Finance Manager expenses scope is COMPANY", getExpensesScope(contextFor("Finance Manager")), "COMPANY");
+  // Was COMPANY until 2026-08-10, when the owner excluded the Finance Manager from outstation and
+  // expenses entirely. He keeps a bare `expenses:read` only because that permission also gates the
+  // /api/marketing-requests/** namespace he executes the finance_execution rung from — SELF is what
+  // stops that residual grant handing back the company-wide expense read the removal closed.
+  expectScope("Finance Manager expenses scope is SELF", getExpensesScope(contextFor("Finance Manager")), "SELF");
 }
 
 function verifyEmployeePortalSelfOnlyIsolation() {

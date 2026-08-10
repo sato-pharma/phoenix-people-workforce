@@ -6,15 +6,21 @@ import {
 } from "@/lib/auth/permissions";
 
 // Only HR Manager (Super Admin with HR Manager title) may review and reject outstation
-// requests. Finance Manager and CEO are not approvers — they are execution/read-only.
+// requests. The CEO is not an approver — read-only oversight.
 const adminOutstationRoles = new Set<PhoenixRole>([
   "Super Admin",
 ]);
 
 // Explicitly named to prevent accidental promotion: these roles see outstation data but
 // must NEVER gain approval authority. Exported for governance tests.
+//
+// Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+// He is not read-only here any more, he is OUT — the `outstation` key was deleted from his matrix
+// in the same change, so assertOutstationAdminAccess would reject him at the assertPermission on
+// line 43 regardless. Removing him from this list too matters because canUseAdminOutstationWorkspace
+// is ALSO called on its own, without that assertPermission, by the Action Center inbox and the CEO
+// command center's expense snapshot — the list is the only gate on those paths.
 export const executionOnlyOutstationRoles: ReadonlyArray<PhoenixRole> = [
-  "Finance Manager",
   "CEO",
 ];
 

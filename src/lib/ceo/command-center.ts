@@ -572,7 +572,8 @@ export type CeoWeeklyTrendPoint = {
 export type CeoLandingDeferredOptions = {
   /**
    * Outstation expense is an admin-outstation-workspace surface (canUseAdminOutstationWorkspace:
-   * Super Admin to approve, Finance Manager / CEO to read). The SFE Manager overview does not
+   * Super Admin to approve, CEO to read — the Finance Manager was dropped from
+   * executionOnlyOutstationRoles on 2026-08-10). The SFE Manager overview does not
    * render the Expense Snapshot, so it passes `false` here and the company-wide expense read is
    * never issued for that page. Defaults to true so the CEO page is unchanged.
    */

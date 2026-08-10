@@ -13,8 +13,12 @@ import { adminShellEmployeeRoles, type PhoenixRole } from "@/lib/auth/permission
 
 export const workspaceMarketingRoles = [
   "SFE Manager",
-  // Finance Execution of marketing requests runs from the workspace shell. Financial Advisor is the
-  // designated executor. Finance Manager is included so they can monitor requests as observers.
+  // Finance Execution of marketing requests runs from the workspace shell. The Finance Manager is
+  // the EXECUTOR as of 2026-08-10, not an observer: the owner activated the `finance_execution`
+  // step and pointed it at that role ("Ahmed is the next step after CEO"), making him the terminal
+  // rung. (This comment previously named Financial Advisor as the designated executor — that was
+  // true until the step was re-pointed, and there has never been a Financial Advisor login;
+  // app_auth_users_role_check does not even permit the value.)
   "Finance Manager",
   "Financial Advisor",
   // The CEO holds `ceo_approval`, the last required rung of the marketing chain. Every decision
@@ -23,6 +27,33 @@ export const workspaceMarketingRoles = [
   // (they have no employee workspace of their own) — which is exactly why the gate below treats an
   // explicit allowedRoles list as authoritative rather than intersecting it.
   "CEO",
+] as const satisfies readonly PhoenixRole[];
+
+/**
+ * Who may open /workspace/expense-dashboard — adminShellEmployeeRoles MINUS the Finance Manager.
+ *
+ * Exists solely to close a leak the 2026-08-10 removal would otherwise have left open. The owner's
+ * instruction was "exclude him 100% from outstation or expenses", and his `outstation` key was
+ * deleted — but `expenses: ["read"]` had to survive because that one permission also gates the
+ * whole /api/marketing-requests/** namespace, including the decision route he executes the terminal
+ * `finance_execution` rung from. That residual grant is exactly what this page checks
+ * (`requireAdminShellEmployeeWorkspaceAccess({ resource: "expenses" })`), and he IS an
+ * adminShellEmployeeRole, so both default gates would have passed and the Outstation Expense
+ * Dashboard would still have opened for him by URL.
+ *
+ * getExpensesScope returns SELF for the role now, so the page would have rendered empty rather than
+ * leaking anyone's claims — but an empty expense dashboard is still an expense surface, and "100%"
+ * means the door does not open. An explicit allowedRoles list is authoritative here (see
+ * canAccessAdminShellEmployeeWorkspacePage below), so naming the set is the fix.
+ *
+ * Delete this constant and revert the page to the default the moment the marketing routes move off
+ * `expenses` onto a marketing-specific resource — at that point the `expenses` key leaves his matrix
+ * entirely and the default gate closes on its own.
+ */
+export const workspaceExpenseDashboardRoles = [
+  "SFE Manager",
+  "Financial Advisor",
+  "Talent Acquisition",
 ] as const satisfies readonly PhoenixRole[];
 
 function includesRole(roles: readonly PhoenixRole[], role: PhoenixRole) {

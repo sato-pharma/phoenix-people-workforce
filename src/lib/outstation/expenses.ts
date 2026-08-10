@@ -62,7 +62,11 @@ export type PayrollExpenseDashboardData = {
 };
 
 // Only HR Manager (Super Admin) may reject payroll expenses.
-// Finance Manager and CEO have no approval authority here.
+// The CEO has no approval authority here — read-only oversight. The Finance Manager is out of the
+// module entirely as of 2026-08-10 (owner: "exclude him 100% from outstation or expenses"): the
+// `outstation` key was removed from his matrix and getExpensesScope now returns SELF for the role,
+// so resolveExpenseAccessFilter below yields him no rows even on the residual `expenses:read` he
+// keeps for the marketing-request routes.
 const manualPayrollExpenseApproverRoles = new Set<PhoenixRole>([
   "Super Admin",
 ]);
