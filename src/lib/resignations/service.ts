@@ -11,6 +11,10 @@ import { resolveNotificationPersonRecipients, resolveNotificationRoleRecipients 
 import { disableTelegramForIdentity } from "@/lib/notifications/settings";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import { logError } from "@/lib/observability/log";
+import { computeResignationSettlement } from "@/lib/payroll/copilot/proration";
+// Read-only use of the owner-locked payroll policy: the Part-1 anchor and payment-mode
+// normalisation. This module never modifies policy.ts.
+import { calculateBasicSalary, normalizePayrollPaymentMode } from "@/lib/payroll/policy";
 import type { PayrollResignationCandidate } from "@/lib/payroll/salary-import";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { generateShortVacancyCode } from "@/lib/workforce/vacancy-code";
@@ -21,6 +25,7 @@ import type {
   EmployeeResignationInput,
   PayrollResignationCandidateRecord,
   ResignationRecord,
+  ResignationSettlementPreview,
   ResignationStatus,
   ResignationWorkflowAction,
   UpdateResignationDatesInput,
@@ -254,6 +259,10 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     createdBy: row.created_by ?? null,
+    // Both filled by getResignationsDashboardData, the only read path that resolves them.
+    createdByName: null,
+    hireDate: null,
+    settlement: null,
     reviewedAt: asIso(row.reviewed_at),
     reviewedBy: row.reviewed_by ?? null,
     approvedAt: asIso(row.approved_at),
@@ -312,6 +321,9 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     completedBy: null,
     createdAt,
     createdBy: null,
+    createdByName: null,
+    hireDate: null,
+    settlement: null,
     effectiveDate,
     employeeHrId: row.hr_id,
     employeeName: resolveEmployeeDisplayName(row.full_name, row.nickname),
@@ -547,6 +559,76 @@ export async function upsertPayrollResignationCandidates(input: {
   return payload.length;
 }
 
+type EmployeeSalaryRow = {
+  base_salary: number | null;
+  extra_cost_of_living: number | null;
+  fuel_allowance: number | null;
+  hr_id: string;
+  payment_mode: string | null;
+};
+
+/**
+ * Settlement preview for the resignation month, BEFORE fingerprint, medical insurance and every
+ * other deduction (that is what the Resignations page asks for — a clean "what is owed" figure,
+ * not the final payslip).
+ *
+ * Every number comes from the owner-locked engines, none of it is re-derived here:
+ *  - computeResignationSettlement is Rule 1 — last working day ≤ 25th pays a Base-only day rate
+ *    for the days worked (no ECoL, no Fuel); after the 25th pays Base + ECoL + Fuel in full.
+ *  - calculateBasicSalary is the Part-1 anchor (Base × BASIC_SALARY_RATE), taken from the FULL
+ *    monthly base, never the prorated one — anchoring on the prorated base applies the 70% twice
+ *    and shrinks the split (the bug fixed for PD-0006 on 2026-07-26, documented in
+ *    automated-payroll/split.ts freezeFirstPart).
+ *
+ * The final assignment mirrors split.ts: a one-part employee takes the whole settlement in Part 1;
+ * a two-part employee takes min(Basic, total) in Part 1 and the remainder in Part 2.
+ */
+function buildResignationSettlementPreview(
+  salary: EmployeeSalaryRow | null,
+  effectiveDate: string,
+): ResignationSettlementPreview | null {
+  if (!salary) return null;
+
+  const baseSalary = Number(salary.base_salary ?? 0);
+  if (!Number.isFinite(baseSalary) || baseSalary <= 0) return null;
+
+  const lastWorkingDate = dateOnly(effectiveDate);
+  if (!lastWorkingDate) return null;
+
+  const [year, month] = lastWorkingDate.split("-").map(Number);
+  if (!year || !month) return null;
+
+  const settlement = computeResignationSettlement({
+    baseSalary,
+    extraCostOfLiving: Number(salary.extra_cost_of_living ?? 0),
+    fuelAllowance: Number(salary.fuel_allowance ?? 0),
+    lastWorkingDate,
+    otherAdditions: 0,
+    otherDeductions: 0,
+    period: { month, year },
+    unpaidDaysInSpan: 0,
+  });
+  if (!settlement) return null;
+
+  const paymentMode = normalizePayrollPaymentMode(salary.payment_mode);
+  const basicSalary = calculateBasicSalary({ baseSalary });
+  const total = settlement.netForMonth;
+  const firstPart =
+    paymentMode === "two_parts" ? Math.min(basicSalary, total) : total;
+  const secondPart = Math.round((total - firstPart + Number.EPSILON) * 100) / 100;
+
+  return {
+    baseSalary,
+    branch: settlement.branch,
+    coveredByFirstPart: secondPart <= 0,
+    daysWorked: settlement.daysWorked,
+    firstPart: Math.round((firstPart + Number.EPSILON) * 100) / 100,
+    paymentMode,
+    secondPart: Math.max(0, secondPart),
+    total,
+  };
+}
+
 function isCompanyResignationReader(access: AccessContext) {
   return (
     access.scope === "system" ||
@@ -579,10 +661,59 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
   if (candidatesResult.error) throw candidatesResult.error;
 
   const employeesByHrId = new Map(directory.employees.map((employee) => [normalizeHrId(employee.hrId), employee]));
+
+  // Actor names come straight from `employees`, not from the directory: getEmployeeDirectory()
+  // returns 112 rows and excludes PHX-1 and ADMIN-HR (both employment_status='active', so it is
+  // NOT an active/inactive filter). Those two authored 32 of the 38 production records, so
+  // resolving through the directory left the audit column printing "phx-1" — the raw-code display
+  // the owner's rule forbids. One extra round trip, scoped to the ids actually referenced.
+  // One lookup covering BOTH the actors (created_by) and the subjects (employee_hr_id): the
+  // subjects are resigned by definition, so the active directory omits them too and their hire
+  // date would come back null for nearly every row.
+  const referencedHrIds = Array.from(
+    new Set(
+      (resignationsResult.data ?? [])
+        .flatMap((row) => [(row as ResignationRow).created_by, (row as ResignationRow).employee_hr_id])
+        .filter((value): value is string => Boolean(value && value.trim()))
+        .flatMap((value) => [value, value.toUpperCase()]),
+    ),
+  );
+  const actorNameByHrId = new Map<string, string>();
+  const hireDateByHrId = new Map<string, string | null>();
+  const salaryByHrId = new Map<string, EmployeeSalaryRow>();
+  if (referencedHrIds.length > 0) {
+    const { data: employeeRows } = await supabase
+      .from("employees")
+      .select(
+        "hr_id, full_name, nickname, hire_date, base_salary, extra_cost_of_living, fuel_allowance, payment_mode",
+      )
+      .in("hr_id", referencedHrIds);
+    for (const entry of employeeRows ?? []) {
+      const row = entry as EmployeeSalaryRow & {
+        full_name: string | null;
+        hire_date: string | null;
+        nickname: string | null;
+      };
+      const key = normalizeHrId(row.hr_id);
+      if (!key) continue;
+      actorNameByHrId.set(key, resolveEmployeeDisplayName(row.full_name ?? row.hr_id, row.nickname));
+      hireDateByHrId.set(key, dateOnly(row.hire_date));
+      salaryByHrId.set(key, row);
+    }
+  }
+
   const allWorkflowRecords = (resignationsResult.data ?? []).map((row) => {
     const record = mapResignation(row as ResignationRow);
     return {
       ...record,
+      createdByName: record.createdBy
+        ? actorNameByHrId.get(normalizeHrId(record.createdBy) ?? "") ?? null
+        : null,
+      hireDate: hireDateByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+      settlement: buildResignationSettlementPreview(
+        salaryByHrId.get(normalizeHrId(record.employeeHrId) ?? "") ?? null,
+        record.effectiveDate,
+      ),
       employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });

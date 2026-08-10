@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { ResignationsReport } from "@/components/reports/resignations-report";
+import { ResignationsWorkspace } from "@/components/resignations/resignations-workspace";
 import {
   EmployeePortalEmptyState,
   EmployeePortalPageShell,
@@ -54,7 +54,11 @@ export default async function EmployeePortalResignationsPage() {
       errorBoundaryTitle="Resignations unavailable"
       title="Resignations"
     >
-      <ResignationsReport initialData={initialData} initialError={initialError} />
+      <ResignationsWorkspace
+        initialData={initialData}
+        initialError={initialError}
+        surface="portal"
+      />
     </EmployeePortalPageShell>
   );
 }

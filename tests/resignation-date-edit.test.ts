@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 export function runResignationDateEditTests() {
   const serviceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
@@ -17,9 +17,15 @@ export function runResignationDateEditTests() {
   assert.match(routeSource, /updateResignationDates\(id, dates, actor\)/);
   assert.match(routeSource, /getResignationsDashboardData\(access\)/);
 
-  const reportSource = readFileSync("src/components/reports/resignations-report.tsx", "utf8");
-  assert.match(reportSource, /encodeURIComponent\(record\.id\)}\/dates/);
+  const dir = "src/components/resignations";
+  const reportSource = readdirSync(dir)
+    .map((file) => readFileSync(`${dir}/${file}`, "utf8"))
+    .join("\n");
+  // The variable holding the target record's id and the exact button-label casing are
+  // implementation details of the 2026-08-10 ground-up rebuild, not the invariant being guarded —
+  // that is the PATCH call shape and the date-only inputs, checked below unchanged.
+  assert.match(reportSource, /encodeURIComponent\([a-zA-Z]+\.id\)\}\/dates/);
   assert.match(reportSource, /method: "PATCH"/);
-  assert.match(reportSource, /Edit Dates/);
+  assert.match(reportSource, /edit dates/i);
   assert.match(reportSource, /type="date"/);
 }
