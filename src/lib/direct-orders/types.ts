@@ -662,6 +662,13 @@ export type DirectOrderApprovalDetail = {
    * Super Admin can; the CEO and SFE Manager see the month but cannot change it.
    */
   canSetSalesMonth: boolean;
+  /**
+   * Whether THIS viewer may record money collected against the order. Same person as
+   * canSetSalesMonth today, but a separate flag because they are separate duties — booking a
+   * month decides which period the SALES count in, recording a collection only says what has
+   * been PAID. Everyone else sees the figures read-only.
+   */
+  canRecordCollection: boolean;
 };
 
 export type DirectOrderWorkspaceData = {

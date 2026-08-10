@@ -10,6 +10,7 @@ import {
   PriceUsageField,
   PricingBreakdownFact,
 } from "@/components/approvals-hub/direct-order-detail-primitives";
+import { DirectOrderCollectionControl } from "@/components/direct-orders/direct-order-collection-control";
 import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
@@ -143,6 +144,7 @@ export function DirectOrderRequestDetail({
     retailUnmatchable,
     pharmacyStanding,
     canSetSalesMonth,
+    canRecordCollection,
     steps,
     availableActions,
     bonusOverCap,
@@ -347,6 +349,16 @@ export function DirectOrderRequestDetail({
           requestId={request.id}
           salesMonth={request.salesMonth}
           canEdit={canSetSalesMonth}
+          status={request.status}
+        />
+
+        <DirectOrderCollectionControl
+          requestId={request.id}
+          salesValue={request.salesValue}
+          paidAmount={request.paidAmount}
+          paymentDate={request.paymentDate}
+          remainingAmount={request.remainingAmount}
+          canEdit={canRecordCollection}
           status={request.status}
         />
 

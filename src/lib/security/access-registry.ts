@@ -370,6 +370,11 @@ export const accessRegistry = [
   // is an identity check inside setDirectOrderSalesMonth (Ahmed El Maraghy / Super Admin), not a
   // role action — the CEO holds direct_orders:approve but must NOT be able to move a month.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/sales-month", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Collections are Finance-owned on exactly the same terms as the sales month above, and for the
+  // same reason the permission reads `read`: the gate is canRecordDirectOrderCollection, an
+  // identity check, not a role action. Separate route from sales-month deliberately — recording a
+  // payment must never be able to move which month the sales landed in.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/collection", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Sidebar badge for the unbooked queue (approved, no sales month). Same `read` permission as the
   // setter above, and the same identity gate behind it: getDirectOrderUnbookedBadge returns 0 to
   // anyone who cannot actually book a month, so the shared Direct Orders nav row stays unbadged for

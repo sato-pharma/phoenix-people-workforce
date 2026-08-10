@@ -557,6 +557,7 @@ import { runDirectOrderRotationConfirmationTests } from "./direct-orders-rotatio
 import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.test.ts";
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
+import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
 import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
@@ -1358,6 +1359,7 @@ await runTest("direct orders rotation confirmation (evidence of use, never the r
 await runTest("direct orders per-rep counters (scope borrowed not re-implemented, read-only, money-first sort, empty speaks)", runDirectOrderRepCountersTests);
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
+await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
 await runTest("direct orders storefront evidence (unknown is never a pass, a failed read never blocks filing, and it never gates the decision)", runDirectOrderEvidenceCheckTests);
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);

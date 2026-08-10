@@ -102,9 +102,10 @@ export type FinanceCommandCenterData = {
    * product can perform.
    *
    * The pipeline used to carry two more stages — collected and paid — dropped on 2026-08-10 when
-   * the owner ruled out collection tracking. They were never fillable: `paid_amount`,
-   * `payment_date` and `remaining_amount` exist on direct_order_requests and are READ in three
-   * places, but no screen, route or service in the codebase writes any of them. The RPC still
+   * the owner ruled out collection tracking. At the time they were not fillable at all: the three
+   * columns existed on direct_order_requests and were READ in three places, but nothing wrote them.
+   * `recordDirectOrderCollection` now does, so the figures would be real if the stages came back —
+   * they stay out because the owner asked for the recording and not the dashboard. The RPC still
    * returns `collectedCount` / `paidTotal` / `remainingTotal`; they are simply not modelled here
    * any more, and the extra keys are ignored by the cast in cachedFinanceCommandCenter. Deleting
    * them from the SQL needs a migration against production and buys nothing but a shorter payload,

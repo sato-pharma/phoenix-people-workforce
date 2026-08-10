@@ -40,6 +40,12 @@ import {
   type DirectOrderHoldGround,
 } from "@/lib/direct-orders/hold-decision";
 import { checkDirectOrderGeography } from "@/lib/direct-orders/geography-check";
+import {
+  canRecordDirectOrderCollection,
+  deriveDirectOrderCollection,
+  DIRECT_ORDER_FINANCE_HR_ID,
+  todayInCairo,
+} from "@/lib/direct-orders/collection-rules";
 import { isHeadOfficeLine, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -4386,6 +4392,7 @@ export async function getDirectOrderApprovalDetail(
     availableActions: { approve: canAct, reject: canAct, return: canAct },
     bonusOverCap,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
+    canRecordCollection: canRecordDirectOrderCollection(access),
     pharmacyEvidence,
     possibleDistributorMatches,
     autoLinkRefusal,
@@ -4794,7 +4801,7 @@ export async function resolvePharmacyGeoVariance(
  * this moves money between months, and a second Finance Manager joining later must not inherit
  * that silently. If the duty moves, this constant is the single line to change.
  */
-export const DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = "B-185";
+export const DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = DIRECT_ORDER_FINANCE_HR_ID;
 
 /** Ahmed, or a Super Admin. The CEO and SFE Manager can SEE the month but never set it. */
 export function canSetDirectOrderSalesMonth(access: AccessContext): boolean {
@@ -4935,6 +4942,128 @@ export async function setDirectOrderSalesMonth(
   });
 
   pingDirectOrderSheet("sales_month_set");
+  return after;
+}
+
+// ── Collections (Finance-owned) ──────────────────────────────────────────────
+
+/**
+ * Record (or clear) the money collected against an approved direct order.
+ *
+ * THIS IS NOT A SALES EVENT, and the separation is the whole point. Booking a sales month moves
+ * the order's VALUE between Source-of-Sales periods; recording a collection only says how much of
+ * that value has been paid. So this function deliberately does NOT touch `sales_month` and does
+ * NOT call phx_rebuild_direct_order_sos_batch — a payment landing in September must never drag
+ * July's sales into September. If a future change makes this write sales_month, the two events
+ * have been collapsed and the month is no longer Finance's explicit decision.
+ *
+ * `remaining_amount` is DERIVED here (sales_value − paid), never accepted from the caller. A
+ * client-supplied remainder is a second source of truth for the same money, and the two drift the
+ * first time someone edits one field.
+ *
+ * Approved-only: a draft, rejected, held or reversed order has no debt to collect against, so
+ * accepting money on one would record a receivable for stock that was never agreed.
+ */
+export async function recordDirectOrderCollection(
+  access: AccessContext,
+  input: { requestId: string; paidAmount: number | null; paymentDate: string | null },
+): Promise<DirectOrderRequest> {
+  await assertPermission(access, "direct_orders", "read");
+  if (!canRecordDirectOrderCollection(access)) {
+    throw new Error("Forbidden: only Finance (Ahmed El Maraghy) or a System Admin can record a collection.");
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: loadError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!current) badRequest("Direct order request not found.");
+  const before = mapRequestRow(current as Record<string, unknown>);
+
+  // Clearing: one explicit "nothing collected" state, so a mistake is undoable. All three columns
+  // reset together — a payment date left behind with no amount is what makes the phantom-pharmacy
+  // check (pharmacy-probation.ts) treat an unpaid order as proof the pharmacy is real.
+  const clearing = input.paidAmount == null;
+
+  let patch: Record<string, string | number | null>;
+  let summary: string;
+  let eventType: string;
+  let eventMessage: string;
+
+  if (clearing) {
+    if (before.paidAmount == null && before.paymentDate == null) return before;
+    patch = { payment_date: null, paid_amount: null, remaining_amount: null };
+    summary = `Direct order collection cleared by ${access.hrId ?? "unknown"}.`;
+    eventType = "collection_cleared";
+    eventMessage = "Collection cleared — nothing is recorded as paid against this order.";
+  } else {
+    // Every guard and the remainder itself live in collection-rules.ts, pure and unit-tested.
+    const outcome = deriveDirectOrderCollection({
+      status: before.status,
+      salesValue: before.salesValue,
+      paidAmount: input.paidAmount,
+      paymentDate: input.paymentDate,
+      todayCairo: todayInCairo(),
+    });
+    if (!outcome.ok) badRequest(outcome.message);
+
+    patch = {
+      payment_date: outcome.paymentDate,
+      paid_amount: outcome.paidAmount,
+      remaining_amount: outcome.remainingAmount,
+    };
+    summary = `Direct order collection of ${outcome.paidAmount} EGP recorded by ${access.hrId ?? "unknown"}.`;
+    eventType = "collection_recorded";
+    eventMessage =
+      outcome.remainingAmount > 0
+        ? `Collected ${outcome.paidAmount} EGP on ${outcome.paymentDate}; ${outcome.remainingAmount} EGP still outstanding.`
+        : `Collected ${outcome.paidAmount} EGP on ${outcome.paymentDate} — paid in full.`;
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_requests")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", input.requestId)
+    .select("*")
+    .single();
+  if (updateError) throw updateError;
+  const after = mapRequestRow(updated as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: after.id,
+    oldValues: {
+      paidAmount: before.paidAmount,
+      paymentDate: before.paymentDate,
+      remainingAmount: before.remainingAmount,
+    },
+    newValues: {
+      paidAmount: after.paidAmount,
+      paymentDate: after.paymentDate,
+      remainingAmount: after.remainingAmount,
+    },
+    summary,
+  });
+  await insertEvent({
+    requestId: after.id,
+    actorHrId: access.hrId,
+    eventType,
+    message: eventMessage,
+    metadata: {
+      previousPaidAmount: before.paidAmount,
+      paidAmount: after.paidAmount,
+      remainingAmount: after.remainingAmount,
+      paymentDate: after.paymentDate,
+      // Recorded so the trail proves the month was untouched, not merely that we intended it.
+      salesMonthUnchanged: after.salesMonth,
+    },
+  });
+
+  pingDirectOrderSheet("collection_recorded");
   return after;
 }
 

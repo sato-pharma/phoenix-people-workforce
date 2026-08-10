@@ -844,11 +844,18 @@ export function FinanceCommandCenter({
             rather than 6, and the description above no longer promises "collected · paid" — the
             pipeline now ends where Phoenix's knowledge ends.
 
-            Those two tiles read paid_amount / remaining_amount, which NOTHING in the codebase
-            writes: there is no screen, route or service that records a pharmacy paying, so both were
-            permanently EGP 0 and always would have been. That is NOT the empty-stage case
-            PipelineStat documents below — that rule keeps a stage visible because tomorrow it fills.
-            These two had no tomorrow. */}
+            Those two tiles read paid_amount / remaining_amount, which at the time NOTHING in the
+            codebase wrote: there was no screen, route or service that recorded a pharmacy paying, so
+            both were permanently EGP 0. That is NOT the empty-stage case PipelineStat documents
+            below — that rule keeps a stage visible because tomorrow it fills. These two had no
+            tomorrow.
+
+            They have one now: DirectOrderCollectionControl and /api/direct-orders/:id/collection
+            were added later the same day, so recordDirectOrderCollection does write all three
+            columns. The tiles are still deliberately absent — the owner asked for the recording, not
+            the dashboard, and restoring them is his call, not a consequence of the write existing.
+            If he does want them back, the RPC already returns collectedCount / paidTotal /
+            remainingTotal, so it is a display change only. */}
         <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
           <PipelineStat
             label="Approved"
