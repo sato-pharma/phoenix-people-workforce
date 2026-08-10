@@ -1,15 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-
-// The Resignations UI is a DIRECTORY of components since the 2026-08-10 rebuild (it was one
-// 1,337-line src/components/reports/resignations-report.tsx before). Read the whole module so
-// these guards keep holding wherever inside it a given string lives.
-export function readResignationsUiSource() {
-  const dir = "src/components/resignations";
-  return readdirSync(dir)
-    .map((file) => readFileSync(`${dir}/${file}`, "utf8"))
-    .join("\n");
-}
+import { readFileSync } from "node:fs";
 
 export function runResignationDateEditTests() {
   const serviceSource = readFileSync("src/lib/resignations/service.ts", "utf8");
@@ -27,7 +17,7 @@ export function runResignationDateEditTests() {
   assert.match(routeSource, /updateResignationDates\(id, dates, actor\)/);
   assert.match(routeSource, /getResignationsDashboardData\(access\)/);
 
-  const reportSource = readResignationsUiSource();
+  const reportSource = readFileSync("src/components/reports/resignations-report.tsx", "utf8");
   assert.match(reportSource, /encodeURIComponent\(record\.id\)}\/dates/);
   assert.match(reportSource, /method: "PATCH"/);
   assert.match(reportSource, /Edit Dates/);
