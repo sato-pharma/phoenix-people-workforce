@@ -18,11 +18,16 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 //   "Office must be imported LAST. Take the line's total sales, work out each AREA's contribution
 //    to it, and spread the Office units by that contribution."
 //
+//   Step 0 (line):  weights are built PER OFFICIAL LINE. "The line's total sales" is his wording and
+//                   it is load-bearing — an Office file carries products from every line at once, and
+//                   the contribution base must be that product's OWN line. See the WEIGHTS ARE PER
+//                   LINE note below; getting this wrong misplaced 76% of CNS July's office units.
 //   Step 1 (area):  ONE blended share per area = that area's share of the line's NON-Office VALUE,
 //                   where value is units × the MASTER factory price (his words: "neglect the
 //                   values, you take units and × factory in master database"). The same share is
-//                   applied to EVERY product — deliberately NOT per product, so a product's office
-//                   units can land in an area that sold none of it. He accepted that consequence.
+//                   applied to EVERY product ON THAT LINE — deliberately NOT per product, so a
+//                   product's office units can land in an area that sold none of it. He accepted
+//                   that consequence.
 //   Step 2 (brick): inside each area, split that area's slice across its BRICKS pro-rata on the
 //                   same blended base. His rule stops at the area; this only exists because the
 //                   rows and the rollup key on brick_id, and it leaves every AREA total identical.
@@ -89,11 +94,14 @@ export type OfficeAreaWeights = {
 };
 
 /**
- * Build the area weights. `priceOf` returns the MASTER factory price for a product code — the value
- * basis the owner named explicitly; the stored row value is never used.
+ * Build the area weights for ONE line's brick rows. `priceOf` returns the MASTER factory price for a
+ * product code — the value basis the owner named explicitly; the stored row value is never used.
  *
  * Deliberately fed from `brickShare` (brick-carrying channels) and NOT `regionShare`: regionShare
  * includes Direct, which carries no area, and the owner's contribution is distributor sell-out.
+ *
+ * Callers must pass rows for a SINGLE line — use `buildOfficeAreaWeightsByLine` unless you have
+ * already partitioned them.
  */
 export function buildOfficeAreaWeights(
   brickShare: OfficeBrickShare[],
@@ -131,9 +139,48 @@ export function buildOfficeAreaWeights(
   return { totalValue, areaShare, brickWithinArea };
 }
 
+// ── WEIGHTS ARE PER LINE ─────────────────────────────────────────────────────
+// `phx_office_brick_share(p_period)` is keyed on the PERIOD and carries no line filter, so it
+// returns every line's brick rows in one list. One Office file also carries products from every
+// line at once. Blending all of that into a single area share spreads a line's office units by
+// other lines' geography: measured on July 2026 CNS, an all-lines share put 32,704 of 42,838 units
+// (76%) in a different area from the per-line share — Menoufia 1 would have taken 8,676 CNS units
+// against 792, and Nasr City 795 against 4,243.
+//
+// It is an easy mistake to re-make because the PREVIOUS per-product weighting was line-correct by
+// accident: a product's own sales only ever occur on its own line. Blending across products is what
+// loses that, so the partition has to be explicit.
 /**
- * Spread ONE product's office units using the blended weights. Returns slices keyed by brick, or the
- * NATIONAL bucket when the period has no non-Office sales to weight on at all.
+ * Partition `brickShare` by the official line of each row's product, then build one weight set per
+ * line. `lineOf` returns a product code's official line; rows whose product has no known line are
+ * grouped under "" and can only serve products with no known line either.
+ */
+export function buildOfficeAreaWeightsByLine(
+  brickShare: OfficeBrickShare[],
+  priceOf: (productCode: string) => number,
+  lineOf: (productCode: string) => string,
+): Map<string, OfficeAreaWeights> {
+  const byLine = new Map<string, OfficeBrickShare[]>();
+  for (const b of brickShare) {
+    const line = lineOf(b.productCode);
+    const list = byLine.get(line);
+    if (list) list.push(b);
+    else byLine.set(line, [b]);
+  }
+  const weights = new Map<string, OfficeAreaWeights>();
+  for (const [line, rows] of byLine) weights.set(line, buildOfficeAreaWeights(rows, priceOf));
+  return weights;
+}
+
+const EMPTY_WEIGHTS: OfficeAreaWeights = {
+  totalValue: 0,
+  areaShare: new Map(),
+  brickWithinArea: new Map(),
+};
+
+/**
+ * Spread ONE product's office units using its own line's blended weights. Returns slices keyed by
+ * brick, or the NATIONAL bucket when that line has no non-Office sales to weight on at all.
  * Pure — unit-tested without a database.
  */
 function allocateProduct(units: number, weights: OfficeAreaWeights): AllocationSlice[] {
@@ -235,12 +282,15 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
   // Index the references for fast per-product lookup.
   const productByCode = new Map(input.references.products.map((p) => [normalizeCodeKey(p.productCode), p]));
 
-  // The owner's rule: ONE blended set of area weights for the whole file, built from every
-  // non-Office brick row in the period and weighted by units × MASTER factory price. Built once
-  // here, then applied unchanged to every product.
-  const weights = buildOfficeAreaWeights(
+  // The owner's rule: ONE blended set of area weights PER LINE, built from that line's non-Office
+  // brick rows in the period and weighted by units × MASTER factory price. Built once here, then
+  // applied unchanged to every product on that line. `lineOf` keys both sides of the partition, so
+  // a product and the rows that weight it always agree on what "its line" means.
+  const lineOf = (productCode: string) => productByCode.get(normalizeCodeKey(productCode))?.line ?? "";
+  const weightsByLine = buildOfficeAreaWeightsByLine(
     input.brickShare,
     (productCode) => productByCode.get(normalizeCodeKey(productCode))?.factoryPrice ?? 0,
+    lineOf,
   );
   const brickById = new Map((input.references.bricks ?? []).map((b) => [b.brickId, b]));
 
@@ -255,7 +305,10 @@ export function computeOfficeAllocation(input: ComputeOfficeAllocationInput): Di
     const officialLine = reference?.line || "Unknown";
     const productName = reference?.productName || product.productName || product.productCode;
 
-    const slices = allocateProduct(product.units, weights);
+    const slices = allocateProduct(
+      product.units,
+      weightsByLine.get(lineOf(product.productCode)) ?? EMPTY_WEIGHTS,
+    );
     let sentToNational = false;
 
     for (const slice of slices) {
