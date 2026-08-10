@@ -22,7 +22,20 @@ import { showsAwaitingFinanceMonth } from "../src/lib/direct-orders/types.ts";
  *     definitions of the same money question drift; this asserts they agree.
  */
 
-const MIGRATION_PATH = "supabase/migrations/20260810170000_phx_finance_command_center.sql";
+/**
+ * Every migration that defines phx_finance_command_center, oldest first. The LAST one is the live
+ * definition, and it is the one the invariants below are really about — but each is checked,
+ * because a `CREATE OR REPLACE` that quietly drops the statement_timeout or re-introduces the
+ * banned table is exactly the regression this file exists to catch, and it can be introduced by
+ * any of them.
+ */
+const MIGRATION_PATHS = [
+  "supabase/migrations/20260810170000_phx_finance_command_center.sql",
+  "supabase/migrations/20260811010000_finance_command_center_direct_orders_marketing_depth.sql",
+] as const;
+
+/** The definition currently in the database — the last CREATE OR REPLACE wins. */
+const MIGRATION_PATH = MIGRATION_PATHS[MIGRATION_PATHS.length - 1]!;
 const SERVICE_PATH = "src/lib/finance/command-center.ts";
 const PAGE_PATH = "app/(admin)/admin/finance-command-center/page.tsx";
 
@@ -60,10 +73,13 @@ function stripTsComments(source: string): string {
 }
 
 function testDeductionsComeFromCommittedPayrollOnly() {
-  const migrationSql = executableSql(read(MIGRATION_PATH));
   const serviceSource = stripTsComments(read(SERVICE_PATH));
+  const bodies: Array<readonly [string, string]> = [
+    ...MIGRATION_PATHS.map((path) => [path, executableSql(read(path))] as const),
+    ["service", serviceSource] as const,
+  ];
 
-  for (const [label, body] of [["migration", migrationSql], ["service", serviceSource]] as const) {
+  for (const [label, body] of bodies) {
     assert.ok(
       !/deductions_candidates/i.test(body),
       `${label} must never read deductions_candidates — that table holds what the detection engines SUGGEST, not what payroll committed (July 2026: 1,833,169.35 estimated vs 25,577.65 actually charged)`,
@@ -75,6 +91,7 @@ function testDeductionsComeFromCommittedPayrollOnly() {
   }
 
   // The positive half: it is not enough to avoid the wrong table, it has to read the right ones.
+  const migrationSql = executableSql(read(MIGRATION_PATH));
   assert.ok(
     /salary_records/i.test(migrationSql),
     "closed-month deductions must be summed from salary_records, the table payroll actually wrote",
@@ -146,28 +163,31 @@ function testUnbookedPredicateMatchesTypescript() {
 }
 
 function testMigrationKeepsItsTimeoutAndLocksDownExecute() {
-  const raw = read(MIGRATION_PATH);
-  const sql = stripSqlComments(raw);
+  // EVERY definition, not just the live one. A CREATE OR REPLACE that omits the timeout or the
+  // revoke silently undoes its predecessor's, which is precisely how three protected RPCs lost
+  // their timeout and began returning HTTP 500 at the 8s authenticator default.
+  for (const path of MIGRATION_PATHS) {
+    const sql = stripSqlComments(read(path));
 
-  // Set INSIDE the CREATE header: a later `ALTER FUNCTION ... SET` is silently dropped by the
-  // next CREATE OR REPLACE, which is how three protected RPCs lost their timeout and started
-  // returning HTTP 500 at the 8s authenticator default.
-  assert.ok(
-    /set statement_timeout to '20s'/i.test(sql),
-    "phx_finance_command_center must declare its statement_timeout in the CREATE header",
-  );
+    // Set INSIDE the CREATE header — a later `ALTER FUNCTION ... SET` does not survive the next
+    // CREATE OR REPLACE.
+    assert.ok(
+      /set statement_timeout to '20s'/i.test(sql),
+      `${path} must declare phx_finance_command_center's statement_timeout in the CREATE header`,
+    );
 
-  // scripts/check-migrations.mjs rule 4 — anon/authenticated inherit EXECUTE through PUBLIC, so
-  // revoking only those two is a no-op; and revoking PUBLIC on a default ACL strips service_role,
-  // hence the explicit re-grant.
-  assert.ok(
-    /revoke\s+execute\s+on\s+function\s+public\.phx_finance_command_center[^;]*from[^;]*public/i.test(sql),
-    "a public SECURITY DEFINER function must REVOKE EXECUTE FROM PUBLIC",
-  );
-  assert.ok(
-    /grant\s+execute\s+on\s+function\s+public\.phx_finance_command_center[^;]*to\s+service_role/i.test(sql),
-    "service_role must be re-granted explicitly after the revoke, or the app cannot call its own RPC",
-  );
+    // scripts/check-migrations.mjs rule 4 — anon/authenticated inherit EXECUTE through PUBLIC, so
+    // revoking only those two is a no-op; and revoking PUBLIC on a default ACL strips service_role,
+    // hence the explicit re-grant.
+    assert.ok(
+      /revoke\s+execute\s+on\s+function\s+public\.phx_finance_command_center[^;]*from[^;]*public/i.test(sql),
+      `${path} creates a SECURITY DEFINER function and must REVOKE EXECUTE FROM PUBLIC`,
+    );
+    assert.ok(
+      /grant\s+execute\s+on\s+function\s+public\.phx_finance_command_center[^;]*to\s+service_role/i.test(sql),
+      `${path} must re-grant service_role after the revoke, or the app cannot call its own RPC`,
+    );
+  }
 }
 
 function testPageIsRoleGatedNotPermissionGated() {

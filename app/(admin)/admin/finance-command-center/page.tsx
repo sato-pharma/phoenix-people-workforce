@@ -59,7 +59,10 @@ async function FinanceCommandContent({ access }: { access: AccessContext }) {
       welcome={{
         fullName: viewer.displayName,
         hrId: access.hrId,
-        imageUrl: null,
+        // B-185 has a mapped portrait (src/lib/employees/profile-images.ts); resolveViewerIdentity
+        // already resolves it, and CeoHeroIdentity self-hides on a load error, so passing it
+        // through costs nothing when a viewer has none.
+        imageUrl: viewer.imageUrl,
         roleLabel: viewer.roleLabel,
       }}
     />
