@@ -266,6 +266,11 @@ const adminNavigationSectionSeeds = [
         href: "/employee-360",
         icon: IdCard,
         label: "Employee 360",
+        // Finance Manager excluded 2026-08-10 (owner). employee_profile:read is a
+        // portalMinimumPermissions floor he must keep — it is what lets him open his OWN profile —
+        // so the grant cannot be withdrawn to hide this row; the exclusion is the only lever. He is
+        // the section's only visible item, so the whole "Employee 360" block leaves his sidebar.
+        excludedRoles: ["Finance Manager"],
         permissions: [{ resource: "employee_profile", action: "read" }],
       },
       // Restored to its own row on 2026-08-08. It was folded into the Marketing & ROI hub on
@@ -319,7 +324,11 @@ const adminNavigationSectionSeeds = [
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
       // only (getAwaitingMyActionItems), and the SFE Manager holds none of those grants — it was
       // an empty inbox for him. Every other role keeps it.
-      { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["SFE Manager"], navBadge: "approvals-hub-pending" },
+      //
+      // Finance Manager excluded 2026-08-10 (owner), same mechanism, different reason: his
+      // leave:read grant is load-bearing for the two rows ABOVE this one — he manages OF-0001 /
+      // A-1 / A-4 and decides their vacations and excuses — so the row can only go by name.
+      { href: "/admin/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], excludedRoles: ["SFE Manager", "Finance Manager"], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
   },
@@ -358,17 +367,23 @@ const adminNavigationSectionSeeds = [
       // this hub (2026-08-02) so each module lives in exactly one place. They are cards in
       // marketingRoiPageItems now.
       //
-      // Finance Manager and Financial Advisor are added here for a specific reason: the ROI
-      // Tracker row they used to reach directly listed them, this hub button did not, and both
-      // are admin-shell roles (not in portalNavigationRoles). Folding without them would leave
-      // the finance roles whose page guard admits ROI Tracker with no sidebar route to it at all.
-      // Marketing Manager / Product Manager / Group Product Manager are deliberately NOT added —
-      // they are portal-only and reach ROI Tracker through the employee portal.
+      // Financial Advisor is here for a specific reason: the ROI Tracker row it used to reach
+      // directly listed it, this hub button did not, and it is an admin-shell role (not in
+      // portalNavigationRoles). Folding without it would leave a finance role whose page guard
+      // admits ROI Tracker with no sidebar route to it at all. Marketing Manager / Product Manager
+      // / Group Product Manager are deliberately NOT added — they are portal-only and reach ROI
+      // Tracker through the employee portal.
+      //
+      // Finance Manager was in this list for the same reason until 2026-08-10, when the owner took
+      // Marketing & ROI and ROI Tracker off his sidebar. The page guard
+      // (assertMarketingAdminPageAccess allowCompanyOversight) still admits him by URL — this is a
+      // navigation decision, not a revocation — but nothing links him here any more. His remaining
+      // marketing duty is the Approval Inbox below, which is the rung he actually executes.
       {
         href: "/admin/marketing-roi",
         icon: Megaphone,
         label: "Marketing & ROI",
-        roles: ["Super Admin", "CEO", "SFE Manager", "District Manager", "Finance Manager", "Financial Advisor"],
+        roles: ["Super Admin", "CEO", "SFE Manager", "District Manager", "Financial Advisor"],
       },
       // Pulled OUT of the hub onto its own sidebar tab (2026-08-02). It is an inbox — work
       // arrives in it and waits — so it needs to be visible at a glance with its pending badge,
@@ -413,6 +428,11 @@ const adminNavigationSectionSeeds = [
       // allowCompanyOversight: true }) minus the SFE Manager, who keeps reaching it as a card in
       // marketingRoiPageItems. Row-level visibility is still scoped per viewer inside
       // getMarketingRoiReport; this widens nothing.
+      //
+      // Finance Manager dropped from this list on 2026-08-10 (owner). Removed from
+      // marketingRoiPageItems for him too — that hub card is what the Cmd+K palette folds back in,
+      // so leaving it would have moved "ROI Tracker" from his sidebar into his command palette
+      // rather than removing it.
       {
         href: "/admin/marketing-roi-tracker",
         icon: Target,
@@ -424,7 +444,6 @@ const adminNavigationSectionSeeds = [
           "Marketing Manager",
           "Product Manager",
           "Group Product Manager",
-          "Finance Manager",
           "Financial Advisor",
         ],
       },
@@ -457,7 +476,12 @@ const adminNavigationSectionSeeds = [
         // needs employees / vacancies / contracts / resignations — none of which he holds — so the
         // hub is empty for him. Probation, the one people-surface he genuinely owns, is its own
         // sidebar entry in this section and is unaffected.
-        excludedRoles: ["SFE Manager"],
+        //
+        // Finance Manager excluded 2026-08-10 (owner). Identical situation: leave:read +
+        // weekly_plans:read open the button, and he holds none of the card grants, so this hub
+        // rendered empty for him too. He is the section's only visible item, so the whole "People
+        // Management" block leaves his sidebar.
+        excludedRoles: ["SFE Manager", "Finance Manager"],
         permissions: [
           { resource: "leave", action: "read" },
           { resource: "employees" },
@@ -520,7 +544,11 @@ const adminNavigationSectionSeeds = [
         // every card inside attendanceManagementPageItems is gated on employees/hr_calendar,
         // which he does not hold, so the hub renders with ZERO items. A link to an empty page is
         // worse than no link, and attendance is not part of his sales/CRM remit either.
-        excludedRoles: ["SFE Manager"],
+        //
+        // Finance Manager excluded 2026-08-10 (owner) — same empty hub, same reasoning. His
+        // attendance:read/export grant stays: it feeds the payroll and day-report surfaces he
+        // keeps, so only the row goes.
+        excludedRoles: ["SFE Manager", "Finance Manager"],
         permissions: [
           { resource: "employees" },
           { resource: "employees", action: "update" },
@@ -654,7 +682,11 @@ const adminNavigationSectionSeeds = [
     // but honours excludedRoles — without it he would see two "CRM" rows.
     items: [
       { href: "/admin/crm", icon: Database, label: "CRM", roles: ["Super Admin"] },
-      { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin"] },
+      // Finance Manager excluded 2026-08-10 (owner). crm_visits:read is what admitted him, and
+      // that grant has to stay — canViewEmployeeActivity and the attendance manager view both
+      // read it — so the row is removed by name. /admin/crm above is Super-Admin-only, so the
+      // whole "CRM" section leaves his sidebar.
+      { href: "/admin/crm-tools", icon: Database, label: "CRM", permissions: [{ resource: "crm_visits" }, { resource: "double_visit_analytics" }, { resource: "hr_calendar" }], excludedRoles: ["Super Admin", "Finance Manager"] },
     ],
     label: "CRM",
   },
@@ -1868,6 +1900,11 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
     // Mirrors assertMarketingAdminPageAccess({ allowCompanyOversight: true }) and the sidebar
     // entry above. Previously omitted Marketing Manager / Product Manager / Group Product
     // Manager even though the page guard admits them.
+    //
+    // Finance Manager removed 2026-08-10 alongside the sidebar row, and it must stay removed for
+    // the removal to mean anything: command-palette.tsx folds every hub card the viewer's role
+    // admits back into Cmd+K, so this card alone would have kept "ROI Tracker" one keystroke away
+    // under a "Marketing & ROI" heading. The page guard still admits him by URL.
     roles: [
       "Super Admin",
       "CEO",
@@ -1875,7 +1912,6 @@ export const marketingRoiPageItems: readonly AdminToolsPageItem[] = [
       "Marketing Manager",
       "Product Manager",
       "Group Product Manager",
-      "Finance Manager",
       "Financial Advisor",
     ],
   },
