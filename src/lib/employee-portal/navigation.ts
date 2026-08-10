@@ -133,8 +133,6 @@ export type EmployeePortalNavVisibility = {
   // roles that ever sit as a person-rung in the approval ladder (see
   // directOrderManagementLadder) — the CEO's rung always resolves to the admin shell.
   showDirectOrdersTab?: boolean;
-  showDirectOrdersReportTab?: boolean;
-  showDirectOrdersApprovalsTab?: boolean;
   showVacationApprovalsTab?: boolean;
   // Excuse has its own flag (distinct from vacation) so a module can be hidden for one role
   // without touching the other — e.g. National Sales Manager sees Vacation but not Excuse.
@@ -373,7 +371,6 @@ export function resolveEmployeePortalNavVisibility(
   // Coaching Analytics and Double-Visit Analytics, which NSM was not asked to gain here.
   const showRoiIntelligenceTab = showSalesIntelligence || isNationalSalesManager;
   const showDirectOrdersTab = !isCnsLine && isDirectOrderRequesterRole(resolvedRole);
-  const isDirectOrderApprovalRung = !isCnsLine && (resolvedRole === "Regional Manager" || isNationalSalesManager);
 
   return {
     showDashboardTab: !isTrainingManager,
@@ -587,8 +584,6 @@ export function resolveEmployeePortalNavVisibility(
     showMyVisitsTab,
     showDeductionsTab,
     showDirectOrdersTab,
-    showDirectOrdersReportTab: showDirectOrdersTab,
-    showDirectOrdersApprovalsTab: isDirectOrderApprovalRung,
     // Vacation Approvals — confirmed portal-shell approver roles.
     showVacationApprovalsTab:
       resolvedRole === "District Manager" ||

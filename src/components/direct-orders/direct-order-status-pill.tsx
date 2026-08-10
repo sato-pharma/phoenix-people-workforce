@@ -1,3 +1,4 @@
+import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import { showsAwaitingFinanceMonth, type DirectOrderStatus } from "@/lib/direct-orders/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,12 +84,22 @@ export function DirectOrderStatusPill({ status, salesMonth, variant = "solid" }:
       : AWAITING_FINANCE_SOLID
     : (variant === "ring" ? RING_TONE : SOLID_TONE)[key] ?? fallback;
 
-  // "Approved — awaiting Finance month" wraps in a narrow cell and the owner's rule forbids that,
-  // so the pill carries the short form and the title attribute carries the reason in full.
-  const label = awaitingFinance ? "awaiting finance month" : String(status).replace(/_/g, " ");
+  // The WORDS now come from the shared vocabulary (status-labels.ts) instead of
+  // `String(status).replace(/_/g, " ")`, which printed the database value: "pending
+  // approval", "held", "expired". Those describe the row, not the reader's
+  // situation — "held" in particular reads as "an approver paused this" when the
+  // truth is that no approver has seen it at all.
+  //
+  // The awaiting-Finance TITLE stays a literal here rather than delegating, and
+  // that is deliberate: this one sentence names the GOLDEN RULE (CEO approval
+  // injects nothing; only the Finance booking does), it is the most important
+  // sentence in the module, and tests/direct-orders-finance-month-badge.test.ts
+  // asserts the wording lives in the file that renders it.
+  const presentation = describeDirectOrderStatus(key, salesMonth);
+  const label = presentation.label;
   const title = awaitingFinance
     ? "Approved — awaiting Finance month. The sales are NOT in any month's numbers yet: they inject only when the Finance Manager books this order into a month."
-    : undefined;
+    : presentation.explanation;
 
   return (
     <span className={`${base} whitespace-nowrap ${tone}`} title={title}>

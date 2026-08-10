@@ -376,6 +376,10 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
       return <NavBadge compact={compact} src="/api/approvals/excuse/pending-count" />;
     case "plan-approvals-pending":
       return <NavBadge compact={compact} src="/api/approvals/plan/pending-count" />;
+    // The ONE Direct Orders row. Sums the approval queue and Finance's unbooked queue because a
+    // nav item carries one badge and the two audiences barely overlap — see the endpoint's note.
+    case "direct-orders-needs-action":
+      return <NavBadge compact={compact} src="/api/direct-orders/needs-action-count" />;
     case "direct-orders-approvals-pending":
       return <NavBadge compact={compact} src="/api/approvals/direct-orders/pending-count" />;
     // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same

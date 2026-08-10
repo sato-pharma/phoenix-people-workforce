@@ -702,7 +702,6 @@ export function runDirectOrderHoldReleaseTests() {
   // SAME candidate the callout reads, so the two can never disagree.
   for (const [label, path] of [
     ["the admin approval window", "../src/components/approvals-hub/direct-order-request-detail.tsx"],
-    ["the portal approval window", "../src/components/employee-portal/direct-order-portal-detail.tsx"],
   ] as const) {
     const source = readFileSync(new URL(path, import.meta.url), "utf8");
     assert.match(

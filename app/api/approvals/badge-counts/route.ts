@@ -74,6 +74,16 @@ export async function GET(request: Request) {
         directOrders: directOrders.status === "fulfilled" ? directOrders.value : { count: 0 },
         directOrdersUnbooked:
           directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value : { count: 0, overdue: false },
+        // The single Direct Orders row's badge. DERIVED from the two slots above rather than
+        // fetched: the sets are provably disjoint (an order is either still in the chain or through
+        // it and waiting on Finance), and both halves already returned 0 to anyone who cannot clear
+        // them — so the sum stays a number the reader can act on, at zero extra query cost.
+        directOrdersNeedsAction: {
+          count:
+            (directOrders.status === "fulfilled" ? directOrders.value.count : 0) +
+            (directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.count : 0),
+          overdue: directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.overdue : false,
+        },
         marketing: marketing.status === "fulfilled" ? marketing.value : { count: 0, overdue: false },
       },
       { headers: { "Cache-Control": "no-store" } },
@@ -86,6 +96,7 @@ export async function GET(request: Request) {
       hub: { count: 0 },
       directOrders: { count: 0 },
       directOrdersUnbooked: { count: 0, overdue: false },
+      directOrdersNeedsAction: { count: 0, overdue: false },
       marketing: { count: 0, overdue: false },
     });
   }

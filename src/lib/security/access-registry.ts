@@ -380,6 +380,9 @@ export const accessRegistry = [
   // anyone who cannot actually book a month, so the shared Direct Orders nav row stays unbadged for
   // the sales roles. Not audited — it returns a count and a boolean, no rows and no names.
   sessionApi({ audit: { classification: "access-read", required: false }, methods: readOnly, pattern: "/api/direct-orders/unbooked-count", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // The ONE Direct Orders sidebar badge: awaiting-approval + awaiting-Finance-month, summed. Same
+  // permission and same guard style as the two counts it composes; both halves gate themselves.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: readOnly, pattern: "/api/direct-orders/needs-action-count", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacies", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Pharmacy registry — pre-register a pharmacy so a later order is recognised. Registry
   // permission is only `read` because the real gate is a role check inside the service

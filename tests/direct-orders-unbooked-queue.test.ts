@@ -37,7 +37,6 @@ const BADGE_COUNTS_ROUTE_PATH = "app/api/approvals/badge-counts/route.ts";
 const DASHBOARD_PATH = "src/components/admin/finance-command-center.tsx";
 const DASHBOARD_SERVICE_PATH = "src/lib/finance/command-center.ts";
 const REPORT_PAGE_PATH = "app/(admin)/admin/direct-orders/report/page.tsx";
-const PORTAL_REPORT_PATH = "src/components/employee-portal/direct-order-portal-report.tsx";
 
 function read(path: string): string {
   return readFileSync(path, "utf8");
@@ -160,21 +159,31 @@ export function runDirectOrdersUnbookedQueueTests() {
   assert.match(
     read(NAVIGATION_PATH),
     // [^\n]* not [^}]*: the row carries a nested `permissions: [{ ... }]` between the two anchors.
-    /href: "\/sales\/direct-orders-tools"[^\n]*navBadge: "direct-orders-unbooked"/,
-    "the Direct Orders sidebar row must carry the unbooked badge",
+    /href: "\/admin\/direct-orders"[^\n]*navBadge: "direct-orders-needs-action"/,
+    "the Direct Orders sidebar row must carry the needs-action badge",
   );
   assert.match(
     read(SIDEBAR_PATH),
-    /case "direct-orders-unbooked":[\s\S]{0,160}\/api\/direct-orders\/unbooked-count/,
+    /case "direct-orders-needs-action":[\s\S]{0,260}\/api\/direct-orders\/needs-action-count/,
     "the sidebar badge switch must resolve the new key to its endpoint",
   );
   assert.match(
     read(BADGE_STORE_PATH),
-    /"\/api\/direct-orders\/unbooked-count": "directOrdersUnbooked"/,
+    /"\/api\/direct-orders\/needs-action-count": "directOrdersNeedsAction"/,
     "the badge must ride the batched poll, not open its own 30s request",
   );
+  // The row MOVED on 2026-08-10: /sales/direct-orders-tools was retired and the module's five nav
+  // entries collapsed into one "Direct Orders" row. A single row carries a single badge, so the
+  // unbooked count is now SUMMED into `direct-orders-needs-action` alongside the approval count.
+  // The four-list rule is unchanged and still swept; it just follows the badge the row now carries,
+  // and the assertion below keeps the unbooked half reachable inside it.
   const badgeCounts = read(BADGE_COUNTS_ROUTE_PATH);
-  assert.match(badgeCounts, /getDirectOrderUnbookedBadge\(access\)/, "the batched route must fetch the unbooked count");
+  assert.match(badgeCounts, /getDirectOrderUnbookedBadge\(access\)/, "the batched route must still fetch the unbooked count");
+  assert.match(
+    badgeCounts,
+    /directOrdersNeedsAction:[\s\S]{0,400}directOrdersUnbooked\.value\.count/,
+    "THE UNBOOKED COUNT MUST BE SUMMED INTO THE ONE ROW'S BADGE: drop it and the Finance Manager's only ambient chaser goes invisible, which is the whole reason that badge exists",
+  );
   assert.match(
     badgeCounts,
     /directOrdersUnbooked:[\s\S]{0,140}\{ count: 0, overdue: false \}/,
@@ -270,12 +279,21 @@ export function runDirectOrdersUnbookedQueueTests() {
     );
   }
 
-  // ── 10. The portal report is untouched ───────────────────────────────────────────────────────
-  // No portal role can book a sales month, so the chip is admin-shell only and this screen must
-  // behave exactly as it did before the filter existed.
-  assert.match(
-    read(PORTAL_REPORT_PATH),
-    /unbookedOnly: false/,
-    "the portal report must pin the filter off — no portal role can clear this queue",
+  // ── 10. The portal report must not open on the unbooked filter ───────────────────────────────
+  // No portal role can book a sales month, so the chip is admin-shell only.
+  //
+  // The rule MOVED on 2026-08-10 without changing. It used to be enforced by the portal having its
+  // own report component; that twin was retired onto the shared DirectOrderReportWorkspace, so what
+  // keeps the filter off for the portal is now the PAGE declining to pass `initialUnbookedOnly`
+  // (the prop defaults to false). Asserting on the component would prove nothing — it is the same
+  // component the Finance Manager uses WITH the chip.
+  const portalReportPage = readFileSync(
+    new URL("../app/employee-portals/direct-orders/report/page.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    portalReportPage,
+    /initialUnbookedOnly/,
+    "the portal report page must not pass initialUnbookedOnly — no portal role can clear that queue",
   );
 }

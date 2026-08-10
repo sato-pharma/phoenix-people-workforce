@@ -30,7 +30,7 @@ const NSM = { role: "National Sales Manager", hrId: "A-12" };
 const CEO = { role: "CEO", hrId: "AA" };
 
 const REQUESTER_HOME = "/employee-portals/direct-orders";
-const APPROVALS_HOME = "/admin/approvals/direct-orders";
+const APPROVALS_HOME = "/admin/direct-orders?view=needs-action";
 
 async function devAuth(page: Page, role: string, hrId: string, next: string) {
   const qs = new URLSearchParams({ hrId, next, role });
