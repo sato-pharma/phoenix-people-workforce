@@ -81,6 +81,28 @@ export type SchemaShape = {
    * and stay silent rather than inventing a violation.
    */
   default_acl_leaks?: DefaultAclLeak[];
+  /**
+   * Dated snapshot schemas past the retention window.
+   *
+   * `check:sql-backups` stops a snapshot being created in `public`; nothing used to check
+   * that one ever LEAVES. On 2026-08-10 there were 15 dated schemas plus 11 dated tables
+   * inside `au` — 101 tables, 1,122,814 rows, 183 MB, oldest 13 days, none ever dropped.
+   *
+   * Optional for the same reason as `default_acl_leaks`: the RPC only exists once
+   * 20260811000600_pg_health_snapshot_expiry_gate.sql is applied, and this script runs
+   * against production and staging independently. `undefined` means "target predates the
+   * check" and must stay silent rather than invent a violation.
+   */
+  stale_snapshot_schemas?: StaleSnapshotSchema[];
+};
+
+/** A dated snapshot schema that is older than the retention window. */
+export type StaleSnapshotSchema = {
+  schema_name: string;
+  taken_on: string;
+  age_days: number;
+  tables_count: number;
+  size_bytes: number;
 };
 
 /** One (granting role, object type, grantee) triple from pg_default_acl in schema public. */
@@ -230,6 +252,26 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
     });
   }
 
+  // A snapshot schema that outlived its purpose. Warning, not error: dropping one is a
+  // judgement call about data nobody else holds, so this asks rather than blocks. It only
+  // has to be loud enough that 15 of them cannot pile up unnoticed again.
+  if (shape.stale_snapshot_schemas && shape.stale_snapshot_schemas.length > 0) {
+    const stale = shape.stale_snapshot_schemas;
+    const mb = Math.round(stale.reduce((sum, s) => sum + Number(s.size_bytes ?? 0), 0) / 1048576);
+    const oldest = stale.reduce((a, b) => (a.age_days >= b.age_days ? a : b));
+    v.push({
+      severity: "warning",
+      code: "stale_snapshot_schema",
+      message:
+        `${stale.length} dated snapshot schema(s) are past the retention window, holding ~${mb} MB ` +
+        `(oldest: ${oldest.schema_name}, ${oldest.age_days} days). ` +
+        `Export then \`drop schema … cascade\` per docs/security/backup-table-placement.md, ` +
+        `or rename it without a trailing date if it is meant to be permanent: ` +
+        stale.slice(0, 10).map((s) => `${s.schema_name} (${s.age_days}d)`).join(", ") +
+        (stale.length > 10 ? ", …" : ""),
+    });
+  }
+
   return v;
 }
 
@@ -245,7 +287,21 @@ async function loadShape(): Promise<SchemaShape> {
   const { data, error } = await supabase.rpc("phx_ci_schema_shape");
   if (error) throw new Error(`phx_ci_schema_shape RPC failed: ${error.message}`);
   if (!data) throw new Error("phx_ci_schema_shape returned no data.");
-  return data as SchemaShape;
+  const shape = data as SchemaShape;
+
+  // Separate RPC so this gate could be added without touching phx_ci_schema_shape. A target
+  // that predates the migration returns an error here; that is "check not deployed yet",
+  // not a violation, so it stays undefined and evaluateSchemaShape stays quiet.
+  const stale = await supabase.rpc("phx_ci_stale_snapshot_schemas", { p_max_age_days: 30 });
+  if (stale.error) {
+    console.log(
+      `[schema-shape] snapshot-expiry gate not available on this target (${stale.error.message}) — skipping.`,
+    );
+  } else {
+    shape.stale_snapshot_schemas = (stale.data ?? []) as StaleSnapshotSchema[];
+  }
+
+  return shape;
 }
 
 function projectRef(url: string | undefined): string {
