@@ -24,11 +24,19 @@ All commands run from the repo root.
 | Full hardening gate (5 domain/DB checks + lint + typegen + typecheck + test + build) | `pnpm run check:harden` |
 | CI gate (same as harden) | `pnpm run ci` |
 
-**Validate once per task, not once per step.** Finish the work first — no lint, typecheck, test, or
-build between edits. Then run `check:harden` once, immediately before you push (and again before a
-migration or a production deploy). Local commits on a feature branch do not each need it: CI re-runs
-the same gate on the PR and blocks a red merge. `check:edit` is an optional fast typecheck mid-task,
-not a per-edit ritual.
+**Validate ONLY when the owner says so. Never on your own judgement.**
+
+No lint, no typecheck, no tests, no build until he says the work is done. Not between edits, not
+"once per task", not because a change feels finished — **he decides when the work is finished, not
+you.** Replaced the old "validate once per task" wording on 2026-08-10 at his instruction: it still
+left the agent deciding where a task ended, so the gate kept firing while he was mid-iteration.
+
+He iterates in long sessions and often changes the same file many times. Re-validating work that is
+about to change again proves nothing and costs him minutes of a 16GB machine he is still typing on.
+
+When he says done: run `check:harden` once, then push. Migrations and production deploys get their
+own run immediately before the action, because CI does not cover those. Verifying a UI change in the
+browser is not validation and does not need permission — reload and look.
 
 ## The two rules that apply to every change
 

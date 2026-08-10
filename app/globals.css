@@ -783,6 +783,32 @@ html:has(.admin-shell) {
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
+/* ══════════════════════════════════════════════════════
+   Finance Command Center — "Since Day One" banner
+   ══════════════════════════════════════════════════════ */
+
+/* Gold foil with a highlight that travels ACROSS THE LETTERS, not across the box: the gradient is
+   clipped to the text and it is the background-position that moves, so the sheen reads like light
+   raking over engraved metal. Reuses ep-shimmer rather than adding a second sweep keyframe.
+   6s, not the 2s the skeletons use — a loading state should feel busy, a nameplate should not. */
+.fcc-nameplate {
+  background-image: linear-gradient(
+    100deg,
+    #e8912f 0%,
+    #f8b56b 22%,
+    #ffe7cf 40%,
+    #ffffff 50%,
+    #ffe7cf 60%,
+    #f8b56b 78%,
+    #e8912f 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: ep-shimmer 6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ep-pulse-orange,
   .ep-pulse-green,
@@ -794,6 +820,7 @@ html:has(.admin-shell) {
   .employee-portal-route-loading,
   .employee-portal-skeleton,
   .employee-portal-nav-pending-dot,
+  .fcc-nameplate,
   .nav-badge-alarm,
   .nav-badge-alarm-overdue,
   .phoenix-route-transition-bar {

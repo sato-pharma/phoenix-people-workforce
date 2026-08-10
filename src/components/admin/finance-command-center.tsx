@@ -15,9 +15,13 @@ import {
 } from "lucide-react";
 
 import { AdminHeroFrame } from "@/components/admin/admin-design-system";
-import { AreaSparkline, SectionShell, TwoSeriesBars } from "@/components/admin/ceo-command-center";
+import { AreaSparkline, SectionShell } from "@/components/admin/ceo-command-center";
 import { CeoHeroIdentity } from "@/components/admin/ceo-hero-identity";
-import type { FinanceCommandCenterView, FinancePayrollRun } from "@/lib/finance/command-center";
+import type {
+  FinanceCommandCenterView,
+  FinanceCommittedMonth,
+  FinancePayrollRun,
+} from "@/lib/finance/command-center";
 
 export type FinanceWelcomeProfile = {
   fullName: string;
@@ -111,13 +115,16 @@ function MetricTile({
     slate: "text-slate-900",
   }[tone];
 
+  // Centred, unlike the CEO centre's left-aligned MetricTile this is modelled on. This page is a
+  // grid of many small figures rather than a few wide ones, and centring gives every card a single
+  // shared axis — the eye scans down one line instead of re-finding a ragged left edge per row.
   return (
-    <div className="min-h-32 border border-slate-200 bg-white px-4 py-4">
-      <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
+    <div className="min-h-32 border border-slate-200 bg-white px-4 py-4 text-center">
+      <div className="flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">
         <span className="text-orange-600">{icon}</span>
         {label}
       </div>
-      <p className={`mt-4 text-3xl font-black leading-none ${toneClass}`}>{value}</p>
+      <p className={`mt-4 text-3xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
       <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p>
     </div>
   );
@@ -194,7 +201,7 @@ function PipelineStat({
     : { amber: "text-amber-700", emerald: "text-emerald-700", rose: "text-rose-700", slate: "text-slate-900" }[tone];
 
   return (
-    <div className="min-w-0 border border-slate-200 bg-white px-4 py-3.5">
+    <div className="min-w-0 border border-slate-200 bg-white px-4 py-3.5 text-center">
       <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
       <p className={`mt-2 text-xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
       {sub ? <p className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p> : null}
@@ -211,22 +218,59 @@ function PipelineStat({
  * position the CEO's carries. The name is read from the viewer rather than hardcoded, so the
  * banner stays true if the seat ever changes hands.
  */
-function FinanceOwnerBanner({ fullName }: { fullName: string }) {
+function FinanceOwnerBanner() {
   return (
+    // py-4 on purpose, matching SfeDepartmentBanner: a banner that pushes the figures down the
+    // page costs more than it adds. Everything below earns its presence through ornament and
+    // depth, never through height.
     <div className="relative overflow-hidden border-b border-slate-200 bg-slate-900 px-5 py-4 text-center">
+      {/* Depth, back to front: a warm ember centred behind the wordmark so the bar is lit rather
+          than flat, then a hairline top and bottom to frame it. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(249,115,22,0.7)_50%,transparent_100%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_58%_130%_at_50%_50%,rgba(249,115,22,0.17)_0%,rgba(249,115,22,0.05)_45%,transparent_76%)]"
       />
-      <div className="relative flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-        <h2 className="bg-[linear-gradient(180deg,#FFFFFF_0%,#FFE7CF_60%,#F8B56B_100%)] bg-clip-text text-sm font-black uppercase tracking-[0.14em] text-transparent">
-          {fullName}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(249,115,22,0.75)_50%,transparent_100%)]"
+      />
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(248,181,107,0.3)_50%,transparent_100%)]"
+      />
+
+      {/* Deliberately the phrase alone. His name and portrait are already the hero directly above,
+          so repeating them here was saying the same thing twice in 40 vertical pixels.
+          Flanked by tapered rules and lit diamonds — the ornament is what makes three short words
+          hold the full width of the bar without setting them enormous. */}
+      <div className="relative flex items-center justify-center gap-3 sm:gap-4">
+        <span
+          aria-hidden="true"
+          className="hidden h-px w-10 bg-[linear-gradient(90deg,transparent_0%,rgba(248,181,107,0.75)_100%)] sm:block lg:w-16"
+        />
+        <span
+          aria-hidden="true"
+          className="hidden h-1 w-1 rotate-45 bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
+        />
+
+        {/* `fcc-nameplate` (app/globals.css) is the gold foil + travelling highlight; it already
+            sets background-clip:text and a transparent colour, so no bg-clip utility here.
+            text-indent cancels the trailing space that letter-spacing adds after the final "E",
+            which would otherwise sit the phrase visibly left of true centre. */}
+        <h2 className="fcc-nameplate text-sm font-black uppercase tracking-[0.44em] [text-indent:0.44em] [text-shadow:0_0_26px_rgba(249,115,22,0.34)] sm:text-[15px]">
+          Since Day One
         </h2>
-        <span aria-hidden="true" className="h-1 w-1 rotate-45 bg-[#F97316]" />
-        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#F8B56B]">
-          Leading Since Your First Day
-        </p>
+
+        <span
+          aria-hidden="true"
+          className="hidden h-1 w-1 rotate-45 bg-[#F97316] shadow-[0_0_10px_rgba(249,115,22,0.9)] sm:block"
+        />
+        <span
+          aria-hidden="true"
+          className="hidden h-px w-10 bg-[linear-gradient(90deg,rgba(248,181,107,0.75)_0%,transparent_100%)] sm:block lg:w-16"
+        />
       </div>
+
       {/* Right corner, absolutely placed so it cannot shift the centred statement off-centre. */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -234,6 +278,105 @@ function FinanceOwnerBanner({ fullName }: { fullName: string }) {
         className="absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 opacity-95 sm:block"
         src="/brand/sato-pharma-logo.png"
       />
+    </div>
+  );
+}
+
+/**
+ * Net payroll, month over month.
+ *
+ * The sparkline above it carries the LEVEL; this carries the MOVEMENT — how much each month's net
+ * rose or fell against the one before, which is the question a finance manager actually asks of a
+ * payroll series. Rendered as plain divs with inline heights, the same way TwoSeriesBars does it,
+ * so it stays in the executive family and pulls in no charting library.
+ *
+ * Bars are scaled from zero, not from the series minimum: a 2.6M and a 2.8M month are genuinely
+ * similar, and a min-anchored scale would exaggerate that into a cliff.
+ */
+function NetMonthOverMonth({ months }: { months: FinanceCommittedMonth[] }) {
+  if (months.length === 0) {
+    return <p className="text-xs text-slate-400">No closed month yet.</p>;
+  }
+
+  const max = Math.max(...months.map((month) => month.net), 1);
+  const lastIndex = months.length - 1;
+
+  return (
+    // `overflow-visible` so a tooltip can escape the chart box; the parent panel does not clip.
+    <div className="relative overflow-visible pt-6">
+      <div className="flex h-24 items-end gap-2">
+        {months.map((month, index) => {
+          const previous = index > 0 ? months[index - 1]!.net : null;
+          const delta = previous && previous > 0 ? (month.net - previous) / previous : null;
+          const flat = delta !== null && Math.abs(delta) < 0.005;
+          const up = delta !== null && !flat && delta > 0;
+          const down = delta !== null && !flat && delta < 0;
+          const isLatest = index === lastIndex;
+          const deltaText = delta === null ? "—" : flat ? "0%" : `${up ? "+" : "−"}${Math.abs(delta * 100).toFixed(0)}%`;
+
+          return (
+            <div
+              className="group relative flex min-w-0 flex-1 flex-col items-center gap-1.5"
+              key={month.period}
+            >
+              {/* Hover card. Pure CSS — this is a server component, and a native `title` alone
+                  cannot show the exact figure and the change together. `title` stays as the
+                  touch/screen-reader fallback, since hover does not exist on a phone. */}
+              <div
+                className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap border border-slate-700 bg-slate-900 px-3 py-2 text-left shadow-[0_12px_28px_rgba(15,23,42,0.35)] group-hover:block"
+                role="tooltip"
+              >
+                <p className="text-[9px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  {monthLabel(month.period)}
+                </p>
+                <p className="mt-1 text-sm font-black tabular-nums text-white">{egpExact(month.net)}</p>
+                <p className="mt-0.5 text-[10px] font-bold tabular-nums text-slate-300">
+                  {n(month.employees)} paid
+                  {delta === null ? "" : ` · ${deltaText} vs ${monthLabel(months[index - 1]!.period)}`}
+                </p>
+              </div>
+
+              <span
+                className={`text-[9px] font-black tabular-nums ${
+                  delta === null || flat ? "text-slate-400" : up ? "text-emerald-700" : "text-rose-700"
+                }`}
+              >
+                {deltaText}
+              </span>
+
+              {/* Solid brand orange with a vertical gradient — no opacity wash, which is what made
+                  the earlier bars look faded and unfinished on white. The latest month is the
+                  deepest and carries a ring so "now" is unmistakable at a glance. */}
+              <div
+                className={`w-full transition-[filter] duration-150 group-hover:brightness-110 ${
+                  isLatest ? "ring-1 ring-orange-700/40" : ""
+                }`}
+                style={{
+                  backgroundImage: isLatest
+                    ? "linear-gradient(180deg,#FB923C 0%,#EA580C 100%)"
+                    : "linear-gradient(180deg,#FDBA74 0%,#F97316 100%)",
+                  height: `${Math.max(6, (month.net / max) * 68)}px`,
+                }}
+                title={`${monthLabel(month.period)} — ${egpExact(month.net)}${delta === null ? "" : ` (${deltaText})`}`}
+              />
+
+              <span
+                className={`truncate text-[8px] ${isLatest ? "font-black text-slate-700" : "text-slate-400"}`}
+              >
+                {monthLabel(month.period)}
+              </span>
+
+              {/* Screen readers get the same three facts the hover card shows. */}
+              <span className="sr-only">
+                {monthLabel(month.period)}: {egpExact(month.net)}, {n(month.employees)} paid
+                {delta === null ? "" : `, ${deltaText} versus the previous month`}
+              </span>
+
+              {down ? <span className="sr-only">decrease</span> : null}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -319,8 +462,12 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
                 <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">in run</p>
               </div>
               <div className="hidden shrink-0 text-right sm:block">
-                <p className="text-sm font-black tabular-nums text-rose-700">{egpExact(run.decided_deductions)}</p>
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">deducted</p>
+                <p
+                  className={`text-sm font-black tabular-nums ${run.on_hold_count > 0 ? "text-amber-700" : "text-slate-300"}`}
+                >
+                  {n(run.on_hold_count)}
+                </p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">on hold</p>
               </div>
             </div>
           ))
@@ -367,31 +514,13 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
         </div>
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-            Deductions actually committed
+            Net payroll — month over month
           </p>
           <p className="mt-0.5 text-[10px] font-medium text-slate-400">
-            What payroll charged — not what the detection engines proposed.
+            How each month moved against the one before it.
           </p>
           <div className="mt-2">
-            <TwoSeriesBars
-              colorA="#F97316"
-              colorB="#8B5CF6"
-              data={data.payroll.committed.map((month) => ({
-                a: month.deductions,
-                b: month.governmental,
-                label: monthLabel(month.period),
-              }))}
-            />
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-2 w-2" style={{ backgroundColor: "#F97316" }} />
-              HR deductions
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span aria-hidden="true" className="h-2 w-2" style={{ backgroundColor: "#8B5CF6" }} />
-              Tax &amp; insurance
-            </span>
+            <NetMonthOverMonth months={data.payroll.committed} />
           </div>
         </div>
       </div>
@@ -431,7 +560,7 @@ export function FinanceCommandCenter({
             fullName={welcome.fullName}
             imageUrl={welcome.imageUrl}
             roleLabel={welcome.roleLabel}
-            subGreeting="Here is what the company owes, what it has charged, and what is waiting on your decision."
+            subGreeting={null}
           />
         </div>
       </AdminHeroFrame>
@@ -443,7 +572,7 @@ export function FinanceCommandCenter({
           SfeDepartmentBanner earns its centred banner too. The Sato mark lives inside the banner
           as a result — same bar, same right-hand position as the CEO's. */}
       <SectionShell
-        header={<FinanceOwnerBanner fullName={welcome.fullName} />}
+        header={<FinanceOwnerBanner />}
         title="Money in motion"
       >
         <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -489,10 +618,10 @@ export function FinanceCommandCenter({
             href="/admin/automated-payroll/finance"
           >
             <FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />
-            Payroll — Finance
+            Payroll
           </Link>
         }
-        description="Run status, the sheets you can pull, and what payroll has actually charged."
+        description="Run status, the sheets you can pull, and who is still held out of the payout."
         title="Payroll cycle"
       >
         <PayrollCycle view={view} />
@@ -561,6 +690,96 @@ export function FinanceCommandCenter({
             ) : null}
           </div>
         )}
+      </SectionShell>
+
+      {/* ── Payout split ──
+          How the month physically leaves the company. FAB and CIB each generate their own bank
+          file; Treasury is everyone with no usable bank account, paid in cash — the one bucket
+          with no export of its own, which is exactly why it belongs on his page. The three are
+          exhaustive and non-overlapping, so they always reconcile to the net beside them. */}
+      <SectionShell
+        action={
+          <Link
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
+            href="/admin/automated-payroll/finance"
+          >
+            <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
+            Bank files
+          </Link>
+        }
+        description="Where the money goes, and whether it settles in the first payment or carries to the second."
+        title="Payout split"
+      >
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">
+          <PipelineStat
+            label="FAB"
+            muted={data.payroll.channels.fabCount === 0}
+            sub={`${n(data.payroll.channels.fabCount)} employees · bank file`}
+            value={egp(data.payroll.channels.fabNet)}
+          />
+          <PipelineStat
+            label="CIB"
+            muted={data.payroll.channels.cibCount === 0}
+            sub={`${n(data.payroll.channels.cibCount)} employees · bank file`}
+            value={egp(data.payroll.channels.cibNet)}
+          />
+          <PipelineStat
+            label="Treasury"
+            muted={data.payroll.channels.treasuryCount === 0}
+            sub={`${n(data.payroll.channels.treasuryCount)} employees · paid in cash`}
+            tone={data.payroll.channels.treasuryCount > 0 ? "amber" : "slate"}
+            value={egp(data.payroll.channels.treasuryNet)}
+          />
+        </div>
+        <div className="grid gap-2 border-t border-slate-100 px-5 pb-5 sm:grid-cols-2">
+          <PipelineStat
+            label="Settled in the first payment"
+            muted={data.payroll.parts.firstOnlyCount === 0}
+            sub={`${n(data.payroll.parts.firstOnlyCount)} employees · nothing carries over`}
+            value={egp(data.payroll.parts.firstOnlyNet)}
+          />
+          <PipelineStat
+            label="Carries to the second"
+            muted={data.payroll.parts.bothPartsCount === 0}
+            sub={`${n(data.payroll.parts.bothPartsCount)} employees · split across both parts`}
+            value={egp(data.payroll.parts.bothPartsNet)}
+          />
+        </div>
+      </SectionShell>
+
+      {/* ── Workforce ──
+          Headcount, and the two leaver figures finance needs before a month can close. Month
+          boundaries are Africa/Cairo, never UTC. */}
+      <SectionShell
+        description="Who payroll pays this month, and who is leaving it."
+        title="Workforce"
+      >
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+          <PipelineStat
+            label="Payroll-eligible"
+            sub={`${n(data.headcount.activeEmployees)} active on the roster`}
+            value={n(data.headcount.payrollEligible)}
+          />
+          <PipelineStat
+            label="Cost to company"
+            sub="gross, this month"
+            value={egp(data.headcount.standingGross)}
+          />
+          <PipelineStat
+            label="Resigned this month"
+            muted={data.headcount.resignedThisMonth === 0}
+            sub="settlements to prepare"
+            tone={data.headcount.resignedThisMonth > 0 ? "amber" : "slate"}
+            value={n(data.headcount.resignedThisMonth)}
+          />
+          <PipelineStat
+            label="Last working day this month"
+            muted={data.headcount.leavingThisMonth === 0}
+            sub="final pay lands in this run"
+            tone={data.headcount.leavingThisMonth > 0 ? "amber" : "slate"}
+            value={n(data.headcount.leavingThisMonth)}
+          />
+        </div>
       </SectionShell>
 
       {/* ── Band 4: direct orders, end to end ──
@@ -711,7 +930,7 @@ export function FinanceCommandCenter({
       </SectionShell>
 
       <div className="flex items-center justify-between gap-4 bg-slate-900 px-5 py-3 text-[10px] text-slate-400">
-        <span>Deduction figures are taken from committed payroll, never from candidate estimates.</span>
+        <span>Every figure is taken from committed payroll and live requests — never from an estimate.</span>
         <span className="shrink-0 tabular-nums">Updated {cairoTimestamp(data.generatedAt)}</span>
       </div>
     </div>

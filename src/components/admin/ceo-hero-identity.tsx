@@ -48,10 +48,14 @@ export function CeoHeroIdentity({
    */
   personal = false,
   /**
-   * Overrides the sub-greeting only. The default line — "Here is where sales and the field stand
-   * today" — is true for the CEO and the SFE Manager, and false for anyone whose page is not about
-   * sales: the Finance Manager holds no `sales` grant at all, so greeting him with a sales promise
-   * describes a page he cannot see. Leave unset to keep the existing copy for every current caller.
+   * The sub-greeting under the greeting line.
+   *
+   * `undefined` keeps the time-aware default ("Here is where sales and the field stand today"),
+   * which is true for the CEO and the SFE Manager. A string overrides it — needed for anyone whose
+   * page is not about sales, e.g. the Finance Manager, who holds no `sales` grant at all and would
+   * otherwise be greeted with a promise about a page he cannot see. **`null` removes the line
+   * entirely** — and it has to be an explicit null rather than an empty string, because `??` would
+   * fall straight back through to the sales copy for a role that has no `sales` grant at all.
    */
   subGreeting,
   /**
@@ -67,7 +71,7 @@ export function CeoHeroIdentity({
   roleLabel: string;
   imageUrl?: string | null;
   personal?: boolean;
-  subGreeting?: string;
+  subGreeting?: string | null;
   flushToEdges?: boolean;
 }) {
   const [hour, setHour] = useState<number | null>(null);
@@ -131,10 +135,12 @@ export function CeoHeroIdentity({
             {personal ? <CeoHiddenNote /> : null}
           </div>
 
-          {/* Sub-greeting */}
-          <p className="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
-            {subGreeting ?? greetSub}
-          </p>
+          {/* Sub-greeting — omitted entirely when the caller passes null. */}
+          {subGreeting === null ? null : (
+            <p className="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+              {subGreeting ?? greetSub}
+            </p>
+          )}
 
           {/* Live Cairo clock */}
           <div className="mt-4 flex w-fit items-center border border-white/10 bg-white/[0.04] text-xs">

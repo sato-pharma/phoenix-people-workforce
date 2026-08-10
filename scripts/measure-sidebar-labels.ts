@@ -17,10 +17,13 @@ import { chromium } from "playwright";
 import { adminNavigationSections, employeePortalNavigationSections } from "@/config/system-navigation";
 import { LABEL_FONT_CSS, SIDEBAR_LABEL_SNAPSHOT_PATH } from "@/config/sidebar-metrics";
 
+// Canonical label AND every `labelByRole` override — the sidebar test resolves per-role labels
+// through getSections before measuring, so an override that never appears here would always read
+// as missing (getSections would hand back a label this script never probed).
 const labels = [
   ...new Set(
     [...adminNavigationSections, ...employeePortalNavigationSections].flatMap((section) =>
-      section.items.map((navItem) => navItem.label),
+      section.items.flatMap((navItem) => [navItem.label, ...Object.values(navItem.labelByRole ?? {})]),
     ),
   ),
 ].sort();
