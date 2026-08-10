@@ -379,6 +379,12 @@ const adminNavigationSectionSeeds = [
       // CEO added 2026-08-04. They hold `ceo_approval`, the LAST required rung of the live chain,
       // and this is the only shell they are ever shown (resolveNavigationMode pins CEO to "admin"),
       // so without this link the final approver had no route to their own queue at all.
+      //
+      // Finance Manager added 2026-08-10 for exactly the same reason, one rung further down: the
+      // `finance_execution` step was activated and pointed at that role (owner: "Ahmed is the next
+      // step after CEO"), which makes HIM the last rung. He is admin-shell only, so this link and
+      // marketingAdminApprovalInboxRoles in src/lib/marketing-requests/admin-page-access.ts have to
+      // move together — the nav roles alone would render a button that redirects him back out.
       {
         href: "/admin/marketing-requests/inbox",
         icon: Inbox,
@@ -388,7 +394,7 @@ const adminNavigationSectionSeeds = [
         // src/lib/action-center/service.ts and app/api/approvals-hub/hub-data/route.ts), so
         // "approvals-hub-pending" would count everything EXCEPT this inbox.
         navBadge: "marketing-approvals-pending",
-        roles: ["CEO", "District Manager", "Super Admin", "SFE Manager"],
+        roles: ["CEO", "District Manager", "Super Admin", "SFE Manager", "Finance Manager"],
       },
       // Company-wide register (owner instruction, 2026-08-03) — every request on the system and
       // where each one is stopped. Deliberately separate from the inbox above, which only carries

@@ -98,9 +98,12 @@ export function runAnalyticsRoutingTests() {
   assert.ok(!dualShellExists, "AnalyticsDualShell must be deleted (separate-URL design supersedes dual-mode)");
 
   // (7) Regression guard for a confirmed finding: assertPermission(sales|weekly_sales, "read") is a
-  // BROAD permission also held by generic roles (Employee, Manager, Finance Manager) that have no
-  // business reason to be in this module — Finance Manager in particular resolves to COMPANY sales
-  // scope, so without a role allowlist it would get the unrestricted, company-wide view by URL alone.
+  // BROAD permission also held by generic roles (Employee, Manager) that have no business reason to
+  // be in this module, so without a role allowlist they would reach it by URL alone.
+  // (Finance Manager used to be the sharpest example here. His `sales` grant was removed on
+  // 2026-08-10: it passed this permission gate but getSalesScope has no branch for the role, so it
+  // fell through to NONE and every query returned zero rows — an empty table that read as "no
+  // sales" rather than "no access". The allowlist below is what actually holds the line either way.)
   // Every core route (both mounts) and every admin hub/detailed route must also gate on the
   // role-allowlist helpers in src/lib/analytics/portal-access.ts — tile visibility on the hub pages
   // is UX, not the security boundary.

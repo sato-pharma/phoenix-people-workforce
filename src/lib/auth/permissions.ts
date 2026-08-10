@@ -600,22 +600,50 @@ const defaultPermissionMatrix: PermissionMap = {
     // isProbationAdministrator roles only.
     probation: ["read"],
   },
-  // Financial Advisor: executes approved requests (payroll runs, disbursements).
-  // No approval authority on any resource — does not approve, only processes.
+  // Finance Manager (Ahmed El Maraghy, B-185 — the only holder): the company's finance execution
+  // point. He EXECUTES money movements that others have already approved; he does not approve the
+  // spend itself. Retuned 2026-08-10 on owner instruction, when the account was activated for the
+  // first time since it was created on 2026-05-02.
+  //
+  // (The comment that used to sit here described Financial Advisor, whose real block is below.)
   "Finance Manager": {
-    direct_orders: ["read", "update", "export"],
+    // No `update`: it is asserted NOWHERE in the codebase, so it granted nothing — but it would
+    // have silently handed him order mutation the day anyone added an
+    // assertPermission(access, "direct_orders", "update") to an edit route. `read` is what the
+    // sales-month setter checks (setDirectOrderSalesMonth), and `export` covers the report and
+    // its share links.
+    direct_orders: ["read", "export"],
     attendance: ["read", "export"],
     crm_visits: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
     expenses: ["read", "export", "update"],
     outstation: ["read", "export", "update"],
-    leave: ["read", "export", "update"],
-    payroll: allActions,
+    // `approve` added 2026-08-10 (owner): he is the direct manager of three head-office staff
+    // (OF-0001, A-1, A-4) and their vacations route to him. This is only the COARSE gate — both
+    // decide paths still bind the actor to an assigned pending approval step
+    // (getPendingVacationApprovalStepForActor), so a company-scoped role cannot decide anyone
+    // else's leave. The Workflow Registry `leave_requests` module is a SECOND, fail-closed gate
+    // and must name this role too, or the decision 403s after passing this one.
+    leave: ["read", "export", "update", "approve"],
+    // Read + export ONLY (owner, 2026-08-10) — deliberately NOT allActions. He keeps everything
+    // finance actually needs: the payroll page (with getPayrollScope === COMPANY), the BANK
+    // TRANSFER FILE and the statutory summary (both gated on `export`), and the Automated Payroll
+    // finance/CIB/FAB sheets (those gate on isAutomatedPayrollFinanceActor, an allow-list
+    // independent of this matrix). What he loses is destructive: deleting a salary batch,
+    // uploading/replacing payroll, and driving the payroll workflow. `read` must stay — it is a
+    // portalMinimumPermissions floor, and payroll_workflow_alert re-checks it per recipient.
+    payroll: ["read", "export"],
     payslips: ["read", "export"],
     deductions: ["read", "export"],
     weekly_plans: ["read", "export"],
-    sales: ["read", "export"],
+    // NO `sales` grant (owner, 2026-08-10). The grant passed the permission gate but getSalesScope
+    // has no Finance Manager branch, so it fell to NONE — every Source-of-Sales query returned zero
+    // rows and the page showed an empty table with no explanation. Rather than widen him to
+    // company-wide sales, the section is dropped: system-navigation's "Source of Sales" row is
+    // permission-gated with no role list, so removing this key is what hides it. His direct-order
+    // visibility is unaffected (DIRECT_ORDER_REPORT_SEE_ALL_ROLES), and booking a sales month
+    // asserts `direct_orders:read`, never `sales`.
     support_requests: ["read", "create"],
     workflow_registry: ["read"],
     report_it: ["read", "create", "export"],
