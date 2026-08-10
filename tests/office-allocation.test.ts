@@ -135,4 +135,73 @@ export function runOfficeAllocationTests() {
   assert.equal(blocked.issues.length, 1);
   assert.equal(blocked.issues[0].value, "Mystery Item");
   assert.ok(blocked.blockingReasons[0].includes("not mapped"));
+
+  // ── ONE LINE'S OFFICE UNITS ARE SPREAD BY THAT LINE'S GEOGRAPHY ONLY ────────
+  // phx_office_brick_share is keyed on the PERIOD and returns every line, and one Office file
+  // carries every line's products, so a single blended share spreads a line's units by another
+  // line's geography. Here CNS sells ONLY in A1 and Pedia sells ONLY in A2, with Pedia worth 20x —
+  // so an all-lines share sends ~95% of the CNS office units to A2, an area with no CNS sales at
+  // all. On July 2026 CNS that mistake displaced 32,704 of 42,838 units.
+  const twoLineRefs: SalesReferenceData = {
+    ...references,
+    products: [
+      ...references.products,
+      { factoryPrice: 500, family: "Pedia", familyCode: "PED", line: "Pedia", productCode: "P-PED", productName: "Pedia Product", source: "" },
+    ],
+  };
+  const twoLineBrickShare = [
+    // CNS: 40 units x 10 = 400, entirely in A1
+    { productCode: "P-A", brickId: "B-1", areaCode: "A1", regionCode: "CA", units: 40 },
+    // Pedia: 16 units x 500 = 8,000, entirely in A2 — 20x the CNS value
+    { productCode: "P-PED", brickId: "B-2", areaCode: "A2", regionCode: "AB", units: 16 },
+  ];
+  const perLine = computeOfficeAllocation({
+    period: "2026-05",
+    distributor: { code: "Office", name: "Office" },
+    fileName: "office 5.xlsx",
+    sheetName: "Sheet1",
+    mapped: [
+      { productCode: "P-A", productName: "Product A", units: 100, rowNumber: 2 },
+      { productCode: "P-PED", productName: "Pedia Product", units: 80, rowNumber: 3 },
+    ],
+    unmappedNames: [],
+    regionShare: [],
+    brickShare: twoLineBrickShare,
+    references: twoLineRefs,
+  });
+  assert.equal(perLine.status, "validated");
+
+  const qtyFor = (line: string, areaCode: string) =>
+    perLine.parsedRows
+      .filter((r) => r.officialLine === line && r.areaCode === areaCode)
+      .reduce((acc, r) => acc + r.qty, 0);
+
+  // THE headline assertion. Blend the two lines and A1 takes 400/8400 = 4.8% ≈ 5 units, so this
+  // fires with "expected ~100, got ~4.76".
+  near(qtyFor("CNS", "A1"), 100, "every CNS office unit lands in A1, the only area with CNS sales");
+  near(qtyFor("CNS", "A2"), 0, "no CNS office unit reaches A2, which sold no CNS");
+  near(qtyFor("Pedia", "A2"), 80, "every Pedia office unit lands in A2, the only area with Pedia sales");
+  near(qtyFor("Pedia", "A1"), 0, "no Pedia office unit reaches A1, which sold no Pedia");
+  // Conservation still holds per product.
+  assert.equal(perLine.byProduct.find((row) => row.productCode === "P-A")?.totalQty, 100);
+  assert.equal(perLine.byProduct.find((row) => row.productCode === "P-PED")?.totalQty, 80);
+  // And a line nobody sold cannot borrow another line's geography — it goes NATIONAL.
+  const orphanLine = computeOfficeAllocation({
+    period: "2026-05",
+    distributor: { code: "Office", name: "Office" },
+    fileName: "office 5.xlsx",
+    sheetName: "Sheet1",
+    mapped: [{ productCode: "P-PED", productName: "Pedia Product", units: 80, rowNumber: 2 }],
+    unmappedNames: [],
+    regionShare: [],
+    // only CNS rows in the base — Pedia has no geography of its own
+    brickShare: [{ productCode: "P-A", brickId: "B-1", areaCode: "A1", regionCode: "CA", units: 40 }],
+    references: twoLineRefs,
+  });
+  assert.equal(orphanLine.byRegion.find((row) => row.regionCode === "NATIONAL")?.totalQty, 80);
+  assert.equal(
+    orphanLine.byArea.find((row) => row.areaCode === "A1")?.totalQty,
+    undefined,
+    "a line with no sales of its own must not be placed on another line's bricks",
+  );
 }
