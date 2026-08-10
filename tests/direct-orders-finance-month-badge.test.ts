@@ -24,12 +24,18 @@ const PILL = "../src/components/direct-orders/direct-order-status-pill.tsx";
 const TYPES = "../src/lib/direct-orders/types.ts";
 const SERVICE = "../src/lib/direct-orders/service.ts";
 
-/** The four surfaces that render an approval list item. */
+/**
+ * Every surface that renders an approval list item.
+ *
+ * Was FOUR (two approvals queues + two submit forms) until 2026-08-10, when the module was
+ * consolidated: both approvals queues were retired into the workspace's Needs Action tab, and the
+ * portal submit form was replaced by the shared one. Two copies became one, which is the whole
+ * point — but the sweep must follow the surfaces that exist NOW rather than shrink, or the rule
+ * quietly stops covering the screen that replaced them.
+ */
 const SURFACES = [
-  ["the approver's queue", "../src/components/approvals-hub/direct-order-approvals-body.tsx"],
-  ["the portal approvals list", "../src/components/employee-portal/direct-order-portal-approvals.tsx"],
   ["the admin submit form's own-orders list", "../src/components/direct-orders/direct-order-submit-form.tsx"],
-  ["the portal submit form's own-orders list", "../src/components/employee-portal/direct-order-portal-submit.tsx"],
+  ["the consolidated workspace", "../src/components/direct-orders/workspace/direct-orders-workspace.tsx"],
 ] as const;
 
 function read(rel: string) {

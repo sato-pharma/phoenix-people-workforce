@@ -170,6 +170,28 @@ const nextConfig: NextConfig = {
     "*.ngrok-free.dev",
     "*.trycloudflare.com",
   ],
+  // Direct Orders route retirements (2026-08-10 consolidation).
+  //
+  // TRUE 308s, declared here rather than as page-level permanentRedirect() calls. Those were tried
+  // first and DO work for a human, but Next throws the redirect after the root layout has begun
+  // streaming, so the status line is already sent: it degrades to a 200 carrying
+  // `<meta http-equiv="refresh">`. Confirmed live in dev. That is a 200 to a bookmark, a crawler and
+  // any link checker, and it flashes the shell before moving. Declared redirects are matched before
+  // any rendering, so they cost nothing and say what they mean.
+  async redirects() {
+    return [
+      // The ten-card hub -> the workspace's Admin Tools tab.
+      { source: "/sales/direct-orders-tools", destination: "/admin/direct-orders?view=admin-tools", permanent: true },
+      // Approving is an action on an order, not a separate world. Both shells.
+      { source: "/admin/approvals/direct-orders", destination: "/admin/direct-orders?view=needs-action", permanent: true },
+      { source: "/employee-portals/approvals/direct-orders", destination: "/employee-portals/direct-orders?view=needs-action", permanent: true },
+      // The approval detail routes were a strict SUBSET of the order detail (same component, minus
+      // the pharmacy-validation capture and the cancel-held control), so this loses nothing.
+      { source: "/admin/approvals/direct-orders/:id", destination: "/admin/direct-orders/:id", permanent: true },
+      { source: "/employee-portals/approvals/direct-orders/:id", destination: "/employee-portals/direct-orders/:id", permanent: true },
+    ];
+  },
+
   async headers() {
     return [
       {

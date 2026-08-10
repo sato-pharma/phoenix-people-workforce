@@ -25,7 +25,6 @@ const EXTRACTOR = "../src/lib/direct-orders/invoice-extraction.ts";
 const CAPTURE = "../src/components/direct-orders/invoice-capture.tsx";
 const ROUTE = "../app/api/direct-orders/invoice-extract/route.ts";
 const ADMIN_FORM = "../src/components/direct-orders/direct-order-submit-form.tsx";
-const PORTAL_FORM = "../src/components/employee-portal/direct-order-portal-submit.tsx";
 
 function read(rel: string) {
   return readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -226,7 +225,6 @@ export function runDirectOrderInvoicePrefillTests() {
   // ── Reachability: BOTH forms, or the people holding invoices cannot use it ────────────────
   for (const [label, rel] of [
     ["the admin submit form", ADMIN_FORM],
-    ["the PORTAL submit form", PORTAL_FORM],
   ] as const) {
     const form = read(rel);
     assert.match(

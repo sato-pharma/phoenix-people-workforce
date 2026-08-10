@@ -112,7 +112,7 @@ export type NavigationSectionItem = {
    */
   exact?: boolean;
   activeTab?: string;
-  navBadge?: "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
+  navBadge?: "direct-orders-needs-action" | "direct-orders-approvals-pending" | "direct-orders-unbooked" | "approvals-hub-pending" | "vacation-approvals-pending" | "excuse-approvals-pending" | "plan-approvals-pending" | "marketing-approvals-pending";
 };
 
 export type NavigationSection = {
@@ -368,7 +368,6 @@ const adminNavigationSectionSeeds = [
       // and a pending badge. Shortened to match its siblings in this section (Leave Approvals /
       // Excuse Approvals / D.Orders Approval). The page keeps the full title.
       { href: "/admin/approvals/plan", icon: CalendarRange, label: "Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       // "Other Approvals" is not a heading, so the only way to take the phrase off his sidebar is
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
       // only (getAwaitingMyActionItems), and the SFE Manager holds none of those grants — it was
@@ -875,7 +874,7 @@ const adminNavigationSectionSeeds = [
       // managers reach it too — but getDirectOrderUnbookedBadge returns 0 to anyone who cannot
       // actually book a month, so it lights up for B-185 and Super Admin alone. A badge that
       // another role cannot clear is how people learn to ignore badges.
-      { href: "/sales/direct-orders-tools", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], navBadge: "direct-orders-unbooked" },
+      { href: "/admin/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], navBadge: "direct-orders-needs-action" },
     ],
     label: "Direct Orders",
   },
@@ -1038,7 +1037,6 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: excuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
       // Shortened with its admin twin above (same 191px clip, same reason).
       { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
-      { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
     label: "Approvals Hub",
@@ -1086,8 +1084,10 @@ const employeePortalNavigationSectionSeeds = [
     id: "sales-operations",
     items: [
       { href: "/employee-portals/source-of-sales", icon: ChartNoAxesColumnIncreasing, label: "Source of Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
-      { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "create" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
-      { href: "/employee-portals/direct-orders/report", icon: FileSpreadsheet, label: "Direct Orders Report", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"] },
+      // ONE Direct Orders row. `direct_orders:read`, not `create`: approvers who never raise an
+      // order still need the workspace, and their queue lives in it now that the standalone
+      // D.Orders Approval row is retired. The Report is reachable from inside the workspace.
+      { href: "/employee-portals/direct-orders", icon: ReceiptText, label: "Direct Orders", permissions: [{ resource: "direct_orders", action: "read" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager"], navBadge: "direct-orders-needs-action" },
       { href: "/employee-portals/weekly-sales", icon: CalendarRange, label: "Weekly Sales", permissions: [{ resource: "sales" }], roles: ["District Manager", "Regional Manager", "National Sales Manager", "Product Manager", "Group Product Manager", "Marketing Manager"] },
       // Portal render of the admin /sales/monthly-closing Closing Matrix + Details — published-gated
       // and scoped per viewer (see loadPortalMonthlyClosing / canAccessPortalClosing). Roles mirror

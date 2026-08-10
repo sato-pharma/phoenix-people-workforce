@@ -169,7 +169,6 @@ export function runDirectOrderCancelHeldTests() {
   const toneFiles = [
     "../src/components/direct-orders/direct-order-status-pill.tsx",
     "../src/components/direct-orders/direct-order-report-workspace.tsx",
-    "../src/components/employee-portal/direct-order-portal-report.tsx",
   ];
   for (const file of toneFiles) {
     const text = readFileSync(new URL(file, import.meta.url), "utf8");

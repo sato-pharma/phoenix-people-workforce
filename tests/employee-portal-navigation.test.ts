@@ -476,34 +476,35 @@ export function runEmployeePortalNavigationTests() {
     "Monthly Closing sidebar item must be gated behind showMonthlyClosingTab",
   );
 
-  // Direct Orders -- submit/report are the module's own requester-role set; approvals is
-  // only the two roles that ever sit as a person-rung in the approval ladder.
+  // Direct Orders -- ONE portal tab, shown to the module's own requester-role set.
+  //
+  // `showDirectOrdersApprovalsTab` and `showDirectOrdersReportTab` were retired 2026-08-10 with the
+  // rows they gated: the approval queue became the workspace's Needs Action tab and the report
+  // became a link inside the workspace, so neither needs a nav flag any more.
+  //
+  // The RULE those flags carried did not go with them, it moved DOWN. "Only a person-rung approver
+  // sees anything to approve" is now enforced by getDirectOrderWorkspaceData filtering `awaiting`
+  // through viewerCanActOnStep -- a service gate covered by direct-orders-approval-flow.test.ts,
+  // and a stronger place for it than a sidebar flag, which only ever hid a link.
+  //
+  // The CNS exclusion below is unchanged and still asserted: it is a business rule about who may
+  // use the module at all, not about which page they land on.
   const districtManagerDefault = resolveEmployeePortalNavVisibility("District Manager");
   const regionalManagerDefault = resolveEmployeePortalNavVisibility("Regional Manager");
   assert.equal(districtManagerDefault.showDirectOrdersTab, true, "District Manager should see Direct Orders (requester role)");
-  assert.equal(districtManagerDefault.showDirectOrdersReportTab, true, "District Manager should see Direct Orders Report");
-  assert.equal(districtManagerDefault.showDirectOrdersApprovalsTab, false, "District Manager never sits as a person-rung, so no Approvals tab");
   assert.equal(regionalManagerDefault.showDirectOrdersTab, true, "Regional Manager should see Direct Orders (requester role)");
-  assert.equal(regionalManagerDefault.showDirectOrdersApprovalsTab, true, "Regional Manager is a person-rung approver, so the Approvals tab must show");
   assert.equal(nsmDefault.showDirectOrdersTab, true, "National Sales Manager should see Direct Orders (requester role)");
-  assert.equal(nsmDefault.showDirectOrdersApprovalsTab, true, "National Sales Manager is a person-rung approver, so the Approvals tab must show");
   assert.equal(productManagerDefault.showDirectOrdersTab, true, "Product Manager should see Direct Orders (requester role)");
-  assert.equal(productManagerDefault.showDirectOrdersApprovalsTab, false, "Product Manager goes straight to CEO, so no Approvals tab");
   assert.equal(groupProductManagerDefault.showDirectOrdersTab, true, "Group Product Manager should see Direct Orders (requester role)");
   const trainingManagerForDirectOrders = resolveEmployeePortalNavVisibility("Training Manager");
   assert.equal(trainingManagerForDirectOrders.showDirectOrdersTab, false, "Direct Orders must not show for a role outside the module's requester set");
-  assert.equal(trainingManagerForDirectOrders.showDirectOrdersApprovalsTab, false, "Direct Orders Approvals must not show for a role that never approves");
 
   // Direct Orders is hidden from the CNS line entirely (owner decision, 2026-07-20) --
   // even a role that would otherwise qualify never sees any of the 3 tabs on CNS.
   const cnsDistrictManager = resolveEmployeePortalNavVisibility("District Manager", undefined, "CNS");
   const cnsRegionalManager = resolveEmployeePortalNavVisibility("Regional Manager", undefined, "CNS");
-  const cnsNationalSalesManager = resolveEmployeePortalNavVisibility("National Sales Manager", undefined, "CNS");
   assert.equal(cnsDistrictManager.showDirectOrdersTab, false, "CNS District Manager must not see Direct Orders");
-  assert.equal(cnsDistrictManager.showDirectOrdersReportTab, false, "CNS District Manager must not see Direct Orders Report");
   assert.equal(cnsRegionalManager.showDirectOrdersTab, false, "CNS Regional Manager must not see Direct Orders");
-  assert.equal(cnsRegionalManager.showDirectOrdersApprovalsTab, false, "CNS Regional Manager must not see Direct Orders Approvals even though RM is normally a person-rung approver");
-  assert.equal(cnsNationalSalesManager.showDirectOrdersApprovalsTab, false, "CNS National Sales Manager must not see Direct Orders Approvals");
   // A non-CNS line for the same roles must be unaffected (the exclusion is CNS-specific).
   const pediaDistrictManager = resolveEmployeePortalNavVisibility("District Manager", undefined, "Pedia");
   assert.equal(pediaDistrictManager.showDirectOrdersTab, true, "Pedia District Manager keeps Direct Orders -- the CNS exclusion must not leak to other lines");
@@ -529,7 +530,6 @@ export function runEmployeePortalNavigationTests() {
       showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
       showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
-      showDirectOrdersReportTab: groupProductManagerDefault.showDirectOrdersReportTab,
       showMonthlyClosingTab: groupProductManagerDefault.showMonthlyClosingTab,
       showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
     },

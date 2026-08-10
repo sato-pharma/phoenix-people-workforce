@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { DirectOrderPortalReport } from "@/components/employee-portal/direct-order-portal-report";
+import { DirectOrderReportWorkspace } from "@/components/direct-orders/direct-order-report-workspace";
 import { getDirectOrderReport, resolveDirectOrderReportScope } from "@/lib/direct-orders/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -19,7 +19,7 @@ export default async function PortalDirectOrdersReportPage() {
       title="Direct Orders Report"
       description="Every direct order — requests, approvals, pharmacies, and money — filter, sort, and export."
     >
-      <DirectOrderPortalReport rows={rows} scope={scope} />
+      <DirectOrderReportWorkspace rows={rows} scope={scope} />
     </EmployeePortalPageShell>
   );
 }

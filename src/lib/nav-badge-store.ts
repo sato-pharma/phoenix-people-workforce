@@ -34,7 +34,15 @@ const channels = new Map<string, Channel>();
 
 export const BADGE_COUNTS_ENDPOINT = "/api/approvals/badge-counts";
 
-type BatchKey = "plan" | "vacation" | "excuse" | "hub" | "directOrders" | "directOrdersUnbooked" | "marketing";
+type BatchKey =
+  | "plan"
+  | "vacation"
+  | "excuse"
+  | "hub"
+  | "directOrders"
+  | "directOrdersUnbooked"
+  | "directOrdersNeedsAction"
+  | "marketing";
 
 /** Maps each legacy per-src badge URL to its key in the batched response. */
 const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
@@ -50,6 +58,10 @@ const BATCH_KEY_BY_SRC: Record<string, BatchKey> = {
   // one counts orders that have already cleared the chain and are waiting on Finance. The two can
   // never be the same number, and one person (B-185) sees only this one.
   "/api/direct-orders/unbooked-count": "directOrdersUnbooked",
+  // The ONE Direct Orders sidebar row, after the module's five nav entries were collapsed into the
+  // workspace. It is the SUM of the two slots above, derived server-side from values the batch
+  // already computes — so it rides the same poll and costs no extra query.
+  "/api/direct-orders/needs-action-count": "directOrdersNeedsAction",
   // Marketing keeps its own dedicated approval inbox (it is deliberately excluded from the
   // consolidated hub), so it needs its own slot — "hub" will never carry a marketing item.
   "/api/marketing-requests/pending-count": "marketing",

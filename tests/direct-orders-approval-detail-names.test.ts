@@ -425,7 +425,6 @@ export function runDirectOrdersApprovalDetailNamesTests() {
   {
     for (const path of [
       "../src/components/approvals-hub/direct-order-request-detail.tsx",
-      "../src/components/employee-portal/direct-order-portal-detail.tsx",
     ]) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       assert.match(source, /row\.distributorCode/, `${path} must show the distributor code`);
@@ -950,7 +949,6 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // Both detail components must accept the label so one component can serve both audiences.
     for (const path of [
       "../src/components/approvals-hub/direct-order-request-detail.tsx",
-      "../src/components/employee-portal/direct-order-portal-detail.tsx",
     ]) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       assert.match(source, /backLabel = "Back to Direct Orders Approvals"/, `${path} must default to the approver wording`);
@@ -967,22 +965,12 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       new URL("../src/components/direct-orders/direct-order-submit-form.tsx", import.meta.url),
       "utf8",
     );
-    const portalList = readFileSync(
-      new URL("../src/components/employee-portal/direct-order-portal-submit.tsx", import.meta.url),
-      "utf8",
-    );
     assert.match(adminList, /\/admin\/direct-orders\/\$\{encodeURIComponent\(r\.id\)\}/, "admin rows must link to the tracking view");
-    assert.match(
-      portalList,
-      /\/employee-portals\/direct-orders\/\$\{encodeURIComponent\(r\.id\)\}/,
-      "portal rows must link to the tracking view",
-    );
 
     // A requester must NEVER see Approve on their own request. Both decision panels bail out
     // when no action is available — that is what keeps this page read-only for them.
     for (const path of [
       "../src/components/approvals-hub/decision-actions.tsx",
-      "../src/components/employee-portal/direct-order-portal-detail.tsx",
     ]) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       assert.match(
@@ -1095,15 +1083,11 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
       "utf8",
     );
-    const portalDetail = readFileSync(
-      new URL("../src/components/employee-portal/direct-order-portal-detail.tsx", import.meta.url),
-      "utf8",
-    );
 
     // The exact bug: both screens printed `${pharmacy.brickId} / ${pharmacy.areaCode}`.
     // `\.?\.?` also catches the optional-chained `pharmacy?.brickId` form — without it a
     // reintroduced raw-code field slips straight past this lock (confirmed by mutation).
-    for (const [name, source] of [["admin", adminDetail], ["portal", portalDetail]] as const) {
+    for (const [name, source] of [["admin", adminDetail]] as const) {
       assert.doesNotMatch(source, /pharmacy\??\.brickId/, `the ${name} approval window must not print a raw brick code`);
       assert.doesNotMatch(source, /pharmacy\??\.areaCode/, `the ${name} approval window must not print a raw area code`);
       assert.doesNotMatch(source, /"Brick \/ Area"/, `the ${name} approval window must not combine brick and area into one cell`);
@@ -1118,12 +1102,12 @@ export function runDirectOrdersApprovalDetailNamesTests() {
   {
     // The portal's mobile card dropped the pharmacy code, so an approver on a phone could not
     // tell two same-named pharmacies apart.
-    const portalList = readFileSync(
-      new URL("../src/components/employee-portal/direct-order-portal-approvals.tsx", import.meta.url),
+    const queueRow = readFileSync(
+      new URL("../src/lib/direct-orders/needs-action.ts", import.meta.url),
       "utf8",
     );
-    assert.match(portalList, /row\.pharmacyCode/, "the portal approvals card must show the pharmacy code");
-    assert.match(portalList, /row\.medicalRepName/, "the portal approvals list must show the medical rep");
+    assert.match(queueRow, /row\.pharmacyCode/, "the Needs Action row must show the pharmacy code");
+    assert.match(queueRow, /row\.medicalRepName/, "the Needs Action row must show the medical rep");
   }
   {
     const serviceSource = readFileSync(new URL("../src/lib/direct-orders/service.ts", import.meta.url), "utf8");
@@ -1195,7 +1179,6 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     // The submit forms labelled a picked brick with codes only because the options omitted names.
     for (const path of [
       "../src/components/direct-orders/direct-order-submit-form.tsx",
-      "../src/components/employee-portal/direct-order-portal-submit.tsx",
     ]) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       assert.match(source, /selectedBrick\.areaName/, `${path} must label the picked brick's area by NAME`);
@@ -1216,7 +1199,6 @@ export function runDirectOrdersApprovalDetailNamesTests() {
   {
     for (const [label, path] of [
       ["the admin approval window", "../src/components/approvals-hub/direct-order-request-detail.tsx"],
-      ["the portal approval window", "../src/components/employee-portal/direct-order-portal-detail.tsx"],
     ] as const) {
       const source = readFileSync(new URL(path, import.meta.url), "utf8");
       const idx = source.indexOf("distributors.length === 0");

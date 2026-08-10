@@ -149,7 +149,7 @@ type EmployeePortalNavItem = {
     | "vacation-approvals-pending"
     | "excuse-approvals-pending"
     | "plan-approvals-pending"
-    | "direct-orders-approvals-pending"
+    | "direct-orders-needs-action"
     | "marketing-approvals-pending";
 };
 
@@ -239,8 +239,6 @@ function buildEmployeePortalSections({
   showCoachingAnalyticsTab = false,
   showActionsTab = false,
   showDirectOrdersTab = false,
-  showDirectOrdersReportTab = false,
-  showDirectOrdersApprovalsTab = false,
   showVacationApprovalsTab = false,
   showExcuseApprovalsTab = false,
   showPlanApprovalsTab = false,
@@ -287,7 +285,6 @@ function buildEmployeePortalSections({
         ...(showVacationApprovalsTab ? [{ href: "/employee-portals/approvals/vacation", label: "Leave Approvals", icon: CalendarDays, navBadge: "vacation-approvals-pending" as const }] : []),
         ...(showExcuseApprovalsTab ? [{ href: "/employee-portals/approvals/excuse", label: "Excuse Approvals", icon: CalendarClock, navBadge: "excuse-approvals-pending" as const }] : []),
         ...(showPlanApprovalsTab ? [{ href: "/employee-portals/approvals/plan", label: "Plan Approvals", icon: CalendarRange, navBadge: "plan-approvals-pending" as const }] : []),
-        ...(showDirectOrdersApprovalsTab ? [{ href: "/employee-portals/approvals/direct-orders", label: "D.Orders Approval", icon: ReceiptText, navBadge: "direct-orders-approvals-pending" as const }] : []),
         ...(showMarketingInboxTab ? [{ href: "/employee-portals/marketing-requests/inbox", label: "Marketing Inbox", icon: Inbox, navBadge: "marketing-approvals-pending" as const }] : []),
         ...(showActionsTab ? [{ href: "/employee-portals/approvals-hub", label: "Other Approvals", icon: Inbox, navBadge: "approvals-hub-pending" as const }] : []),
       ],
@@ -319,7 +316,6 @@ function buildEmployeePortalSections({
         // so without this twin a DM/RM/NSM had no targets surface at all.
         ...(showTargetsTab ? [{ href: "/employee-portals/targets", label: "Targets", icon: Target }] : []),
         ...(showDirectOrdersTab ? [{ href: "/employee-portals/direct-orders", label: "Direct Orders", icon: ReceiptText }] : []),
-        ...(showDirectOrdersReportTab ? [{ href: "/employee-portals/direct-orders/report", label: "Direct Orders Report", icon: FileSpreadsheet }] : []),
       ],
     },
     // Merged from the old "Team Performance" + "Team Operations": performance views first, then
@@ -615,7 +611,7 @@ function EmployeePortalMenu({
                   {item.navBadge === "vacation-approvals-pending" ? <NavBadge src="/api/approvals/vacation/pending-count" /> : null}
                   {item.navBadge === "excuse-approvals-pending" ? <NavBadge src="/api/approvals/excuse/pending-count" /> : null}
                   {item.navBadge === "plan-approvals-pending" ? <NavBadge src="/api/approvals/plan/pending-count" /> : null}
-                  {item.navBadge === "direct-orders-approvals-pending" ? <NavBadge src="/api/approvals/direct-orders/pending-count" /> : null}
+                  {item.navBadge === "direct-orders-needs-action" ? <NavBadge src="/api/direct-orders/needs-action-count" /> : null}
                   {item.navBadge === "marketing-approvals-pending" ? <NavBadge src="/api/marketing-requests/pending-count" /> : null}
                   {pending ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-orange-500 employee-portal-nav-pending-dot" /> : null}
                 </Link>

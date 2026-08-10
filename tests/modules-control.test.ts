@@ -72,15 +72,32 @@ export function runModulesControlTests() {
   }
 
   // Modules Control must refuse to assign a module whose required permission the target's role
-  // does not hold. This used to be exercised via "Sales Queue" (sales:import); that module was
-  // retired 2026-08-02 and its approval workflow moved into the Sales Import workspace, leaving no
-  // admin sidebar module requiring sales:import at all. "D.Orders Approval"
-  // (direct_orders:approve) is the equivalent fixture — an uncollapsed admin module carrying a
-  // permission Medical Rep still lacks — so the blocking path stays covered.
+  // does not hold.
+  //
+  // FOUND, NOT NAMED. This fixture has now been invalidated twice by an unrelated consolidation:
+  // "Sales Queue" (sales:import) was retired 2026-08-02, and its replacement "D.Orders Approval"
+  // (direct_orders:approve) was retired 2026-08-10 when the direct-order approval queue moved into
+  // the workspace's Needs Action tab. Each time, a test protecting the BLOCKING PATH failed for a
+  // reason that had nothing to do with blocking. So it now discovers a qualifying module instead of
+  // hard-coding one: any admin module with no role allow-list (or the role branch would fire first)
+  // carrying a permission the Medical Rep lacks.
   const gatedModule = catalog.find(
-    (module) => module.label === "D.Orders Approval" && module.navigationMode === "admin",
+    (module) =>
+      module.navigationMode === "admin" &&
+      module.roles.length === 0 &&
+      module.permissions.length > 0 &&
+      !module.permissions.some(
+        (permission) =>
+          permissionMatrix["Medical Rep"]?.[permission.resource]?.includes(permission.action) ?? false,
+      ),
   );
-  assert.ok(gatedModule, "D.Orders Approval module exists");
+  assert.ok(
+    gatedModule,
+    "no admin module requires a permission Medical Rep lacks — the blocking path has no fixture left to exercise it",
+  );
+  const requiredLabel = gatedModule!.permissions
+    .map((permission) => `${permission.resource}:${permission.action}`)
+    .join(" or ");
   assert.throws(
     () => validateModuleAssignmentList({
       catalog,
@@ -91,7 +108,15 @@ export function runModulesControlTests() {
       targetKey: "a-9",
       targetType: "user",
     }),
-    /Blocked: A-9 is Medical Rep\. D\.Orders Approval requires direct_orders:approve\./,
+    (error: unknown) => {
+      const message = (error as Error).message;
+      assert.strictEqual(
+        message,
+        `Blocked: A-9 is Medical Rep. ${gatedModule!.label} requires ${requiredLabel}.`,
+        "the refusal must name the person, their role, the module and the exact permission",
+      );
+      return true;
+    },
     "invalid drag/drop is blocked before any database write can be attempted",
   );
 

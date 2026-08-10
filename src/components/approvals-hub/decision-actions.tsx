@@ -53,8 +53,9 @@ export function DecisionActions({ endpoint, commentField, actions, backHref, ext
   const panelRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     // The one legitimate use of this pattern: a portal target only exists in the browser, so the
-    // flag must flip exactly once after hydration. Same disable the portal twin already carries
-    // for the same reason (direct-order-portal-detail.tsx:57).
+    // flag must flip exactly once after hydration. (The portal twin that carried the same disable,
+    // direct-order-portal-detail.tsx, was retired 2026-08-10 — this component is now the only
+    // approval surface in either shell.)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);

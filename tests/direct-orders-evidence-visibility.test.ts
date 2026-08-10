@@ -98,10 +98,8 @@ export function runDirectOrderEvidenceVisibilityTests() {
   // fell behind). Reusing EvidenceReading in both screens is what stops that happening a second
   // time for the reading itself.
   const adminDetail = read("../src/components/approvals-hub/direct-order-request-detail.tsx");
-  const portalDetail = read("../src/components/employee-portal/direct-order-portal-detail.tsx");
   for (const [label, source] of [
     ["the admin approval window", adminDetail],
-    ["the portal approval window", portalDetail],
   ] as const) {
     assert.match(
       source,

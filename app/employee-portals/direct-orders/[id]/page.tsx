@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
-import { DirectOrderPortalDetail } from "@/components/employee-portal/direct-order-portal-detail";
+import { DirectOrderRequestDetail } from "@/components/approvals-hub/direct-order-request-detail";
 import { PharmacyValidationCapture } from "@/components/direct-orders/pharmacy-validation-capture";
 import { CancelHeldOrder } from "@/components/direct-orders/cancel-held-order";
 import { getDirectOrderApprovalDetail } from "@/lib/direct-orders/service";
@@ -43,10 +43,15 @@ export default async function PortalMyDirectOrderDetailPage({ params }: { params
       description="Track this request: every detail your approvers see, and exactly which rung it is waiting on."
     >
       <div className="space-y-5">
-        <DirectOrderPortalDetail
+        {/* The SHARED order detail, not a portal copy. `direct-order-portal-detail.tsx` was an
+            860-line twin of this 1,005-line component taking the identical
+            `DirectOrderApprovalDetail` payload — and the mobile approval-window hardening
+            (tests/direct-orders-approval-window-mobile.test.ts) was done on THIS one, so the
+            portal was the copy running the older layout. */}
+        <DirectOrderRequestDetail
           detail={detail}
           backHref="/employee-portals/direct-orders"
-          backLabel="Back to My Direct Orders"
+          backLabel="Back to Direct Orders"
         />
         {showValidation && detail?.pharmacy ? (
           <PharmacyValidationCapture

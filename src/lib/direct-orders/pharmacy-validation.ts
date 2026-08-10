@@ -90,8 +90,22 @@ export type DirectOrderValidationRow = {
   evidenceCheck: DirectOrderEvidenceCheck | null;
 };
 
+/**
+ * Who may work the validation desk. Exported so a caller can ASK before calling
+ * `listDirectOrderPharmacyValidations`, which throws.
+ *
+ * The Needs Action inbox has to know whether to count pending validations for this
+ * viewer, and the only alternatives were re-writing this condition at the call site
+ * (a second copy of a visibility rule — the exact mechanism behind audit F5) or
+ * calling the throwing function and swallowing the 403, which would hide a real
+ * permission error as an empty queue.
+ */
+export function canDecideDirectOrderPharmacyValidations(access: AccessContext): boolean {
+  return access.scope === "system" || access.role === "Super Admin";
+}
+
 function assertValidationDeskAccess(access: AccessContext): void {
-  if (!(access.scope === "system" || access.role === "Super Admin")) {
+  if (!canDecideDirectOrderPharmacyValidations(access)) {
     throw forbiddenError("Forbidden: only a System Admin can decide pharmacy validations.");
   }
 }

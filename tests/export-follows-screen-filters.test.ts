@@ -29,10 +29,6 @@ const directOrdersWorkspaceSource = readFileSync(
   new URL("../src/components/direct-orders/direct-order-report-workspace.tsx", import.meta.url),
   "utf8",
 );
-const directOrdersPortalSource = readFileSync(
-  new URL("../src/components/employee-portal/direct-order-portal-report.tsx", import.meta.url),
-  "utf8",
-);
 const vacationTableSource = readFileSync(
   new URL("../src/components/vacation/company-vacation-report-table.tsx", import.meta.url),
   "utf8",
@@ -316,7 +312,6 @@ export function runExportFollowsScreenFiltersTests() {
   );
   for (const [name, source] of [
     ["admin direct-orders workspace", directOrdersWorkspaceSource],
-    ["portal direct-orders report", directOrdersPortalSource],
   ] as const) {
     assert.match(
       source,

@@ -453,10 +453,8 @@ export function runDirectOrdersApprovalFlowTests() {
       ["../src/lib/direct-orders/report-workbook.ts", "the XLSX export"],
       ["../src/lib/direct-orders/approved-email.ts", "the approved-order email"],
       ["../src/components/direct-orders/direct-order-report-workspace.tsx", "the admin report"],
-      ["../src/components/employee-portal/direct-order-portal-report.tsx", "the portal report"],
       ["../src/components/direct-orders/direct-order-caps-manager.tsx", "the caps screen"],
       ["../src/components/approvals-hub/direct-order-request-detail.tsx", "the approval window"],
-      ["../src/components/employee-portal/direct-order-portal-detail.tsx", "the portal approval window"],
     ] as const;
     for (const [rel, what] of files) {
       const source = readFileSync(new URL(rel, import.meta.url), "utf8");
