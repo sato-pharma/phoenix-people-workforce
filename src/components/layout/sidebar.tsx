@@ -352,9 +352,11 @@ export function NavBadge({ compact = false, src }: { compact?: boolean; src: str
     );
   }
   return (
+    // min-w/px tightened 2026-08-10: a badge row leaves the label only ~98px, and this pill was
+    // spending 32px of it to show a 1-2 digit count. 18px still fits "99+" at 10px/900.
     <span
       aria-label={label}
-      className={cn("ml-auto min-w-[20px] rounded-full px-1.5 py-0.5 text-center text-[10px] font-black leading-none text-white", alarmClass)}
+      className={cn("ml-auto min-w-[18px] rounded-full px-1 py-0.5 text-center text-[10px] font-black leading-none text-white", alarmClass)}
       role="status"
     >
       {count > 99 ? "99+" : count}
@@ -496,7 +498,10 @@ function NavRow({
             >
               {item.label}
             </span>
-            {standalone && (
+            {/* The ↗ marks a hub row, but it is decorative and the badge is not. On a standalone
+                row that also carries a pending count the label is left ~98px, and spending 20px of
+                that on both adornments is what forced the ellipsis. The badge wins. */}
+            {standalone && !item.navBadge && (
               <ArrowUpRight
                 aria-hidden="true"
                 className={cn("h-3.5 w-3.5 shrink-0", dark ? "text-orange-400/70" : "text-orange-500/70")}
