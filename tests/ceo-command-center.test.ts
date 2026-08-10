@@ -23,9 +23,13 @@ export function runCeoCommandCenterTests() {
 
   // Other roles' landings must be unchanged by this feature.
   assert.equal(resolveLandingPathForRole("Super Admin"), "/admin");
+  // Changed 2026-08-10: the Finance Manager now has his own command center, peer to the CEO's and
+  // the SFE Manager's above. He previously landed on /admin/outstation/expense-command — one
+  // module of a job spanning payroll, direct orders, marketing execution, expenses and leave.
   assert.equal(
     resolveLandingPathForRole("Finance Manager"),
-    "/admin/outstation/expense-command",
+    "/admin/finance-command-center",
+    "Finance Manager must land on the Finance Command Center",
   );
   assert.equal(resolveLandingPathForRole("Employee"), "/employee-portals");
   assert.equal(resolveLandingPathForRole("Medical Rep"), "/employee-portals");

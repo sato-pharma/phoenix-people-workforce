@@ -15,7 +15,7 @@ import { formatHrIdForDisplay } from "@/lib/hr-id";
 export const dynamic = "force-dynamic";
 
 /** Keep in step with the dedicated command-center entries in system-navigation.ts. */
-const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager"]);
+const DEDICATED_COMMAND_CENTER_ROLES = new Set<PhoenixRole>(["CEO", "SFE Manager", "Finance Manager"]);
 
 export default async function AdminCommandPage() {
   const access = await resolveAccessContextFromPage();

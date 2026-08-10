@@ -26,6 +26,7 @@ import {
   Hourglass,
   IdCard,
   Inbox,
+  Landmark,
   Package,
   LayoutDashboard,
   LifeBuoy,
@@ -220,6 +221,12 @@ const adminNavigationSectionSeeds = [
       // that bypass too (see getSections), so this is the line that actually hides it. Both are
       // listed explicitly: this is one role's personal overview, not a module anyone else works in.
       { href: "/admin/sfe-command-center", icon: LayoutDashboard, label: "SFE Manager Overview", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["SFE Manager"], excludedRoles: ["Super Admin", "CEO"] },
+      // Deliberately roles-only, with NO `permissions` field — unlike the two entries above.
+      // permissionAllowed is an OR across the list, and the Finance Manager holds neither `admin`
+      // nor `overview` (see the matrix in permissions.ts), so copying their gate verbatim would
+      // hide this row from the one person it exists for. His role IS the gate; the page itself
+      // re-checks with the same role test.
+      { href: "/admin/finance-command-center", icon: Landmark, label: "Finance Command Center", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
       { href: "/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       // Excluded for every role that has its OWN command center directly above — otherwise the
@@ -227,7 +234,7 @@ const adminNavigationSectionSeeds = [
       // admin-wide dashboard instead of theirs. The CEO was already excluded for this reason;
       // the SFE Manager has had his own overview since /admin/sfe-command-center shipped and
       // needs the same exclusion. Keep this list in step with the dedicated entries above.
-      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager"] },
+      { href: "/admin", icon: LayoutDashboard, label: "Command Center", permissions: [{ resource: "admin" }, { resource: "overview" }], excludedRoles: ["CEO", "SFE Manager", "Finance Manager"] },
     ],
     // Heading restored on owner instruction (2026-08-08). It was blanked for the SFE Manager on
     // 2026-08-02, where this section resolves to a single button; Super Admin and CEO see several
