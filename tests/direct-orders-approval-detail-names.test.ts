@@ -104,6 +104,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     // `tests/direct-orders-pharmacy-standing.test.ts` owns spec D2's wording.
     pharmacyStanding: null,
     canSetSalesMonth: false,
+    canRecordCollection: false,
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,
@@ -483,10 +484,21 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       "the sales month must not be derived from the approval date any more",
     );
     assert.match(serviceSource, /export async function setDirectOrderSalesMonth\(/, "Finance needs an explicit setter");
+
+    // The HR_ID literal moved to collection-rules.ts on 2026-08-10 so the collections work could
+    // reuse it from a module with no Supabase import (and therefore be unit-testable). The property
+    // this guards is unchanged, so it is now checked in two halves: the literal is still an HR_ID,
+    // and the sales-month setter still derives from that literal rather than from a role.
+    const rulesSource = readFileSync(new URL("../src/lib/direct-orders/collection-rules.ts", import.meta.url), "utf8");
+    assert.match(
+      rulesSource,
+      /DIRECT_ORDER_FINANCE_HR_ID = "B-185"/,
+      "Finance's direct-order duties are pinned to Ahmed El Maraghy by HR_ID — not to the Finance Manager ROLE, so a future second holder cannot inherit them silently",
+    );
     assert.match(
       serviceSource,
-      /DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = "B-185"/,
-      "the setter is Ahmed El Maraghy by HR_ID — not the Finance Manager ROLE, so a future second holder cannot inherit it silently",
+      /DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = DIRECT_ORDER_FINANCE_HR_ID/,
+      "the sales-month setter must derive from that one HR_ID constant, never from a role or a second literal",
     );
 
     // Changing the month must rebuild BOTH periods, or the sales double or vanish.
