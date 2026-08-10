@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { computeOfficeAllocation } from "../src/lib/sales/office-allocation.ts";
+import { buildOfficeAreaWeights, computeOfficeAllocation } from "../src/lib/sales/office-allocation.ts";
 import type { SalesReferenceData } from "../src/lib/sales/monthly-distributor-import.ts";
 
 const references: SalesReferenceData = {
@@ -24,7 +24,42 @@ const references: SalesReferenceData = {
   ],
 };
 
+// A1 sells 40 units of the cheap product (10) -> value 400.
+// A2 sells 40 of the cheap product AND 10 of the expensive one (50) -> value 900.
+// Total 1300, so the shares are 400/1300 and 900/1300.
+// The UNIT shares would be 40/90 and 50/90 — deliberately different, so a units-weighted
+// regression cannot pass this test.
+const brickShare = [
+  { productCode: "P-A", brickId: "B-1", areaCode: "A1", regionCode: "CA", units: 40 },
+  { productCode: "P-A", brickId: "B-2", areaCode: "A2", regionCode: "AB", units: 40 },
+  { productCode: "P-B", brickId: "B-2", areaCode: "A2", regionCode: "AB", units: 10 },
+];
+const regionShare = [
+  { productCode: "P-A", regionCode: "CA", units: 60 },
+  { productCode: "P-A", regionCode: "AB", units: 40 },
+  { productCode: "P-B", regionCode: "CA", units: 50 },
+];
+
+const near = (actual: number | undefined, expected: number, what: string) =>
+  assert.ok(
+    typeof actual === "number" && Math.abs(actual - expected) < 0.01,
+    `${what}: expected ~${expected}, got ${actual}`,
+  );
+
 export function runOfficeAllocationTests() {
+  // ── the weights themselves: VALUE, not units ────────────────────────────────
+  const weights = buildOfficeAreaWeights(brickShare, (code) =>
+    references.products.find((p) => p.productCode === code)?.factoryPrice ?? 0);
+
+  assert.equal(weights.totalValue, 1300);
+  near(weights.areaShare.get("A1"), 400 / 1300, "A1 share is its share of VALUE");
+  near(weights.areaShare.get("A2"), 900 / 1300, "A2 share is its share of VALUE");
+  // If this is ever weighted by units again, A1 becomes 40/90 = 0.444 and this fires.
+  assert.ok(
+    Math.abs((weights.areaShare.get("A1") ?? 0) - 40 / 90) > 0.1,
+    "area share must be the VALUE share, not the units share",
+  );
+
   const result = computeOfficeAllocation({
     period: "2026-05",
     distributor: { code: "Office", name: "Office" },
@@ -36,49 +71,54 @@ export function runOfficeAllocationTests() {
       { productCode: "P-C", productName: "Product C", units: 30, rowNumber: 4 },
     ],
     unmappedNames: [],
-    // Region share INCLUDES Direct: CA total 60 (40 brick + 20 Direct), AB 40. P-B only sold via Direct in CA.
-    regionShare: [
-      { productCode: "P-A", regionCode: "CA", units: 60 },
-      { productCode: "P-A", regionCode: "AB", units: 40 },
-      { productCode: "P-B", regionCode: "CA", units: 50 },
-    ],
-    // Brick share EXCLUDES Direct: CA has only B-1=40 (Direct's 20 is not here); AB has B-2=40. P-B has no brick rows.
-    brickShare: [
-      { productCode: "P-A", brickId: "B-1", areaCode: "A1", regionCode: "CA", units: 40 },
-      { productCode: "P-A", brickId: "B-2", areaCode: "A2", regionCode: "AB", units: 40 },
-    ],
+    regionShare,
+    brickShare,
     references,
   });
 
   assert.equal(result.status, "validated");
   assert.equal(result.distributor.code, "Office");
 
-  // Totals: 100 + 50 + 30 = 180 units. Value = 600 + 400 + 2500 + 150 = 3650.
+  // Nothing is created or lost: 100 + 50 + 30 = 180. Value 1000 + 2500 + 150 = 3650.
   assert.equal(result.totals.totalQty, 180);
-  assert.equal(result.totals.totalValue, 3650);
+  near(result.totals.totalValue, 3650, "total value");
 
-  // P-A: region step (incl. Direct) sends 60 to CA, 40 to AB. Brick step (excl. Direct) places all of
-  // CA's 60 on B-1 and all of AB's 40 on B-2. If Direct had been used in the brick key, B-1 would be 50.
+  // ── the owner's rule: ONE blended share applied to EVERY product ────────────
+  // Every product splits 400/1300 : 900/1300, regardless of where that product itself sold.
   const b1 = result.byBrick.find((row) => row.brickId === "B-1");
   const b2 = result.byBrick.find((row) => row.brickId === "B-2");
-  assert.equal(b1?.totalQty, 60);
-  assert.equal(b1?.totalValue, 600); // 60 × factory price 10
-  assert.equal(b2?.totalQty, 40);
+  near(b1?.totalQty, 180 * (400 / 1300), "B-1 gets the blended area share of ALL products");
+  near(b2?.totalQty, 180 * (900 / 1300), "B-2 gets the blended area share of ALL products");
 
-  // P-B: sold only via Direct in CA (region-level, no brick detail) → its 50 units fall to NATIONAL.
-  // P-C: sold nowhere this period → its 30 units fall to NATIONAL. National total = 80.
+  // The consequence the owner accepted: P-C sold NOWHERE this period and is still placed, because
+  // the share is blended across products instead of computed per product. Under the old
+  // per-product rule its 30 units fell to NATIONAL.
   const national = result.byRegion.find((row) => row.regionCode === "NATIONAL");
-  assert.equal(national?.totalQty, 80);
-  assert.equal(national?.totalValue, 2650); // P-B 50×50 + P-C 30×5
+  assert.equal(national, undefined, "nothing falls to NATIONAL while an area carries value");
+  const pc = result.byProduct.find((row) => row.productCode === "P-C");
+  assert.equal(pc?.totalQty, 30, "a product that sold nowhere is still fully placed");
 
-  // Conservation: P-A's allocated slices sum to exactly its office units (100).
-  const paQty = result.byProduct.find((row) => row.productCode === "P-A")?.totalQty;
-  assert.equal(paQty, 100);
+  // Conservation, per product, after rounding.
+  assert.equal(result.byProduct.find((row) => row.productCode === "P-A")?.totalQty, 100);
+  assert.equal(result.byProduct.find((row) => row.productCode === "P-B")?.totalQty, 50);
 
-  // National products are surfaced as an advisory.
-  assert.ok(result.advisories?.some((a) => a.includes("National bucket")));
+  // ── NATIONAL is reached only when there is no non-Office geography at all ───
+  const nothingSold = computeOfficeAllocation({
+    period: "2026-05",
+    distributor: { code: "Office", name: "Office" },
+    fileName: "office 5.xlsx",
+    sheetName: "Sheet1",
+    mapped: [{ productCode: "P-A", productName: "Product A", units: 100, rowNumber: 2 }],
+    unmappedNames: [],
+    regionShare: [],
+    brickShare: [],
+    references,
+  });
+  assert.equal(nothingSold.status, "validated");
+  assert.equal(nothingSold.byRegion.find((row) => row.regionCode === "NATIONAL")?.totalQty, 100);
+  assert.ok(nothingSold.advisories?.some((a) => a.includes("National bucket")));
 
-  // BLOCKED path: any unmapped office product name blocks the whole batch, persists nothing.
+  // ── BLOCKED path is unchanged: one unmapped name blocks the batch ───────────
   const blocked = computeOfficeAllocation({
     period: "2026-05",
     distributor: { code: "Office", name: "Office" },
@@ -86,8 +126,8 @@ export function runOfficeAllocationTests() {
     sheetName: "Sheet1",
     mapped: [{ productCode: "P-A", productName: "Product A", units: 100, rowNumber: 2 }],
     unmappedNames: [{ productName: "Mystery Item", units: 12, rowNumber: 5 }],
-    regionShare: [{ productCode: "P-A", regionCode: "CA", units: 60 }],
-    brickShare: [{ productCode: "P-A", brickId: "B-1", areaCode: "A1", regionCode: "CA", units: 40 }],
+    regionShare,
+    brickShare,
     references,
   });
   assert.equal(blocked.status, "blocked");
