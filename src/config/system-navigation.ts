@@ -2112,7 +2112,17 @@ export const archivedMarketingPageItems: readonly AdminToolsPageItem[] = [
     icon: Archive,
     label: "Archived ROI Tracking",
     description: "Historical marketing requests imported from Excel, with their own ROI tracking — kept apart from live Phoenix performance.",
-    roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager", "Financial Advisor"],
+    // Finance Manager removed 2026-08-10 (owner), completing the trim that took "Marketing & ROI"
+    // and "ROI Tracker" off his sidebar earlier the same day. This card was the survivor: it has no
+    // sidebar row of its own, so hiding the parent hub did nothing — hubPageItemGroups folds every
+    // card the viewer's role admits straight back into the Cmd+K palette, which left "Archived ROI
+    // Tracking" one keystroke away under a heading he was supposed to have lost.
+    //
+    // He keeps the live marketing rung he actually executes (`finance_execution`, via Marketing
+    // Inbox). What goes is read-only historical Excel data that was never his to report on.
+    // assertMarketingAdminPageAccess({ allowCompanyOversight: true }) still admits him by URL — this
+    // is a navigation decision, not a revocation, matching how ROI Tracker was handled.
+    roles: ["Super Admin", "CEO", "SFE Manager", "Financial Advisor"],
   },
 ];
 

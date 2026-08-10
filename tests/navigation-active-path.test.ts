@@ -418,6 +418,12 @@ export function runNavigationActivePathTests() {
       "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
       "/admin/outstation/expenses/dashboard",
       "/admin/outstation/expenses",
+      // The last survivor of the marketing trim, found by a pre-handover audit of the account on
+      // 2026-08-10. "Marketing & ROI" and "ROI Tracker" were taken off his sidebar earlier that day,
+      // but this card sits in archivedMarketingPageItems and has NO sidebar row of its own — so
+      // hiding the parent hub achieved nothing and hubPageItemGroups folded it straight back into
+      // Cmd+K. adminHrefsFor cannot see it; only this assertion can.
+      "/admin/archived-marketing-requests",
       // Resignations, added 2026-08-10 with the grant. He reaches the page through his OWN sidebar
       // row, so the People Management card must stay excluded — otherwise hubPageItemGroups folds
       // it back into his Cmd+K under a "People Management" heading he was removed from, which is
