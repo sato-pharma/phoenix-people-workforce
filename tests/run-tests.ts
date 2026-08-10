@@ -518,6 +518,7 @@ import { runSosLatentGuardsTests } from "./sos-latent-guards.test.ts";
 import { runSosDirectInAchievementTests } from "./sos-direct-in-achievement.test.ts";
 import { runSosDirectToDmTests } from "./sos-direct-to-dm.test.ts";
 import { runClosingMatrixTargetsTests } from "./closing-matrix-targets.test.ts";
+import { runClosingFilteredExportKeepsDirectTests } from "./closing-filtered-export-keeps-direct.test.ts";
 import { runDirectRegionAllocationTests } from "./direct-region-allocation.test.ts";
 import { runDirectAmbiguousRegionBlockTests } from "./direct-ambiguous-region-block.test.ts";
 import { runSosCodedPathCrossAreaGuardTests } from "./sos-coded-path-cross-area-guard.test.ts";
@@ -1545,6 +1546,11 @@ await runTest(
 await runTest(
   "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero and the share belonging to excluded areas is named)",
   runMonthlyClosingExportStoreSplitFilteredTests,
+);
+
+await runTest(
+  "row-level filtered export keeps its direct money (Distributor = DIRECT is a real slice, named on the Total sheet, not a matrix of zeros)",
+  runClosingFilteredExportKeepsDirectTests,
 );
 
 await runTest(

@@ -259,7 +259,29 @@ export async function POST(request: Request) {
 
       // Under a row-level filter the aggregate matrix cannot express the slice — rebuild its
       // cells from the same rows, so sheet 1 and the audit pair describe one population.
-      const rebuiltMatrix = rowLevelActive ? rebuildMatrixFromRows(matrix, details.rows) : matrix;
+      //
+      // `includeDirect` because such a slice CAN contain direct money: `DIRECT` is itself a
+      // selectable distributor (51 rows / 1,208,548.15 EGP in 2026-07), and an Excluded or
+      // free-text filter can match direct rows too. Without it, "Distributor = DIRECT" returned a
+      // Closing Matrix of zeros beside a Data sheet listing every one of those rows — and the
+      // Total sheet still read Difference 0, because the bridge was zero as well. A real
+      // distributor's slice is unaffected: it contains no direct rows to fold in.
+      const rebuiltMatrix = rowLevelActive
+        ? rebuildMatrixFromRows(matrix, details.rows, { includeDirect: true })
+        : matrix;
+      // Stated on the Total sheet, because a rebuilt slice has no retail half to subtract. Derived
+      // as (with direct) minus (without) so a direct row whose area or product is absent from this
+      // matrix — never placed in a cell — is not bridged as if it were on the sheet.
+      const directPlaced = rowLevelActive
+        ? (() => {
+          const invoiceOnly = rebuildMatrixFromRows(matrix, details.rows);
+          return {
+            units: rebuiltMatrix.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0)
+              - invoiceOnly.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0),
+            value: rebuiltMatrix.grandTotal.rowTotal.salesValue - invoiceOnly.grandTotal.rowTotal.salesValue,
+          };
+        })()
+        : undefined;
 
       // The store split. A wholesaler supplies its whole city rather than only the area it stands
       // in, so its sell-in on Pedia / Anti Infective / CNS is shared evenly across that city's
@@ -364,6 +386,9 @@ export async function POST(request: Request) {
         channelComparison: await channelComparisonPromise,
         channels,
         coverage: await coveragePromise,
+        // Only set under a row-level filter, where `channels` is null and the Total sheet has no
+        // retail half to derive the direct bridge from.
+        directPlaced,
         filterNote,
         includeTargetSheet: !rowLevelActive,
         // The whole month's rows drive the Store Split sheet, so a reader who filtered to one area

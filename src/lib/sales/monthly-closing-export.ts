@@ -3060,6 +3060,19 @@ export async function buildMonthlyClosingWorkbook(
      * whole-line figures beside a filtered workbook would describe a different population.
      */
     channelBreakdown?: ChannelBreakdown | null;
+    /**
+     * The direct money already inside `matrix`, when there is no `channels` pair to derive it from.
+     * Only a row-level filter (distributor, Included/Excluded, free-text search) hits this: the
+     * matrix is rebuilt from the filtered rows, so the retail half has no equivalent slice — but
+     * the slice can still CONTAIN direct, because `DIRECT` is itself a selectable distributor and
+     * a search or an Excluded filter can match direct rows too. Without this the Total sheet's
+     * bridge stayed at zero and the Difference opened by exactly the direct amount.
+     *
+     * Supply it derived as (matrix with direct) minus (the same matrix without), never by summing
+     * the direct rows: a direct row naming an area or product outside this matrix is never placed
+     * in a cell, so counting it would bridge money that is not on the sheet.
+     */
+    directPlaced?: { units: number; value: number };
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -3195,16 +3208,26 @@ export async function buildMonthlyClosingWorkbook(
     // total (and, in July, the direct merged into the area rows themselves — which is why it is
     // derived as grand total minus the retail matrix rather than by walking the Direct rows).
     // `national` sits above the grand total and is counted only in the company total.
+    // Under a row-level filter there is no retail half to subtract, so the caller states the figure
+    // instead (`directPlaced`). Falling back to zero there was the bug: `DIRECT` is a selectable
+    // distributor, so "Distributor = DIRECT" produced a workbook whose Difference tied only because
+    // the headline was as empty as the bridge.
     const retailValue = options?.channels?.retail?.grandTotal.rowTotal.salesValue;
     const retailUnits = options?.channels?.retail?.grandTotal.cells.reduce((sum, cell) => sum + cell.salesUnits, 0);
+    const placedUnits = retailUnits === undefined
+      ? options?.directPlaced?.units ?? 0
+      : headline.salesUnits - retailUnits;
+    const placedValue = retailValue === undefined
+      ? options?.directPlaced?.value ?? 0
+      : headline.salesValue - retailValue;
     const directInMatrix = {
       national: {
         units: matrix.directNational?.rowTotal.salesUnits ?? 0,
         value: matrix.directNational?.rowTotal.salesValue ?? 0,
       },
       placed: {
-        units: retailUnits === undefined ? 0 : Number((headline.salesUnits - retailUnits).toFixed(6)),
-        value: retailValue === undefined ? 0 : Number((headline.salesValue - retailValue).toFixed(2)),
+        units: Number(placedUnits.toFixed(6)),
+        value: Number(placedValue.toFixed(2)),
       },
     };
     writeTotalSheet(
