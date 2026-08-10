@@ -1,0 +1,52 @@
+-- Security-advisor follow-up: close a staging-only anon EXECUTE leak on the monthly-closing lock.
+--
+-- 20260810140000_monthly_closing_lock.sql already creates phx_lock_monthly_closing,
+-- phx_unlock_monthly_closing and phx_reject_write_to_locked_closing SECURITY DEFINER and explicitly
+-- revokes EXECUTE from public/anon/authenticated, granting only service_role. That migration is
+-- correctly in place on production (verified live via pg_proc.proacl: phx_unlock_monthly_closing and
+-- phx_lock_monthly_closing show {postgres=X/postgres,service_role=X/postgres}; no anon/authenticated/
+-- public entry).
+--
+-- Staging (cifwmndunmlxjhyjugxa) told a different story. 20260810140000 was entirely absent from the
+-- staging migration ledger, yet phx_unlock_monthly_closing and phx_reject_write_to_locked_closing
+-- already existed there with proacl = NULL — the bare Postgres default, meaning EXECUTE open to
+-- PUBLIC (and therefore to anon and authenticated, which inherit through PUBLIC membership) — and
+-- phx_lock_monthly_closing did not exist at all. The two functions were evidently created by an
+-- earlier/partial hand-run of this feature's SQL during development, predating the file's revoke
+-- statements, and the finished migration was never (re-)applied to staging afterward. This is exactly
+-- what the security advisor flagged (anon_security_definer_function_executable on both functions).
+--
+-- phx_unlock_monthly_closing was a REAL vulnerability in that state. Its body performs no internal
+-- caller/role check of its own — p_actor is a free-text label written straight into the unlock
+-- history, never verified against auth.uid() or any admin table — so it trusts the GRANT alone to
+-- gate access. With EXECUTE open to PUBLIC, any anonymous request carrying only the public anon key
+-- could call rpc('phx_unlock_monthly_closing', {p_line, p_period, ...}) directly against PostgREST
+-- and force-unlock any locked month, bypassing the app's Super-Admin-only route entirely
+-- (app/api/sales/monthly-closing/lock/route.ts gates GET/POST/DELETE with forbidNonAdmin() +
+-- assertPermission(access, "sales", "import") before ever calling the RPC via the service-role
+-- client) — precisely the class of back door this feature was built to close (see this migration's
+-- own header: "service_role included, which is the point, because service_role is what every one of
+-- those back doors runs as").
+--
+-- phx_reject_write_to_locked_closing was NOT independently exploitable despite carrying the same open
+-- grant: it is declared RETURNS TRIGGER, and Postgres refuses to invoke a trigger-returning function
+-- via ordinary SQL/RPC regardless of EXECUTE grants (confirmed live on staging: a direct
+-- `select public.phx_reject_write_to_locked_closing();` raised "trigger functions can only be called
+-- as triggers" before the body ran), and PostgREST does not expose trigger-returning functions as
+-- /rest/v1/rpc endpoints at all. Revoked anyway, for the same reason
+-- 20260719190000_phx_revoke_anon_executable_secdef_triggers.sql revoked the other two SECURITY
+-- DEFINER trigger functions in this schema: no SECURITY DEFINER function should carry an EXECUTE
+-- grant it structurally cannot use, it is what the advisor scans for, and it keeps staging's ACL
+-- honest against production's.
+--
+-- This migration is a defensive, idempotent, function-named backstop: unlike re-running the full
+-- feature migration, it does not depend on any table/trigger DDL and cannot fail if
+-- 20260810140000 is ever re-applied out of order or partially. It is a no-op wherever the grant is
+-- already correct — verified as such on production before this was written, and re-verified on
+-- staging (applied there first via 20260810140000 itself, then this file layered on top with zero
+-- ACL change) before being committed here.
+
+revoke execute on function public.phx_unlock_monthly_closing(text, text, text, text) from public, anon, authenticated;
+revoke execute on function public.phx_reject_write_to_locked_closing() from public, anon, authenticated;
+
+grant execute on function public.phx_unlock_monthly_closing(text, text, text, text) to service_role;
