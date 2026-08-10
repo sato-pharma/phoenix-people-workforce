@@ -179,4 +179,21 @@ export function runSfeManagerNavDeadLinksTests() {
     "Monthly Closing's export route must admit SFE Manager into the full-workbook branch, mirroring the page's " +
       "view+download carve-out -- otherwise his Export XLSX click silently downloads the Details-only workbook.",
   );
+
+  // (8) The matrix data-feed route (app/api/sales/monthly-closing/route.ts) is what the workspace
+  // calls on Refresh and on every Line/Month change. It must admit SFE Manager exactly as the page,
+  // export route and nav card already do -- this was the ONE closing surface the suite never pinned,
+  // so it stayed Super-Admin-only and 403'd his on-screen Closing Matrix ("Forbidden: Monthly Closing
+  // is restricted to the admin account") the moment he refreshed or switched line, even though the
+  // page server-renders that same matrix for him (owner report + fix, 2026-08-10). Publishing and
+  // locking stay Super-Admin-only, pinned by (5) above.
+  const monthlyClosingMatrixRouteSource = readFileSync("app/api/sales/monthly-closing/route.ts", "utf8");
+  assert.match(
+    monthlyClosingMatrixRouteSource,
+    /access\.role\s*!==\s*"SFE Manager"/,
+    "app/api/sales/monthly-closing/route.ts (the workspace's matrix reload feed) must admit SFE Manager, " +
+      "mirroring the page gate -- otherwise his Refresh / line change on the Closing Matrix returns 403 while " +
+      "the page server-renders the same matrix for him. If that decision changed, update this test and the " +
+      "page gate together.",
+  );
 }
