@@ -226,7 +226,10 @@ const adminNavigationSectionSeeds = [
       // nor `overview` (see the matrix in permissions.ts), so copying their gate verbatim would
       // hide this row from the one person it exists for. His role IS the gate; the page itself
       // re-checks with the same role test.
-      { href: "/admin/finance-command-center", icon: Landmark, label: "Finance Command Center", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+      // Label shortened 2026-08-10: "Finance Command Center" measured 150px against a 136px budget
+      // and clipped to "Finance Command …". The PAGE still reads Finance Command Center — only the
+      // rail is width-constrained. Budgets are pinned by tests/sidebar-label-width.test.ts.
+      { href: "/admin/finance-command-center", icon: Landmark, label: "Finance Overview", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
       { href: "/business-review-s1", icon: LayoutDashboard, label: "S1 Business Review", permissions: [{ resource: "admin" }, { resource: "overview" }], roles: ["CEO", "SFE Manager", "Super Admin"] },
       { href: "/organogram", icon: Network, label: "Organogram", permissions: [{ resource: "organogram" }], roles: ["CEO"] },
       // Excluded for every role that has its OWN command center directly above — otherwise the
@@ -335,7 +338,11 @@ const adminNavigationSectionSeeds = [
     items: [
       { href: "/admin/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/admin/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: leaveExcuseApproverAdminNavigationRoles, navBadge: "excuse-approvals-pending" },
-      { href: "/admin/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
+      // "Weekly / Monthly Plan Approvals" measured 191px against a 118px budget — the worst clip in
+      // either shell, and unfixable by geometry: no sensible rail width fits 191px beside an icon
+      // and a pending badge. Shortened to match its siblings in this section (Leave Approvals /
+      // Excuse Approvals / D.Orders Approval). The page keeps the full title.
+      { href: "/admin/approvals/plan", icon: CalendarRange, label: "Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverAdminNavigationRoles, navBadge: "plan-approvals-pending" },
       { href: "/admin/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       // "Other Approvals" is not a heading, so the only way to take the phrase off his sidebar is
       // to drop the row. No loss: this inbox carries resignation / contract / outstation items
@@ -420,7 +427,9 @@ const adminNavigationSectionSeeds = [
       {
         href: "/admin/marketing-requests/inbox",
         icon: Inbox,
-        label: "Marketing Approval Inbox",
+        // 150px against a 98px budget — the tightest context there is: a standalone hub row that
+        // ALSO carries a pending badge, so the label competes with both the ↗ and the count.
+        label: "Marketing Inbox",
         // The pending badge the comment above promised. It needs its OWN kind: marketing is
         // deliberately excluded from the consolidated approvals hub (see the comments in
         // src/lib/action-center/service.ts and app/api/approvals-hub/hub-data/route.ts), so
@@ -556,7 +565,8 @@ const adminNavigationSectionSeeds = [
       {
         href: "/attendance",
         icon: Fingerprint,
-        label: "Attendance Management",
+        // 147px against a 136px budget. The hub page still titles itself Attendance Management.
+        label: "Attendance",
         // The SFE Manager holds attendance:read, so the permission gate lets him through — but
         // every card inside attendanceManagementPageItems is gated on employees/hr_calendar,
         // which he does not hold, so the hub renders with ZERO items. A link to an empty page is
@@ -838,7 +848,8 @@ const adminNavigationSectionSeeds = [
   {
     id: "access-communication",
     items: [
-      { href: "/admin/access-communication", icon: ShieldCheck, label: "Access & Communication", permissions: [{ resource: "admin_access" }, { resource: "communication" }], excludedRoles: ["CEO"] },
+      // 149px against a 136px budget. Page title keeps the full "Access & Communication".
+      { href: "/admin/access-communication", icon: ShieldCheck, label: "Access & Comms", permissions: [{ resource: "admin_access" }, { resource: "communication" }], excludedRoles: ["CEO"] },
     ],
     label: "Access & Communication",
   },
@@ -894,7 +905,8 @@ const employeePortalNavigationSectionSeeds = [
     items: [
       { href: "/employee-portals/approvals/vacation", icon: CalendarCheck, label: "Leave Approvals", permissions: [{ resource: "leave", action: "read" }], roles: vacationApproverPortalNavigationRoles, navBadge: "vacation-approvals-pending" },
       { href: "/employee-portals/approvals/excuse", icon: CalendarClock, label: "Excuse Approvals", permissions: [{ resource: "leave", action: "read" }], roles: excuseApproverPortalNavigationRoles, navBadge: "excuse-approvals-pending" },
-      { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Weekly / Monthly Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
+      // Shortened with its admin twin above (same 191px clip, same reason).
+      { href: "/employee-portals/approvals/plan", icon: CalendarRange, label: "Plan Approvals", permissions: [{ resource: "weekly_plans", action: "read" }], roles: planApproverPortalNavigationRoles, navBadge: "plan-approvals-pending" },
       { href: "/employee-portals/approvals/direct-orders", icon: ReceiptText, label: "D.Orders Approval", permissions: [{ resource: "direct_orders", action: "approve" }], navBadge: "direct-orders-approvals-pending" },
       { href: "/employee-portals/approvals-hub", icon: Inbox, label: "Other Approvals", permissions: [{ resource: "leave", action: "read" }], navBadge: "approvals-hub-pending" },
     ],
@@ -1094,7 +1106,9 @@ const employeePortalNavigationSectionSeeds = [
       {
         href: "/employee-portals/marketing-requests/coverage-report",
         icon: MapPinned,
-        label: "Marketing Coverage Report",
+        // 161px against a 136px budget. It already sits under the Marketing Requests section, so
+        // the "Marketing" prefix was doing no work in the rail. Page title keeps it in full.
+        label: "Coverage Report",
         roles: [
           "Medical Rep",
           "District Manager",
