@@ -33,8 +33,11 @@ export type FinanceWelcomeProfile = {
 
 function egp(value: number) {
   const safe = Number.isFinite(value) ? value : 0;
+  // Abbreviate only where the exact figure cannot fit and the rounding is immaterial. Below 100K
+  // the full number is shown: on a finance dashboard "EGP 6K" for a 5,500 EGP payable is a worse
+  // answer than the number itself, and 43,925.50 rounding to "44K" hides which order it is.
   if (Math.abs(safe) >= 1_000_000) return `EGP ${(safe / 1_000_000).toFixed(2)}M`;
-  if (Math.abs(safe) >= 1_000) return `EGP ${(safe / 1_000).toFixed(0)}K`;
+  if (Math.abs(safe) >= 100_000) return `EGP ${(safe / 1_000).toFixed(0)}K`;
   return `EGP ${Math.round(safe).toLocaleString("en-US")}`;
 }
 
@@ -164,6 +167,77 @@ function QueueRow({
   );
 }
 
+/**
+ * A single figure in a pipeline strip.
+ *
+ * Renders its zero rather than hiding it — owner's rule for this page: "relevant even if empty, no
+ * data now, tomorrow will be populated." Both modules here are mid-lifecycle (the receivables
+ * columns are populated on 0 of 24 direct orders today), and a stage that disappears when empty
+ * teaches the reader it does not exist. `muted` greys an untouched stage so an empty pipeline still
+ * reads as a pipeline, not as a row of failures.
+ */
+function PipelineStat({
+  label,
+  value,
+  sub,
+  muted = false,
+  tone = "slate",
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  muted?: boolean;
+  tone?: "slate" | "emerald" | "amber" | "rose";
+}) {
+  const toneClass = muted
+    ? "text-slate-300"
+    : { amber: "text-amber-700", emerald: "text-emerald-700", rose: "text-rose-700", slate: "text-slate-900" }[tone];
+
+  return (
+    <div className="min-w-0 border border-slate-200 bg-white px-4 py-3.5">
+      <p className="text-[9px] font-black uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className={`mt-2 text-xl font-black leading-none tabular-nums ${toneClass}`}>{value}</p>
+      {sub ? <p className="mt-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{sub}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * The one header on this page allowed to be a statement rather than a label.
+ *
+ * Deliberately the same construction as SfeDepartmentBanner in ceo-command-center.tsx — same
+ * vertical footprint as a normal header (px-5 py-4, so it cannot push the figures down the page),
+ * same orange hairline, same gradient-clipped title, and the Sato mark in the same right-hand
+ * position the CEO's carries. The name is read from the viewer rather than hardcoded, so the
+ * banner stays true if the seat ever changes hands.
+ */
+function FinanceOwnerBanner({ fullName }: { fullName: string }) {
+  return (
+    <div className="relative overflow-hidden border-b border-slate-200 bg-slate-900 px-5 py-4 text-center">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent_0%,rgba(249,115,22,0.7)_50%,transparent_100%)]"
+      />
+      <div className="relative flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+        <h2 className="bg-[linear-gradient(180deg,#FFFFFF_0%,#FFE7CF_60%,#F8B56B_100%)] bg-clip-text text-sm font-black uppercase tracking-[0.14em] text-transparent">
+          {fullName}
+        </h2>
+        <span aria-hidden="true" className="h-1 w-1 rotate-45 bg-[#F97316]" />
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#F8B56B]">
+          Leading Since Your First Day
+        </p>
+      </div>
+      {/* Right corner, absolutely placed so it cannot shift the centred statement off-centre. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        alt="SATO Pharma"
+        className="absolute right-5 top-1/2 hidden h-7 w-auto -translate-y-1/2 opacity-95 sm:block"
+        src="/brand/sato-pharma-logo.png"
+      />
+    </div>
+  );
+}
+
 function AllClear({ message }: { message: string }) {
   return (
     <div className="flex items-center gap-3 border border-emerald-200 bg-emerald-50 px-5 py-4">
@@ -211,9 +285,19 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
     return "Part 1 in progress";
   };
 
-  const scope = sheets?.full ? "full" : "part1";
-  const period = sheets?.period;
-  const sheetQuery = period ? `?month=${period.month}&year=${period.year}&scope=${scope}` : "";
+  // Which period's sheets to offer, and the authorization to offer them at all, are two different
+  // questions and must not be conflated.
+  //
+  // `sheets` resolving non-null IS the authorization: getFinanceAvailability runs
+  // assertAutomatedPayrollFinanceActor, so a viewer who may not download never gets a payload and
+  // never gets a button. But it reports on the CURRENT month, and the sheets finance actually
+  // needs belong to whichever run is confirmed-but-unpublished — in August that is still JULY.
+  // Keying the buttons to the current month hid them exactly when they mattered.
+  const sheetRun = readyToPay ?? runs.find((run) => run.part1_confirmed && !run.published) ?? null;
+  const canDownloadSheets = sheets !== null && sheetRun !== null;
+  const scope = sheetRun?.part2_confirmed ? "full" : "part1";
+  const [sheetYear, sheetMonth] = (sheetRun?.month_key ?? "").split("-");
+  const sheetQuery = sheetRun ? `?month=${Number(sheetMonth)}&year=${Number(sheetYear)}&scope=${scope}` : "";
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1.1fr_0.9fr] lg:divide-x lg:divide-slate-200">
@@ -246,10 +330,12 @@ function PayrollCycle({ view }: { view: FinanceCommandCenterView }) {
             sheet and both bank files are sitting ready and pulling them is his job. These are
             shortcuts to /admin/automated-payroll/finance, which he already reaches through
             isAutomatedPayrollFinanceActor — no new authority, one less navigation. */}
-        {sheets?.hasRun && (sheets.part1 || sheets.full) ? (
+        {canDownloadSheets && sheetRun ? (
           <div className="flex flex-wrap items-center gap-2 bg-slate-50 px-5 py-4">
             <span className="mr-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-              {readyToPay ? `Ready to pay — ${monthLabel(readyToPay.month_key)}` : "Available to download"}
+              {sheetRun.part2_confirmed
+                ? `Ready to pay — ${monthLabel(sheetRun.month_key)}`
+                : `Part 1 available — ${monthLabel(sheetRun.month_key)}`}
             </span>
             {SHEET_LINKS.map((sheet) => (
               <a
@@ -324,11 +410,11 @@ export function FinanceCommandCenter({
 }) {
   const { data } = view;
   const latest = data.payroll.committed[data.payroll.committed.length - 1] ?? null;
-  const openRun = data.payroll.runs[0] ?? null;
 
   const actionTotal =
     data.directOrders.awaitingCount +
     data.marketing.awaitingMyStep +
+    data.marketing.dueUnexecutedCount +
     data.marketing.missingPaymentProof +
     data.leave.awaitingMyDecision;
 
@@ -340,15 +426,24 @@ export function FinanceCommandCenter({
             <Landmark aria-hidden="true" className="h-3.5 w-3.5" />
             Finance Command Center
           </div>
-          <CeoHeroIdentity fullName={welcome.fullName} imageUrl={welcome.imageUrl} roleLabel={welcome.roleLabel} />
+          <CeoHeroIdentity
+            flushToEdges
+            fullName={welcome.fullName}
+            imageUrl={welcome.imageUrl}
+            roleLabel={welcome.roleLabel}
+            subGreeting="Here is what the company owes, what it has charged, and what is waiting on your decision."
+          />
         </div>
       </AdminHeroFrame>
 
       <UnavailableNotice sources={view.unavailable} />
 
-      {/* ── Band 1: money in motion ── */}
+      {/* ── Band 1 ──
+          `header` replaces the default title row entirely (and with it any `action`), which is how
+          SfeDepartmentBanner earns its centred banner too. The Sato mark lives inside the banner
+          as a result — same bar, same right-hand position as the CEO's. */}
       <SectionShell
-        description="The standing cost of the company, and what is waiting on you right now."
+        header={<FinanceOwnerBanner fullName={welcome.fullName} />}
         title="Money in motion"
       >
         <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -373,11 +468,15 @@ export function FinanceCommandCenter({
             value={egp(data.directOrders.awaitingValue)}
           />
           <MetricTile
-            icon={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Expense claims pending"
-            sub={ageLabel(data.outstation.pendingOldest, "Queue is clear")}
-            tone={data.outstation.pendingCount > 0 ? "amber" : "emerald"}
-            value={egp(data.outstation.pendingClaimed)}
+            icon={<Megaphone aria-hidden="true" className="h-3.5 w-3.5" />}
+            label="Marketing spend to pay"
+            sub={
+              data.marketing.dueUnexecutedCount > 0
+                ? `${n(data.marketing.dueUnexecutedCount)} approved, not executed`
+                : "Nothing due"
+            }
+            tone={data.marketing.dueUnexecutedCount > 0 ? "amber" : "emerald"}
+            value={egp(data.marketing.dueUnexecutedValue)}
           />
         </div>
       </SectionShell>
@@ -429,6 +528,17 @@ export function FinanceCommandCenter({
                 tone="amber"
               />
             ) : null}
+            {data.marketing.dueUnexecutedCount > 0 ? (
+              <QueueRow
+                count={data.marketing.dueUnexecutedCount}
+                href="/admin/marketing-requests/inbox"
+                icon={<Megaphone aria-hidden="true" className="h-4 w-4" />}
+                label="Approved marketing spend not yet paid"
+                meta="Carries a pay date and has never been executed"
+                tone="rose"
+                value={egpExact(data.marketing.dueUnexecutedValue)}
+              />
+            ) : null}
             {data.marketing.missingPaymentProof > 0 ? (
               <QueueRow
                 count={data.marketing.missingPaymentProof}
@@ -453,36 +563,149 @@ export function FinanceCommandCenter({
         )}
       </SectionShell>
 
-      {/* ── Band 4: cost control ── */}
+      {/* ── Band 4: direct orders, end to end ──
+          The booking hop is his alone; the rest is the receivable that hop creates. Every stage
+          renders its zero — the collection columns are empty on all 24 orders today, and a stage
+          that vanishes when empty teaches the reader it does not exist. */}
       <SectionShell
-        description="Committed figures from payroll itself. Candidate estimates are never shown here."
-        title="Cost control"
+        action={
+          <Link
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
+            href="/admin/direct-orders/report"
+          >
+            <ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />
+            Direct order report
+          </Link>
+        }
+        description="Approved · booked into a month · into Source of Sales · collected · paid. Only you can book the month."
+        title="Direct orders"
       >
-        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricTile
-            icon={<ScrollText aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Deductions charged"
-            sub={latest ? `${monthLabel(latest.period)} payroll` : "No closed month yet"}
-            value={egp(latest?.deductions ?? 0)}
-          />
-          <MetricTile
-            icon={<Landmark aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Tax & insurance"
-            sub={latest ? `${monthLabel(latest.period)} payroll` : "No closed month yet"}
-            value={egp(latest?.governmental ?? 0)}
-          />
-          <MetricTile
-            icon={<ReceiptText aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Expenses in open run"
-            sub={openRun ? `${monthLabel(openRun.month_key)} · reimbursed` : "No run open"}
-            value={egp(openRun?.expenses_paid ?? 0)}
-          />
-          <MetricTile
-            icon={<CalendarClock aria-hidden="true" className="h-3.5 w-3.5" />}
-            label="Expense claims approved"
-            sub={`${n(data.outstation.approvedCount)} trips cleared`}
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <PipelineStat
+            label="Approved"
+            sub={`${n(data.directOrders.approvedCount)} orders`}
             tone="emerald"
-            value={egp(data.outstation.approvedValue)}
+            value={egp(data.directOrders.approvedValue)}
+          />
+          <PipelineStat
+            label="Awaiting a month"
+            muted={data.directOrders.awaitingCount === 0}
+            sub={`${n(data.directOrders.awaitingCount)} yours to book`}
+            tone={data.directOrders.awaitingCount > 0 ? "rose" : "slate"}
+            value={egp(data.directOrders.awaitingValue)}
+          />
+          <PipelineStat
+            label="Booked"
+            muted={data.directOrders.bookedCount === 0}
+            sub={`${n(data.directOrders.bookedCount)} into a month`}
+            value={egp(data.directOrders.bookedValue)}
+          />
+          <PipelineStat
+            label="In Source of Sales"
+            muted={data.directOrders.injectedCount === 0}
+            sub="orders injected"
+            value={n(data.directOrders.injectedCount)}
+          />
+          <PipelineStat
+            label="Collected"
+            muted={data.directOrders.paidTotal === 0}
+            sub={`${n(data.directOrders.collectedCount)} payments in`}
+            tone="emerald"
+            value={egp(data.directOrders.paidTotal)}
+          />
+          <PipelineStat
+            label="Still outstanding"
+            muted={data.directOrders.remainingTotal === 0}
+            sub="unpaid balance"
+            tone={data.directOrders.remainingTotal > 0 ? "amber" : "slate"}
+            value={egp(data.directOrders.remainingTotal)}
+          />
+        </div>
+        <div className="grid gap-2 border-t border-slate-100 px-5 pb-5 sm:grid-cols-2 lg:grid-cols-3">
+          <PipelineStat
+            label="In approval"
+            muted={data.directOrders.pendingCount === 0}
+            sub={`${n(data.directOrders.pendingCount)} awaiting a decision`}
+            value={egp(data.directOrders.pendingValue)}
+          />
+          <PipelineStat
+            label="Held or expired"
+            muted={data.directOrders.heldCount === 0}
+            sub={`${n(data.directOrders.heldCount)} parked`}
+            tone={data.directOrders.heldCount > 0 ? "amber" : "slate"}
+            value={egp(data.directOrders.heldValue)}
+          />
+          <PipelineStat
+            label="Oldest unbooked"
+            muted={data.directOrders.awaitingCount === 0}
+            sub={data.directOrders.awaitingCount > 0 ? "since approval" : "nothing waiting"}
+            tone={data.directOrders.awaitingCount > 0 ? "rose" : "slate"}
+            value={
+              daysSince(data.directOrders.awaitingOldest) === null
+                ? "—"
+                : `${daysSince(data.directOrders.awaitingOldest)} d`
+            }
+          />
+        </div>
+      </SectionShell>
+
+      {/* ── Band 5: marketing requests ──
+          `dueUnexecuted` deliberately does NOT require a finance step to exist: a request approved
+          before that rung was switched on is still spend the company owes, and hiding it on a
+          workflow technicality would hide a real payable. */}
+      <SectionShell
+        action={
+          <Link
+            className="inline-flex items-center gap-1.5 border border-white/20 bg-white/10 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-white/20"
+            href="/admin/marketing-requests/inbox"
+          >
+            <Megaphone aria-hidden="true" className="h-3.5 w-3.5" />
+            Approval inbox
+          </Link>
+        }
+        description="You execute the transaction after CEO approval, then attach the invoice and the transfer proof."
+        title="Marketing requests"
+      >
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <PipelineStat
+            label="Committed spend"
+            muted={data.marketing.committedSpend === 0}
+            sub={`${n(data.marketing.approvedCount)} approved`}
+            value={egp(data.marketing.committedSpend)}
+          />
+          <PipelineStat
+            label="Due to pay"
+            muted={data.marketing.dueUnexecutedCount === 0}
+            sub={`${n(data.marketing.dueUnexecutedCount)} not executed`}
+            tone={data.marketing.dueUnexecutedCount > 0 ? "rose" : "slate"}
+            value={egp(data.marketing.dueUnexecutedValue)}
+          />
+          <PipelineStat
+            label="Executed by you"
+            muted={data.marketing.executedCount === 0}
+            sub="transactions done"
+            tone="emerald"
+            value={n(data.marketing.executedCount)}
+          />
+          <PipelineStat
+            label="Invoice missing"
+            muted={data.marketing.missingInvoice === 0}
+            sub="on executed spend"
+            tone={data.marketing.missingInvoice > 0 ? "amber" : "slate"}
+            value={n(data.marketing.missingInvoice)}
+          />
+          <PipelineStat
+            label="Transfer proof missing"
+            muted={data.marketing.missingPaymentProof === 0}
+            sub="yours to attach"
+            tone={data.marketing.missingPaymentProof > 0 ? "amber" : "slate"}
+            value={n(data.marketing.missingPaymentProof)}
+          />
+          <PipelineStat
+            label="ROI committed"
+            muted={data.marketing.requiredRoi === 0}
+            sub="sales this must return"
+            value={egp(data.marketing.requiredRoi)}
           />
         </div>
       </SectionShell>

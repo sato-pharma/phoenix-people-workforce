@@ -47,11 +47,28 @@ export function CeoHeroIdentity({
    * being greeted "Good morning, Dr. Anwar" and handed a note addressed to the Chief Executive.
    */
   personal = false,
+  /**
+   * Overrides the sub-greeting only. The default line — "Here is where sales and the field stand
+   * today" — is true for the CEO and the SFE Manager, and false for anyone whose page is not about
+   * sales: the Finance Manager holds no `sales` grant at all, so greeting him with a sales promise
+   * describes a page he cannot see. Leave unset to keep the existing copy for every current caller.
+   */
+  subGreeting,
+  /**
+   * Pull the portrait flush to the hero's right and bottom edges, instead of insetting it 47px
+   * from the right and bleeding 4% past the bottom. Flush-bottom means the photo ends exactly
+   * where the next section's header bar begins, rather than being clipped mid-figure.
+   *
+   * Opt-in: the CEO's banner inset and bleed are deliberate and long-standing, and stay untouched.
+   */
+  flushToEdges = false,
 }: {
   fullName: string;
   roleLabel: string;
   imageUrl?: string | null;
   personal?: boolean;
+  subGreeting?: string;
+  flushToEdges?: boolean;
 }) {
   const [hour, setHour] = useState<number | null>(null);
   const [imgError, setImgError] = useState(false);
@@ -115,7 +132,9 @@ export function CeoHeroIdentity({
           </div>
 
           {/* Sub-greeting */}
-          <p className="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">{greetSub}</p>
+          <p className="mt-1.5 max-w-md text-sm leading-relaxed text-slate-400">
+            {subGreeting ?? greetSub}
+          </p>
 
           {/* Live Cairo clock */}
           <div className="mt-4 flex w-fit items-center border border-white/10 bg-white/[0.04] text-xs">
@@ -129,7 +148,10 @@ export function CeoHeroIdentity({
       {showPhoto ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute right-[47px] top-0 bottom-[-4%] hidden max-w-[46%] items-end justify-end sm:flex"
+          className={cn(
+            "pointer-events-none absolute top-0 hidden max-w-[46%] items-end justify-end sm:flex",
+            flushToEdges ? "right-0 bottom-0" : "right-[47px] bottom-[-4%]",
+          )}
         >
           {/* A warm glow behind the subject so a dark studio portrait separates from the dark
               hero instead of dissolving into it. Non-personal heroes only — the CEO's banner

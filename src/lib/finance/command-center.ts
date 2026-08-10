@@ -66,22 +66,43 @@ export type FinanceCommandCenterData = {
     standingGross: number;
   };
   payroll: { committed: FinanceCommittedMonth[]; runs: FinancePayrollRun[] };
+  /**
+   * The direct-order money pipeline: approved → booked into a sales month → injected into Source
+   * of Sales → collected → paid. Only the booking hop is his exclusive duty, but the rest is the
+   * receivable that duty creates. The collection fields read 0 today and fill as collection starts.
+   */
   directOrders: {
     awaitingCount: number;
     awaitingValue: number;
     awaitingOldest: string | null;
-    bookedCount: number;
-    byStatus: FinanceStatusSlice[];
-  };
-  outstation: {
-    pendingCount: number;
-    pendingClaimed: number;
-    pendingOldest: string | null;
     approvedCount: number;
     approvedValue: number;
+    bookedCount: number;
+    bookedValue: number;
+    injectedCount: number;
+    collectedCount: number;
+    paidTotal: number;
+    remainingTotal: number;
+    pendingCount: number;
+    pendingValue: number;
+    heldCount: number;
+    heldValue: number;
     byStatus: FinanceStatusSlice[];
   };
-  marketing: { awaitingMyStep: number; missingPaymentProof: number; missingInvoice: number };
+  marketing: {
+    awaitingMyStep: number;
+    approvedCount: number;
+    committedSpend: number;
+    requiredRoi: number;
+    executedCount: number;
+    /** Approved, carrying a pay date, never executed — the queue that means money is owed. */
+    dueUnexecutedCount: number;
+    dueUnexecutedValue: number;
+    dueOldest: string | null;
+    inApprovalCount: number;
+    missingPaymentProof: number;
+    missingInvoice: number;
+  };
   leave: { awaitingMyDecision: number };
 };
 
@@ -126,9 +147,16 @@ function emptyData(): FinanceCommandCenterData {
     generatedAt: new Date().toISOString(),
     headcount: { activeEmployees: 0, payrollEligible: 0, standingNet: 0, standingGross: 0 },
     payroll: { committed: [], runs: [] },
-    directOrders: { awaitingCount: 0, awaitingValue: 0, awaitingOldest: null, bookedCount: 0, byStatus: [] },
-    outstation: { pendingCount: 0, pendingClaimed: 0, pendingOldest: null, approvedCount: 0, approvedValue: 0, byStatus: [] },
-    marketing: { awaitingMyStep: 0, missingPaymentProof: 0, missingInvoice: 0 },
+    directOrders: {
+      approvedCount: 0, approvedValue: 0, awaitingCount: 0, awaitingOldest: null, awaitingValue: 0,
+      bookedCount: 0, bookedValue: 0, byStatus: [], collectedCount: 0, heldCount: 0, heldValue: 0,
+      injectedCount: 0, paidTotal: 0, pendingCount: 0, pendingValue: 0, remainingTotal: 0,
+    },
+    marketing: {
+      approvedCount: 0, awaitingMyStep: 0, committedSpend: 0, dueOldest: null, dueUnexecutedCount: 0,
+      dueUnexecutedValue: 0, executedCount: 0, inApprovalCount: 0, missingInvoice: 0,
+      missingPaymentProof: 0, requiredRoi: 0,
+    },
     leave: { awaitingMyDecision: 0 },
   };
 }
