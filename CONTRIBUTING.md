@@ -9,6 +9,35 @@ Phoenix Workforce is a private enterprise HR/workforce platform. This repository
 - Feature branches branch off the working branch and stay short-lived and focused on a single change.
 - The exact working-branch name and deployment mapping are documented in [docs/current-operating-state.md](docs/current-operating-state.md).
 
+## Toolchain
+
+Verified on the owner's machine 2026-08-10. Versions are what is actually in use, not minimums.
+
+| CLI | Version | Needed for | Authenticate with |
+| --- | --- | --- | --- |
+| `node` | 24.15.0 | runtime | — |
+| `pnpm` | 11.13.1 | every repo script | — |
+| `git` | 2.55.0 | — | — |
+| `gh` | 2.95.0 | all GitHub work — PRs, checks, API (never the GitHub MCP tools) | `gh auth login` |
+| `supabase` | 2.109.1 | migrations, project inspection | `supabase login` |
+| `railway` | 5.30.3 | production logs, variables, deploy status | `railway login` |
+| `psql` / `pg_dump` | 18.4 | direct DB work and snapshot exports; 18.x reads the 17.6 server fine | uses `SUPABASE_DB_URL` |
+| `jq` | 1.8.2 | JSON in shell pipelines | — |
+| `python` | 3.13 | ad-hoc data/text processing | — |
+| `openssl` | 3.5.7 | secret generation | — |
+| `docker` | 29.5.2 | only `supabase start` (local stack); the daemon is normally not running | — |
+
+Playwright is a **devDependency**, not a global CLI — use `pnpm exec playwright`. The configs only
+target chromium, so `pnpm exec playwright install chromium` is enough; there is no need to pull
+firefox and webkit.
+
+**Installed but dead — do not use, and do not verify against them:** `gcloud` (the GCP billing
+account was closed 2026-08-01; every API returns `BILLING_DISABLED`) and `vercel` (decommissioned).
+Both linger on PATH and will happily run, which is exactly the trap. Production is Railway.
+
+No AWS CLI is required. The `aws-…` strings throughout the repo are the Supabase pooler hostname
+(`aws-0-eu-central-1.pooler.supabase.com`), not an AWS dependency.
+
 ## Development Workflow
 
 1. Clone the repo and run `pnpm install`.

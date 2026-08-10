@@ -1,9 +1,14 @@
 #!/usr/bin/env node
 // PreToolUse(Bash) guard — deterministic, zero-cost.
-// Blocks two commands the memory documents as silent traps in THIS repo:
+// Blocks the commands the memory documents as silent traps in THIS repo:
 //   C1  recursive grep  — ~346k path entries make `grep -r` hang 10-40s+. Use rg / git grep.
-//   C4  standalone jq   — jq is NOT installed; it emits zero output and looks like success.
-//                         Only `gh ... --jq` works (gh has jq embedded).
+//
+// RETIRED 2026-08-10:
+//   C4  standalone jq — blocked jq because it was not installed and emitted zero output, which
+//       looks identical to success. jq 1.8.2 is now installed (scoop, ~/scoop/shims/jq.exe), so
+//       the guard was denying a command that works. A guard asserting something untrue is worse
+//       than no guard: it costs every session a wasted round trip and teaches a false fact.
+//       If jq ever disappears from PATH again, restore the check rather than reasoning around it.
 // FAILS OPEN: any parse/logic error exits 0 (allow). A hook bug must never block a real command.
 import { readFileSync } from 'node:fs';
 
@@ -35,14 +40,6 @@ try {
       'Recursive grep hangs in this repo (~346k path entries get scanned; 10-40s+). ' +
         'Use `git grep` (in the shell) or the Grep tool — both honour .gitignore and stay fast. ' +
         '(`rg`/`gg` are not reliably on the shell PATH here. Never `alias grep=rg`.)',
-    );
-  }
-
-  // C4 — standalone jq (command position or piped-into). `gh ... --jq` is fine (not matched).
-  if (/(?:^|\|)\s*jq\b/.test(cmd)) {
-    deny(
-      'Standalone `jq` is NOT installed here — it emits zero output, which looks identical to ' +
-        '"nothing happened". Use `gh ... --jq` (gh has jq embedded), or parse JSON with node/python.',
     );
   }
 
