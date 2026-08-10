@@ -29,13 +29,6 @@ export type ResignationRecord = {
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
-  /**
-   * Human name for `createdBy`, resolved from the employee directory by
-   * getResignationsDashboardData — the only read path that already holds the employee map.
-   * Null when the actor is not a directory row (a system account or a deleted employee); the UI
-   * then falls back to the raw HR_ID rather than showing nothing.
-   */
-  createdByName: string | null;
   reviewedAt: string | null;
   reviewedBy: string | null;
   approvedAt: string | null;

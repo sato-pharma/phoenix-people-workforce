@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const migrationSource = readFileSync(
   new URL("../supabase/_migrations_archive/pre-baseline-2026-07-11/20260513100643_payroll_two_part_workflow.sql", import.meta.url),
@@ -66,12 +66,10 @@ const payrollDashboardSource = readFileSync(
   "utf8",
 );
 
-// The Resignations UI became a directory of components in the 2026-08-10 rebuild; concatenate it
-// so these guards keep holding wherever inside the module a given string lives.
-const resignationsUiDir = new URL("../src/components/resignations/", import.meta.url);
-const resignationsReportSource = readdirSync(resignationsUiDir)
-  .map((file) => readFileSync(new URL(file, resignationsUiDir), "utf8"))
-  .join("\n");
+const resignationsReportSource = readFileSync(
+  new URL("../src/components/reports/resignations-report.tsx", import.meta.url),
+  "utf8",
+);
 
 const resignationsServiceSource = readFileSync(
   new URL("../src/lib/resignations/service.ts", import.meta.url),

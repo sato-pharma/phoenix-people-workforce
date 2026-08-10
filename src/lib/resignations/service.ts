@@ -254,9 +254,6 @@ function mapResignation(row: ResignationRow): ResignationRecord {
     createdAt: new Date(row.created_at).toISOString(),
     updatedAt: new Date(row.updated_at).toISOString(),
     createdBy: row.created_by ?? null,
-    // Resolved against the directory by getResignationsDashboardData, which is the only read
-    // path that already holds the employee map.
-    createdByName: null,
     reviewedAt: asIso(row.reviewed_at),
     reviewedBy: row.reviewed_by ?? null,
     approvedAt: asIso(row.approved_at),
@@ -315,7 +312,6 @@ function mapLegacyResignationEmployee(row: HistoricalResignedEmployeeRow): Resig
     completedBy: null,
     createdAt,
     createdBy: null,
-    createdByName: null,
     effectiveDate,
     employeeHrId: row.hr_id,
     employeeName: resolveEmployeeDisplayName(row.full_name, row.nickname),
@@ -587,11 +583,6 @@ export async function getResignationsDashboardData(access?: AccessContext): Prom
     const record = mapResignation(row as ResignationRow);
     return {
       ...record,
-      // Owner rule: surfaces show human names, never raw HR_IDs. Falls back to the stored id
-      // when the actor is not a directory row (system account, deleted employee).
-      createdByName: record.createdBy
-        ? employeesByHrId.get(normalizeHrId(record.createdBy))?.displayName ?? null
-        : null,
       employeeStatus: employeesByHrId.get(normalizeHrId(record.employeeHrId))?.employmentStatus ?? record.employeeStatus ?? null,
     };
   });
