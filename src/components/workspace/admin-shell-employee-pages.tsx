@@ -505,9 +505,14 @@ export async function WorkspaceVacationRequestPage() {
       icon={<CalendarDays className="h-3.5 w-3.5" />}
       title="Vacation Request"
     >
+      {/* showHero={false}: WorkspaceFrame above already renders the page hero. These portal
+          components default showHero to true because they are also mounted standalone, so every
+          other workspace page passes false explicitly — this one did not, and the page rendered
+          TWO stacked "Vacation Request" heroes. */}
       <VacationRequestForm
         initialData={initialData}
         initialError={initialError ?? initialData?.balanceError ?? null}
+        showHero={false}
       />
     </WorkspaceFrame>
   );
@@ -529,7 +534,9 @@ export async function WorkspaceVacationReportPage({ searchParams }: { searchPara
       icon={<CalendarCheck className="h-3.5 w-3.5" />}
       title="Vacation Report"
     >
-      <VacationReport initialData={initialData} initialError={initialError} />
+      {/* Same doubled hero as Vacation Request above — both /leave-management and the portal copy
+          of this page already pass showHero={false}; only the workspace copy was missed. */}
+      <VacationReport initialData={initialData} initialError={initialError} showHero={false} />
     </WorkspaceFrame>
   );
 }
@@ -599,7 +606,8 @@ export async function WorkspaceOrganogramPage() {
       icon={<Network className="h-3.5 w-3.5" />}
       title="Organogram"
     >
-      <OrganogramReport initialError={initialError} initialReport={initialReport} />
+      {/* Third page with the same doubled hero. */}
+      <OrganogramReport initialError={initialError} initialReport={initialReport} showHero={false} />
     </WorkspaceFrame>
   );
 }
