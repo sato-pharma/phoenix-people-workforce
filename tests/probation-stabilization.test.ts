@@ -1,5 +1,15 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+
+// The Resignations UI became a directory of components in the 2026-08-10 rebuild (it was one
+// 1,337-line src/components/reports/resignations-report.tsx). Concatenate the module so this
+// file's "Terminated Employees" guard keeps holding wherever inside it that string lives.
+function readResignationsUiSource() {
+  const dir = "src/components/resignations";
+  return readdirSync(dir)
+    .map((file) => readFileSync(`${dir}/${file}`, "utf8"))
+    .join("\n");
+}
 
 // sameWorkforceLine is a zero-dependency pure function — safe to import directly
 // in the test runner. canReadProbationEmployee lives in the full service (which pulls
@@ -21,7 +31,7 @@ export function runProbationStabilizationTests() {
   const inAppNotificationsSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");
   const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   const resignationsSource = readFileSync("src/lib/resignations/service.ts", "utf8");
-  const resignationsReportSource = readFileSync("src/components/reports/resignations-report.tsx", "utf8");
+  const resignationsReportSource = readResignationsUiSource();
   const trackerSource = readFileSync("src/components/probation/probation-tracker.tsx", "utf8");
 
   assert.match(serviceSource, /getProbationRows\(access: AccessContext\)/);

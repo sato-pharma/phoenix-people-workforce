@@ -378,6 +378,7 @@ import { runEmployeeRegionResolverTests } from "./employee-region-resolver.test.
 import { runEmployeeRecordHealthTests } from "./employee-record-health.test.ts";
 import { runEmployeeSalaryDetailsTests } from "./employee-salary-details.test.ts";
 import { runResignationDateEditTests } from "./resignation-date-edit.test.ts";
+import { runResignationsViewModelTests } from "./resignations-view-model.test.ts";
 import { runResignationsDashboardScopeTests } from "./resignations-dashboard-scope.test.ts";
 import { runResignationsCairoTodayTests } from "./resignations-cairo-today.test.ts";
 import { runResignationSubmittedByFkTests } from "./resignation-submitted-by-fk.test.ts";
@@ -1189,6 +1190,7 @@ await runTest("employee region resolver (au line-area-region crosswalk derivatio
 await runTest("employee record health", runEmployeeRecordHealthTests);
 await runTest("employee salary details", runEmployeeSalaryDetailsTests);
 await runTest("resignation date edit", runResignationDateEditTests);
+await runTest("resignations view model + UI contract (Cairo-anchored days-left, status/line filters, candidate queue merge, XLSX export, no window.prompt / no bespoke shell / no CSV blob)", runResignationsViewModelTests);
 await runTest("resignations dashboard scope (unscoped-read fix)", runResignationsDashboardScopeTests);
 await runTest("resignations Cairo-today (exit-date defaults resolve via Africa/Cairo)", runResignationsCairoTodayTests);
 await runTest("resignation submitted_by_hr_id FK (actor casing must not violate the employees FK; constraint errors are not 'schema missing')", runResignationSubmittedByFkTests);
