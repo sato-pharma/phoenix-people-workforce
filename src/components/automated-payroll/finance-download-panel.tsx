@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { AdminPageHero } from "@/components/admin/admin-design-system";
-import { adminPanelClassName } from "@/components/admin/admin-design-tokens";
+import { Banknote, Building2, Landmark, ShieldCheck } from "lucide-react";
+
+import { AdminCallout, AdminPageHero, AdminTableShell } from "@/components/admin/admin-design-system";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 import { SelectField } from "./select-field";
 
@@ -66,138 +66,162 @@ export function FinanceDownloadPanel({ initialMonth, initialYear }: { initialMon
     window.location.href = `/api/automated-payroll/finance/cib-download?month=${month}&year=${year}&scope=${scope}`;
   };
 
+  // Rebuilt 2026-08-10. It was a single 768px column of stacked full-width bands: hero, then a
+  // period bar, then a status band, then FAB, then CIB — each holding two buttons and a paragraph.
+  // Widening that column alone just turned narrow bands into wide empty ones, so the layout is what
+  // changed: the period controls and status moved INTO the hero (they describe the whole page, they
+  // are not a step), and the three deliverables became peer cards in one row on desktop. They are
+  // genuinely parallel — same period, same run, three files — so a row is what they are.
+  const periodControls = (
+    <div className="flex flex-wrap items-end gap-3">
+      <SelectField label="Month" value={month} onChange={setMonth}>
+        {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
+      </SelectField>
+      <SelectField label="Year" value={year} onChange={setYear}>
+        {[year - 1, year, year + 1].map((value) => <option key={value} value={value}>{value}</option>)}
+      </SelectField>
+      <Button
+        variant="outline"
+        disabled={busy}
+        onClick={() => void load(month, year)}
+        className="h-10 border-white/25 bg-white/10 font-bold text-white shadow-sm hover:bg-white/20"
+      >
+        {busy ? "Checking…" : "Check"}
+      </Button>
+    </div>
+  );
+
+  const statusBadges = availability?.hasRun ? (
+    <>
+      {availability.published ? <Badge variant="success">Published</Badge> : null}
+      {availability.full
+        ? <Badge variant="success">Full sheet ready</Badge>
+        : availability.part1
+          ? <Badge variant="neutral">Part 1 ready</Badge>
+          : <Badge variant="warning">In progress</Badge>}
+    </>
+  ) : (
+    <Badge variant="neutral">No run for this period</Badge>
+  );
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
+    <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-4 py-6">
       <AdminPageHero
         eyebrow="Payroll"
+        icon={<Landmark className="h-3.5 w-3.5" />}
         title="Automated Payroll — Finance"
-        description="Download the HR-confirmed payroll sheet. All cells are locked except two Finance Edit columns for your execution notes."
+        description="Download the HR-confirmed payroll sheet and the two bank transfer files for the selected period. All payroll cells are locked except the two Finance Edit columns for your execution notes."
+        actions={periodControls}
+        badges={statusBadges}
       />
 
-      <div className={cn(adminPanelClassName, "flex flex-wrap items-end gap-3 p-4")}>
-        <SelectField label="Month" value={month} onChange={setMonth}>
-          {MONTHS.map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
-        </SelectField>
-        <SelectField label="Year" value={year} onChange={setYear}>
-          {[year - 1, year, year + 1].map((value) => <option key={value} value={value}>{value}</option>)}
-        </SelectField>
-        <Button
-          variant="outline"
-          disabled={busy}
-          onClick={() => void load(month, year)}
-          className="h-10 border-slate-300 font-bold text-slate-700 shadow-sm hover:bg-slate-100"
-        >
-          Check
-        </Button>
-      </div>
+      {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
 
-      {error ? <div className="border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700">{error}</div> : null}
-
-      <div className={cn(adminPanelClassName, "flex flex-col gap-3 p-5")}>
-        {!availability?.hasRun ? (
-          <p className="text-sm text-slate-500">No Automated Payroll run for this period yet.</p>
-        ) : (
-          <>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-slate-500">Status:</span>
-              {availability.published ? <Badge variant="success">Published</Badge> : null}
-              {availability.full ? <Badge variant="success">Full sheet ready</Badge> : availability.part1 ? <Badge variant="neutral">Part 1 ready</Badge> : <Badge variant="warning">In progress</Badge>}
-            </div>
-            <div className="flex flex-wrap gap-3">
+      {!availability?.hasRun ? (
+        <AdminCallout tone="neutral">
+          No Automated Payroll run exists for {MONTHS[month - 1]} {year} yet. Pick another period above, or wait for HR
+          to confirm this one.
+        </AdminCallout>
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-3">
+          <AdminTableShell
+            title="Payroll Sheet"
+            description="The HR-confirmed sheet, protected — only the Finance Edit and Finance Edit Reason columns accept input."
+          >
+            <div className="flex flex-col gap-3 p-5">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                <ShieldCheck className="h-4 w-4 text-orange-500" />
+                Locked workbook
+              </div>
               <Button
                 disabled={!availability.part1}
                 onClick={() => download("part1")}
-                className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+                className="w-full border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
               >
                 Download Part 1 (locked)
               </Button>
               <Button
                 disabled={!availability.full}
                 onClick={() => download("full")}
-                className="border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
+                className="w-full border border-orange-600 bg-orange-600 text-white hover:bg-orange-700"
               >
                 Download Full sheet (locked)
               </Button>
             </div>
-            <p className="text-xs text-slate-400">The downloaded workbook is protected: only the Finance Edit and Finance Edit Reason columns are editable.</p>
-          </>
-        )}
-      </div>
+          </AdminTableShell>
 
-      {availability?.hasRun ? (
-        <div className={cn(adminPanelClassName, "flex flex-col gap-3 border-blue-200 p-5")}>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">FAB Bank Transfer Sheet</h3>
-            <p className="text-xs text-slate-500">
-              The literal file for bank submission — FAB&apos;s own bulk-transfer format, matched cell-for-cell to
-              the company&apos;s real submitted file. No branding, no extra columns. Double-check every value before
-              submitting to the bank.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-              Value Date
-              <input
-                type="date"
-                value={fabValueDate}
-                onChange={(event) => setFabValueDate(event.target.value)}
-                className="h-10 rounded-md border border-slate-300 px-3 text-sm text-slate-700 shadow-sm"
-              />
-            </label>
-            <Button
-              disabled={!availability.part1}
-              onClick={() => downloadFab("part1")}
-              className="border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
-            >
-              Download FAB Sheet — Part 1
-            </Button>
-            <Button
-              disabled={!availability.full}
-              onClick={() => downloadFab("part2")}
-              className="border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
-            >
-              Download FAB Sheet — Part 2
-            </Button>
-          </div>
-          <p className="text-xs text-slate-400">
-            Only FAB-bank employees with a payable amount for that part are included; held employees and zero-amount
-            rows are left out. This workbook is fully editable so you can correct a value before submitting it.
-          </p>
-        </div>
-      ) : null}
+          <AdminTableShell
+            title="FAB Bank Transfer Sheet"
+            description="FAB's own bulk-transfer format, matched cell-for-cell to the company's real submitted file — no branding, no extra columns."
+          >
+            <div className="flex flex-col gap-3 p-5">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                <Building2 className="h-4 w-4 text-blue-600" />
+                Bank submission file
+              </div>
+              <label className="flex flex-col gap-1 text-[11px] font-black uppercase tracking-wide text-slate-500">
+                Value Date
+                <input
+                  type="date"
+                  value={fabValueDate}
+                  onChange={(event) => setFabValueDate(event.target.value)}
+                  className="h-10 w-full border border-slate-300 px-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-400 focus-visible:border-orange-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/20"
+                />
+              </label>
+              <Button
+                disabled={!availability.part1}
+                onClick={() => downloadFab("part1")}
+                className="w-full border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
+              >
+                Download FAB Sheet — Part 1
+              </Button>
+              <Button
+                disabled={!availability.full}
+                onClick={() => downloadFab("part2")}
+                className="w-full border border-blue-700 bg-blue-700 text-white hover:bg-blue-800"
+              >
+                Download FAB Sheet — Part 2
+              </Button>
+              <p className="text-xs leading-5 text-slate-400">
+                Only FAB-bank employees with a payable amount for that part are included; held employees and
+                zero-amount rows are left out. Fully editable, so you can correct a value before submitting.
+                Double-check every value before it goes to the bank.
+              </p>
+            </div>
+          </AdminTableShell>
 
-      {availability?.hasRun ? (
-        <div className={cn(adminPanelClassName, "flex flex-col gap-3 border-indigo-200 p-5")}>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800">CIB Bank Transfer Sheet</h3>
-            <p className="text-xs text-slate-500">
-              CIB&apos;s own bulk-credit format, matched cell-for-cell to the company&apos;s real submitted file — same
-              fixed-width fields, same header colors, same account-number highlight. Double-check every value before
-              submitting to the bank.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <Button
-              disabled={!availability.part1}
-              onClick={() => downloadCib("part1")}
-              className="border border-indigo-700 bg-indigo-700 text-white hover:bg-indigo-800"
-            >
-              Download CIB Sheet — Part 1
-            </Button>
-            <Button
-              disabled={!availability.full}
-              onClick={() => downloadCib("part2")}
-              className="border border-indigo-700 bg-indigo-700 text-white hover:bg-indigo-800"
-            >
-              Download CIB Sheet — Part 2
-            </Button>
-          </div>
-          <p className="text-xs text-slate-400">
-            Only CIB-bank employees with a payable amount for that part are included; held employees and zero-amount
-            rows are left out. This workbook is fully editable so you can correct a value before submitting it.
-          </p>
+          <AdminTableShell
+            title="CIB Bank Transfer Sheet"
+            description="CIB's own bulk-credit format, matched cell-for-cell — same fixed-width fields, same header colors, same account-number highlight."
+          >
+            <div className="flex flex-col gap-3 p-5">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                <Banknote className="h-4 w-4 text-indigo-600" />
+                Bank submission file
+              </div>
+              <Button
+                disabled={!availability.part1}
+                onClick={() => downloadCib("part1")}
+                className="w-full border border-indigo-700 bg-indigo-700 text-white hover:bg-indigo-800"
+              >
+                Download CIB Sheet — Part 1
+              </Button>
+              <Button
+                disabled={!availability.full}
+                onClick={() => downloadCib("part2")}
+                className="w-full border border-indigo-700 bg-indigo-700 text-white hover:bg-indigo-800"
+              >
+                Download CIB Sheet — Part 2
+              </Button>
+              <p className="text-xs leading-5 text-slate-400">
+                Only CIB-bank employees with a payable amount for that part are included; held employees and
+                zero-amount rows are left out. Fully editable, so you can correct a value before submitting.
+                Double-check every value before it goes to the bank.
+              </p>
+            </div>
+          </AdminTableShell>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
