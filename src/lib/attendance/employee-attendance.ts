@@ -5,7 +5,7 @@ import { compactDeductionHrId } from "@/lib/deductions-governance/service";
 import { isAttendanceTracked } from "@/lib/attendance/eligibility";
 import { loadActiveDeviceMappedHrIds } from "@/lib/attendance/device-user-mapping";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
-import { hrIdsMatch, normalizeHrId, normalizeHrIdForAccess, type AccessContext } from "@/lib/auth/permissions";
+import { hrIdsMatch, normalizeHrId, normalizeHrIdForAccess, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
 import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { resolveEmployeeDisplayName } from "@/lib/employees/display-name";
 import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
@@ -187,6 +187,37 @@ export type AttendanceReportTarget = {
 };
 
 /**
+ * Roles whose attendance visibility is SELF ONLY — not their direct reports, and never the
+ * company-wide bypass below.
+ *
+ * Finance Manager (owner instruction, 2026-08-10: "fix the attendance export so he only sees
+ * himself"). He holds `attendance: ["read","export"]` and scopeForRole gives the role `"company"`,
+ * so the `context.scope === "company"` arm in both functions below was silently admitting him to
+ * EVERY employee's attendance — `/api/attendance/employee-fingerprint-export?hrId=<anyone>` returned
+ * any one of 114 people's full 24-column punch-and-deduction workbook. Nothing in the product linked
+ * there for him; it was reachable by URL alone, and it predated the modules granted the same day.
+ *
+ * Deliberately a SELF-ONLY list rather than just deleting the `scope === "company"` arm. Deleting it
+ * would drop him to the manager fallback (self + direct reports), which would still show him the
+ * attendance of the three head-office staff who report to him. The owner asked for himself and
+ * nobody else, so this is the explicit carve-out that produces that — he is the one manager in the
+ * system who cannot see his own team's attendance, and it needs to be visible in code that this is
+ * intentional rather than an oversight.
+ *
+ * He keeps his OWN report in full: /workspace/fingerprint-report is bound to access.hrId and passes
+ * the self check that runs before this gate.
+ *
+ * Note the removal is not achievable by narrowing `scope` alone: scopeForRole returns "company" for
+ * exactly Super Admin, CEO and Finance Manager, and the first two are named explicitly in the
+ * disjunctions below — so the scope arm existed only for him anyway.
+ */
+const SELF_ONLY_ATTENDANCE_ROLES: ReadonlySet<PhoenixRole> = new Set<PhoenixRole>(["Finance Manager"]);
+
+export function isSelfOnlyAttendanceViewer(context: Pick<AccessContext, "role">): boolean {
+  return SELF_ONLY_ATTENDANCE_ROLES.has(context.role);
+}
+
+/**
  * Whether `context` may view the fingerprint/attendance report of `target`.
  *
  *  - self — always.
@@ -212,11 +243,20 @@ export function canViewEmployeeAttendanceReport(
 
   if (hrIdsMatch(caller, targetHrId)) return true; // self
 
-  // Whole-company visibility (CEO / Super Admin / company-or-system scope, plus the
-  // functional head-office oversight roles that hold real attendance permissions).
+  // Self-only roles stop here — BEFORE the company bypass and before the direct-report fallback.
+  // Placed after the self check above so the role keeps its own report in full. See
+  // SELF_ONLY_ATTENDANCE_ROLES for why this is a role list and not a narrowing of `scope`.
+  if (isSelfOnlyAttendanceViewer(context)) return false;
+
+  // Whole-company visibility (CEO / Super Admin / system scope, plus the functional head-office
+  // oversight roles that hold real attendance permissions).
+  //
+  // `context.scope === "company"` was removed on 2026-08-10: scopeForRole returns "company" for
+  // exactly Super Admin, CEO and Finance Manager, the first two are already named on their own
+  // lines, and the third must not be here at all — so the arm admitted one role by accident and
+  // nobody by design.
   if (
     context.scope === "system" ||
-    context.scope === "company" ||
     context.role === "Super Admin" ||
     context.role === "CEO" ||
     context.role === "SFE Manager" ||
@@ -375,9 +415,18 @@ export async function resolveAttendanceScopeHrIds(context: AccessContext): Promi
   if (context.source === "guest" || context.scope === "none") {
     throw new Error("Forbidden: attendance access denied.");
   }
+  const selfOnlyCaller = normalizeAttendanceHrId(context.hrId);
+  // Same self-only carve-out as canViewEmployeeAttendanceReport, applied to the LIST scoper so the
+  // two cannot disagree: one decides "may I see this person", the other decides "which people does
+  // this report cover", and a role held out of one but not the other is a hole. Returns his own
+  // HR_ID rather than null (null means "no restriction, whole company").
+  if (isSelfOnlyAttendanceViewer(context)) {
+    if (!selfOnlyCaller) throw new Error("Forbidden: attendance access denied.");
+    return [selfOnlyCaller];
+  }
+  // `context.scope === "company"` removed 2026-08-10 — see the note in canViewEmployeeAttendanceReport.
   if (
     context.scope === "system" ||
-    context.scope === "company" ||
     context.role === "Super Admin" ||
     context.role === "CEO" ||
     context.role === "SFE Manager" ||
