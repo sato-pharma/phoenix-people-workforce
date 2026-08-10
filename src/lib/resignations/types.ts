@@ -14,6 +14,22 @@ export type ResignationWorkflowAction =
   | "cancel"
   | "reopen";
 
+export type ResignationSettlementPreview = {
+  /** The employee's full monthly base salary (not prorated). */
+  baseSalary: number;
+  /** Days paid in the resignation month under Rule 1. */
+  daysWorked: number;
+  /** "on_or_before_25" = Base-only day-rate proration; "after_25" = full Base + ECoL + Fuel. */
+  branch: "on_or_before_25" | "after_25";
+  /** Payable this month before other deductions. */
+  total: number;
+  firstPart: number;
+  secondPart: number;
+  paymentMode: "one_part" | "two_parts";
+  /** True when Part 1 alone covers the whole settlement (secondPart is zero). */
+  coveredByFirstPart: boolean;
+};
+
 export type ResignationRecord = {
   id: string;
   employeeHrId: string;
@@ -29,6 +45,25 @@ export type ResignationRecord = {
   createdAt: string;
   updatedAt: string;
   createdBy: string | null;
+  /**
+   * Human name for `createdBy`, resolved by getResignationsDashboardData straight from the
+   * employees table — NOT from getEmployeeDirectory(), which omits the PHX-1 / ADMIN-HR system
+   * accounts that authored 32 of the 38 production records. Null only when the id names nobody.
+   */
+  createdByName: string | null;
+  /**
+   * The employee's hire date, resolved by getResignationsDashboardData from the employees table.
+   * Not from getEmployeeDirectory() — that omits resigned people, which is nearly every subject
+   * on this page.
+   */
+  hireDate: string | null;
+  /**
+   * Settlement preview for the month the employee resigned in — BEFORE fingerprint, medical
+   * insurance and every other deduction. Computed server-side by getResignationsDashboardData
+   * from the owner-locked helpers (computeResignationSettlement + calculateBasicSalary), never
+   * re-derived in the UI. Null when the employee row carries no salary.
+   */
+  settlement: ResignationSettlementPreview | null;
   reviewedAt: string | null;
   reviewedBy: string | null;
   approvedAt: string | null;

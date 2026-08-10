@@ -1,4 +1,4 @@
-import { ResignationsReport } from "@/components/reports/resignations-report";
+import { ResignationsWorkspace } from "@/components/resignations/resignations-workspace";
 import { redirect } from "next/navigation";
 
 import { canAccess } from "@/lib/auth/permissions";
@@ -35,6 +35,6 @@ export default async function ResignationsPage() {
   }
 
   return (
-    <ResignationsReport initialData={initialData} initialError={initialError} />
+    <ResignationsWorkspace initialData={initialData} initialError={initialError} />
   );
 }

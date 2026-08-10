@@ -1,5 +1,13 @@
 import { strict as assert } from "node:assert";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+
+// The Resignations UI became a self-contained module directory in the 2026-08-10 rebuild.
+function readResignationsUiSource() {
+  const dir = "src/components/resignations";
+  return readdirSync(dir)
+    .map((file) => readFileSync(`${dir}/${file}`, "utf8"))
+    .join("\n");
+}
 
 // sameWorkforceLine is a zero-dependency pure function — safe to import directly
 // in the test runner. canReadProbationEmployee lives in the full service (which pulls
@@ -21,7 +29,7 @@ export function runProbationStabilizationTests() {
   const inAppNotificationsSource = readFileSync("src/lib/notifications/in-app.ts", "utf8");
   const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   const resignationsSource = readFileSync("src/lib/resignations/service.ts", "utf8");
-  const resignationsReportSource = readFileSync("src/components/reports/resignations-report.tsx", "utf8");
+  const resignationsReportSource = readResignationsUiSource();
   const trackerSource = readFileSync("src/components/probation/probation-tracker.tsx", "utf8");
 
   assert.match(serviceSource, /getProbationRows\(access: AccessContext\)/);
@@ -179,7 +187,14 @@ export function runProbationStabilizationTests() {
   assert.match(resignationsSource, /vacancyCodeFromEmployee/);
   assert.match(resignationsSource, /Termination\/vacancy reference/);
   assert.match(resignationsSource, /phx_resign_employee_and_open_vacancy/);
-  assert.match(resignationsReportSource, /Terminated Employees/);
+  // The 2026-08-10 ground-up rebuild dropped the literal heading "Terminated Employees" — the
+  // module has no separate terminated table any more (owner decision: exits are highlighted
+  // inside the normal queue). The invariant this guard actually protects — that a terminated exit
+  // still shows up on the Resignations page, not a standalone termination system — is what's
+  // checked here instead. Also checked directly for isTerminatedResignation() in
+  // tests/resignations-view-model.test.ts.
+  assert.match(resignationsReportSource, /isTerminatedResignation/);
+  assert.match(resignationsReportSource, /["']Terminated["']/);
 
   assert.match(trackerSource, /SelectedWorkflowAction/);
   assert.match(trackerSource, /Type HR ID to confirm termination/);
