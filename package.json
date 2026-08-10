@@ -90,6 +90,7 @@
     "check:schema-shape": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-schema-shape.ts",
     "check:db-timezone": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-db-timezone.ts",
     "check:sos-product-mapping": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-sos-product-mapping.ts",
+    "check:sos-source-files": "node --env-file-if-exists=.env.local --experimental-strip-types --experimental-specifier-resolution=node --experimental-loader ./tests/alias-loader.mjs scripts/check-sos-source-files.ts",
     "check:secret-pins": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-secret-pins.ts",
     "check:unbacked": "node --experimental-strip-types --experimental-specifier-resolution=node scripts/check-unbacked-branches.ts",
     "check:routes": "node scripts/check-routes.mjs",
