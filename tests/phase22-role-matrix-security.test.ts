@@ -334,4 +334,47 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.equal(getSalesScope(districtManager), "TEAM");
   assert.equal(getExpensesScope(employee), "SELF");
   assert.equal(getExpensesScope(districtManager), "TEAM");
+
+  // ── Finance Manager is excluded from Outstation and Expenses (owner, 2026-08-10) ──────────────
+  // "NO EXCLUDE HIM 100% FROM OUTSTAION OR EXPENSES". Two things have to hold, and they fail in
+  // opposite directions, so both are asserted:
+  //
+  //  1. NO `outstation` action of any kind. Deleting the key — rather than trimming actions — is
+  //     what closes /api/admin/outstation/**, the Expense Command Center, the approval queue,
+  //     manual entry, the historical upload and /workspace/submit-expense in one move.
+  //  2. `expenses` is read ONLY, and its scope is SELF. The key survives at all for exactly one
+  //     reason: `expenses:read` is what the whole /api/marketing-requests/** namespace is gated on
+  //     (access-registry.ts), including /:id/decision and /finance-evidence — the two routes he
+  //     executes the terminal `finance_execution` rung from. Delete it and the rung the owner
+  //     activated the same morning becomes a dead end nobody can clear. SELF scope is what stops
+  //     that residual grant handing back the company-wide expense read the removal closed.
+  //
+  // If the marketing routes ever move onto a marketing-specific resource, `expenses` should leave
+  // his matrix outright and the first loop below should cover both resources.
+  // (`financeManager` is already declared at the top of this function alongside the other role
+  // fixtures — reused rather than shadowed.)
+  for (const action of ["read", "create", "update", "delete", "approve", "export", "import"] as const) {
+    assert.equal(
+      await canAccess(financeManager, "outstation", action),
+      false,
+      `Finance Manager must hold NO outstation grant — found ${action}`,
+    );
+  }
+  assert.equal(
+    await canAccess(financeManager, "expenses", "read"),
+    true,
+    "expenses:read must survive — it is the gate on every /api/marketing-requests/** route, including the finance_execution decision",
+  );
+  for (const action of ["create", "update", "delete", "approve", "export", "import"] as const) {
+    assert.equal(
+      await canAccess(financeManager, "expenses", action),
+      false,
+      `expenses is read-only for the Finance Manager — found ${action}`,
+    );
+  }
+  assert.equal(
+    getExpensesScope(financeManager),
+    "SELF",
+    "Finance Manager expense scope must be SELF, or the residual expenses:read restores the company-wide expense read",
+  );
 }

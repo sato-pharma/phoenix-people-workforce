@@ -617,8 +617,24 @@ const defaultPermissionMatrix: PermissionMap = {
     crm_visits: ["read"],
     employee_documents: ["read", "export"],
     employee_profile: ["read", "update"],
-    expenses: ["read", "export", "update"],
-    outstation: ["read", "export", "update"],
+    // NO `outstation` key at all (owner, 2026-08-10): "exclude him 100% from outstation or
+    // expenses". Outstation expense claims are a field-operations module the HR Manager approves
+    // and Super Admin administers; he has no duty in it. Removing the key — rather than trimming
+    // actions — is what closes /api/admin/outstation/**, the Expense Command Center, the expense
+    // queue, manual entry, the historical upload and the dashboards in one move.
+    //
+    // `expenses` is cut to a bare `read` and is NOT an expense grant any more. It survives for one
+    // reason only: `expenses:read` is the permission the WHOLE /api/marketing-requests/** namespace
+    // is gated on (see access-registry.ts), including /api/marketing-requests/:id/decision and
+    // /finance-evidence — the two routes he uses to execute the terminal `finance_execution` rung
+    // and attach the money-transfer proof. Delete this key and the rung activated on 2026-08-10
+    // becomes a dead end nobody can clear. It buys him nothing on the expense side: getExpensesScope
+    // now returns SELF for this role, every outstation page/nav/hub row is gone, and `approve` (the
+    // action outstation actually gates its writes on) was never held.
+    //
+    // If the marketing routes are ever re-gated onto a marketing-specific resource, this key should
+    // be deleted outright — it exists only to bridge that collision.
+    expenses: ["read"],
     // `approve` added 2026-08-10 (owner): he is the direct manager of three head-office staff
     // (OF-0001, A-1, A-4) and their vacations route to him. This is only the COARSE gate — both
     // decide paths still bind the actor to an assigned pending approval step
@@ -1392,7 +1408,13 @@ export function getExpensesScope(
       return "LINE";
     case "SFE Manager":
     case "CEO":
-    case "Finance Manager":
+    // Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+    // He falls to SELF, and as head-office staff he files no outstation claims, so his expense
+    // visibility is empty rather than company-wide. This is the scope half of the removal: the
+    // `outstation` key is gone from his matrix, but resolveExpenseAccessFilter in
+    // src/lib/outstation/expenses.ts reads getExpensesScope off the residual `expenses:read` he
+    // keeps for the marketing routes — leaving him COMPANY here would have handed back exactly the
+    // company-wide expense read the key removal was meant to close.
     case "Super Admin":
       return "COMPANY";
     default:

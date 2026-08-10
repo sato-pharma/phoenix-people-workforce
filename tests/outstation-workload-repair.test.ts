@@ -109,8 +109,9 @@ export function runOutstationWorkloadRepairTests() {
 
   // ── Both repairs are Super Admin only ───────────────────────────────────────────
   // assertOutstationAdminAccess(..., "approve") is Super-Admin-only; the "read" variant also
-  // admits the execution-only finance roles. Using "read" here would hand Finance and the CEO
-  // the ability to release payments.
+  // admits the execution-only oversight roles. Using "read" here would hand the CEO the ability
+  // to release payments. (The Finance Manager was the other read-tier role until 2026-08-10, when
+  // the owner excluded him from outstation and expenses entirely.)
   for (const declaration of [
     "export async function setOutstationWorkloadManually",
     "export async function retryOutstationWorkloadCapture",
@@ -118,13 +119,13 @@ export function runOutstationWorkloadRepairTests() {
     assert.match(
       functionSlice(service, declaration),
       /assertOutstationAdminAccess\(access,\s*"approve"\)/,
-      `${declaration} must be gated on approve (Super Admin), never on read — read admits Finance Manager and CEO`,
+      `${declaration} must be gated on approve (Super Admin), never on read — read also admits the CEO`,
     );
   }
   assert.match(
     functionSlice(service, "export async function listHeldOutstationRequests"),
     /assertOutstationAdminAccess\(access,\s*"read"\)/,
-    "the held LIST is read-scoped on purpose, so finance can see what is stuck without being able to change it",
+    "the held LIST is read-scoped on purpose, so oversight can see what is stuck without being able to change it",
   );
 
   // ── The employee-facing capture is owner-scoped, and CSRF-guarded at the edge ────

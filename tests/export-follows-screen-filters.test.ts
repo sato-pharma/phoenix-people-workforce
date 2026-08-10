@@ -116,7 +116,11 @@ export function runExportFollowsScreenFiltersTests() {
     directOrder({ id: "d4", salesValue: 700, status: "rejected", requesterName: "Karim Fouad" }),
   ];
 
-  const approvedOnly = filterDirectOrderReportRows(directOrders, { search: "", statuses: ["approved"] });
+  // `unbookedOnly: false` throughout this block: it is a THIRD filter axis added 2026-08-10 for the
+  // Finance Manager's unbooked queue (tests/direct-orders-unbooked-queue.test.ts covers it), and it
+  // is a required field precisely so every construction site has to state its intent. These
+  // assertions are about status and search, so it stays off.
+  const approvedOnly = filterDirectOrderReportRows(directOrders, { search: "", statuses: ["approved"], unbookedOnly: false });
   assert.deepEqual(
     approvedOnly.map((row) => row.id),
     ["d1", "d2"],
@@ -128,19 +132,19 @@ export function runExportFollowsScreenFiltersTests() {
     "Total value in the file must equal the KPI card's total over the same filtered rows (3000, not the unfiltered 4100)",
   );
   assert.equal(
-    filterDirectOrderReportRows(directOrders, { search: "", statuses: [] }).length,
+    filterDirectOrderReportRows(directOrders, { search: "", statuses: [], unbookedOnly: false }).length,
     4,
     "no status chip selected still means every row — an empty filter must never narrow",
   );
 
-  const searched = filterDirectOrderReportRows(directOrders, { search: "karim", statuses: [] });
+  const searched = filterDirectOrderReportRows(directOrders, { search: "karim", statuses: [], unbookedOnly: false });
   assert.deepEqual(
     searched.map((row) => row.id),
     ["d4"],
     "the search box matches the requester name case-insensitively, and the export honours it",
   );
   assert.equal(
-    filterDirectOrderReportRows(directOrders, { search: "karim", statuses: ["approved"] }).length,
+    filterDirectOrderReportRows(directOrders, { search: "karim", statuses: ["approved"], unbookedOnly: false }).length,
     0,
     "search and status compose (AND), so a contradictory pair exports nothing rather than everything",
   );
@@ -158,23 +162,27 @@ export function runExportFollowsScreenFiltersTests() {
   const parsedGarbage = parseDirectOrderReportFilters({ search: 42, statuses: "approved" });
   assert.deepEqual(
     parsedGarbage,
-    { search: "", statuses: [] },
+    // `unbookedOnly: false` is asserted here on purpose rather than loosened away: a malformed body
+    // must degrade to the WIDEST population, and this flag is the one filter whose "safe" default is
+    // off. If parse ever started defaulting it true, every garbage-bodied export would silently
+    // become an unbooked-only slice.
+    { search: "", statuses: [], unbookedOnly: false },
     "a malformed body degrades to 'no filter' rather than throwing, so Export never fails on a bad request shape",
   );
   assert.deepEqual(
     parseDirectOrderReportFilters(undefined),
-    { search: "", statuses: [] },
+    { search: "", statuses: [], unbookedOnly: false },
     "an absent body is the unfiltered export the button used to always send",
   );
 
   // The cover stamp names statuses the way the chips do — the standing rule is human-readable
   // names, never raw codes.
   assert.equal(
-    describeDirectOrderReportFilters({ search: "", statuses: [] }),
+    describeDirectOrderReportFilters({ search: "", statuses: [], unbookedOnly: false }),
     null,
     "an unfiltered export carries no filter stamp, so it does not claim to be a slice",
   );
-  const directNote = describeDirectOrderReportFilters({ search: " Cairo ", statuses: ["approved", "pending_approval"] });
+  const directNote = describeDirectOrderReportFilters({ search: " Cairo ", statuses: ["approved", "pending_approval"], unbookedOnly: false });
   assert.equal(
     directNote,
     'Filtered export — this workbook covers only: Status: Pending, Approved · Search: "Cairo".',
@@ -195,7 +203,7 @@ export function runExportFollowsScreenFiltersTests() {
   // reads — the exact raw-code leak the assertion above this one exists to prevent. Naming them
   // here means the fallback branch can never quietly start covering a real status again.
   assert.equal(
-    describeDirectOrderReportFilters({ search: "", statuses: ["held", "expired", "cancelled"] }),
+    describeDirectOrderReportFilters({ search: "", statuses: ["held", "expired", "cancelled"], unbookedOnly: false }),
     "Filtered export — this workbook covers only: Status: Held, Expired, Cancelled.",
     "every real status must stamp its human-readable label; hitting the unknown-status fallback means a raw code reached the owner's file",
   );

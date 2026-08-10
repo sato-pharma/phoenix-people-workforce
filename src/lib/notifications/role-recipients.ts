@@ -101,7 +101,10 @@ export const DEFAULT_NOTIFICATION_ROLE_POLICIES: Record<NotificationRoleKey, Not
     key: "outstation_sla_reminder",
     label: "Outstation SLA reminder",
     description: "Reminds approvers of outstation expense requests pending more than 3 days.",
-    roles: ["Super Admin", "Finance Manager", "CEO"],
+    // Finance Manager removed 2026-08-10 (owner: "exclude him 100% from outstation or expenses").
+    // The reminder is disabled today, so this changes nothing live — but leaving him on the list
+    // would silently email him about a module he can no longer open the moment it is switched on.
+    roles: ["Super Admin", "CEO"],
     // Disabled 2026-07-22 at owner request (335437cc) — restored behind this real toggle.
     enabled: false,
   },

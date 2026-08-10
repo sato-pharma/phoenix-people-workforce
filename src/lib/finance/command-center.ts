@@ -98,8 +98,17 @@ export type FinanceCommandCenterData = {
   };
   /**
    * The direct-order money pipeline: approved → booked into a sales month → injected into Source
-   * of Sales → collected → paid. Only the booking hop is his exclusive duty, but the rest is the
-   * receivable that duty creates. The collection fields read 0 today and fill as collection starts.
+   * of Sales. Only the booking hop is his exclusive duty, and it is the hop nothing else in the
+   * product can perform.
+   *
+   * The pipeline used to carry two more stages — collected and paid — dropped on 2026-08-10 when
+   * the owner ruled out collection tracking. They were never fillable: `paid_amount`,
+   * `payment_date` and `remaining_amount` exist on direct_order_requests and are READ in three
+   * places, but no screen, route or service in the codebase writes any of them. The RPC still
+   * returns `collectedCount` / `paidTotal` / `remainingTotal`; they are simply not modelled here
+   * any more, and the extra keys are ignored by the cast in cachedFinanceCommandCenter. Deleting
+   * them from the SQL needs a migration against production and buys nothing but a shorter payload,
+   * so it is deliberately not part of this change.
    */
   directOrders: {
     awaitingCount: number;
@@ -110,9 +119,6 @@ export type FinanceCommandCenterData = {
     bookedCount: number;
     bookedValue: number;
     injectedCount: number;
-    collectedCount: number;
-    paidTotal: number;
-    remainingTotal: number;
     pendingCount: number;
     pendingValue: number;
     heldCount: number;
@@ -187,8 +193,8 @@ function emptyData(): FinanceCommandCenterData {
     },
     directOrders: {
       approvedCount: 0, approvedValue: 0, awaitingCount: 0, awaitingOldest: null, awaitingValue: 0,
-      bookedCount: 0, bookedValue: 0, byStatus: [], collectedCount: 0, heldCount: 0, heldValue: 0,
-      injectedCount: 0, paidTotal: 0, pendingCount: 0, pendingValue: 0, remainingTotal: 0,
+      bookedCount: 0, bookedValue: 0, byStatus: [], heldCount: 0, heldValue: 0,
+      injectedCount: 0, pendingCount: 0, pendingValue: 0,
     },
     marketing: {
       approvedCount: 0, awaitingMyStep: 0, committedSpend: 0, dueOldest: null, dueUnexecutedCount: 0,

@@ -253,8 +253,10 @@ export function runNavigationActivePathTests() {
   // sidebar links under People Management — none are cards here anymore.
   const sensitiveHrHrefs = ["/admin/recruitment-hiring"] as const;
   // /admin/outstation-expenses and /leave-management moved off this list — both
-  // are shared with Finance Manager/CEO now (Outstation Expenses / Leave
-  // Management hubs), not Super-Admin/Talent-Acquisition-exclusive.
+  // are shared with the CEO (Outstation Expenses / Leave Management hubs), not
+  // Super-Admin/Talent-Acquisition-exclusive. (Outstation was shared with the
+  // Finance Manager too until 2026-08-10, when the owner excluded him from the
+  // module entirely; it is asserted the other way below now.)
   const systemAdministratorOnlyHrefs = ["/admin/admin-tools"] as const;
 
   const marketingManagerPortal = employeePortalHrefsFor("Marketing Manager");
@@ -305,17 +307,29 @@ export function runNavigationActivePathTests() {
   assertExcludesAll(talentAcquisitionAdmin, systemAdministratorOnlyHrefs, "Talent Acquisition must not see system-administrator-only modules");
 
   const financeAdmin = adminHrefsFor("Finance Manager");
-  assertIncludesAll(financeAdmin, ["/admin/payroll-management"], "Finance Manager must see payroll ownership");
+  // /admin/payroll-management was his payroll-ownership row until the owner hid it later the same
+  // day (2026-08-10) — see the exclusion list below. His real payroll execution surface,
+  // /admin/automated-payroll/finance ("Payroll — Finance" / "Payroll"), is untouched by that move.
+  assertIncludesAll(financeAdmin, ["/admin/automated-payroll/finance"], "Finance Manager must see his payroll execution surface");
   assertExcludesAll(financeAdmin, [...sensitiveHrHrefs, ...systemAdministratorOnlyHrefs], "Finance Manager must not see HR-owned or owner-only modules");
 
-  // ── The seven rows the owner took off B-185's sidebar on 2026-08-10 ──────────────────────────
+  // ── The rows the owner took off B-185's sidebar on 2026-08-10 ────────────────────────────────
   // Every one of these was reachable because of a grant he still legitimately holds and still
-  // needs elsewhere (employee_profile:read is a portal floor, leave:read drives the two approval
-  // rows he keeps, attendance:read feeds payroll, crm_visits:read feeds the manager activity
-  // view), so none of them can be re-hidden by trimming the permission matrix — they are held out
-  // by name in system-navigation.ts, which is exactly what a well-meaning "the gate already covers
-  // this" cleanup would undo. Sidebar removal is a navigation decision, not a revocation: the page
-  // guards still admit him by URL, deliberately.
+  // needs elsewhere (employee_profile:read is a portal floor, leave:read/approve drives the
+  // consolidated Leave Management page he keeps instead, attendance:read feeds payroll,
+  // crm_visits:read feeds the manager activity view), so none of them can be re-hidden by
+  // trimming the permission matrix — they are held out by name in system-navigation.ts, which is
+  // exactly what a well-meaning "the gate already covers this" cleanup would undo. Sidebar removal
+  // is a navigation decision, not a revocation: the page guards still admit him by URL,
+  // deliberately.
+  //
+  // Six of these rows joined the list later the same day: "Request Vacation"/"Submit Excuse" (My
+  // Requests) and "Leave Approvals"/"Excuse Approvals" (Approvals Hub) were folded into his own
+  // "Leave Management" button (financeLeaveManagementVacationItems/
+  // financeLeaveManagementExcuseItems — he keeps every one of these duties, only the navigation
+  // path moved); "Payroll Management" went the same way as its sibling hubs above once his one
+  // reachable card inside it ("Deductions") was excluded by name too (see hubCardHrefsFor below);
+  // "Pharmacovigilance" was trimmed to just "Report It", its own direct row now.
   assertExcludesAll(
     financeAdmin,
     [
@@ -326,33 +340,78 @@ export function runNavigationActivePathTests() {
       "/admin/people-management",
       "/attendance",
       "/admin/crm-tools",
+      "/admin/payroll-management",
+      "/workspace/leave-management/vacation-request",
+      "/workspace/excuses",
+      "/admin/approvals/vacation",
+      "/admin/approvals/excuse",
+      "/admin/pharmacovigilance",
+      // Added when the owner said "exclude him 100% from outstation or expenses" (2026-08-10).
+      // Unlike every other row above, this one is NOT held out by name alone — the `outstation` key
+      // was deleted from his matrix in the same change, so both gates are shut. It is asserted here
+      // because the section has exactly one item, so a regression would silently restore the whole
+      // "Outstation Expenses" block to his sidebar.
+      "/admin/outstation-expenses",
     ],
     "Finance Manager's sidebar must stay trimmed to his finance remit (owner, 2026-08-10)",
   );
-  // The other half of that instruction: the trim must not touch the rungs he actually executes.
-  // Marketing Approval Inbox is the terminal finance_execution step (see
-  // ceo-marketing-approval-inbox.test.ts), and he decides leave/excuse for OF-0001, A-1 and A-4.
+  // The other half of that instruction: the trim must not remove a duty he actually holds — only
+  // the navigation path to it. Marketing Approval Inbox is the terminal finance_execution step
+  // (see ceo-marketing-approval-inbox.test.ts); vacation/excuse decisions for OF-0001/A-1/A-4 and
+  // his own vacation/excuse self-service now live behind the consolidated Leave Management button;
+  // Report It is now a direct row instead of a click inside Pharmacovigilance.
   assertIncludesAll(
     financeAdmin,
-    ["/admin/marketing-requests/inbox", "/admin/approvals/vacation", "/admin/approvals/excuse"],
+    ["/admin/marketing-requests/inbox", "/admin/finance-leave-management", "/admin/report-it/new"],
     "the sidebar trim must not remove a duty the Finance Manager actually holds",
   );
 
-  // Three hub CARDS the owner removed on 2026-08-10. They never appeared in the sidebar — they are
-  // cards on a hub page and Cmd+K entries — so adminHrefsFor cannot see them and only
-  // hubCardHrefsFor can catch a regression. Each was reachable through a grant he keeps:
-  // payroll:read (Automated Payroll finance sheets, bank transfer file), deductions:read (the
-  // Deductions card he keeps), outstation:update (acting on the expense claims themselves).
+  // Hub CARDS the owner removed on 2026-08-10. Most never appeared in the sidebar — they are cards
+  // on a hub page and Cmd+K entries — so adminHrefsFor cannot see them and only hubCardHrefsFor can
+  // catch a regression. Most were reachable through a grant he keeps: payroll:read (Automated
+  // Payroll finance sheets, bank transfer file) and deductions:read (the surfaces he keeps read
+  // that grant too). "Deductions" (/admin/deductions) joined the list later the same day, once
+  // /admin/payroll-management itself was hidden from his sidebar — the card has no roles field of
+  // its own, so leaving it unexcluded would have kept it one keystroke away in Cmd+K even with the
+  // parent hub row gone.
+  //
+  // The Outstation cards are the exception and the reason this list grew again: they are not held
+  // out by name, they are gone because the `outstation` grant itself was deleted. Asserting them
+  // here is what catches someone "restoring" the key to fix an unrelated 403.
   const financeHubCards = hubCardHrefsFor("Finance Manager");
   assertExcludesAll(
     financeHubCards,
-    ["/payroll", "/admin/deductions-governance", "/admin/outstation/policy"],
+    [
+      "/payroll",
+      "/admin/deductions-governance",
+      "/admin/outstation/policy",
+      "/admin/deductions",
+      // The whole Outstation Expenses hub, added when the owner said "exclude him 100% from
+      // outstation or expenses" (2026-08-10). Expense Command Center was the ONE card on this hub
+      // he could actually open, and the assertion below used to require it to survive — that is the
+      // line this change reverses. The others (queue, manual entry, dashboard, historical upload)
+      // were already dark for him: they gate on outstation:approve or systemAdministratorNavigation
+      // Roles, neither of which he ever held.
+      "/admin/outstation/expense-command",
+      "/admin/outstation/expense-command?tab=queue",
+      "/admin/outstation/expense-command?tab=queue&action=create-manager-expense",
+      "/admin/outstation/expenses/dashboard",
+      "/admin/outstation/expenses",
+    ],
     "Finance Manager's hub cards must stay trimmed (owner, 2026-08-10)",
   );
   assertIncludesAll(
     financeHubCards,
-    ["/admin/outstation/expense-command"],
-    "Expense Command Center is the outstation card he actually works from — it must survive",
+    [
+      // The five actions consolidated into the Leave Management page (financeLeaveManagement
+      // VacationItems / financeLeaveManagementExcuseItems) must all still be reachable as cards.
+      "/workspace/leave-management/vacation-request",
+      "/admin/approvals/vacation",
+      "/leave-management/vacation-report",
+      "/workspace/excuses",
+      "/admin/approvals/excuse",
+    ],
+    "every consolidated Leave Management action must survive as a hub card",
   );
 
   // ── A visible sidebar row must never bounce the person who presses it ────────────────────────
@@ -368,6 +427,11 @@ export function runNavigationActivePathTests() {
   // throws the user out.
   const VACATION_REQUEST_HREF = "/workspace/leave-management/vacation-request";
   for (const shellRole of adminShellEmployeeRoles) {
+    // Finance Manager is intentionally exempt from this loop: his row moved into the consolidated
+    // Leave Management page on 2026-08-10 (financeLeaveManagementVacationItems), so the row is
+    // absent even though he still holds leave:create — a deliberate navigation decision, not a
+    // guard/gate mismatch. hubCardHrefsFor above already asserts the card survives there instead.
+    if (shellRole === "Finance Manager") continue;
     const rowIsShown = adminHrefsFor(shellRole).includes(VACATION_REQUEST_HREF);
     const guardWouldAdmit = lookupForRole(shellRole)["leave:create"] === true;
     assert.equal(
@@ -406,6 +470,22 @@ export function runNavigationActivePathTests() {
       "/leave-management",
     ],
     "Super Admin must see full governance modules",
+  );
+  // The Finance-Manager-only rows added 2026-08-10 use `roles: ["Finance Manager"]`, which the
+  // system-administrator workspace bypasses (isSystemAdministratorWorkspace ignores `roles` but
+  // still honours excludedRoles — see getSections) — so both rows carry excludedRoles naming
+  // Super Admin explicitly. Without it, Super Admin would see a second "Leave Management" row
+  // alongside his own /leave-management, and "Report It" as a direct row alongside the
+  // Pharmacovigilance hub he already keeps.
+  assertExcludesAll(
+    superAdminAuthorityNav,
+    ["/admin/finance-leave-management", "/admin/report-it/new"],
+    "Super Admin's role bypass must not leak the Finance-Manager-only rows into his own sidebar",
+  );
+  assertExcludesAll(
+    ceoAdmin,
+    ["/admin/finance-leave-management", "/admin/report-it/new"],
+    "CEO must not pick up the Finance-Manager-only rows either",
   );
   assertIncludesAll(superAdminAuthorityNav, ["/admin/analytics"], "Sales Analytics Hub must stay visible in sales navigation");
   assertIncludesAll(

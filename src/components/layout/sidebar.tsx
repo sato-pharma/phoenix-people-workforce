@@ -378,6 +378,11 @@ function ApprovalNavBadge({ compact, navBadge }: { compact: boolean; navBadge: N
       return <NavBadge compact={compact} src="/api/approvals/plan/pending-count" />;
     case "direct-orders-approvals-pending":
       return <NavBadge compact={compact} src="/api/approvals/direct-orders/pending-count" />;
+    // Approved orders with no sales month — Finance's queue, not an approval queue. Rides the same
+    // batched poll (BATCH_KEY_BY_SRC) and the same overdue alarm as its siblings; the threshold is
+    // APPROVALS_SLA_THRESHOLDS.directOrderMonth.
+    case "direct-orders-unbooked":
+      return <NavBadge compact={compact} src="/api/direct-orders/unbooked-count" />;
     case "marketing-approvals-pending":
       return <NavBadge compact={compact} src="/api/marketing-requests/pending-count" />;
     default:

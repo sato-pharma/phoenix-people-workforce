@@ -1,3 +1,4 @@
+import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderStatus } from "@/lib/direct-orders/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -15,6 +16,20 @@ export type DirectOrderReportFilters = {
   /** Empty = every status. Kept as plain strings: a value that is not a real status must narrow
    * to nothing rather than be dropped, since dropping it would WIDEN a tampered export. */
   statuses: string[];
+  /**
+   * Approved orders carrying no sales month — the Finance Manager's entire job, and until now the
+   * one slice of this report that could not be asked for.
+   *
+   * Its OWN field rather than a tenth status chip, deliberately. `statuses` is matched against
+   * `row.status` and the header above says an unrecognised value must narrow to nothing — so a
+   * pseudo-status "awaiting_month" would filter every row away instead of selecting them. It is
+   * also not a status in the first place: these orders ARE approved, and the chips must keep
+   * meaning exactly what the status column says.
+   *
+   * Composes with the others (AND, like search does): "Awaiting month" plus a search term narrows
+   * to unbooked orders matching that term, which is what someone hunting one order expects.
+   */
+  unbookedOnly: boolean;
 };
 
 /**
@@ -62,6 +77,10 @@ export function filterDirectOrderReportRows(
   const statuses = new Set(filters.statuses);
   const needle = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
+    // showsAwaitingFinanceMonth, not a local `status === "approved" && !salesMonth`: that predicate
+    // is already the one the status pill, the report banner and phx_finance_command_center all use,
+    // and a fourth copy is how the filter would one day disagree with the badge counting it.
+    if (filters.unbookedOnly && !showsAwaitingFinanceMonth(row.status, row.salesMonth)) return false;
     if (statuses.size > 0 && !statuses.has(row.status)) return false;
     if (!needle) return true;
     return searchableValues(row).some((value) => (value ?? "").toLowerCase().includes(needle));
@@ -71,10 +90,14 @@ export function filterDirectOrderReportRows(
 /** Reads the filter off an export request body. Anything unrecognised is ignored, never
  * defaulted to a wider slice. */
 export function parseDirectOrderReportFilters(input: unknown): DirectOrderReportFilters {
-  const source = (input ?? {}) as { search?: unknown; statuses?: unknown };
+  const source = (input ?? {}) as { search?: unknown; statuses?: unknown; unbookedOnly?: unknown };
   return {
     search: typeof source.search === "string" ? source.search : "",
     statuses: Array.isArray(source.statuses) ? source.statuses.filter((value): value is string => typeof value === "string") : [],
+    // Strict `=== true`, matching the header's rule: anything unrecognised must fall to the
+    // NARROWER reading. Here that is `false` — a truthy-coercing parse would let `"0"` or `"false"`
+    // in a tampered body silently switch the export to a slice the requester never chose.
+    unbookedOnly: source.unbookedOnly === true,
   };
 }
 
@@ -86,6 +109,9 @@ export function parseDirectOrderReportFilters(input: unknown): DirectOrderReport
  */
 export function describeDirectOrderReportFilters(filters: DirectOrderReportFilters): string | null {
   const parts: string[] = [];
+  // First, because it is the strongest narrowing on this report — a workbook of unbooked orders
+  // forwarded without this line reads as the whole approved population.
+  if (filters.unbookedOnly) parts.push("Awaiting a sales month (approved, not yet booked)");
   if (filters.statuses.length > 0) {
     // Stamped in chip order, not click order, so the same slice always reads the same way.
     const selected = new Set(filters.statuses);

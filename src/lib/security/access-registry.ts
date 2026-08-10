@@ -370,6 +370,11 @@ export const accessRegistry = [
   // is an identity check inside setDirectOrderSalesMonth (Ahmed El Maraghy / Super Admin), not a
   // role action — the CEO holds direct_orders:approve but must NOT be able to move a month.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/sales-month", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
+  // Sidebar badge for the unbooked queue (approved, no sales month). Same `read` permission as the
+  // setter above, and the same identity gate behind it: getDirectOrderUnbookedBadge returns 0 to
+  // anyone who cannot actually book a month, so the shared Direct Orders nav row stays unbadged for
+  // the sales roles. Not audited — it returns a count and a boolean, no rows and no names.
+  sessionApi({ audit: { classification: "access-read", required: false }, methods: readOnly, pattern: "/api/direct-orders/unbooked-count", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["GET", "POST"], pattern: "/api/direct-orders/pharmacies", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Pharmacy registry — pre-register a pharmacy so a later order is recognised. Registry
   // permission is only `read` because the real gate is a role check inside the service
