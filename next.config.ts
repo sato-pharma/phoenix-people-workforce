@@ -181,7 +181,10 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       // The ten-card hub -> the workspace's Admin Tools tab.
-      { source: "/sales/direct-orders-tools", destination: "/admin/direct-orders?view=admin-tools", permanent: true },
+      // ?view=admin-tools still resolves (resolveDirectOrderWorkspaceTab keeps the legacy aliases
+      // working), but pointing the redirect at the current name means the URL a user ends up with
+      // is the one that will still be correct next year.
+      { source: "/sales/direct-orders-tools", destination: "/admin/direct-orders?view=pharmacy-control", permanent: true },
       // Approving is an action on an order, not a separate world. Both shells.
       { source: "/admin/approvals/direct-orders", destination: "/admin/direct-orders?view=needs-action", permanent: true },
       { source: "/employee-portals/approvals/direct-orders", destination: "/employee-portals/direct-orders?view=needs-action", permanent: true },
