@@ -1,4 +1,7 @@
+import { redirect } from "next/navigation";
+
 import { MarketingRoiTracker } from "@/components/marketing-requests/marketing-roi-tracker";
+import { resolveAccessContextFromPage } from "@/lib/auth/server";
 
 import { assertMarketingAdminPageAccess } from "../marketing-requests/admin-access";
 
@@ -16,6 +19,13 @@ export const dynamic = "force-dynamic";
  * "Archived" here means PROVENANCE ("came from Excel"), not the status='archived' lifecycle state.
  */
 export default async function ArchivedMarketingRequestsPage() {
+  // Owner, 2026-08-11: revoked for the Finance Manager at the PAGE, not just the sidebar. These
+  // three had been hidden from his navigation only, which a live role sweep showed still rendered
+  // them on a typed or bookmarked URL — hidden is not revoked. He keeps Monthly Closing and the
+  // Marketing Inbox; what goes is sales-management reporting and the legacy Excel ROI set.
+  // allowCompanyOversight admits him by company scope, so the role clause has to come first.
+  const archivedAccess = await resolveAccessContextFromPage();
+  if (archivedAccess.role === "Finance Manager") redirect("/admin/marketing-requests/inbox");
   await assertMarketingAdminPageAccess({ allowCompanyOversight: true });
 
   return (

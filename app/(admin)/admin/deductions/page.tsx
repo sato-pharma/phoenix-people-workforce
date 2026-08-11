@@ -7,7 +7,12 @@ import { currentCairoDateParts } from "@/lib/i18n/format";
 
 export const dynamic = "force-dynamic";
 
-const VIEW_ROLES = new Set(["Super Admin", "CEO", "Finance Manager"]);
+  // Owner, 2026-08-11: revoked for the Finance Manager at the PAGE, not just the sidebar. These
+  // three had been hidden from his navigation only, which a live role sweep showed still rendered
+  // them on a typed or bookmarked URL — hidden is not revoked. He keeps Monthly Closing and the
+  // Marketing Inbox; what goes is sales-management reporting and the legacy Excel ROI set.
+// Removing him from this set IS the revocation — the page already redirects anyone outside it.
+const VIEW_ROLES = new Set(["Super Admin", "CEO"]);
 
 export default async function AdminDeductionsPage() {
   const access = await resolveAccessContextFromPage();

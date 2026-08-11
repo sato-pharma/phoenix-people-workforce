@@ -13,6 +13,12 @@ export default async function MonthlySalesDashboardPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
   if (!(await canAccess(access, "sales", "read"))) redirect("/admin/access");
+  // Owner, 2026-08-11: revoked for the Finance Manager at the PAGE, not just the sidebar. These
+  // three had been hidden from his navigation only, which a live role sweep showed still rendered
+  // them on a typed or bookmarked URL — hidden is not revoked. He keeps Monthly Closing and the
+  // Marketing Inbox; what goes is sales-management reporting and the legacy Excel ROI set.
+  // His `sales:read` satisfies the check above, so this must be its own clause.
+  if (access.role === "Finance Manager") redirect("/admin/finance-command-center");
 
   let initialData: SalesDashboardData | null = null;
   let initialError: string | null = null;
