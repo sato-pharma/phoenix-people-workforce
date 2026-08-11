@@ -352,6 +352,11 @@ export function runNavigationActivePathTests() {
       // because the section has exactly one item, so a regression would silently restore the whole
       // "Outstation Expenses" block to his sidebar.
       "/admin/outstation-expenses",
+      // Owner, 2026-08-11: /admin/analytics restricted to Super Admin only, sidebar-wide. This was
+      // his ONLY route to /admin/analytics/monthly-closing/details and its Monthly Closing Export
+      // XLSX button; he now reaches it through his own dedicated row instead (see
+      // finance-manager-monthly-closing-row.test.ts), so this shared hub stays excluded.
+      "/admin/analytics",
     ],
     "Finance Manager's sidebar must stay trimmed to his finance remit (owner, 2026-08-10)",
   );
@@ -385,9 +390,6 @@ export function runNavigationActivePathTests() {
       "/admin/weekly-plans/calendar",
       "/admin/payslips-center",
       "/workspace/fingerprint-report",
-      // Monthly Closing: /admin/analytics is the only route to the Export XLSX button, since the
-      // upload workspace that also renders it needs sales:import, which he must never hold.
-      "/admin/analytics",
       // Source of Sales returns with the restored `sales` grant — owner decision, 2026-08-10.
       "/sales/source-of-sales-tools",
     ],

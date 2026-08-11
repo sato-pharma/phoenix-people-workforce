@@ -969,12 +969,13 @@ const adminNavigationSectionSeeds = [
       // module-card grid (app/(analytics)/admin/analytics/page.tsx). That page's
       // MODULES list has been extended with the 4 field-dashboard cards and now
       // filters cards per-role, so it doubles as this section's hub directly.
-      // Finance Manager added 2026-08-10 (owner) alongside canViewAdminCoreAnalytics — without this
-      // row the analytics tree he now passes has no door, and /admin/analytics/monthly-closing
-      // /details is the only page in the product that renders his Monthly Closing Export button.
-      // The hub itself only offers him the two `sales`-resource tiles; Weekly is withheld because he
-      // holds no weekly_sales grant and that page would 403.
-      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin", "CEO", "SFE Manager", "Finance Manager"] },
+      // Owner, 2026-08-11: restricted to Super Admin only, sidebar-wide. CEO and SFE Manager keep
+      // separate dashboard shortcuts straight into /admin/analytics(/monthly-closing) on their own
+      // command centers (see SFE_NAV_ITEMS / the CEO quick-links array in ceo-phase-b.tsx), so
+      // they are not fully cut off. Finance Manager now reaches his Monthly Closing export via his
+      // own dedicated row instead (see the finance-monthly-closing section above), so this hub row
+      // narrows to Super Admin only with no remaining door left unclosed.
+      { href: "/admin/analytics", icon: ChartColumnBig, label: "Sales Analytics", permissions: [{ resource: "sales" }], roles: ["Super Admin"] },
     ],
     label: "Sales Analytics",
   },

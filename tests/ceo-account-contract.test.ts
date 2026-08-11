@@ -27,11 +27,11 @@ const ceoAllowedReadOnlyRoutes = [
   "/admin/people-management",
   "/admin/payroll-management",
   "/admin/outstation-expenses",
-  // /admin/analytics/source-sales and /admin/analytics/monthly-closing are no
-  // longer separate sidebar entries — the "Sales Analytics" section collapsed
-  // to one button (system-navigation.ts) and those two now live as cards on
-  // the /admin/analytics page itself (see salesAnalyticsPageItems below).
-  "/admin/analytics",
+  // /admin/analytics/source-sales and /admin/analytics/monthly-closing are not
+  // separate sidebar entries — they live as cards inside the /admin/analytics hub
+  // page itself (see salesAnalyticsPageItems below). The hub row's own sidebar
+  // visibility is Super-Admin-only as of 2026-08-11 (owner) and is asserted
+  // absent for CEO further down, so it is deliberately not listed here.
   "/admin/marketing-roi",
   "/leave-management",
 ] as const;
@@ -86,6 +86,17 @@ export async function runCeoAccountContractTests() {
       `CEO navigation must expose the approved read-only route ${href}`,
     );
   }
+
+  // Owner, 2026-08-11: the "Sales Analytics" hub row (/admin/analytics) was restricted to
+  // Super Admin only in the sidebar. CEO keeps working access to the pages underneath it —
+  // via direct URL and via the dashboard shortcuts in ceo-phase-b.tsx / ceo-sos-tables.tsx
+  // (asserted below) — only the sidebar door closed, so this gets its own assertion rather
+  // than sitting in ceoAllowedReadOnlyRoutes or either blocked list.
+  assert.equal(
+    visibleAdminHrefs.includes("/admin/analytics"),
+    false,
+    "CEO sidebar must not expose /admin/analytics — restricted to Super Admin only, 2026-08-11",
+  );
 
   for (const href of ceoBlockedHighRiskRoutes) {
     assert.equal(
