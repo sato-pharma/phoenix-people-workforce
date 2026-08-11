@@ -105,6 +105,8 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
     pharmacyStanding: null,
     canSetSalesMonth: false,
     canRecordCollection: false,
+    canCorrectAndResubmit: false,
+    returnComment: null,
     steps: [],
     availableActions: { approve: true, reject: true, return: true },
     bonusOverCap: false,

@@ -259,5 +259,58 @@ export async function runDirectOrderSecondReviewFixTests() {
     "the shared pricing helper must exist",
   );
 
-  console.log("  direct-orders second-review fixes: findings 1, 2, 5, 6 all covered");
+  // ── Finding 1, the UI half: a working service with no interface is the same defect ──
+  const detailSource = readFileSync(
+    new URL("../src/components/approvals-hub/direct-order-request-detail.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    detailSource.includes("DirectOrderCorrectResubmit"),
+    "the order detail must offer Correct & Resubmit — Needs Action already promises 'Fix and resubmit'",
+  );
+  assert.ok(
+    detailSource.includes("canCorrectAndResubmit ?"),
+    "the panel must be gated on the server-computed ownership+status flag, never rendered unconditionally",
+  );
+
+  const panelSource = readFileSync(
+    new URL("../src/components/direct-orders/direct-order-correct-resubmit.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(
+    panelSource.includes("returnComment") && panelSource.includes("blockquote"),
+    "the approver's reason must be shown prominently — it is the instruction the requester is acting on",
+  );
+  // Pre-filled, not re-entered: every editable field seeds from the order's current value.
+  for (const seed of [
+    "useState(String(qty))",
+    'useState<"bonus" | "discount">(dealType)',
+    "useState(String(bonus ?? 0))",
+    'useState(collectionDate ?? "")',
+  ]) {
+    assert.ok(panelSource.includes(seed), `the correction form must pre-fill from the existing order (${seed})`);
+  }
+  assert.ok(
+    !panelSource.includes("productName={") && panelSource.includes("raise a new order"),
+    "the panel must not offer to edit the product/pharmacy, and must say why in words",
+  );
+  // Entered values survive a server refusal — retyping a correction is the frustration being fixed.
+  assert.ok(
+    panelSource.includes("// The entered values are kept on failure"),
+    "a failed resubmit must keep what the requester typed",
+  );
+
+  // The server flag must mirror reviseDirectOrder's guard, or the button appears for someone the
+  // server will refuse.
+  assert.ok(
+    serviceSource.includes("canCorrectAndResubmit:") && serviceSource.includes('request.status === "returned" &&'),
+    "canCorrectAndResubmit must require returned status",
+  );
+  // The return reason is read from the EVENTS table — the decision RPC never stores it on the step.
+  assert.ok(
+    serviceSource.includes('.eq("event_type", "return")'),
+    "the return comment must come from direct_order_events; the approval step never carries it",
+  );
+
+  console.log("  direct-orders second-review fixes: findings 1 (service + UI), 2, 5, 6 all covered");
 }
