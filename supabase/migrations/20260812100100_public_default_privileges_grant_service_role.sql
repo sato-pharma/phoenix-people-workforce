@@ -1,0 +1,41 @@
+-- Make new tables in `public` reachable by the application BY CONSTRUCTION, not by remembering.
+-- Idempotent, and a no-op against production.
+--
+-- WHY THIS EXISTS. The root cause behind 20260812100000. `pg_default_acl` for schema `public`,
+-- object type `table`, measured 2026-08-12:
+--
+--   production  role postgres        -> {postgres=arwdDxtm, service_role=arwdDxtm}
+--   production  role supabase_admin  -> {postgres, anon, authenticated, service_role}
+--   staging     (no entry at all)
+--
+-- Production hands `service_role` full privileges on every new table automatically, which is why all
+-- 303 of its public tables have them. A project with no default ACL entry creates every table
+-- owner-only, so the application — which connects as `service_role` — cannot read or write it. On
+-- staging that produced exactly two broken tables, and they were exactly the two created since the
+-- 2026-07-11 clone. Every future table would have been broken the same way.
+--
+-- This is the counterpart to 20260809130000_public_default_privileges_revoke_anon.sql. That one
+-- removed the default that made new tables readable by `anon`; this one adds the default that makes
+-- them usable by `service_role`. Together they express the module's actual security posture:
+-- service-role only, all authorization in the Next.js server layer.
+--
+-- SCOPE. `service_role` ONLY. anon and authenticated are deliberately not granted; re-granting them
+-- would silently undo 20260809130000, which is the migration that closed the `zz_backup_*` hole.
+-- Applies to the `postgres` grantor — the role that migrations, the SQL editor and the MCP actually
+-- create tables through. The `supabase_admin` grantor is left alone: on a managed project it often
+-- cannot be altered without membership, and 20260809130000 already documents that limitation.
+-- Nothing here touches an existing table, an RLS setting, or a policy.
+--
+-- BLAST RADIUS
+--   * Production: NO-OP. The postgres default already grants service_role arwdDxtm.
+--   * Staging: applied out-of-band 2026-08-12 and PROVED with a live probe — a table created
+--     afterwards came out {postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres} with
+--     anon_select = false and auth_select = false even though it had no RLS, which is precisely the
+--     `zz_backup_*` shape 20260809130000 was written to make safe. Probe dropped.
+--   * A fresh rebuild: this is the repair.
+--
+-- Rollback:
+--   alter default privileges for role postgres in schema public revoke all on tables from service_role;
+
+alter default privileges for role postgres in schema public
+  grant all on tables to service_role;
