@@ -46,6 +46,14 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // weighted by that product's own unit share. That placed Office differently in every area and was
 // the single largest difference between Phoenix and the owner's manual closing — worth 6,075 units
 // of area error on July CNS alone.
+//
+// ⛔ THIS FORMULA IS LOCKED (owner, 2026-08-11). The block between the GOLDEN RULE · LOCKED markers
+// below is pinned by two fingerprints in `office-golden-rule.ts` and asserted by
+// `tests/office-golden-rule-lock.test.ts`, which runs in the required CI `validate` job. Editing the
+// math — or the comments describing it — turns CI red and the change cannot merge. Unlocking needs
+// the owner's password, which exists only as a scrypt verifier (`office-golden-rule.lock.json`);
+// nobody can recover it from this repository. To change the rule, run `pnpm run office-rule:unlock`
+// and enter it. Do NOT re-pin the fingerprints by hand.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const OFFICE_DISTRIBUTOR_CODE = "Office";
@@ -59,6 +67,8 @@ export type OfficeUnmappedName = { productName: string; units: number; rowNumber
 
 type AllocationSlice = { brickId: string; areaCode: string; regionCode: string; units: number };
 
+// ═══ GOLDEN RULE · LOCKED · START ════════════════════════════════════════════
+// Everything down to the matching END marker is fingerprinted. See the ⛔ note above.
 function round6(n: number): number {
   return Math.round((Number.isFinite(n) ? n : 0) * 1_000_000) / 1_000_000;
 }
@@ -220,6 +230,7 @@ function allocateProduct(units: number, weights: OfficeAreaWeights): AllocationS
 
   return reconcile([...sliceMap.values()], units);
 }
+// ═══ GOLDEN RULE · LOCKED · END ══════════════════════════════════════════════
 
 export type ComputeOfficeAllocationInput = {
   period: string;
