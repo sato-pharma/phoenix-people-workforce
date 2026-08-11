@@ -45,7 +45,8 @@ export default async function AdminDirectOrdersWorkspacePage({
   // the view that replaced them instead of silently falling back to Overview.
   const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH });
+  // The view is resolved BEFORE the load so the loader can skip data this view cannot show.
+  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
 
   // The admin desks, gated exactly as the existing hub page gates them — same
   // lookup, same helpers. This component owns no permission rule of its own.

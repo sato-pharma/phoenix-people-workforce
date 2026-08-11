@@ -178,9 +178,46 @@ function reportRowToQueueRow(row: {
   };
 }
 
+/**
+ * Which views actually need the full report row set.
+ *
+ * `getDirectOrderReport` is the expensive read in this module — it selects every request in the
+ * viewer's scope and decorates it. Before this list it ran on EVERY workspace open regardless of
+ * which view the user asked for, so opening Overview paid for the All-Orders dataset.
+ *
+ * TWO views are still on this list for reasons that are known costs, not oversights, and BOTH are
+ * correctness constraints rather than laziness — dropping either would silently show a smaller
+ * number than the truth, which is worse than a slow page:
+ *
+ *   `overview`     — the summary counters (in-progress / returned / completed-this-month) are
+ *                    computed across the viewer's WHOLE scope. For a wide-scope viewer they cannot
+ *                    be derived from `myOrders` without under-reporting.
+ *   `needs-action` — the Finance "assign a sales month" queue is filtered out of these same rows.
+ *                    Skipping the report here would empty Finance's inbox rather than shorten it.
+ *
+ * The real fix for both is cheap targeted queries — aggregate COUNTs for the summary, and a
+ * dedicated `status = 'approved' AND sales_month IS NULL` read for the Finance queue — instead of
+ * loading every row and counting in JavaScript. That is the next step; it is deliberately NOT done
+ * by simply removing these two entries, because that trades a slow page for a wrong one.
+ */
+const VIEWS_NEEDING_FULL_REPORT: readonly DirectOrderWorkspaceTabKey[] = [
+  "overview",
+  "needs-action",
+  "orders",
+  "reports",
+];
+
 export async function loadDirectOrderWorkspaceView(
   access: AccessContext,
-  options: { basePath: string; now?: Date },
+  options: {
+    basePath: string;
+    now?: Date;
+    /**
+     * The view being rendered. Data the view cannot show is not fetched. Defaults to `overview`
+     * so an omitted value is the conservative case (loads the most), never the silently-empty one.
+     */
+    view?: DirectOrderWorkspaceTabKey;
+  },
 ): Promise<DirectOrderWorkspaceView> {
   const scope = resolveDirectOrderReportScope(access);
   const canAssignFinanceMonth = canSetDirectOrderSalesMonth(access);
@@ -191,16 +228,27 @@ export async function loadDirectOrderWorkspaceView(
   // difference between a role-shaped UI and a full one with most of it greyed out.
   const canSeeAllOrders = scope !== "own";
 
-  // The four reads run together, and the three optional ones resolve to a constant
-  // for a viewer who cannot use them — so a District Manager pays for exactly one
-  // query set, not four.
+  // The four reads run together, and each optional one resolves to a constant for a viewer who
+  // cannot use it — so a District Manager pays for exactly one query set, not four.
+  //
+  // VIEW-AWARE (2026-08-11). Capability was never the only question: a viewer who CAN see every
+  // order still does not need every order to render Needs Action or Pharmacy Control. Each read is
+  // now gated on `canUse && viewNeedsIt`, so opening the workspace on a view that shows none of
+  // this costs nothing for it.
+  const view = options.view ?? "overview";
+  const needsFullReport =
+    (canSeeAllOrders || canAssignFinanceMonth) && VIEWS_NEEDING_FULL_REPORT.includes(view);
+  // Pharmacy Control renders the validation queue; Overview and Needs Action need only its COUNT,
+  // which the list already gives us for free once loaded. No other view mentions it.
+  const needsValidations =
+    canDecideCustomerValidations &&
+    (view === "overview" || view === "needs-action" || view === "pharmacy-control");
+
   const [workspace, myOrders, reportRows, pendingValidations] = await Promise.all([
     getDirectOrderWorkspaceData(access),
     listMyDirectOrders(access),
-    canSeeAllOrders || canAssignFinanceMonth
-      ? getDirectOrderReport(access)
-      : Promise.resolve([]),
-    canDecideCustomerValidations
+    needsFullReport ? getDirectOrderReport(access) : Promise.resolve([]),
+    needsValidations
       ? listDirectOrderPharmacyValidations(access, { status: "pending" })
       : Promise.resolve([]),
   ]);
