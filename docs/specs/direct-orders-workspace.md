@@ -1,3 +1,6 @@
+> **SUPERSEDED (2026-08-11).** The current authoritative spec is [direct-orders.md](./direct-orders.md).
+> This file is kept for history — where it disagrees with that file, that file is correct.
+
 # Direct Orders — UX/navigation audit and consolidation plan
 
 Audit run 2026-08-10 against `origin/main` @ `5aea06eb`. Method: enumerate every route, component,
