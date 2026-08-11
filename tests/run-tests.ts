@@ -563,6 +563,7 @@ import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.tes
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
+import { runDirectOrderRlsCoverageTests } from "./direct-orders-rls-coverage.test.ts";
 import { runDirectOrderSecondReviewFixTests } from "./direct-orders-second-review-fixes.test.ts";
 import { runFinanceManagerMonthlyClosingRowTests } from "./finance-manager-monthly-closing-row.test.ts";
 import { runFinanceManagerCalendarRowTests } from "./finance-manager-calendar-row.test.ts";
@@ -1375,6 +1376,7 @@ await runTest("direct orders per-rep counters (scope borrowed not re-implemented
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
+await runTest("direct orders RLS coverage (every direct_order_* table has RLS; a public table without it is reachable with the anon key)", runDirectOrderRlsCoverageTests);
 await runTest("direct orders second-review fixes (returned orders correct in place keeping their chain, no phantom draft queue, sales month approved-only server-side, Finance authority in one module)", runDirectOrderSecondReviewFixTests);
 await runTest("finance manager monthly closing row (export-only surface not the upload workspace, both gates, no sales:import, full-sheet branch intact)", runFinanceManagerMonthlyClosingRowTests);
 await runTest("finance manager calendar row (authoring page off the sidebar, planning calendar on it, and BOTH gates of the destination pinned)", runFinanceManagerCalendarRowTests);
