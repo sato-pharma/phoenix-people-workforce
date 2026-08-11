@@ -163,13 +163,17 @@ export function runDirectOrderCancelHeldTests() {
   // them now would assert that files contain maps they deliberately no longer have — the rule is
   // unchanged, but it has to be pointed at where the colours actually live.
   //
-  // The shared pill's own maps ARE typed `Record<DirectOrderStatus, string>`, so tsc would catch a
-  // missing status there. The two report workspaces still use `Record<string, string>`, where it
-  // would not, and those are the ones this sweep genuinely protects.
-  const toneFiles = [
-    "../src/components/direct-orders/direct-order-status-pill.tsx",
-    "../src/components/direct-orders/direct-order-report-workspace.tsx",
-  ];
+  // 2026-08-12: direct-order-report-workspace.tsx became the FIFTH to move. Its local STATUS_TONE
+  // was byte-identical to RING_TONE and, worse, it rendered `status.replace("_", " ")` — printing
+  // "approved" for a row whose own Sales month cell said "Not booked". It now renders
+  // <DirectOrderStatusPill variant="ring" />, so it no longer owns colours to sweep.
+  //
+  // Only the shared pill is left, and its maps are typed `Record<DirectOrderStatus, string>` — so a
+  // missing status there is a COMPILE error, which is a stronger guarantee than this sweep. The
+  // sweep stays because the fallback branch and AWAITING_FINANCE tones are still plain lookups, and
+  // because a future component that reintroduces a local `Record<string, string>` map should be
+  // added back to this list rather than left unguarded.
+  const toneFiles = ["../src/components/direct-orders/direct-order-status-pill.tsx"];
   for (const file of toneFiles) {
     const text = readFileSync(new URL(file, import.meta.url), "utf8");
     for (const status of ALL_STATUSES) {

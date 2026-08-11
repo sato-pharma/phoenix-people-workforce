@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import {
   DIRECT_ORDER_REPORT_STATUS_OPTIONS,
   filterDirectOrderReportRows,
@@ -18,20 +19,14 @@ import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-
 // id out of the table and hand-assemble the URL.
 const DIRECT_ORDER_DETAIL_BASE = "/admin/direct-orders";
 
-const STATUS_TONE: Record<string, string> = {
-  approved: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  pending_approval: "bg-amber-50 text-amber-700 ring-amber-200",
-  returned: "bg-sky-50 text-sky-700 ring-sky-200",
-  rejected: "bg-rose-50 text-rose-700 ring-rose-200",
-  reversed: "bg-slate-100 text-slate-600 ring-slate-200",
-  draft: "bg-slate-50 text-slate-500 ring-slate-200",
-  // Held = parked outside the approval flow until the pharmacy passes validation (spec B6).
-  held: "bg-orange-50 text-orange-700 ring-orange-200",
-  expired: "bg-slate-200 text-slate-500 ring-slate-300",
-  // Cancelled = withdrawn by its requester while held (audit F3).
-  cancelled: "bg-zinc-100 text-zinc-600 ring-zinc-300",
-};
-
+// The local STATUS_TONE map that used to live here is gone (2026-08-12). Its values were
+// byte-identical to RING_TONE in direct-order-status-pill.tsx, and it rendered the raw database
+// value via `r.status.replace("_", " ")` — so it printed "approved" for a row this very table's
+// own Sales month column was simultaneously labelling "Not booked". Same row, two answers.
+//
+// DirectOrderStatusPill with variant="ring" reproduces this table's styling exactly and adds what
+// the copy had dropped: the shared vocabulary from status-labels.ts, and showsAwaitingFinanceMonth,
+// which splits `approved` into Completed vs Waiting for Finance depending on the sales month.
 const SCOPE_LABEL: Record<DirectOrderReportScope, string> = {
   all: "Company-wide (all direct orders)",
   hierarchy: "Your region / management line",
@@ -54,9 +49,7 @@ type Col = {
 // Every field — "do not minus even one field".
 const COLUMNS: Col[] = [
   { key: "status", label: "Status", render: (r) => (
-      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ring-1 ${STATUS_TONE[r.status] ?? "bg-slate-50 text-slate-500 ring-slate-200"}`}>
-        {r.status.replace("_", " ")}
-      </span>
+      <DirectOrderStatusPill status={r.status} salesMonth={r.salesMonth} variant="ring" />
     ) },
   { key: "requesterName", label: "Requester" },
   { key: "requesterHrId", label: "HR_ID" },
