@@ -678,6 +678,7 @@ import { runClosingStoreSplitRiskFollowupsTests } from "./closing-store-split-ri
 import { runStoreSplitMatrixTests } from "./store-split-matrix.test.ts";
 import { runStoreSplitDetailReportTests } from "./store-split-detail-report.test.ts";
 import { runMonthlyClosingExportSplitStaticTests } from "./monthly-closing-export-split-static.test.ts";
+import { runClosingExportMatchesScreenTests } from "./closing-export-matches-screen.test.ts";
 import { runCeoMarketingApprovalInboxTests } from "./ceo-marketing-approval-inbox.test.ts";
 import { runMarketingApprovalInboxNavBadgeTests } from "./marketing-approval-inbox-nav-badge.test.ts";
 
@@ -1521,8 +1522,13 @@ await runTest(
 );
 
 await runTest(
-  "monthly closing export split-static rows (split-touched rows are written static so Excel recalculation cannot revert them; every surviving live formula recalculates to exactly its cached value; untouched rows keep live formulas)",
+  "monthly closing export writes the matrix static (no cell reaches the Calc sheet; split-touched, direct-carrying and untouched rows all carry the screen's own figure)",
   runMonthlyClosingExportSplitStaticTests,
+);
+
+await runTest(
+  "exported Closing Matrix equals the screen (no Calc-sheet formula survives anywhere on the grid, organogram region subtotals and merged direct export at their on-screen value, and the fixture still reproduces the SUMIFS-to-zero bug)",
+  runClosingExportMatchesScreenTests,
 );
 
 await runTest(
@@ -1708,7 +1714,7 @@ await runTest(
   runClosingDirectAreaIdentityTests,
 );
 await runTest(
-  "Fayoum/Beni Suef merged Closing Matrix row exports static (Pedia/CNS) — unprotected proves the SUMIFS-revert bug fires, markMergedAreaRowsStatic fixes it, sibling rows and the Giza subtotal stay live",
+  "Fayoum/Beni Suef merged Closing Matrix row exports its combined total (Pedia/CNS), flagged or not, and no cell can SUMIFS the fold away",
   runMonthlyClosingExportAreaMergeStaticTests,
 );
 await runTest(

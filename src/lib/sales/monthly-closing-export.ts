@@ -757,7 +757,10 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
   return zebra ? ZEBRA : null;
 }
 
-function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs, note?: string) {
+// No `ref: DataRefs` parameter, deliberately: this sheet must not be able to reach the hidden Calc
+// sheet at all. Taking the ranges away is what stops a future edit quietly adding a SUMIFS back —
+// see the long note above the row-writing loop for the 1.1M EGP of misstated subtotals that cost.
+function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, note?: string) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
   // Each product block is Units, Value, Tgt Units, Tgt Value, Ach %, then this row's share of the
@@ -872,16 +875,10 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     if (fill) cell.fill = { fgColor: { argb: fill }, pattern: "solid", type: "pattern" };
   };
 
-  const valueCrit = (level: Tone, key: string, productCode?: string): [string, string | number][] => {
-    const base: [string, string | number][] = productCode ? [[ref.dpProduct, productCode]] : [];
-    if (level === "area") return [[ref.dpArea, key], ...base];
-    if (level === "subtotal") return [[ref.dpRegion, key], ...base];
-    return base; // grand
-  };
-
-  // `isStatic` rows (Direct channel) are written as plain cached values, not Data-sheet
-  // formulas, because Direct value is taken straight from the sheet (it has no Data block).
-  const writeRow = (level: Tone, key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, isStatic = false, accent: string | null = null, accentText: string = DIRECT_TEXT) => {
+  // EVERY SALES NUMBER ON THIS SHEET IS A VALUE, NEVER A SUMIFS. See the block above the call
+  // sites below for why. `level` is gone from the signature because it only ever existed to build
+  // those SUMIFS criteria, and it was identical to `tone` at all five call sites.
+  const writeRow = (key: string, name: string, cells: MonthlyClosingCell[], rowTotal: MonthlyClosingCell, tone: Tone, accent: string | null = null, accentText: string = DIRECT_TEXT) => {
     rowAccent = accent;
     rowAccentText = accentText;
     const row = sheet.getRow(rowIndex);
@@ -890,10 +887,8 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     products.forEach((product, index) => {
       const start = productStart(index);
       const cell = cells[index];
-      const units = isStatic ? (cell?.salesUnits ?? 0) : F(sumifs(ref.dpUnits, valueCrit(level, key, product.productCode)), cell?.salesUnits ?? 0);
-      const value = isStatic ? (cell?.salesValue ?? 0) : F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0);
-      num(row.getCell(start), units, UNITS_FMT, tone, false, index);
-      num(row.getCell(start + 1), value, VALUE_FMT, tone, false, index);
+      num(row.getCell(start), cell?.salesUnits ?? 0, UNITS_FMT, tone, false, index);
+      num(row.getCell(start + 1), cell?.salesValue ?? 0, VALUE_FMT, tone, false, index);
       // Targets and achievement come off the matrix cell, which sourced them from
       // au.monthly_targets — the same engine the Targets workspace reads, so the two can never
       // disagree. They are plain cached values rather than Data-sheet formulas: the Calc sheet
@@ -922,10 +917,7 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
         index,
       );
     });
-    const totalValue = isStatic
-      ? rowTotal.salesValue
-      : F(level === "grand" ? sumAll(ref.dpValue) : sumifs(ref.dpValue, valueCrit(level, key)), rowTotal.salesValue);
-    num(row.getCell(grandStart), totalValue, VALUE_FMT, tone);
+    num(row.getCell(grandStart), rowTotal.salesValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + 1), rowTotal.targetValue, VALUE_FMT, tone);
     num(row.getCell(grandStart + 2), rowTotal.achievement, PCT_FMT, tone, true);
     num(
@@ -944,48 +936,58 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     rowIndex += 1;
   };
 
-  // Two DIFFERENT questions, deliberately not the same flag — see isSyntheticDirectArea:
-  //   * is this the synthetic "Direct orders (company)" pseudo-area?  -> drives the LABEL and the
-  //     blue band. Identified by its areaCode, which the injector sets to "DIRECT".
-  //   * does this row contain direct money?  -> drives STATIC rendering. A real area that absorbed
-  //     July's direct sales is still "GZ1 / Giza - Giza Centers" and must keep its own name.
-  // Collapsing the two would rename every area that absorbed direct to "◆ Direct".
-
-  // Every live formula on this sheet SUMIFS the hidden Calc sheet, which holds distributor invoice
-  // lines ONLY — direct sales have no block there. So once any row carries direct, the subtotal and
-  // grand-total formulas would recalculate to less than the value they were cached with. When
-  // direct has been merged into the areas we therefore write the whole sheet as cached values:
-  // a static number that is right beats a live formula that silently drops direct on first edit.
-  const hasMergedDirect = matrix.regions.some((region) =>
-    region.areas.some((area) => area.isDirect && !isSyntheticDirectArea(area)));
-
-  // The store split is the SAME problem at row grain. applyStoreSplitToMatrix moves store
-  // (wholesaler) sales between a city's areas, but the Calc sheet still holds the unsplit rows —
-  // so a split-touched row's formula would recalculate straight back to its pre-split value while
-  // the Store Split tab keeps telling the post-split story. Touched rows arrive flagged
-  // (`storeSplitAdjusted`) and are written static ONE ROW AT A TIME: unlike merged direct this is
-  // per-row, not sheet-wide, because the flag is set only where a row's own net delta is non-zero
-  // — every untouched row (and, on a whole-month export, the subtotals and the grand total, whose
-  // deltas cancel to zero) keeps its live formulas.
+  // ── WHY EVERY SALES NUMBER ON THIS SHEET IS A VALUE AND NOT A FORMULA ───────
+  //
+  // This grid used to write each Units/Value cell as =SUMIFS over the hidden Calc sheet, keeping
+  // the screen's own number only as that formula's CACHED result. That is what made the downloaded
+  // workbook disagree with the Closing Matrix on screen — permanently, and un-fixable by re-syncing
+  // any data, because it was never a data problem:
+  //
+  //   * ExcelJS stamps the file calcId 171027 (Excel 2010) and writes no calcChain.xml, so a modern
+  //     Excel fully recalculates ON OPEN and discards every cached value.
+  //   * The Calc sheet holds phx_closing_distributor_product — distributor invoice lines keyed by
+  //     the GEOGRAPHIC region_code. The screen's matrix is that same SQL plus TypeScript transforms
+  //     the Calc sheet knows nothing about: direct injection, the Fayoum/Beni Suef area merge,
+  //     ORGANOGRAM region grouping (applyOperationalRegions), the store city split, and targets.
+  //   * The organogram one was fatal, because it re-labels the very key the subtotal SUMIFS matched
+  //     on. Measured against production for 2026-07: Anti Infective's UE-1 and UE-2 have no
+  //     geographic equivalent at all, so both subtotals recalculated to ZERO (-33,589.80 and
+  //     -81,621.90 EGP). CNS lost 329,320.95 from OT and 177,609.81 from AB while gaining
+  //     212,604.13 on D1. 18 of 22 region subtotals across the three lines were wrong on open.
+  //
+  // Each earlier transform had been patched one at a time with a "render this row static" flag
+  // (hasMergedDirect, storeSplitAdjusted, and markMergedAreaRowsStatic reusing that same flag) — a
+  // hand-maintained list that must grow with every new closing rule, and which the organogram
+  // grouping was simply never added to. The permanent fix is to stop re-deriving at all: a REPORT
+  // sheet states what the application computed. Independent re-derivation belongs to the visible
+  // Data + Total audit pair, which exists for exactly that and already carries a Difference row to
+  // name any gap it finds.
+  //
+  // DO NOT reintroduce a Calc-sheet formula on this grid. tests/closing-export-matches-screen.test.ts
+  // fails on any Closing Matrix cell that carries one.
+  //
+  // The only formulas left here are the Contr% cells, which divide two cells on THIS sheet by a
+  // third on THIS sheet. They recalculate to exactly the values written above them, so they cannot
+  // drift from the screen.
+  //
+  // isSyntheticDirectArea still drives the LABEL and the blue band (the "◆ Direct" pseudo-area).
+  // That is a different question from where a row's money came from: a real area that absorbed
+  // July's direct sales is still "GZ1 / Giza - Giza Centers" and must keep its own name.
 
   matrix.regions.forEach((region) => {
     region.areas.forEach((area) => {
       const synthetic = isSyntheticDirectArea(area);
-      const carriesDirect = Boolean(area.isDirect);
-      const splitTouched = area.storeSplitAdjusted === true;
       writeRow(
-        "area",
         synthetic ? "◆ Direct" : area.areaCode,
         synthetic ? "Direct orders (company)" : area.areaName,
         area.cells,
         area.rowTotal,
         "area",
-        carriesDirect || splitTouched,
         synthetic ? DIRECT_FILL : null,
       );
       zebra = !zebra;
     });
-    writeRow("subtotal", region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal", hasMergedDirect || region.subtotal.storeSplitAdjusted === true);
+    writeRow(region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal, "subtotal");
     zebra = false;
   });
   // When the reader has filtered down to a single region, calling the bottom line "National Grand
@@ -994,21 +996,19 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   // for the black national total a full export ends with.
   const soleRegion = matrix.regions.length === 1 ? matrix.regions[0] : null;
   writeRow(
-    "grand",
     "",
     soleRegion ? `${soleRegion.regionName} — Region Total` : "National Grand Total",
     matrix.grandTotal.cells,
     matrix.grandTotal.rowTotal,
     "grand",
-    hasMergedDirect || matrix.grandTotal.storeSplitAdjusted === true,
     soleRegion ? REGION_TOTAL_FILL : null,
     WHITE,
   );
   if (matrix.directNational) {
-    writeRow("subtotal", "◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", true, DIRECT_FILL);
+    writeRow("◆ DIRECT", "Direct – National", matrix.directNational.cells, matrix.directNational.rowTotal, "subtotal", DIRECT_FILL);
   }
   if (matrix.companyTotal) {
-    writeRow("grand", "", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand", true);
+    writeRow("", "Grand Total (incl. Direct)", matrix.companyTotal.cells, matrix.companyTotal.rowTotal, "grand");
   }
 
   // Filter stamp — a filtered workbook gets forwarded like any other, so the sheet itself must
@@ -3086,7 +3086,7 @@ export async function buildMonthlyClosingWorkbook(
   // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
-  writeMatrixSheet(workbook, matrix, ref, options?.filterNote);
+  writeMatrixSheet(workbook, matrix, options?.filterNote);
   // The master's two halves, immediately beside it: the same money split by channel so the retail
   // business and the direct business can each be read on their own. Both tie back to the master.
   if (options?.channels) {
@@ -3353,16 +3353,17 @@ export async function buildPortalClosingWorkbook(
   // screen, and that screen has direct folded into the area rows. Without it the Closing Matrix,
   // Target vs Achievement and the headline were all invoice-only while the screen was not, so a
   // manager's export was short its whole share of the month's direct sales and said nothing.
-  // The area rows already render STATIC (they arrive `isDirect` from the scoped matrix, which
-  // rebuildMatrixFromRows preserves), so the folded money cannot be recalculated away by a live
-  // SUMIFS over the Calc sheet — that sheet holds distributor invoice lines only.
+  // The folded money cannot be recalculated away: writeMatrixSheet renders every sales cell as a
+  // VALUE and can no longer reach the Calc sheet at all. This used to depend on the rows happening
+  // to arrive flagged `isDirect` — one entry in a hand-maintained static list that the organogram
+  // region grouping was never added to. See the note above that function's row-writing loop.
   const rebuiltMatrix = rebuildMatrixFromRows(matrix, visible, {
     includeDirect: true,
     preserveTargets: true,
   });
   const { blocks, ref } = planDataLayout(comparison.data);
 
-  writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
+  writeMatrixSheet(workbook, rebuiltMatrix, "Scoped to your own areas, region and products — never company-wide.");
   writeTargetAchievementSheet(workbook, rebuiltMatrix);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
