@@ -385,7 +385,44 @@ export async function runDirectOrderSecondReviewFixTests() {
   assert.equal(resolveDirectOrderWorkspaceTab(""), "overview", "an absent view is Overview");
   assert.equal(resolveDirectOrderWorkspaceTab("nonsense"), "overview", "an unknown view falls back safely");
 
+  // ── HR_ID canonicalisation: the SQL side and the TS side must not drift ────
+  //
+  // The whole point of the lookup table is that both sides read ONE list. If someone adds an alias
+  // to hrIdAliases and not to the migration (or vice versa), scope filtering returns different rows
+  // depending on which side ran it — and the failure is silent row loss, not an error.
+  const hrIdSource = readFileSync(new URL("../src/lib/hr-id.ts", import.meta.url), "utf8");
+  const migrationSource = readFileSync(
+    new URL("../supabase/migrations/20260811120000_hr_id_aliases_and_direct_order_requester_key.sql", import.meta.url),
+    "utf8",
+  );
+
+  const tsAliases = [...hrIdSource.matchAll(/^\s*([a-z0-9]+):\s*"([a-z0-9]+)"/gm)].map((m) => [m[1], m[2]]);
+  assert.ok(tsAliases.length > 0, "the TypeScript alias table must be parseable — this test is the drift guard");
+  for (const [alias, canonical] of tsAliases) {
+    assert.ok(
+      migrationSource.includes(`'${alias}', '${canonical}'`),
+      `hr_id_aliases is missing ${alias} -> ${canonical}; SQL and TS scope filters would return different rows`,
+    );
+  }
+
+  // The canonicaliser must mirror canonicalHrIdKey's ORDER (trim → lower → alias) and its
+  // blank-is-null rule, or an absent HR ID collapses into a match on empty string.
+  assert.ok(
+    migrationSource.includes("nullif(lower(btrim(p_value)), '')"),
+    "phx_canonical_hr_id must trim, lower and treat blank as NULL, exactly as canonicalHrIdKey does",
+  );
+  // A stored generated column cannot consult a table, so the key MUST be trigger-maintained.
+  assert.ok(
+    migrationSource.includes("create trigger trg_direct_order_requester_key"),
+    "requester_hr_id_key must be trigger-maintained — a generated column cannot read the alias table",
+  );
+  // Adding an alias does not touch rows it newly affects, so the backfill must stay re-runnable.
+  assert.ok(
+    migrationSource.includes("phx_backfill_direct_order_requester_key"),
+    "the backfill must be a callable function, so adding an alias later can re-normalise affected rows",
+  );
+
   console.log(
-    "  direct-orders second-review fixes: findings 1 (service + UI), 2, 5, 6 + view-aware loading covered",
+    "  direct-orders second-review fixes: findings 1 (service + UI), 2, 5, 6 + view-aware loading + HR_ID alias drift guard",
   );
 }
