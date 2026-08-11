@@ -243,15 +243,32 @@ function matchesFilter(row: DirectOrderQueueRow, filter: FilterKey): boolean {
 }
 
 /**
- * Free-text search over the fields a person actually remembers: who raised it,
- * the pharmacy, the product, the area or region, and the order id. The brief asks
- * for customer code and MR name too — those are NOT on this row type, so they are
- * deliberately absent rather than silently unsearchable-but-advertised. See the
- * remaining-work note in docs/specs/direct-orders-workspace.md.
+ * Free-text search over the fields a person actually remembers: who raised it, the
+ * pharmacy by name OR customer code, the product, the area or region, the covering
+ * rep, and the order id.
+ *
+ * `pharmacyCode` and `medicalRepName` are optional on the row, and that is not
+ * sloppiness — it is the truth about where each one comes from. Rows built from
+ * `DirectOrderApprovalListItem` (My Orders, Needs Action) carry both; rows built
+ * from `DirectOrderReportRow` (All Orders) carry the code but not the rep, because
+ * the report path never resolves reps and making it do so would re-introduce the
+ * seat-model walk that was just taken OFF the badge path. `filter(Boolean)` drops
+ * whichever is absent, and `searchPlaceholder` below only advertises the rep where
+ * it is actually searchable.
  */
 function matchesQuery(row: DirectOrderQueueRow, query: string): boolean {
   if (!query) return true;
-  const haystack = [row.requesterName, row.pharmacyName, row.productName, row.areaName, row.regionName, row.id]
+  const haystack = [
+    row.requesterName,
+    row.pharmacyName,
+    row.pharmacyCode,
+    row.productName,
+    row.areaName,
+    row.regionName,
+    row.medicalRepName,
+    row.id,
+  ]
+    .filter(Boolean)
     .join(" ")
     .toLowerCase();
   return query
@@ -259,6 +276,20 @@ function matchesQuery(row: DirectOrderQueueRow, query: string): boolean {
     .split(/\s+/)
     .filter(Boolean)
     .every((term) => haystack.includes(term));
+}
+
+/**
+ * Describe only what THIS row set can actually be searched by.
+ *
+ * A single hardcoded placeholder would either omit the rep on the tab where it
+ * works, or promise it on the tab where it silently does not — and a search box
+ * that lists a field it cannot match is worse than one that stays quiet about it.
+ */
+function searchPlaceholder(rows: readonly DirectOrderQueueRow[]): string {
+  const hasRep = rows.some((row) => Boolean(row.medicalRepName));
+  return hasRep
+    ? "Search by person, rep, pharmacy or code, product, area or order id"
+    : "Search by person, pharmacy or code, product, area or order id";
 }
 
 function OrderRow({ row, basePath, variant }: { row: DirectOrderQueueRow; basePath: string; variant: Variant }) {
@@ -337,7 +368,7 @@ function OrdersList({
             setQuery(event.target.value);
             setShown(PAGE_SIZE);
           }}
-          placeholder="Search by person, pharmacy, product, area or order id"
+          placeholder={searchPlaceholder(rows)}
           className={`h-11 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none ${control(variant)}`}
         />
       </label>

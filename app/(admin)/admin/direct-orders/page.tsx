@@ -6,7 +6,6 @@ import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/dire
 import { directOrdersPageItems } from "@/config/system-navigation";
 import { loadDirectOrderWorkspaceView, type DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
 import {
-  canAccess,
   getPermissionMatrix,
   permissionActions,
   permissionResources,
@@ -14,6 +13,7 @@ import {
 } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { permissionAllowed, roleAllowed, type PermissionLookup } from "@/lib/navigation/active-path";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -34,13 +34,10 @@ export default async function AdminDirectOrdersWorkspacePage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals/direct-orders");
   }
-  // Mirrors the sidebar button's gate. The four service reads behind the view
-  // each assert `direct_orders:read` again — this only avoids rendering a shell
-  // around a guaranteed 403.
-  if (!(await canAccess(access, "direct_orders", "read"))) redirect("/employee-portals");
 
   const { view } = await searchParams;
   const requestedTab = (view ?? "overview") as DirectOrderWorkspaceTabKey;

@@ -208,8 +208,10 @@ export function runDirectOrdersUnbookedQueueTests() {
     /assertPermission\(access, "direct_orders", "read"\)/,
     "the badge must assert its own permission — it is reachable as a bare endpoint too",
   );
-  // Cheapness is a correctness property here: NavBadge polls every 30s, and countDirectOrderAwaiting
-  // (the sibling badge) delegates to getDirectOrderWorkspaceData, which loads the whole workspace.
+  // Cheapness is a correctness property here: NavBadge polls every 30s. Its sibling on the same
+  // row, countDirectOrderAwaitingFast, is held to the same standard by
+  // tests/direct-orders-badge-fast-path.test.ts — the slow countDirectOrderAwaiting that used to
+  // load the whole workspace for one integer was deleted on 2026-08-11.
   assert.doesNotMatch(
     badgeFn.slice(0, 1200),
     /getDirectOrderWorkspaceData/,

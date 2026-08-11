@@ -8,6 +8,7 @@ import { systemDeployment } from "@/config/system-settings";
 import { getDirectOrderReport, resolveDirectOrderReportScope } from "@/lib/direct-orders/service";
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,7 @@ export default async function AdminDirectOrdersReportPage({
   const initialUnbookedOnly = (Array.isArray(unbookedParam) ? unbookedParam[0] : unbookedParam) === "1";
 
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders/report");
   const rows = await getDirectOrderReport(access);
   const scope = resolveDirectOrderReportScope(access);

@@ -33,9 +33,13 @@ function emptyMaps(): DirectOrderGeoNameMaps {
 /**
  * Brick/area/region name maps from the sales reference master.
  *
- * Cached ~60s in-process. The cache is not an optimization detail — it is what keeps the
- * nav badge cheap: `countDirectOrderAwaiting` → `getDirectOrderWorkspaceData` runs on every
- * admin render, and it now needs these names for its list rows.
+ * Cached ~60s in-process, because `getDirectOrderWorkspaceData` needs these names for its list
+ * rows on every workspace render.
+ *
+ * This is no longer what keeps the NAV BADGE cheap — that claim was true until 2026-08-11, when
+ * the badge stopped calling the workspace at all and moved to `countDirectOrderAwaitingFast`,
+ * which loads no names. The cache still matters for the page; it is just not the last line of
+ * defence against a 30s poll any more.
  *
  * Fails soft to empty maps: a reference-data outage must degrade the approval window to bare
  * codes, never break the only screen where a direct order can be approved.
