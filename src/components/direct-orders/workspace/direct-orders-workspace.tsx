@@ -22,7 +22,10 @@ import type {
   DirectOrderNeedsActionGroup,
   DirectOrderQueueRow,
 } from "@/lib/direct-orders/needs-action";
-import type { DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
+import type {
+  DirectOrderOrdersFilterKey,
+  DirectOrderWorkspaceTabKey,
+} from "@/lib/direct-orders/workspace-data";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ONE Direct Orders workspace, rendered by BOTH shells.
@@ -59,19 +62,80 @@ export type DirectOrdersWorkspaceProps = {
   allOrders: readonly DirectOrderQueueRow[];
   /** Admin desks the viewer may open — passed in so this component owns no permission rule. */
   adminTools: readonly { href: string; label: string; description: string }[];
+  /**
+   * Whether the viewer's scope reaches past their own orders. Drives the Orders view's filter
+   * strip: an own-scope viewer is not offered a choice between two identical sets.
+   */
+  canSeeAllOrders: boolean;
   customersHref: string | null;
   /** The full report + xlsx export. Kept as its own route — it has filters, share links and an
    *  export the workspace tabs do not — but reached from HERE rather than its own sidebar row. */
   reportHref: string | null;
 };
 
+/**
+ * Which desk answers which question. Matched on the route slug so the nav registry stays a plain
+ * list of pages — only this component knows the grouping, and adding a desk means adding one slug.
+ */
+const PHARMACY_CONTROL_DESKS = ["/validations", "/held", "/pharmacies", "/pharmacy-variances", "/cleanup"] as const;
+const REPORT_DESKS = ["/report", "/rep-counters", "/reconciliation"] as const;
+const CONTROL_DESKS = ["/caps"] as const;
+
+const ORDERS_FILTERS: readonly { key: DirectOrderOrdersFilterKey; label: string }[] = [
+  { key: "mine", label: "Mine" },
+  // "My team" is deliberately absent rather than faked: the rows the workspace already holds
+  // cannot distinguish a direct report's order from anyone else's in scope without resolving the
+  // seat model, and that walk was removed from this path on purpose for its cost. Offering a
+  // filter that silently returned the wrong set would be worse than offering two honest ones.
+  { key: "all", label: "All in my scope" },
+];
+
+/** A grouped set of desks, introduced by what the group is FOR rather than by a permission name. */
+function DeskGroup({
+  tools,
+  variant,
+  intro,
+  emptyMessage,
+}: {
+  tools: readonly { href: string; label: string; description: string }[];
+  variant: Variant;
+  intro: string;
+  emptyMessage: string;
+}) {
+  if (tools.length === 0) {
+    return <div className={`${surface(variant)} px-4 py-8 text-center text-sm text-slate-500`}>{emptyMessage}</div>;
+  }
+  return (
+    <div className="space-y-3">
+      <p className="px-1 text-[12px] leading-5 text-slate-500">{intro}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {tools.map((tool) => (
+          <Link
+            key={tool.href}
+            href={tool.href}
+            className={`${surface(variant)} flex min-h-[44px] items-start gap-3 p-4 transition-colors hover:bg-orange-50/40`}
+          >
+            <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-slate-900">{tool.label}</span>
+              <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{tool.description}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const TAB_LABEL: Record<DirectOrderWorkspaceTabKey, string> = {
   overview: "Overview",
   "needs-action": "Needs Action",
-  "my-orders": "My Orders",
-  "all-orders": "All Orders",
-  customers: "Customers",
-  "admin-tools": "Admin Tools",
+  orders: "Orders",
+  // Named for the work, not the permission level. "Admin Tools" described who was allowed in
+  // rather than what they came to do, which is why everything ended up inside it.
+  "pharmacy-control": "Pharmacy Control",
+  reports: "Reports & Monitoring",
+  controls: "Commercial Controls",
 };
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -428,6 +492,18 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   const [tab, setTab] = useState<DirectOrderWorkspaceTabKey>(
     tabs.includes(props.initialTab) ? props.initialTab : "overview",
   );
+  const [ordersFilter, setOrdersFilter] = useState<DirectOrderOrdersFilterKey>("mine");
+  // An own-scope viewer has no wider set to switch to, so their filter is pinned to "mine" and the
+  // strip is not rendered — rather than offering a control with one working position.
+  const ordersRows =
+    props.canSeeAllOrders && ordersFilter === "all" ? allOrders : myOrders;
+
+  // The desks are partitioned by the QUESTION they answer, matched on their route. Grouping here
+  // rather than in the nav registry keeps this component the only place that knows the new IA,
+  // so the registry stays a plain list of pages and nothing else has to learn the grouping.
+  const pharmacyControlTools = adminTools.filter((tool) => PHARMACY_CONTROL_DESKS.some((slug) => tool.href.includes(slug)));
+  const reportTools = adminTools.filter((tool) => REPORT_DESKS.some((slug) => tool.href.includes(slug)));
+  const controlTools = adminTools.filter((tool) => CONTROL_DESKS.some((slug) => tool.href.includes(slug)));
 
   const goNeedsAction = () => setTab("needs-action");
 
@@ -545,7 +621,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   workspace under 40. */}
               <button
                 type="button"
-                onClick={() => setTab("my-orders")}
+                onClick={() => setTab("orders")}
                 className="-my-2 inline-flex min-h-[44px] items-center px-2 text-[11px] font-black text-orange-700"
               >
                 See all
@@ -572,66 +648,74 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
         />
       ) : null}
 
-      {tab === "my-orders" ? (
-        <OrdersList
-          rows={myOrders}
-          basePath={basePath}
-          variant={variant}
-          emptyMessage="You have not raised a direct order yet."
-        />
-      ) : null}
-
-      {tab === "all-orders" ? (
-        <OrdersList
-          rows={allOrders}
-          basePath={basePath}
-          variant={variant}
-          emptyMessage="No direct orders in your scope yet."
-        />
-      ) : null}
-
-      {tab === "customers" ? (
-        <div className={`${surface(variant)} px-4 py-8 text-center`}>
-          <Store className="mx-auto h-6 w-6 text-slate-400" aria-hidden="true" />
-          <p className="mt-2 text-sm font-bold text-slate-900">Pharmacy lookup lives inside the order</p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
-            You do not need to register a pharmacy before raising an order. Start a new order and search for it
-            there — if it is not found, the same screen files the verification request for you.
-          </p>
-          {props.customersHref ? (
-            <Link
-              href={props.customersHref}
-              className={`mt-4 inline-flex min-h-[44px] items-center gap-2 border border-slate-300 px-4 text-sm font-black text-slate-700 hover:bg-slate-50 ${control(variant)}`}
-            >
-              Open the full pharmacy registry
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
+      {/* ORDERS — one view, scope as a FILTER rather than as two tabs.
+          Which orders a person may see is a permission question the server has already answered;
+          making the user pick between "My Orders" and "All Orders" asked them to answer it again,
+          in the module's own vocabulary. An own-scope viewer sees no filter strip at all, because
+          for them the two sets are identical. */}
+      {tab === "orders" ? (
+        <div className="space-y-3">
+          {props.canSeeAllOrders ? (
+            <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control(variant)}`} role="tablist">
+              {ORDERS_FILTERS.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={ordersFilter === option.key}
+                  onClick={() => setOrdersFilter(option.key)}
+                  className={`min-h-[36px] px-3 text-[12px] font-black transition-colors ${
+                    ordersFilter === option.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
+                  } ${control(variant)}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           ) : null}
+          <OrdersList
+            rows={ordersRows}
+            basePath={basePath}
+            variant={variant}
+            emptyMessage={
+              ordersFilter === "mine"
+                ? "You have not raised a direct order yet."
+                : "No direct orders in your scope yet."
+            }
+          />
         </div>
       ) : null}
 
-      {tab === "admin-tools" ? (
-        adminTools.length === 0 ? (
-          <div className={`${surface(variant)} px-4 py-8 text-center text-sm text-slate-500`}>
-            No administrative tools are available for your role.
-          </div>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2">
-            {adminTools.map((tool) => (
-              <Link
-                key={tool.href}
-                href={tool.href}
-                className={`${surface(variant)} flex min-h-[44px] items-start gap-3 p-4 transition-colors hover:bg-orange-50/40`}
-              >
-                <Wrench className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold text-slate-900">{tool.label}</span>
-                  <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{tool.description}</span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        )
+      {/* The three authority views. Each groups the desks that answer ONE kind of question, so a
+          user picks by what they are doing rather than by which permission level a tool sits at.
+          The desks remain their own routes — deep-linkable, bookmarkable, refresh-safe — but they
+          are reached from inside the workspace and grouped by task, not presented as one
+          undifferentiated grid of eight cards. */}
+      {tab === "pharmacy-control" ? (
+        <DeskGroup
+          tools={pharmacyControlTools}
+          variant={variant}
+          intro="Deciding whether a pharmacy is real, correctly mapped and safe to order against — and releasing the orders waiting on that answer."
+          emptyMessage="No pharmacy control tools are available for your role."
+        />
+      ) : null}
+
+      {tab === "reports" ? (
+        <DeskGroup
+          tools={reportTools}
+          variant={variant}
+          intro="Monitoring and analysis: the full order record, how reps are behaving, and whether the module's injected sales reconcile with the manual upload."
+          emptyMessage="No reporting tools are available for your role."
+        />
+      ) : null}
+
+      {tab === "controls" ? (
+        <DeskGroup
+          tools={controlTools}
+          variant={variant}
+          intro="Commercial configuration. These settings shape what every future order is allowed to offer — they are not an order queue."
+          emptyMessage="No commercial controls are available for your role."
+        />
       ) : null}
 
       {needsAction.some((group) => group.kind === "verify_customer") && tab === "overview" ? (

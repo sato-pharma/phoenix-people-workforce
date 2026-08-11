@@ -669,6 +669,19 @@ export type DirectOrderApprovalDetail = {
    * been PAID. Everyone else sees the figures read-only.
    */
   canRecordCollection: boolean;
+  /**
+   * Whether THIS viewer may correct and resubmit the order — true only when it is `returned` AND
+   * the viewer raised it (or is a System Admin acting for them). See `reviseDirectOrder`.
+   */
+  canCorrectAndResubmit: boolean;
+  /**
+   * The approver's reason for sending it back, shown prominently to the requester.
+   *
+   * Read from `direct_order_events`, NOT from the approval step: the decision RPC only writes
+   * `decision_comment` when the step moves to approved/rejected, so a RETURN never stores its
+   * reason on the step at all. The event is the only durable copy.
+   */
+  returnComment: { message: string; byName: string | null; at: string } | null;
 };
 
 export type DirectOrderWorkspaceData = {

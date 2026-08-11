@@ -4,7 +4,7 @@ import { ReceiptText } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/direct-orders-workspace";
 import { directOrdersPageItems } from "@/config/system-navigation";
-import { loadDirectOrderWorkspaceView, type DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
+import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
 import {
   getPermissionMatrix,
   permissionActions,
@@ -40,9 +40,13 @@ export default async function AdminDirectOrdersWorkspacePage({
   }
 
   const { view } = await searchParams;
-  const requestedTab = (view ?? "overview") as DirectOrderWorkspaceTabKey;
+  // Honours the pre-2026-08-11 tab names (my-orders, all-orders, customers, admin-tools) so
+  // bookmarks, the sidebar history and next.config.ts's retired-route redirects keep landing on
+  // the view that replaced them instead of silently falling back to Overview.
+  const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH });
+  // The view is resolved BEFORE the load so the loader can skip data this view cannot show.
+  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
 
   // The admin desks, gated exactly as the existing hub page gates them — same
   // lookup, same helpers. This component owns no permission rule of its own.
@@ -87,6 +91,7 @@ export default async function AdminDirectOrdersWorkspacePage({
         myOrders={workspace.myOrders}
         allOrders={workspace.allOrders}
         adminTools={adminTools}
+        canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/admin/direct-orders/report`}
         customersHref={
           isSystemAdministratorWorkspace || access.role === "SFE Manager" ? `${BASE_PATH}/pharmacies` : null

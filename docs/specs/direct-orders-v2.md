@@ -1,3 +1,6 @@
+> **SUPERSEDED (2026-08-11).** The current authoritative spec is [direct-orders.md](./direct-orders.md).
+> This file is kept for history — where it disagrees with that file, that file is correct.
+
 # Direct Orders V2 — Agreed Specification
 
 **Date agreed:** 2026-08-04 (evening, after the module's first live day)

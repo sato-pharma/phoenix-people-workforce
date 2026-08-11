@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/direct-orders-workspace";
-import { loadDirectOrderWorkspaceView, type DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
+import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
@@ -38,9 +38,18 @@ export default async function PortalDirectOrdersWorkspacePage({
   }
 
   const { view } = await searchParams;
-  const requestedTab = (view ?? "overview") as DirectOrderWorkspaceTabKey;
+  // Same legacy-alias handling as the admin shell — the portal's old ?view= links are in
+  // bookmarks and in next.config.ts's retired-approvals redirect.
+  const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH });
+  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
+
+  // The portal shell carries no admin desks (adminTools is empty below), so the three authority
+  // views are filtered out here rather than rendered as empty sections. The Report stays reachable
+  // from the Overview header via reportHref, exactly as before.
+  const portalTabs = workspace.tabs.filter(
+    (tab) => tab !== "pharmacy-control" && tab !== "reports" && tab !== "controls",
+  );
 
   return (
     <EmployeePortalPageShell
@@ -52,13 +61,14 @@ export default async function PortalDirectOrdersWorkspacePage({
         variant="portal"
         basePath={BASE_PATH}
         newOrderHref={workspace.capabilities.canCreate ? `${BASE_PATH}/new` : null}
-        tabs={workspace.tabs.filter((tab) => tab !== "admin-tools")}
+        tabs={portalTabs}
         initialTab={requestedTab}
         summary={workspace.summary}
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
         allOrders={workspace.allOrders}
         adminTools={[]}
+        canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/employee-portals/direct-orders/report`}
         customersHref={null}
       />
