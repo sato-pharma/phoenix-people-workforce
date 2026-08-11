@@ -13,6 +13,11 @@ paths = [
   '''\.next/''',
   '''dist/''',
   '''pnpm-lock\.yaml''',
+  # The Office golden rule's password VERIFIER (scrypt salt + derived key, 128 hex chars each).
+  # It is deliberately committed and is not a secret: it can check the owner's password and can
+  # never supply it. Without this exclusion the generic high-entropy rule would fail the required
+  # `secret-scan` check the moment he arms the lock with `pnpm run office-rule:password`.
+  '''src/lib/sales/office-golden-rule\.lock\.json''',
 ]
 regexes = [
   # This codebase names internal step/template/milestone identifiers "key"/"stepKey"/

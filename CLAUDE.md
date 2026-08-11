@@ -68,7 +68,7 @@ browser is not validation and does not need permission — reload and look.
 
 ## Protected Files — OWNER APPROVAL REQUIRED
 
-These three files are **permanently locked** by the owner. No AI session, developer, or automated
+These files are **permanently locked** by the owner. No AI session, developer, or automated
 tool may read-then-edit, refactor, rename constants, adjust formulas, or change any value inside
 them without the owner explicitly approving that specific change in the active conversation first.
 
@@ -77,6 +77,16 @@ them without the owner explicitly approving that specific change in the active c
 | `src/lib/incentives/scheme-2026.ts` | 2026 incentive payout curve, achievement thresholds, semester target formula |
 | `src/lib/payroll/policy.ts` | `BASIC_SALARY_RATE` (70%), and all salary derivation formulas (base → basic → net → gross) |
 | `src/components/employee-portal/identity-card.tsx` | Employee portal identity banner — must always use `PhoenixSignatureCard`; do NOT swap it for another component |
+| `src/lib/sales/office-allocation.ts` (the `GOLDEN RULE · LOCKED` region) | The Office allocation golden rule — units spread by each area's share of the line's non-Office **value**. **Enforced mechanically**, not just behaviourally: see below |
+
+**The Office golden rule is the one lock a session cannot talk itself past.** Locked 2026-08-11 at
+the owner's instruction. `tests/office-golden-rule-lock.test.ts` pins the formula with a source
+fingerprint, a behaviour fingerprint, and four verbatim clause checks, and it runs in the required
+CI `validate` job — so a PR that changes the rule goes red and cannot merge. Changing it needs the
+owner's password via `pnpm run office-rule:unlock`; the password exists only as a scrypt verifier and
+is not recoverable from this repository. Do not re-pin the fingerprints by hand, and do not "fix" a
+red lock test by editing `src/lib/sales/office-golden-rule.ts` — that edit is precisely what the
+check exists to catch. The rule itself is documented clause by clause in that same file.
 
 **If any request would touch one of these files** (fix, refactor, rename, extend, delete): STOP. Show
 the owner the exact change you intend to make and why it is necessary, and continue only after the
