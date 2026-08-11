@@ -330,11 +330,45 @@ async function buildApprovalChain(input: {
       seen.add(key);
       if (isCeo(cursor)) break; // stop before the CEO — added as the final role rung
       const manager = lookup(cursor);
+
+      // CREATE AND FLAG (owner decision, 2026-08-12). `manager` is undefined when someone's
+      // manager_hr_id points at an HR_ID the employee directory does not carry — a departed or
+      // mistyped record. Two things used to happen here, both silently:
+      //
+      //   1. the rung was still created, bound to that raw HR_ID and labelled "Manager", so it was
+      //      indistinguishable from a healthy rung — and NOBODY can act on it, because no session
+      //      ever resolves to an HR_ID that is not in the directory;
+      //   2. `cursor` became null, so every rung ABOVE the break vanished and the request jumped
+      //      straight to the CEO having skipped its management line.
+      //
+      // The rung is still created (refusing would block a requester over someone else's missing
+      // record), but it now SAYS it is broken, in the label the order detail and Needs Action
+      // render, and it is logged so a directory repair can be scheduled rather than discovered
+      // when an order stalls.
+      //
+      // THE TRUNCATION IS NOT FIXABLE HERE. Without that record there is no next manager_hr_id to
+      // climb to, so the rungs above cannot be reconstructed — flagging makes the break visible,
+      // it does not repair the chain. That is why the log names the request's requester too.
+      //
+      // NOT hierarchy-resolver.ts: `resolveReportingSeatHrId` prefers `pendingManagerReplacementForHrId`,
+      // the DEPARTED manager's HR_ID, because it exists for org-chart GROUPING. Using it here would
+      // address the rung to someone who has resigned. The resignation trigger reassigns
+      // `manager_hr_id` upward precisely so an ACTIVE person can act, so raw `managerHrId` is right.
+      if (!manager) {
+        logError("Direct order approval chain hit an unresolvable manager; the chain is short", {
+          labels: {
+            event: "direct_order_chain_unresolved_manager",
+            requesterHrId: input.requesterHrId,
+            unresolvedManagerHrId: cursor,
+          },
+        });
+      }
+
       rungs.push({
         kind: "person",
         role: null,
         approverHrId: manager?.hrId ?? cursor,
-        label: manager?.jobTitle?.trim() || "Manager",
+        label: manager?.jobTitle?.trim() || (manager ? "Manager" : `Unresolved manager (${cursor})`),
       });
       cursor = manager?.managerHrId ?? null;
       guard += 1;
