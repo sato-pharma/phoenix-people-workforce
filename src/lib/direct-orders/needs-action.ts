@@ -58,13 +58,14 @@ export type DirectOrderQueueRow = {
   bonusOverCap: boolean;
 };
 
+// NOTE: there is deliberately no "finish_draft" kind — see the comment where the drafts group used
+// to be built. `draft` is a DB column default that no user-facing path can produce.
 export type DirectOrderNeedsActionKind =
   | "approve"
   | "correct"
   | "verify_customer"
   | "decide_customer"
-  | "assign_month"
-  | "finish_draft";
+  | "assign_month";
 
 export type DirectOrderNeedsActionItem = {
   id: string;
@@ -206,19 +207,21 @@ export function buildDirectOrderNeedsAction(
     );
   }
 
-  const drafts = input.myOrders.filter((row) => String(row.status) === "draft");
-  if (drafts.length > 0) {
-    groups.push(
-      group(
-        "finish_draft",
-        `${drafts.length} ${plural(drafts.length, "draft is", "drafts are")} not submitted yet`,
-        "Finish",
-        drafts,
-        basePath,
-        `${basePath}?view=needs-action&queue=finish_draft`,
-      ),
-    );
-  }
+  // NO "finish draft" GROUP — `draft` is not a capability this product has (second-review
+  // finding 2, verified 2026-08-11).
+  //
+  // `draft` is the DB column default (`status text not null default 'draft'`, foundation migration)
+  // and a declared registry status, but NOTHING creates a draft row: `submitDirectOrder` is the only
+  // write path into `direct_order_requests` and it always inserts `pending_approval` or `held`,
+  // overwriting the default in the same statement. There is no save-draft control, no draft editor
+  // and no submit-an-existing-draft path anywhere in the module.
+  //
+  // So the group this replaces offered a "Finish" button for a state a user cannot reach and could
+  // not have acted on if they had — a fake capability, which is worse than an absent one. Removing
+  // it hides nothing: a `draft` row (only reachable by direct SQL) still appears in the Orders list
+  // like any other status, and `draft` is left untouched in the DB check constraint, the registry
+  // and the status vocabulary. Implementing real drafts later means adding the missing write paths
+  // and restoring this group — not re-deriving the state.
 
   const finance = [...input.awaitingFinanceMonth];
   if (finance.length > 0) {

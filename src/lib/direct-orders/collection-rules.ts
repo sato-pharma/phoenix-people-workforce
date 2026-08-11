@@ -7,31 +7,16 @@
  * date-boundary guard you cannot pin to a date is not a guard you can trust.
  */
 
-import { canonicalHrIdKey } from "@/lib/hr-id";
-import type { AccessContext } from "@/lib/auth/permissions";
-
 /**
- * The one person the owner named for Finance's direct-order duties (2026-08-03): Ahmed El Maraghy.
- * An HR_ID and not the "Finance Manager" ROLE, deliberately — these duties move money, and a second
- * Finance Manager hired later must not inherit them silently. service.ts re-exports this as
- * DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID so the literal "B-185" exists in exactly one place.
+ * WHO may record a collection now lives in `finance-authority.ts` — the single boundary for every
+ * "may this person do Finance's job" question (second-review finding 6, 2026-08-11). Re-exported
+ * here so the many existing importers of this module keep working unchanged; the restriction
+ * itself is byte-for-byte what it was.
  */
-export const DIRECT_ORDER_FINANCE_HR_ID = "B-185";
-
-/**
- * Who may record that money actually arrived.
- *
- * A SEPARATE predicate from canSetDirectOrderSalesMonth even though both resolve to the same person
- * today. They are different duties — booking a month decides which period the SALES count in,
- * recording a collection says what has been PAID — and the owner may split them once someone else
- * handles receivables. Lives here rather than in service.ts so it can be tested without a database.
- */
-export function canRecordDirectOrderCollection(
-  access: Pick<AccessContext, "scope" | "role" | "hrId">,
-): boolean {
-  if (access.scope === "system" || access.role === "Super Admin") return true;
-  return canonicalHrIdKey(access.hrId) === canonicalHrIdKey(DIRECT_ORDER_FINANCE_HR_ID);
-}
+export {
+  DIRECT_ORDER_FINANCE_HR_ID,
+  canRecordDirectOrderCollection,
+} from "@/lib/direct-orders/finance-authority";
 
 export type DirectOrderCollectionOutcome =
   | { ok: true; paidAmount: number; remainingAmount: number; paymentDate: string }

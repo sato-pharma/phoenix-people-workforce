@@ -46,6 +46,11 @@ import {
   DIRECT_ORDER_FINANCE_HR_ID,
   todayInCairo,
 } from "@/lib/direct-orders/collection-rules";
+import {
+  canAssignDirectOrderSalesMonth,
+  deriveDirectOrderSalesMonthChange,
+} from "@/lib/direct-orders/finance-authority";
+import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import { isHeadOfficeLine, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -2697,6 +2702,103 @@ export type SubmitDirectOrderInput = {
   collectionDate?: string | null;
 };
 
+/**
+ * Resolve the money for a direct order: which price basis applies, whether it is over cap, and the
+ * resulting sales value. ONE definition, called by both `submitDirectOrder` and `reviseDirectOrder`.
+ *
+ * EXTRACTED 2026-08-11, when returned-order correction was implemented (second-review finding 1).
+ * A corrected order is repriced from scratch on resubmission, and a second copy of these rules is
+ * precisely how a correction ends up valued on a basis the business does not sell at — the exact
+ * failure the no-factory-price ruling below exists to prevent. Both callers must price identically
+ * or the correction is a silent repricing.
+ */
+async function resolveDirectOrderPricing(input: {
+  product: { productCode: string; productName: string };
+  dealType: DirectOrderDealType;
+  qty: number;
+  bonus: number | null | undefined;
+  discountPct: number | null | undefined;
+  caps: Awaited<ReturnType<typeof loadDirectOrderCaps>>;
+}): Promise<{
+  bonus: number;
+  discountPct: number | null;
+  publicPrice: number | null;
+  pharmacyPrice: number | null;
+  salesValue: number;
+  /**
+   * Over-cap does NOT block and does NOT restrict who may finalize (owner rule, 2026-08-03). It
+   * flags the request: an "over cap" badge on every list and detail view, a tag on the approver's
+   * notification, and an event when it is finalized. The chain always ends at the CEO regardless.
+   */
+  overCap: boolean;
+}> {
+  const supabase = getSupabaseAdmin();
+  const { product, dealType, qty, caps } = input;
+
+  // Both money inputs are read FRESH from the table rather than taken off `product`.
+  // `listSourceOfSalesProducts()` is unstable_cache'd with a 600s revalidate and no price
+  // setter busts that tag, so a price the owner just typed could be up to ten minutes stale.
+  // A stale price is fine for a dropdown label; it is not fine for a sales value.
+  const { data: priceRow } = await supabase
+    .from("source_of_sales_products")
+    .select("public_price, pharmacy_price")
+    .eq("product_code", product.productCode)
+    .maybeSingle();
+  const prices = priceRow as { public_price?: number | null; pharmacy_price?: number | null } | null;
+
+  if (dealType === "discount") {
+    // Discount uses the PUBLIC price; value = qty × public × (1 − disc%). No bonus. UNCHANGED.
+    const publicPrice = prices?.public_price != null ? Number(prices.public_price) : null;
+    // NOTE: discount mode still HARD-BLOCKS on a missing public price, whereas bonus mode below
+    // falls back and flags. That asymmetry is deliberate and pre-existing — do not "harmonize"
+    // the two paths without the owner deciding which way they should converge.
+    if (publicPrice == null || publicPrice <= 0) {
+      badRequest(`No public price is set for ${product.productName}. Ask an admin to set it before using discount mode.`);
+    }
+    const discountPct = Math.max(0, Math.min(100, Number(input.discountPct) || 0));
+    const capPct = resolveDiscountCapPct(caps, product.productCode);
+    return {
+      bonus: 0,
+      discountPct,
+      publicPrice,
+      pharmacyPrice: null,
+      salesValue: computeDiscountSalesValue({ qty, publicPrice: publicPrice as number, discountPct }),
+      overCap: !validateDiscount({ discountPct, capPct }).withinCap,
+    };
+  }
+
+  // Bonus: value = qty × PHARMACY price (bonus units excluded); bonus capped by config.
+  //
+  // There is NO factory-price fallback (owner ruling, 2026-08-04): a direct order is priced on
+  // the pharmacy price or the public price and never on the factory price. The old fallback
+  // silently repriced a bonus order onto a basis the business does not sell at, and when the
+  // factory price was missing too it produced a real order worth 0 EGP that climbed the whole
+  // chain to the CEO — Tigogrow (TG001) and Osteosat (OS001) are both in that state today.
+  // A missing pharmacy price is now REFUSED, exactly as the discount branch above refuses a
+  // missing public price. This deliberately replaces the earlier "flag, never block" rule.
+  const bonus = Math.floor(Number(input.bonus) || 0);
+  const capPct = resolveBonusCapPct(caps, product.productCode);
+  const rawPharmacyPrice = prices?.pharmacy_price != null ? Number(prices.pharmacy_price) : null;
+  const pharmacyPrice = rawPharmacyPrice != null && rawPharmacyPrice > 0 ? rawPharmacyPrice : null;
+  if (pharmacyPrice == null) {
+    badRequest(
+      `No pharmacy price is set for ${product.productName}. A bonus deal is valued on the pharmacy ` +
+        "price, so ask an admin to set it before submitting this order.",
+    );
+  }
+  // `pharmacyPrice` is non-null past the guard above, so the pharmacy price is the ONLY basis a
+  // bonus deal can ever be valued on. The product's factory price is deliberately not referenced
+  // here, and a test asserts this branch never names it again.
+  return {
+    bonus,
+    discountPct: null,
+    publicPrice: null,
+    pharmacyPrice,
+    salesValue: computeDirectOrderSalesValue({ qty, pharmacyPrice }),
+    overCap: !validateBonus({ qty, bonus, capPct }).withinCap,
+  };
+}
+
 export async function submitDirectOrder(
   access: AccessContext,
   input: SubmitDirectOrderInput,
@@ -2740,67 +2842,15 @@ export async function submitDirectOrder(
   const dealType: DirectOrderDealType = input.dealType === "discount" ? "discount" : "bonus";
   const overrideReason = input.bonusOverrideReason?.trim() || null;
 
-  let bonus = 0;
-  let discountPct: number | null = null;
-  let publicPrice: number | null = null;
-  let pharmacyPrice: number | null = null;
-  let salesValue: number;
-  // Over-cap does NOT block submission and does NOT restrict who may finalize (owner rule,
-  // 2026-08-03). It flags the request: an "over cap" badge on every list and detail view, a
-  // tag on the approver's notification, and an event when it is finalized. The chain already
-  // always ends at the CEO rung regardless.
-  let overCap: boolean;
-
-  // Both money inputs are read FRESH from the table rather than taken off `product`.
-  // `listSourceOfSalesProducts()` is unstable_cache'd with a 600s revalidate and no price
-  // setter busts that tag, so a price the owner just typed could be up to ten minutes stale.
-  // A stale price is fine for a dropdown label; it is not fine for a sales value.
-  const { data: priceRow } = await supabase
-    .from("source_of_sales_products")
-    .select("public_price, pharmacy_price")
-    .eq("product_code", product.productCode)
-    .maybeSingle();
-  const prices = priceRow as { public_price?: number | null; pharmacy_price?: number | null } | null;
-
-  if (dealType === "discount") {
-    // Discount uses the PUBLIC price; value = qty × public × (1 − disc%). No bonus. UNCHANGED.
-    publicPrice = prices?.public_price != null ? Number(prices.public_price) : null;
-    // NOTE: discount mode still HARD-BLOCKS on a missing public price, whereas bonus mode below
-    // falls back and flags. That asymmetry is deliberate and pre-existing — do not "harmonize"
-    // the two paths without the owner deciding which way they should converge.
-    if (publicPrice == null || publicPrice <= 0) {
-      badRequest(`No public price is set for ${product.productName}. Ask an admin to set it before using discount mode.`);
-    }
-    discountPct = Math.max(0, Math.min(100, Number(input.discountPct) || 0));
-    const capPct = resolveDiscountCapPct(caps, product.productCode);
-    overCap = !validateDiscount({ discountPct, capPct }).withinCap;
-    salesValue = computeDiscountSalesValue({ qty, publicPrice: publicPrice as number, discountPct });
-  } else {
-    // Bonus: value = qty × PHARMACY price (bonus units excluded); bonus capped by config.
-    //
-    // There is NO factory-price fallback (owner ruling, 2026-08-04): a direct order is priced on
-    // the pharmacy price or the public price and never on the factory price. The old fallback
-    // silently repriced a bonus order onto a basis the business does not sell at, and when the
-    // factory price was missing too it produced a real order worth 0 EGP that climbed the whole
-    // chain to the CEO — Tigogrow (TG001) and Osteosat (OS001) are both in that state today.
-    // A missing pharmacy price is now REFUSED, exactly as the discount branch above refuses a
-    // missing public price. This deliberately replaces the earlier "flag, never block" rule.
-    bonus = Math.floor(Number(input.bonus) || 0);
-    const capPct = resolveBonusCapPct(caps, product.productCode);
-    overCap = !validateBonus({ qty, bonus, capPct }).withinCap;
-    const rawPharmacyPrice = prices?.pharmacy_price != null ? Number(prices.pharmacy_price) : null;
-    pharmacyPrice = rawPharmacyPrice != null && rawPharmacyPrice > 0 ? rawPharmacyPrice : null;
-    if (pharmacyPrice == null) {
-      badRequest(
-        `No pharmacy price is set for ${product.productName}. A bonus deal is valued on the pharmacy ` +
-          "price, so ask an admin to set it before submitting this order.",
-      );
-    }
-    // `pharmacyPrice` is non-null past the guard above, so the pharmacy price is the ONLY basis a
-    // bonus deal can ever be valued on. The product's factory price is deliberately not referenced
-    // here, and a test asserts this branch never names it again.
-    salesValue = computeDirectOrderSalesValue({ qty, pharmacyPrice });
-  }
+  const { bonus, discountPct, publicPrice, pharmacyPrice, salesValue, overCap } =
+    await resolveDirectOrderPricing({
+      product,
+      dealType,
+      qty,
+      bonus: input.bonus,
+      discountPct: input.discountPct,
+      caps,
+    });
 
   // Load the pharmacy in full (a missing map entry IS "not found") — the approver's
   // notification names the pharmacy, its geography and its distributors, so the bare
@@ -2978,6 +3028,236 @@ export async function submitDirectOrder(
 
   pingDirectOrderSheet("order_submitted");
   return request;
+}
+
+// ── Correct & resubmit a returned order ──────────────────────────────────────
+
+/**
+ * The fields a requester may change when correcting a RETURNED order.
+ *
+ * PRODUCT AND PHARMACY ARE DELIBERATELY ABSENT. Both are identity, not detail:
+ *   - changing the product can change the LINE, and the approval chain was built for the original
+ *     requester's line — a corrected order on a different line would climb a chain that no longer
+ *     matches it;
+ *   - changing the pharmacy re-opens the held decision (`decideDirectOrderHold`), which is taken at
+ *     submit time and determines whether the order belongs in the approval flow at all.
+ * A correction that needs either is a DIFFERENT order, and the product asks for a new one. This is
+ * a business rule, not a technical limitation, and the UI says so in those words.
+ */
+export type ReviseDirectOrderInput = {
+  requestId: string;
+  qty: number;
+  dealType?: DirectOrderDealType;
+  bonus?: number;
+  discountPct?: number | null;
+  bonusOverrideReason?: string | null;
+  collectionDate?: string | null;
+  /** The requester's note back to the approver saying what they changed. Required. */
+  correctionNote?: string | null;
+};
+
+/**
+ * Correct a returned direct order and put it back in front of the SAME approver.
+ *
+ * WHY THIS EXISTS (second-review finding 1, 2026-08-11). The workflow registry has declared
+ * `submit` as `from: ["draft","returned"] → pending_approval` since the module's foundation
+ * migration, Needs Action offers "Fix and resubmit", and `resolveActionAvailability` tells the
+ * approver "Waiting for the requester to resubmit". None of it was reachable: `submitDirectOrder`
+ * accepts no request id, always INSERTs, and hard-codes `status: "draft"` in its registry check, so
+ * the registry's `"returned"` entry had never once been exercised. A returned order was a dead end
+ * — the requester's only recourse was to raise a second, unrelated order, orphaning the original
+ * and every approval already recorded against it.
+ *
+ * WHY IT UPDATES RATHER THAN INSERTS. The whole point of a return is that the request survives: its
+ * id, its history, and the approvals already given. So this writes to the SAME row and never touches
+ * `direct_order_approval_steps`.
+ *
+ * WHY THE CHAIN IS NOT REBUILT. It does not need to be. `phx_apply_direct_order_decision` only
+ * updates a step when `p_step_next_status in ('approved','rejected')` — a `return` therefore leaves
+ * the returning rung `pending`, with every rung above it untouched and every rung below it already
+ * `approved`. `resolveActiveStep` takes the lowest-order pending rung, so flipping the request back
+ * to `pending_approval` resumes at exactly the rung that returned it. Rebuilding would restart at
+ * SFE and discard real decisions; that is explicitly not the business rule.
+ */
+export async function reviseDirectOrder(
+  access: AccessContext,
+  input: ReviseDirectOrderInput,
+): Promise<DirectOrderRequest> {
+  await assertPermission(access, "direct_orders", "create");
+  if (!isDirectOrderRequesterRole(access.role) && access.role !== "Super Admin") {
+    badRequest(`Role "${access.role}" cannot submit direct orders. Allowed: ${DIRECT_ORDER_REQUESTER_ROLES.join(", ")}.`);
+  }
+  const actorHrId = requireActorHrId(access);
+
+  const supabase = getSupabaseAdmin();
+  const { data: current, error: loadError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!current) badRequest("Direct order request not found.");
+  const before = mapRequestRow(current as Record<string, unknown>);
+
+  if (before.status !== "returned") {
+    badRequest(
+      `Only an order that an approver sent back can be corrected. This one is ${describeDirectOrderStatus(before.status, before.salesMonth).label.toLowerCase()}.`,
+    );
+  }
+
+  // OWNERSHIP. A return is addressed to the person who raised the order; nobody else may answer it.
+  // Super Admin may act on their behalf, matching every other requester-side action in this module.
+  const isSuperAdmin = access.role === "Super Admin" || access.scope === "system";
+  if (!isSuperAdmin && canonicalHrIdKey(before.requesterHrId) !== canonicalHrIdKey(actorHrId)) {
+    badRequest("Only the person who raised this order can correct and resubmit it.");
+  }
+
+  const correctionNote = input.correctionNote?.trim() || null;
+  if (!correctionNote) {
+    // Symmetric with the approver, who cannot return without a written reason. A silent
+    // resubmission gives them no way to see what changed without diffing the row by hand.
+    badRequest("Say what you changed, so the approver can see why this is different.");
+  }
+
+  const qty = Math.floor(Number(input.qty) || 0);
+  if (qty <= 0) badRequest("Quantity must be greater than zero.");
+
+  const collectionDate = String(input.collectionDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(collectionDate)) {
+    badRequest("A valid money-collection date (YYYY-MM-DD) is required.");
+  }
+
+  // The product is NOT taken from the caller — see ReviseDirectOrderInput. It is re-resolved from
+  // the stored code so a correction cannot silently move the order to another product or line.
+  const products = await listSourceOfSalesProducts();
+  const product = products.find((candidate) => candidate.productCode === before.productCode);
+  if (!product) {
+    badRequest(`This order's product (${before.productCode}) is no longer in the product master, so it cannot be resubmitted.`);
+  }
+
+  const caps = await loadDirectOrderCaps();
+  const dealType: DirectOrderDealType = input.dealType === "discount" ? "discount" : "bonus";
+  const overrideReason = input.bonusOverrideReason?.trim() || null;
+
+  // Repriced from scratch through the SAME helper `submitDirectOrder` uses. A correction submitted
+  // a week later must be valued on today's price basis, exactly as a fresh order would be.
+  const { bonus, discountPct, publicPrice, pharmacyPrice, salesValue, overCap } =
+    await resolveDirectOrderPricing({
+      product,
+      dealType,
+      qty,
+      bonus: input.bonus,
+      discountPct: input.discountPct,
+      caps,
+    });
+
+  const steps = await loadSteps(before.id);
+  const activeStep = resolveActiveStep(steps);
+  if (!activeStep) {
+    // Defensive: a returned order should always carry the returning rung as still-pending. If it
+    // does not, the chain is malformed and resubmitting would send it to nobody.
+    badRequest(
+      "This order has no approver waiting on it, so it cannot be resubmitted. Ask a system administrator to check its approval chain.",
+    );
+  }
+
+  // Governance: the registry's `submit` action has always declared `returned` as a legal origin.
+  // Passing the row's REAL status (not a literal) is what finally exercises it.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "submit",
+    expectedNextStatus: "pending_approval",
+    status: before.status,
+  });
+
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_requests")
+    .update({
+      status: "pending_approval",
+      qty,
+      bonus,
+      bonus_override_reason: overrideReason,
+      deal_type: dealType,
+      discount_pct: discountPct,
+      public_price_snapshot: publicPrice,
+      pharmacy_price_snapshot: dealType === "bonus" ? pharmacyPrice : null,
+      sales_value: salesValue,
+      collection_date: collectionDate,
+      submitted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", before.id)
+    // Compare-and-swap on the status we validated against, so two tabs cannot both resubmit.
+    .eq("status", "returned")
+    .select("*")
+    .single();
+  if (updateError) throw updateError;
+  const after = mapRequestRow(updated as Record<string, unknown>);
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    entityId: after.id,
+    oldValues: {
+      status: before.status,
+      qty: before.qty,
+      bonus: before.bonus,
+      dealType: before.dealType,
+      discountPct: before.discountPct,
+      salesValue: before.salesValue,
+      collectionDate: before.collectionDate,
+    },
+    newValues: { status: after.status, qty, bonus, dealType, discountPct, salesValue, collectionDate },
+    summary: `Direct order corrected and resubmitted by ${access.hrId} (${product.productName}, ${qty} units).`,
+  });
+  await insertEvent({
+    requestId: after.id,
+    actorHrId: access.hrId,
+    eventType: "resubmitted",
+    message: `Corrected and resubmitted: ${correctionNote}`,
+    metadata: {
+      correctionNote,
+      // The exact before/after of every editable field, so the timeline answers "what changed"
+      // without anyone reconstructing it from two audit rows.
+      changed: {
+        qty: { from: before.qty, to: qty },
+        bonus: { from: before.bonus, to: bonus },
+        dealType: { from: before.dealType, to: dealType },
+        discountPct: { from: before.discountPct, to: discountPct },
+        salesValue: { from: before.salesValue, to: salesValue },
+        collectionDate: { from: before.collectionDate, to: collectionDate },
+      },
+      basis: dealType === "bonus" ? "pharmacy_price" : "public_price",
+      overCap,
+      resumedAtStepOrder: activeStep.order,
+      resumedAtLabel: activeStep.label,
+    },
+  });
+
+  // Straight back to the rung that returned it — not to the front of the chain.
+  const pharmacy = (await loadPharmaciesByIds([after.pharmacyId])).get(after.pharmacyId) ?? null;
+  const requesterDisplayName = (await nameLookup())(before.requesterHrId) ?? before.requesterHrId;
+  const notifyContext = await buildNotifyContext(after, requesterDisplayName, pharmacy);
+  const approvers = activeStep.kind === "role" && activeStep.role
+    ? await hrIdsForRole(activeStep.role)
+    : [activeStep.approverHrId];
+  const tags = [
+    overCap ? (dealType === "discount" ? "[High Discount]" : "[High Bonus]") : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  await notifyDirectOrder({
+    recipients: [...approvers.filter((id): id is string => Boolean(id)), ...(await ccRecipients())],
+    title: `${tags ? `${tags} ` : ""}Corrected direct order back for your approval`,
+    message: `${buildDirectOrderNotificationLine(notifyContext)} The requester says: ${correctionNote}`,
+    metrics: buildDirectOrderNotificationMetrics(notifyContext),
+    eventType: "resubmitted",
+    requestId: after.id,
+    subjectHrId: before.requesterHrId,
+  });
+
+  pingDirectOrderSheet("order_resubmitted");
+  return after;
 }
 
 // ── Decide (approve / reject / return) ────────────────────────────────────────
@@ -4864,10 +5144,14 @@ export async function resolvePharmacyGeoVariance(
  */
 export const DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID = DIRECT_ORDER_FINANCE_HR_ID;
 
-/** Ahmed, or a Super Admin. The CEO and SFE Manager can SEE the month but never set it. */
+/**
+ * Ahmed, or a Super Admin. The CEO and SFE Manager can SEE the month but never set it.
+ *
+ * Delegates to `finance-authority.ts` rather than re-deriving the rule — that module is the single
+ * place Finance's direct-order authority is defined, so reassigning the duty is a one-file change.
+ */
 export function canSetDirectOrderSalesMonth(access: AccessContext): boolean {
-  if (access.scope === "system" || access.role === "Super Admin") return true;
-  return canonicalHrIdKey(access.hrId) === canonicalHrIdKey(DIRECT_ORDER_SALES_MONTH_SETTER_HR_ID);
+  return canAssignDirectOrderSalesMonth(access);
 }
 
 /**
@@ -4949,11 +5233,6 @@ export async function setDirectOrderSalesMonth(
     throw new Error("Forbidden: only Finance (Ahmed El Maraghy) or a System Admin can set the sales month.");
   }
 
-  const nextMonth = input.salesMonth === null ? null : String(input.salesMonth).trim();
-  if (nextMonth !== null && !/^\d{4}-\d{2}$/.test(nextMonth)) {
-    badRequest("Pick a month in YYYY-MM form, e.g. 2026-07.");
-  }
-
   const supabase = getSupabaseAdmin();
   const { data: current, error: loadError } = await supabase
     .from("direct_order_requests")
@@ -4964,6 +5243,18 @@ export async function setDirectOrderSalesMonth(
   if (!current) badRequest("Direct order request not found.");
   const before = mapRequestRow(current as Record<string, unknown>);
   const previousMonth = before.salesMonth;
+
+  // SERVER-SIDE STATUS GUARD (second-review finding 5, 2026-08-11). The month's FORMAT and the
+  // caller's identity were checked before this; the order's STATE was not. Booking a month is a
+  // Finance decision about an order the chain has already authorised, so the server — not the
+  // absence of a button — is what refuses it on an unapproved row. See finance-authority.ts.
+  const monthChange = deriveDirectOrderSalesMonthChange({
+    status: before.status,
+    currentMonth: previousMonth,
+    requestedMonth: input.salesMonth === null ? null : String(input.salesMonth).trim(),
+  });
+  if (!monthChange.ok) badRequest(monthChange.message);
+  const nextMonth = monthChange.nextMonth;
   if (previousMonth === nextMonth) return before;
 
   const { data: updated, error: updateError } = await supabase
