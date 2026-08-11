@@ -7,6 +7,7 @@ import {
   BarChart3,
   CalendarDays,
   Download,
+  FileSpreadsheet,
   Filter,
   Loader2,
   MapPin,
@@ -81,6 +82,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
   const [error, setError] = useState<string | null>(initialError);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [downloadingSummary, setDownloadingSummary] = useState(false);
   const [filters, setFilters] = useState<WeeklyFilters>({
     distributorCodes: initial?.appliedFilters.distributorCodes ?? [],
     distributorMode: initial?.appliedFilters.distributorFilterMode ?? "include",
@@ -175,29 +177,34 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     () => (data?.availableWeekNumbers ?? []).map((week) => ({ code: String(week), label: `Week ${week}` })),
     [data],
   );
-  const handleExport = useCallback(async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      const params = new URLSearchParams();
-      for (const code of filters.distributorCodes) params.append("distributor", code);
-      if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
-      for (const code of filters.regionCodes) params.append("region", code);
-      if (filters.regionMode === "exclude") params.set("regionMode", "exclude");
-      for (const code of filters.productCodes) params.append("product", code);
-      if (filters.productMode === "exclude") params.set("productMode", "exclude");
-      for (const code of filters.lineCodes) params.append("line", code);
-      if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
-      for (const code of filters.monthCodes) params.append("month", code);
-      if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
-      for (const code of filters.weekNumberCodes) params.append("weekNum", code);
-      if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
-      const response = await fetch(`/api/sales/weekly/export?${params.toString()}`, { cache: "no-store" });
+  // Both exports send the SAME filter query — they differ only in the endpoint and the fallback
+  // filename. Shared so the two downloads can never drift into disagreeing about what the user is
+  // looking at, which is the whole point of the summarized report reconciling to this screen.
+  const buildExportParams = useCallback(() => {
+    const params = new URLSearchParams();
+    for (const code of filters.distributorCodes) params.append("distributor", code);
+    if (filters.distributorMode === "exclude") params.set("distributorMode", "exclude");
+    for (const code of filters.regionCodes) params.append("region", code);
+    if (filters.regionMode === "exclude") params.set("regionMode", "exclude");
+    for (const code of filters.productCodes) params.append("product", code);
+    if (filters.productMode === "exclude") params.set("productMode", "exclude");
+    for (const code of filters.lineCodes) params.append("line", code);
+    if (filters.lineMode === "exclude") params.set("lineMode", "exclude");
+    for (const code of filters.monthCodes) params.append("month", code);
+    if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
+    for (const code of filters.weekNumberCodes) params.append("weekNum", code);
+    if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
+    return params;
+  }, [filters]);
+
+  const downloadWorkbook = useCallback(
+    async (endpoint: string, fallbackName: string) => {
+      const response = await fetch(`${endpoint}?${buildExportParams().toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Export failed.");
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
       const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match?.[1] ?? "phoenix-weekly-sales.xlsx";
+      const filename = match?.[1] ?? fallbackName;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -206,12 +213,35 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
+    },
+    [buildExportParams],
+  );
+
+  const handleExport = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadWorkbook("/api/sales/weekly/export", "phoenix-weekly-sales.xlsx");
     } catch {
       // silent — network errors show as nothing downloaded
     } finally {
       setDownloading(false);
     }
-  }, [downloading, filters]);
+  }, [downloading, downloadWorkbook]);
+
+  // Separate busy flag: the summarized report loads three dashboard scopes (period, month, year) and
+  // takes longer than the BI workbook, so sharing one flag would freeze both buttons on either click.
+  const handleSummaryExport = useCallback(async () => {
+    if (downloadingSummary) return;
+    setDownloadingSummary(true);
+    try {
+      await downloadWorkbook("/api/sales/weekly/summary-export", "phoenix-weekly-summary.xlsx");
+    } catch {
+      // silent — network errors show as nothing downloaded
+    } finally {
+      setDownloadingSummary(false);
+    }
+  }, [downloadingSummary, downloadWorkbook]);
 
   if (!data) {
     return (
@@ -257,6 +287,22 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
                 <Download className="h-4 w-4" />
               )}
               {downloading ? "Preparing…" : "Export Excel"}
+            </button>
+            {/* Second, separate export. Outlined rather than filled so the existing report stays the
+                primary action and nobody has to choose between formats after clicking one button. */}
+            <button
+              type="button"
+              onClick={handleSummaryExport}
+              disabled={downloadingSummary || loading}
+              className="flex items-center gap-1.5 rounded-[6px] border border-[#F97316] bg-white px-3 py-2 text-sm font-black text-[#EA580C] shadow-sm transition-colors hover:bg-[#FFF7ED] disabled:opacity-60"
+              title="Download the 5-tab management summary: weekly by branch and manager, month-to-date, year-to-date, and low-sales branches holding stock"
+            >
+              {downloadingSummary ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileSpreadsheet className="h-4 w-4" />
+              )}
+              {downloadingSummary ? "Preparing…" : "Summarized Report"}
             </button>
           </div>
         </div>
