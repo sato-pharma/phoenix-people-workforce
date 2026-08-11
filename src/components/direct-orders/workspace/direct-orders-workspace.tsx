@@ -12,7 +12,6 @@ import {
   Plus,
   RotateCcw,
   Search,
-  Store,
   Wrench,
 } from "lucide-react";
 
