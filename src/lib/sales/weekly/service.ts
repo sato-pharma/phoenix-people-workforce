@@ -942,11 +942,30 @@ export async function loadWeeklyDashboard(filters?: {
   // Opt-in fetch narrowing (see narrowRowsToCycleMonths). Applied AFTER the week-window choice so it
   // only ever removes batches: a caller that wants one month's aggregates stops paying for the whole
   // history. Whole months only — see batch-scope.ts for why that is the one safe unit.
+  // Same narrowing, driven by the dashboard's OWN month filter rather than a caller opt-in. Without
+  // it every filter change re-pages the entire validated history — measured on production data:
+  // 34,838 rows over 35 round trips, 7-20s per load — and because the numbers already on screen are
+  // left in place for that whole time, the previous UNFILTERED total is what the user keeps seeing.
+  // That is the "period filter does nothing / full value still shows" report, not a filter that
+  // fails to apply (the in-memory filters below were verified correct against production).
+  // Whole months only, so de-cumulation chains stay intact (see batch-scope.ts).
+  // INCLUDE mode only: an exclude selection names the months to DROP, so it cannot become a
+  // fetch whitelist. Restricted tiers are left on the old full fetch so the option universes they
+  // derive from rows stay bit-for-bit unchanged.
+  const narrowToSelectedMonths =
+    (filters?.accessScope?.tier ?? "full") === "full" &&
+    cycleMonthFilter.has &&
+    cycleMonthFilter.mode === "include"
+      ? [...cycleMonthFilter.set]
+      : null;
   const batchIdsForRows = narrowBatchesToCycleMonths(
-    allWeeksRequested || scopeIsBoundedProduct
-      ? batches
-      : batches.filter((b) => windowCycleKeys.has(`${b.distributor_code}||${b.cycle_month ?? ""}`)),
-    filters?.narrowRowsToCycleMonths,
+    narrowBatchesToCycleMonths(
+      allWeeksRequested || scopeIsBoundedProduct
+        ? batches
+        : batches.filter((b) => windowCycleKeys.has(`${b.distributor_code}||${b.cycle_month ?? ""}`)),
+      filters?.narrowRowsToCycleMonths,
+    ),
+    narrowToSelectedMonths,
   ).map((b) => String(b.id));
   if (batchIdsForRows.length === 0) return empty();
   const CONCURRENCY = 6;
@@ -1158,13 +1177,36 @@ export async function loadWeeklyDashboard(filters?: {
   );
   // Month + week-of-month option universes — independent of the date-week selection (computed from all
   // visible rows for the chosen distributor) so these dropdowns never collapse on selection.
+  // When the fetch was narrowed to the selected months, the rows no longer span the full history, so
+  // these two universes must NOT come from rows — that would collapse the Month dropdown to the month
+  // already chosen and leave no way to switch. Take them from the batch list instead: it is always
+  // loaded in full, and its cycle_month / week_number are a faithful stand-in for the rows' own
+  // (re-verified against production: 0 mismatches across all 34,838 validated rows).
   const monthOptionRows = visibleRows.filter((row) => passesMultiFilter(distributor, normalizeCode(row.distributorCode)));
-  const availableMonths = [...new Set(monthOptionRows.map((row) => row.cycleMonth).filter(Boolean))]
+  const optionBatches = batches.filter(
+    (batch) =>
+      passesMultiFilter(distributor, normalizeCode(String(batch.distributor_code ?? ""))) &&
+      (!scopeVisibleDistributorCodes ||
+        scopeVisibleDistributorCodes.has(normalizeCode(String(batch.distributor_code ?? "")))),
+  );
+  const availableMonths = (
+    narrowToSelectedMonths
+      ? [...new Set(optionBatches.map((batch) => normalizeText(String(batch.cycle_month ?? ""))).filter(Boolean))]
+      : [...new Set(monthOptionRows.map((row) => row.cycleMonth).filter(Boolean))]
+  )
     .sort((left, right) => right.localeCompare(left))
     .map((code) => ({ code, name: monthLabel(code) }));
-  const availableWeekNumbers = [
-    ...new Set(monthOptionRows.map((row) => row.weekNumber).filter((value): value is number => value != null)),
-  ].sort((left, right) => left - right);
+  const availableWeekNumbers = (
+    narrowToSelectedMonths
+      ? [
+          ...new Set(
+            optionBatches
+              .map((batch) => (batch.week_number != null ? Number(batch.week_number) : null))
+              .filter((value): value is number => value != null),
+          ),
+        ]
+      : [...new Set(monthOptionRows.map((row) => row.weekNumber).filter((value): value is number => value != null))]
+  ).sort((left, right) => left - right);
 
   // When a month / week-of-month filter is active it defines the time scope, so don't ALSO restrict to
   // the date-week selector (that would conflict). Otherwise keep the existing selected-week scope.

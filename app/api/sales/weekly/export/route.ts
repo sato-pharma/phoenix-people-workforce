@@ -64,16 +64,27 @@ export async function GET(request: Request) {
     // formatting, the Distributor×Product cross-tab and all breakdown sheets.
     const buffer = await buildWeeklyExportWorkbook(data, generatedAt, { interactive: false });
 
-    // Build a meaningful filename from filters
+    // Build a meaningful filename from filters.
     const parts: string[] = ["phoenix-weekly-sales"];
-    const weekLabel = data.appliedFilters.allWeeks
-      ? "all-weeks"
-      : data.appliedFilters.weekStarts.length === 1
-        ? data.appliedFilters.weekStarts[0]
-        : data.appliedFilters.weekStarts.length > 1
-          ? `${data.appliedFilters.weekStarts.length}-weeks`
-          : "latest";
-    parts.push(weekLabel);
+    // The period segment must describe the MONTH / WEEK-OF-MONTH filters, because those are the only
+    // period controls the dashboard has. `allWeeks` is hardcoded true above (full-dataset load), so
+    // reading it here always produced "all-weeks" — every export came back named as if no period had
+    // been chosen, which is indistinguishable from the filter having been ignored.
+    const f = data.appliedFilters;
+    const monthSeg =
+      f.cycleMonths.length === 0
+        ? null
+        : f.cycleMonthMode === "exclude"
+          ? `excl-${f.cycleMonths.length}-months`
+          : f.cycleMonths.map((month) => month.slice(0, 7)).join("-");
+    const weekNumSeg =
+      f.weekNumbers.length === 0
+        ? null
+        : f.weekNumberMode === "exclude"
+          ? `excl-${f.weekNumbers.length}-weeks`
+          : f.weekNumbers.map((week) => `w${week}`).join("-");
+    parts.push(monthSeg ?? (weekNumSeg ? "all-months" : "all-weeks"));
+    if (weekNumSeg) parts.push(weekNumSeg);
     // Summarize each multi filter: single include -> the code; multi include -> "N-noun";
     // exclude -> "excl-N-noun". Empty selections add nothing.
     const seg = (codes: string[], filterMode: "include" | "exclude", noun: string): string | null => {
@@ -82,7 +93,6 @@ export async function GET(request: Request) {
       if (codes.length === 1) return codes[0].toLowerCase().replace(/\s+/g, "-");
       return `${codes.length}-${noun}`;
     };
-    const f = data.appliedFilters;
     for (const part of [
       seg(f.distributorCodes, f.distributorFilterMode, "distributors"),
       seg(f.regionCodes, f.regionFilterMode, "regions"),

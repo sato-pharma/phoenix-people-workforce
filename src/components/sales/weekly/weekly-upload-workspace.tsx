@@ -18,7 +18,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
 
 
-const money = (value: number) => `EGP ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+// No money formatter here on purpose: this whole screen — Validate preview AND the stored-upload
+// history — reports UNITS. Value belongs to the surfaces that own the price (dashboard, export).
 const num = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
 const card = "rounded-[6px] border border-[#E2E8F0] bg-white shadow-sm";
@@ -704,7 +705,6 @@ export function WeeklyUploadWorkspace({
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Rows</th>
                 <th className="px-3 py-2 text-right">Net units</th>
-                <th className="px-3 py-2 text-right">Sales value</th>
                 <th className="px-3 py-2 text-right">Stock units</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -712,7 +712,7 @@ export function WeeklyUploadWorkspace({
             <tbody>
               {filteredBatches.length === 0 && (
                 <tr>
-                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={10}>
+                  <td className="px-3 py-4 text-center text-[#94A3B8]" colSpan={9}>
                     {batches.length === 0 ? "No weekly uploads yet." : "No uploads match the current filters."}
                   </td>
                 </tr>
@@ -767,7 +767,6 @@ export function WeeklyUploadWorkspace({
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalRows)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalNetQty)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">{money(batch.totalSalesValue)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{num(batch.totalStockQty)}</td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex items-center gap-2">
@@ -1181,11 +1180,10 @@ function ValidationResultPanel({
             This week only{selectedWeek ? ` — Week ${selectedWeek}` : ""} (de-cumulated)
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm font-bold text-[#0F172A]">
-            <span>Sales value: <span className="text-[#F97316]">{money(tw.salesValue)}</span></span>
-            <span>Net units: {num(tw.netQty)}</span>
+            <span>Net units: <span className="text-[#F97316]">{num(tw.netQty)}</span></span>
             <span className="text-xs font-medium text-[#64748B]">
               {tw.priorWeekStart
-                ? `= this sheet (cumulative ${money(t.salesValue)}) − previous sheet of the month (${tw.priorWeekStart})`
+                ? `= this sheet (cumulative ${num(t.netQty)} units) − previous sheet of the month (${tw.priorWeekStart})`
                 : "first sheet of the month — equals the full cumulative figure"}
             </span>
           </div>
@@ -1214,13 +1212,15 @@ function ValidationResultPanel({
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-4 lg:grid-cols-7">
+      {/* Validation is a UNITS check — the operator is confirming quantities parsed correctly, not
+          money. Value is derived downstream from Product Master factory price, so showing EGP here
+          invites reconciling against a figure this step does not own. Units only (owner's rule). */}
+      <div className="grid grid-cols-2 gap-px bg-[#E2E8F0] sm:grid-cols-3 lg:grid-cols-6">
         <Metric label="Rows" value={num(result.rowCount)} />
         <Metric label="Importable" value={num(result.importableRows)} />
         <Metric label="Sales units" value={num(t.salesQty)} />
         <Metric label="Return units" value={num(t.returnQty)} />
         <Metric label="Net units" value={num(t.netQty)} accent />
-        <Metric label="Sales value" value={money(t.salesValue)} accent />
         <Metric label="Stock units" value={num(t.stockQty)} />
       </div>
 
@@ -1228,26 +1228,26 @@ function ValidationResultPanel({
       <div className="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
         <SummaryTable
           title="By product"
-          head={["Product", "Sales", "Return", "Net", "Value", "Stock"]}
+          head={["Product", "Sales", "Return", "Net", "Stock"]}
           rows={result.byProduct.map((p) => [
             p.productName || p.productCode,
-            num(p.salesQty), num(p.returnQty), num(p.netQty), money(p.salesValue), num(p.stockQty),
+            num(p.salesQty), num(p.returnQty), num(p.netQty), num(p.stockQty),
           ])}
         />
         <SummaryTable
           title="By branch"
-          head={["Branch", "Sales", "Return", "Net", "Value", "Stock"]}
+          head={["Branch", "Sales", "Return", "Net", "Stock"]}
           rows={result.byBranch.map((b) => [
             b.branchName || b.branchCode,
-            num(b.salesQty), num(b.returnQty), num(b.netQty), money(b.salesValue), num(b.stockQty),
+            num(b.salesQty), num(b.returnQty), num(b.netQty), num(b.stockQty),
           ])}
         />
         <SummaryTable
           title="By region"
-          head={["Region", "Sales", "Return", "Net", "Value", "Stock"]}
+          head={["Region", "Sales", "Return", "Net", "Stock"]}
           rows={result.byRegion.map((r) => [
             r.regionName || r.regionCode,
-            num(r.salesQty), num(r.returnQty), num(r.netQty), money(r.salesValue), num(r.stockQty),
+            num(r.salesQty), num(r.returnQty), num(r.netQty), num(r.stockQty),
           ])}
         />
       </div>
