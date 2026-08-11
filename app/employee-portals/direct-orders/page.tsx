@@ -42,7 +42,7 @@ export default async function PortalDirectOrdersWorkspacePage({
   // bookmarks and in next.config.ts's retired-approvals redirect.
   const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH });
+  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
 
   // The portal shell carries no admin desks (adminTools is empty below), so the three authority
   // views are filtered out here rather than rendered as empty sections. The Report stays reachable

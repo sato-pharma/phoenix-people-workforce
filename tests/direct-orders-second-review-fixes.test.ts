@@ -8,6 +8,7 @@ import {
   DIRECT_ORDER_FINANCE_HR_ID,
 } from "../src/lib/direct-orders/finance-authority.ts";
 import { buildDirectOrderNeedsAction } from "../src/lib/direct-orders/needs-action.ts";
+import { resolveDirectOrderWorkspaceTab } from "../src/lib/direct-orders/workspace-data.ts";
 import type { AccessContext } from "../src/lib/auth/permissions.ts";
 
 /**
@@ -312,5 +313,79 @@ export async function runDirectOrderSecondReviewFixTests() {
     "the return comment must come from direct_order_events; the approval step never carries it",
   );
 
-  console.log("  direct-orders second-review fixes: findings 1 (service + UI), 2, 5, 6 all covered");
+  // ── Phase 3: the workspace loads only what the open view can show ─────────
+  const workspaceDataSource = readFileSync(
+    new URL("../src/lib/direct-orders/workspace-data.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.ok(
+    workspaceDataSource.includes("VIEWS_NEEDING_FULL_REPORT"),
+    "the expensive report read must be gated on the view, not run on every workspace open",
+  );
+  assert.ok(
+    workspaceDataSource.includes("needsFullReport ? getDirectOrderReport(access) : Promise.resolve([])"),
+    "getDirectOrderReport must be skipped for views that cannot show its rows",
+  );
+
+  // The two views that MUST keep it. Removing either from the list is a correctness regression,
+  // not an optimisation: Overview's counters span the viewer's whole scope, and Needs Action's
+  // Finance queue is filtered out of these same rows. This assertion exists so a future tidy-up
+  // that "removes the last heavy load" fails loudly instead of silently under-reporting.
+  const reportListBlock = workspaceDataSource.slice(
+    workspaceDataSource.indexOf("const VIEWS_NEEDING_FULL_REPORT"),
+    workspaceDataSource.indexOf("export async function loadDirectOrderWorkspaceView"),
+  );
+  for (const required of ['"overview"', '"needs-action"']) {
+    assert.ok(
+      reportListBlock.includes(required),
+      `${required} must keep the full report until its counts come from a cheap query — dropping it under-reports`,
+    );
+  }
+
+  // Views that show none of it must not pay for it.
+  for (const cheapView of ["pharmacy-control", "controls"]) {
+    assert.ok(
+      !reportListBlock.includes(`"${cheapView}"`),
+      `${cheapView} shows no order rows and must not trigger the report read`,
+    );
+  }
+
+  // Both shells must actually PASS the view, or the gate above can never fire.
+  for (const page of [
+    "../app/(admin)/admin/direct-orders/page.tsx",
+    "../app/employee-portals/direct-orders/page.tsx",
+  ]) {
+    const pageSource = readFileSync(new URL(page, import.meta.url), "utf8");
+    assert.ok(
+      pageSource.includes("view: requestedTab"),
+      `${page} must pass the resolved view to the loader`,
+    );
+    assert.ok(
+      pageSource.includes("resolveDirectOrderWorkspaceTab(view)"),
+      `${page} must resolve legacy ?view= aliases so old bookmarks do not fall back to Overview`,
+    );
+  }
+
+  // The legacy aliases themselves — these URLs are in bookmarks, the sidebar history and
+  // next.config.ts's retired-route redirects.
+  for (const [legacy, target] of [
+    ["my-orders", "orders"],
+    ["all-orders", "orders"],
+    ["customers", "pharmacy-control"],
+    ["admin-tools", "pharmacy-control"],
+  ]) {
+    assert.equal(
+      resolveDirectOrderWorkspaceTab(legacy),
+      target,
+      `the retired ?view=${legacy} link must land on ${target}, not silently on Overview`,
+    );
+  }
+  assert.equal(resolveDirectOrderWorkspaceTab("orders"), "orders", "current names still resolve");
+  assert.equal(resolveDirectOrderWorkspaceTab(""), "overview", "an absent view is Overview");
+  assert.equal(resolveDirectOrderWorkspaceTab("nonsense"), "overview", "an unknown view falls back safely");
+
+  console.log(
+    "  direct-orders second-review fixes: findings 1 (service + UI), 2, 5, 6 + view-aware loading covered",
+  );
 }
