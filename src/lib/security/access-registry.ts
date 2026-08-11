@@ -349,6 +349,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/submit", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/decision", permission: { resource: "direct_orders", action: "approve" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/reverse", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // Correct & resubmit a RETURNED order. `create` rather than `approve` because this is the
+  // requester answering a return, not an approval action — and the service additionally requires
+  // that the caller OWNS the order and that it is actually in `returned`. Same request id, same
+  // approval chain: see reviseDirectOrder.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/revise", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
   // Early Birds. The sync route mirrors the whole company-day from the vendor, so it is gated on a
   // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
   // roster guarantee is a read guarantee, not a write one.
