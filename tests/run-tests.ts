@@ -559,6 +559,7 @@ import { runDirectOrderRepCountersTests } from "./direct-orders-rep-counters.tes
 import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-refused.test.ts";
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
+import { runFinanceManagerMonthlyClosingRowTests } from "./finance-manager-monthly-closing-row.test.ts";
 import { runFinanceManagerCalendarRowTests } from "./finance-manager-calendar-row.test.ts";
 import { runFinanceManagerArchivedRoiHiddenTests } from "./finance-manager-archived-roi-hidden.test.ts";
 import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
@@ -1364,6 +1365,7 @@ await runTest("direct orders per-rep counters (scope borrowed not re-implemented
 await runTest("direct orders counters survive cleanup (a refusal on a REJECTED pharmacy counts, an ordinary rejection never does, the page does not go blank)", runDirectOrderCountersRefusedTests);
 await runTest("direct orders finance-month badge (approved never shows alone, one shared pill not four, the gate gets the row not a constant)", runDirectOrderFinanceMonthBadgeTests);
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
+await runTest("finance manager monthly closing row (export-only surface not the upload workspace, both gates, no sales:import, full-sheet branch intact)", runFinanceManagerMonthlyClosingRowTests);
 await runTest("finance manager calendar row (authoring page off the sidebar, planning calendar on it, and BOTH gates of the destination pinned)", runFinanceManagerCalendarRowTests);
 await runTest("finance manager archived ROI hidden (removing the role is the fix; hiding the hub never was, because Cmd+K re-admits by role)", runFinanceManagerArchivedRoiHiddenTests);
 await runTest("direct orders storefront evidence (unknown is never a pass, a failed read never blocks filing, and it never gates the decision)", runDirectOrderEvidenceCheckTests);
