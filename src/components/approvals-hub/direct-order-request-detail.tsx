@@ -11,6 +11,7 @@ import {
   PricingBreakdownFact,
 } from "@/components/approvals-hub/direct-order-detail-primitives";
 import { DirectOrderCollectionControl } from "@/components/direct-orders/direct-order-collection-control";
+import { DirectOrderCorrectResubmit } from "@/components/direct-orders/direct-order-correct-resubmit";
 import { DirectOrderSalesMonthControl } from "@/components/direct-orders/direct-order-sales-month-control";
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { EvidenceReading } from "@/components/direct-orders/evidence-reading";
@@ -145,6 +146,8 @@ export function DirectOrderRequestDetail({
     pharmacyStanding,
     canSetSalesMonth,
     canRecordCollection,
+    canCorrectAndResubmit,
+    returnComment,
     steps,
     availableActions,
     bonusOverCap,
@@ -344,6 +347,23 @@ export function DirectOrderRequestDetail({
         ))}
 
         <PricingBreakdownFact breakdown={pricingBreakdown} />
+
+        {/* The requester's answer to a return. Rendered here, on the order itself, because a
+            correction is an action ON this order — not a separate destination. Absent for everyone
+            who cannot act: the flag is ownership + returned-status, computed server-side. */}
+        {canCorrectAndResubmit ? (
+          <DirectOrderCorrectResubmit
+            requestId={request.id}
+            dealType={request.dealType === "discount" ? "discount" : "bonus"}
+            qty={request.qty}
+            bonus={request.bonus}
+            discountPct={request.discountPct}
+            collectionDate={request.collectionDate}
+            productName={request.productName}
+            pharmacyName={detail.pharmacy?.pharmacyName ?? "this pharmacy"}
+            returnComment={returnComment}
+          />
+        ) : null}
 
         <DirectOrderSalesMonthControl
           requestId={request.id}

@@ -4633,6 +4633,30 @@ export async function getDirectOrderApprovalDetail(
     rawEvidence && !canViewDirectOrderEvidenceAiNote(access.hrId, request)
       ? { ...rawEvidence, evidenceCheck: null }
       : rawEvidence;
+
+  // The approver's reason for sending it back. Loaded ONLY for a returned order, and read from the
+  // events table rather than the approval step: the decision RPC writes `decision_comment` only
+  // when the step moves to approved/rejected, so a RETURN leaves no reason on the step at all.
+  // Without this the requester is told to "fix and resubmit" with no way to see what to fix.
+  let returnEvent: { message: string; actorHrId: string | null; createdAt: string } | null = null;
+  if (request.status === "returned") {
+    const { data: returnRow } = await getSupabaseAdmin()
+      .from("direct_order_events")
+      .select("message, actor_hr_id, created_at")
+      .eq("request_id", request.id)
+      .eq("event_type", "return")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const row = returnRow as { message?: string | null; actor_hr_id?: string | null; created_at?: string } | null;
+    if (row?.message) {
+      returnEvent = {
+        message: row.message,
+        actorHrId: row.actor_hr_id ?? null,
+        createdAt: row.created_at ?? "",
+      };
+    }
+  }
   const rawMatches =
     (pharmacy?.distributorCodes?.length ?? 0) === 0
       ? await findPossibleDistributorMatchesByPharmacyName(pharmacy?.pharmacyName)
@@ -4734,6 +4758,21 @@ export async function getDirectOrderApprovalDetail(
     bonusOverCap,
     canSetSalesMonth: canSetDirectOrderSalesMonth(access),
     canRecordCollection: canRecordDirectOrderCollection(access),
+    // Correcting a return is the requester's own action, so this is an OWNERSHIP flag, not a role
+    // one. Mirrors reviseDirectOrder's guard exactly — if these ever disagree, the button appears
+    // for someone the server will refuse.
+    canCorrectAndResubmit:
+      request.status === "returned" &&
+      (access.role === "Super Admin" ||
+        access.scope === "system" ||
+        canonicalHrIdKey(request.requesterHrId) === canonicalHrIdKey(access.hrId)),
+    returnComment: returnEvent
+      ? {
+          message: returnEvent.message,
+          byName: returnEvent.actorHrId ? nameOf(returnEvent.actorHrId) ?? returnEvent.actorHrId : null,
+          at: returnEvent.createdAt,
+        }
+      : null,
     pharmacyEvidence,
     possibleDistributorMatches,
     autoLinkRefusal,
