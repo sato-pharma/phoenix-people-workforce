@@ -268,7 +268,17 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
             <Filter className="h-3.5 w-3.5" />
             Filters
           </span>
-          <span className={cn("text-[#64748B]", loading && "text-[#F97316]")}>{loading ? "Updating" : "Ready"}</span>
+          {/* A weekly reload takes seconds, and until it lands the PREVIOUS numbers are still on
+              screen. A faint "Updating" was too easy to miss, so a stale unfiltered total read as
+              "the period filter did nothing" — make the pending state unmissable instead. */}
+          {loading ? (
+            <span className="flex items-center gap-1.5 rounded-[4px] bg-[#F97316] px-2 py-0.5 text-white">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Updating…
+            </span>
+          ) : (
+            <span className="text-[#64748B]">Ready</span>
+          )}
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           <MultiSelectFilter
@@ -346,8 +356,11 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           No validated weekly uploads yet. Upload a weekly file from <span className="font-black">Weekly Sales Upload</span>.
         </div>
       ) : (
-        <>
-          <div className={cn("grid grid-cols-2 gap-3 transition-opacity lg:grid-cols-4", loading && "opacity-60")}>
+        // Dim EVERY figure while a reload is in flight, not just the KPI row — the tables and charts
+        // below carry the same about-to-be-replaced numbers, and leaving them crisp is what made a
+        // pending filter look like an applied one.
+        <div className={cn("space-y-4 transition-opacity", loading && "opacity-40")} aria-busy={loading}>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi icon={<TrendingUp className="h-4 w-4" />} label="Sales value" value={money(data.kpis.salesValue)} delta={data.compare.salesValue} format={money} />
             <Kpi icon={<Package className="h-4 w-4" />} label="Sales units" value={num(data.kpis.salesUnits)} delta={data.compare.salesUnits} format={num} />
             <Kpi icon={<Store className="h-4 w-4" />} label="Stock units" value={num(data.kpis.stockUnits)} delta={data.compare.stockUnits} format={num} />
@@ -370,7 +383,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           <TrendStrip trend={data.trend} selected={[]} />
 
           <ZeroStockTable rows={zeroStockRows} totalStock={zeroStockTotal} />
-        </>
+        </div>
       )}
     </div>
   );
