@@ -485,10 +485,12 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     assert.match(serviceSource, /export async function setDirectOrderSalesMonth\(/, "Finance needs an explicit setter");
 
     // The HR_ID literal moved to collection-rules.ts on 2026-08-10 so the collections work could
-    // reuse it from a module with no Supabase import (and therefore be unit-testable). The property
-    // this guards is unchanged, so it is now checked in two halves: the literal is still an HR_ID,
-    // and the sales-month setter still derives from that literal rather than from a role.
-    const rulesSource = readFileSync(new URL("../src/lib/direct-orders/collection-rules.ts", import.meta.url), "utf8");
+    // reuse it from a module with no Supabase import (and therefore be unit-testable), and again to
+    // finance-authority.ts on 2026-08-11 (second-review finding 6) so that EVERY "may this person do
+    // Finance's job" question resolves in one module and the duty can later be reassigned by
+    // changing one function. The property this guards is unchanged, so it is still checked in two
+    // halves: the literal is an HR_ID, and the sales-month setter derives from it rather than a role.
+    const rulesSource = readFileSync(new URL("../src/lib/direct-orders/finance-authority.ts", import.meta.url), "utf8");
     assert.match(
       rulesSource,
       /DIRECT_ORDER_FINANCE_HR_ID = "B-185"/,

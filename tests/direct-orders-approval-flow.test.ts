@@ -242,20 +242,42 @@ export function runDirectOrdersApprovalFlowTests() {
     assert.ok(submitIdx > -1, "submitDirectOrder must still exist");
     const submitBody = serviceSource.slice(submitIdx, serviceSource.indexOf("// ── Decide", submitIdx));
 
+    // The pricing rules moved into a SHARED helper on 2026-08-11, when returned-order correction
+    // was implemented: `reviseDirectOrder` reprices a correction from scratch, and a second copy of
+    // these rules is exactly how a correction ends up valued on a basis the business does not sell
+    // at. The guarantees below are therefore asserted against the helper, and both callers are
+    // pinned to it — a stronger property than checking one function body, not a weaker one.
+    const pricingIdx = serviceSource.indexOf("async function resolveDirectOrderPricing(");
+    assert.ok(pricingIdx > -1, "the shared pricing helper must exist");
+    const pricingBody = serviceSource.slice(pricingIdx, submitIdx);
+
     assert.match(
-      submitBody,
+      pricingBody,
       /select\("public_price, pharmacy_price"\)/,
       "both money inputs must be read FRESH from the table — listSourceOfSalesProducts is unstable_cache'd for 600s and no price setter busts it",
     );
     assert.match(submitBody, /pharmacy_price_snapshot/, "the pricing basis must be snapshotted onto the request");
 
+    // BOTH money paths must go through the one helper. If either grows its own copy of the pricing
+    // rules, a correction and a fresh submission can silently disagree about what an order is worth.
+    assert.match(
+      submitBody,
+      /resolveDirectOrderPricing\(/,
+      "submitDirectOrder must price through the shared helper",
+    );
+    const reviseIdx = serviceSource.indexOf("export async function reviseDirectOrder(");
+    assert.ok(reviseIdx > -1, "reviseDirectOrder must exist");
+    const reviseBody = serviceSource.slice(reviseIdx, serviceSource.indexOf("// ── Decide", reviseIdx));
+    assert.match(
+      reviseBody,
+      /resolveDirectOrderPricing\(/,
+      "reviseDirectOrder must price a correction through the SAME helper, never a second copy",
+    );
+
     // The bonus branch must contain NO badRequest at all. Checked on the branch body rather than
     // by pattern-matching a message, because a block can be written either side of the value line
     // and either order would read as "no pharmacy price … badRequest".
-    const bonusBranch = submitBody.slice(
-      submitBody.indexOf("// Bonus: value = qty × PHARMACY price"),
-      submitBody.indexOf("// Load the pharmacy in full"),
-    );
+    const bonusBranch = pricingBody.slice(pricingBody.indexOf("// Bonus: value = qty × PHARMACY price"));
     assert.ok(bonusBranch.length > 0, "the bonus pricing branch must still be identifiable");
     // SUPERSEDED RULE (owner ruling, 2026-08-04). This block previously asserted the opposite —
     // "a missing pharmacy price must fall back and flag, never block". The owner has since ruled
