@@ -288,6 +288,7 @@ import { runBrickSuggestionsTests } from "./brick-suggestions.test.ts";
 import { runImportCoverageTests } from "./import-coverage.test.ts";
 import { runOfficePivotTests } from "./office-pivot.test.ts";
 import { runOfficeAllocationTests } from "./office-allocation.test.ts";
+import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -1065,6 +1066,7 @@ await runTest("closing organogram regions (areas follow the org chart, per line)
 await runTest("direct channel", runDirectChannelTests);
 await runTest("office pivot", runOfficePivotTests);
 await runTest("office allocation", runOfficeAllocationTests);
+await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRuleLockTests);
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
