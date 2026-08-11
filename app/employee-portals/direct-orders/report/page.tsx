@@ -5,11 +5,13 @@ import { DirectOrderReportWorkspace } from "@/components/direct-orders/direct-or
 import { getDirectOrderReport, resolveDirectOrderReportScope } from "@/lib/direct-orders/service";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function PortalDirectOrdersReportPage() {
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) !== "employee-portal") redirect("/admin/direct-orders/report");
   const rows = await getDirectOrderReport(access);
   const scope = resolveDirectOrderReportScope(access);

@@ -14,11 +14,13 @@ import {
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminDirectOrdersPage() {
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals/direct-orders/new");
   const canSubmit = isDirectOrderRequesterRole(access.role) || access.role === "Super Admin";
   const [products, areaBrickOptions, distributors, pharmacies, myRequests, capsData] = await Promise.all([

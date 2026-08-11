@@ -5,6 +5,7 @@ import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/dire
 import { loadDirectOrderWorkspaceView, type DirectOrderWorkspaceTabKey } from "@/lib/direct-orders/workspace-data";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function PortalDirectOrdersWorkspacePage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect("/admin/direct-orders");
   }

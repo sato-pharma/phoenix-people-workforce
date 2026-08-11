@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { resolveAccessContext } from "@/lib/auth/server";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
-import { countDirectOrderAwaiting, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
+import { countDirectOrderAwaitingFast, getDirectOrderUnbookedBadge } from "@/lib/direct-orders/service";
+import { countDirectOrderPendingValidations } from "@/lib/direct-orders/pharmacy-validation";
 import { getMarketingApproverBadge } from "@/lib/marketing-requests/service";
 import {
   getExcuseAwaitingBadge,
@@ -26,7 +27,7 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
-    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, marketing] = await Promise.allSettled([
+    const [plan, vacation, excuse, hub, directOrders, directOrdersUnbooked, directOrderValidations, marketing] = await Promise.allSettled([
       (async () => {
         await assertPermission(access, "weekly_plans", "read");
         return getPlanAwaitingBadge(access);
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       // without the resource falls back to {count: 0} exactly like every other domain here.
       (async () => {
         await assertPermission(access, "direct_orders", "read");
-        return { count: await countDirectOrderAwaiting(access) };
+        return { count: await countDirectOrderAwaitingFast(access) };
       })(),
       // The Finance Manager's unbooked queue — approved orders with no sales month. Its own slot,
       // never folded into `directOrders` above: that one is "waiting on your approval rung", this is
@@ -59,6 +60,9 @@ export async function GET(request: Request) {
       // approval rung at all. It asserts direct_orders:read itself and returns 0 to anyone who
       // cannot book a month, so every other role sharing the Direct Orders nav row stays unbadged.
       getDirectOrderUnbookedBadge(access),
+      // Pharmacy claims awaiting confirmation — the third queue the workspace inbox counts. A count,
+      // not a list: it rides the same 30s poll. Returns 0 to anyone who cannot work the desk.
+      countDirectOrderPendingValidations(access),
       // Marketing Approval Inbox. No assertPermission: marketing has no permission resource, and
       // getMarketingApproverBadge is scoped entirely by the caller's own `assigned_hr_id` (same gate
       // as /api/marketing-requests/inbox), so it can only ever count the caller's own rung. A role
@@ -81,7 +85,8 @@ export async function GET(request: Request) {
         directOrdersNeedsAction: {
           count:
             (directOrders.status === "fulfilled" ? directOrders.value.count : 0) +
-            (directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.count : 0),
+            (directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.count : 0) +
+            (directOrderValidations.status === "fulfilled" ? directOrderValidations.value : 0),
           overdue: directOrdersUnbooked.status === "fulfilled" ? directOrdersUnbooked.value.overdue : false,
         },
         marketing: marketing.status === "fulfilled" ? marketing.value : { count: 0, overdue: false },

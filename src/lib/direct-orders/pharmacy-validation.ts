@@ -484,6 +484,34 @@ async function mapValidationRow(
   };
 }
 
+/**
+ * How many pharmacy claims are waiting on this viewer — a COUNT, not the claims.
+ *
+ * WHY THIS EXISTS. The consolidated workspace's Needs Action inbox counts three queues:
+ * approvals, the Finance sales-month queue, and pending pharmacy validations. The sidebar badge
+ * counted only the first two, so a System Admin saw a badge reading 9 and opened a screen reading
+ * 12. Measured live on 2026-08-11 — the badge was not wrong about approvals, it was silent about a
+ * whole queue, which is worse: the three pharmacies nobody had confirmed were the items with no
+ * other chaser at all.
+ *
+ * A count, never `listDirectOrderPharmacyValidations().length` — that loads every claim plus its
+ * pharmacies, its requesters and its evidence rows, and this runs on a 30-second poll. `head: true`
+ * sends no rows at all.
+ *
+ * Returns 0 for anyone who cannot work the desk, matching the rule the other two halves already
+ * follow: a badge you cannot clear is how people learn to ignore badges.
+ */
+export async function countDirectOrderPendingValidations(access: AccessContext): Promise<number> {
+  if (!canDecideDirectOrderPharmacyValidations(access)) return 0;
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("direct_order_pharmacy_validations")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending");
+  if (error) throw error;
+  return count ?? 0;
+}
+
 /** The Super Admin's validation desk: every pending claim, with its evidence. */
 export async function listDirectOrderPharmacyValidations(
   access: AccessContext,

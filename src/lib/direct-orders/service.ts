@@ -3657,9 +3657,10 @@ function toApprovalListItem(
 /**
  * Geography names + area reps for a batch of requests, loaded ONCE per list page.
  *
- * Both underlying loads are TTL-cached in-process, which is what keeps this affordable on
- * the nav-badge path: countDirectOrderAwaiting → getDirectOrderWorkspaceData runs on every
- * admin render.
+ * Both underlying loads are TTL-cached in-process, which keeps this affordable on every
+ * workspace render. It is no longer on the nav-badge path: the badge moved to
+ * `countDirectOrderAwaitingFast` on 2026-08-11 precisely because resolving geography names and
+ * walking the seat model to produce one integer, every 30 seconds, was never worth it.
  */
 async function loadListDecorations(
   requests: DirectOrderRequest[],
@@ -3780,9 +3781,69 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   return { awaiting, history, held };
 }
 
-export async function countDirectOrderAwaiting(access: AccessContext): Promise<number> {
-  const data = await getDirectOrderWorkspaceData(access);
-  return data.awaiting.length;
+/**
+ * How many pending requests this viewer can decide right now — WITHOUT building the workspace.
+ *
+ * WHY THIS EXISTS. `countDirectOrderAwaiting` (deleted with this change) answered the same
+ * question by calling
+ * `getDirectOrderWorkspaceData` and reading `.length`. That function is the right shape for a page
+ * and the wrong shape for a badge: to produce one integer it also runs a `select("*")` over every
+ * held/expired row, a decision-history query, a pharmacy load, a caps load, an employee-directory
+ * name lookup, and `loadListDecorations` — which resolves geography names AND walks the live seat
+ * model for the covering rep of every (line, area) pair.
+ *
+ * None of that changes the number. All of it ran every 30 seconds, for every user with a sidebar
+ * open, because NavBadge polls — and after the 2026-08-10 consolidation the single Direct Orders
+ * row's badge sums this count, so the poll reaches more people than before, not fewer.
+ *
+ * This path reads two tables and only the columns the decision actually needs:
+ * `viewerCanActOnStep` looks at a step's kind, role and approver; `resolveActiveStep` looks at its
+ * order and status. Nothing else is loaded.
+ *
+ * THE ELIGIBILITY RULE IS NOT REIMPLEMENTED. It still goes through `resolveActiveStep` and
+ * `viewerCanActOnStep`, the same two functions the workspace uses, so the badge and the screen
+ * cannot drift apart — which is the failure this whole module keeps relearning (audit F5). A test
+ * asserts the two agree on the same fixture.
+ */
+export async function countDirectOrderAwaitingFast(access: AccessContext): Promise<number> {
+  await assertPermission(access, "direct_orders", "read");
+  const supabase = getSupabaseAdmin();
+
+  const { data: pendingRows, error: pendingError } = await supabase
+    .from("direct_order_requests")
+    .select("id")
+    .eq("status", "pending_approval");
+  if (pendingError) throw pendingError;
+
+  const ids = ((pendingRows ?? []) as Array<{ id: string }>).map((row) => String(row.id));
+  if (ids.length === 0) return 0;
+
+  // Same 100-id batching as loadStepsForRequests, and for the same reason: PostgREST folds every
+  // .in() value into the request URL and this list is company-wide with no fixed cap.
+  const stepsByRequest = new Map<string, DirectOrderStepState[]>();
+  for (let index = 0; index < ids.length; index += 100) {
+    const batch = ids.slice(index, index + 100);
+    const { data, error } = await supabase
+      .from("direct_order_approval_steps")
+      .select("request_id, step_order, approver_kind, approver_role, approver_hr_id, status")
+      .in("request_id", batch)
+      .order("step_order", { ascending: true });
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      const requestId = String(row.request_id);
+      const list = stepsByRequest.get(requestId) ?? [];
+      // mapStepRow tolerates the missing label/decision columns (they default), and none of them
+      // feed resolveActiveStep or viewerCanActOnStep.
+      list.push(mapStepRow(row));
+      stepsByRequest.set(requestId, list);
+    }
+  }
+
+  let count = 0;
+  for (const id of ids) {
+    if (viewerCanActOnStep(access, resolveActiveStep(stepsByRequest.get(id) ?? []))) count += 1;
+  }
+  return count;
 }
 
 /** The caller's own direct order requests (any status), newest first — for the "My direct orders" list. */
@@ -4825,9 +4886,9 @@ export function canSetDirectOrderSalesMonth(access: AccessContext): boolean {
  * B-185 and Super Admin, nobody else), and a badge you cannot clear is noise that teaches people to
  * ignore badges. So this returns 0 for everyone who is not the setter.
  *
- * CHEAP BY CONSTRUCTION. NavBadge polls every 30s, so this must not become another
- * countDirectOrderAwaiting — that delegates to getDirectOrderWorkspaceData, which loads the whole
- * workspace (see the note above it and in geo-names.ts). Two scalar columns, filtered in Postgres.
+ * CHEAP BY CONSTRUCTION. NavBadge polls every 30s, so this must never grow into a workspace
+ * load. Two scalar columns, filtered in Postgres. Its sibling on the same badge,
+ * `countDirectOrderAwaitingFast`, is held to the same standard for the same reason.
  *
  * The predicate is the same one `showsAwaitingFinanceMonth` uses in types.ts and
  * `phx_finance_command_center` uses in SQL — status approved AND no month. Three languages, one

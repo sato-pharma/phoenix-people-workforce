@@ -9,6 +9,7 @@ import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility"
 import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-visibility";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function PortalMyDirectOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const access = await resolveAccessContextFromPage();
+  await assertDirectOrdersPageAccess(access);
   const { id } = await params;
   if (resolveNavigationMode(access) !== "employee-portal") {
     redirect(`/admin/direct-orders/${encodeURIComponent(id)}`);
