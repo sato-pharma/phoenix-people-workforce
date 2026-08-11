@@ -109,6 +109,27 @@ queries (aggregate COUNTs; a dedicated approved-and-unbooked read), not deleting
 **Orders paging is still client-side (25/page) over a server-scoped set.** Server-side pagination is
 outstanding. Scope is always enforced server-side; client filtering only ever narrows, never widens.
 
+### Why server-side pagination is not a small change (analysed 2026-08-11)
+
+`getDirectOrderReport` selects every request with no limit, then applies the scope tier **in
+JavaScript**, then decorates. Moving `.range()` into the query means moving the scope filter into
+SQL first — and each tier currently compares on a NORMALISED value, not the stored one:
+
+| Tier | Current JS comparison | Why a naive SQL translation is wrong |
+| --- | --- | --- |
+| `own` | `canonicalHrIdKey(row.requesterHrId) === canonicalHrIdKey(access.hrId)` | `.eq("requester_hr_id", hrId)` misses any row whose stored HR ID differs in case or padding from the session's — the canonical form exists precisely because they do differ. |
+| `hierarchy` | `visible.has(canonicalHrIdKey(row.requesterHrId))` | `visible` is a Set of **canonical** keys; `.in("requester_hr_id", [...visible])` compares them against **raw** stored values. |
+| `line` | `row.line.trim().toLowerCase() === viewerLine` | `.eq("line", viewerLine)` is case- and whitespace-sensitive where the JS is not. |
+
+So the ordering is: make the comparison basis consistent (a normalised/generated column, or
+canonicalise on write with a backfill), THEN push the filter down, THEN paginate. Doing it in the
+other order silently returns **fewer rows than the viewer is entitled to** — a scope-limited manager
+quietly loses orders, with no error and nothing on screen to indicate the list is short.
+
+Note the tiers already fail CLOSED (an unresolvable line yields zero rows, never the whole company),
+so the risk here is under-showing, not over-showing. That is still a correctness defect and it is
+why this was not attempted as a quick `.range()` addition.
+
 ## Security invariants
 
 - RLS is enabled with **zero policies** on the direct-order tables: service-role-only, all
