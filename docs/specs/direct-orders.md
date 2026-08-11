@@ -132,8 +132,13 @@ why this was not attempted as a quick `.range()` addition.
 
 ## Security invariants
 
-- RLS is enabled with **zero policies** on the direct-order tables: service-role-only, all
-  authorization in the Next.js server layer.
+- RLS is enabled on **all 8** direct-order tables. Six carry **zero policies**; two —
+  `direct_order_pharmacy_validations` and `direct_order_report_share_links` — carry a single `ALL`
+  policy naming **`service_role` only**. No direct-order table grants `anon` or `authenticated` any
+  policy, so every one of them denies those roles by default: service-role-only, all authorization
+  in the Next.js server layer. (Verified against production `pg_class`/`pg_policy` 2026-08-12. The
+  earlier "zero policies" wording was true of most tables, not all, so a reviewer who checked the
+  two exceptions would have concluded the spec was wrong rather than the code.)
 - The page-level gate (`assertDirectOrdersPageAccess`) is UX polish. The **service layer** is the
   security boundary and re-asserts independently.
 - Deciding a pharmacy validation is **Super-Admin-only** (`scope === "system" || "Super Admin"`).
