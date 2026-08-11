@@ -375,7 +375,14 @@ export function runNavigationActivePathTests() {
       // carry excludedRoles: ["Finance Manager"], so a grant alone gave him a page with no route.
       "/organogram",
       "/resignations",
-      "/admin/company-calendar",
+      // Was "/admin/company-calendar" until 2026-08-11, when the owner swapped his calendar row
+      // from event AUTHORING to company READING. The authoring page was never the right one for
+      // him: canPublishCompanyWide is false for a line-scoped manager, so the events he created
+      // reached head-office staff only, while the page's hero promised a company-wide audience.
+      // The planning calendar is the one he needs, and he passes BOTH of its gates —
+      // weekly_plans:read for the page, and the unrestricted default in isPlanItemVisibleToViewer
+      // for the data. tests/finance-manager-calendar-row.test.ts pins both halves.
+      "/admin/weekly-plans/calendar",
       "/admin/payslips-center",
       "/workspace/fingerprint-report",
       // Monthly Closing: /admin/analytics is the only route to the Export XLSX button, since the

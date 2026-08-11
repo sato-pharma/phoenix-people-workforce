@@ -425,9 +425,27 @@ const adminNavigationSectionSeeds = [
   {
     id: "finance-events-calendar",
     items: [
-      { href: "/admin/company-calendar", icon: CalendarDays, label: "Events Calendar", roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+      // Owner, 2026-08-11: swapped from /admin/company-calendar (event AUTHORING) to the planning
+      // calendar (company READING). His events would only ever have reached head-office staff —
+      // canPublishCompanyWide is false for him — so the authoring page promised a company-wide
+      // reach he does not have, while the planning calendar is the one he actually needs to read.
+      //
+      // Both gates verified before this row was pointed here, because a row whose destination
+      // bounces the viewer is the dead link this account has been audited for twice:
+      //   gate 1, the page — /admin/weekly-plans/calendar redirects unless canAccess(weekly_plans,
+      //           read); he holds weekly_plans: ["read","export"], so he is admitted.
+      //   gate 2, the data — isPlanItemVisibleToViewer narrows only the roles it NAMES (CEO,
+      //           Training Manager, the line-scoped sales roles, District/Regional Manager) and
+      //           ends in `return true`. Finance Manager is not named, so he keeps the documented
+      //           unrestricted default and sees every calendar-eligible plan, company-wide.
+      // If anyone ever adds a "finance manager" branch to that function, this row starts showing
+      // him a narrowed calendar without the nav changing at all.
+      //
+      // The authoring page keeps its own role guard — this is a navigation decision, not a
+      // revocation, so /admin/company-calendar stays reachable by URL exactly as ROI Tracker was.
+      { href: "/admin/weekly-plans/calendar", icon: CalendarRange, label: "Company Calendar", permissions: [{ resource: "weekly_plans", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
     ],
-    label: "Events Calendar",
+    label: "Company Calendar",
   },
   {
     id: "finance-payslips-center",
