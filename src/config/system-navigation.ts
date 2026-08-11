@@ -455,6 +455,32 @@ const adminNavigationSectionSeeds = [
     label: "Payslips Center",
   },
   {
+    id: "finance-monthly-closing",
+    items: [
+      // Owner, 2026-08-11: a Monthly Closing tab of his own, able to export the full workbook for
+      // CNS, Pedia or Anti Infective.
+      //
+      // He asked for /sales/monthly-closing. This row deliberately points somewhere else, because
+      // that page cannot give him what he asked for and would be a dead link twice over:
+      //   1. its guard admits only Super Admin, system scope and SFE Manager — he is redirected;
+      //   2. even past that, it loads its matrix behind assertPermission(sales, "import"), and
+      //      `sales:import` is the one action he must never hold — it is the gate on the whole
+      //      upload/publish workspace and ten other pages. Granting it to reach an export would
+      //      hand him the ability to produce the closing he is only meant to consume.
+      //
+      // /admin/analytics/monthly-closing/details is the export-only surface built for exactly this
+      // in #2010: assertPermission(sales, "read") plus canViewAdminCoreAnalytics, both of which he
+      // passes, and its Export XLSX button posts to /api/sales/monthly-closing/export, whose
+      // Branch A names Finance Manager — the full sheet set for any line, published or not.
+      //
+      // This row exists because that door was closed underneath him: /admin/analytics was narrowed
+      // to Super Admin only, and it was his ONLY route into the analytics tree. The CEO and SFE
+      // Manager kept dashboard shortcuts; he had none, so the grant survived with nothing to click.
+      { href: "/admin/analytics/monthly-closing/details", icon: ChartColumnBig, label: "Monthly Closing", permissions: [{ resource: "sales", action: "read" }], roles: ["Finance Manager"], excludedRoles: ["Super Admin", "CEO"] },
+    ],
+    label: "Monthly Closing",
+  },
+  {
     id: "finance-fingerprint-report",
     items: [
       // His OWN attendance only (owner: "only himself"). The page behind this
@@ -1452,7 +1478,17 @@ export const sourceOfSalesPageItems: readonly AdminToolsPageItem[] = [
     label: "Achievement Dash",
     description: "Monthly closing achievement dashboard.",
     permissions: [{ resource: "sales" }],
-    excludedRoles: ["CEO", "Marketing Manager"],
+    // Finance Manager excluded 2026-08-11 (owner). His `sales` grant satisfies the bare
+    // { resource: "sales" } permission here, so the card was visible to him — and because this is a
+    // hub CARD rather than a sidebar row, hiding a parent hub would not have removed it:
+    // hubPageItemGroups folds every card a viewer's role allows straight back into Cmd+K. Naming
+    // him in excludedRoles is the only gate that actually closes it, the same lesson "Archived ROI
+    // Tracking" cost two attempts to learn.
+    //
+    // He keeps Monthly Closing itself — the export-only surface added in this same change. What
+    // goes is the achievement DASHBOARD, which reads sales performance against target; that is
+    // sales-management reporting, not a finance duty.
+    excludedRoles: ["CEO", "Marketing Manager", "Finance Manager"],
   },
   {
     href: "/sales/monthly-closing",
