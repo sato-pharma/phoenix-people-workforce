@@ -168,4 +168,80 @@ export async function runDirectOrderCollectionTests() {
     body.includes("payment_date: null") && body.includes("paid_amount: null"),
     "clearing a collection must reset the payment date and the amount together",
   );
+
+  // ── The field is a RUNNING TOTAL, and every label must say so ─────────────
+  //
+  // The arithmetic here has always been right and an earlier review was wrong to call it a bug:
+  // the control pre-fills with the stored figure and a save REPLACES it, so editing 200 to 500
+  // stores 500. Accumulating instead — the "fix" that was proposed and withdrawn — would have
+  // stored 700 the moment Finance corrected a typo.
+  //
+  // What was actually wrong was the WORDS. "Amount collected" reads just as easily as "the amount
+  // collected this time", and a Finance user entering a second instalment of 300 against 200
+  // already collected would have stored 300 and silently lost 100. These assertions pin the
+  // wording, because the wording is the whole safeguard.
+  const control = readFileSync(
+    new URL("../src/components/direct-orders/direct-order-collection-control.tsx", import.meta.url),
+    "utf8",
+  );
+  const controlCode = control
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*") && !line.trim().startsWith("{/*"))
+    .join("\n");
+
+  assert.match(
+    controlCode,
+    /Total collected \(Finance\)/,
+    "the control's heading must say TOTAL — it is the first thing read and the last thing doubted",
+  );
+  assert.match(
+    controlCode,
+    /aria-label="Total collected to date, in EGP[^"]*replaces any amount already recorded"/,
+    "the input's accessible name must say total AND that saving replaces — a screen-reader user gets " +
+      "no help from the visible hint below it",
+  );
+  assert.match(controlCode, /placeholder="Total collected \(EGP\)"/, "the placeholder must say total");
+  assert.match(
+    controlCode,
+    /RUNNING TOTAL, not a new payment/,
+    "the control must warn, in words, that saving replaces the stored figure",
+  );
+  assert.match(
+    controlCode,
+    /saving replaces the \{money\(paidAmount\)\} already/,
+    "and must NAME the figure being replaced — telling someone a field is a total is weaker than " +
+      "telling them which number they are about to overwrite",
+  );
+
+  // The pre-fill is what makes the replace semantics safe: arriving at an empty box and typing the
+  // new instalment is exactly the mistake the wording now prevents.
+  assert.match(
+    controlCode,
+    /useState\(paidAmount == null \? "" : String\(paidAmount\)\)/,
+    "the amount field must pre-fill with the stored total, so an edit starts from what is recorded",
+  );
+
+  // ── The limitations are written down where they will be found ────────────
+  const spec = readFileSync(new URL("../docs/specs/direct-orders.md", import.meta.url), "utf8");
+  for (const limitation of [
+    "instalment ledger",
+    "most recent recorded total",
+    "Refunds",
+    "pharmacy-probation.ts",
+    "RUNNING TOTAL",
+  ]) {
+    assert.ok(
+      spec.includes(limitation),
+      `the spec must document "${limitation}" — the brief was to document this model, not expand it, ` +
+        "and an undocumented limit is one somebody designs against by accident",
+    );
+  }
+  assert.ok(
+    // The spec wraps this sentence across lines inside a blockquote, so the newline and the "> "
+    // prefix are matched rather than assumed away.
+    /withdrawn\s*>?\s*and must stay withdrawn/.test(spec),
+    "the spec must record that accumulating was proposed, withdrawn, and must stay withdrawn",
+  );
+
+  console.log("  direct-orders collection: labelled as a total, pre-filled, and its limits documented");
 }

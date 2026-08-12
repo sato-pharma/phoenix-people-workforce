@@ -32,6 +32,21 @@ const egp = (value: number): string =>
  *
  * The remainder is DERIVED here and never taken from the caller: two independent sources of truth
  * for the same money drift the moment someone edits one of them.
+ *
+ * `paidAmount` IS THE RUNNING TOTAL, NOT A PAYMENT. The caller sends what has been collected in
+ * total to date, and it replaces whatever was stored. A second instalment is entered as the sum of
+ * both. Everything below reads correctly once that is understood and confusingly if it is not, so
+ * it is stated here rather than left to be inferred from `paidRounded > orderValue`.
+ *
+ * DO NOT MAKE THIS ACCUMULATE. A review proposed adding the input to the stored figure instead;
+ * that was withdrawn, and must stay withdrawn — it would store 700 the moment Finance corrected a
+ * typo from 200 to 500. The control pre-fills with the current total precisely so that editing is
+ * the normal case.
+ *
+ * The model's full shape and its limits — no instalment ledger, no per-payment proof, no refunds,
+ * no overpayment, and the pharmacy-probation signal that rides on `payment_date` — are documented
+ * in docs/specs/direct-orders.md under "The collection model". This module is deliberately not the
+ * place to grow them: it validates one total, and that is all it claims to do.
  */
 export function deriveDirectOrderCollection(input: {
   status: string;
