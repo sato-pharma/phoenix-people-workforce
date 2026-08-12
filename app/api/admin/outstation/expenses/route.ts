@@ -18,6 +18,7 @@ import { assertValidPayrollPeriod } from "@/lib/payroll/period";
 import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
+import { logAppError } from "@/lib/error-monitor/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,6 +79,28 @@ export async function GET(request: Request) {
     if (isForbiddenError(error)) {
       return NextResponse.json({ error: "forbidden", message }, { status: 403 });
     }
+    // ── The 500 has to leave a trace (2026-08-12) ──────────────────────────────────────────────
+    //
+    // This route caught its own error and returned a client-safe message, so the REAL cause went
+    // nowhere: not to app_error_events, and not to instrumentation.ts's onRequestError either,
+    // because that only fires on errors the handler lets escape. When this endpoint started
+    // returning 500 in production, the hourly synthetic smoke could say THAT it was broken and
+    // nothing anywhere could say WHY — the message the client sees is deliberately sanitised, and
+    // it is the only thing that survived.
+    //
+    // `clientSafeErrorMessage` still guards what the caller is told. This records the unsanitised
+    // message and stack where an operator can read them, which is the whole point of having an
+    // error table. Awaited rather than fired-and-forgotten: the response is already failing, and a
+    // dropped log on the one path that needs it is how this happened in the first place.
+    await logAppError({
+      source: "server",
+      route: "/api/admin/outstation/expenses",
+      routeType: "route-handler",
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? (error.stack ?? null) : null,
+    }).catch(() => {
+      // Never let the logger turn a 500 into a crash. If it cannot write, the response still goes.
+    });
     return NextResponse.json(
       {
         error: isPayrollExpensesSchemaMissing(error) ? "payroll_expenses_schema_not_ready" : "expenses_load_failed",

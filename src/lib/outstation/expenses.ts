@@ -25,6 +25,7 @@ import { normalizeApprovedAmount, payableExpenseAmount } from "@/lib/outstation/
 import { assertOutstationExpenseWorkflowTransition } from "@/lib/outstation/workflow";
 import { createSystemNotification, logNotificationSendFailure } from "@/lib/notifications/system";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
 import { getSupabaseRlsClientIfAvailable } from "@/lib/supabase/rls-server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -764,13 +765,15 @@ export async function listUnifiedOutstationExpenses(
   // does not reproduce — `expense_claims.import_id` points only at the 2 real uploads. Serving a
   // report-scoped read from the new model would quietly return a different set, which is exactly
   // the divergence this phase exists to rule out.
-  if (!reportId) {
-    const { expenseClaimsReadEnabled, listExpenseClaims } = await import(
-      "@/lib/outstation/claims-read"
-    );
-    if (expenseClaimsReadEnabled()) {
-      return listExpenseClaims(month, year, accessContext);
-    }
+  //
+  // THE FLAG IS CHECKED BEFORE THE IMPORT, NOT AFTER. It used to be the other way round, which
+  // meant every call with no reportId loaded `claims-read.ts` whether the flag was on or off —
+  // making the default-OFF path do new work at runtime that the default-off promise said it would
+  // not. `expenseClaimsReadEnabled` therefore lives in `claims-read-flag.ts`, which imports
+  // nothing, so asking the question costs nothing and pulls in nothing.
+  if (!reportId && expenseClaimsReadEnabled()) {
+    const { listExpenseClaims } = await import("@/lib/outstation/claims-read");
+    return listExpenseClaims(month, year, accessContext);
   }
 
   const [historicalExpenses, requestExpenses] = await Promise.all([

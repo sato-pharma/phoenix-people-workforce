@@ -66,10 +66,12 @@ const CLAIM_COLUMNS = [
  *
  * Environment-driven and default-false on purpose: phase 2 is an observation window, and the
  * decision to trust the new model is the owner's, not a deploy's.
+ *
+ * The implementation moved to `claims-read-flag.ts`, which imports nothing, so `expenses.ts` can
+ * check the flag WITHOUT loading this module — see that file for why that matters. Re-exported here
+ * because this is where a reader looks for it.
  */
-export function expenseClaimsReadEnabled(): boolean {
-  return String(process.env.PHOENIX_EXPENSE_CLAIMS_READ ?? "").trim().toLowerCase() === "true";
-}
+export { expenseClaimsReadEnabled } from "@/lib/outstation/claims-read-flag";
 
 function toNumber(value: unknown): number {
   const parsed = Number(value);
