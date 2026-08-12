@@ -354,6 +354,12 @@ export const accessRegistry = [
   // that the caller OWNS the order and that it is actually in `returned`. Same request id, same
   // approval chain: see reviseDirectOrder.
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/revise", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // Re-address a stuck approval rung. `update` is the widest permission this entry can name, and it
+  // is NOT the real gate: repairDirectOrderApprovalRung is Super Admin only, asserts the workflow
+  // registry transition, and refuses any rung whose approver still resolves in the directory. That
+  // last refusal is what keeps this a repair rather than a way to choose your own approver — a
+  // permission string cannot express it, so the service owns it and this entry says so.
+  sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/:id/repair-rung", permission: { resource: "direct_orders", action: "update" }, guard: "domain-helper", csrfRequired: true }),
   // Early Birds. The sync route mirrors the whole company-day from the vendor, so it is gated on a
   // role allowlist plus a GLOBAL rate-limit bucket rather than on a per-roster permission — the
   // roster guarantee is a read guarantee, not a write one.

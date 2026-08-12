@@ -343,8 +343,12 @@ export async function runDirectOrderSecondReviewFixTests() {
     );
   }
 
-  // Views that show none of it must not pay for it.
-  for (const cheapView of ["pharmacy-control", "controls"]) {
+  // ORDERS IS NO LONGER ON THE LIST (2026-08-12). It reads listDirectOrderOperationalPage instead —
+  // scoped, filtered and paginated in the database, decorating one page rather than the whole
+  // population. If "orders" reappears here, the list has silently gone back to loading every row a
+  // viewer may see in order to render 25 of them, which is the defect the operational query exists
+  // to remove.
+  for (const cheapView of ["orders", "pharmacy-control", "controls"]) {
     assert.ok(
       !reportListBlock.includes(`"${cheapView}"`),
       `${cheapView} shows no order rows and must not trigger the report read`,

@@ -207,13 +207,15 @@ export function runDirectOrderBadgeFastPathTests() {
     /\.filter\(Boolean\)/,
     "optional fields must be dropped before joining, or an absent rep name injects 'undefined' into the haystack and matches the literal search 'undefined'",
   );
-  // The placeholder is DERIVED, because rep names exist on My Orders rows and not
-  // on All Orders rows (the report path never resolves reps). A fixed string would
+  // The placeholder is DERIVED on TWO axes now, because it can be wrong in two ways. Rep names
+  // exist on My Orders rows and not on All Orders rows (the report path never resolves reps), and
+  // the SERVER search reaches pharmacy and person but not area or region. A fixed string would
   // either hide a working field or advertise a dead one.
   assert.match(
     workspace,
-    /placeholder=\{searchPlaceholder\(rows\)\}/,
-    "the placeholder must be derived from the rows on screen, not hardcoded — rep search works on My Orders and not on All Orders",
+    /placeholder=\{searchPlaceholder\(rows, Boolean\(server\)\)\}/,
+    "the placeholder must be derived from the rows on screen AND from whether the server is answering — " +
+      "rep search works on My Orders and not on All Orders, and area search works only off-server",
   );
   assert.match(
     workspace,

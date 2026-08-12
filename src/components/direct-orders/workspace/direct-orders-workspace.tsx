@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -16,11 +17,16 @@ import {
 } from "lucide-react";
 
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
-import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 import type {
   DirectOrderNeedsActionGroup,
   DirectOrderQueueRow,
 } from "@/lib/direct-orders/needs-action";
+import {
+  directOrderMatchesStatusGroup,
+  resolveDirectOrderStatusGroup,
+  type DirectOrderOperationalPage,
+  type DirectOrderStatusGroupKey,
+} from "@/lib/direct-orders/operational-query";
 import type {
   DirectOrderOrdersFilterKey,
   DirectOrderWorkspaceTabKey,
@@ -58,6 +64,18 @@ export type DirectOrdersWorkspaceProps = {
   summary: { needsMyAction: number; inProgress: number; returned: number; completedThisMonth: number };
   needsAction: readonly DirectOrderNeedsActionGroup[];
   myOrders: readonly DirectOrderQueueRow[];
+  /**
+   * ONE PAGE of Orders, already scoped/filtered/paginated by the server. When present this is THE
+   * source for the Orders list — `allOrders` is not consulted at all.
+   *
+   * Null on every view except `orders`, and null on the legacy path, which is why the fallback
+   * below still exists.
+   */
+  ordersPage?: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
+  /**
+   * LEGACY list source. Only read when `ordersPage` is absent. Retained so the two shells can be
+   * migrated independently rather than in one commit — do not add new readers.
+   */
   allOrders: readonly DirectOrderQueueRow[];
   /** Admin desks the viewer may open — passed in so this component owns no permission rule. */
   adminTools: readonly { href: string; label: string; description: string }[];
@@ -77,7 +95,11 @@ export type DirectOrdersWorkspaceProps = {
  * list of pages — only this component knows the grouping, and adding a desk means adding one slug.
  */
 const PHARMACY_CONTROL_DESKS = ["/validations", "/held", "/pharmacies", "/pharmacy-variances", "/cleanup"] as const;
-const REPORT_DESKS = ["/report", "/rep-counters", "/reconciliation"] as const;
+// `/approval-exceptions` sits under Reports & Monitoring rather than Pharmacy Control because it is
+// not about pharmacies at all — it monitors the health of the approval chain itself, alongside
+// reconciliation. It is also the one desk whose queue nobody else can see: a stuck rung appears in
+// no approver's Needs Action, by definition.
+const REPORT_DESKS = ["/report", "/rep-counters", "/reconciliation", "/approval-exceptions"] as const;
 const CONTROL_DESKS = ["/caps"] as const;
 
 const ORDERS_FILTERS: readonly { key: DirectOrderOrdersFilterKey; label: string }[] = [
@@ -200,14 +222,30 @@ function SummaryCard({
 
 // ── Needs Action inbox ───────────────────────────────────────────────────────
 
+/** How many of a group's items show before "See all" — one screenful, not a page. */
+const NEEDS_ACTION_PREVIEW = 5;
+
 function NeedsActionInbox({
   groups,
   variant,
   emptyMessage,
+  expandedKind,
+  returnTo,
 }: {
   groups: readonly DirectOrderNeedsActionGroup[];
   variant: Variant;
   emptyMessage: string;
+  /**
+   * The `?queue=` group, shown in full instead of previewed.
+   *
+   * This param has been in every group's `seeAllHref` since the inbox was built and NOTHING read
+   * it — so "See all 12" navigated to the view the reader was already on and still showed five.
+   * A link that restates its own page is worse than no link: the reader concludes the other seven
+   * do not exist.
+   */
+  expandedKind?: string | null;
+  /** The list URL to return to from an item's detail. See withReturnTo. */
+  returnTo?: string | null;
 }) {
   if (groups.length === 0) {
     return (
@@ -221,7 +259,10 @@ function NeedsActionInbox({
 
   return (
     <div className="space-y-4">
-      {groups.map((group) => (
+      {groups.map((group) => {
+        const expanded = expandedKind === group.kind;
+        const shown = expanded ? group.items : group.items.slice(0, NEEDS_ACTION_PREVIEW);
+        return (
         <section key={group.kind} className={surface(variant)}>
           <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <h3 className="text-sm font-black text-slate-950">{group.headline}</h3>
@@ -240,10 +281,10 @@ function NeedsActionInbox({
             </Link>
           ) : (
             <ul>
-              {group.items.slice(0, 5).map((item) => (
+              {shown.map((item) => (
                 <li key={item.id} className="border-b border-slate-100 last:border-b-0">
                   <Link
-                    href={item.href}
+                    href={withReturnTo(item.href, returnTo ?? null)}
                     className="flex min-h-[56px] items-center gap-3 px-4 py-3 transition-colors hover:bg-orange-50/40"
                   >
                     <div className="min-w-0 flex-1">
@@ -259,7 +300,7 @@ function NeedsActionInbox({
                   </Link>
                 </li>
               ))}
-              {group.items.length > 5 ? (
+              {group.items.length > shown.length ? (
                 <li>
                   <Link
                     href={group.seeAllHref}
@@ -273,7 +314,8 @@ function NeedsActionInbox({
             </ul>
           )}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -292,17 +334,22 @@ const FILTERS = [
   { key: "in-progress", label: "In Progress" },
   { key: "returned", label: "Returned" },
   { key: "completed", label: "Completed" },
-] as const;
+] as const satisfies readonly { key: DirectOrderStatusGroupKey; label: string }[];
 
-type FilterKey = (typeof FILTERS)[number]["key"];
+/**
+ * The chip keys ARE the server's group keys — aliased, not re-declared, so a chip cannot be added
+ * here that the query has no way to answer. `satisfies` above is the other half: a label typo in a
+ * key fails to compile rather than producing a chip that silently matches nothing.
+ */
+type FilterKey = DirectOrderStatusGroupKey;
 
+/**
+ * The grouping rule now lives in operational-query.ts, because the SERVER has to answer the same
+ * question these chips ask. It was defined here, privately, which is why the chips could only ever
+ * filter rows already on screen — the database had no way to express "In Progress".
+ */
 function matchesFilter(row: DirectOrderQueueRow, filter: FilterKey): boolean {
-  if (filter === "all") return true;
-  if (filter === "returned") return String(row.status) === "returned";
-  const { stage, actionable } = describeDirectOrderStatus(row.status, row.salesMonth);
-  if (filter === "needs-action") return actionable;
-  if (filter === "in-progress") return stage === "approval" || stage === "customer_check" || stage === "finance";
-  return stage === "completed";
+  return directOrderMatchesStatusGroup({ status: String(row.status), salesMonth: row.salesMonth }, filter);
 }
 
 /**
@@ -347,19 +394,52 @@ function matchesQuery(row: DirectOrderQueueRow, query: string): boolean {
  * A single hardcoded placeholder would either omit the rep on the tab where it
  * works, or promise it on the tab where it silently does not — and a search box
  * that lists a field it cannot match is worse than one that stays quiet about it.
+ *
+ * SERVER MODE omits AREA and REGION, and says so rather than listing them.
+ * `listDirectOrderOperationalPage` resolves pharmacy and person to ids before
+ * querying, so those are matched for real; area and region names come from the
+ * geo tables via the pharmacy, a hop further than the search reaches. The rep is
+ * likewise not resolved on this path.
+ *
+ * The in-memory lists keep the wider search, because they genuinely hold the
+ * decorated rows. This is the one place the two paths differ in capability, and
+ * the placeholder is where the person finds that out — before they type an area
+ * name and conclude their order does not exist.
  */
-function searchPlaceholder(rows: readonly DirectOrderQueueRow[]): string {
+function searchPlaceholder(rows: readonly DirectOrderQueueRow[], server: boolean): string {
+  if (server) return "Search by person, pharmacy or code, product or order id";
   const hasRep = rows.some((row) => Boolean(row.medicalRepName));
   return hasRep
     ? "Search by person, rep, pharmacy or code, product, area or order id"
     : "Search by person, pharmacy or code, product, area or order id";
 }
 
-function OrderRow({ row, basePath, variant }: { row: DirectOrderQueueRow; basePath: string; variant: Variant }) {
+/**
+ * Append the list the reader is leaving, so the detail's Back can return them to it.
+ *
+ * Only the client knows this — the hrefs are otherwise built server-side, where the query string
+ * the reader assembled does not exist. The detail page validates it before use
+ * (`resolveDirectOrderReturnHref`); nothing here is trusted just because this file wrote it.
+ */
+function withReturnTo(href: string, returnTo: string | null): string {
+  return returnTo ? `${href}?from=${encodeURIComponent(returnTo)}` : href;
+}
+
+function OrderRow({
+  row,
+  basePath,
+  variant,
+  returnTo,
+}: {
+  row: DirectOrderQueueRow;
+  basePath: string;
+  variant: Variant;
+  returnTo?: string | null;
+}) {
   return (
     <li className="border-b border-slate-100 last:border-b-0">
       <Link
-        href={`${basePath}/${encodeURIComponent(row.id)}`}
+        href={withReturnTo(`${basePath}/${encodeURIComponent(row.id)}`, returnTo ?? null)}
         className="flex min-h-[64px] flex-col gap-1.5 px-4 py-3 transition-colors hover:bg-orange-50/40"
       >
         <div className="flex items-start justify-between gap-2">
@@ -397,27 +477,91 @@ function OrdersList({
   variant,
   emptyMessage,
   initialFilter,
+  server,
+  returnTo,
 }: {
   rows: readonly DirectOrderQueueRow[];
   basePath: string;
   variant: Variant;
   emptyMessage: string;
   initialFilter?: FilterKey;
+  /** The list URL to return to from an order's detail. See withReturnTo. */
+  returnTo?: string | null;
+  /**
+   * SERVER MODE. When set, `rows` is one already-searched, already-filtered page from the database
+   * and this component must not narrow it again — the search box and status chips push to the URL
+   * instead, and the server answers.
+   *
+   * Absent for the legacy in-memory lists (Needs Action groups, "recent orders" on Overview), which
+   * genuinely hold everything they display and are small by construction.
+   */
+  server?: {
+    query: string;
+    group: FilterKey;
+    onQueryChange: (next: string) => void;
+    onGroupChange: (next: FilterKey) => void;
+  };
 }) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<FilterKey>(initialFilter ?? "all");
+  const [query, setQuery] = useState(server?.query ?? "");
+  const [localFilter, setLocalFilter] = useState<FilterKey>(initialFilter ?? "all");
   const [shown, setShown] = useState(PAGE_SIZE);
 
+  // DERIVED in server mode, not mirrored. The chip's selection IS the URL there, so holding a copy
+  // in state and syncing it from an effect would be two sources of truth for one fact — and the
+  // copy is the one that goes stale on Back. `localFilter` exists only for the in-memory lists,
+  // which have no URL to read.
+  const filter: FilterKey = server ? server.group : localFilter;
+
+  // Deps are PRIMITIVES, never `server` itself: the call site builds that object inline, so it is a
+  // new identity on every parent render and an effect keyed on it would clear and restart the
+  // debounce timer each time — a debounce that never fires while anything else re-renders.
+  const serverQuery = server?.query ?? null;
+  const pushQuery = server?.onQueryChange;
+  const pushQueryRef = useRef(pushQuery);
+  useEffect(() => {
+    pushQueryRef.current = pushQuery;
+  });
+
+  // The URL moved underneath us — Back, Forward, or someone opening a shared link. Adopt it.
+  // Without this the box keeps the text the person typed, the push effect below sees it differs
+  // from the URL, and it navigates FORWARD again: the Back button would appear broken on the one
+  // screen this whole phase exists to make navigable.
+  const lastServerQuery = useRef(serverQuery);
+  useEffect(() => {
+    if (serverQuery === null || lastServerQuery.current === serverQuery) return;
+    lastServerQuery.current = serverQuery;
+    setQuery(serverQuery);
+  }, [serverQuery]);
+
+  // DEBOUNCED, and only in server mode. Typing "el salam" must not be eight navigations — and the
+  // 300ms is deliberately longer than the pharmacy combo box's 250ms because this one re-runs a
+  // scoped, counted query rather than a single indexed lookup.
+  //
+  // The equality guard is what stops the loop: every arrival from the server re-runs this effect,
+  // and without it the component would push the value it just received straight back.
+  useEffect(() => {
+    if (serverQuery === null || query === serverQuery) return;
+    const timer = setTimeout(() => pushQueryRef.current?.(query), 300);
+    return () => clearTimeout(timer);
+  }, [query, serverQuery]);
+
   const filtered = useMemo(
-    () => rows.filter((row) => matchesFilter(row, filter) && matchesQuery(row, query)),
-    [rows, filter, query],
+    // In server mode the rows ARE the result — filtering them again would narrow a set the database
+    // already decided, and would make page 2 of a search show fewer than 25 rows for no reason.
+    () => (server ? rows : rows.filter((row) => matchesFilter(row, filter) && matchesQuery(row, query))),
+    [rows, filter, query, server],
   );
 
+  // Counts are computed from the rows on screen, which in server mode is ONE PAGE — so they would
+  // read "3 returned" when the scoped set holds 300. Rather than show a number that is wrong,
+  // server mode renders the chips without counts. A missing count is honest; a page-local one
+  // pretending to be a total is not.
   const counts = useMemo(() => {
+    if (server) return null;
     const out: Record<string, number> = {};
     for (const entry of FILTERS) out[entry.key] = rows.filter((row) => matchesFilter(row, entry.key)).length;
     return out;
-  }, [rows]);
+  }, [rows, server]);
 
   return (
     <div className="space-y-3">
@@ -431,7 +575,7 @@ function OrdersList({
             setQuery(event.target.value);
             setShown(PAGE_SIZE);
           }}
-          placeholder={searchPlaceholder(rows)}
+          placeholder={searchPlaceholder(rows, Boolean(server))}
           className={`h-11 w-full border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:outline-none ${control(variant)}`}
         />
       </label>
@@ -445,14 +589,16 @@ function OrdersList({
               role="tab"
               aria-selected={filter === entry.key}
               onClick={() => {
-                setFilter(entry.key);
+                setLocalFilter(entry.key);
                 setShown(PAGE_SIZE);
+                server?.onGroupChange(entry.key);
               }}
               className={`min-h-[36px] whitespace-nowrap px-3 py-1.5 text-[12px] font-black uppercase tracking-wide transition-colors ${control(variant)} ${
                 filter === entry.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}
             >
-              {entry.label} <span className="ml-1 opacity-70">{counts[entry.key] ?? 0}</span>
+              {entry.label}
+              {counts ? <span className="ml-1 opacity-70">{counts[entry.key] ?? 0}</span> : null}
             </button>
           ))}
         </div>
@@ -466,10 +612,13 @@ function OrdersList({
         <div className={surface(variant)}>
           <ul>
             {filtered.slice(0, shown).map((row) => (
-              <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} />
+              <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} />
             ))}
           </ul>
-          {filtered.length > shown ? (
+          {/* Never in server mode: `filtered` IS one page there, and a second "show more" above the
+              real pagination controls would page through the page. Stated rather than left to the
+              coincidence that both sizes are currently 25. */}
+          {!server && filtered.length > shown ? (
             <button
               type="button"
               onClick={() => setShown((current) => current + PAGE_SIZE)}
@@ -488,14 +637,79 @@ function OrdersList({
 
 export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   const { variant, basePath, newOrderHref, tabs, summary, needsAction, myOrders, allOrders, adminTools } = props;
-  const [tab, setTab] = useState<DirectOrderWorkspaceTabKey>(
-    tabs.includes(props.initialTab) ? props.initialTab : "overview",
-  );
-  const [ordersFilter, setOrdersFilter] = useState<DirectOrderOrdersFilterKey>("mine");
-  // An own-scope viewer has no wider set to switch to, so their filter is pinned to "mine" and the
-  // strip is not rendered — rather than offering a control with one working position.
-  const ordersRows =
-    props.canSeeAllOrders && ordersFilter === "all" ? allOrders : myOrders;
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ── STATE LIVES IN THE URL, NOT IN useState ────────────────────────────────
+  //
+  // Tab, scope filter, status, search and page were all component state, which meant: Back left the
+  // workspace entirely, a refresh dropped you on Overview, a filtered list could not be sent to a
+  // colleague, and — the reason this mattered most — Order Detail had nowhere to return you to, so
+  // it sent everyone to the workspace root regardless of where they came from.
+  //
+  // Reading them from the URL makes each of those work for free, and lets the SERVER fetch the
+  // right page: a tab change is now a navigation, so `loadDirectOrderWorkspaceView` runs again for
+  // the view being opened rather than the view you left.
+  const tab: DirectOrderWorkspaceTabKey = tabs.includes(props.initialTab) ? props.initialTab : "overview";
+  const ordersFilter: DirectOrderOrdersFilterKey =
+    searchParams.get("scope") === "all" ? "all" : "mine";
+  // Read from the URL, not held in state: this is what makes a filtered, searched list a link
+  // somebody can send, and what makes Back return to the previous filter rather than leaving
+  // Direct Orders entirely.
+  const ordersQuery = searchParams.get("q") ?? "";
+  const ordersGroup = resolveDirectOrderStatusGroup(searchParams.get("group"));
+  // Which Needs Action group "See all" asked to open. Only Needs Action honours it — Overview's
+  // copy of the inbox is a preview by design, and its See-all links point HERE.
+  const expandedQueue = searchParams.get("queue");
+
+  /**
+   * The exact list URL an order's detail should return to.
+   *
+   * Built from the CURRENT params, so it carries the tab, scope, chip, search and page the reader
+   * assembled. The detail page validates it before use — a value that reaches a link through the
+   * query string is not trusted merely because this component is the one that put it there.
+   */
+  const returnTo = useMemo(() => {
+    const qs = searchParams.toString();
+    return qs ? `${basePath}?${qs}` : basePath;
+  }, [searchParams, basePath]);
+
+  /**
+   * Build the next URL from the current one, so an unrelated param a future feature adds is not
+   * silently dropped by a tab click. A null value REMOVES the key — that is how the URL stays short
+   * for the default case instead of accumulating `&status=&q=` noise.
+   */
+  const pushParams = (changes: Record<string, string | null>) => {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === null || value === "") next.delete(key);
+      else next.set(key, value);
+    }
+    const qs = next.toString();
+    router.push(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
+  };
+
+  // Any change to WHAT is being listed resets to page 1. Staying on page 3 while narrowing a filter
+  // is how you end up looking at an empty list and concluding there are no results.
+  const goTab = (next: DirectOrderWorkspaceTabKey) => pushParams({ view: next, page: null });
+  const goOrdersFilter = (next: DirectOrderOrdersFilterKey) =>
+    pushParams({ scope: next === "mine" ? null : next, page: null });
+  const goPage = (next: number) => pushParams({ page: next <= 1 ? null : String(next) });
+
+  // The server page wins whenever it is present: it is already scoped, filtered and paginated in
+  // the database, so re-filtering it here would narrow a set the server already decided.
+  //
+  // The fallback is the pre-2026-08-12 behaviour and is only reached when `ordersPage` is absent.
+  const servedPage = props.ordersPage ?? null;
+  const ordersRows = servedPage
+    ? servedPage.rows
+    : props.canSeeAllOrders && ordersFilter === "all"
+      ? allOrders
+      : myOrders;
+
+  // An own-scope viewer has no wider set to switch to, so the strip is not rendered — rather than
+  // offering a control with one working position.
+  const showOrdersScopeStrip = props.canSeeAllOrders;
 
   // The desks are partitioned by the QUESTION they answer, matched on their route. Grouping here
   // rather than in the nav registry keeps this component the only place that knows the new IA,
@@ -504,7 +718,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   const reportTools = adminTools.filter((tool) => REPORT_DESKS.some((slug) => tool.href.includes(slug)));
   const controlTools = adminTools.filter((tool) => CONTROL_DESKS.some((slug) => tool.href.includes(slug)));
 
-  const goNeedsAction = () => setTab("needs-action");
+  const goNeedsAction = () => goTab("needs-action");
 
   return (
     <div className="space-y-4 pb-20 sm:pb-0">
@@ -579,7 +793,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
               type="button"
               role="tab"
               aria-selected={tab === key}
-              onClick={() => setTab(key)}
+              onClick={() => goTab(key)}
               className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-[12px] font-black uppercase tracking-wide transition-colors ${control(variant)} ${
                 tab === key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}
@@ -611,6 +825,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
             groups={needsAction}
             variant={variant}
             emptyMessage="When an order needs your approval, a correction, or a pharmacy verified, it appears here."
+            returnTo={returnTo}
           />
           <section className={surface(variant)}>
             <header className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
@@ -620,7 +835,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   workspace under 40. */}
               <button
                 type="button"
-                onClick={() => setTab("orders")}
+                onClick={() => goTab("orders")}
                 className="-my-2 inline-flex min-h-[44px] items-center px-2 text-[11px] font-black text-orange-700"
               >
                 See all
@@ -631,7 +846,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
             ) : (
               <ul>
                 {myOrders.slice(0, 5).map((row) => (
-                  <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} />
+                  <OrderRow key={row.id} row={row} basePath={basePath} variant={variant} returnTo={returnTo} />
                 ))}
               </ul>
             )}
@@ -644,6 +859,8 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
           groups={needsAction}
           variant={variant}
           emptyMessage="Nothing is waiting on you across approvals, corrections, pharmacy verification or Finance."
+          expandedKind={expandedQueue}
+          returnTo={returnTo}
         />
       ) : null}
 
@@ -654,7 +871,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
           for them the two sets are identical. */}
       {tab === "orders" ? (
         <div className="space-y-3">
-          {props.canSeeAllOrders ? (
+          {showOrdersScopeStrip ? (
             <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control(variant)}`} role="tablist">
               {ORDERS_FILTERS.map((option) => (
                 <button
@@ -662,7 +879,7 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                   type="button"
                   role="tab"
                   aria-selected={ordersFilter === option.key}
-                  onClick={() => setOrdersFilter(option.key)}
+                  onClick={() => goOrdersFilter(option.key)}
                   className={`min-h-[36px] px-3 text-[12px] font-black transition-colors ${
                     ordersFilter === option.key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
                   } ${control(variant)}`}
@@ -681,7 +898,54 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
                 ? "You have not raised a direct order yet."
                 : "No direct orders in your scope yet."
             }
+            // Only when a server page is in play. Handing these to the legacy in-memory path would
+            // navigate for a filter that array already answers locally, and correctly.
+            returnTo={returnTo}
+            server={
+              servedPage
+                ? {
+                    query: ordersQuery,
+                    group: ordersGroup,
+                    onQueryChange: (next) => pushParams({ q: next || null, page: null }),
+                    onGroupChange: (next) => pushParams({ group: next === "all" ? null : next, page: null }),
+                  }
+                : undefined
+            }
           />
+
+          {/* Server pagination. Rendered only when a server page is in play — the legacy path has
+              its own "Show more" inside OrdersList. The count is the DATABASE count over the scoped
+              and filtered set, so "1–25 of 4,312" is a fact rather than "however many we loaded". */}
+          {servedPage && servedPage.totalCount > servedPage.pageSize ? (
+            <nav
+              className="flex items-center justify-between gap-3 px-1"
+              aria-label="Orders pagination"
+            >
+              <p className="text-[11px] font-bold tabular-nums text-slate-500">
+                {(servedPage.page - 1) * servedPage.pageSize + 1}–
+                {Math.min(servedPage.page * servedPage.pageSize, servedPage.totalCount)} of{" "}
+                {servedPage.totalCount.toLocaleString("en-US")}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => goPage(servedPage.page - 1)}
+                  disabled={servedPage.page <= 1}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-[12px] font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => goPage(servedPage.page + 1)}
+                  disabled={servedPage.page * servedPage.pageSize >= servedPage.totalCount}
+                  className={`min-h-[44px] border border-slate-300 px-3 text-[12px] font-black text-slate-700 disabled:opacity-40 ${control(variant)}`}
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
+          ) : null}
         </div>
       ) : null}
 

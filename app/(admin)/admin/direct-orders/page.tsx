@@ -5,6 +5,7 @@ import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/direct-orders-workspace";
 import { directOrdersPageItems } from "@/config/system-navigation";
 import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
+import { resolveDirectOrderStatusGroup } from "@/lib/direct-orders/operational-query";
 import {
   getPermissionMatrix,
   permissionActions,
@@ -31,7 +32,14 @@ const BASE_PATH = "/admin/direct-orders";
 export default async function AdminDirectOrdersWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    scope?: string;
+    status?: string;
+    group?: string;
+    q?: string;
+    page?: string;
+  }>;
 }) {
   const access = await resolveAccessContextFromPage();
   await assertDirectOrdersPageAccess(access);
@@ -39,14 +47,28 @@ export default async function AdminDirectOrdersWorkspacePage({
     redirect("/employee-portals/direct-orders");
   }
 
-  const { view } = await searchParams;
+  const { view, scope, status, group, q, page } = await searchParams;
   // Honours the pre-2026-08-11 tab names (my-orders, all-orders, customers, admin-tools) so
   // bookmarks, the sidebar history and next.config.ts's retired-route redirects keep landing on
   // the view that replaced them instead of silently falling back to Overview.
   const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
   // The view is resolved BEFORE the load so the loader can skip data this view cannot show.
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
+  const workspace = await loadDirectOrderWorkspaceView(access, {
+    basePath: BASE_PATH,
+    view: requestedTab,
+    ordersPage: Number(page) || 1,
+    // Filters go INTO the query, not onto a fetched array. "mine" is the default, so it is absent
+    // from the URL rather than spelled out — the shortest URL is the common case.
+    ordersFilters: {
+      scopeFilter: scope === "all" ? "all" : "mine",
+      status: status ?? null,
+      // The filter chips' vocabulary, resolved server-side so an unknown value in a hand-edited URL
+      // falls back to "all" rather than reaching the query.
+      statusGroup: resolveDirectOrderStatusGroup(group),
+      q: q ?? null,
+    },
+  });
 
   // The admin desks, gated exactly as the existing hub page gates them — same
   // lookup, same helpers. This component owns no permission rule of its own.
@@ -90,6 +112,7 @@ export default async function AdminDirectOrdersWorkspacePage({
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
         allOrders={workspace.allOrders}
+        ordersPage={workspace.orders}
         adminTools={adminTools}
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/admin/direct-orders/report`}

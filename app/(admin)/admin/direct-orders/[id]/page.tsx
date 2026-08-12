@@ -9,6 +9,7 @@ import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
+import { resolveDirectOrderReturnHref } from "@/lib/direct-orders/workspace-data";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,24 @@ export const dynamic = "force-dynamic";
  * buttons suppress themselves: availableActions are all false for a non-approver, and both
  * decision panels render null when no action is available.
  */
-export default async function AdminMyDirectOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AdminMyDirectOrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+}) {
   const access = await resolveAccessContextFromPage();
   await assertDirectOrdersPageAccess(access);
   const { id } = await params;
+  const { from } = await searchParams;
   if (resolveNavigationMode(access) === "employee-portal") {
-    redirect(`/employee-portals/direct-orders/${encodeURIComponent(id)}`);
+    redirect(
+      `/employee-portals/direct-orders/${encodeURIComponent(id)}` +
+        // Carried across the hop. The redirect is meant to be invisible; dropping the return
+        // context here would make it visible in the worst way — by losing their place.
+        (from ? `?from=${encodeURIComponent(from)}` : ""),
+    );
   }
   const detail = await getDirectOrderApprovalDetail(access, id);
 
@@ -46,7 +59,15 @@ export default async function AdminMyDirectOrderDetailPage({ params }: { params:
 
   return (
     <div className="space-y-5">
-      <DirectOrderRequestDetail detail={detail} backHref="/admin/direct-orders" backLabel="Back to My Direct Orders" />
+      {/* Back to the LIST THEY CAME FROM — tab, filter, search and page intact. An approver works
+          down a queue one order at a time, and returning them to an unfiltered Overview made them
+          rebuild it every single time. resolveDirectOrderReturnHref refuses anything that is not
+          this exact workspace path, so the query string cannot become an open redirect. */}
+      <DirectOrderRequestDetail
+        detail={detail}
+        backHref={resolveDirectOrderReturnHref(from, "/admin/direct-orders")}
+        backLabel="Back to My Direct Orders"
+      />
       {showValidation && detail?.pharmacy ? (
         <PharmacyValidationCapture
           pharmacyId={detail.pharmacy.id}

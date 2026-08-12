@@ -51,6 +51,15 @@ type Props = {
   caps: SubmitFormCaps;
   initialPharmacies: DirectOrderPharmacy[];
   myRequests: DirectOrderApprovalListItem[];
+  /**
+   * The mounting shell's Direct Orders base.
+   *
+   * Was hardcoded to "/admin/direct-orders", which is the WRONG shell for almost everyone who uses
+   * this form: portalNavigationRoles sends every District / Regional / National Sales Manager and
+   * Product / Group Product Manager to the portal, and they are the people who raise direct orders.
+   * The admin detail page redirects them back, so it worked — via a round trip to the wrong shell.
+   */
+  basePath: string;
 };
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
@@ -68,7 +77,7 @@ function inputClass() {
   return "mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 focus:outline-none";
 }
 
-export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, myRequests }: Props) {
+export function DirectOrderSubmitForm({ products, areas, bricks, distributors, caps, myRequests, basePath }: Props) {
   const router = useRouter();
 
   const [productCode, setProductCode] = useState("");
@@ -94,7 +103,15 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
+  /**
+   * The success banner, carrying the ORDER IT CREATED.
+   *
+   * Used to be a bare string. The submit API has always returned the created request — the client
+   * simply typed the response as `{success, message}` and threw the row away — so "it is now with
+   * your first approver" was a sentence about an order the person then had to go and find in a
+   * list. The id was right there in the response.
+   */
+  const [ok, setOk] = useState<{ message: string; orderId: string | null } | null>(null);
 
   const product = useMemo(() => products.find((p) => p.productCode === productCode) ?? null, [products, productCode]);
   const qtyNum = Math.max(0, Math.floor(Number(qty) || 0));
@@ -228,13 +245,21 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           collectionDate,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        result?: { id?: string };
+      };
       if (!res.ok || !data.success) throw new Error(data.message || "Could not submit the direct order.");
-      setOk(
-        overCap
+      setOk({
+        message: overCap
           ? "Direct order submitted — flagged as over cap for your approvers, and on its way to the first of them."
           : "Direct order submitted — it is now with your first approver.",
-      );
+        // Optional on purpose: a submit that succeeded but whose response shape surprises us still
+        // shows the confirmation. Losing the link is a smaller failure than claiming the order did
+        // not go through when it did.
+        orderId: typeof data.result?.id === "string" ? data.result.id : null,
+      });
       setProductCode("");
       setQty("");
       setBonus("");
@@ -520,7 +545,39 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           </div>
 
           {error ? <p className="text-sm font-semibold text-rose-600">{error}</p> : null}
-          {ok ? <p className="text-sm font-semibold text-emerald-600">{ok}</p> : null}
+          {/* The confirmation now offers the two things a person actually wants next: see the order
+              they just raised, or raise the next one. Without them the only route onward was the
+              browser's Back button, or hunting the order out of a list — and "Create another" is
+              the honest name for what the form already did to itself (it clears the product fields
+              and keeps the pharmacy, which is exactly the repeat-order case). */}
+          {ok ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-emerald-600">{ok.message}</p>
+              <div className="flex flex-wrap gap-2">
+                {ok.orderId ? (
+                  <Link
+                    href={`${basePath}/${encodeURIComponent(ok.orderId)}`}
+                    className="border border-emerald-600 px-3 py-1.5 text-[12px] font-black text-emerald-700 hover:bg-emerald-50"
+                  >
+                    View this order
+                  </Link>
+                ) : null}
+                <Link
+                  href={basePath}
+                  className="border border-slate-300 px-3 py-1.5 text-[12px] font-black text-slate-600 hover:bg-slate-50"
+                >
+                  Back to Direct Orders
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setOk(null)}
+                  className="border border-slate-300 px-3 py-1.5 text-[12px] font-black text-slate-600 hover:bg-slate-50"
+                >
+                  Create another
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <button
             type="button"
@@ -583,7 +640,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                         SAME detail the approvers read, so they can see exactly which rung holds it. */}
                     <td className="whitespace-nowrap px-3 py-2 text-right">
                       <Link
-                        href={`/admin/direct-orders/${encodeURIComponent(r.id)}`}
+                        href={`${basePath}/${encodeURIComponent(r.id)}`}
                         className="font-bold text-orange-600 hover:text-orange-700"
                       >
                         Track →

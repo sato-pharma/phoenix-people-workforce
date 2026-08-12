@@ -59,6 +59,35 @@ export type DirectOrderStatus =
   // every rejection rate and per-rep counter that groups by status (audit F3).
   | "cancelled";
 
+/**
+ * The same nine statuses, at RUNTIME.
+ *
+ * Needed because the operational Orders query derives its status-group filters by asking
+ * `describeDirectOrderStatus` about each status in turn, rather than hardcoding a second copy of
+ * the grouping rule next to the SQL. A type union alone cannot be iterated.
+ *
+ * The assertion below is the point of the list: `satisfies` proves every entry is a real status,
+ * and `_statusListIsExhaustive` fails to COMPILE if a status is ever added to the union above and
+ * not added here. Without it this array would be a silent second source of truth — a tenth status
+ * would simply never appear in any group filter, and the Orders list would quietly stop showing
+ * those orders with nothing failing anywhere.
+ */
+export const DIRECT_ORDER_STATUS_VALUES = [
+  "draft",
+  "pending_approval",
+  "approved",
+  "rejected",
+  "returned",
+  "reversed",
+  "held",
+  "expired",
+  "cancelled",
+] as const satisfies readonly DirectOrderStatus[];
+
+type MissingDirectOrderStatus = Exclude<DirectOrderStatus, (typeof DIRECT_ORDER_STATUS_VALUES)[number]>;
+const _statusListIsExhaustive: [MissingDirectOrderStatus] extends [never] ? true : never = true;
+void _statusListIsExhaustive;
+
 /** The three states a pharmacy's verification can be in. */
 export type DirectOrderPharmacyVerificationStatus = "verified" | "pending_review" | "rejected";
 

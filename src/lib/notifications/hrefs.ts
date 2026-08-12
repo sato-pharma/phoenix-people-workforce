@@ -109,13 +109,22 @@ export function notificationHrefForViewerRole(input: {
   // the write site also repairs every notification already sitting in the table, because this runs
   // at read time.
   {
-    const current =
+    const retired =
       fallback.startsWith("/admin/approvals/direct-orders") ||
       fallback.startsWith("/employee-portals/approvals/direct-orders");
-    if (current) {
-      const id = /\/approvals\/direct-orders\/([^/?#]+)/.exec(fallback)?.[1] ?? null;
-      const base = isPortal ? "/employee-portals/approvals/direct-orders" : "/admin/approvals/direct-orders";
-      return id ? `${base}/${id}` : base;
+    const live =
+      fallback.startsWith("/admin/direct-orders") || fallback.startsWith("/employee-portals/direct-orders");
+    if (retired || live) {
+      const id =
+        /\/approvals\/direct-orders\/([^/?#]+)/.exec(fallback)?.[1] ??
+        /\/(?:admin|employee-portals)\/direct-orders\/([^/?#]+)/.exec(fallback)?.[1] ??
+        null;
+      // Emits the LIVE workspace route. It used to emit the retired approvals path, which resolved
+      // only because next.config.ts redirects it — so every already-stored row got repaired into a
+      // URL that still needed rescuing. Rows written before 2026-08-12 carry the old path and are
+      // matched by `retired` above, so they land on the current route in one hop.
+      const base = isPortal ? "/employee-portals/direct-orders" : "/admin/direct-orders";
+      return id ? `${base}/${id}` : `${base}?view=needs-action`;
     }
   }
 

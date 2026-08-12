@@ -42,7 +42,7 @@ export default async function PortalDirectOrdersPage() {
       description="Submit a direct (company) order for approval up your management line to the CEO."
     >
       {canSubmit ? (
-        <DirectOrderSubmitForm products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} />
+        <DirectOrderSubmitForm products={products} areas={areaBrickOptions.areas} bricks={areaBrickOptions.bricks} distributors={distributors} caps={caps} initialPharmacies={pharmacies} myRequests={myRequests} basePath="/employee-portals/direct-orders" />
       ) : (
         <p className="rounded border border-slate-200 bg-white px-4 py-6 text-sm text-slate-500">
           Your role cannot submit direct orders. Approvers review them under Approvals Hub &gt; D.Orders Approval.
