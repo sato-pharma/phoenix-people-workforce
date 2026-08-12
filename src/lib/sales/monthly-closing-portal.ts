@@ -50,10 +50,7 @@ import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publica
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Roles that can open the portal Monthly Closing tab. Medical Rep and Marketing
- * Manager are excluded — Medical Rep has no line, Marketing Manager sits on
- * "Head Office" (not a product line) so the portal can never resolve meaningful
- * published data for them.
+ * Roles that can open the portal Monthly Closing tab. Medical Rep stays excluded — no line.
  */
 export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "District Manager",
@@ -65,6 +62,28 @@ export const PORTAL_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([
   "National Sales Manager",
   "Product Manager",
   "Group Product Manager",
+  // Marketing Manager added 2026-08-12 (owner: a Monthly Closing tab, able to export any line's
+  // full closing sheet). She asked for /sales/monthly-closing; that is the ADMIN upload/publish
+  // workspace and it cannot be her door — she is a portal-navigation role, so its page redirects
+  // her at `resolveNavigationMode(access) === "employee-portal"` before any permission check runs,
+  // and past that it loads its matrix behind assertPermission(sales, "import"). `sales:import` is
+  // the gate on the upload/publish workspace and ten other pages; granting it to reach an export
+  // would let her PRODUCE the closing she is only meant to CONSUME. This tab is the same Closing
+  // Matrix + Details in her own shell. Same call as the Finance Manager's in #2010.
+  //
+  // The old exclusion reason here ("sits on Head Office, so the portal can never resolve
+  // meaningful published data") is no longer true and was already stale when this was written:
+  // resolvePortalClosingScope below resolves her lines from resolveSalesAccessScope, which folds in
+  // the fixed head-office oversight set (MARKETING_OVERSIGHT_LINE_ROLES → Anti Infective, Pedia,
+  // CNS) instead of her own Head Office label, and then filters Head Office out by
+  // canViewHeadOfficeLine. loadPortalMonthlyClosing was already built for her — its published-lines
+  // read is commented "at most three (the Marketing oversight set)". Only this gate was missing, so
+  // she held the scope with no page to use it on.
+  //
+  // Admitting her leaks nothing: Head Office is stripped from allowedLines for every non-CEO
+  // viewer, stripRestrictedColumns drops LA003/LA004/SS001, and the three lines she can now open
+  // are exactly the three she already oversees everywhere else in sales.
+  "Marketing Manager",
 ]);
 
 const PRODUCT_SCOPED_CLOSING_ROLES: ReadonlySet<PhoenixRole> = new Set([

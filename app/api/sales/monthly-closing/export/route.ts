@@ -17,9 +17,8 @@ import {
   buildMonthlyClosingWorkbook,
   buildPortalClosingWorkbook,
 } from "@/lib/sales/monthly-closing-export";
-import { loadPortalMonthlyClosing } from "@/lib/sales/monthly-closing-portal";
-import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
-import { MARKETING_OVERSIGHT_LINE_ROLES } from "@/lib/sales/access-scope";
+import { loadPortalMonthlyClosing, resolvePortalClosingScope } from "@/lib/sales/monthly-closing-portal";
+import { MARKETING_OVERSIGHT_LINE_ROLES, normalizeLineKey } from "@/lib/sales/access-scope";
 import {
   filterMonthlyClosingMatrix,
   listMonthlyClosingLines,
@@ -147,16 +146,58 @@ export async function POST(request: Request) {
     // him nothing, because every restricted row sits on Head Office and listMonthlyClosingLines
     // excludes Head Office for everyone, the CEO included.
     //
+    // Marketing Manager added 2026-08-12 (owner: a Monthly Closing tab of her own, able to "export
+    // any line full closing sheet"). She reaches this route from the portal tab
+    // (/employee-portals/monthly-closing). Without this branch her Export XLSX fell to the scoped
+    // one below and returned the lesser workbook — and on an unpublished month, Data + Total only,
+    // HTTP 200, with nothing on screen or in the file saying so.
+    //
+    // Unlike the five roles above she is NOT company-scoped, so she is admitted for a line she
+    // actually oversees and for nothing else. Her allowed set comes from the same engine the rest
+    // of sales uses (resolvePortalClosingScope → resolveSalesAccessScope →
+    // MARKETING_OVERSIGHT_LINE_ROLES), with the confidential Head Office line already filtered out
+    // by canViewHeadOfficeLine. Today that set is Anti Infective / Pedia / CNS, which happens to be
+    // every closeable line there is — but the check below is written against her SCOPE rather than
+    // against that coincidence, so adding a fifth product line later cannot silently hand her a
+    // full-company matrix for a line she does not oversee.
+    const marketingOversight = MARKETING_OVERSIGHT_LINE_ROLES.has(access.role)
+      ? await resolvePortalClosingScope(access)
+      : null;
+    // An out-of-scope line is REFUSED, never traded for one she does hold. loadMonthlyClosingParts
+    // silently falls back to availableLines[0] for a line it does not recognise, so substituting
+    // here would build a FULL workbook labelled for the line she asked for and filled with a
+    // different line's figures — the exact silent-substitution failure pickPortalClosingLine exists
+    // to prevent. Same 403 the scoped branch already returns for details.outOfScope.
+    if (marketingOversight) {
+      const requestedLine = String(body.line ?? "").trim();
+      const inScope = marketingOversight.allowedLines.some(
+        (candidate) => normalizeLineKey(candidate) === normalizeLineKey(requestedLine),
+      );
+      if (requestedLine && !inScope) {
+        return NextResponse.json(
+          { success: false, error: "Forbidden: this line is outside your access." },
+          { status: 403 },
+        );
+      }
+    }
+
     // APPEND ONLY. tests/sfe-manager-nav-dead-links.test.ts pins the first three terms of this
     // disjunction as a literal source substring, so adding to the end keeps it green while
     // reordering breaks it. Do not refactor this into a named predicate without moving that test.
-    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager" || access.role === "CEO" || access.role === "Finance Manager") {
+    if (access.role === "Super Admin" || access.scope === "system" || access.role === "SFE Manager" || access.role === "CEO" || access.role === "Finance Manager" || marketingOversight !== null) {
       // Server-load the full report (matrix + distributor comparison + insights). The body is
       // only the line/period selection — never trusted for data or authorization.
       // The combined matrix AND its two halves. The channel tabs need retail-without-direct and
       // direct-without-retail, and both must come from this one read so they cannot disagree with
       // the master they sit beside.
-      const parts = await loadMonthlyClosingParts({ line: body.line ?? null, period: body.period ?? null });
+      // `marketingOversight.line` is her DEFAULT line, used only when the caller named none. Without
+      // it a line-less export would take loadMonthlyClosingParts' own fallback (availableLines[0]),
+      // which is company-wide and knows nothing about her oversight set. Null for every other role,
+      // so their fallback is untouched.
+      const parts = await loadMonthlyClosingParts({
+        line: body.line ?? marketingOversight?.line ?? null,
+        period: body.period ?? null,
+      });
       const matrix = filterMonthlyClosingMatrix(parts.combined, matrixFilter);
       // The retail half takes the IDENTICAL place filter, so an area on the Retail tab is the same
       // area the master shows.
@@ -204,6 +245,21 @@ export async function POST(request: Request) {
       // dropped, and an in-scope area never receives its share from an excluded store in the same
       // city. Row-level filters (distributor, Included/Excluded, search) DO belong here — they
       // define the population being allocated, not where it lands.
+      //
+      // WATCH THIS ONE FOR THE MARKETING MANAGER. This read is scoped to the caller, and that scope
+      // includes `app_auth_users.product_scope_override` as a HARD row filter, while the Matrix
+      // sheet above comes from the unscoped loadMonthlyClosingParts. For the four company-scope
+      // roles that is a no-op — none carries an override. A-9 does: 21 product codes, a
+      // Product-Manager-shaped control sitting on a role that oversees three whole lines. Verified
+      // 2026-08-12 it costs nothing TODAY — those 21 codes cover every product that has ever
+      // recorded a sale on Anti Infective / Pedia / CNS. The two it misses, TE006 Tebofortin Intens
+      // and TE007 Tebofortin Max, are active in the master with zero rows in every period.
+      //
+      // The day either one sells, this workbook stops tying: the Matrix sheet will carry its column
+      // and the Data/Total audit pair will not, silently, on HTTP 200. The fix then is to clear that
+      // override (she oversees whole lines, so a per-product allowlist does not describe her), NOT
+      // to un-scope this read — widening what a caller may see to make a sheet balance is how a
+      // confidential product reaches a workbook.
       const detailsPromise = loadMonthlyClosingDetails({
         access,
         line: matrix.line,
@@ -493,34 +549,29 @@ export async function POST(request: Request) {
       );
     }
 
-    // This viewer's OWN scoped Closing Matrix skeleton. Two different sources, because the
-    // portal's "one line per viewer" model does not fit every scoped role:
+    // This viewer's OWN scoped Closing Matrix skeleton, from loadPortalMonthlyClosing — narrowed by
+    // line/region/area/product and confidential-stripped, publish-gated, the exact matrix their
+    // portal screen shows. District/Regional/National Manager and Product/Group Product Manager.
     //
-    // - District/Regional/National Manager, Product/Group Product Manager: loadPortalMonthlyClosing
-    //   — narrows by line/region/area/product and strips confidential columns, publish-gated, the
-    //   exact matrix their portal screen shows.
-    // - Marketing Manager (MARKETING_OVERSIGHT_LINE_ROLES): she oversees THREE lines at once
-    //   (Anti Infective/Pedia/CNS — see access-scope.ts). Her actual boundary is WHICH lines, not
-    //   which areas/regions/products within one — resolveSalesAccessScope already enforces that on
-    //   `details.rows` (fail-closed to her 3-line allowlist, confidential-stripped). The unscoped
-    //   company matrix for `details.line` alone is therefore safe to use as the skeleton: its SHAPE
-    //   (which areas/products exist) carries no figures — every cell is about to be rebuilt from her
-    //   own already-scoped rows below, exactly like the other branch. She keeps her own branch
-    //   because it also skips the publication gate, which is deliberate for her.
+    // The Marketing Manager had a second source here (loadMonthlyClosingWithStoreSplit, keyed on
+    // MARKETING_OVERSIGHT_LINE_ROLES) because her boundary is WHICH lines rather than which
+    // areas/products within one. It is gone because she now takes the full-workbook branch above,
+    // which is what the owner actually asked for — that set holds only her, so the branch was
+    // unreachable and would have rotted here as a second, lesser answer to a question this route no
+    // longer asks her.
     //
-    // `line: details.line` on the second branch IS LOAD-BEARING, not tidying. The skeleton is not
-    // decoration: buildPortalClosingWorkbook rebuilds it with `preserveTargets: true`, so the
-    // workbook's PRODUCT COLUMNS and every TARGET come from the skeleton while only the sales come
-    // from the rows. Resolve the skeleton from the viewer's default line rather than the line being
-    // exported, and a two-line manager — a Product Manager holding Pedia + Anti Infective through
+    // `line: details.line` IS LOAD-BEARING, not tidying. The skeleton is not decoration:
+    // buildPortalClosingWorkbook rebuilds it with `preserveTargets: true`, so the workbook's PRODUCT
+    // COLUMNS and every TARGET come from the skeleton while only the sales come from the rows.
+    // Resolve the skeleton from the viewer's default line rather than the line being exported, and a
+    // two-line manager — a Product Manager holding Pedia + Anti Infective through
     // line_scope_override — exporting his second line gets the FIRST line's products and the FIRST
     // line's targets wrapped around the second line's rows, with the exported sales silently dropped
     // because they have no column to land in. Nothing on the sheet would say so.
     // loadPortalMonthlyClosing REFUSES a line outside the caller's scope instead of substituting a
     // different one, so the worst case is the honest rows-only workbook below, never a mislabelled one.
-    const scopedMatrix = MARKETING_OVERSIGHT_LINE_ROLES.has(access.role)
-      ? await loadMonthlyClosingWithStoreSplit({ line: details.line, period: details.period }).catch(() => null)
-      : (await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null))?.matrix ?? null;
+    const scopedMatrix =
+      (await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null))?.matrix ?? null;
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
