@@ -547,6 +547,7 @@ import { runPayrollCopilotExpenseReviewTests } from "./payroll-copilot-expense-r
 import { runPayrollCopilotHolidayBridgingTests } from "./payroll-copilot-holiday-bridging.test.ts";
 import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.test.ts";
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
+import { runDirectOrderFamilyBasketTests } from "./direct-orders-family-basket.test.ts";
 import { runDirectOrdersUnbookedQueueTests } from "./direct-orders-unbooked-queue.test.ts";
 import { runApiErrorsMustBeThrownTests } from "./api-errors-must-be-thrown.test.ts";
 import { runDirectOrderReportColumnsTests } from "./direct-orders-report-columns.test.ts";
@@ -1369,6 +1370,7 @@ await runTest("payroll copilot holiday bridging (mandatory before/after national
 await runTest("payroll resignation-candidate visibility (additive batch-dashboard banner; stripping untouched)", runPayrollResignationCandidateVisibilityTests);
 await runTest("direct orders approval flow (ladder per role, sequential gating, caps flag not block, pharmacy-price value)", runDirectOrdersApprovalFlowTests);
 await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
+await runTest("direct orders family basket (Lacto only, confidential excluded, form offers what the service accepts)", runDirectOrderFamilyBasketTests);
 await runTest("direct orders unbooked queue (badge wired through all 4 lists, setter-only, filter, graduated ageing, dead tiles gone)", runDirectOrdersUnbookedQueueTests);
 await runTest("api-errors factories are always thrown, never called bare (a dropped error is a guard that does nothing)", runApiErrorsMustBeThrownTests);
 await runTest("direct orders report columns (39-column twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);

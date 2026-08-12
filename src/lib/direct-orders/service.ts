@@ -64,6 +64,10 @@ import {
   type DirectOrderOperationalPage,
 } from "@/lib/direct-orders/operational-query";
 import { isHeadOfficeLine, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
+import {
+  familyKey,
+  validateDirectOrderBasket,
+} from "@/lib/direct-orders/product-family";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
   describeDirectOrderPharmacyStanding,
@@ -119,6 +123,7 @@ import {
   type DirectOrderReportRow,
   type DirectOrderReportScope,
   type DirectOrderRequest,
+  type DirectOrderRequestItem,
   type DirectOrderStatus,
   type DirectSalesReconciliationResult,
   type DirectOrderStepState,
@@ -456,6 +461,75 @@ async function loadSteps(requestId: string): Promise<DirectOrderStepState[]> {
     .order("step_order", { ascending: true });
   if (error) throw error;
   return ((data ?? []) as Array<Record<string, unknown>>).map(mapStepRow);
+}
+
+/**
+ * Every line of a request, in entry order.
+ *
+ * Mirrors `loadSteps`: one focused read, ordered, mapped once. Always returns at least one row for
+ * any request written since the items migration backfilled every existing request to a single line —
+ * an empty result means the request predates that and something is wrong, which is why callers that
+ * must show the money treat it as such rather than rendering an empty basket.
+ */
+async function loadDirectOrderItems(requestId: string): Promise<DirectOrderRequestItem[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("direct_order_request_items")
+    .select("*")
+    .eq("request_id", requestId)
+    .order("line_no", { ascending: true });
+  if (error) throw error;
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    lineNo: Number(row.line_no ?? 0),
+    productCode: String(row.product_code ?? ""),
+    productName: String(row.product_name ?? ""),
+    familyCode: String(row.family_code ?? ""),
+    dealType: String(row.deal_type ?? "bonus") === "discount" ? "discount" : "bonus",
+    qty: Number(row.qty ?? 0),
+    bonus: Number(row.bonus ?? 0),
+    discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
+    publicPriceSnapshot: row.public_price_snapshot == null ? null : Number(row.public_price_snapshot),
+    pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
+    salesValue: Number(row.sales_value ?? 0),
+    overCap: row.over_cap === true,
+  }));
+}
+
+/**
+ * The same lines for MANY requests in one read.
+ *
+ * The cleanup pass compares every open request against every other, so asking per request would be
+ * one round trip per order on a page that already reads the whole open set. `fetchAllRows` pages it,
+ * because "every open request" is not a number this can assume stays small.
+ */
+async function loadDirectOrderItemsForRequests(requestIds: readonly string[]): Promise<Map<string, DirectOrderRequestItem[]>> {
+  const byRequest = new Map<string, DirectOrderRequestItem[]>();
+  if (requestIds.length === 0) return byRequest;
+  const supabase = getSupabaseAdmin();
+  const rows = await fetchAllRows<Record<string, unknown>>(
+    () => supabase.from("direct_order_request_items").select("*").in("request_id", [...requestIds]),
+    "id",
+  );
+  for (const row of rows) {
+    const key = String(row.request_id ?? "");
+    const bucket = byRequest.get(key) ?? [];
+    bucket.push({
+      lineNo: Number(row.line_no ?? 0),
+      productCode: String(row.product_code ?? ""),
+      productName: String(row.product_name ?? ""),
+      familyCode: String(row.family_code ?? ""),
+      dealType: String(row.deal_type ?? "bonus") === "discount" ? "discount" : "bonus",
+      qty: Number(row.qty ?? 0),
+      bonus: Number(row.bonus ?? 0),
+      discountPct: row.discount_pct == null ? null : Number(row.discount_pct),
+      publicPriceSnapshot: row.public_price_snapshot == null ? null : Number(row.public_price_snapshot),
+      pharmacyPriceSnapshot: row.pharmacy_price_snapshot == null ? null : Number(row.pharmacy_price_snapshot),
+      salesValue: Number(row.sales_value ?? 0),
+      overCap: row.over_cap === true,
+    });
+    byRequest.set(key, bucket);
+  }
+  for (const bucket of byRequest.values()) bucket.sort((a, b) => a.lineNo - b.lineNo);
+  return byRequest;
 }
 
 async function insertEvent(input: {
@@ -2752,7 +2826,179 @@ export type SubmitDirectOrderInput = {
   bonusOverrideReason?: string | null;
   /** Expected money-collection date (YYYY-MM-DD), required — entered by the requester. */
   collectionDate?: string | null;
+  /**
+   * EXTRA lines beyond the one described by the fields above, for a family basket.
+   *
+   * Additive on purpose. Every existing caller — the submit API route, the tests, anything holding
+   * a saved payload — sends the singular fields and no `items`, and gets exactly the one-product
+   * request it always got. A Lacto basket sends the second concentration here.
+   *
+   * The alternative, replacing the singular fields with an `items` array, would have been cleaner
+   * to read and would have broken every caller at once for a feature only Lacto can use.
+   */
+  items?: DirectOrderItemInput[];
 };
+
+/** One line a caller wants on a request. `productCode` identifies it; everything else prices it. */
+export type DirectOrderItemInput = {
+  productCode: string;
+  qty: number;
+  dealType?: DirectOrderDealType;
+  bonus?: number;
+  discountPct?: number | null;
+};
+
+/** A line, priced and checked, ready to be written. */
+export type ResolvedDirectOrderLine = {
+  lineNo: number;
+  productCode: string;
+  productName: string;
+  familyCode: string;
+  line: string;
+  dealType: DirectOrderDealType;
+  qty: number;
+  bonus: number;
+  discountPct: number | null;
+  publicPrice: number | null;
+  pharmacyPrice: number | null;
+  salesValue: number;
+  overCap: boolean;
+};
+
+/**
+ * Turn what a caller asked for into priced, validated lines — the ONE definition both
+ * `submitDirectOrder` and `reviseDirectOrder` use.
+ *
+ * A request used to be one product. It can now carry several, but only from ONE family and only
+ * from a family allowed to combine (today Lacto alone — see product-family.ts). Everything else
+ * about a line is unchanged: same catalogue lookup, same line guard, same pricing helper, same
+ * flag-never-block cap behaviour.
+ *
+ * SHARED FOR THE SAME REASON `resolveDirectOrderPricing` IS. A correction is repriced from scratch
+ * on resubmission; a second copy of these rules is precisely how a correction ends up valued — or
+ * validated — differently from the order it corrects.
+ *
+ * THE LINE GUARD RUNS PER ITEM, not once for the basket. A single-family basket cannot span product
+ * lines today (every family sits on one line once confidential products are excluded), so this is
+ * defence in depth rather than a live case — but "cannot today" is a property of the data, and this
+ * is money.
+ */
+async function resolveDirectOrderBasket(input: {
+  access: AccessContext;
+  items: readonly DirectOrderItemInput[];
+  caps: Awaited<ReturnType<typeof loadDirectOrderCaps>>;
+}): Promise<{ lines: ResolvedDirectOrderLine[]; familyCode: string; totalSalesValue: number }> {
+  const { access, items, caps } = input;
+  if (items.length === 0) badRequest("A direct order needs at least one product.");
+
+  const products = await listSourceOfSalesProducts();
+  const requesterLine = await resolveDirectOrderRequesterLineName(access);
+
+  type Candidate = { item: DirectOrderItemInput; product: (typeof products)[number]; qty: number };
+  const candidates: Candidate[] = [];
+
+  for (const item of items) {
+    const qty = Math.floor(Number(item.qty) || 0);
+    if (qty <= 0) badRequest("Quantity must be greater than zero.");
+
+    const product = products.find((candidate) => candidate.productCode === item.productCode);
+    if (!product) badRequest(`Unknown product code "${item.productCode}".`);
+    if ((product.line ?? "").trim().toUpperCase() === "IGNORE") {
+      badRequest(`"${product.productName}" is not a submittable Phoenix product.`);
+    }
+    // Server-side line guard (defence in depth — the submit form's dropdown is already scoped, but
+    // this is money-critical: never trust a client-only restriction here).
+    if (requesterLine !== null && requesterLine.toLowerCase() !== (product.line ?? "").trim().toLowerCase()) {
+      badRequest(
+        requesterLine
+          ? `"${product.productName}" is a ${product.line} product — you can only submit direct orders for your own line (${requesterLine}).`
+          : `Your account has no field line on record, so it cannot submit a direct order for "${product.productName}".`,
+      );
+    }
+    candidates.push({ item, product, qty });
+  }
+
+  // The family rule, from the one module that owns it. Checked BEFORE pricing: refusing a mixed
+  // basket after reading prices for it would be work done to reach a foregone conclusion.
+  const verdict = validateDirectOrderBasket(
+    candidates.map((candidate) => ({
+      productCode: candidate.product.productCode,
+      familyCode: familyKey(candidate.product.familyCode),
+    })),
+  );
+  if (!verdict.ok) badRequest(verdict.message);
+
+  const lines: ResolvedDirectOrderLine[] = [];
+  for (const [index, candidate] of candidates.entries()) {
+    const dealType: DirectOrderDealType = candidate.item.dealType === "discount" ? "discount" : "bonus";
+    const priced = await resolveDirectOrderPricing({
+      product: candidate.product,
+      dealType,
+      qty: candidate.qty,
+      bonus: candidate.item.bonus,
+      discountPct: candidate.item.discountPct,
+      caps,
+    });
+    lines.push({
+      lineNo: index + 1,
+      productCode: candidate.product.productCode,
+      productName: candidate.product.productName,
+      familyCode: familyKey(candidate.product.familyCode),
+      line: candidate.product.line,
+      dealType,
+      qty: candidate.qty,
+      bonus: priced.bonus,
+      discountPct: priced.discountPct,
+      publicPrice: priced.publicPrice,
+      pharmacyPrice: priced.pharmacyPrice,
+      salesValue: priced.salesValue,
+      overCap: priced.overCap,
+    });
+  }
+
+  return {
+    lines,
+    familyCode: lines[0].familyCode,
+    // The request's stored sales_value. Rounded once, at the end: summing pre-rounded lines and
+    // rounding again would let a half-piastre drift in and out of the collection remainder.
+    totalSalesValue: Math.round(lines.reduce((sum, line) => sum + line.salesValue, 0) * 100) / 100,
+  };
+}
+
+/**
+ * Replace a request's lines with exactly these.
+ *
+ * Delete-then-insert rather than diffing: a correction can drop a line, and reconciling an edited
+ * basket line-by-line is a lot of code to arrive at the same three rows. The unique constraint on
+ * (request_id, line_no) makes a partial failure loud rather than silently duplicating a line.
+ */
+async function writeDirectOrderItems(requestId: string, lines: readonly ResolvedDirectOrderLine[]): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error: deleteError } = await supabase
+    .from("direct_order_request_items")
+    .delete()
+    .eq("request_id", requestId);
+  if (deleteError) throw deleteError;
+
+  const { error: insertError } = await supabase.from("direct_order_request_items").insert(
+    lines.map((line) => ({
+      request_id: requestId,
+      line_no: line.lineNo,
+      product_code: line.productCode,
+      product_name: line.productName,
+      family_code: line.familyCode,
+      public_price_snapshot: line.publicPrice,
+      pharmacy_price_snapshot: line.dealType === "bonus" ? line.pharmacyPrice : null,
+      deal_type: line.dealType,
+      qty: line.qty,
+      bonus: line.bonus,
+      discount_pct: line.discountPct,
+      sales_value: line.salesValue,
+      over_cap: line.overCap,
+    })),
+  );
+  if (insertError) throw insertError;
+}
 
 /**
  * Resolve the money for a direct order: which price basis applies, whether it is over cap, and the
@@ -2863,46 +3109,44 @@ export async function submitDirectOrder(
   }
   const actorHrId = requireActorHrId(access);
 
-  const qty = Math.floor(Number(input.qty) || 0);
-  if (qty <= 0) badRequest("Quantity must be greater than zero.");
-
   const collectionDate = String(input.collectionDate ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(collectionDate)) {
     badRequest("A valid money-collection date (YYYY-MM-DD) is required.");
   }
 
-  // Resolve the product from the master (name, line).
-  const products = await listSourceOfSalesProducts();
-  const product = products.find((candidate) => candidate.productCode === input.productCode);
-  if (!product) badRequest(`Unknown product code "${input.productCode}".`);
-  if ((product.line ?? "").trim().toUpperCase() === "IGNORE") {
-    badRequest(`"${product.productName}" is not a submittable Phoenix product.`);
-  }
-  // Server-side line guard (defense in depth — the submit form's dropdown is already
-  // scoped, but this is money-critical: never trust a client-only restriction here).
-  const requesterLine = await resolveDirectOrderRequesterLineName(access);
-  if (requesterLine !== null && requesterLine.toLowerCase() !== (product.line ?? "").trim().toLowerCase()) {
-    badRequest(
-      requesterLine
-        ? `"${product.productName}" is a ${product.line} product — you can only submit direct orders for your own line (${requesterLine}).`
-        : `Your account has no field line on record, so it cannot submit a direct order for "${product.productName}".`,
-    );
-  }
-
   const supabase = getSupabaseAdmin();
   const caps = await loadDirectOrderCaps();
-  const dealType: DirectOrderDealType = input.dealType === "discount" ? "discount" : "bonus";
   const overrideReason = input.bonusOverrideReason?.trim() || null;
 
-  const { bonus, discountPct, publicPrice, pharmacyPrice, salesValue, overCap } =
-    await resolveDirectOrderPricing({
-      product,
-      dealType,
-      qty,
-      bonus: input.bonus,
-      discountPct: input.discountPct,
-      caps,
-    });
+  // The basket. The singular fields are line 1; `items` adds the rest. Product lookup, the
+  // IGNORE-line check, the server-side line guard, the family rule and pricing all live in
+  // resolveDirectOrderBasket, which reviseDirectOrder calls identically.
+  const { lines, familyCode, totalSalesValue } = await resolveDirectOrderBasket({
+    access,
+    caps,
+    items: [
+      {
+        productCode: input.productCode,
+        qty: input.qty,
+        dealType: input.dealType,
+        bonus: input.bonus,
+        discountPct: input.discountPct,
+      },
+      ...(input.items ?? []),
+    ],
+  });
+
+  // Line 1 populates the request's singular columns, which roughly thirty files still read. For a
+  // one-item request — every order raised before today, and every non-Lacto order after it — those
+  // columns are the whole truth exactly as before. `sales_value` is the basket TOTAL either way,
+  // because collection's remaining_amount derives from it and must never under-count a basket.
+  const headLine = lines[0];
+  const product = { productCode: headLine.productCode, productName: headLine.productName, line: headLine.line };
+  const dealType = headLine.dealType;
+  const qty = headLine.qty;
+  const { bonus, discountPct, publicPrice, pharmacyPrice } = headLine;
+  const overCap = lines.some((line) => line.overCap);
+  const salesValue = totalSalesValue;
 
   // Load the pharmacy in full (a missing map entry IS "not found") — the approver's
   // notification names the pharmacy, its geography and its distributors, so the bare
@@ -2970,6 +3214,7 @@ export async function submitDirectOrder(
       line: product.line,
       product_code: product.productCode,
       product_name: product.productName,
+      family_code: familyCode,
       qty,
       bonus,
       bonus_override_reason: overrideReason,
@@ -2987,6 +3232,11 @@ export async function submitDirectOrder(
     .single();
   if (insertError) throw insertError;
   const request = mapRequestRow(inserted as Record<string, unknown>);
+
+  // The lines. Written immediately after the request so a basket can never exist without them —
+  // the Source-of-Sales injection reads items, so a request with no items would inject nothing and
+  // the money would simply be absent rather than wrong, which is harder to notice.
+  await writeDirectOrderItems(request.id, lines);
 
   // Seed the approval steps — never for a held order, whose chain is built at revival.
   if (chain.length > 0) {
@@ -3106,6 +3356,15 @@ export type ReviseDirectOrderInput = {
   collectionDate?: string | null;
   /** The requester's note back to the approver saying what they changed. Required. */
   correctionNote?: string | null;
+  /**
+   * EXTRA lines beyond the one described above. Absent means the correction keeps a single line,
+   * which is what every correction before today did.
+   *
+   * A correction REPLACES the basket rather than editing it: sending one item drops a second line
+   * that was there before. Deliberate — a returned order is corrected as a whole, and "which of my
+   * lines survived" is a worse question for a requester than "what am I resubmitting".
+   */
+  items?: DirectOrderItemInput[];
 };
 
 /**
@@ -3188,20 +3447,31 @@ export async function reviseDirectOrder(
   }
 
   const caps = await loadDirectOrderCaps();
-  const dealType: DirectOrderDealType = input.dealType === "discount" ? "discount" : "bonus";
   const overrideReason = input.bonusOverrideReason?.trim() || null;
 
-  // Repriced from scratch through the SAME helper `submitDirectOrder` uses. A correction submitted
-  // a week later must be valued on today's price basis, exactly as a fresh order would be.
-  const { bonus, discountPct, publicPrice, pharmacyPrice, salesValue, overCap } =
-    await resolveDirectOrderPricing({
-      product,
-      dealType,
-      qty,
-      bonus: input.bonus,
-      discountPct: input.discountPct,
-      caps,
-    });
+  // Repriced from scratch through the SAME helper `submitDirectOrder` uses, basket and all. A
+  // correction submitted a week later must be valued on today's price basis, and validated by the
+  // same family rule, exactly as a fresh order would be.
+  const { lines, familyCode, totalSalesValue } = await resolveDirectOrderBasket({
+    access,
+    caps,
+    items: [
+      {
+        productCode: before.productCode,
+        qty: input.qty,
+        dealType: input.dealType,
+        bonus: input.bonus,
+        discountPct: input.discountPct,
+      },
+      ...(input.items ?? []),
+    ],
+  });
+
+  const headLine = lines[0];
+  const dealType = headLine.dealType;
+  const { bonus, discountPct, publicPrice, pharmacyPrice } = headLine;
+  const overCap = lines.some((line) => line.overCap);
+  const salesValue = totalSalesValue;
 
   const steps = await loadSteps(before.id);
   const activeStep = resolveActiveStep(steps);
@@ -3226,7 +3496,8 @@ export async function reviseDirectOrder(
     .from("direct_order_requests")
     .update({
       status: "pending_approval",
-      qty,
+      family_code: familyCode,
+      qty: headLine.qty,
       bonus,
       bonus_override_reason: overrideReason,
       deal_type: dealType,
@@ -3245,6 +3516,10 @@ export async function reviseDirectOrder(
     .single();
   if (updateError) throw updateError;
   const after = mapRequestRow(updated as Record<string, unknown>);
+
+  // Replace the lines. AFTER the compare-and-swap on status='returned' succeeded, so a losing
+  // second tab cannot rewrite the basket of an order it did not resubmit.
+  await writeDirectOrderItems(after.id, lines);
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -4250,6 +4525,15 @@ async function resolveDirectOrderRequesterLineName(access: AccessContext): Promi
 export type DirectOrderProductOption = {
   productCode: string;
   productName: string;
+  /**
+   * The catalogue's own family grouping — LA covers the Lacto concentrations, TE the Tebofortins.
+   *
+   * Carried so the submit form can offer the rest of a family without a second round trip, and so
+   * the rule the server enforces and the choice the form offers come from the SAME field. Deriving
+   * siblings from name prefixes in the component would be a second definition of a grouping the
+   * master data already owns, and the two would disagree the first time a product was renamed.
+   */
+  familyCode: string;
   line: string;
   /** Prices discount deals. */
   publicPrice: number | null;
@@ -4270,7 +4554,7 @@ export async function listDirectOrderProductOptions(
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("source_of_sales_products")
-    .select("product_code, product_name, line, public_price, pharmacy_price")
+    .select("product_code, product_name, family_code, line, public_price, pharmacy_price")
     .eq("active", true)
     .neq("line", "IGNORE");
   if (access) {
@@ -4282,6 +4566,7 @@ export async function listDirectOrderProductOptions(
     .map((p) => ({
       productCode: String(p.product_code),
       productName: String(p.product_name ?? ""),
+      familyCode: String(p.family_code ?? ""),
       line: String(p.line ?? ""),
       publicPrice: p.public_price == null ? null : Number(p.public_price),
       pharmacyPrice: p.pharmacy_price == null ? null : Number(p.pharmacy_price),
@@ -4643,10 +4928,13 @@ export async function getDirectOrderApprovalDetail(
   const loaded = await getDirectOrderRequest(access, requestId);
   if (!loaded) return null;
   const { request, steps } = loaded;
-  const [nameOf, pharmacies, caps] = await Promise.all([
+  const [nameOf, pharmacies, caps, items] = await Promise.all([
     nameLookup(),
     loadPharmaciesByIds([request.pharmacyId]),
     loadDirectOrderCaps(),
+    // In the same round trip as the rest — an approver cannot decide without the lines, so
+    // fetching them later would only move the wait.
+    loadDirectOrderItems(request.id),
   ]);
   const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
   // Confidentiality + line scoping for THIS viewer, resolved once and handed to both history
@@ -4770,6 +5058,9 @@ export async function getDirectOrderApprovalDetail(
 
   return {
     request,
+    // Every line, always — one for a normal order, several for a family basket. An approver decides
+    // a number and must see every line that adds up to it.
+    items,
     requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
     pharmacyRegisteredByName: pharmacy?.createdByHrId ? nameOf(pharmacy.createdByHrId) : null,
     pharmacy,
@@ -5389,6 +5680,11 @@ export async function getDirectOrderReport(
   const pharmacies = await loadPharmaciesByIds(requests.map((request) => request.pharmacyId));
   const nameOf = await nameLookup();
   const decidedByReq = await loadDecidingActors(requests.map((request) => request.id));
+  // Every product on every request. One paged read alongside the four this already does — the
+  // report's product and unit columns would otherwise show the FIRST line against a sales value
+  // that is the whole basket, which on the sheet Finance books from is the report understating
+  // what was ordered.
+  const itemsByRequest = await loadDirectOrderItemsForRequests(requests.map((request) => request.id));
 
   // Resolve brick/area/region CODES → NAMES for display (owner wants both). Shared with the
   // approval detail and the approvals lists — see @/lib/direct-orders/geo-names.
@@ -5398,6 +5694,18 @@ export async function getDirectOrderReport(
     const active = resolveActiveStep(stepsByReq.get(request.id) ?? []);
     const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
     const distributorCodesText = formatDistributorCodesText(pharmacy?.distributorCodes);
+    // A basket ONLY. One-product orders — every order raised before this feature, and most raised
+    // after — take the identical path they always took, straight off the request's own columns.
+    //
+    // No column is ADDED. The 39 columns are positional twins consumed by the owner's Google Sheet
+    // every 60 seconds, so an insert would shift live formulas. Instead the existing columns are
+    // made truthful: names and codes joined the same way the approval detail joins them, units
+    // summed the same way sales value already is. For a single line both are what they were.
+    //
+    // Prices and deal terms stay the FIRST line's. Averaging two prices would invent a number, and
+    // a mixed-deal basket has no single discount to report — the order's own screen shows each line.
+    const items = itemsByRequest.get(request.id) ?? [];
+    const isBasket = items.length > 1;
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
@@ -5405,11 +5713,11 @@ export async function getDirectOrderReport(
       requesterRole: request.requesterRole,
       status: request.status,
       line: request.line,
-      productCode: request.productCode,
-      productName: request.productName,
+      productCode: isBasket ? items.map((item) => item.productCode).join(" + ") : request.productCode,
+      productName: isBasket ? items.map((item) => item.productName).join(" + ") : request.productName,
       pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
-      qty: request.qty,
-      bonus: request.bonus,
+      qty: isBasket ? items.reduce((total, item) => total + item.qty, 0) : request.qty,
+      bonus: isBasket ? items.reduce((total, item) => total + item.bonus, 0) : request.bonus,
       bonusOverrideReason: request.bonusOverrideReason,
       dealType: request.dealType,
       discountPct: request.discountPct,
@@ -6261,6 +6569,10 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
   //       pharmacy records is still seen as one order — which is exactly how the live pair hid.
   const canonical = canonicalPharmacyMap(mergeProposals);
   const requestById = new Map(allRequests.map((request) => [request.requestId, request]));
+  // Every product on every open request. Without these the dedupe key falls back to the request's
+  // FIRST line, and two different baskets that happen to start the same would be proposed for
+  // cancellation as one order.
+  const linesByRequest = await loadDirectOrderItemsForRequests(allRequests.map((request) => request.requestId));
   const duplicateProposals = findDuplicateRequestGroups(
     allRequests.map((request) => ({
       id: request.requestId,
@@ -6275,6 +6587,7 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
       requesterHrId: request.requesterHrId,
       submittedAt: request.submittedAt,
       approvedStepCount: request.approvedStepCount,
+      lines: linesByRequest.get(request.requestId) ?? [],
     })),
     canonical,
   );

@@ -260,18 +260,37 @@ export function runDirectOrdersApprovalFlowTests() {
 
     // BOTH money paths must go through the one helper. If either grows its own copy of the pricing
     // rules, a correction and a fresh submission can silently disagree about what an order is worth.
+    //
+    // STRENGTHENED 2026-08-12, when a request became a basket. Both callers now reach
+    // resolveDirectOrderPricing through resolveDirectOrderBasket, which prices EVERY line. Asserting
+    // that each caller uses the basket resolver AND that the basket resolver is the only thing that
+    // calls the pricing helper is stronger than the old pair of checks: it rules out a third path
+    // pricing independently, which the previous assertions would not have caught.
     assert.match(
       submitBody,
-      /resolveDirectOrderPricing\(/,
-      "submitDirectOrder must price through the shared helper",
+      /resolveDirectOrderBasket\(/,
+      "submitDirectOrder must price through the shared basket resolver",
     );
     const reviseIdx = serviceSource.indexOf("export async function reviseDirectOrder(");
     assert.ok(reviseIdx > -1, "reviseDirectOrder must exist");
     const reviseBody = serviceSource.slice(reviseIdx, serviceSource.indexOf("// ── Decide", reviseIdx));
     assert.match(
       reviseBody,
-      /resolveDirectOrderPricing\(/,
-      "reviseDirectOrder must price a correction through the SAME helper, never a second copy",
+      /resolveDirectOrderBasket\(/,
+      "reviseDirectOrder must price a correction through the SAME resolver, never a second copy",
+    );
+    // Exactly one call site for the pricing helper: inside the basket resolver. Comments stripped,
+    // because the helper is discussed by name in several docblocks that must stay readable.
+    const serviceCode = serviceSource
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+      .join("\n");
+    const pricingCalls = serviceCode.match(/await resolveDirectOrderPricing\(/g) ?? [];
+    assert.equal(
+      pricingCalls.length,
+      1,
+      "resolveDirectOrderPricing must have exactly ONE caller (resolveDirectOrderBasket). A second " +
+        "call site is a second place for the money rules to drift.",
     );
 
     // The bonus branch must contain NO badRequest at all. Checked on the branch body rather than

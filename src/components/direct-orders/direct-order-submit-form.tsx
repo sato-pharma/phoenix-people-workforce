@@ -4,6 +4,12 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import {
+  familyAllowsMultipleItems,
+  familyKey,
+  selectableFamilyMembers,
+} from "@/lib/direct-orders/product-family";
+
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
 import { DistributorCustomerPicker } from "@/components/direct-orders/distributor-customer-picker";
 import { InvoiceCapture } from "@/components/direct-orders/invoice-capture";
@@ -23,6 +29,8 @@ import type {
 type ProductOption = {
   productCode: string;
   productName: string;
+  /** The catalogue's grouping — the SAME field the server enforces the basket rule on. */
+  familyCode: string;
   line: string;
   publicPrice: number | null;
   pharmacyPrice: number | null;
@@ -114,6 +122,37 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [ok, setOk] = useState<{ message: string; orderId: string | null } | null>(null);
 
   const product = useMemo(() => products.find((p) => p.productCode === productCode) ?? null, [products, productCode]);
+
+  // ── The family basket (owner, 2026-08-12) ──────────────────────────────────
+  //
+  // "make him able to choose lacto adv 1 and lacto adv 2 but this only with lacto". The rule is
+  // NOT written here: familyAllowsMultipleItems and selectableFamilyMembers are the same functions
+  // the server validates with, so the form can only ever offer what the server will accept. A
+  // component with its own copy of the rule is a component that eventually offers a basket the
+  // service refuses, and the requester is told no after filling the form in.
+  //
+  // selectableFamilyMembers also drops confidential products, so Lacto Basic 1/2 never appear.
+  const siblings = useMemo(() => {
+    if (!product || !familyAllowsMultipleItems(product.familyCode)) return [];
+    return selectableFamilyMembers(products, product.familyCode).filter(
+      (candidate) => candidate.productCode !== product.productCode,
+    );
+  }, [product, products]);
+
+  // Which siblings are on the order, each with its own quantity and deal — two concentrations of
+  // one product are still two different asks, and forcing them to share a quantity would be a
+  // worse lie than not offering them at all.
+  const [extraLines, setExtraLines] = useState<
+    Record<string, { qty: string; dealType: DirectOrderDealType; bonus: string; discount: string }>
+  >({});
+
+  // Anything selected for a product that is no longer reachable — the requester changed the main
+  // product, so its family changed — must go. Leaving it would submit a line the form no longer
+  // shows, which is the worst kind of surprise on an order.
+  const activeExtras = useMemo(
+    () => Object.entries(extraLines).filter(([code]) => siblings.some((s) => s.productCode === code)),
+    [extraLines, siblings],
+  );
   const qtyNum = Math.max(0, Math.floor(Number(qty) || 0));
   const bonusNum = Math.max(0, Math.floor(Number(bonus) || 0));
   const discountNum = Math.max(0, Math.min(100, Number(discount) || 0));
@@ -243,6 +282,15 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
           discountPct: dealType === "discount" ? discountNum : null,
           bonusOverrideReason: overCap ? overrideReason.trim() || null : null,
           collectionDate,
+          // Only the lines still shown. Every rule about what may share a request is re-checked
+          // server-side; this is the convenience, never the gate.
+          items: activeExtras.map(([code, line]) => ({
+            productCode: code,
+            qty: Number(line.qty) || 0,
+            dealType: line.dealType,
+            bonus: line.dealType === "bonus" ? Number(line.bonus) || 0 : 0,
+            discountPct: line.dealType === "discount" ? Number(line.discount) || 0 : null,
+          })),
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -261,6 +309,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         orderId: typeof data.result?.id === "string" ? data.result.id : null,
       });
       setProductCode("");
+      setExtraLines({});
       setQty("");
       setBonus("");
       setDiscount("");
@@ -322,6 +371,122 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
               ))}
             </select>
           </div>
+
+          {/* ── The rest of this product's family ────────────────────────────
+              Offered ONLY when the catalogue says this product's family may share a request —
+              today Lacto alone. Every other product shows nothing here at all, so the form a
+              requester already knows is unchanged for them.
+
+              Each line carries its OWN quantity and deal. Two concentrations are two different
+              asks: making them share one quantity would be a worse lie than not offering the
+              second line. */}
+          {siblings.length > 0 ? (
+            <div className="border border-orange-200 bg-orange-50/40 p-3">
+              <p className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                Add another {product?.familyCode ? familyKey(product.familyCode) : ""} concentration
+              </p>
+              <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
+                These go on the SAME order. Only products from one family can share an order.
+              </p>
+              <div className="mt-2 space-y-2">
+                {siblings.map((sibling) => {
+                  const line = extraLines[sibling.productCode];
+                  const on = Boolean(line);
+                  return (
+                    <div key={sibling.productCode} className="border border-slate-200 bg-white p-2">
+                      <label className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(event) =>
+                            setExtraLines((prev) => {
+                              const next = { ...prev };
+                              if (event.target.checked) {
+                                // Starts on the SAME deal type as the main line — the common case is
+                                // two concentrations on one arrangement — but each stays editable.
+                                next[sibling.productCode] = { qty: "", dealType, bonus: "", discount: "" };
+                              } else {
+                                delete next[sibling.productCode];
+                              }
+                              return next;
+                            })
+                          }
+                        />
+                        {sibling.productName}
+                      </label>
+
+                      {on ? (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <label className="block">
+                            <span className={labelClass()}>Quantity</span>
+                            <input
+                              type="number"
+                              min="1"
+                              inputMode="numeric"
+                              className={inputClass()}
+                              value={line.qty}
+                              onChange={(event) =>
+                                setExtraLines((prev) => ({
+                                  ...prev,
+                                  [sibling.productCode]: { ...prev[sibling.productCode], qty: event.target.value },
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="block">
+                            <span className={labelClass()}>Deal</span>
+                            <select
+                              className={inputClass()}
+                              value={line.dealType}
+                              onChange={(event) =>
+                                setExtraLines((prev) => ({
+                                  ...prev,
+                                  [sibling.productCode]: {
+                                    ...prev[sibling.productCode],
+                                    dealType: event.target.value === "discount" ? "discount" : "bonus",
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="bonus">Bonus</option>
+                              <option value="discount">Discount</option>
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className={labelClass()}>
+                              {line.dealType === "discount" ? "Discount %" : "Bonus units"}
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              inputMode="decimal"
+                              className={inputClass()}
+                              value={line.dealType === "discount" ? line.discount : line.bonus}
+                              onChange={(event) =>
+                                setExtraLines((prev) => ({
+                                  ...prev,
+                                  [sibling.productCode]:
+                                    prev[sibling.productCode].dealType === "discount"
+                                      ? { ...prev[sibling.productCode], discount: event.target.value }
+                                      : { ...prev[sibling.productCode], bonus: event.target.value },
+                                }))
+                              }
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* The cap is checked per PRODUCT server-side and flags rather than blocks, so no
+                  number here is refused. Saying so stops a requester assuming a silent limit. */}
+              <p className="mt-2 text-[11px] text-slate-500">
+                Each line is priced and cap-checked on its own. Going over a cap flags the order for
+                your approvers; it never blocks it.
+              </p>
+            </div>
+          ) : null}
 
           {/* Deal type */}
           <div>

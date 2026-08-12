@@ -132,19 +132,70 @@ export const DIRECT_ORDER_CORE_FIELD_LABELS: readonly string[] = [
 export function buildDirectOrderDetailFields(detail: DirectOrderApprovalDetail): DirectOrderDetailField[] {
   const { request, requesterName, pharmacy, geo, medicalRep } = detail;
 
+  // A BASKET is more than one line. The singular fields on the request describe line 1 only, so
+  // showing them alone to an approver deciding a multi-line order would hide money they are
+  // approving. `items` always holds at least one line, so a one-line order takes the same path.
+  const items = detail.items ?? [];
+  const isBasket = items.length > 1;
+
+  // EVERY core label is emitted on both paths. DIRECT_ORDER_CORE_FIELD_LABELS is the machine-checked
+  // completeness bar between this window and the approved-order email, and an earlier cut of this
+  // change swapped "Product" / "Sato product code" / "Deal type" out for a basket — which the suite
+  // did not catch, because no fixture builds a basket. Summarising them is right; dropping them is
+  // how the two surfaces drift apart again.
+  const productSummary = isBasket
+    ? items.map((item) => item.productName).join(" + ")
+    : codeNameLabel(request.productName, request.productCode);
+  const codeSummary = isBasket ? items.map((item) => item.productCode).join(" + ") : text(request.productCode);
+  // A one-line order reads its deal type from the REQUEST, exactly as it always did. Deriving it
+  // from the line instead looked equivalent — the service writes both from the same resolved line —
+  // but it is not: it makes this function disagree with the request whenever the two are out of
+  // step, and the suite caught precisely that. Only a basket needs the derived answer, because only
+  // a basket can mix.
+  const dealTypes = new Set(items.map((item) => item.dealType));
+  const dealTypeLabel = !isBasket
+    ? request.dealType === "discount"
+      ? "Discount"
+      : "Bonus"
+    : dealTypes.size > 1
+      ? "Mixed"
+      : items[0].dealType === "discount"
+        ? "Discount"
+        : "Bonus";
+
   const fields: DirectOrderDetailField[] = [
     { label: "Request ID", value: request.id },
     { label: "Requester", value: `${requesterName} · ${request.requesterHrId} · ${request.requesterRole}` },
     { label: "Line", value: text(request.line) },
-    { label: "Product", value: codeNameLabel(request.productName, request.productCode) },
+    { label: "Product", value: productSummary },
     // The company's own product code, given its own field rather than left in a parenthesis —
     // the owner reads it as a value in its own right, not as a decoration on the name.
-    { label: "Sato product code", value: text(request.productCode) },
+    { label: "Sato product code", value: codeSummary },
     { label: "Status", value: request.status.replace(/_/g, " ") },
-    { label: "Deal type", value: request.dealType === "discount" ? "Discount" : "Bonus" },
-    { label: "Quantity", value: units(request.qty) },
-    { label: "Sales value", value: money(request.salesValue) },
+    { label: "Deal type", value: dealTypeLabel },
+    // A basket's lines each carry their own quantity, so one number cannot stand for them; the
+    // per-line block below is where those live. A single-line order keeps the field it always had.
+    ...(isBasket ? [] : [{ label: "Quantity", value: units(request.qty) }]),
+    { label: isBasket ? "Sales value (total)" : "Sales value", value: money(request.salesValue) },
   ];
+
+  if (isBasket) {
+    // One row per line, each with its own quantity, deal and money — because each of those can
+    // differ between concentrations. The count is in the label so an approver reading quickly
+    // cannot mistake the first line for the whole order.
+    fields.push({
+      label: `Products (${items.length})`,
+      value: items
+        .map((item) => {
+          const deal =
+            item.dealType === "discount" ? `${item.discountPct ?? 0}% discount` : `${units(item.bonus)} bonus`;
+          const flag = item.overCap ? " · over cap" : "";
+          return `${codeNameLabel(item.productName, item.productCode)} — ${units(item.qty)} · ${deal} · ${money(item.salesValue)}${flag}`;
+        })
+        .join("\n"),
+      layout: "full",
+    });
+  }
 
   // BOTH prices are always shown, not just the one that priced this deal. Which basis was used
   // is stated explicitly, so an approver never has to infer it from which field is present.
@@ -256,6 +307,16 @@ export type DirectOrderNotifyContext = {
   distributorCodesText: string;
   /** "Ibn Sina · Overseas" — names only, for the length-bounded one-liner. */
   distributorNames: string;
+  /**
+   * The request's lines, when the caller has them.
+   *
+   * OPTIONAL, and that is a deliberate trade rather than laziness. Several notify sites build this
+   * context from a request row they already hold and would otherwise pay an extra read per order —
+   * the held-notice sweep runs over every held order at once. When absent the one-liner falls back
+   * to the request's own product, which is exactly right for the one-line orders those sweeps
+   * actually cover. The SUBMIT path, where a basket is first seen by an approver, passes them.
+   */
+  items?: readonly { productName: string; qty: number }[];
 };
 
 /**
@@ -289,8 +350,16 @@ function dealSummary(request: DirectOrderRequest): string {
 /** One dense line naming the pharmacy, its geography, its rep and its distributors. */
 export function buildDirectOrderNotificationLine(ctx: DirectOrderNotifyContext): string {
   const { request } = ctx;
+  // A basket names every product, because "Lacto Advanced 1 × 100" for an order that is also
+  // buying Advanced 2 tells the approver something false about what they are being asked to
+  // approve. Bounded by DIRECT_ORDER_NOTIFICATION_MAX_CHARS below, as the whole line always was.
+  const productSummary =
+    ctx.items && ctx.items.length > 1
+      ? ctx.items.map((item) => `${item.productName} × ${units(item.qty)}`).join(" + ")
+      : `${request.productName} × ${units(request.qty)}`;
+
   const parts = [
-    `${ctx.requesterName} submitted ${request.productName} × ${units(request.qty)}`,
+    `${ctx.requesterName} submitted ${productSummary}`,
     `for ${codeNameLabel(ctx.pharmacyName, ctx.pharmacyCode)}`,
     `— ${money(request.salesValue)}, ${dealSummary(request)}.`,
     `${geoSentence(ctx.geo)} · Medical rep ${repLabel(ctx.medicalRep)}.`,
