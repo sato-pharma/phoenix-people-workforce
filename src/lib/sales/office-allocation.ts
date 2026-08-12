@@ -56,7 +56,12 @@ import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 // and enter it. Do NOT re-pin the fingerprints by hand.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const OFFICE_DISTRIBUTOR_CODE = "Office";
+// Re-exported so the existing importers keep their import site. The constant itself lives in the
+// leaf module `office-distributor.ts` because the closing loader needs it and cannot import this
+// file back without a cycle.
+export { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-distributor";
+import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-distributor";
+
 export const OFFICE_TEMPLATE_KEY = "office_allocation";
 const NATIONAL = "NATIONAL";
 

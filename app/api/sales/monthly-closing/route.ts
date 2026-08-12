@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
-import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
@@ -32,12 +32,16 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const line = searchParams.get("line");
     const period = searchParams.get("period");
-    const data = await loadMonthlyClosingWithStoreSplit({ line, period });
+    const parts = await loadMonthlyClosingPartsWithStoreSplit({ line, period });
+    const data = parts.combined;
     // Completeness ride-along: which of last month's sources are still absent from this month.
     // Degrades to null — the banner simply hides — rather than ever taking the closing down.
     const coverage = await loadMonthlySourceCoverage(data.line, data.period).catch(() => null);
 
-    return NextResponse.json({ success: true, data, coverage });
+    // `office` is the same grid holding only the Office channel's allocated units, so the workspace
+    // can show "of which Office" beside every figure. Null (never an empty grid) when it could not
+    // be read — the table then renders "—" and says so, rather than a misleading zero.
+    return NextResponse.json({ success: true, data, coverage, office: parts.office });
   } catch (error) {
     if (isForbiddenError(error)) {
       return NextResponse.json(

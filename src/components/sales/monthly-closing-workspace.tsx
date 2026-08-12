@@ -32,17 +32,21 @@ type Props = {
   initialCoverage?: MonthlySourceCoverage | null;
   initialError: string | null;
   initialMatrix: MonthlyClosingMatrix | null;
+  /** The Office-only grid behind every "of which Office" column. Null = could not be read. */
+  initialOffice?: MonthlyClosingMatrix | null;
 };
 
 type ClosingResponse = {
   coverage?: MonthlySourceCoverage | null;
   data?: MonthlyClosingMatrix;
   error?: string;
+  office?: MonthlyClosingMatrix | null;
   success: boolean;
 };
 
-export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = null, initialError, initialMatrix }: Props) {
+export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = null, initialError, initialMatrix, initialOffice = null }: Props) {
   const [matrix, setMatrix] = useState<MonthlyClosingMatrix | null>(initialMatrix);
+  const [office, setOffice] = useState<MonthlyClosingMatrix | null>(initialOffice);
   const [coverage, setCoverage] = useState<MonthlySourceCoverage | null>(initialCoverage);
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -63,6 +67,15 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
   const filteredMatrix = useMemo(
     () => (matrix ? filterMonthlyClosingMatrix(matrix, filter) : null),
     [matrix, filter],
+  );
+
+  // The Office grid gets the SAME filter. Its cells are looked up by area and product code rather
+  // than by position, so an unfiltered grid would still resolve each cell correctly — but its region
+  // subtotals and national total would be the unfiltered ones, and "of which Office" would then
+  // exceed a filtered row's own total.
+  const filteredOffice = useMemo(
+    () => (office ? filterMonthlyClosingMatrix(office, filter) : null),
+    [office, filter],
   );
 
   // One plain-language sentence about completeness, or null to show nothing. Missing sources are
@@ -215,6 +228,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
       const payload: ClosingResponse = text ? JSON.parse(text) : { success: response.ok };
       if (payload.success && payload.data) {
         setMatrix(payload.data);
+        setOffice(payload.office ?? null);
         setCoverage(payload.coverage ?? null);
         setFilter(emptyMonthlyClosingFilter);
       } else {
@@ -479,7 +493,7 @@ export function MonthlyClosingWorkspace({ canPublish = false, initialCoverage = 
                 <div className="border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500 md:px-5">
                   Store sales are shared across their city&apos;s areas — this matrix and the exported workbook show the same numbers.
                 </div>
-                <ClosingMatrixTable matrix={filteredMatrix} />
+                <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
               </>
             ) : (
               <ClosingDetailsPanel

@@ -90,6 +90,7 @@ export default async function PortalMonthlyClosingPage({
           availablePeriods={result.availablePeriods}
           line={result.line}
           matrix={result.matrix}
+          office={result.office}
           selectedPeriod={result.selectedPeriod}
         />
       )}

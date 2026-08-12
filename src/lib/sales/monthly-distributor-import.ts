@@ -23,6 +23,7 @@ import { applyClosingAreaMerges, markMergedAreaRowsStatic } from "@/lib/sales/cl
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { JULY_2026_DIRECT_PERIOD, JULY_2026_DIRECT_ROWS } from "@/lib/sales/july-2026-direct-orders";
 import { loadMonthlyTargets, resolveTargetLineCode } from "@/lib/sales/monthly-targets";
+import { isOfficeDistributorCode } from "@/lib/sales/office-distributor";
 import { finalizeSosBatchAndAuditSupersede } from "@/lib/sales/source-of-sales-batch-supersede";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import { getSupabaseAdmin, rpcAll, toQueryError } from "@/lib/supabase/server";
@@ -4173,7 +4174,86 @@ export type MonthlyClosingParts = {
   combined: MonthlyClosingMatrix;
   retail: MonthlyClosingMatrix;
   directCells: MonthlyClosingDirectCell[];
+  /**
+   * The Office slice of `retail`, on the SAME grid — so any cell, subtotal or grand total in the
+   * matrix can be read as "x units, of which y came from Office".
+   *
+   * Office is not a distributor: its units carry no customer and no geography of their own, they
+   * are spread across areas by the owner's value-share rule (see office-allocation.ts). On CNS July
+   * 2026 that is 42,838 of 105,152 units — 41% of the closing — and until 2026-08-11 it was
+   * arithmetically inseparable from real distributor sell-out everywhere except the Data sheet.
+   *
+   * Built by running the SAME builder over the Office-only cells, rather than threading a second
+   * number through every MonthlyClosingCell: subtotals and grand totals then come out of the same
+   * code path as the headline figures and cannot drift from them.
+   *
+   * NULL means "could not be determined", never "zero" — see loadOfficeClosingCells.
+   */
+  office: MonthlyClosingMatrix | null;
 };
+
+/**
+ * The Office-only area × product cells for one line and month.
+ *
+ * Reads `phx_closing_distributor_product`, whose WHERE clause is `phx_monthly_closing_matrix`'s
+ * term for term (same period, same line, same `not is_direct`, same LA003/LA004/SS001 exclusion) —
+ * it only adds `distributor_code` to the GROUP BY. Verified against production on 2026-08-11:
+ * summing it across distributors reproduces the matrix to 0 units and 0 EGP on CNS July.
+ *
+ * Returns NULL, never [], when the RPC cannot be read. An unapplied migration surfaces as PGRST202
+ * and an empty result set, which would render every "of which Office" as a confident 0 — the exact
+ * misleading zero the owner's rule forbids. Null makes the UI say it does not know.
+ */
+async function loadOfficeClosingCells(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  line: string,
+  period: string,
+): Promise<MonthlyClosingAggregateCell[] | null> {
+  let rows: Record<string, unknown>[];
+  try {
+    rows = await rpcAll(
+      supabase,
+      "phx_closing_distributor_product",
+      { p_line: line, p_period: period },
+      ["distributor_code", "area_code", "product_code"],
+    );
+  } catch {
+    return null;
+  }
+
+  return officeCellsFromDistributorRows(rows);
+}
+
+/**
+ * Keep only the Office rows of a `phx_closing_distributor_product` result and fold them to the
+ * matrix's own grain.
+ *
+ * Two things go wrong here if it is done casually, and both are silent:
+ *   1. NOT filtering to Office returns every distributor and makes "of which Office" equal to the
+ *      whole closing — a column that always reads 100%.
+ *   2. The RPC groups by REGION as well as area, so one (area, product) can arrive as several rows.
+ *      Overwriting instead of summing drops every region but the last.
+ * Exported so both are covered by a test that does not need a database.
+ */
+export function officeCellsFromDistributorRows(rows: Record<string, unknown>[]): MonthlyClosingAggregateCell[] {
+  const byCell = new Map<string, MonthlyClosingAggregateCell>();
+  for (const row of rows) {
+    if (!isOfficeDistributorCode(row.distributor_code)) continue;
+    const areaCode = String(row.area_code ?? "");
+    const productCode = String(row.product_code ?? "");
+    const key = `${normalizeCode(areaCode)} ${normalizeCode(productCode)}`;
+    const existing = byCell.get(key);
+    const units = Number(row.units ?? 0);
+    const value = Number(row.value ?? 0);
+    if (existing) {
+      existing.salesUnits += units;
+      existing.salesValue += value;
+    } else {
+      byCell.set(key, { areaCode, productCode, salesUnits: units, salesValue: value });
+    }
+  }
+  return [...byCell.values()];
+}
 
 export async function loadMonthlyClosing(input?: {
   line?: string | null;
@@ -4223,7 +4303,7 @@ export async function loadMonthlyClosingParts(input?: {
       period: selectedPeriod,
       products,
     });
-    return { combined: skeleton, retail: skeleton, directCells: [] };
+    return { combined: skeleton, retail: skeleton, directCells: [], office: skeleton };
   }
 
   const supabase = getSupabaseAdmin();
@@ -4233,13 +4313,16 @@ export async function loadMonthlyClosingParts(input?: {
   // none, and every target cell renders "—".
   const targetLineCode = resolveTargetLineCode(selectedLine);
   const [
-    areas, products, aggregateData, directData, targetRows,
+    areas, products, aggregateData, directData, officeData, targetRows,
     operationalRegions, directSubmitters, regionBySubmitter,
   ] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
     rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
     rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
+    // The Office slice of the same grid. Already fail-soft (returns null, not []) — an Office
+    // outage must not take the closing down, exactly as the targets read below must not.
+    loadOfficeClosingCells(supabase, selectedLine, selectedPeriod),
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
@@ -4310,6 +4393,33 @@ export async function loadMonthlyClosingParts(input?: {
     targetLineCode,
   );
 
+  // The Office grid, built through the SAME pipeline as `matrix` — same area merges, same
+  // operational regions, same columns — so every row, subtotal and grand total lines up cell for
+  // cell with the headline figures and can be read as "of which Office".
+  //
+  // Direct is deliberately NOT injected: Office units are distributor-channel units by definition
+  // (phx_closing_distributor_product filters `not is_direct`), so injecting direct here would
+  // report direct money as Office money.
+  //
+  // The city store split is not applied either, and must not be: it moves WHOLESALER customers
+  // between the areas of a city, and Office rows carry no customer at all. An area's total moves
+  // with the split; its Office component does not.
+  const officeMerged = officeData ? applyClosingAreaMerges(targetLineCode, areas, officeData, []) : null;
+  const officeMatrix = officeMerged
+    ? markMergedAreaRowsStatic(
+      buildMonthlyClosingMatrix({
+        areas: applyOperationalRegions(officeMerged.areas, operationalRegions),
+        availableLines,
+        availablePeriods,
+        cells: officeMerged.cells,
+        line: selectedLine,
+        period: selectedPeriod,
+        products,
+      }),
+      targetLineCode,
+    )
+    : null;
+
   return {
     combined: injectDirectIntoMatrix(matrix, allocatedDirect),
     // `matrix` is the retail-only grid: buildMonthlyClosingMatrix was fed the non-direct cells
@@ -4317,5 +4427,6 @@ export async function loadMonthlyClosingParts(input?: {
     // NEW matrix rather than mutating this one.
     retail: matrix,
     directCells: allocatedDirect,
+    office: officeMatrix,
   };
 }
