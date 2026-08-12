@@ -56,6 +56,12 @@
     // the repo, blocking typecheck and the pre-push hook for everyone. Same
     // reasoning as the worktree entries above: if git ignores it, tsc should not
     // be walking it.
-    "outputs"
+    "outputs",
+    // Same story as "outputs", hit on 2026-08-13: audit scratch space holding COPIES of this
+    // repo's own app/, src/ and tests/ trees (artifacts/marketing-requests-audit is 235 files /
+    // 4.4 MB). tsc walked them and failed with TS7006 on
+    // artifacts/.../tests/sales-marketing-line-scope.test.ts — a file that is not part of the
+    // build — which blocked the pre-push hook for every push from this checkout.
+    "artifacts"
   ]
 }
