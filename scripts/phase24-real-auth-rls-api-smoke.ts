@@ -367,6 +367,38 @@ async function verifyReadableSurface(
   return `${table} read accepted`;
 }
 
+// The inverse of verifyReadableSurface: for a surface that must stay service-role only, a clean
+// read is the failure and 42501 is the pass. Table-not-there still routes to SurfaceUnavailableError
+// so a rename or drop is loud here too, and a denial for any OTHER reason (e.g. network, auth) does
+// not get credited as proof of the lockdown.
+async function verifyDeniedSurface(client: SupabaseClient, table: string) {
+  const { error } = await client
+    .from(table)
+    .select("*")
+    .limit(1);
+  if (!error) {
+    throw new Error(`${table} is readable by authenticated — this table is meant to stay service-role only`);
+  }
+  const code = (error as { code?: string }).code ?? "";
+  if (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    /schema cache|relation .* does not exist|could not find the table/i.test(error.message)
+  ) {
+    throw new SurfaceUnavailableError(
+      `${table} is not reachable through the staging API (${code || "no code"}: ${error.message}). ` +
+        "The check named a table that is not there — fix the table name in this smoke.",
+    );
+  }
+  if (code !== "42501") {
+    throw new Error(
+      `${table} denied authenticated for an unexpected reason (${code || "no code"}: ${error.message}), ` +
+        "not the expected 42501 — confirm RLS is still enabled before trusting this check.",
+    );
+  }
+  return `${table} correctly denies authenticated reads (42501)`;
+}
+
 async function verifyScopedPayrollRows(
   client: SupabaseClient,
   role: PhoenixRole,
@@ -465,8 +497,6 @@ async function runRole(role: PhoenixRole, user: TestUser): Promise<Check[]> {
       // the grant and its policies, so this is a real read rather than a staging-only green.
       ["Expenses RLS", "expense_claims", "employee_hr_id, status"],
       ["Sales RLS", "sales_records", "employee_hr_id, manager_hr_id, line"],
-      ["Probation RLS", "employee_probation", "employee_hr_id, manager_hr_id"],
-      ["Leave RLS", "v2_vacation_requests", "employee_hr_id, manager_hr_id"],
     ] as const) {
       try {
         const detail = await verifyReadableSurface(client, role, table, select);
@@ -476,6 +506,40 @@ async function runRole(role: PhoenixRole, user: TestUser): Promise<Check[]> {
           error instanceof SurfaceUnavailableError
             ? skip(surface, `${table} read is accepted by RLS`, error, role)
             : fail(surface, `${table} read is accepted by RLS`, error, role),
+        );
+      }
+    }
+
+    // These two are NOT authenticated read surfaces, on purpose. Every application read goes
+    // through getSupabaseAdmin() (service_role) — 11 call sites for employee_probation, ~40 for
+    // v2_vacation_requests, verified 2026-08-13, none using the user's own session — and
+    // 20260812100100 states the posture outright: "service_role ONLY ... anon and authenticated are
+    // deliberately not granted". This is NOT the expense_claims 42501 incident repeating: that table
+    // is read with a real user session via getSupabaseRlsClientIfAvailable(), so its missing grant
+    // took a live route down; neither table here has such a path. PR #2070 found both throwing
+    // 42501 and left the question of which side was wrong "worth resolving deliberately rather than
+    // inside this PR" — this is that resolution. Assert the denial instead of demanding a read that
+    // must never succeed, so a future grant that widens either table is caught, not just a missing
+    // one.
+    //
+    // If this ever fails with "is readable by authenticated" rather than a table-not-there or
+    // wrong-code error, check phase25-staging-rls-mutation-smoke.ts / phase26 first: both issue
+    // `grant select, insert, update, delete ... to authenticated` for these same two tables against
+    // this same approved staging project and do not revoke it afterward. A red here on staging may
+    // be that leftover grant, not a new widening — but it is still real drift worth clearing, since
+    // nothing else would ever tell you the sandbox stopped matching production.
+    for (const [surface, table] of [
+      ["Probation RLS", "employee_probation"],
+      ["Leave RLS", "v2_vacation_requests"],
+    ] as const) {
+      try {
+        const detail = await verifyDeniedSurface(client, table);
+        checks.push(pass(surface, `${table} stays service-role only`, role, detail));
+      } catch (error) {
+        checks.push(
+          error instanceof SurfaceUnavailableError
+            ? skip(surface, `${table} stays service-role only`, error, role)
+            : fail(surface, `${table} stays service-role only`, error, role),
         );
       }
     }
@@ -532,6 +596,7 @@ async function main() {
       api: "Service-role-backed app routes must keep explicit Phoenix permission guards.",
       mode: "PHASE24 real Supabase Auth smoke is read-only and uses the approved staging sandbox only.",
       rls: "Authenticated Supabase JWTs must resolve Phoenix role/scope through current_access helpers and table policies.",
+      serviceRoleOnly: "employee_probation and v2_vacation_requests must stay unreadable by authenticated — every application read of them uses the service-role client, so a grant would widen access with no consumer.",
       skipped: "A check that could not run is never a pass. Skipped rows fail this run until the surface they name is corrected.",
     },
     results: checks,

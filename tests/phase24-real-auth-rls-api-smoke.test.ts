@@ -33,18 +33,45 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
 
   assert.match(smoke, /user_access_profiles/);
   assert.match(smoke, /employees/);
-  assert.match(smoke, /salary_records/);
-  assert.match(smoke, /"outstation_expenses"/);
-  assert.match(smoke, /"outstation_expense_requests"/);
-  assert.match(smoke, /"expense_claims"/);
-  assert.match(smoke, /sales_records/);
-  assert.match(smoke, /employee_probation/);
-  assert.match(smoke, /v2_vacation_requests/);
 
   // payroll_expenses was renamed to outstation_expenses on 2026-07-13. This assertion used to pin
   // the retired name, so the smoke and the test agreed with each other and disagreed with the
   // database for a month. Prose may still explain the rename; naming it as a table must not return.
   assert.doesNotMatch(smoke, /"payroll_expenses"/);
+
+  // The two per-role loops are the point of this smoke, so assert membership inside each loop's own
+  // array rather than that a table name appears somewhere in the file — a bare match is how
+  // `payroll_expenses` passed for a month after the table it named was gone (#2070) and how
+  // `employee_probation`/`v2_vacation_requests` could sit in the wrong loop and still "pass" this
+  // test. The two loops destructure differently ([surface, table, select] vs [surface, table]),
+  // which is what tells them apart.
+  const readableLoop = smoke.match(/for \(const \[surface, table, select\] of \[([\s\S]*?)\] as const\) \{/);
+  const deniedLoop = smoke.match(/for \(const \[surface, table\] of \[([\s\S]*?)\] as const\) \{/);
+  assert.ok(readableLoop, "authenticated-readable surfaces loop not found");
+  assert.ok(deniedLoop, "service-role-only (denied) surfaces loop not found");
+  const readableSurfaces = readableLoop[1];
+  const deniedSurfaces = deniedLoop[1];
+
+  for (const table of ["salary_records", "outstation_expenses", "outstation_expense_requests", "expense_claims", "sales_records"]) {
+    assert.match(readableSurfaces, new RegExp(`"${table}"`));
+  }
+
+  // employee_probation and v2_vacation_requests are service-role only by design (verified
+  // 2026-08-13: no authenticated SELECT grant in staging or production, every application read uses
+  // getSupabaseAdmin()). PR #2070 found both throwing 42501 and explicitly left deciding which side
+  // was wrong "worth resolving deliberately rather than inside this PR" — they must never return to
+  // the readable loop, which would silently re-demand a read that must never succeed.
+  for (const table of ["employee_probation", "v2_vacation_requests"]) {
+    assert.match(deniedSurfaces, new RegExp(`"${table}"`));
+    assert.doesNotMatch(readableSurfaces, new RegExp(`"${table}"`));
+  }
+
+  // The denial check must be a real inversion, not a copy-paste of the readable one: a clean read is
+  // the failure, and only 42501 counts as proof the lockdown holds.
+  assert.match(smoke, /async function verifyDeniedSurface/);
+  assert.match(smoke, /await verifyDeniedSurface\(client, table\)/);
+  assert.match(smoke, /is readable by authenticated — this table is meant to stay service-role only/);
+  assert.match(smoke, /code !== "42501"/);
 
   // A surface the smoke cannot reach must never be recorded as a pass. The old code returned a
   // "coverage skipped" string here and the caller pushed pass() on any non-throw, which is exactly
