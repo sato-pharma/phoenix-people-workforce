@@ -50,6 +50,7 @@ import {
 } from "@/lib/marketing-requests/roi-labels";
 import type {
   MarketingRequestDetail,
+  MarketingRequestRejection,
   MarketingRequestStepProgress,
 } from "@/lib/marketing-requests/service";
 import type {
@@ -75,6 +76,8 @@ type DraftWorkspacePayload = {
   pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
+  rejected: MarketingRequest[];
+  rejectionByRequestId: Record<string, MarketingRequestRejection>;
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
@@ -255,6 +258,8 @@ function emptyPayload(): DraftWorkspacePayload {
     drafts: [],
     inApproval: [],
     products: [],
+    rejected: [],
+    rejectionByRequestId: {},
     requestTypes: [],
     requesterLineId: null,
     requesterLineName: null,
@@ -745,6 +750,8 @@ function MarketingRequestDraftWorkspaceInner() {
         drafts: payload.drafts ?? [],
         inApproval: payload.inApproval ?? [],
         products: payload.products ?? [],
+        rejected: payload.rejected ?? [],
+        rejectionByRequestId: payload.rejectionByRequestId ?? {},
         requestTypes: payload.requestTypes ?? [],
         requesterLineId: payload.requesterLineId ?? null,
         requesterLineName: payload.requesterLineName ?? null,
@@ -2620,6 +2627,122 @@ function MarketingRequestDraftWorkspaceInner() {
                         )}
                       </div>
                     ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Card>
+
+        {/* ------ Rejected ----------------------------------------------------------------------------------------------------------------------------------- */}
+        {/*
+          Refused requests. This card is the whole point of the change that added it: `rejected` was
+          the one requester-reachable status the workspace never queried, so a refused request —
+          and the rejection reason, the only place the "why" is written down at all — appeared on no
+          screen, not even to the person who raised it.
+
+          The reason is shown INLINE rather than behind the "View timeline" disclosure the other
+          cards use. A requester opening this card has exactly one question, and making them click
+          to reach the answer is the failure this card exists to end.
+        */}
+        <Card className="overflow-hidden rounded-sm border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+          <div className="border-b border-slate-100 bg-rose-50/60 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-rose-600">
+                  Not Proceeding
+                </p>
+                <h2 className="mt-0.5 text-[15px] font-black tracking-tight text-slate-950">
+                  Rejected
+                </h2>
+              </div>
+              <Badge variant="neutral">
+                {workspace.rejected.length} rejected
+              </Badge>
+            </div>
+          </div>
+          <div className="space-y-1.5 p-4">
+            {isLoading ? (
+              <TableSkeleton cols={3} rows={2} />
+            ) : workspace.rejected.length === 0 ? (
+              <p className="rounded-sm border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-[12px] font-medium text-slate-400">
+                No requests have been rejected.
+              </p>
+            ) : (
+              workspace.rejected.map((request) => {
+                const rejection =
+                  workspace.rejectionByRequestId[request.id] ?? null;
+                return (
+                  <div
+                    className="rounded-sm border border-rose-200 bg-rose-50/30 p-3"
+                    key={request.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[10px] font-bold text-slate-500">
+                          {request.requestCode}
+                        </p>
+                        <p className="mt-0.5 text-[13px] font-black text-slate-950">
+                          {customerNameMap.get(request.customerId) ??
+                            "Customer"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                          {requestTypeNameMap.get(request.requestTypeId) ??
+                            "Request"}{" "}
+                          · {egp(request.estimatedCost)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-sm border border-rose-200 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-rose-700">
+                        Rejected
+                      </span>
+                    </div>
+
+                    <div className="mt-2 border-t border-rose-200/70 pt-2">
+                      {rejection ? (
+                        <>
+                          {/*
+                            Labelled fields, NOT one prose sentence. Measured in a real browser at
+                            375px: "Rejected by <name> at <step> · <date>" wraps to 2 lines in a
+                            253px content box at 11px, and the standing rule forbids wrapping AND
+                            ellipsis — so the fix has to be structural, not a restyle. Each value
+                            gets its own row, which fits at both 375px and desktop.
+                          */}
+                          <dl className="space-y-1">
+                            {([
+                              ["Rejected by", rejection.decidedByName || "An approver"],
+                              ["At step", rejection.stepName],
+                              ["When", rejection.decidedAtLabel],
+                            ] as Array<[string, string | null]>)
+                              .filter(([, value]) => Boolean(value))
+                              .map(([label, value]) => (
+                                <div className="flex items-baseline gap-2" key={label}>
+                                  <dt className="w-[66px] shrink-0 text-[9px] font-bold uppercase tracking-[0.08em] text-rose-700/70">
+                                    {label}
+                                  </dt>
+                                  <dd className="min-w-0 text-[11px] font-bold text-slate-700">
+                                    {value}
+                                  </dd>
+                                </div>
+                              ))}
+                          </dl>
+                          {rejection.reason ? (
+                            <p className="mt-1.5 rounded-sm border border-rose-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-rose-900">
+                              <span className="font-bold">Reason: </span>
+                              {rejection.reason}
+                            </p>
+                          ) : (
+                            <p className="mt-1.5 text-[11px] font-medium text-slate-400">
+                              No reason was recorded.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-[11px] font-medium text-slate-400">
+                          Rejection details unavailable — the approval chain for
+                          this request could not be read.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 );
               })
