@@ -23,6 +23,30 @@ import { logAppError } from "@/lib/error-monitor/service";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * What was actually thrown, in words.
+ *
+ * NOT every throw is an Error. Supabase hands back a plain `{ message, details, hint, code }` and
+ * this codebase rethrows it as-is, so `String(error)` yields the useless "[object Object]" — which
+ * is exactly what the first version of this logging recorded on 2026-08-12, turning a captured
+ * error into a captured shrug. Own properties are enumerated so a PostgrestError's `code` and
+ * `details` survive, and JSON.stringify is guarded because a cyclic throw must not replace one
+ * unreadable log line with a second failure.
+ */
+function describeThrown(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    try {
+      return JSON.stringify(error, Object.getOwnPropertyNames(error));
+    } catch {
+      return Object.getOwnPropertyNames(error)
+        .map((key) => `${key}=${String((error as Record<string, unknown>)[key])}`)
+        .join(" ");
+    }
+  }
+  return String(error);
+}
+
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
@@ -96,7 +120,7 @@ export async function GET(request: Request) {
       source: "server",
       route: "/api/admin/outstation/expenses",
       routeType: "route-handler",
-      message: error instanceof Error ? error.message : String(error),
+      message: describeThrown(error),
       stack: error instanceof Error ? (error.stack ?? null) : null,
     }).catch(() => {
       // Never let the logger turn a 500 into a crash. If it cannot write, the response still goes.
