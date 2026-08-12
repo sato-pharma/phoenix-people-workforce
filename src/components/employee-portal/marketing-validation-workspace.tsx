@@ -358,6 +358,40 @@ function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
   return Array.from(seen.values());
 }
 
+/**
+ * The exact reason Save is blocked, in the same order `canSave` checks them.
+ *
+ * The Save button is natively `disabled` while the form is incomplete, so a tap never reaches
+ * `submitValidation` and its messages never show — a field rep got no feedback at all about which
+ * customer, pharmacy, or code line still needed something, only a button that did nothing. This
+ * walks the same checks `canSave` runs, in the same order, and names the first one that fails, so
+ * the reason is visible without ever having to tap a dead button.
+ */
+function describeMissingRequirement(customers: CustomerLine[], isDeskMode: boolean): string | null {
+  const hasPin = (capture: CaptureState) => capture.latitude !== null && capture.longitude !== null;
+
+  for (const [customerIndex, customer] of customers.entries()) {
+    const customerLabel = customer.name.trim() ? `"${customer.name.trim()}"` : `Customer ${customerIndex + 1}`;
+    if (!customer.name.trim()) return `Enter a name for Customer ${customerIndex + 1}.`;
+    if (isDeskMode && !hasPin(customer.capture)) return `Pin ${customerLabel}'s location on the map.`;
+    if (customer.pharmacies.length === 0) return `${customerLabel} needs at least one pharmacy.`;
+
+    for (const [pharmacyIndex, pharmacy] of customer.pharmacies.entries()) {
+      const pharmacyLabel = pharmacy.name.trim() ? `"${pharmacy.name.trim()}"` : `Pharmacy ${pharmacyIndex + 1}`;
+      if (!pharmacy.name.trim()) return `Enter a name for Pharmacy ${pharmacyIndex + 1} under ${customerLabel}.`;
+      if (isDeskMode && !hasPin(pharmacy.capture)) return `Pin ${pharmacyLabel}'s location on the map.`;
+      if (pharmacy.vendorCodes.length === 0) return `${pharmacyLabel} needs at least one distributor code.`;
+
+      for (const [codeIndex, line] of pharmacy.vendorCodes.entries()) {
+        const codeSuffix = pharmacy.vendorCodes.length > 1 ? ` (row ${codeIndex + 1})` : "";
+        if (!line.distributorId) return `Pick a distributor for ${pharmacyLabel}${codeSuffix}.`;
+        if (!line.distributorCode.trim()) return `Enter the distributor code for ${pharmacyLabel}${codeSuffix}.`;
+      }
+    }
+  }
+  return null;
+}
+
 function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
   const pharmacies = new Map<string, ValidatedPharmacyDetail>();
   for (const row of rows) {
@@ -1378,6 +1412,10 @@ export function MarketingValidationWorkspace() {
     }
     return null;
   })();
+  // Save is a native `disabled` submit button, so once the form is incomplete a tap fires no click
+  // event and `submitValidation` never runs to explain why — the rep just sees a button that does
+  // nothing. Compute the same reason here so it can be shown without requiring a tap at all.
+  const missingRequirement = !isSaving ? describeMissingRequirement(customers, isDeskMode) : null;
 
   async function reverseGeocode(latitude: number, longitude: number) {
     const response = await fetch("/api/marketing-requests/reverse-geocode", {
@@ -1661,9 +1699,10 @@ export function MarketingValidationWorkspace() {
     }
     if (!canSave) {
       setMessage(
-        isDeskMode
-          ? "Complete every customer, pharmacy, vendor, and code field, and pin a location on the map for each one, before saving."
-          : "Complete every customer, pharmacy, vendor, and code field before saving.",
+        describeMissingRequirement(customers, isDeskMode)
+          ?? (isDeskMode
+            ? "Complete every customer, pharmacy, vendor, and code field, and pin a location on the map for each one, before saving."
+            : "Complete every customer, pharmacy, vendor, and code field before saving."),
       );
       return;
     }
@@ -2293,14 +2332,19 @@ export function MarketingValidationWorkspace() {
                   {customers.length} customer{customers.length === 1 ? "" : "s"} · {totalPharmacyCount} pharmacy row{totalPharmacyCount === 1 ? "" : "s"} ready
                 </span>
               </div>
-              <Button
-                className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
-                disabled={!canSave}
-                type="submit"
-              >
-                {isSaving ? <LoadingSpinner className="text-white" /> : <Save className="h-3.5 w-3.5" />}
-                Save Validation
-              </Button>
+              <div className="flex flex-col gap-1.5 sm:items-end">
+                {!duplicateCustomerName && missingRequirement ? (
+                  <p className="text-[12px] font-semibold text-amber-700">{missingRequirement}</p>
+                ) : null}
+                <Button
+                  className="h-10 min-w-[180px] gap-2 rounded-sm bg-orange-500 px-5 text-[13px] font-bold text-white shadow-sm hover:bg-orange-600"
+                  disabled={!canSave}
+                  type="submit"
+                >
+                  {isSaving ? <LoadingSpinner className="text-white" /> : <Save className="h-3.5 w-3.5" />}
+                  Save Validation
+                </Button>
+              </div>
             </div>
           </form>
         </Card>
