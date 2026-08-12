@@ -1,7 +1,6 @@
 import { MapPin, Sunrise, Trophy } from "lucide-react";
 
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
-import { PersonPhoto } from "@/components/people/person-photo";
 import type { EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { formatDayShort, formatHireDate, formatStartClock, startTierClass, startTierLabel } from "./early-birds-format";
 
@@ -112,9 +111,8 @@ export function EarlyBirdsWinnerPanel({
       />
 
       <div className="flex flex-col gap-4 px-4 py-5 sm:flex-row sm:items-start sm:gap-6 sm:px-5">
-        <div className="relative mx-auto shrink-0 sm:mx-0">
-          <PersonPhoto name={winner.employeeName} size="xl" src={winner.photoSrc} />
-          <span className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-md bg-amber-400 text-sm font-black text-slate-900 shadow">
+        <div className="mx-auto shrink-0 sm:mx-0">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-400 text-sm font-black text-slate-900 shadow">
             ★
           </span>
         </div>

@@ -223,7 +223,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
     plansAwaitingManagerApproval,
     rmRegional,
     dvFocus,
-    earlyBirdWinner,
+    earlyBirdStars,
   } = snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount + plansCount;
@@ -264,7 +264,7 @@ export function RmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnap
 
       <DistrictsAttention rmRegional={rmRegional} />
 
-      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <CrmFirstVisitBoard
         action={<EarlyBirdsSyncButton />}

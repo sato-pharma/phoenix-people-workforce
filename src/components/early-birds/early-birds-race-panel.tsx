@@ -1,7 +1,6 @@
 import { Sunrise } from "lucide-react";
 
 import { SectionHead, rankChipClass } from "@/components/employee-portal/portal-command-center";
-import { PersonPhoto } from "@/components/people/person-photo";
 import type { EarlyBirdsRepScore } from "@/lib/early-birds/types";
 import { formatPoints, formatStartClock, startTierClass, startTierLabel } from "./early-birds-format";
 
@@ -33,14 +32,12 @@ function beforeNineCount(score: EarlyBirdsRepScore): number {
 function RaceRow({
   score,
   index,
-  photoSrc,
   leaderScore,
   isViewer,
   winCount,
 }: {
   score: EarlyBirdsRepScore;
   index: number;
-  photoSrc: string | null;
   leaderScore: number;
   isViewer: boolean;
   winCount: number;
@@ -61,8 +58,6 @@ function RaceRow({
       >
         {index + 1}
       </span>
-
-      <PersonPhoto name={score.name} size="sm" src={photoSrc} />
 
       <div className="min-w-0 flex-1">
         <p className="flex items-center gap-1.5 whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
@@ -124,13 +119,11 @@ function RaceRow({
 
 export function EarlyBirdsRacePanel({
   scores,
-  photoByHrIdKey,
   winCountByHrIdKey,
   viewerHrIdKey,
   mobileLimit = 10,
 }: {
   scores: EarlyBirdsRepScore[];
-  photoByHrIdKey: Map<string, string | null>;
   winCountByHrIdKey: Map<string, number>;
   viewerHrIdKey?: string | null;
   mobileLimit?: number;
@@ -170,7 +163,6 @@ export function EarlyBirdsRacePanel({
             index={index}
             isViewer={score.hrIdKey === viewerHrIdKey}
             leaderScore={leaderScore}
-            photoSrc={photoByHrIdKey.get(score.hrIdKey) ?? null}
             score={score}
             winCount={winCountByHrIdKey.get(score.hrIdKey) ?? 0}
           />
@@ -185,7 +177,6 @@ export function EarlyBirdsRacePanel({
             index={index}
             isViewer={score.hrIdKey === viewerHrIdKey}
             leaderScore={leaderScore}
-            photoSrc={photoByHrIdKey.get(score.hrIdKey) ?? null}
             score={score}
             winCount={winCountByHrIdKey.get(score.hrIdKey) ?? 0}
           />
@@ -199,7 +190,6 @@ export function EarlyBirdsRacePanel({
               index={viewerIndex}
               isViewer
               leaderScore={leaderScore}
-              photoSrc={photoByHrIdKey.get(scores[viewerIndex].hrIdKey) ?? null}
               score={scores[viewerIndex]}
               winCount={winCountByHrIdKey.get(scores[viewerIndex].hrIdKey) ?? 0}
             />

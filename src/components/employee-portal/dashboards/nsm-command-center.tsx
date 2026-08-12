@@ -126,7 +126,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 /* ── NSM command center ────────────────────────────────────────────── */
 
 export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus, earlyBirdWinner } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, nsmNational, nsmBoard, dvFocus, earlyBirdStars } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
 
   return (
@@ -158,7 +158,7 @@ export function NsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
         <RankingPanel title="Districts (DSMs)" subtitle="by achievement %" icon={Network} rows={nsmBoard?.dsms ?? []} />
       </div>
 
-      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <CrmFirstVisitBoard action={<EarlyBirdsSyncButton />} crm={nsmBoard?.crm ?? null} />
 

@@ -51,7 +51,7 @@ const ACTIONS: readonly ActionStripItem[] = [
 ];
 
 export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus, earlyBirdWinner } = snapshot;
+  const { shell, pendingVacationCount, pendingExcuseCount, dsmTeam, dvFocus, earlyBirdStars } = snapshot;
   const totalPending = pendingVacationCount + pendingExcuseCount;
   const pct = dsmTeam ? Math.max(0, Math.round(dsmTeam.achievementPercent)) : null;
   const pctNum = pct ?? 0;
@@ -86,7 +86,7 @@ export function DsmCommandCenter({ snapshot, access }: { snapshot: PortalHomeSna
 
       <RankingPanel title="My Reps" subtitle="by achievement %" icon={Trophy} rows={dsmTeam?.members ?? []} />
 
-      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <CrmFirstVisitBoard
         action={<EarlyBirdsSyncButton />}
