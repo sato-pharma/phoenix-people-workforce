@@ -17,6 +17,13 @@ tests/synthetic/report/
 tsconfig.tsbuildinfo
 _junk/
 
+# Audit scratch space. artifacts/marketing-requests-audit alone is 235 files / 4.4 MB, nearly all of
+# it COPIES of this repo's own app/, src/ and tests/ trees — the same anti-pattern as the audit
+# source zips below. Worse than untidy: tsc walked those copies and failed on them (TS7006 in
+# artifacts/.../tests/sales-marketing-line-scope.test.ts), which blocked the pre-push hook for
+# everyone until `artifacts` was added to tsconfig's exclude alongside this rule.
+artifacts/
+
 # Source-dump archives produced by the audit workflow. Two of them (DIRECT_ORDERS_DELTA_SOURCE.zip,
 # OUTSTATION_EXPENSES_SOURCE.zip) were committed by accident on 2026-08-12 — 1.03 MB of BINARY
 # holding nothing but copies of this repo's own app/, src/ and docs/ trees, which git already
