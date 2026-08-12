@@ -104,6 +104,76 @@ function famBgFor(variant: RowVariant) {
   return "";
 }
 
+// Violet tint for the "of which Office" columns — its own axis, distinct from Contr (sky),
+// Achievement (orange) and Family (amber).
+function officeBgFor(variant: RowVariant) {
+  if (variant === "area") return "bg-violet-50";
+  if (variant === "subtotal") return "bg-violet-100";
+  return "";
+}
+
+// ── "of which Office" ─────────────────────────────────────────────────────────
+// Office units are not sold by anyone: they are the Office channel's units, spread across areas by
+// the owner's value-share rule (src/lib/sales/office-allocation.ts). On CNS July 2026 they are 41%
+// of the closing. This block reads the parallel Office matrix — built by the SAME builder over the
+// same areas and columns — so every figure below is the Office component of the cell beside it and
+// can never be a re-derivation that drifts.
+//
+// NULL everywhere means the Office grid could not be read, and every cell renders "—". It must
+// never render 0: a confident zero would read as "this area took no Office units", which is a
+// different and much more damaging statement than "we do not know".
+
+type OfficeLookup = {
+  /** The caller wired an Office grid at all. False ⇒ the columns are not rendered on this surface. */
+  shown: boolean;
+  /**
+   * Office units for one row and product. Three states, and they must stay distinct:
+   *   undefined — not shown on this surface; the caller renders no cell at all.
+   *   null      — shown but unreadable; the cell renders "—".
+   *   number    — the Office component. 0 here is a real, asserted zero.
+   */
+  unitsFor: (rowKey: string, productCode: string) => number | null | undefined;
+  /** The same three states for a whole row's Office VALUE. */
+  valueFor: (rowKey: string) => number | null | undefined;
+  /** A real zero when the grid is readable, matching the three states above. Used by Direct rows. */
+  zero: number | null | undefined;
+};
+
+// `undefined` and `null` mean different things and must not be collapsed:
+//   undefined — this surface does not carry the Office breakdown. Render exactly as before.
+//   null      — this surface does carry it, but it could not be read. Render "—" and say so.
+// Collapsing them would put a warning banner on a surface that never asked for the feature.
+function buildOfficeLookup(office: MonthlyClosingMatrix | null | undefined): OfficeLookup {
+  if (office === undefined) {
+    return { shown: false, unitsFor: () => undefined, valueFor: () => undefined, zero: undefined };
+  }
+  if (!office) {
+    return { shown: true, unitsFor: () => null, valueFor: () => null, zero: null };
+  }
+  const units = new Map<string, number>();
+  const rowValue = new Map<string, number>();
+  const codes = office.columns.map((c) => c.productCode);
+  const put = (rowKey: string, cells: MonthlyClosingCell[], total: MonthlyClosingCell) => {
+    cells.forEach((cell, idx) => {
+      const code = codes[idx];
+      if (code) units.set(`${rowKey}|${code}`, cell.salesUnits ?? 0);
+    });
+    rowValue.set(rowKey, total.salesValue ?? 0);
+  };
+  for (const region of office.regions) {
+    for (const area of region.areas) put(`A:${area.areaCode}`, area.cells, area.rowTotal);
+    put(`R:${region.regionCode}`, region.subtotal.cells, region.subtotal.rowTotal);
+  }
+  put("NAT", office.grandTotal.cells, office.grandTotal.rowTotal);
+  return {
+    shown: true,
+    // A row/product absent from the Office grid genuinely took no Office units — 0, not unknown.
+    unitsFor: (rowKey, productCode) => units.get(`${rowKey}|${productCode}`) ?? 0,
+    valueFor: (rowKey) => rowValue.get(rowKey) ?? 0,
+    zero: 0,
+  };
+}
+
 // ── Column grouping ───────────────────────────────────────────────────────────
 // Consecutive columns that share the same family name are grouped. Multi-product
 // families (isMulti=true) get a 3-column family summary block after their members.
@@ -129,12 +199,15 @@ function groupColumns(columns: MonthlyClosingColumn[]): ColumnGroup[] {
 function ProductCells({
   bandTint,
   cell,
+  officeUnits,
   productTotal,
   rowBg,
   variant,
 }: {
   bandTint: boolean;
   cell: MonthlyClosingCell;
+  /** Office component of this cell's units. undefined ⇒ no cell; null ⇒ "—"; number ⇒ the figure. */
+  officeUnits: number | null | undefined;
   productTotal: number | null;
   rowBg?: string;
   variant: RowVariant;
@@ -142,11 +215,13 @@ function ProductCells({
   const bg = rowBg ?? (variant === "area" && bandTint ? "bg-orange-50/50" : "");
   const achBg = rowBg ?? achBgFor(variant);
   const contrBg = rowBg ?? contrBgFor(variant);
+  const officeBg = rowBg ?? officeBgFor(variant);
   const contrib =
     productTotal && productTotal > 0 ? (cell.salesValue ?? 0) / productTotal : null;
   return (
     <>
       <NumCell bg={bg} value={cell.salesUnits} variant={variant} />
+      {officeUnits !== undefined ? <NumCell bg={officeBg} value={officeUnits} variant={variant} /> : null}
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
       <ContribCell bg={contrBg} value={contrib} variant={variant} />
       <NumCell bg={bg} muted value={cell.targetUnits} variant={variant} />
@@ -188,20 +263,25 @@ function FamilyCells({
 function TotalCells({
   cell,
   grandTotal,
+  officeValue,
   rowBg,
   variant,
 }: {
   cell: MonthlyClosingCell;
   grandTotal: number | null;
+  /** Office component of this row's total VALUE — the axis this block is measured on. */
+  officeValue: number | null | undefined;
   rowBg?: string;
   variant: RowVariant;
 }) {
   const bg = rowBg ?? totalBgFor(variant);
+  const officeBg = rowBg ?? officeBgFor(variant);
   const contrib =
     grandTotal && grandTotal > 0 ? (cell.salesValue ?? 0) / grandTotal : null;
   return (
     <>
       <NumCell bg={bg} kind="value" value={cell.salesValue} variant={variant} />
+      {officeValue !== undefined ? <NumCell bg={officeBg} kind="value" value={officeValue} variant={variant} /> : null}
       <ContribCell bg={bg} value={contrib} variant={variant} />
       <NumCell bg={bg} kind="value" muted value={cell.targetValue} variant={variant} />
       <AchCell bg={bg} value={cell.achievement} variant={variant} />
@@ -211,11 +291,12 @@ function TotalCells({
 
 // ── Header helpers ─────────────────────────────────────────────────────────────
 
-function MetricHeaders() {
+function MetricHeaders({ showOffice }: { showOffice: boolean }) {
   const cell = "sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle";
   return (
     <>
       <th className={cell} style={{ top: 44 }}>Units</th>
+      {showOffice ? <th className={`${cell} phx-office`} style={{ top: 44 }}>of wh. Office</th> : null}
       <th className={cell} style={{ top: 44 }}>Value</th>
       <th className={`${cell} phx-contr`} style={{ top: 44 }}>Contr %</th>
       <th className={`${cell} font-normal opacity-60`} style={{ top: 44 }}>Tgt Units</th>
@@ -243,9 +324,11 @@ const COL = {
   ach: 64, area: 92,
   contr: 68,
   gtAch: 64, gtContr: 68,
-  gtTgt: 96, gtValue: 110,
+  gtOffice: 110, gtTgt: 96, gtValue: 110,
   // Family summary block (3 columns, no Units/Ach axis)
   famContr: 68, famTgt: 96, famValue: 102,
+  // "of wh. Office" — wide enough for the longest header, which never wraps (owner's rule).
+  office: 92,
   name: 196, tgtUnits: 66, tgtValue: 96, units: 70, value: 102,
 };
 const PRODUCT_GROUP_WIDTH = COL.units + COL.value + COL.contr + COL.tgtUnits + COL.tgtValue + COL.ach;
@@ -256,16 +339,22 @@ const STICKY2 = "sticky z-20";
 // ── RegionBlock ────────────────────────────────────────────────────────────────
 
 function RegionBlock({
+  columns,
   columnGroups,
   grandTotalValue,
+  office,
   productTotals,
   region,
 }: {
+  columns: MonthlyClosingColumn[];
   columnGroups: ColumnGroup[];
   grandTotalValue: number;
+  office: OfficeLookup;
   productTotals: number[];
   region: MonthlyClosingRegionGroup;
 }) {
+  const officeUnits = (rowKey: string, idx: number) => office.unitsFor(rowKey, columns[idx]?.productCode ?? "");
+  const officeValue = (rowKey: string) => office.valueFor(rowKey);
   return (
     <>
       {region.areas.map((area) => {
@@ -286,6 +375,7 @@ function RegionBlock({
                     bandTint={idx % 2 === 1}
                     cell={area.cells[idx]}
                     key={`${area.areaCode}-${idx}`}
+                    officeUnits={officeUnits(`A:${area.areaCode}`, idx)}
                     productTotal={productTotals[idx] ?? null}
                     rowBg={synthetic ? directBg : undefined}
                     variant="area"
@@ -303,7 +393,7 @@ function RegionBlock({
                 )}
               </Fragment>
             ))}
-            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} rowBg={synthetic ? directBg : undefined} variant="area" />
+            <TotalCells cell={area.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`A:${area.areaCode}`)} rowBg={synthetic ? directBg : undefined} variant="area" />
           </tr>
         );
       })}
@@ -317,6 +407,7 @@ function RegionBlock({
                 bandTint={idx % 2 === 1}
                 cell={region.subtotal.cells[idx]}
                 key={`sub-${region.regionCode}-${idx}`}
+                officeUnits={officeUnits(`R:${region.regionCode}`, idx)}
                 productTotal={productTotals[idx] ?? null}
                 variant="subtotal"
               />
@@ -332,7 +423,7 @@ function RegionBlock({
             )}
           </Fragment>
         ))}
-        <TotalCells cell={region.subtotal.rowTotal} grandTotal={grandTotalValue} variant="subtotal" />
+        <TotalCells cell={region.subtotal.rowTotal} grandTotal={grandTotalValue} officeValue={officeValue(`R:${region.regionCode}`)} variant="subtotal" />
       </tr>
     </>
   );
@@ -340,7 +431,18 @@ function RegionBlock({
 
 // ── Main export ────────────────────────────────────────────────────────────────
 
-export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix }) {
+export function ClosingMatrixTable({
+  matrix,
+  office,
+}: {
+  matrix: MonthlyClosingMatrix;
+  /**
+   * The Office slice of `matrix`, on the same grid — see MonthlyClosingParts.office. Undefined on a
+   * surface that has not been wired for it yet, null when the Office grid could not be read; both
+   * render every "of wh. Office" as "—" and raise the callout below, never a silent 0.
+   */
+  office?: MonthlyClosingMatrix | null;
+}) {
   const topRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const syncing = useRef(false);
@@ -367,6 +469,11 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
 
   const columnGroups = groupColumns(matrix.columns);
   const multiCount = columnGroups.filter((g) => g.isMulti).length;
+  const officeLookup = buildOfficeLookup(office);
+  // Direct money carries no Office by construction, so the national Office figures serve both the
+  // retail grand total and the "incl. Direct" total unchanged.
+  const natOfficeUnits = (idx: number) => officeLookup.unitsFor("NAT", matrix.columns[idx]?.productCode ?? "");
+  const natOfficeValue = officeLookup.valueFor("NAT");
 
   // Per-product national totals for contribution % — derived from the grand total row.
   const productTotals = matrix.grandTotal.cells.map((c) => c.salesValue ?? 0);
@@ -374,9 +481,9 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
 
   const tableWidth =
     COL.area + COL.name +
-    matrix.columns.length * PRODUCT_GROUP_WIDTH +
+    matrix.columns.length * (PRODUCT_GROUP_WIDTH + (officeLookup.shown ? COL.office : 0)) +
     multiCount * FAMILY_GROUP_WIDTH +
-    COL.gtValue + COL.gtContr + COL.gtTgt + COL.gtAch;
+    COL.gtValue + (officeLookup.shown ? COL.gtOffice : 0) + COL.gtContr + COL.gtTgt + COL.gtAch;
 
   const bandHeader = "whitespace-nowrap px-3 align-middle";
 
@@ -390,7 +497,21 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
         table.phx-closing-grid thead th { background-color: #0B0B0B !important; color: #F1F5F9 !important; box-shadow: inset 0 -2px 0 #F97316; }
         table.phx-closing-grid thead th.phx-family { background-color: #78350f !important; color: #fef3c7 !important; box-shadow: inset 0 -2px 0 #d97706; }
         table.phx-closing-grid .phx-contr { background-color: #0c3352 !important; }
+        table.phx-closing-grid thead th.phx-office { background-color: #3B1D6B !important; color: #E9D5FF !important; box-shadow: inset 0 -2px 0 #8B5CF6; }
       `}</style>
+
+      {officeLookup.shown && officeLookup.valueFor("NAT") === null ? (
+        <div className="mb-3">
+          <AdminCallout tone="warning">
+            <AlertTriangle className="mt-0.5 h-4 w-4" />
+            <p>
+              The Office breakdown could not be read for this line and month, so every
+              &ldquo;of wh. Office&rdquo; column shows &mdash;. The sales figures beside them are
+              unaffected and still include the Office units.
+            </p>
+          </AdminCallout>
+        </div>
+      ) : null}
 
       {/* Top horizontal scrollbar (synced proxy) */}
       <div
@@ -414,6 +535,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
             {columnGroups.flatMap((group, gi) => [
               ...group.indices.flatMap((_, iInGroup) => [
                 <col key={`u-${gi}-${iInGroup}`} style={{ width: COL.units }} />,
+                ...(officeLookup.shown ? [<col key={`o-${gi}-${iInGroup}`} style={{ width: COL.office }} />] : []),
                 <col key={`v-${gi}-${iInGroup}`} style={{ width: COL.value }} />,
                 <col key={`c-${gi}-${iInGroup}`} style={{ width: COL.contr }} />,
                 <col key={`tu-${gi}-${iInGroup}`} style={{ width: COL.tgtUnits }} />,
@@ -427,6 +549,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
               ] : []),
             ])}
             <col style={{ width: COL.gtValue }} />
+            {officeLookup.shown ? <col style={{ width: COL.gtOffice }} /> : null}
             <col style={{ width: COL.gtContr }} />
             <col style={{ width: COL.gtTgt }} />
             <col style={{ width: COL.gtAch }} />
@@ -438,7 +561,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
               <th className={`${bandHeader} ${STICKY2} top-0 z-40 h-11`} rowSpan={2} style={{ left: COL.area }}>Area Name</th>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
-                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={6} key={`ph-${gi}-${idx}`}>
+                  <th className={`${bandHeader} sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 7 : 6} key={`ph-${gi}-${idx}`}>
                     <span className="block truncate text-[12px] font-black leading-tight" style={{ color: "#FDBA74" }}>{matrix.columns[idx].productName}</span>
                     <span className="block text-[10px] font-normal" style={{ color: "#CBD5E1" }}>{matrix.columns[idx].productCode}</span>
                   </th>
@@ -450,17 +573,18 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                   </th>,
                 ] : []),
               ])}
-              <th className={`${bandHeader} phx-gt sticky top-0 z-30 h-11`} colSpan={4}>Grand Total</th>
+              <th className={`${bandHeader} phx-gt sticky top-0 z-30 h-11`} colSpan={officeLookup.shown ? 5 : 4}>Grand Total</th>
             </tr>
             {/* Row 2: per-column metric sub-headers */}
             <tr>
               {columnGroups.flatMap((group, gi) => [
                 ...group.indices.map((idx) => (
-                  <MetricHeaders key={`mh-${gi}-${idx}`} />
+                  <MetricHeaders key={`mh-${gi}-${idx}`} showOffice={officeLookup.shown} />
                 )),
                 ...(group.isMulti ? [<FamilySubHeaders key={`fsh-${gi}`} />] : []),
               ])}
               <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Value</th>
+              {officeLookup.shown ? <th className="phx-gt phx-office sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>of wh. Office</th> : null}
               <th className="phx-gt phx-contr sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Contr %</th>
               <th className="phx-gt sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle font-normal opacity-60" style={{ top: 44 }}>Tgt Value</th>
               <th className="phx-gt phx-ach sticky z-30 whitespace-nowrap px-2 py-1.5 align-middle" style={{ top: 44 }}>Ach %</th>
@@ -470,8 +594,10 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
             {matrix.regions.map((region) => (
               <RegionBlock
                 columnGroups={columnGroups}
+                columns={matrix.columns}
                 grandTotalValue={grandTotalValue}
                 key={region.regionCode}
+                office={officeLookup}
                 productTotals={productTotals}
                 region={region}
               />
@@ -488,6 +614,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                       bandTint={idx % 2 === 1}
                       cell={matrix.grandTotal.cells[idx]}
                       key={`gt-${idx}`}
+                      officeUnits={natOfficeUnits(idx)}
                       productTotal={productTotals[idx] ?? null}
                       variant="grand"
                     />
@@ -504,7 +631,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                 </Fragment>
               ))}
               {/* rowTotal is the unmodified sum of all individual products — no family duplication */}
-              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
+              <TotalCells cell={matrix.grandTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} variant="grand" />
             </tr>
 
             {matrix.directNational ? (
@@ -518,6 +645,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                         bandTint={idx % 2 === 1}
                         cell={matrix.directNational!.cells[idx]}
                         key={`dn-${idx}`}
+                        officeUnits={officeLookup.zero}
                         productTotal={productTotals[idx] ?? null}
                         rowBg="bg-[#B6CEF8]"
                         variant="subtotal"
@@ -535,7 +663,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                     )}
                   </Fragment>
                 ))}
-                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} rowBg="bg-[#B6CEF8]" variant="subtotal" />
+                <TotalCells cell={matrix.directNational.rowTotal} grandTotal={grandTotalValue} officeValue={officeLookup.zero} rowBg="bg-[#B6CEF8]" variant="subtotal" />
               </tr>
             ) : null}
 
@@ -550,6 +678,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                         bandTint={idx % 2 === 1}
                         cell={matrix.companyTotal!.cells[idx]}
                         key={`ct-${idx}`}
+                        officeUnits={natOfficeUnits(idx)}
                         productTotal={productTotals[idx] ?? null}
                         variant="grand"
                       />
@@ -565,7 +694,7 @@ export function ClosingMatrixTable({ matrix }: { matrix: MonthlyClosingMatrix })
                     )}
                   </Fragment>
                 ))}
-                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} variant="grand" />
+                <TotalCells cell={matrix.companyTotal.rowTotal} grandTotal={grandTotalValue} officeValue={natOfficeValue} variant="grand" />
               </tr>
             ) : null}
           </tbody>

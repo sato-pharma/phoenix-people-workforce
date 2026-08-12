@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { systemIdentity } from "@/config/system-settings";
 import { isSyntheticDirectArea } from "@/lib/sales/closing-direct-area";
 import { normalizeCode } from "@/lib/sales/master-data/definitions";
+import { OFFICE_DISTRIBUTOR_CODE } from "@/lib/sales/office-distributor";
 import {
   emptyClosingCell,
   rebuildMatrixFromRows,
@@ -757,18 +758,66 @@ function fillFor(tone: Tone, zebra: boolean): string | null {
   return zebra ? ZEBRA : null;
 }
 
-function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatrix, ref: DataRefs, note?: string) {
+function writeMatrixSheet(
+  workbook: ExcelJS.Workbook,
+  matrix: MonthlyClosingMatrix,
+  ref: DataRefs,
+  note?: string,
+  office?: MonthlyClosingMatrix | null,
+) {
   const sheet = workbook.addWorksheet(sanitizeSheetName("Closing Matrix"), { views: [{ state: "frozen", xSplit: 2, ySplit: 5 }] });
   const products = matrix.columns;
-  // Each product block is Units, Value, Tgt Units, Tgt Value, Ach %, then this row's share of the
-  // LINE for that product — sales share and target share. 7 metrics per product.
-  const METRICS_PER_PRODUCT = 7;
+  // Each product block is Units, [of wh. Office], Value, Tgt Units, Tgt Value, Ach %, then this
+  // row's share of the LINE for that product — sales share and target share.
+  //
+  // "of wh. Office" is how many of those Units came from the Office channel rather than a real
+  // distributor invoice (see MonthlyClosingParts.office). It is present only when the caller
+  // supplied the Office grid, so EVERY offset below is named rather than a literal: adding a metric
+  // in the middle of a block silently re-points every SUMIFS and every column letter on the sheet
+  // if the offsets are open-coded.
+  const showOffice = Boolean(office);
+  const METRICS_PER_PRODUCT = showOffice ? 8 : 7;
+  const M_UNITS = 0;
+  const M_OFFICE = 1;
+  const M_VALUE = showOffice ? 2 : 1;
+  const M_TGT_UNITS = showOffice ? 3 : 2;
+  const M_TGT_VALUE = showOffice ? 4 : 3;
+  const M_ACH = showOffice ? 5 : 4;
+  const M_SALES_CONTR = showOffice ? 6 : 5;
+  const M_TGT_CONTR = showOffice ? 7 : 6;
+  // Grand Total block: Value, [of wh. Office], Tgt Value, Ach %.
+  const GRAND_METRICS = showOffice ? 4 : 3;
+  const G_VALUE = 0;
+  const G_OFFICE = 1;
+  const G_TGT = showOffice ? 2 : 1;
+  const G_ACH = showOffice ? 3 : 2;
   const productCols = products.length * METRICS_PER_PRODUCT;
-  // +3 Grand Total metrics, then the same two share columns for the row as a whole.
-  const totalCols = 2 + productCols + 3 + 2;
+  // + the Grand Total metrics, then the same two share columns for the row as a whole.
+  const totalCols = 2 + productCols + GRAND_METRICS + 2;
   const productStart = (index: number) => 3 + index * METRICS_PER_PRODUCT;
   const grandStart = 3 + productCols;
-  const contribStart = grandStart + 3;
+  const contribStart = grandStart + GRAND_METRICS;
+
+  // The Office component of any row/product on this grid. Keyed by the same (level, key) the
+  // SUMIFS criteria use, so a row and its Office figure can never point at different areas.
+  const officeUnitsBy = new Map<string, number>();
+  const officeValueBy = new Map<string, number>();
+  if (office) {
+    const codes = office.columns.map((c) => c.productCode);
+    const put = (key: string, cells: MonthlyClosingCell[], total: MonthlyClosingCell) => {
+      cells.forEach((cell, idx) => {
+        if (codes[idx]) officeUnitsBy.set(`${key}|${codes[idx]}`, cell.salesUnits ?? 0);
+      });
+      officeValueBy.set(key, total.salesValue ?? 0);
+    };
+    for (const region of office.regions) {
+      for (const area of region.areas) put(`area:${area.areaCode}`, area.cells, area.rowTotal);
+      put(`subtotal:${region.regionCode}`, region.subtotal.cells, region.subtotal.rowTotal);
+    }
+    // Both "National Grand Total" and "Grand Total (incl. Direct)" are written at level "grand"
+    // with an empty key, and both take the national Office figure — Direct carries none.
+    put("grand:", office.grandTotal.cells, office.grandTotal.rowTotal);
+  }
 
   bandHeader(sheet, matrix.line, matrix.period, "Closing Matrix", totalCols);
 
@@ -796,16 +845,19 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   // The last two are CONTRIBUTION percentages — this row's share of the line, not an achievement
   // against a target. The header says "Contr%" outright (owner, 2026-08-05): read as a bare "%"
   // beside "Ach %" they were taken for a second achievement figure.
-  const metricLabels = ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"];
+  const metricLabels = showOffice
+    ? ["Units", "of wh. Office", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"]
+    : ["Units", "Value", "Tgt Units", "Tgt Value", "Ach %", "Sales Contr% of Line", "Tgt Contr% of Line"];
   products.forEach((product, index) => {
     const start = productStart(index);
     sheet.mergeCells(4, start, 4, start + METRICS_PER_PRODUCT - 1);
     headerStyle(sheet.getCell(4, start), `${product.productName} (${product.productCode})`);
     metricLabels.forEach((label, metricIndex) => headerStyle(metricRow.getCell(start + metricIndex), label));
   });
-  sheet.mergeCells(4, grandStart, 4, grandStart + 2);
+  sheet.mergeCells(4, grandStart, 4, grandStart + GRAND_METRICS - 1);
   headerStyle(sheet.getCell(4, grandStart), "Grand Total");
-  ["Value", "Tgt Value", "Ach %"].forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
+  (showOffice ? ["Value", "of wh. Office", "Tgt Value", "Ach %"] : ["Value", "Tgt Value", "Ach %"])
+    .forEach((label, index) => headerStyle(metricRow.getCell(grandStart + index), label));
   sheet.mergeCells(4, contribStart, 4, contribStart + 1);
   headerStyle(sheet.getCell(4, contribStart), "Contribution of Line (Contr%)");
   ["Sales Contr% of Line", "Tgt Contr% of Line"].forEach((label, index) => headerStyle(metricRow.getCell(contribStart + index), label));
@@ -830,8 +882,8 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
   const denominatorRow = matrix.companyTotal
     ? nationalGrandRow + (matrix.directNational ? 1 : 0) + 1
     : nationalGrandRow;
-  const GRAND_VALUE_COL = columnLetter(grandStart);
-  const GRAND_TARGET_COL = columnLetter(grandStart + 1);
+  const GRAND_VALUE_COL = columnLetter(grandStart + G_VALUE);
+  const GRAND_TARGET_COL = columnLetter(grandStart + G_TGT);
   const shareCell = (excelRow: number, col: string, numerator: number | null, denominator: number): CellValue =>
     F(
       `IFERROR(IF(${col}${excelRow}="","",${col}${excelRow}/$${col}$${denominatorRow}),"")`,
@@ -892,30 +944,47 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
       const cell = cells[index];
       const units = isStatic ? (cell?.salesUnits ?? 0) : F(sumifs(ref.dpUnits, valueCrit(level, key, product.productCode)), cell?.salesUnits ?? 0);
       const value = isStatic ? (cell?.salesValue ?? 0) : F(sumifs(ref.dpValue, valueCrit(level, key, product.productCode)), cell?.salesValue ?? 0);
-      num(row.getCell(start), units, UNITS_FMT, tone, false, index);
-      num(row.getCell(start + 1), value, VALUE_FMT, tone, false, index);
+      num(row.getCell(start + M_UNITS), units, UNITS_FMT, tone, false, index);
+      if (showOffice) {
+        // Same SUMIFS as Units with one extra criterion on the Distributor column, so the two stay
+        // consistent if the reader edits the Data sheet. The store split never moves an Office row
+        // (Office rows carry no customer), so a split-touched row's Office figure is live-safe —
+        // but it follows `isStatic` anyway, to stay in lockstep with the Units beside it.
+        const officeUnits = officeUnitsBy.get(`${level}:${key}|${product.productCode}`) ?? 0;
+        num(
+          row.getCell(start + M_OFFICE),
+          isStatic
+            ? officeUnits
+            : F(sumifs(ref.dpUnits, [[ref.dpDist, OFFICE_DISTRIBUTOR_CODE], ...valueCrit(level, key, product.productCode)]), officeUnits),
+          UNITS_FMT,
+          tone,
+          false,
+          index,
+        );
+      }
+      num(row.getCell(start + M_VALUE), value, VALUE_FMT, tone, false, index);
       // Targets and achievement come off the matrix cell, which sourced them from
       // au.monthly_targets — the same engine the Targets workspace reads, so the two can never
       // disagree. They are plain cached values rather than Data-sheet formulas: the Calc sheet
       // holds distributor invoice lines only, so there is nothing there to SUMIFS a target out
       // of. A null stays blank, so an area with no target reads "—" and never a fabricated 0.
-      num(row.getCell(start + 2), cell?.targetUnits ?? null, UNITS_FMT, tone, false, index);
-      num(row.getCell(start + 3), cell?.targetValue ?? null, VALUE_FMT, tone, false, index);
-      num(row.getCell(start + 4), cell?.achievement ?? null, PCT_FMT, tone, true, index);
+      num(row.getCell(start + M_TGT_UNITS), cell?.targetUnits ?? null, UNITS_FMT, tone, false, index);
+      num(row.getCell(start + M_TGT_VALUE), cell?.targetValue ?? null, VALUE_FMT, tone, false, index);
+      num(row.getCell(start + M_ACH), cell?.achievement ?? null, PCT_FMT, tone, true, index);
       // This row's share of the LINE for THIS product — sales and target, against the same
       // denominator row every other share on the sheet uses, so the column adds to 100%.
       const denomCell = denominatorTotals.cells[index];
       num(
-        row.getCell(start + 5),
-        shareCell(rowIndex, columnLetter(start + 1), cell?.salesValue ?? null, denomCell?.salesValue ?? 0),
+        row.getCell(start + M_SALES_CONTR),
+        shareCell(rowIndex, columnLetter(start + M_VALUE), cell?.salesValue ?? null, denomCell?.salesValue ?? 0),
         PCT_FMT,
         tone,
         false,
         index,
       );
       num(
-        row.getCell(start + 6),
-        shareCell(rowIndex, columnLetter(start + 3), cell?.targetValue ?? null, denomCell?.targetValue ?? 0),
+        row.getCell(start + M_TGT_CONTR),
+        shareCell(rowIndex, columnLetter(start + M_TGT_VALUE), cell?.targetValue ?? null, denomCell?.targetValue ?? 0),
         PCT_FMT,
         tone,
         false,
@@ -925,9 +994,20 @@ function writeMatrixSheet(workbook: ExcelJS.Workbook, matrix: MonthlyClosingMatr
     const totalValue = isStatic
       ? rowTotal.salesValue
       : F(level === "grand" ? sumAll(ref.dpValue) : sumifs(ref.dpValue, valueCrit(level, key)), rowTotal.salesValue);
-    num(row.getCell(grandStart), totalValue, VALUE_FMT, tone);
-    num(row.getCell(grandStart + 1), rowTotal.targetValue, VALUE_FMT, tone);
-    num(row.getCell(grandStart + 2), rowTotal.achievement, PCT_FMT, tone, true);
+    num(row.getCell(grandStart + G_VALUE), totalValue, VALUE_FMT, tone);
+    if (showOffice) {
+      const officeValue = officeValueBy.get(`${level}:${key}`) ?? 0;
+      num(
+        row.getCell(grandStart + G_OFFICE),
+        isStatic
+          ? officeValue
+          : F(sumifs(ref.dpValue, [[ref.dpDist, OFFICE_DISTRIBUTOR_CODE], ...valueCrit(level, key)]), officeValue),
+        VALUE_FMT,
+        tone,
+      );
+    }
+    num(row.getCell(grandStart + G_TGT), rowTotal.targetValue, VALUE_FMT, tone);
+    num(row.getCell(grandStart + G_ACH), rowTotal.achievement, PCT_FMT, tone, true);
     num(
       row.getCell(contribStart),
       shareCell(rowIndex, GRAND_VALUE_COL, rowTotal.salesValue, denominatorTotals.rowTotal.salesValue),
@@ -2874,6 +2954,10 @@ const SHEET_GUIDE: Record<string, { ar: string; en: string }> = {
     ar: "الشيت الرئيسي: إجمالي المبيعات (موزعين + أوردرات مباشرة) لكل منطقة ومنتج، مع التارجت ونسبة التحقيق.",
     en: "The master sheet: total sales (distributors + direct) per area and product, with target and achievement.",
   },
+  "Office Allocation": {
+    ar: "وحدات الأوفيس وحدها: لكل منطقة ولكل منتج. الأوفيس ليس موزعاً — وحداته توزَّع على المناطق بقاعدة المالك حسب مساهمة كل منطقة في قيمة مبيعات الخط.",
+    en: "The Office channel on its own, per area and product. Office is not a distributor: its units are spread across areas by the owner's rule, on each area's share of the line's value. The same figures as the “of wh. Office” columns on the Closing Matrix.",
+  },
   "Retail Sales (no direct)": {
     ar: "مبيعات الموزعين فقط، بدون أي أوردر مباشر — نفس المناطق والمنتجات.",
     en: "Distributor sell-out only, with every direct order excluded — same areas and products.",
@@ -3000,6 +3084,68 @@ function writeDashboardSheet(
   sheet.getColumn(3).alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
 }
 
+
+// ── Office Allocation ─────────────────────────────────────────────────────────
+// The Office channel on its own: area x product, units and value, plus each area's share of the
+// line's Office units. Office is not a distributor — its units carry no customer and no geography,
+// and land in an area only because the owner's value-share rule put them there
+// (src/lib/sales/office-allocation.ts). On CNS July 2026 it is 42,838 of 105,152 units.
+//
+// Written as plain VALUES, not SUMIFS. Every xlsx this repo writes is recalculated by Excel on
+// open, and this sheet's figures come from the same office grid the Closing Matrix's "of wh.
+// Office" column was cached with — a live formula here could disagree with it after a single edit.
+function writeOfficeSheet(workbook: ExcelJS.Workbook, office: MonthlyClosingMatrix, note?: string) {
+  const sheet = workbook.addWorksheet(sanitizeSheetName("Office Allocation"), { views: [{ state: "frozen", xSplit: 2, ySplit: 4 }] });
+  const products = office.columns;
+  const nationalUnits = office.grandTotal.cells.reduce((sum, cell) => sum + (cell.salesUnits ?? 0), 0);
+
+  const columns: TableColumn[] = [
+    { label: "Area", width: 12 },
+    { label: "Area Name", width: 30 },
+    ...products.map((product) => ({
+      label: `${product.productName} (${product.productCode})`,
+      numFmt: UNITS_FMT,
+      right: true,
+      width: 15,
+    })),
+    { dataBar: true, label: "Office Units", numFmt: UNITS_FMT, right: true, width: 14 },
+    { label: "Office Value", numFmt: VALUE_FMT, right: true, width: 16 },
+    { label: "% of Line Office Units", numFmt: PCT_FMT, right: true, width: 18 },
+  ];
+
+  const rowFor = (code: string, name: string, cells: MonthlyClosingCell[], total: MonthlyClosingCell): CellValue[] => {
+    const units = cells.reduce((sum, cell) => sum + (cell.salesUnits ?? 0), 0);
+    return [
+      code,
+      name,
+      ...cells.map((cell) => cell.salesUnits ?? 0),
+      units,
+      total.salesValue ?? 0,
+      nationalUnits > 0 ? units / nationalUnits : 0,
+    ];
+  };
+
+  const rows: CellValue[][] = [];
+  for (const region of office.regions) {
+    for (const area of region.areas) rows.push(rowFor(area.areaCode, area.areaName, area.cells, area.rowTotal));
+    rows.push(rowFor(region.regionCode, `${region.regionName} (Region)`, region.subtotal.cells, region.subtotal.rowTotal));
+  }
+
+  bandHeader(sheet, office.line, office.period, "Office Allocation", columns.length);
+  writeTable(sheet, 4, {
+    columns,
+    note:
+      "Office units are not sold by a distributor. They are allocated to areas by the owner's rule: each area's "
+      + "share of the line's non-Office VALUE (units x master factory price) is applied to every product's units, "
+      + "and the value is worked out afterwards. These are the same figures as the \u201cof wh. Office\u201d columns on the "
+      + "Closing Matrix."
+      + (note ? `  ·  ${note}` : ""),
+    rows,
+    title: "Office allocation by area and product",
+    totals: rowFor("", "National Grand Total", office.grandTotal.cells, office.grandTotal.rowTotal),
+  });
+}
+
 export async function buildMonthlyClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
@@ -3073,6 +3219,15 @@ export async function buildMonthlyClosingWorkbook(
      * in a cell, so counting it would bridge money that is not on the sheet.
      */
     directPlaced?: { units: number; value: number };
+    /**
+     * The Office slice of `matrix`, on the same grid (MonthlyClosingParts.office). Adds an
+     * "of wh. Office" column to every product block and to the Grand Total on the Closing Matrix,
+     * and an "Office Allocation" sheet carrying the whole area x product breakdown.
+     *
+     * Omitted (or null) simply leaves the workbook exactly as it was — a missing breakdown is
+     * honest, a column of zeroes would claim no area took Office units.
+     */
+    office?: MonthlyClosingMatrix | null;
   },
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
@@ -3086,7 +3241,10 @@ export async function buildMonthlyClosingWorkbook(
   // Plan the Calc layout first (for the formula ranges), write the visible report sheets,
   // then add the hidden Calc sheet LAST so a report sheet stays the active tab.
   const { blocks, ref } = planDataLayout(comparison.data);
-  writeMatrixSheet(workbook, matrix, ref, options?.filterNote);
+  writeMatrixSheet(workbook, matrix, ref, options?.filterNote, options?.office);
+  // Straight after the master, so the Office layer reads as a lens ON the closing rather than as a
+  // separate report buried at the back.
+  writeOfficeSheet(workbook, options?.office ?? matrix, options?.filterNote);
   // The master's two halves, immediately beside it: the same money split by channel so the retail
   // business and the direct business can each be read on their own. Both tie back to the master.
   if (options?.channels) {
@@ -3332,6 +3490,8 @@ export async function buildPortalClosingWorkbook(
   matrix: MonthlyClosingMatrix,
   comparison: MonthlyClosingComparison,
   details: ClosingDetailsResult,
+  /** This viewer's own Office grid, scoped exactly as `matrix` is. Null omits the breakdown. */
+  office?: MonthlyClosingMatrix | null,
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = systemIdentity.appName;
@@ -3362,7 +3522,8 @@ export async function buildPortalClosingWorkbook(
   });
   const { blocks, ref } = planDataLayout(comparison.data);
 
-  writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.");
+  writeMatrixSheet(workbook, rebuiltMatrix, ref, "Scoped to your own areas, region and products — never company-wide.", office);
+  if (office) writeOfficeSheet(workbook, office, "Scoped to your own areas, region and products — never company-wide.");
   writeTargetAchievementSheet(workbook, rebuiltMatrix);
   writeComparisonSheet(workbook, comparison, ref);
   writeRankingsSheet(workbook, comparison, ref);
