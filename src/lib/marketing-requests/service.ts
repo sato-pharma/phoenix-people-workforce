@@ -764,7 +764,6 @@ type NormalizedMarketingValidationInput = {
 type MarketingSystemValidationInput = {
   customerEvidenceStatus: MarketingEvidenceStatus;
   pharmacyEvidenceStatus: MarketingEvidenceStatus;
-  referenceStatus: MarketingPharmacyCodeReferenceStatus;
 };
 
 type CreateValidationOptions = {
@@ -1493,15 +1492,53 @@ function systemStatusFromEvidence(status: MarketingEvidenceStatus): MarketingVal
   return status === "complete" ? "system_validated" : "pending";
 }
 
+/**
+ * Whether a field-captured validation row is auto-usable in the marketing request customer
+ * dropdown. Decided on EVIDENCE ALONE.
+ *
+ * Until 2026-08-12 this also demanded that the pharmacy's distributor code resolve to exactly one
+ * row in `marketing_pharmacy_code_references`, and an unmatched code parked the whole customer on
+ * `pending` — invisible in the dropdown with no way back for the rep, because releasing a pending
+ * link is Super Admin / CEO only (`canAccessCustomerPharmacyMapping`). A code missing from a
+ * reference table Phoenix itself owns says nothing about whether the rep stood in front of the
+ * shop, so honest field work was being blocked on our own data-quality gap.
+ *
+ * Owner ruling, 2026-08-12: release it and FLAG it. The reference lookup still runs and is still
+ * recorded truthfully on both the link and the distributor code row, because an unmatched code
+ * means no sale can ever be attributed to that pharmacy and the request's ROI would read zero
+ * forever — `buildUntrackedDistributorCodeNote` says exactly that on the row. This is the trade the
+ * desk / on-behalf path has always made; the field path now matches it.
+ *
+ * Evidence still gates, and is the whole gate: `complete` on BOTH the customer and the pharmacy
+ * means a GPS fix plus a timestamped live photo that actually reached the `marketing-evidence`
+ * bucket (see `evidenceStatusFromInput`), which is the only proof the visit happened at all.
+ */
 export function resolveMarketingSystemValidationStatus(
   input: MarketingSystemValidationInput,
 ): MarketingValidationStatus {
-  return input.customerEvidenceStatus === "complete" &&
-    input.pharmacyEvidenceStatus === "complete" &&
-    input.referenceStatus === "matched"
+  return input.customerEvidenceStatus === "complete" && input.pharmacyEvidenceStatus === "complete"
     ? "system_validated"
     : "pending";
 }
+
+/**
+ * The note stamped on any link whose distributor code is not a unique match in the Phoenix
+ * reference database. Returns null when the code matched and there is nothing to warn about.
+ *
+ * Since 2026-08-12 this rides on VALIDATED rows too, not just pending ones — an unmatched code no
+ * longer blocks the customer, so the warning is the only thing left carrying the consequence.
+ */
+export function buildUntrackedDistributorCodeNote(
+  referenceStatus: MarketingPharmacyCodeReferenceStatus,
+): string | null {
+  return referenceStatus === "matched"
+    ? null
+    : `Distributor code is ${referenceStatus.replace(/_/g, " ")} in the Phoenix reference database, so sales cannot be tracked for it yet.`;
+}
+
+/** Why a field-captured link is still pending. Evidence is now the only thing that can park one. */
+export const MARKETING_PENDING_EVIDENCE_NOTE =
+  "Waiting for a complete live photo and location on both the customer and the pharmacy.";
 
 /**
  * The single rule deciding what status a validation row is saved with.
@@ -4359,19 +4396,22 @@ export async function createMarketingValidationRecord(
           systemStatus: resolveMarketingSystemValidationStatus({
             customerEvidenceStatus: normalizedCustomer.evidenceStatus,
             pharmacyEvidenceStatus: normalizedPharmacy.evidenceStatus,
-            referenceStatus: reference.status,
           }),
         });
         // The reference lookup still runs and is still stored truthfully, because an unmatched code
         // means sales can never be attributed to this pharmacy — the row is usable, but its ROI
         // would read zero forever. Say so on the row rather than letting it look fully healthy.
-        const linkValidationNotes = isOnBehalf
-          ? reference.status === "matched"
+        // Since the code stopped gating the status (2026-08-12) this warning is the ONLY thing
+        // carrying that consequence, so it now rides on validated rows as well as pending ones.
+        const untrackedCodeNote = buildUntrackedDistributorCodeNote(reference.status);
+        const linkValidationNotes = [
+          isOnBehalf
             ? adminValidationNote
-            : `${adminValidationNote} Distributor code is ${reference.status.replace(/_/g, " ")} in the Phoenix reference database, so sales cannot be tracked for it yet.`
-          : linkValidationStatus === "system_validated"
-            ? null
-            : "Waiting for complete evidence or distributor-code match.";
+            : linkValidationStatus === "system_validated"
+              ? null
+              : MARKETING_PENDING_EVIDENCE_NOTE,
+          untrackedCodeNote,
+        ].filter(Boolean).join(" ") || null;
         const distributorCodeInsert = await supabase
           .from("marketing_pharmacy_distributor_codes")
           .insert({

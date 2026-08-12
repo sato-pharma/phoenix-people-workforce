@@ -5,6 +5,7 @@ import type { EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
 import {
   assertMarketingOnBehalfAccess,
   buildMarketingOnBehalfEmployees,
+  buildUntrackedDistributorCodeNote,
   canValidateMarketingOnBehalf,
   normalizeMarketingValidationInput,
   resolveMarketingSystemValidationStatus,
@@ -214,7 +215,6 @@ function runMarketingOnBehalfValidationTests() {
       systemStatus: resolveMarketingSystemValidationStatus({
         customerEvidenceStatus: "missing",
         pharmacyEvidenceStatus: "missing",
-        referenceStatus: "not_found",
       }),
     }),
     "sfe_validated",
@@ -307,31 +307,52 @@ export function runMarketingValidationServiceTests() {
   assert.equal(legacyCustomer.pharmacies[0].vendorCodes[0].distributorPharmacyCode, "PH-001");
   assert.equal(legacyCustomer.pharmacies[0].vendorCodes[0].normalizedPharmacyCode, "ph-001");
 
+  // OWNER RULING 2026-08-12 — complete field evidence is the WHOLE gate.
+  //
+  // This input reaches `system_validated` — the customer is in the marketing request dropdown —
+  // whatever the pharmacy's distributor code turns out to be. Until this date the rule also took a
+  // `referenceStatus` and returned "pending" for an unmatched code, which made a genuinely visited
+  // customer invisible in the dropdown with no route back for the rep, since only Super Admin / CEO
+  // can release a pending link. The reference status is no longer an input at all — the type is now
+  // the guard against reintroducing it — and the consequence of an unmatched code is carried by
+  // `buildUntrackedDistributorCodeNote` on the row instead of by a block.
   assert.equal(
     resolveMarketingSystemValidationStatus({
       customerEvidenceStatus: "complete",
       pharmacyEvidenceStatus: "complete",
-      referenceStatus: "matched",
     }),
     "system_validated",
   );
-
   assert.equal(
-    resolveMarketingSystemValidationStatus({
-      customerEvidenceStatus: "complete",
-      pharmacyEvidenceStatus: "complete",
-      referenceStatus: "not_found",
-    }),
-    "pending",
+    buildUntrackedDistributorCodeNote("not_found"),
+    "Distributor code is not found in the Phoenix reference database, so sales cannot be tracked for it yet.",
+  );
+  assert.equal(
+    buildUntrackedDistributorCodeNote("ambiguous"),
+    "Distributor code is ambiguous in the Phoenix reference database, so sales cannot be tracked for it yet.",
+  );
+  assert.equal(
+    buildUntrackedDistributorCodeNote("matched"),
+    null,
+    "a matched code has nothing to warn about",
   );
 
+  // Evidence is now the ONLY thing that can park a field row on pending. Both sides must be
+  // complete — a customer photographed at a pharmacy that was not is still unproven.
   assert.equal(
     resolveMarketingSystemValidationStatus({
       customerEvidenceStatus: "pending",
       pharmacyEvidenceStatus: "complete",
-      referenceStatus: "matched",
     }),
     "pending",
+  );
+  assert.equal(
+    resolveMarketingSystemValidationStatus({
+      customerEvidenceStatus: "complete",
+      pharmacyEvidenceStatus: "pending",
+    }),
+    "pending",
+    "an incomplete pharmacy capture must still park the row — this is the case that hit production on 2026-08-11",
   );
 
   const partial = normalizeMarketingValidationInput({
