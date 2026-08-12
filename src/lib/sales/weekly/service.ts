@@ -494,6 +494,14 @@ function mapBatch(row: Record<string, unknown>): WeeklyBatch {
 // ── dashboard ──────────────────────────────────────────────────────────────────────────────────
 
 type FactRow = {
+  /**
+   * The upload this row came from (weekly_sales_batches.id).
+   *
+   * The ONLY safe identity for "the sheet I am looking at". week_start is not: computeWeekGroups
+   * collapses dates less than 5 days apart and expands any selection back to the whole group, which
+   * is what silently pulled neighbouring weeks into a single-sheet export.
+   */
+  batchId: string;
   weekStart: string;
   /** first day of the month-cycle this row belongs to (YYYY-MM-DD), or "" when untagged */
   cycleMonth: string;
@@ -749,6 +757,15 @@ export async function loadWeeklyDashboard(filters?: {
   /** Week-of-month filter (1–4) + mode. Empty = all weeks. */
   weekNumbers?: number[] | null;
   weekNumberMode?: WeeklyFilterMode | null;
+  /**
+   * Restrict to specific uploads by `weekly_sales_batches.id`. Empty/omitted = every upload in scope.
+   *
+   * This is the only unambiguous way to say "the sheet I am looking at": week_start is not, because
+   * computeWeekGroups() collapses dates less than 5 days apart and expands a selection back to the
+   * whole group. Applied in memory AFTER de-cumulation — see the filter site for why narrowing the
+   * fetch instead would report cumulative figures.
+   */
+  batchIds?: string[] | null;
   /** Per-viewer visibility tier (full / product / territory / none). Defaults to full access. */
   accessScope?: WeeklyAccessScope;
   /**
@@ -812,6 +829,8 @@ export async function loadWeeklyDashboard(filters?: {
   const product = resolveMultiFilter(filters?.productCodes, filters?.productCode, filters?.productFilterMode, normalizeCode);
   const line = resolveMultiFilter(filters?.lineCodes, filters?.line, filters?.lineFilterMode, normalizeComparableLine);
   const cycleMonthFilter = resolveMultiFilter(filters?.cycleMonths, null, filters?.cycleMonthMode, normalizeText);
+  // Uploads are matched by exact id, so no include/exclude mode and no normalisation — a uuid is a uuid.
+  const batchIdFilter = new Set((filters?.batchIds ?? []).map((value) => normalizeText(value)).filter(Boolean));
   const weekNumberFilter = resolveMultiFilter(
     filters?.weekNumbers?.map((value) => String(value)),
     null,
@@ -879,6 +898,19 @@ export async function loadWeeklyDashboard(filters?: {
   // than the raw company-wide list — otherwise these shortcuts would leak it right back.
   const distributorsForEmpty = (filters?.accessScope?.tier ?? "full") === "full" ? distributors : [];
 
+  // Upload picker options, newest first. Built from the batch list already in hand, so this costs no
+  // extra query. Label is human-readable per the owner's standing rule — never a bare uuid.
+  const uploadOption = (batch: (typeof batches)[number]) => ({
+    code: String(batch.id),
+    name: [
+      String(batch.distributor_name ?? batch.distributor_code ?? "—"),
+      batch.week_start ? String(batch.week_start) : "undated",
+      batch.week_number != null ? `W${batch.week_number}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  });
+
   const empty = (): WeeklyDashboard => ({
     weekStart: selectedWeekAnchor,
     priorWeekStart: priorCanonical,
@@ -889,6 +921,9 @@ export async function loadWeeklyDashboard(filters?: {
     availableProducts: [],
     availableMonths: [],
     availableWeekNumbers: [],
+    // Still offered even when there is nothing to show: the viewer must be able to pick a different
+    // upload to get out of an empty view.
+    availableUploads: distributorsForEmpty.length > 0 ? batches.map(uploadOption) : [],
     distributors: distributorsForEmpty,
     appliedFilters,
     kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
@@ -1019,6 +1054,7 @@ export async function loadWeeklyDashboard(filters?: {
     for (const row of firstPage.data ?? []) {
       if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
       allRows.push({
+        batchId: String(row.batch_id ?? ""),
         weekStart: String(row.week_start ?? ""),
         cycleMonth: String(row.cycle_month ?? ""),
         weekNumber: row.week_number != null ? Number(row.week_number) : null,
@@ -1061,6 +1097,7 @@ export async function loadWeeklyDashboard(filters?: {
         for (const row of pageData) {
           if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
           allRows.push({
+            batchId: String(row.batch_id ?? ""),
             weekStart: String(row.week_start ?? ""),
             cycleMonth: String(row.cycle_month ?? ""),
             weekNumber: row.week_number != null ? Number(row.week_number) : null,
@@ -1101,6 +1138,9 @@ export async function loadWeeklyDashboard(filters?: {
   //   • A missing/zero current master price falls back to the stored value (never zero a row).
   const priceMap = new Map<string, number>();
   const mappedCodes = new Set<string>(); // master products that have a line (i.e. properly mapped)
+  // product_code -> family NAME. Deliberately the name, not family_code: the code is NOT unique —
+  // "DO" is shared by both Dopaminict and Dolabactin, so grouping on it would merge two families.
+  const familyByCode = new Map<string, string>();
   try {
     const reference = await loadSalesReferenceData({ includeCustomerBricks: false });
     for (const masterProduct of reference.products) {
@@ -1109,6 +1149,8 @@ export async function loadWeeklyDashboard(filters?: {
       const price = Number(masterProduct.factoryPrice);
       if (Number.isFinite(price) && price > 0) priceMap.set(code, price);
       if ((masterProduct.line ?? "").trim()) mappedCodes.add(code);
+      const family = (masterProduct.family ?? "").trim();
+      if (family) familyByCode.set(code, family);
     }
   } catch {
     // Best-effort: if the master can't be read, keep stored values rather than failing the load.
@@ -1151,6 +1193,11 @@ export async function loadWeeklyDashboard(filters?: {
     if (!passesMultiFilter(line, normalizeComparableLine(row.officialLine))) return false;
     if (!passesMultiFilter(cycleMonthFilter, normalizeText(row.cycleMonth))) return false;
     if (!passesMultiFilter(weekNumberFilter, row.weekNumber != null ? String(row.weekNumber) : "")) return false;
+    // Upload selection. Applied HERE, on de-cumulated rows — never to the batch fetch above. Fetching
+    // only the chosen batch would strip the earlier weeks of its month, and de-cumulation subtracts
+    // each week from the one before, so the sheet would report its CUMULATIVE figure instead of the
+    // week's own sale (Royafloxacin June W3 would read 945 rather than 428).
+    if (batchIdFilter.size > 0 && !batchIdFilter.has(row.batchId)) return false;
     return true;
   });
   // Filter-option universes. Scoped by the selected weeks + distributor choice ONLY — deliberately
@@ -1383,6 +1430,15 @@ export async function loadWeeklyDashboard(filters?: {
     availableProducts,
     availableMonths,
     availableWeekNumbers,
+    // Bounded to the distributors this viewer can actually see, exactly like `distributors` below —
+    // otherwise the picker would name uploads outside their scope.
+    availableUploads: batches
+      .filter(
+        (batch) =>
+          !scopeVisibleDistributorCodes ||
+          scopeVisibleDistributorCodes.has(normalizeCode(String(batch.distributor_code ?? ""))),
+      )
+      .map(uploadOption),
     distributors: scopeVisibleDistributorCodes
       ? distributors.filter((d) => scopeVisibleDistributorCodes.has(normalizeCode(d.code)))
       : distributors,
@@ -1421,11 +1477,14 @@ export async function loadWeeklyDashboard(filters?: {
           line: row.officialLine,
           regionCode: row.regionCode,
           regionName: row.regionName,
+          areaCode: row.areaCode,
           branchCode: row.branchCode,
           branchName: row.branchName,
           cycleMonth: row.cycleMonth,
           weekNumber: row.weekNumber,
           weekStart: row.weekStart,
+          batchId: row.batchId,
+          family: familyByCode.get(normalizeCode(row.productCode)) ?? "",
           salesValue: Number(row.salesValue.toFixed(2)),
           salesUnits: Number(row.netQty.toFixed(2)),
           stockUnits: Number(row.stockQty.toFixed(2)),

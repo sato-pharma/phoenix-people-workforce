@@ -118,9 +118,24 @@ export function runWeeklyAreaScopeTests() {
   const rmVisible = applyWeeklyTerritoryScope(rmRows, rm).map((r) => r.label);
   assert.deepEqual(
     rmVisible.sort(),
-    ["AB unmapped", "D1 mapped to D16 (his)", "D1 unmapped"].sort(),
-    "RM keeps all his regions for unmapped rows but only his own areas among mapped ones",
+    ["AB unmapped", "D1 mapped to D16 (his)", "D1 mapped to D11 (not his)", "D1 unmapped"].sort(),
+    "RM keeps every row of every region he owns — mapping a branch to an area he does not own must " +
+      "not take it away from him while area coverage is partial",
   );
+
+  // ── THE REGRESSION THIS GUARDS: stamping an area must never remove a row ───
+  // Owner decision 2026-08-12. Area coverage is partial, so an exclusive area bound silently drops
+  // rows the day a branch gets mapped. Same rows, mapped vs unmapped, must never shrink the view.
+  const beforeMapping = applyWeeklyTerritoryScope(
+    rmRows.map((r) => ({ ...r, areaCode: null })),
+    rm,
+  ).map((r) => r.label);
+  for (const label of beforeMapping) {
+    assert.ok(
+      rmVisible.includes(label),
+      `area-mapping a branch removed a row the viewer could already see: ${label}`,
+    );
+  }
 
   // ── No geography bound at all (line-only roles) passes everything ──────────
   assert.equal(

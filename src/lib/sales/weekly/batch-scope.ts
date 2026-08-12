@@ -36,3 +36,33 @@ export function narrowBatchesToCycleMonths<T extends CycleMonthBatch>(
   if (wanted.size === 0) return [...batches];
   return batches.filter((batch) => wanted.has(normalizeCycleMonth(batch.cycle_month)));
 }
+
+/** A batch's period tags — the pair the dashboard's Month + Week-of-month filters address. */
+export type PeriodTaggedBatch = { cycleMonth?: string | null; weekNumber?: number | null };
+
+/**
+ * The most recent (cycle month, week-of-month) anyone has uploaded.
+ *
+ * Used as the DEFAULT scope for the summarized report when the viewer has not picked a period. The
+ * report is meant to answer "what did the sheet I just uploaded sell", so falling back to the whole
+ * validated history — which is what an empty filter means to the loader — showed dates running back
+ * to May and was the first thing the owner rejected.
+ *
+ * Deliberately (month, week) and not a raw week_start: distributors stamp slightly different dates
+ * for the same operational week, and the week NUMBER is the tag they are all reconciled onto.
+ */
+export function latestUploadedPeriod<T extends PeriodTaggedBatch>(
+  batches: readonly T[],
+): { cycleMonth: string; weekNumber: number } | null {
+  let best: { cycleMonth: string; weekNumber: number } | null = null;
+  for (const batch of batches) {
+    const cycleMonth = normalizeCycleMonth(batch.cycleMonth);
+    const weekNumber = batch.weekNumber;
+    if (!cycleMonth || weekNumber == null || !Number.isFinite(weekNumber)) continue;
+    // cycle_month is a zero-padded YYYY-MM-DD, so lexical order is chronological order.
+    if (!best || cycleMonth > best.cycleMonth || (cycleMonth === best.cycleMonth && weekNumber > best.weekNumber)) {
+      best = { cycleMonth, weekNumber: Number(weekNumber) };
+    }
+  }
+  return best;
+}

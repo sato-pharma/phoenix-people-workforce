@@ -49,14 +49,15 @@ function factRows(): WeeklyFactExportRow[] {
     rows.push({
       distributorCode: "IS", distributorName: "Ibn Sina",
       productCode: p.c, productName: p.n, line: p.line,
-      regionCode: r.c, regionName: r.n,
+      regionCode: r.c, regionName: r.n, areaCode: null,
       branchCode: `B${i % 3}`, branchName: `Branch ${i % 3}`,
       cycleMonth: w.cycleMonth, weekNumber: w.weekNumber, weekStart: w.weekStart,
+      batchId: `batch-${w.weekNumber}`, family: p.c === "SAG" ? "Saginko" : "Royafloxacin",
       salesValue: 1000 + i * 11, salesUnits: 10 + i, stockUnits: 4 + (i % 7),
     });
   }
   // Null-week row must not crash and must be invisible to "W{n}" SUMIFS.
-  rows.push({ distributorCode: "IS", distributorName: "Ibn Sina", productCode: "SAG", productName: "Saginkgo", line: "Anti infective", regionCode: "D1", regionName: "Delta 1", branchCode: "B1", branchName: "Branch 1", cycleMonth: "2026-05-01", weekNumber: null, weekStart: "2026-05-18", salesValue: 500, salesUnits: 5, stockUnits: 2 });
+  rows.push({ distributorCode: "IS", distributorName: "Ibn Sina", productCode: "SAG", productName: "Saginkgo", line: "Anti infective", regionCode: "D1", regionName: "Delta 1", areaCode: null, branchCode: "B1", branchName: "Branch 1", cycleMonth: "2026-05-01", weekNumber: null, weekStart: "2026-05-18", batchId: "batch-untagged", family: "Saginko", salesValue: 500, salesUnits: 5, stockUnits: 2 });
   return rows;
 }
 
@@ -77,6 +78,7 @@ function sampleDashboard(empty = false): WeeklyDashboard {
   return {
     weekStart: null, priorWeekStart: null, availableWeeks: [], weekGroupMembers: {},
     availableLines: ["Anti infective"], availableRegions: [], availableProducts: [], availableMonths: [], availableWeekNumbers: [],
+    availableUploads: [],
     distributors: dists.map((d) => ({ code: d.code, name: d.name })),
     appliedFilters: {
       weekStart: null, weekStarts: [], allWeeks: true,

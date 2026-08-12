@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 
+import JSZip from "jszip";
+
 import {
   compareManagerBuckets,
   managerKey,
@@ -7,16 +9,21 @@ import {
   resolveWeeklyManager,
   type WeeklyManagerIndex,
 } from "../src/lib/sales/weekly/manager-attribution.ts";
+import { latestUploadedPeriod } from "../src/lib/sales/weekly/batch-scope.ts";
 import {
+  buildWeeklySummaryWorkbook,
   cycleMonthsOfCurrentYear,
   currentCairoCycleMonth,
   groupRowsByManager,
   isActionableLowSalesBucket,
   isLowSalesWithStock,
   latestCycleMonthStockOnly,
+  resolveLineTabs,
+  spanPlan,
+  splitLineIntoFamilyBlocks,
   ytdCoverageNote,
 } from "../src/lib/sales/weekly/summary-workbook.ts";
-import type { WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
+import type { WeeklyDashboard, WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 
 const MAY = "2026-05-01";
 const JUN = "2026-06-01";
@@ -31,11 +38,14 @@ function factRow(overrides: Partial<WeeklyFactExportRow> = {}): WeeklyFactExport
     line: "CNS",
     regionCode: "CA",
     regionName: "Cairo",
+    areaCode: "CA1",
     branchCode: "BR1",
     branchName: "Branch One",
     cycleMonth: JUL,
     weekNumber: 1,
     weekStart: "2026-07-04",
+    batchId: "batch-1",
+    family: "Royafloxacin",
     salesValue: 100,
     salesUnits: 10,
     stockUnits: 5,
@@ -95,7 +105,7 @@ function managerIndex(): WeeklyManagerIndex {
   };
 }
 
-export function runWeeklySummaryReportTests() {
+export async function runWeeklySummaryReportTests() {
   const index = managerIndex();
 
   // 1) HEADLINE — the low-sales predicate, exactly the table the owner specified. Zero-sales branches
@@ -261,6 +271,52 @@ export function runWeeklySummaryReportTests() {
     assert.ok(complete.includes("All months"), `full coverage must say so, got "${complete}"`);
   }
 
+  // 9b) HEADLINE — the default period is the LATEST (cycle month, week), not the whole history.
+  //     An empty filter means "everything" to the loader, and that is what put dates from May in
+  //     front of the owner when he asked for the sheet he had just uploaded.
+  {
+    const batches = [
+      { cycleMonth: "2026-07-01", weekNumber: 4 },
+      { cycleMonth: "2026-08-01", weekNumber: 1 },
+      { cycleMonth: "2026-08-01", weekNumber: 2 },
+      { cycleMonth: "2026-06-01", weekNumber: 3 },
+    ];
+    assert.deepEqual(
+      latestUploadedPeriod(batches),
+      { cycleMonth: "2026-08-01", weekNumber: 2 },
+      "the newest month AND the newest week within it",
+    );
+    // A later week number in an OLDER month must never beat a newer month.
+    assert.deepEqual(
+      latestUploadedPeriod([
+        { cycleMonth: "2026-07-01", weekNumber: 4 },
+        { cycleMonth: "2026-08-01", weekNumber: 1 },
+      ]),
+      { cycleMonth: "2026-08-01", weekNumber: 1 },
+      "August W1 is newer than July W4 — month wins over week number",
+    );
+    assert.equal(latestUploadedPeriod([]), null, "no batches means no default period, not a guess");
+    assert.equal(
+      latestUploadedPeriod([{ cycleMonth: null, weekNumber: 2 }, { cycleMonth: "2026-08-01", weekNumber: null }]),
+      null,
+      "an untagged batch cannot define the period",
+    );
+  }
+
+  // 9d) Line splitting is NOT the default. His rule: one combined tab set unless he deliberately
+  //     picks more than one line — "dont make all line like this one sheet per line".
+  {
+    assert.deepEqual(resolveLineTabs([]), [], "no line picked -> one combined tab set");
+    assert.deepEqual(resolveLineTabs(["Pedia"]), [], "one line picked -> still ONE tab set, that line only");
+    assert.deepEqual(
+      resolveLineTabs(["Pedia", "CNS"]),
+      ["Pedia", "CNS"],
+      "two or more lines picked -> a tab set per line, in the order he picked them",
+    );
+    assert.deepEqual(resolveLineTabs(["Pedia", "Pedia", " CNS "]), ["Pedia", "CNS"], "de-duped and trimmed");
+    assert.deepEqual(resolveLineTabs(["", "  "]), [], "blank picks are not lines");
+  }
+
   // 10) Period helpers are Cairo-based, first-of-month, and the year list stops at the current month
   //     (never running ahead into months that cannot have data yet).
   {
@@ -274,5 +330,153 @@ export function runWeeklySummaryReportTests() {
 
     const january = new Date("2026-01-04T12:00:00Z");
     assert.deepEqual(cycleMonthsOfCurrentYear(january), ["2026-01-01"], "in January the list is just January");
+  }
+
+  // ── Page geometry: a value cell must never collapse onto its neighbour ──────
+  //
+  // spanPlan used to return floor(cols / cells), which is ZERO once a table carries more products
+  // than the page can hold. Two cells then resolved to the SAME column, so the later product
+  // silently overwrote the earlier one and the last pair landed on the trend column. Reachable in
+  // production: Tebofortin has SEVEN concentrations in the master, and 7 products = 14 value cells
+  // across 10 available columns.
+  {
+    for (const cells of [2, 4, 6, 8, 10, 12, 14, 20]) {
+      const plan = spanPlan(cells, 10);
+      assert.equal(plan.length, cells, `spanPlan must return one span per cell (${cells})`);
+      assert.ok(
+        plan.every((span) => span >= 1),
+        `spanPlan(${cells}, 10) returned a zero-width span: ${JSON.stringify(plan)}`,
+      );
+      // No two cells may start on the same column — that collision IS the bug.
+      const starts: number[] = [];
+      let cursor = 2;
+      for (const span of plan) {
+        starts.push(cursor);
+        cursor += span;
+      }
+      assert.equal(new Set(starts).size, starts.length, `two cells collide on one column at ${cells} cells`);
+    }
+    assert.deepEqual(spanPlan(4, 10), [3, 3, 2, 2], "spare columns go to the leftmost cells so the table still ends flush");
+    assert.deepEqual(spanPlan(0, 10), [], "no cells, no spans");
+  }
+
+  // ── A family wider than the page is CHUNKED, never rendered as one wide table ──
+  {
+    const tebofortin = Array.from({ length: 7 }, (_, i) =>
+      factRow({ productCode: `TEB${i}`, productName: `Tebofortin ${i}`, family: "Tebofortin", line: "CNS" }),
+    );
+    const conviban = Array.from({ length: 4 }, (_, i) =>
+      factRow({ productCode: `CON${i}`, productName: `Conviban ${i}`, family: "Conviban", line: "CNS" }),
+    );
+    const blocks = splitLineIntoFamilyBlocks([...tebofortin, ...conviban]);
+    for (const block of blocks) {
+      const products = new Set(block.rows.map((row) => row.productCode)).size;
+      assert.ok(products <= 5, `a block carries ${products} products — the page holds 5: "${block.label}"`);
+    }
+    assert.ok(
+      blocks.some((block) => /\(1 of 2\)/.test(block.label)),
+      `a 7-product family must be split into numbered parts, got: ${blocks.map((b) => b.label).join(" | ")}`,
+    );
+    // Nothing may be dropped on the way.
+    assert.equal(
+      new Set(blocks.flatMap((b) => b.rows.map((r) => r.productCode))).size,
+      11,
+      "every product must survive the split — 7 Tebofortin + 4 Conviban",
+    );
+  }
+
+  // A line that fits the page stays ONE table, plainly named.
+  {
+    const antiInfective = ["Saginko", "Royafloxacin"].map((family, i) =>
+      factRow({ productCode: `AI${i}`, productName: family, family, line: "Anti Infective" }),
+    );
+    const blocks = splitLineIntoFamilyBlocks(antiInfective);
+    assert.equal(blocks.length, 1, "two products is one table");
+    assert.equal(blocks[0].label, "Anti Infective", "and it carries the plain line name, not a family list");
+  }
+
+  // ── The workbook must OPEN. Excel's "we found a problem" prompt is a shipped defect ──
+  //
+  // Tab 2's rows are grouped so a manager collapses to one line. ExcelJS derives each row's
+  // `collapsed` flag as `outlineLevel >= properties.outlineLevelRow` and offers no setter, so the
+  // default outlineLevelRow of 0 stamps collapsed="1" onto every level-1 row while leaving them
+  // visible. Excel reads that as a collapsed group whose rows are not hidden and offers to repair
+  // the file. Caught on a real preview 2026-08-12.
+  {
+    const rows = [
+      factRow({ productCode: "P1", productName: "Alpha", family: "Alpha", areaCode: "CA1", regionCode: "CA" }),
+      factRow({ productCode: "P2", productName: "Beta", family: "Beta", areaCode: "CA2", regionCode: "CA" }),
+      // A row with NO area still has to appear, in its own bucket.
+      factRow({ productCode: "P1", productName: "Alpha", family: "Alpha", areaCode: null, regionCode: "CA" }),
+    ];
+    const dash = (factRows: WeeklyFactExportRow[]) =>
+      ({
+        weekStart: null, priorWeekStart: null, availableWeeks: [], weekGroupMembers: {},
+        availableLines: ["CNS"], availableRegions: [], availableProducts: [], availableMonths: [],
+        availableWeekNumbers: [], availableUploads: [], distributors: [],
+        appliedFilters: {
+          weekStart: null, weekStarts: [], allWeeks: true, distributorCode: null, regionCode: null,
+          productCode: null, lineCode: null, productCodes: [], productFilterMode: "include",
+          distributorCodes: [], distributorFilterMode: "include", regionCodes: [], regionFilterMode: "include",
+          lineCodes: [], lineFilterMode: "include", cycleMonths: [], cycleMonthMode: "include",
+          weekNumbers: [], weekNumberMode: "include",
+        },
+        kpis: { salesValue: 0, salesUnits: 0, stockUnits: 0, branchCount: 0, regionCount: 0, productCount: 0, distributorCount: 0 },
+        compare: {
+          salesValue: { current: 0, prior: null, pct: null },
+          salesUnits: { current: 0, prior: null, pct: null },
+          stockUnits: { current: 0, prior: null, pct: null },
+        },
+        regions: [], products: [], distributorBreakdown: [], branchBreakdown: [],
+        zeroSalesBranches: [], weekComparison: [], sources: [], trend: [], factRows,
+      }) as unknown as WeeklyDashboard;
+
+    const buffer = await buildWeeklySummaryWorkbook({
+      weekly: dash(rows), mtd: dash(rows), ytd: dash(rows), trend: dash(rows),
+      managerIndex: { dmByLineRegion: new Map(), seatsById: new Map(), nameByHrId: new Map(), regionNameByCode: new Map(), ceoName: null },
+      ytdMonths: [JUL], periodLabel: "test", generatedAt: "2026-08-12 00:00 UTC", lineFilter: [],
+      masterAreas: [{ areaCode: "CA1", areaName: "Heliopolis" }, { areaCode: "CA2", areaName: "Nasr City" }],
+    });
+
+    assert.ok(buffer.length > 100 && buffer[0] === 0x50 && buffer[1] === 0x4b, "the workbook must be a valid .xlsx");
+
+    const zip = await JSZip.loadAsync(buffer);
+    let outlined = 0;
+    let collapsedButVisible = 0;
+    for (const name of Object.keys(zip.files)) {
+      if (!/worksheets\/sheet\d+\.xml$/.test(name)) continue;
+      const xml = await zip.files[name].async("string");
+      for (const rowXml of xml.match(/<row [^>]*>/g) ?? []) {
+        if (/outlineLevel="[1-9]/.test(rowXml)) outlined += 1;
+        if (/collapsed="1"/.test(rowXml) && !/hidden="1"/.test(rowXml)) collapsedButVisible += 1;
+      }
+
+      // THE ONE THAT ACTUALLY BROKE EXCEL. OOXML's CT_SheetPr is a SEQUENCE —
+      // tabColor -> outlinePr -> pageSetUpPr — and ExcelJS 4.4.0 emits pageSetUpPr FIRST. Combining
+      // fitToPage with outlineProperties therefore yields schema-invalid XML that is still
+      // well-formed, so nothing but Excel notices: it reports "Load error. Line 2, column 0" and
+      // offers to repair the workbook. Assert the order rather than the absence, so the day ExcelJS
+      // fixes its xform this test stops complaining instead of blocking the improvement.
+      const sheetPr = /<sheetPr>(.*?)<\/sheetPr>/.exec(xml)?.[1] ?? "";
+      const outlineAt = sheetPr.indexOf("<outlinePr");
+      const pageSetupAt = sheetPr.indexOf("<pageSetUpPr");
+      if (outlineAt >= 0 && pageSetupAt >= 0) {
+        assert.ok(
+          outlineAt < pageSetupAt,
+          `${name}: <outlinePr> must precede <pageSetUpPr> inside <sheetPr> — Excel rejects the sheet otherwise. Got: ${sheetPr}`,
+        );
+      }
+    }
+    assert.ok(outlined > 0, "Tab 2 must actually carry outline levels — otherwise it cannot collapse");
+    assert.equal(
+      collapsedButVisible,
+      0,
+      `${collapsedButVisible} row(s) are marked collapsed while still visible — Excel will offer to repair this file`,
+    );
+
+    // The area names must be printed, never the codes.
+    const shared = await zip.file("xl/sharedStrings.xml")?.async("string");
+    assert.ok(shared?.includes("Heliopolis"), "areas must print as names");
+    assert.ok(!/>CA1</.test(shared ?? ""), "an area CODE must never reach the sheet");
   }
 }

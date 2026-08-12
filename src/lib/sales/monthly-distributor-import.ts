@@ -3248,9 +3248,11 @@ export type MonthlyClosingDirectCell = {
 
 // UE-1 / UE-2 sit exactly where the single "UE" used to: on a line whose organogram splits Upper
 // Egypt across two district managers, the reader still expects to find Upper Egypt in that slot.
-const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "UE-1", "UE-2", "AB", "D1", "D2", "OT"] as const;
+// Exported for the same reason the store-split arithmetic below is: this is the sequence readers
+// recognise from Monthly Closing, and any report that re-declares it is free to drift away from it.
+export const MONTHLY_CLOSING_REGION_ORDER = ["CA", "GZ", "UE", "UE-1", "UE-2", "AB", "D1", "D2", "OT"] as const;
 
-function monthlyClosingRegionRank(regionCode: string) {
+export function monthlyClosingRegionRank(regionCode: string) {
   const index = MONTHLY_CLOSING_REGION_ORDER.indexOf(regionCode as (typeof MONTHLY_CLOSING_REGION_ORDER)[number]);
   return index === -1 ? MONTHLY_CLOSING_REGION_ORDER.length : index;
 }
