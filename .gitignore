@@ -17,6 +17,13 @@ tests/synthetic/report/
 tsconfig.tsbuildinfo
 _junk/
 
+# Source-dump archives produced by the audit workflow. Two of them (DIRECT_ORDERS_DELTA_SOURCE.zip,
+# OUTSTATION_EXPENSES_SOURCE.zip) were committed by accident on 2026-08-12 — 1.03 MB of BINARY
+# holding nothing but copies of this repo's own app/, src/ and docs/ trees, which git already
+# stores far better as text. Never reached main; this rule keeps it that way.
+# A zip that genuinely belongs in the repo can still be added with `git add -f`.
+*.zip
+
 # Analytics local env (contains DB credentials for analytics_readonly)
 .env.analytics
 .claude/worktrees/
