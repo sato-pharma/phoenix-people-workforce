@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  AlertTriangle,
   Camera,
   CheckCircle2,
   ClipboardCheck,
@@ -310,6 +311,53 @@ function statusVariant(status: MarketingValidationStatus): "success" | "warning"
   return "neutral";
 }
 
+/**
+ * Why this customer is not in the marketing request list yet, said in the rep's terms.
+ *
+ * Evidence is the only thing that can park a field row since 2026-08-12 — an unmatched distributor
+ * code no longer blocks (see `resolveMarketingSystemValidationStatus`) — so this names the side
+ * whose live photo and location are short instead of reading back the stored note, which cannot say
+ * WHICH capture failed.
+ */
+function pendingBlockReason(rows: MarketingValidationReportRow[]): string {
+  const customerShort = rows.some((row) => row.customer.evidenceStatus !== "complete");
+  const pharmacyShort = rows.some((row) => row.pharmacy.evidenceStatus !== "complete");
+  if (customerShort && pharmacyShort) {
+    return "The live photo and location are incomplete on both the customer and the pharmacy.";
+  }
+  if (customerShort) return "The customer's live photo and location are incomplete.";
+  if (pharmacyShort) return "The pharmacy's live photo and location are incomplete.";
+  return "Waiting for a Super Admin or the CEO to release it.";
+}
+
+/**
+ * The same finding as `pendingBlockReason`, short enough to sit in a table cell on one line.
+ *
+ * The owner's standing rule is that nothing in the UI wraps or truncates, so the prose explanation
+ * lives once in the tab's banner and each row carries only this chip.
+ */
+function pendingBlockLabel(rows: MarketingValidationReportRow[]): string {
+  const customerShort = rows.some((row) => row.customer.evidenceStatus !== "complete");
+  const pharmacyShort = rows.some((row) => row.pharmacy.evidenceStatus !== "complete");
+  if (customerShort && pharmacyShort) return "Both captures incomplete";
+  if (customerShort) return "Customer capture incomplete";
+  if (pharmacyShort) return "Pharmacy capture incomplete";
+  return "Awaiting release";
+}
+
+/** Distributor codes on these rows that no sale can ever be matched to. */
+function untrackedVendorCodes(rows: MarketingValidationReportRow[]) {
+  const seen = new Map<string, { code: string; distributorName: string }>();
+  for (const row of rows) {
+    if (row.distributorCode.referenceStatus === "matched") continue;
+    seen.set(row.distributorCode.id, {
+      code: row.distributorCode.distributorPharmacyCode,
+      distributorName: row.distributorName,
+    });
+  }
+  return Array.from(seen.values());
+}
+
 function buildValidatedPharmacyDetails(rows: MarketingValidationReportRow[]) {
   const pharmacies = new Map<string, ValidatedPharmacyDetail>();
   for (const row of rows) {
@@ -498,6 +546,21 @@ function AdminValidatedBadge() {
   return (
     <span className="inline-flex items-center rounded-sm border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700">
       Admin validated
+    </span>
+  );
+}
+
+/**
+ * Shown on a VALIDATED customer whose distributor code is not in the Phoenix reference database.
+ *
+ * Since 2026-08-12 such a customer is usable in a marketing request (owner ruling: flag, do not
+ * block), so this badge is the only thing left saying that no sale can ever be matched back to it
+ * and its ROI will read zero. The request form asks for a written reason before accepting the code.
+ */
+function UntrackedCodeBadge() {
+  return (
+    <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+      Sales not trackable
     </span>
   );
 }
@@ -1109,13 +1172,30 @@ function TableSkeleton() {
 
 export function MarketingValidationWorkspace() {
   const [workspace, setWorkspace] = useState<MarketingValidationWorkspacePayload>(emptyWorkspace);
-  const [activeTab, setActiveTab] = useState<"validation" | "validated">("validation");
+  const [activeTab, setActiveTab] = useState<"validation" | "validated" | "pending">("validation");
   const [selectedValidatedCustomerKey, setSelectedValidatedCustomerKey] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [captureTarget, setCaptureTarget] = useState<string | null>(null);
   const [cameraTarget, setCameraTarget] = useState<LocationTarget | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  /**
+   * The banner text and the colour it is shown in, kept together.
+   *
+   * The colour used to be sniffed from the text at render time (`message.includes("saved")`), which
+   * broke the moment the save messages started distinguishing a validated customer from a blocked
+   * one — "Saved, but ... is NOT in your marketing request customer list" would have rendered green.
+   * `setMessage` keeps its original one-argument shape so every existing caller is unchanged; the
+   * two that know their own outcome pass the tone explicitly.
+   */
+  const [messageState, setMessageState] = useState<{ text: string; tone: "success" | "warning" } | null>(null);
+  const message = messageState?.text ?? null;
+  const setMessage = useCallback((text: string | null, tone?: "success" | "warning") => {
+    setMessageState(
+      text === null
+        ? null
+        : { text, tone: tone ?? (text.includes("saved") || text.includes("success") ? "success" : "warning") },
+    );
+  }, []);
   const [customers, setCustomers] = useState<CustomerLine[]>(() => [newCustomerLine()]);
   // Super Admin only. When set, the whole form switches to desk mode: the location comes from map
   // search instead of the phone's GPS, no live photo is required, and the saved customer is owned
@@ -1224,9 +1304,41 @@ export function MarketingValidationWorkspace() {
     }
     return Array.from(groups.values());
   }, [workspace.rows]);
+  /**
+   * The customers this rep captured that are NOT in her marketing request list.
+   *
+   * Before 2026-08-12 these appeared nowhere at all: the page had only Validate and Validated tabs,
+   * `validatedGroups` skips anything not validated, and the save message said "Validation rows
+   * saved." either way — so a customer that landed pending simply vanished, with the rep having no
+   * way to know it had, why, or that only a Super Admin / CEO could release it.
+   */
+  const pendingGroups = useMemo(() => {
+    const groups = new Map<string, ValidatedCustomerGroup>();
+    for (const row of workspace.rows) {
+      if (row.validationStatus !== "pending") continue;
+      const key = row.customer.id;
+      const current = groups.get(key);
+      if (current) {
+        current.rows.push(row);
+        continue;
+      }
+      groups.set(key, {
+        customerName: row.customer.displayName,
+        customerType: row.customer.customerType,
+        isAdminValidated: Boolean(row.customer.validatedAt),
+        key,
+        rows: [row],
+        status: row.validationStatus,
+      });
+    }
+    return Array.from(groups.values());
+  }, [workspace.rows]);
   const selectedValidatedGroup = useMemo(
-    () => validatedGroups.find((group) => group.key === selectedValidatedCustomerKey) ?? null,
-    [selectedValidatedCustomerKey, validatedGroups],
+    () =>
+      validatedGroups.find((group) => group.key === selectedValidatedCustomerKey)
+      ?? pendingGroups.find((group) => group.key === selectedValidatedCustomerKey)
+      ?? null,
+    [pendingGroups, selectedValidatedCustomerKey, validatedGroups],
   );
   const selectedValidatedPharmacies = useMemo(
     () => (selectedValidatedGroup ? buildValidatedPharmacyDetails(selectedValidatedGroup.rows) : []),
@@ -1595,11 +1707,40 @@ export function MarketingValidationWorkspace() {
         };
       });
       resetForm();
-      setMessage("Validation rows saved.");
-      // Optimistic: switch to validated tab so user immediately sees new entry
-      if (rows.some((r) => r.validationStatus === "system_validated" || r.validationStatus === "sfe_validated")) {
-        setActiveTab("validated");
+
+      // Say what actually happened, per customer.
+      //
+      // This used to be a flat "Validation rows saved." whatever came back, and the page had
+      // nowhere to show a row that landed pending — so a customer that would never reach the
+      // marketing request list looked identical to one that had. Name the customers that are
+      // blocked and why, and land the rep on the tab that shows them.
+      const savedCustomers = new Map<string, MarketingValidationReportRow[]>();
+      for (const row of rows) {
+        savedCustomers.set(row.customer.id, [...(savedCustomers.get(row.customer.id) ?? []), row]);
       }
+      const blocked = Array.from(savedCustomers.values()).filter((customerRows) =>
+        customerRows.every((row) => row.validationStatus === "pending"),
+      );
+      const usable = savedCustomers.size - blocked.length;
+      const untracked = untrackedVendorCodes(rows);
+
+      if (blocked.length === 0) {
+        setMessage(
+          untracked.length > 0
+            ? `Saved and validated. ${usable === 1 ? "The customer is" : `All ${usable} customers are`} now in your marketing request customer list. Note ${untracked.length === 1 ? "code" : "codes"} ${untracked.map((entry) => `${entry.code} (${entry.distributorName})`).join(", ")} ${untracked.length === 1 ? "is" : "are"} not in the Phoenix reference database, so no sale can be matched to ${untracked.length === 1 ? "it" : "them"} yet — you can still submit a request, but you will be asked to record why.`
+            : `Saved and validated. ${usable === 1 ? "The customer is" : `All ${usable} customers are`} now in your marketing request customer list.`,
+          "success",
+        );
+        setActiveTab("validated");
+        return;
+      }
+
+      const blockedNames = blocked.map((customerRows) => customerRows[0].customer.displayName).join(", ");
+      setMessage(
+        `Saved, but ${blockedNames} ${blocked.length === 1 ? "is" : "are"} NOT in your marketing request customer list yet. ${pendingBlockReason(blocked.flat())} Ask a Super Admin or the CEO to release ${blocked.length === 1 ? "it" : "them"}, or capture ${blocked.length === 1 ? "it" : "them"} again with the live photo and location on both the customer and the pharmacy.${usable > 0 ? ` The other ${usable === 1 ? "customer is" : `${usable} customers are`} ready to use.` : ""}`,
+        "warning",
+      );
+      setActiveTab("pending");
     } catch {
       // Network failure mid-request --- queue for retry
       enqueue(submissionPayload);
@@ -1700,11 +1841,16 @@ export function MarketingValidationWorkspace() {
         <TabButton active={activeTab === "validated"} onClick={() => setActiveTab("validated")}>
           Validated ({validatedGroups.length})
         </TabButton>
+        {pendingGroups.length > 0 ? (
+          <TabButton active={activeTab === "pending"} onClick={() => setActiveTab("pending")}>
+            Not Usable Yet ({pendingGroups.length})
+          </TabButton>
+        ) : null}
       </div>
 
       {/* --------- Alert Messages --------- */}
       {message ? (
-        <div className={`rounded-sm border px-3.5 py-2.5 text-[13px] font-semibold ${message.includes("saved") || message.includes("success") ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+        <div className={`rounded-sm border px-3.5 py-2.5 text-[13px] font-semibold ${messageState?.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
           {message}
         </div>
       ) : null}
@@ -2158,6 +2304,126 @@ export function MarketingValidationWorkspace() {
             </div>
           </form>
         </Card>
+      ) : activeTab === "pending" ? (
+        /* --------- Not Usable Yet Tab --------- */
+        <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-amber-600">Not Usable Yet</p>
+              <h2 className="mt-1 text-lg font-black tracking-tight text-slate-900">Captured but not in your request list</h2>
+            </div>
+            <span className="inline-flex items-center rounded-sm border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+              {pendingGroups.length} customers
+            </span>
+          </div>
+
+          <div className="mt-3 flex items-start gap-2 rounded-sm border border-amber-200 bg-amber-50 px-3.5 py-2.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <p className="text-[12px] font-semibold leading-relaxed text-amber-800">
+              These customers were saved, but they do not appear in the customer list when you create a marketing
+              request. A customer only becomes usable once the live photo and location are complete on both the
+              customer and the pharmacy. Capture the customer again with the missing photo, or ask a Super Admin or
+              the CEO to release it from Customer Pharmacy Mapping.
+            </p>
+          </div>
+
+          {isLoading ? (
+            <TableSkeleton />
+          ) : (
+            <>
+              {/* Mobile card view < 480px */}
+              <div className="mt-4 block md:hidden">
+                <div className="space-y-2">
+                  {pendingGroups.map((group) => {
+                    const customer = group.rows[0]?.customer;
+                    const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
+                    return (
+                      <div className="rounded-sm border border-amber-200 bg-white p-3" key={group.key}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-bold text-slate-900">{group.customerName}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                              <StatusBadge status={group.status} />
+                            </div>
+                          </div>
+                          <button
+                            className="flex h-7 shrink-0 items-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[11px] font-bold text-orange-700"
+                            onClick={() => setSelectedValidatedCustomerKey(group.key)}
+                            type="button"
+                          >
+                            <Store className="h-3 w-3" />
+                            {pharmaciesForCustomer.length}
+                          </button>
+                        </div>
+                        <div className="mt-2 space-y-1 text-[12px]">
+                          <div className="flex justify-between gap-2">
+                            <span className="font-medium text-slate-500">Blocked by</span>
+                            <span className="font-semibold text-amber-700">{pendingBlockLabel(group.rows)}</span>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <span className="font-medium text-slate-500">Area</span>
+                            <span className="font-semibold text-slate-700">{customer?.extractedAreaName || customer?.regionName || "Not captured"}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Desktop table view >= 480px */}
+              <div className="mt-4 hidden md:block">
+                <div className="overflow-hidden rounded-sm border border-slate-200">
+                  <table className="w-full border-collapse text-left">
+                    <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                      <tr>
+                        <th className="border-r border-slate-100 px-3 py-2.5">Customer</th>
+                        <th className="border-r border-slate-100 px-3 py-2.5">Blocked By</th>
+                        <th className="border-r border-slate-100 px-3 py-2.5">Area</th>
+                        <th className="px-3 py-2.5 text-center">Pharmacies</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white text-[13px]">
+                      {pendingGroups.map((group) => {
+                        const customer = group.rows[0]?.customer;
+                        const pharmaciesForCustomer = buildValidatedPharmacyDetails(group.rows);
+                        return (
+                          <tr className="border-t border-slate-100" key={group.key}>
+                            <td className="border-r border-slate-100 px-3 py-2.5">
+                              <div className="min-w-0">
+                                <p className="font-bold text-slate-900">{group.customerName}</p>
+                                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                  <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
+                                  <StatusBadge status={group.status} />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="border-r border-slate-100 px-3 py-2.5 font-semibold text-amber-700">
+                              {pendingBlockLabel(group.rows)}
+                            </td>
+                            <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-700">
+                              {customer?.extractedAreaName || customer?.regionName || "Not captured"}
+                            </td>
+                            <td className="px-3 py-2.5 text-center">
+                              <button
+                                className="inline-flex h-7 min-w-7 items-center justify-center gap-1 rounded-sm border border-orange-200 bg-orange-50 px-2 text-[12px] font-bold text-orange-700 transition hover:bg-orange-100"
+                                onClick={() => setSelectedValidatedCustomerKey(group.key)}
+                                type="button"
+                              >
+                                {pharmaciesForCustomer.length}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </Card>
       ) : (
         /* --------- Validated Customers Tab --------- */
         <Card className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
@@ -2193,6 +2459,7 @@ export function MarketingValidationWorkspace() {
                                 <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                 <StatusBadge status={group.status} />
                                 {group.isAdminValidated ? <AdminValidatedBadge /> : null}
+                                {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                               </div>
                             </div>
                             <button
@@ -2246,6 +2513,7 @@ export function MarketingValidationWorkspace() {
                                   <span className="text-[11px] font-medium capitalize text-slate-500">{group.customerType}</span>
                                   <StatusBadge status={group.status} />
                                   {group.isAdminValidated ? <AdminValidatedBadge /> : null}
+                                  {untrackedVendorCodes(group.rows).length > 0 ? <UntrackedCodeBadge /> : null}
                                 </div>
                               </div>
                             </td>
