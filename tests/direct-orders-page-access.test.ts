@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 const PAGES = [
   ["admin workspace", "../app/(admin)/admin/direct-orders/page.tsx"],
   ["admin new order", "../app/(admin)/admin/direct-orders/new/page.tsx"],
-  ["admin report", "../app/(admin)/admin/direct-orders/report/page.tsx"],
+  ["admin report", "../app/(admin)/admin/direct-orders/(desks)/report/page.tsx"],
   ["admin order detail", "../app/(admin)/admin/direct-orders/[id]/page.tsx"],
   ["portal workspace", "../app/employee-portals/direct-orders/page.tsx"],
   ["portal new order", "../app/employee-portals/direct-orders/new/page.tsx"],

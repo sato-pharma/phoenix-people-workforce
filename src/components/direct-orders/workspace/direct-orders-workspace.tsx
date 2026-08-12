@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 import { DirectOrderStatusPill } from "@/components/direct-orders/direct-order-status-pill";
+import { DirectOrdersTabStrip } from "@/components/direct-orders/workspace/direct-orders-tab-strip";
 import type {
   DirectOrderNeedsActionGroup,
   DirectOrderQueueRow,
@@ -65,18 +66,14 @@ export type DirectOrdersWorkspaceProps = {
   needsAction: readonly DirectOrderNeedsActionGroup[];
   myOrders: readonly DirectOrderQueueRow[];
   /**
-   * ONE PAGE of Orders, already scoped/filtered/paginated by the server. When present this is THE
-   * source for the Orders list — `allOrders` is not consulted at all.
+   * ONE PAGE of Orders, already scoped, filtered and paginated by the SERVER, and the only source
+   * the Orders list has.
    *
-   * Null on every view except `orders`, and null on the legacy path, which is why the fallback
-   * below still exists.
+   * Null on every view except `orders` — the loader fetches it for that view and no other. Since a
+   * tab change is a navigation, `?view=orders` always arrives with this populated; the `myOrders`
+   * fallback below exists only for a caller that passes no page at all.
    */
   ordersPage?: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
-  /**
-   * LEGACY list source. Only read when `ordersPage` is absent. Retained so the two shells can be
-   * migrated independently rather than in one commit — do not add new readers.
-   */
-  allOrders: readonly DirectOrderQueueRow[];
   /** Admin desks the viewer may open — passed in so this component owns no permission rule. */
   adminTools: readonly { href: string; label: string; description: string }[];
   /**
@@ -148,16 +145,8 @@ function DeskGroup({
   );
 }
 
-const TAB_LABEL: Record<DirectOrderWorkspaceTabKey, string> = {
-  overview: "Overview",
-  "needs-action": "Needs Action",
-  orders: "Orders",
-  // Named for the work, not the permission level. "Admin Tools" described who was allowed in
-  // rather than what they came to do, which is why everything ended up inside it.
-  "pharmacy-control": "Pharmacy Control",
-  reports: "Reports & Monitoring",
-  controls: "Commercial Controls",
-};
+// TAB_LABEL moved to direct-orders-tab-strip.tsx, beside the strip that renders it, so the desk
+// shell and this component cannot disagree about what a tab is called.
 
 const money = (value: number) => `${Math.round(value).toLocaleString("en-US")} EGP`;
 const shortDate = (value: string | null) => (value ? String(value).slice(0, 10) : "—");
@@ -636,7 +625,7 @@ function OrdersList({
 // ── The workspace ────────────────────────────────────────────────────────────
 
 export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
-  const { variant, basePath, newOrderHref, tabs, summary, needsAction, myOrders, allOrders, adminTools } = props;
+  const { variant, basePath, newOrderHref, tabs, summary, needsAction, myOrders, adminTools } = props;
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -701,11 +690,11 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
   //
   // The fallback is the pre-2026-08-12 behaviour and is only reached when `ordersPage` is absent.
   const servedPage = props.ordersPage ?? null;
-  const ordersRows = servedPage
-    ? servedPage.rows
-    : props.canSeeAllOrders && ordersFilter === "all"
-      ? allOrders
-      : myOrders;
+  // `myOrders` is the fallback only for a caller that passes no server page at all. It is NOT the
+  // wide list: the `allOrders` fallback that used to sit here is gone, and with it the last
+  // full-table read on a routine screen. It was reachable only while tab switching was client-side;
+  // now that a tab is a navigation, ?view=orders always arrives with its own server page.
+  const ordersRows = servedPage ? servedPage.rows : myOrders;
 
   // An own-scope viewer has no wider set to switch to, so the strip is not rendered — rather than
   // offering a control with one working position.
@@ -785,29 +774,21 @@ export function DirectOrdersWorkspace(props: DirectOrdersWorkspaceProps) {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="-mx-1 overflow-x-auto px-1">
-        <div className={`inline-flex min-w-max border border-slate-300 bg-white p-1 ${control(variant)}`} role="tablist">
-          {tabs.map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={tab === key}
-              onClick={() => goTab(key)}
-              className={`min-h-[40px] whitespace-nowrap px-3 py-1.5 text-[12px] font-black uppercase tracking-wide transition-colors ${control(variant)} ${
-                tab === key ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-100"
-              }`}
-            >
-              {TAB_LABEL[key]}
-              {key === "needs-action" && summary.needsMyAction > 0 ? (
-                <span className="ml-1.5 inline-flex min-w-[18px] justify-center rounded-full bg-orange-600 px-1 text-[10px] text-white">
-                  {summary.needsMyAction}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* THE SHARED STRIP. Rendered identically above every desk under (desks)/, which is what makes
+          Pharmacy Validation or the Held Desk feel like a tab of this module rather than a
+          departure from it.
+
+          It navigates by <Link> rather than by click handler, so a tab is a real URL — right-click,
+          middle-click and "copy link" all behave. `goTab` survives for the in-CONTENT shortcuts
+          below ("view all", the empty-state jump to Orders), which are buttons inside a view rather
+          than the navigation chrome. */}
+      <DirectOrdersTabStrip
+        tabs={tabs}
+        activeTab={tab}
+        basePath={basePath}
+        needsActionCount={summary.needsMyAction}
+        rounded={variant === "portal"}
+      />
       {props.reportHref ? (
         <Link
           href={props.reportHref}
