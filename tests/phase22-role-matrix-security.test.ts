@@ -40,7 +40,10 @@ export async function runPhase22RoleMatrixSecurityTests() {
   assert.match(phase22Smoke, /Payroll upload mutation requires payroll import/);
   assert.match(phase22Smoke, /Sales upload mutation requires sales import/);
   assert.match(phase22Smoke, /Users bulk mutation requires user admin update/);
+  assert.match(phase22Smoke, /every role-sensitive table in the list still exists/);
   assert.match(phase22Smoke, /role-sensitive business tables keep RLS enabled/);
+  // Same expense data as outstation_expenses — dropping it silently narrows the RLS check.
+  assert.match(phase22Smoke, /"expense_claims"/);
   assert.doesNotMatch(phase22Smoke, /\.insert\(/);
   assert.doesNotMatch(phase22Smoke, /\.update\(/);
   assert.doesNotMatch(phase22Smoke, /\.delete\(/);

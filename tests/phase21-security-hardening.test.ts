@@ -46,8 +46,12 @@ export function runPhase21SecurityHardeningTests() {
   assert.match(proxySource, /\/api\/sales\/monthly-import\/validate/);
   assert.match(proxySource, /\/api\/sales\/source-of-sales\/products/);
 
+  assert.match(phase21Smoke, /every critical table in the list still exists/);
   assert.match(phase21Smoke, /critical public tables have RLS enabled/);
   assert.match(phase21Smoke, /critical tables do not grant direct anon privileges/);
+  // expense_claims carries the same expense data as outstation_expenses and must stay in the
+  // sweep; dropping it from criticalTables silently narrows the RLS and anon-grant checks.
+  assert.match(phase21Smoke, /"expense_claims"/);
   assert.match(phase21Smoke, /sensitive SECURITY DEFINER functions are not executable by public\/authenticated roles/);
   assert.match(phase21Smoke, /service-role key is not imported into client components/);
   assert.match(phase21Smoke, /methodIsExplicitlyUnsupported/);

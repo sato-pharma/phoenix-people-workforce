@@ -23,6 +23,10 @@ const criticalTables = [
   "salary_records",
   "outstation_expenses",
   "outstation_expense_reports",
+  // The phase-2 expense projection. It carries the same employee expense data as the two tables
+  // above (claimed/approved totals, HR IDs, trip destinations), so it belongs in this sweep even
+  // though nothing writes to it directly — phx_refresh_expense_claims rebuilds it from them.
+  "expense_claims",
   "sales_import_batches",
   "sales_records",
   "employee_resignations",
@@ -192,6 +196,16 @@ async function databaseSecurityAudit() {
         and c.relname = any(${criticalTables})
       order by c.relname
     `;
+
+    // Check presence FIRST. A table that no longer exists is simply absent from the row set above,
+    // not an error, so every check that follows would pass vacuously for it. That is how
+    // payroll_expenses stayed green here for a month after 20260713120000 renamed it away (#2074).
+    const absentTables = criticalTables.filter((table) => !tableRows.some((row) => row.relname === table));
+    addCheck("every critical table in the list still exists", absentTables.length === 0, {
+      absentTables,
+      expected: criticalTables.length,
+      found: tableRows.length,
+    });
 
     const missingRls = tableRows.filter((row) => !row.relrowsecurity).map((row) => row.relname);
     addCheck("critical public tables have RLS enabled", missingRls.length === 0, { missingRls, checked: tableRows.length });
