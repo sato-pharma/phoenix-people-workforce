@@ -249,17 +249,31 @@ export async function POST(request: Request) {
       // WATCH THIS ONE FOR THE MARKETING MANAGER. This read is scoped to the caller, and that scope
       // includes `app_auth_users.product_scope_override` as a HARD row filter, while the Matrix
       // sheet above comes from the unscoped loadMonthlyClosingParts. For the four company-scope
-      // roles that is a no-op — none carries an override. A-9 does: 21 product codes, a
-      // Product-Manager-shaped control sitting on a role that oversees three whole lines. Verified
-      // 2026-08-12 it costs nothing TODAY — those 21 codes cover every product that has ever
-      // recorded a sale on Anti Infective / Pedia / CNS. The two it misses, TE006 Tebofortin Intens
-      // and TE007 Tebofortin Max, are active in the master with zero rows in every period.
+      // roles that is a no-op — none carries an override. A-9 does: 23 product codes, a
+      // Product-Manager-shaped control sitting on a role that oversees three whole lines.
       //
-      // The day either one sells, this workbook stops tying: the Matrix sheet will carry its column
-      // and the Data/Total audit pair will not, silently, on HTTP 200. The fix then is to clear that
-      // override (she oversees whole lines, so a per-product allowlist does not describe her), NOT
-      // to un-scope this read — widening what a caller may see to make a sheet balance is how a
-      // confidential product reaches a workbook.
+      // Topped up from 21 to 23 on 2026-08-12 (owner) with TE006 Tebofortin Intens and TE007
+      // Tebofortin Max. Verified live the same day: the list now covers 100% of the ACTIVE products
+      // on all three of her lines — Anti Infective 2/2, CNS 17/17, Pedia 4/4 — so both halves of
+      // this workbook draw from one population and the Matrix cannot carry a column the Data/Total
+      // audit pair lacks.
+      //
+      // THE STANDING OBLIGATION: any product launching on Anti Infective / Pedia / CNS must be added
+      // to that override, or this workbook silently stops tying — HTTP 200, no error, nothing on any
+      // sheet saying so. That is the running cost of the list, and it was accepted deliberately.
+      //
+      // DO NOT "SIMPLIFY" THIS BY CLEARING THE OVERRIDE. An earlier version of this comment
+      // recommended exactly that, reasoning that she oversees whole lines so a per-product allowlist
+      // does not describe her. It is wrong, and the reason is not visible from this file: her
+      // `sales_scope_override` is COMPANY, so computeSalesAccessScope returns allowedLineNames null
+      // — EVERY line, not her three. Her product list is therefore also the second guard holding the
+      // confidential Head Office line out of her reads. LA003/LA004/SS001 are covered independently
+      // by RESTRICTED_PRODUCT_CODES, but RY001 (ROYANOXICAM 8MG 20 TAB) is NOT restricted and it
+      // SELLS — 217 rows, 10,458 EGP, 2026-01 to 2026-07. Clear the list and the only thing left is
+      // stripHeadOfficeRows, which passes through rows that carry no line dimension.
+      //
+      // And never un-scope this read to make a sheet balance — widening what a caller may see is how
+      // a confidential product reaches a workbook.
       const detailsPromise = loadMonthlyClosingDetails({
         access,
         line: matrix.line,
