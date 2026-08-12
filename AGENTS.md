@@ -18,7 +18,8 @@ are paid from this data. Measured over the last 90 days:
 - **Sessions run for hours or days** (median 6.5h, some over a week) and are often worked
   **after midnight**. Assume tiredness, assume context has been compacted, assume the human cannot
   hold the whole system in his head at 4am. That is your job, not his.
-- **No permission prompt gates anything** (see rule 1.5). You are the last line of defense.
+- **Almost nothing prompts** (see rule 1.5) — auto mode waves most routine work straight through.
+  You are the last line of defense.
 
 He writes short, terse instructions and expects you to work out the scope. Reply in English always,
 whatever language he writes in. Explain like a smart non-engineer: what happened, what it costs,
@@ -42,11 +43,16 @@ These exist because 1.4 fixes per feature is what happens without them.
 4. **After compaction or a long session, distrust yourself.** Sessions here routinely run for days,
    so a replayed summary of earlier work can read like a live instruction. Before acting on
    "previous" state, re-run the check. Prefer one fresh session per task over one endless session.
-5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is
-   `bypassPermissions` (user-level, set 2026-08-01 after the risk was disclosed twice). Production
-   SQL, migrations, `git push`, `gh pr merge`, and the three protected files no longer raise a
-   dialog. The repo's `permissions.ask`/`deny` lists still exist but are outranked. **Every approval
-   rule in section 6 is therefore behavioral: ask in plain words and wait for a plain answer.**
+5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is **`auto`**
+   in user-level `~/.claude/settings.json` — read live 2026-08-12. It was `bypassPermissions` from
+   2026-08-01 (set after the risk was disclosed twice), which gated nothing at all; the owner
+   reverted it, confirmed 2026-08-09. So the repo's `permissions.ask`/`deny` lists are no longer
+   outranked and real dialogs do fire again. What auto mode still does **not** do is gate the work
+   that matters: its classifier silently auto-approves a large share of routine calls, and no mode
+   has ever prompted on a judgement call. **Every approval rule in section 6 is therefore
+   behavioral: ask in plain words and wait for a plain answer.** Never offer a prompt that did not
+   appear as evidence you were allowed, and read the settings file before asserting which mode is
+   on — this paragraph named the wrong mode from the revert until 2026-08-12.
 
 ## 2. Hard-Learned Rules (each cost a real incident — do not relearn them)
 

@@ -92,11 +92,14 @@ check exists to catch. The rule itself is documented clause by clause in that sa
 the owner the exact change you intend to make and why it is necessary, and continue only after the
 owner approves that specific change in the conversation.
 
-**This lock is now behavioral, not mechanical.** `.claude/settings.json` still lists these paths
-under `permissions.ask`, but the owner set `permissions.defaultMode: "bypassPermissions"` in
-user-level settings on 2026-08-01, so **no approval prompt fires for them any more**. Nothing but
-the agent's own compliance stops an edit. Treat the absence of a prompt as silence, never as
-approval.
+**This lock is behavioral first, whatever the settings say.** `.claude/settings.json` lists three of
+the four paths above under `permissions.ask` — `office-allocation.ts` is not among them; it has the
+CI lock instead — and those entries are live again: `permissions.defaultMode` is **`auto`** in
+user-level settings, read live 2026-08-12, not the `bypassPermissions` set on 2026-08-01 and since
+reverted (confirmed 2026-08-09). So a dialog may well fire on the three listed files. **Do not
+depend on one, and never read its absence as approval.** Auto mode auto-approves a great deal by
+itself, and nothing but the agent's own compliance stops an edit its classifier waves through. Check
+`~/.claude/settings.json` for the current mode — this file named the wrong one until 2026-08-12.
 
 **Do not reintroduce a passphrase here.** A shared one was removed 2026-07-31 (it sat in a committed
 file, so it authenticated nobody); approval belongs in the conversation, not in version control.
