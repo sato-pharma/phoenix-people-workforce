@@ -17,11 +17,16 @@ type TestUser = {
   password: string;
 };
 
+// "skipped" exists so a check that could not run can never be counted as a green one. It is a
+// distinct third state on purpose: "RLS refused me" (fail) and "the table this check names is not
+// there any more" (skipped) are different defects and want different fixes, but neither is a pass.
+type CheckStatus = "pass" | "fail" | "skipped";
+
 type Check = {
   detail?: string;
   name: string;
-  ok: boolean;
   role?: PhoenixRole;
+  status: CheckStatus;
   surface: string;
 };
 
@@ -229,15 +234,25 @@ async function signIn(role: PhoenixRole, user: TestUser) {
 }
 
 function pass(surface: string, name: string, role?: PhoenixRole, detail?: string): Check {
-  return { detail, name, ok: true, role, surface };
+  return { detail, name, role, status: "pass", surface };
 }
 
 function fail(surface: string, name: string, error: unknown, role?: PhoenixRole): Check {
   return {
     detail: error instanceof Error ? error.message : String(error),
     name,
-    ok: false,
     role,
+    status: "fail",
+    surface,
+  };
+}
+
+function skip(surface: string, name: string, error: unknown, role?: PhoenixRole): Check {
+  return {
+    detail: error instanceof Error ? error.message : String(error),
+    name,
+    role,
+    status: "skipped",
     surface,
   };
 }
@@ -315,6 +330,11 @@ async function verifyEmployeeScope(client: SupabaseClient, role: PhoenixRole, us
   return visibleHrIds;
 }
 
+// Thrown when the named table is not reachable through the API at all, so the check never got as
+// far as exercising a policy. Distinct from a plain Error, which here means RLS actively refused a
+// read that should have been allowed.
+class SurfaceUnavailableError extends Error {}
+
 async function verifyReadableSurface(
   client: SupabaseClient,
   role: PhoenixRole,
@@ -326,8 +346,21 @@ async function verifyReadableSurface(
     .select(select)
     .limit(25);
   if (error) {
-    if (/schema cache|relation .* does not exist|could not find the table/i.test(error.message)) {
-      return `${table} is not present in the staging API schema cache; coverage skipped`;
+    // This branch used to `return` a human-readable excuse string, which the caller then recorded
+    // with pass(). That is how "Expenses RLS - payroll_expenses read is accepted by RLS" stayed green for
+    // a month after 20260713120000_rename_payroll_expenses_to_outstation.sql removed that table:
+    // every role reported a pass for a read that never touched a policy. A check that cannot run is
+    // now surfaced as "skipped" and fails the run, so a renamed table is loud instead of invisible.
+    const code = (error as { code?: string }).code ?? "";
+    if (
+      code === "PGRST205" ||
+      code === "42P01" ||
+      /schema cache|relation .* does not exist|could not find the table/i.test(error.message)
+    ) {
+      throw new SurfaceUnavailableError(
+        `${table} is not reachable through the staging API (${code || "no code"}: ${error.message}). ` +
+          "The check named a table that is not there, so no RLS policy was exercised — fix the table name in this smoke.",
+      );
     }
     throw new Error(`${role} cannot read ${table}: ${error.message}`);
   }
@@ -420,9 +453,17 @@ async function runRole(role: PhoenixRole, user: TestUser): Promise<Check[]> {
       checks.push(fail("Employees RLS", "employee visibility is scoped", error, role));
     }
 
+    // Every table named here must be a live read surface. When one is renamed, retire the old name
+    // in the same commit — a stale entry no longer reads as a pass, but it still buys no coverage.
     for (const [surface, table, select] of [
       ["Payroll RLS", "salary_records", "hr_id"],
-      ["Expenses RLS", "payroll_expenses", "hr_id"],
+      // Renamed from payroll_expenses by 20260713120000_rename_payroll_expenses_to_outstation.sql.
+      ["Expenses RLS", "outstation_expenses", "hr_id"],
+      ["Expenses RLS", "outstation_expense_requests", "employee_hr_id, status"],
+      // The table the phase-2 expense read switch points at, and the one whose missing authenticated
+      // SELECT grant produced the 2026-08-12 42501 incident. Staging and production now both carry
+      // the grant and its policies, so this is a real read rather than a staging-only green.
+      ["Expenses RLS", "expense_claims", "employee_hr_id, status"],
       ["Sales RLS", "sales_records", "employee_hr_id, manager_hr_id, line"],
       ["Probation RLS", "employee_probation", "employee_hr_id, manager_hr_id"],
       ["Leave RLS", "v2_vacation_requests", "employee_hr_id, manager_hr_id"],
@@ -431,7 +472,11 @@ async function runRole(role: PhoenixRole, user: TestUser): Promise<Check[]> {
         const detail = await verifyReadableSurface(client, role, table, select);
         checks.push(pass(surface, `${table} read is accepted by RLS`, role, detail));
       } catch (error) {
-        checks.push(fail(surface, `${table} read is accepted by RLS`, error, role));
+        checks.push(
+          error instanceof SurfaceUnavailableError
+            ? skip(surface, `${table} read is accepted by RLS`, error, role)
+            : fail(surface, `${table} read is accepted by RLS`, error, role),
+        );
       }
     }
 
@@ -474,18 +519,24 @@ async function main() {
     checks.push(fail("API guards", "service-role-backed app routes keep explicit permission guards", error));
   }
 
-  const failed = checks.filter((check) => !check.ok);
+  const failed = checks.filter((check) => check.status === "fail");
+  const skipped = checks.filter((check) => check.status === "skipped");
+  const passed = checks.filter((check) => check.status === "pass");
   console.log(JSON.stringify({
     failed,
-    passed: checks.length - failed.length,
+    // Reported separately from `failed` so the cause is obvious at a glance, and never folded into
+    // `passed`. A skipped row means this smoke names a surface that no longer exists.
+    skipped,
+    passed: passed.length,
     policy: {
       api: "Service-role-backed app routes must keep explicit Phoenix permission guards.",
       mode: "PHASE24 real Supabase Auth smoke is read-only and uses the approved staging sandbox only.",
       rls: "Authenticated Supabase JWTs must resolve Phoenix role/scope through current_access helpers and table policies.",
+      skipped: "A check that could not run is never a pass. Skipped rows fail this run until the surface they name is corrected.",
     },
     results: checks,
   }, null, 2));
-  if (failed.length > 0) {
+  if (failed.length > 0 || skipped.length > 0) {
     process.exitCode = 1;
   }
 }

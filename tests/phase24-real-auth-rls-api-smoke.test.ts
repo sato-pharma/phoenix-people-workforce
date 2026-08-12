@@ -34,11 +34,28 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
   assert.match(smoke, /user_access_profiles/);
   assert.match(smoke, /employees/);
   assert.match(smoke, /salary_records/);
-  assert.match(smoke, /payroll_expenses/);
+  assert.match(smoke, /"outstation_expenses"/);
+  assert.match(smoke, /"outstation_expense_requests"/);
+  assert.match(smoke, /"expense_claims"/);
   assert.match(smoke, /sales_records/);
   assert.match(smoke, /employee_probation/);
   assert.match(smoke, /v2_vacation_requests/);
-  assert.match(smoke, /schema cache[\s\S]*coverage skipped/);
+
+  // payroll_expenses was renamed to outstation_expenses on 2026-07-13. This assertion used to pin
+  // the retired name, so the smoke and the test agreed with each other and disagreed with the
+  // database for a month. Prose may still explain the rename; naming it as a table must not return.
+  assert.doesNotMatch(smoke, /"payroll_expenses"/);
+
+  // A surface the smoke cannot reach must never be recorded as a pass. The old code returned a
+  // "coverage skipped" string here and the caller pushed pass() on any non-throw, which is exactly
+  // how a deleted table reported green for every role. Pin the throw, the distinct status, and the
+  // non-zero exit — dropping any one of the three silently restores the false green.
+  assert.doesNotMatch(smoke, /coverage skipped/);
+  assert.match(smoke, /class SurfaceUnavailableError/);
+  assert.match(smoke, /throw new SurfaceUnavailableError/);
+  assert.match(smoke, /instanceof SurfaceUnavailableError/);
+  assert.match(smoke, /status: "skipped"/);
+  assert.match(smoke, /failed\.length > 0 \|\| skipped\.length > 0/);
 
   assert.match(smoke, /assertSourceContains\("app\/api\/payroll\/upload\/route\.ts"/);
   assert.match(smoke, /assertPermission\\\(access, "payroll", "import"\\\)/);
