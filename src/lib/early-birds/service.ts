@@ -7,7 +7,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { cairoTodayIso } from "@/lib/crm/dates";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
-import { getEmployeePhotoMap, resolveEmployeePhotoSrc } from "@/lib/employees/employee-photo";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
 import { collectEarlyBirdsInputs } from "@/lib/early-birds/collect";
@@ -37,8 +36,6 @@ export type EarlyBirdsWinnerRecord = {
   timeline: unknown[];
   confirmationSource: "manager" | "auto";
   confirmedAt: string | null;
-  /** Resolved server-side so no client component ever imports the photo module. */
-  photoSrc: string | null;
   isNational: boolean;
 };
 
@@ -50,7 +47,6 @@ export type EarlyBirdsBoardData = {
   closed: boolean;
   ranking: EarlyBirdsRanking;
   profiles: Map<string, EarlyBirdsRepProfile>;
-  photoByHrIdKey: Map<string, string | null>;
   winner: EarlyBirdsWinnerRecord | null;
   hallOfFame: EarlyBirdsWinnerRecord[];
   /** Winner counts across the shown history, for the ×N repeat badge. */
@@ -75,7 +71,7 @@ function daysBetween(fromIso: string, toIso: string): number {
   return Math.round((to - from) / 86_400_000);
 }
 
-function mapWinnerRow(row: Record<string, unknown>, photoSrc: string | null, isNational: boolean): EarlyBirdsWinnerRecord {
+function mapWinnerRow(row: Record<string, unknown>, isNational: boolean): EarlyBirdsWinnerRecord {
   const periodKey = String(row.period_key ?? "");
   return {
     id: String(row.id ?? ""),
@@ -93,7 +89,6 @@ function mapWinnerRow(row: Record<string, unknown>, photoSrc: string | null, isN
     timeline: Array.isArray(row.timeline) ? (row.timeline as unknown[]) : [],
     confirmationSource: row.confirmation_source === "auto" ? "auto" : "manager",
     confirmedAt: (row.confirmed_at as string | null) ?? null,
-    photoSrc,
     isNational,
   };
 }
@@ -135,11 +130,8 @@ export async function listEarlyBirdsWinners(input: {
     // not structurally overlap a row shape, so a direct assertion is rejected.
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
     const nationalIds = await listNationalWinnerIds(rows.map((row) => String(row.period_key ?? "")));
-    const photoMap = await getEmployeePhotoMap().catch(() => new Map());
 
-    return rows.map((row) =>
-      mapWinnerRow(row, resolveEmployeePhotoSrc(String(row.employee_hr_id ?? ""), photoMap), nationalIds.has(String(row.id ?? ""))),
-    );
+    return rows.map((row) => mapWinnerRow(row, nationalIds.has(String(row.id ?? ""))));
   } catch (error) {
     logError("Early Birds winners read failed", {
       labels: { event: "early_birds_winners_read_failed" },
@@ -194,7 +186,6 @@ export async function getEarlyBirdsBoard(input: {
     closed: todayIso > period.endIso,
     ranking: EMPTY_RANKING(period),
     profiles: new Map(),
-    photoByHrIdKey: new Map(),
     winner: null,
     hallOfFame: [],
     winCountByHrIdKey: new Map(),
@@ -215,12 +206,6 @@ export async function getEarlyBirdsBoard(input: {
       throughIso: inputs.throughIso,
     });
 
-    const photoMap = await getEmployeePhotoMap().catch(() => new Map());
-    const photoByHrIdKey = new Map<string, string | null>();
-    for (const profile of inputs.profiles.values()) {
-      photoByHrIdKey.set(profile.hrIdKey, resolveEmployeePhotoSrc(profile.hrId, photoMap));
-    }
-
     const recentKeys = listRecentEarlyBirdsPeriods(todayIso, 8).map((entry) => entry.periodKey);
     const winners = await listEarlyBirdsWinners({
       managerHrIds: [input.managerHrId],
@@ -240,7 +225,6 @@ export async function getEarlyBirdsBoard(input: {
       throughIso: inputs.throughIso,
       ranking,
       profiles: inputs.profiles,
-      photoByHrIdKey,
       winner: winners.find((record) => record.periodKey === period.periodKey) ?? null,
       hallOfFame: winners.filter((record) => record.periodKey !== period.periodKey),
       winCountByHrIdKey,
@@ -254,8 +238,30 @@ export async function getEarlyBirdsBoard(input: {
   }
 }
 
-/** The single most recent national Early Bird, for the landing cards. */
-export async function getLatestNationalEarlyBird(): Promise<EarlyBirdsWinnerRecord | null> {
+/**
+ * One star per line, highest score first. A single company-wide "best of the best" can go whole
+ * fortnights without ever being someone's own line — this keeps every line represented instead of
+ * gating one shared slot. Pure so the pick is regression-tested without a database, same reason as
+ * {@link resolveEarlyBirdsScopeFrom}: ties keep the first-seen row, and a line simply does not
+ * appear if it has no confirmed winner in `winners` — never a placeholder.
+ */
+export function pickTopEarlyBirdPerLine(winners: readonly EarlyBirdsWinnerRecord[]): EarlyBirdsWinnerRecord[] {
+  const byLine = new Map<string, EarlyBirdsWinnerRecord>();
+  for (const winner of [...winners].sort((a, b) => b.totalScore - a.totalScore)) {
+    if (!winner.lineName || byLine.has(winner.lineName)) continue;
+    byLine.set(winner.lineName, winner);
+  }
+  return Array.from(byLine.values()).sort((a, b) => b.totalScore - a.totalScore);
+}
+
+/**
+ * This fortnight's stars, one per line (Pedia / Anti Infective / CNS), for the landing cards.
+ * Scoped to the most recently crowned period — the same "every district has settled" signal
+ * `early_birds_national_winners` already provides — then picks each line's own top scorer among
+ * that period's confirmed district winners. `isNational` marks whichever of them is ALSO the
+ * single overall company-wide winner for that period.
+ */
+export async function getLatestLineEarlyBirds(): Promise<EarlyBirdsWinnerRecord[]> {
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
@@ -266,8 +272,9 @@ export async function getLatestNationalEarlyBird(): Promise<EarlyBirdsWinnerReco
       .limit(1);
     if (error) throw new Error(error.message);
 
-    const winnerId = String((data ?? [])[0]?.winner_id ?? "");
-    if (!winnerId) return null;
+    const periodKey = String((data ?? [])[0]?.period_key ?? "");
+    if (!periodKey) return [];
+    const nationalWinnerId = String((data ?? [])[0]?.winner_id ?? "");
 
     const { data: winnerRows, error: winnerError } = await supabase
       .from("early_birds_winners")
@@ -276,22 +283,21 @@ export async function getLatestNationalEarlyBird(): Promise<EarlyBirdsWinnerReco
           "manager_hr_id, total_score, rank_at_approval, headline_stats, timeline, " +
           "confirmation_source, confirmed_at",
       )
-      .eq("id", winnerId)
-      .is("revoked_at", null)
-      .limit(1);
+      .eq("period_key", periodKey)
+      .is("revoked_at", null);
     if (winnerError) throw new Error(winnerError.message);
 
-    const row = (winnerRows ?? [])[0] as unknown as Record<string, unknown> | undefined;
-    if (!row) return null;
+    const rows = (winnerRows ?? []) as unknown as Array<Record<string, unknown>>;
+    if (rows.length === 0) return [];
 
-    const photoMap = await getEmployeePhotoMap().catch(() => new Map());
-    return mapWinnerRow(row, resolveEmployeePhotoSrc(String(row.employee_hr_id ?? ""), photoMap), true);
+    const candidates = rows.map((row) => mapWinnerRow(row, String(row.id ?? "") === nationalWinnerId));
+    return pickTopEarlyBirdPerLine(candidates);
   } catch (error) {
-    logError("Early Birds national winner read failed", {
-      labels: { event: "early_birds_national_read_failed" },
+    logError("Early Birds line stars read failed", {
+      labels: { event: "early_birds_line_stars_read_failed" },
       error,
     });
-    return null;
+    return [];
   }
 }
 

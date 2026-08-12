@@ -1,7 +1,6 @@
 import { Trophy } from "lucide-react";
 
 import { SectionHead } from "@/components/employee-portal/portal-command-center";
-import { PersonPhoto } from "@/components/people/person-photo";
 import { normalizeHrIdForAccess } from "@/lib/hr-id";
 import type { EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 
@@ -50,25 +49,26 @@ export function EarlyBirdsHallOfFame({ winners }: { winners: EarlyBirdsWinnerRec
           const wins = winCount.get(key) ?? 1;
           return (
             <div key={winner.id} className="flex w-36 flex-col items-center gap-2 text-center sm:w-40">
-              <div className="relative">
-                <PersonPhoto name={winner.employeeName} size="md" src={winner.photoSrc} />
-                {wins > 1 && (
-                  <span
-                    className="absolute -right-2 -top-2 flex h-7 w-7 items-center justify-center rounded-md bg-slate-700 text-[11px] font-black text-white shadow"
-                    title={`Won ${wins} fortnights`}
-                  >
-                    ×{wins}
-                  </span>
-                )}
-                {winner.isNational && (
-                  <span
-                    className="absolute -bottom-2 -left-2 flex h-6 w-6 items-center justify-center rounded-md bg-amber-400 text-slate-900 shadow"
-                    title="National Early Bird"
-                  >
-                    <Trophy className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
+              {(wins > 1 || winner.isNational) && (
+                <div className="flex items-center gap-1.5">
+                  {wins > 1 && (
+                    <span
+                      className="flex h-7 items-center justify-center rounded-md bg-slate-700 px-2 text-[11px] font-black text-white shadow"
+                      title={`Won ${wins} fortnights`}
+                    >
+                      ×{wins}
+                    </span>
+                  )}
+                  {winner.isNational && (
+                    <span
+                      className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-400 text-slate-900 shadow"
+                      title="National Early Bird"
+                    >
+                      <Trophy className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                </div>
+              )}
               <p className="whitespace-nowrap text-xs font-bold text-slate-900" dir="auto">
                 {winner.employeeName}
               </p>

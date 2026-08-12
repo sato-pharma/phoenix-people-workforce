@@ -642,7 +642,7 @@ function PmGpmCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
 // --- Medical Rep layout — premium field rep command center ---
 
 function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount, earlyBirdWinner } =
+  const { shell, pendingVacationCount, pendingExcuseCount, leaveEntitlementDays, mrSalesAchievement, monthlySalesTrend, doubleVisitPulse, mrPendingExpenseCount, earlyBirdStars } =
     snapshot;
   const daysUntilRenewal = shell.hrContract?.daysUntilRenewal;
   const probationStatus = shell.hrContract?.probationStatus;
@@ -727,7 +727,7 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
 
       {/* The rep's own landing page is the whole point of the competition — this is where a rep
           sees who is currently the star and what it would take to be next. */}
-      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <QuickActions
         actions={[

@@ -110,7 +110,6 @@ export function EarlyBirdsBoard({
       </div>
 
       <EarlyBirdsRacePanel
-        photoByHrIdKey={data.photoByHrIdKey}
         scores={data.ranking.scores}
         viewerHrIdKey={viewerHrIdKey}
         winCountByHrIdKey={data.winCountByHrIdKey}

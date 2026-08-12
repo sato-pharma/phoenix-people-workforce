@@ -55,7 +55,7 @@ const INTEL_TILES: Array<{ href: string; icon: typeof Activity; label: string; d
 ];
 
 export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: PortalHomeSnapshot; access?: AccessContext }) {
-  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval, earlyBirdWinner } =
+  const { shell, pendingVacationCount, pendingExcuseCount, pendingCountsAvailable, leaveEntitlementDays, mmOverview, plansAwaitingManagerApproval, earlyBirdStars } =
     snapshot;
   const plansCount = plansAwaitingManagerApproval ?? 0;
   const totalPending = pendingVacationCount + pendingExcuseCount;
@@ -118,7 +118,7 @@ export function MarketingManagerCommandCenter({ snapshot, access }: { snapshot: 
         <PendingActions pendingVacationCount={pendingVacationCount} pendingExcuseCount={pendingExcuseCount} plansAwaitingApproval={plansCount} />
       ) : null}
 
-      <EarlyBirdOfTheFortnightCard winner={earlyBirdWinner} />
+      <EarlyBirdOfTheFortnightCard stars={earlyBirdStars} />
 
       <MmInboxClient rows={pendingForMe} now={now} />
 

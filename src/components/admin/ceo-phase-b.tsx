@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { EarlyBirdOfTheFortnightCard } from "@/components/early-birds/early-bird-of-the-fortnight-card";
-import { getLatestNationalEarlyBird } from "@/lib/early-birds/service";
+import { getLatestLineEarlyBirds } from "@/lib/early-birds/service";
 import {
   Activity,
   AlertTriangle,
@@ -917,16 +917,17 @@ export async function CeoPhaseBWidgets({
     new Set(landing.dataUnavailable.filter((source) => !isSfe || isSfeDataSource(source))),
   );
 
-  // The national Early Bird, for the two admin-shell audiences. This component is rendered by BOTH
-  // the CEO command center and the SFE Manager overview, so one fetch covers both. It degrades to
-  // null like every other source here — a missing announcement must never blank an executive page.
-  const earlyBirdWinner = await getLatestNationalEarlyBird().catch(() => null);
+  // This fortnight's stars, one per line, for the two admin-shell audiences. This component is
+  // rendered by BOTH the CEO command center and the SFE Manager overview, so one fetch covers
+  // both. Degrades to [] like every other source here — a missing announcement must never blank an
+  // executive page.
+  const earlyBirdStars = await getLatestLineEarlyBirds().catch(() => []);
 
   return (
     <div className="divide-y divide-slate-200 border-t border-slate-200">
-      {earlyBirdWinner ? (
+      {earlyBirdStars.length > 0 ? (
         <div className="bg-white p-5">
-          <EarlyBirdOfTheFortnightCard href="/admin/early-birds" winner={earlyBirdWinner} />
+          <EarlyBirdOfTheFortnightCard href="/admin/early-birds" stars={earlyBirdStars} />
         </div>
       ) : null}
       {unavailableSources.length > 0 ? (

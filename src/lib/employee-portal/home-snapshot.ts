@@ -21,7 +21,7 @@ import { getAwaitingMyActionItems } from "@/lib/action-center/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
-import { getLatestNationalEarlyBird, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
+import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
 
 // Roles that get the double-visit "focus" landing widgets (trend, scope coverage, probation
@@ -70,9 +70,10 @@ export type UpcomingMarketingActivity = { id: string; requestCode: string; payDa
 export type PortalHomeSnapshot = {
   shell: EmployeePortalShellData;
   role: string;
-  /** The current national Early Bird, shown as a compact card on every audience's landing page.
-   * Null until the first fortnight is confirmed — the card renders nothing rather than an empty box. */
-  earlyBirdWinner: EarlyBirdsWinnerRecord | null;
+  /** This fortnight's stars, one per line, shown as a compact card on every audience's landing
+   * page. Empty until the first fortnight is confirmed — the card renders nothing rather than an
+   * empty box. */
+  earlyBirdStars: EarlyBirdsWinnerRecord[];
   pendingVacationCount: number;
   pendingExcuseCount: number;
   /**
@@ -799,19 +800,19 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
 
   // Pure calculation — no DB.
   const balance = getVacationBalancePeriod({ hireDate: shell.hrContract.hireDate, referenceDate: today });
-  const [roleExtras, dvFocus, earlyBirdWinner] = await Promise.all([
+  const [roleExtras, dvFocus, earlyBirdStars] = await Promise.all([
     roleExtrasPromise,
     dvFocusPromise,
-    // Computed OUTSIDE the role branches: it is the same national winner for every audience, so
-    // resolving it per role would be the same query many times over. Degrades to null like every
+    // Computed OUTSIDE the role branches: it is the same three line-stars for every audience, so
+    // resolving it per role would be the same query many times over. Degrades to [] like every
     // other snapshot field — a missing announcement must never fail a landing page.
-    getLatestNationalEarlyBird().catch(() => null),
+    getLatestLineEarlyBirds().catch(() => []),
   ]);
 
   return {
     shell,
     role,
-    earlyBirdWinner,
+    earlyBirdStars,
     pendingVacationCount,
     pendingExcuseCount,
     pendingCountsAvailable,
