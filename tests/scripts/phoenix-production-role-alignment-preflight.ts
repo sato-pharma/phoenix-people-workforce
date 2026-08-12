@@ -41,16 +41,16 @@ const affectedTables = [
   "salary_records",
   "salary_batches",
   "salary_flags",
-  "payroll_expenses",
-  "payroll_expense_reports",
+  "outstation_expenses",
+  "outstation_expense_reports",
   "sales_records",
 ];
 
 const protectedMutationTables = [
   "employees",
   "user_access_profiles",
-  "payroll_expenses",
-  "payroll_expense_reports",
+  "outstation_expenses",
+  "outstation_expense_reports",
   "salary_records",
   "salary_batches",
   "salary_flags",
@@ -250,6 +250,13 @@ async function inspectStaticFiles(findings: Finding[]) {
   ]);
   const migrationHash = createHash("sha256").update(migration).digest("hex");
 
+  // These are substring assertions against the 2026-05-11 migration FILE, not against the live
+  // database. That file predates the 2026-07-13 rename of payroll_expenses ->
+  // outstation_expenses (20260713120000_rename_payroll_expenses_to_outstation.sql), so the two
+  // payroll_expenses entries below are CORRECT and must keep the old name — the historical text
+  // they match never changes. Renaming them here would make every section "missing" and turn this
+  // INFO finding into a permanent BLOCKER. The live-database table lists (affectedTables /
+  // protectedMutationTables) are the ones that track the current schema.
   const requiredMigrationSections = [
     "create or replace function public.current_phoenix_role()",
     "create or replace function public.current_access_scope()",

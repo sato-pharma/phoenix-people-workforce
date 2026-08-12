@@ -274,7 +274,7 @@ async function runOutstationApprovalSmoke(lookup: LookupContext) {
     comment: "PHASE17 disposable approved for payroll.",
   });
   tracked.expenseTripIds.add(result.expenseTripId);
-  const expense = await selectMaybeSingle("payroll_expenses", "trip_id,hr_approved,total", "trip_id", result.expenseTripId);
+  const expense = await selectMaybeSingle("outstation_expenses", "trip_id,hr_approved,total", "trip_id", result.expenseTripId);
   addCheck("outstation approval created approved payroll expense", expense?.hr_approved === true, expense);
   await assertAuditTrace(String(requestId), "outstation approval");
 }
@@ -387,9 +387,9 @@ async function cleanup() {
   await safeDelete("v2_vacation_request_events", "request_id", Array.from(tracked.vacationRequestIds));
   await safeDelete("v2_vacation_email_tokens", "request_id", Array.from(tracked.vacationRequestIds));
   await safeDelete("v2_vacation_requests", "id", Array.from(tracked.vacationRequestIds));
-  await safeDelete("payroll_expenses", "trip_id", Array.from(tracked.expenseTripIds));
+  await safeDelete("outstation_expenses", "trip_id", Array.from(tracked.expenseTripIds));
   for (const fileName of tracked.payrollReportFileNames) {
-    await safeDeleteIlike("payroll_expense_reports", "file_name", fileName);
+    await safeDeleteIlike("outstation_expense_reports", "file_name", fileName);
   }
   await safeDelete("outstation_location_audit_logs", "expense_request_id", Array.from(tracked.outstationRequestIds));
   await safeDelete("outstation_expense_requests", "id", Array.from(tracked.outstationRequestIds));

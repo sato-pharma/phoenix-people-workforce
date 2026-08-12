@@ -356,7 +356,7 @@ async function cleanupPhase26Fixtures(sql: ReturnType<typeof postgres>, cleanup:
       where notes like ${`${phaseTag}%`}
     `;
     await transaction`
-      delete from public.payroll_expenses
+      delete from public.outstation_expenses
       where source_file_name = ${`${phaseTag}_BROWSER_MUTATION_SMOKE`}
         or trip_id like ${`${phaseTag}%`}
     `;
@@ -586,7 +586,7 @@ async function runBrowserRlsMutations(
         trip_id: `${phaseTag}-EXPENSE`,
       },
       method: "POST",
-      table: "payroll_expenses",
+      table: "outstation_expenses",
     });
     assertAllowed(result, "browser Finance expense insert");
     expenseId = returnedId(result);
@@ -602,7 +602,7 @@ async function runBrowserRlsMutations(
         body: { total: 999 },
         method: "PATCH",
         query: `?id=eq.${expenseId}`,
-        table: "payroll_expenses",
+        table: "outstation_expenses",
       }), "browser Employee expense update");
       checks.push(pass("Browser RLS", "Employee browser token cannot mutate payroll expense", "Employee"));
     } catch (error) {
@@ -614,7 +614,7 @@ async function runBrowserRlsMutations(
         body: { hr_comment: `${phaseTag} finance browser update accepted` },
         method: "PATCH",
         query: `?id=eq.${expenseId}`,
-        table: "payroll_expenses",
+        table: "outstation_expenses",
       }), "browser Finance expense update");
       checks.push(pass("Browser RLS", "Finance browser token can update disposable expense fixture", "Finance Manager"));
     } catch (error) {
@@ -837,7 +837,7 @@ async function readPhase26Residue(sql: ReturnType<typeof postgres>) {
   const rows = await sql`
     select 'employees' as table_name, count(*)::int as phase26_rows from public.employees where hr_id like 'PHASE26-%'
     union all
-    select 'payroll_expenses', count(*)::int from public.payroll_expenses where trip_id like 'PHASE26-%' or source_file_name like 'PHASE26-%'
+    select 'outstation_expenses', count(*)::int from public.outstation_expenses where trip_id like 'PHASE26-%' or source_file_name like 'PHASE26-%'
     union all
     select 'employee_probation', count(*)::int from public.employee_probation where notes like 'PHASE26-%' or coalesce(hr_id, '') like 'PHASE26-%' or coalesce(employee_hr_id, '') like 'PHASE26-%'
     union all

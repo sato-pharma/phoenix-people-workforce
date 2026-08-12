@@ -391,7 +391,7 @@ async function cleanupPhase25Fixtures(sql: ReturnType<typeof postgres>) {
       where notes like ${`${phaseTag}%`}
     `;
     await transaction`
-      delete from public.payroll_expenses
+      delete from public.outstation_expenses
       where source_file_name = ${`${phaseTag}_RLS_MUTATION_SMOKE`}
         or trip_id like ${`${phaseTag}%`}
     `;
@@ -496,7 +496,7 @@ async function verifyFinanceMutations(
 
   try {
     const { data, error } = await clients["Finance Manager"]
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .insert({
         description: `${phaseTag} finance disposable expense`,
         expense_date: "2026-05-19",
@@ -526,7 +526,7 @@ async function verifyFinanceMutations(
   if (expenseId) {
     try {
       const { data, error } = await clients["Employee"]
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .update({ total: 999 })
         .eq("id", expenseId)
         .select("id");
@@ -538,7 +538,7 @@ async function verifyFinanceMutations(
 
     try {
       const { data, error } = await clients["Finance Manager"]
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .update({ hr_comment: `${phaseTag} finance update accepted` })
         .eq("id", expenseId)
         .select("id");
