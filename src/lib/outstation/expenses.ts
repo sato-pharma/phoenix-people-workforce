@@ -298,7 +298,10 @@ function collectLineHrIds(
   return lineHrIds;
 }
 
-async function resolveExpenseAccessFilter(
+// Exported for the phase-2 read path (claims-read.ts). Visibility here is application-scoped, not
+// RLS-scoped, so the scope rule must have exactly ONE definition - a second copy that drifts is how
+// a manager ends up seeing another line's claims.
+export async function resolveExpenseAccessFilter(
   accessContext: AccessContext,
 ): Promise<ExpenseAccessFilter> {
   if (accessContext.scope === "system") {
@@ -544,7 +547,11 @@ function applyHrIdInFilter<T extends { or: (value: string) => T; ilike: (column:
   return query.or(ors);
 }
 
-function applyEmployeeHrIdInFilter<T extends { or: (value: string) => T }>(
+// Exported for the phase-2 read path (claims-read.ts), which reads `expense_claims` — that table
+// keys on employee_hr_id, so this is the correct helper and applyHrIdInFilter (hr_id) is NOT.
+// Shared rather than copied because outstation visibility is application-scoped, not RLS-scoped:
+// a second, drifting copy of the scope rule is how a manager ends up seeing another line's claims.
+export function applyEmployeeHrIdInFilter<T extends { or: (value: string) => T }>(
   query: T,
   hrIds: string[],
 ) {
