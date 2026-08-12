@@ -758,6 +758,7 @@ import { runEarlyBirdsLineStarsTests } from "./early-birds-line-stars.test.ts";
 import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
+import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.test.ts";
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
@@ -1825,6 +1826,10 @@ await runTest(
 await runTest(
   "schema-shape default ACLs (the loaded gun is an error; the unfixable supabase_admin row stays a warning)",
   runSchemaShapeDefaultAclTests,
+);
+await runTest(
+  "schema-shape private USAGE (missing grant makes every dependent RLS policy untestable; no dependents means no demand)",
+  runSchemaShapePrivateUsageTests,
 );
 await runTest(
   "territory sync (rollup==source reconciles within epsilon; row-count off-by-one fails; period window clamps)",
