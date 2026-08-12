@@ -6,14 +6,14 @@ import {
   coverageRatio,
   growthOf,
   isValidVsTargetPeriod,
-  latestPeriodWithActuals,
-  periodHasActuals,
+  pickLandingPeriod,
   priorPeriodOf,
   rollupBricks,
   rollupByArea,
   rollupByRep,
   shiftPeriod,
   totalRows,
+  uploadedPeriodsOf,
   type BrickSalesRow,
   type VsTargetNames,
 } from "../src/lib/sales/vs-target.ts";
@@ -174,29 +174,50 @@ export function runSalesVsTargetTests() {
   assert.equal(repNodes[0].name, "Mona Farid", "reps are shown by name");
 
   // ── "Not uploaded yet" is not "sold nothing" ───────────────────────────────
-  // August 2026 carries CNS targets copied forward from July but no Source-of-Sales
-  // upload. Every figure computes to a confident 0, which on the field force's daily
-  // dashboard reads as company-wide collapse. This is the guard against that.
+  // August 2026 carries targets copied forward from July but no Source-of-Sales upload.
+  // Every figure computes to a confident 0, which on the field force's daily dashboard
+  // reads as company-wide collapse. This is the guard against that.
+  //
+  // The guard used to ask "does any row have an actual?", and production answered yes for
+  // the wrong reason: on 2026-08-10 Finance booked ONE direct order into August (20 units
+  // of Guamusin, 1,309.50 EGP, area GZ1). That single row made August rank as the newest
+  // loaded month, and every company-scope viewer opened on 1,309.50 EGP against a
+  // 17,508,935 EGP target — 0.0% for every line, region, area and rep. The landing month
+  // is now gated on the DISTRIBUTOR upload, which is the only thing that means "month in".
+  const uploaded = uploadedPeriodsOf([
+    { period: "2026-07", distributor_code: "EG" },
+    { period: "2026-07", distributor_code: "Office" },
+    // Both direct pseudo-distributors, in the two casings the ledger actually holds.
+    { period: "2026-08", distributor_code: "DirectReq" },
+    { period: "2026-08", distributor_code: "DIRECT" },
+  ]);
+  assert.deepEqual([...uploaded], ["2026-07"], "a month carrying only direct-order batches has not been uploaded");
+
   const targetOnlyMonth = [
     row({ period: "2026-08", actualValue: 0, targetValue: 549702.94, hasTarget: true, hasActual: false }),
   ];
+  const directOrderOnly = row({ period: "2026-08", actualValue: 1309.5, targetValue: 4738.5, hasTarget: true, hasActual: true });
   const loadedMonth = [row({ period: "2026-07", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true })];
 
   assert.equal(
-    periodHasActuals(targetOnlyMonth, "2026-08"),
-    false,
-    "a month with only target-derived rows has no sales loaded, however many rows it returns",
-  );
-  assert.equal(periodHasActuals(loadedMonth, "2026-07"), true, "a month with real sales reports as loaded");
-  assert.equal(
-    latestPeriodWithActuals([...loadedMonth, ...targetOnlyMonth]),
+    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth, directOrderOnly], uploaded, "2026-08"),
     "2026-07",
-    "the landing month is the newest month with SALES, not the newest month that merely has target rows",
+    "one direct order booked into an un-uploaded month must not pull the whole dashboard onto that month",
   );
   assert.equal(
-    latestPeriodWithActuals(targetOnlyMonth),
-    null,
-    "with nothing loaded anywhere there is no landing month to pick, and the caller falls back explicitly",
+    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth], uploaded, "2026-08"),
+    "2026-07",
+    "the landing month is the newest UPLOADED month with sales, not the newest month that merely has target rows",
+  );
+  assert.equal(
+    pickLandingPeriod(targetOnlyMonth, uploaded, "2026-08"),
+    "2026-07",
+    "a viewer with no sales anywhere still lands on the newest uploaded month, so the page can say 'nothing in your scope' instead of inventing a 0% month",
+  );
+  assert.equal(
+    pickLandingPeriod([...loadedMonth, directOrderOnly], new Set<string>(), "2026-08"),
+    "2026-08",
+    "with no month uploaded at all the caller's fallback wins, and the UI renders the not-uploaded panel",
   );
 
   // ── Trend keeps empty months visible ───────────────────────────────────────

@@ -29,10 +29,10 @@ import {
   emptyTotals,
   growthOf,
   isValidVsTargetPeriod,
-  latestPeriodWithActuals,
   loadTargetBearingPairs,
+  loadUploadedPeriods,
   loadVsTargetRange,
-  periodHasActuals,
+  pickLandingPeriod,
   priorPeriodOf,
   rankByAchievement,
   rollupByArea,
@@ -108,16 +108,33 @@ export type VsTargetDashboardData = {
    * Sales that belong to a team and a region but to NO area — Direct Orders the engine could
    * not place in one area, so it spreads them across regions by weight. They are inside the
    * team and region totals but absent from area / rep / brick, which is why those levels foot
-   * to less than the headline. In 2026-07 this was 628,267.65 EGP: every direct order that
-   * month. Surfaced so the difference reads as an explained split, not a missing row.
+   * to less than the headline. 149,288.50 EGP in 2026-07. Surfaced so the difference reads as
+   * an explained split, not a missing row.
    */
   areaUnattributedValue: number;
   /**
-   * False when NO sales have been uploaded for this period yet — distinct from "sold
-   * nothing". Targets can exist for a month whose sales file has not arrived, and the UI
-   * must say so instead of rendering a confident 0%.
+   * Sales the engine could not place AT ALL — no area and no region. These are the `unmapped`
+   * channel, counted here since the owner's ruling of 2026-08-12 so that Sales vs Target foots
+   * to Monthly Closing to the piastre. 151,591.94 EGP in 2026-07.
+   *
+   * Held apart from `areaUnattributedValue` because they are NOT Direct Orders and the
+   * footnotes name their source. They reach the headline total and nothing below it: with no
+   * area there is no target, so they never touch an achievement %.
+   */
+  unplacedValue: number;
+  /**
+   * False when this period's Source-of-Sales distributor upload has not arrived yet —
+   * distinct from "sold nothing". Targets can exist for a month whose sales file has not
+   * landed, and the UI must say so instead of rendering a confident 0%.
    */
   salesLoaded: boolean;
+  /**
+   * Value already booked into an un-uploaded month. Always Direct Orders: Finance books
+   * those the day they are approved, months before the distributor files arrive. Reported
+   * inside the "not uploaded yet" panel so the money is visibly parked rather than
+   * silently missing — and so nobody reads the panel as "August has nothing at all".
+   */
+  pendingDirectValue: number;
   /** True when this viewer has no sales territory at all. */
   isEmptyScope: boolean;
 };
@@ -168,7 +185,9 @@ export async function buildVsTargetDashboard(
       uncovered: [],
       byDesignUntargetedValue: 0,
       areaUnattributedValue: 0,
+      unplacedValue: 0,
       salesLoaded: false,
+      pendingDirectValue: 0,
       isEmptyScope: true,
     };
   }
@@ -182,12 +201,13 @@ export async function buildVsTargetDashboard(
       ? windowStartCandidate
       : SALES_VS_TARGET_FLOOR;
 
-  const [rangeRows, areaNames, employeeNames, productNames, targetBearing] = await Promise.all([
+  const [rangeRows, areaNames, employeeNames, productNames, targetBearing, uploadedPeriods] = await Promise.all([
     loadVsTargetRange(windowStart, current),
     loadAllCanonicalAreaNames(),
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadTargetBearingPairs().catch(() => new Set<string>()),
+    loadUploadedPeriods(windowStart, current),
   ]);
 
   // Scope FIRST — everything below derives from these arrays.
@@ -206,12 +226,16 @@ export async function buildVsTargetDashboard(
     employeeName: (hrId) => employeeNames.get(hrId) ?? "Unnamed employee",
   };
 
-  // Land on the newest month that actually has sales. Defaulting to the calendar month
-  // would open the dashboard on an un-uploaded August showing 0% against targets copied
-  // forward from July — a confident zero that reads as company-wide collapse.
-  const period = explicitPeriod ?? latestPeriodWithActuals(scopedAll) ?? current;
+  // Land on the newest UPLOADED month that has sales in this viewer's scope. "Has any row
+  // with an actual" is not the same question and is not safe to ask: one direct order
+  // booked into a month whose distributor files have not arrived is enough to make that
+  // month rank newest, which opened the whole company on 1,309.50 EGP against a 17.5M
+  // target in August 2026.
+  const period = explicitPeriod ?? pickLandingPeriod(scopedAll, uploadedPeriods, current);
   const priorPeriod = priorPeriodOf(period);
-  const salesLoaded = periodHasActuals(scopedAll, period);
+  // A company fact, not a scope fact: the month's upload has either landed or it has not.
+  // A viewer with an empty territory in a loaded month is `isEmptyScope`, which says so.
+  const salesLoaded = uploadedPeriods.has(period);
 
   const rows = scopedAll.filter((row) => row.period === period);
   const priorRows = priorPeriod ? scopedAll.filter((row) => row.period === priorPeriod) : null;
@@ -263,9 +287,13 @@ export async function buildVsTargetDashboard(
       .filter((entry) => !entry.expectsTarget)
       .reduce((sum, entry) => sum + entry.actualValue, 0),
     areaUnattributedValue: rows
-      .filter((row) => row.areaCode == null)
+      .filter((row) => row.areaCode == null && row.regionCode != null)
+      .reduce((sum, row) => sum + row.actualValue, 0),
+    unplacedValue: rows
+      .filter((row) => row.areaCode == null && row.regionCode == null)
       .reduce((sum, row) => sum + row.actualValue, 0),
     salesLoaded,
+    pendingDirectValue: salesLoaded ? 0 : totals.actualValue,
     isEmptyScope: rows.length === 0,
   };
 }

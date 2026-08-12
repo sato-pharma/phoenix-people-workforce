@@ -680,6 +680,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
+import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -1510,6 +1511,10 @@ await runTest("outstation workload repair (a hand-entered figure is refused not 
 await runTest("outstation manager workload rollup (a DM's ride-alongs are already his; an NSM reaches one hop but only on the days he was actually out with that DM; a shared rep counts once)", runOutstationWorkloadRollupTests);
 
 await runTest("sales vs target (no target reads as null not 0%, July 2026 has no prior period, and a medical rep is bounded to their own rows not their whole line)", runSalesVsTargetTests);
+await runTest(
+  "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",
+  runAchievementCountsUnmappedTests,
+);
 await runTest("direct orders registry grants every chain rung (SFE can return/reject/advance, never finalize or submit)", runDirectOrdersRegistryChainGrantsTests);
 await runTest(
   "SoS customer channel (six words ⇒ store, مستشف ⇒ hospital and it wins the overlap without stopping the closing's city split; ة/ه fold; channel totals cover the whole side)",

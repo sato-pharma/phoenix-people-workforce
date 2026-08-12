@@ -233,31 +233,84 @@ export async function loadBrickSales(period: string): Promise<BrickSalesRow[]> {
 }
 
 /**
- * Does this period actually have sales loaded, or has nobody uploaded it yet?
+ * Source-of-Sales distributor codes that are not a distributor at all.
  *
- * `has_actual` is false on a row that exists ONLY because a target exists for that key.
- * The distinction matters enormously on the current month: August 2026 carries targets
- * copied forward from July but no Source-of-Sales upload, so every figure computes to a
- * confident 0 — telling the entire field force they sold nothing, on the dashboard they
- * open daily. "Not uploaded yet" and "sold nothing" must never render the same way.
+ * `DirectReq` is the pseudo-distributor the Direct Orders module injects approved orders
+ * under; `DIRECT` is the legacy manual direct upload. Both write into Source of Sales one
+ * order at a time, all month long. Neither is evidence that the month's distributor files
+ * have arrived.
  */
-export function periodHasActuals(rows: AchievementRow[], period: string): boolean {
-  return rows.some((row) => row.period === period && row.hasActual);
+const NON_DISTRIBUTOR_BATCH_CODES = new Set(["direct", "directreq"]);
+
+/**
+ * The periods whose monthly Source-of-Sales distributor upload has actually landed.
+ *
+ * `has_actual` cannot answer this, and believing it cost the dashboard its credibility:
+ * on 2026-08-10 Finance booked ONE direct order into August (20 units of Guamusin,
+ * 1,309.50 EGP, area GZ1). That single row set `has_actual`, August ranked as the newest
+ * loaded month, and every viewer with company scope opened Sales vs Target on 1,309.50 EGP
+ * against a 17,508,935 EGP target — 0.0% achievement for every line, region, area and rep,
+ * on the screen the field force reads daily. The distributor batch ledger is the only
+ * honest signal for "this month is in".
+ *
+ * Deliberately NOT caught by the caller: an error boundary is recoverable, whereas an
+ * empty set would make the UI assert that a month nobody has questioned was never
+ * uploaded — the exact false certainty this whole module exists to prevent.
+ */
+export async function loadUploadedPeriods(from: string, to: string): Promise<Set<string>> {
+  if (!isValidVsTargetPeriod(from) || !isValidVsTargetPeriod(to) || to < from) return new Set();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_import_batches")
+    .select("period,distributor_code")
+    .gte("period", from)
+    .lte("period", to);
+  if (error) throw error;
+  return uploadedPeriodsOf((data ?? []) as Record<string, unknown>[]);
+}
+
+/** Pure half of the loader, so the direct-order exclusion is testable without a database. */
+export function uploadedPeriodsOf(batches: Array<Record<string, unknown>>): Set<string> {
+  const periods = new Set<string>();
+  for (const batch of batches) {
+    const period = str(batch.period).trim();
+    // Case-insensitive: the ledger holds both `DIRECT` and `DirectReq`.
+    const code = str(batch.distributor_code).trim().toLowerCase();
+    if (!period || NON_DISTRIBUTOR_BATCH_CODES.has(code)) continue;
+    periods.add(period);
+  }
+  return periods;
 }
 
 /**
- * The most recent period in `rows` that has sales loaded, or null if none does.
+ * The month the dashboard opens on.
  *
- * Used to pick the landing month, so the dashboard opens on the newest REAL month rather
- * than on an empty current month that is merely waiting for its upload.
+ * Two conditions, BOTH required: the month's distributor upload has landed, and this
+ * viewer has sales inside it. Ranking on sales alone is what put the whole company on
+ * August's single direct order.
+ *
+ * When the viewer has no sales in any uploaded month we still open on the newest UPLOADED
+ * month rather than on the newest month carrying any row at all: "nothing in your scope"
+ * is a fact the viewer can act on, a confident 0% against a month nobody has uploaded is
+ * not. `fallback` (the current month) is reached only when no month has been uploaded.
  */
-export function latestPeriodWithActuals(rows: AchievementRow[]): string | null {
-  let latest: string | null = null;
+export function pickLandingPeriod(
+  rows: AchievementRow[],
+  uploadedPeriods: ReadonlySet<string>,
+  fallback: string,
+): string {
+  let withSales: string | null = null;
   for (const row of rows) {
-    if (!row.hasActual) continue;
-    if (latest == null || row.period > latest) latest = row.period;
+    if (!row.hasActual || !uploadedPeriods.has(row.period)) continue;
+    if (withSales == null || row.period > withSales) withSales = row.period;
   }
-  return latest;
+  if (withSales) return withSales;
+
+  let newestUploaded: string | null = null;
+  for (const period of uploadedPeriods) {
+    if (newestUploaded == null || period > newestUploaded) newestUploaded = period;
+  }
+  return newestUploaded ?? fallback;
 }
 
 // ── Totals with target-coverage accounting ───────────────────────────────────
@@ -269,6 +322,8 @@ export type VsTargetTotals = {
   targetUnits: number;
   /** Actual sitting on a key that HAS a target — the only actual achievement % uses. */
   coveredActualValue: number;
+  /** The same rule in units. Kept so achievementUnits divides like-for-like, as value does. */
+  coveredActualUnits: number;
   /** Actual with no target row anywhere. Reported beside the %, never inside it. */
   uncoveredActualValue: number;
   /** Distinct (line, area, product) keys with a target, and without. */
@@ -286,6 +341,7 @@ export function emptyTotals(): VsTargetTotals {
     targetValue: 0,
     targetUnits: 0,
     coveredActualValue: 0,
+    coveredActualUnits: 0,
     uncoveredActualValue: 0,
     coveredKeys: 0,
     uncoveredKeys: 0,
@@ -308,6 +364,7 @@ function addRow(total: VsTargetTotals, row: AchievementRow): void {
   total.targetUnits += row.targetUnits ?? 0;
   if (row.hasTarget) {
     total.coveredActualValue += row.actualValue;
+    total.coveredActualUnits += row.actualUnits;
     total.coveredKeys += 1;
   } else {
     total.uncoveredActualValue += row.actualValue;
@@ -323,10 +380,16 @@ function addRow(total: VsTargetTotals, row: AchievementRow): void {
  * differently. Targets are never negative, but actuals can be (returns and credit notes
  * — Anti-Infective/Haram-Faisal was −32,166 EGP in 2026-07), so a negative achievement
  * is legitimate and is left alone.
+ *
+ * BOTH percentages divide the COVERED actual by the target. Units used to divide the whole
+ * actual instead, which quietly folded untargeted sales into the numerator and read 55.4%
+ * where the like-for-like figure was 50.7% (2026-07, company-wide). Nothing renders
+ * achievementUnits today; that is exactly why the inconsistency had to go before something
+ * does.
  */
 function sealTotals(total: VsTargetTotals): VsTargetTotals {
   total.achievementValue = total.targetValue !== 0 ? total.coveredActualValue / total.targetValue : null;
-  total.achievementUnits = total.targetUnits !== 0 ? total.actualUnits / total.targetUnits : null;
+  total.achievementUnits = total.targetUnits !== 0 ? total.coveredActualUnits / total.targetUnits : null;
   return total;
 }
 
