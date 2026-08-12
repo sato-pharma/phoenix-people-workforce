@@ -186,6 +186,25 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // exactly: the same 9 statuses and the same 16 actions, no undeclared targets on either.
   "20260808214500_direct_orders_release_held.sql",
   "20260809031500_direct_orders_duplicate_cleanup.sql",
+  // ── Applied to STAGING and PRODUCTION 2026-08-12/13 via apply-sql-file.mjs, so no ledger row on
+  // either. This is the migration that makes PHOENIX_EXPENSE_CLAIMS_READ safe to turn on: before it,
+  // expense_claims had RLS with one policy (service_role) and no grant to `authenticated`, and
+  // turning the flag on took /api/admin/outstation/expenses down for ~3.5 hours with a 42501.
+  //
+  // Verified on production by direct inspection AND by exercising the real RLS machinery, which
+  // staging cannot do (it lacks USAGE on schema `private`, so helper calls raise 42501 before any
+  // policy is reached — a separate gap, and the reason every staging RLS test is currently vacuous).
+  // Before: rls on, authenticated select/insert/update/delete all false, one policy. After: the same
+  // 375 rows, select true, insert/update/delete still false, two policies.
+  //
+  // Then, as `authenticated` for 15 real users: all 15 see rows through the new policy (1 to 62
+  // claims each), and for every one of them every legacy row they can see is still reachable as a
+  // claim they can see. The lower per-user counts against the raw legacy union are the dedup —
+  // 375 claims vs 360+39 legacy rows, a difference of exactly the 24 rows carrying both legacy ids.
+  //
+  // The flag remains false. Applying this does not enable anything; it only removes the reason the
+  // flag was unsafe.
+  "20260812213000_expense_claims_select_rls.sql",
   // Applied: verified 0 tables matching `email_backfill_backup%` remain on staging, which is this
   // file's own end state.
   "20260801100000_drop_email_backfill_backup.sql",
