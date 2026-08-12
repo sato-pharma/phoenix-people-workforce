@@ -9,7 +9,7 @@ import type { DirectOrderReportRow } from "@/lib/direct-orders/types";
 // spreadsheet engine into that hot path to read a list of strings.
 //
 // Keeping it here also means the downloadable .xlsx and the live Sheet cannot drift: they are the
-// same 39 columns in the same order, because they are literally the same array.
+// same columns in the same order, because they are literally the same array.
 //
 // COLUMNS and directOrderReportRowCells() below remain POSITIONAL TWINS with no compile-time link.
 // Adding an entry to one without the other silently shifts every later column — the header would

@@ -1373,7 +1373,7 @@ await runTest("direct orders approval detail (names never codes, medical rep, no
 await runTest("direct orders family basket (Lacto only, confidential excluded, form offers what the service accepts)", runDirectOrderFamilyBasketTests);
 await runTest("direct orders unbooked queue (badge wired through all 4 lists, setter-only, filter, graduated ageing, dead tiles gone)", runDirectOrdersUnbookedQueueTests);
 await runTest("api-errors factories are always thrown, never called bare (a dropped error is a guard that does nothing)", runApiErrorsMustBeThrownTests);
-await runTest("direct orders report columns (39-column twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);
+await runTest("direct orders report columns (positional twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);
 await runTest("marketing request report columns (positional twins, owner's 16 headers first, Sunday-week W2 rule, Cairo times)", runMarketingRequestReportColumnsTests);
 await runTest("direct orders validation capture is reachable from BOTH the admin and portal routes (requester-only, held-only)", runDirectOrderValidationCaptureReachableTests);
 await runTest("direct orders live-sheet webhook (void not awaitable, secret in body, all six transitions, script fails closed)", runDirectOrderSheetWebhookTests);
