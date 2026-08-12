@@ -202,6 +202,10 @@ export async function POST(request: Request) {
       // The retail half takes the IDENTICAL place filter, so an area on the Retail tab is the same
       // area the master shows.
       const retailFiltered = filterMonthlyClosingMatrix(parts.retail, matrixFilter);
+      // The Office slice takes the SAME place filter, so "of wh. Office" is always measured against
+      // the rows the Matrix sheet actually kept. Null when it could not be read; the workbook then
+      // simply omits the Office column and sheet rather than printing a column of zeroes.
+      const officeFiltered = parts.office ? filterMonthlyClosingMatrix(parts.office, matrixFilter) : null;
 
       // Scope every other sheet to the areas the filtered matrix actually KEPT, rather than
       // re-applying the raw filter to each one. That is what makes the sheets agree: the matrix
@@ -509,6 +513,10 @@ export async function POST(request: Request) {
         directPlaced,
         filterNote,
         includeTargetSheet: !rowLevelActive,
+        // Omitted under a row-level filter for the same reason as : that slice is rebuilt
+        // from filtered invoice rows and the Office grid has no equivalent narrowing, so pairing
+        // them would set a whole-month Office figure beside a filtered Units figure.
+        office: rowLevelActive ? null : officeFiltered,
         // The whole month's rows drive the Store Split sheet, so a reader who filtered to one area
         // can still see WHERE the rest of that city's share went; `storeSplitScopeAreaCodes` marks
         // which of those areas this workbook actually covers.
@@ -584,8 +592,19 @@ export async function POST(request: Request) {
     // because they have no column to land in. Nothing on the sheet would say so.
     // loadPortalMonthlyClosing REFUSES a line outside the caller's scope instead of substituting a
     // different one, so the worst case is the honest rows-only workbook below, never a mislabelled one.
-    const scopedMatrix =
-      (await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null))?.matrix ?? null;
+    // ONE read, reused twice: the matrix skeleton and the Office grid come out of the same
+    // loadPortalMonthlyClosing call, so the "of which Office" figures a viewer downloads are scoped
+    // by exactly the chain that scoped the sales beside them and cannot drift from their screen.
+    //
+    // The office-differentiation work this came from branched on MARKETING_OVERSIGHT_LINE_ROLES
+    // here, reading loadMonthlyClosingWithStoreSplit for the Marketing Manager. That is deliberately
+    // NOT carried over: it was written against a tree where she still reached this line, and the
+    // note above records why she no longer does — she is admitted by `marketingOversight !== null`
+    // to the full-workbook branch further up and returns there. The branch would be dead code, and
+    // loadMonthlyClosingWithStoreSplit is not even imported here any more.
+    const scopedPortal =
+      await loadPortalMonthlyClosing({ access, line: details.line, period: details.period }).catch(() => null);
+    const scopedMatrix = scopedPortal?.matrix ?? null;
     const buffer = scopedMatrix
       ? await buildPortalClosingWorkbook(
           scopedMatrix,
@@ -593,6 +612,8 @@ export async function POST(request: Request) {
           // read — so the Matrix tab's ClosingExportData (Calc sheet) cannot disagree with Data.
           await loadMonthlyClosingComparisonFromRows(details.line, details.period, details.rows),
           details,
+          // Same read as the skeleton, so the Office grid is never company-wide beside scoped sales.
+          scopedPortal?.office ?? null,
         )
       : await buildClosingDetailsWorkbook(details);
     // These rows are already narrowed to this caller's own access, so a District Manager's file is

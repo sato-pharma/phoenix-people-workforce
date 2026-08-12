@@ -31,6 +31,12 @@ export async function loadMonthlyClosingPartsWithStoreSplit(input?: {
     combined: applyStoreSplitToMatrix(parts.combined, net).matrix,
     retail: applyStoreSplitToMatrix(parts.retail, net).matrix,
     directCells: parts.directCells,
+    // `office` is deliberately NOT split. The split moves WHOLESALER customers between the areas of
+    // one city; Office rows carry no customer at all (clientCode is null by construction), so none
+    // of them is ever a store row and none of them ever moves. Passing it through applyStoreSplitToMatrix
+    // would push another channel's net onto the Office grid and make "of which Office" exceed the
+    // area's own Office units.
+    office: parts.office,
   };
 }
 

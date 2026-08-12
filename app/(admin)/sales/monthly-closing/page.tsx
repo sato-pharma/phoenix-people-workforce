@@ -5,7 +5,7 @@ import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import type { MonthlyClosingMatrix } from "@/lib/sales/monthly-distributor-import";
-import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import { loadMonthlyClosingPartsWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
 import { loadMonthlySourceCoverage, type MonthlySourceCoverage } from "@/lib/sales/source-coverage";
 
 export const dynamic = "force-dynamic";
@@ -41,12 +41,16 @@ export default async function MonthlyClosingPage({
   const requestedPeriod = typeof params.period === "string" ? params.period : Array.isArray(params.period) ? params.period[0] : null;
 
   let initialMatrix: MonthlyClosingMatrix | null = null;
+  // The Office-only grid behind every "of which Office" column. Null = could not be read.
+  let initialOffice: MonthlyClosingMatrix | null = null;
   let initialCoverage: MonthlySourceCoverage | null = null;
   let initialError: string | null = null;
 
   try {
     await assertPermission(access, "sales", "import");
-    initialMatrix = await loadMonthlyClosingWithStoreSplit({ line: requestedLine, period: requestedPeriod });
+    const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: requestedLine, period: requestedPeriod });
+    initialMatrix = parts.combined;
+    initialOffice = parts.office;
     // Completeness ride-along; a coverage failure hides the banner, never the closing.
     initialCoverage = await loadMonthlySourceCoverage(initialMatrix.line, initialMatrix.period).catch(() => null);
   } catch (error) {
@@ -59,6 +63,7 @@ export default async function MonthlyClosingPage({
       initialCoverage={initialCoverage}
       initialError={initialError}
       initialMatrix={initialMatrix}
+      initialOffice={initialOffice}
     />
   );
 }

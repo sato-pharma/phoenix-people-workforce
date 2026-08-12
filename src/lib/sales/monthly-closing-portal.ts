@@ -23,7 +23,10 @@ import {
   type MonthlyClosingGrandTotalRow,
   type MonthlyClosingMatrix,
 } from "@/lib/sales/monthly-distributor-import";
-import { loadMonthlyClosingWithStoreSplit } from "@/lib/sales/monthly-closing-with-store-split";
+import {
+  loadMonthlyClosingPartsWithStoreSplit,
+  loadMonthlyClosingWithStoreSplit,
+} from "@/lib/sales/monthly-closing-with-store-split";
 import { listPublishedPeriodsForLine } from "@/lib/sales/monthly-closing-publication";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -526,6 +529,11 @@ export function applyRegionScope(
 
 export type PortalClosingResult = {
   matrix: MonthlyClosingMatrix | null;
+  /**
+   * The Office slice of `matrix`, scoped identically. Optional so the early-return shapes above
+   * (no line, nothing published) stay valid; null when the Office grid could not be read.
+   */
+  office?: MonthlyClosingMatrix | null;
   line: string | null;
   /**
    * Every line this viewer may open that has at least one published month — the line picker's
@@ -595,7 +603,8 @@ export async function loadPortalMonthlyClosing(input: {
   const requested = String(input.period ?? "").trim();
   const selectedPeriod = publishedPeriods.includes(requested) ? requested : publishedPeriods[0];
 
-  const raw = await loadMonthlyClosingWithStoreSplit({ line: selectedLine, period: selectedPeriod });
+  const parts = await loadMonthlyClosingPartsWithStoreSplit({ line: selectedLine, period: selectedPeriod });
+  const raw = parts.combined;
   // Lock the line and restrict the month selector to published months only.
   const locked: MonthlyClosingMatrix = {
     ...raw,
@@ -608,8 +617,22 @@ export async function loadPortalMonthlyClosing(input: {
   const productScoped = scope.productCodes ? scopeMatrixToProducts(safe, scope.productCodes) : safe;
   const matrix = applyRegionScope(productScoped, scope.regionNames, scope.areaCodes);
 
+  // The Office grid rides the IDENTICAL scoping chain. Skipping any step here would leak a
+  // confidential product's Office units, or show a District Manager the national Office figure
+  // beside his own region's sales.
+  const office = parts.office
+    ? applyRegionScope(
+      scope.productCodes
+        ? scopeMatrixToProducts(stripRestrictedColumns(parts.office), scope.productCodes)
+        : stripRestrictedColumns(parts.office),
+      scope.regionNames,
+      scope.areaCodes,
+    )
+    : null;
+
   return {
     matrix,
+    office,
     line: selectedLine,
     availableLines,
     availablePeriods: publishedPeriods,

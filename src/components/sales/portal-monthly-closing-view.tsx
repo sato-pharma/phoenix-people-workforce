@@ -33,6 +33,8 @@ import {
 
 type Props = {
   matrix: MonthlyClosingMatrix | null;
+  /** The Office-only grid behind every "of which Office" column. Null = could not be read. */
+  office?: MonthlyClosingMatrix | null;
   /** The line on show — resolved server-side, and one of `availableLines`. */
   line: string;
   /**
@@ -51,7 +53,7 @@ const monthSelectClassName =
 const lineSelectClassName =
   "h-11 w-52 rounded border border-[#D8E0EA] bg-[#F8FAFC] px-3.5 text-sm font-semibold text-[#0F172A] outline-none transition focus:border-[#FDBA74] focus:ring-4 focus:ring-[#F97316]/10 disabled:opacity-60";
 
-export function PortalMonthlyClosingView({ matrix, line, availableLines, availablePeriods, selectedPeriod }: Props) {
+export function PortalMonthlyClosingView({ matrix, office = null, line, availableLines, availablePeriods, selectedPeriod }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
@@ -63,6 +65,13 @@ export function PortalMonthlyClosingView({ matrix, line, availableLines, availab
   const filteredMatrix = useMemo(
     () => (matrix ? filterMonthlyClosingMatrix(matrix, filter) : null),
     [matrix, filter],
+  );
+
+  // Same filter as the matrix — otherwise a filtered row's subtotal would be compared against an
+  // unfiltered Office total. See the same note in monthly-closing-workspace.tsx.
+  const filteredOffice = useMemo(
+    () => (office ? filterMonthlyClosingMatrix(office, filter) : null),
+    [office, filter],
   );
 
   // Same option-building the admin workspace uses — regions/areas/products drawn from the (already
@@ -287,7 +296,7 @@ export function PortalMonthlyClosingView({ matrix, line, availableLines, availab
               </p>
             ) : null}
             {filteredMatrix && hasMatrix ? (
-              <ClosingMatrixTable matrix={filteredMatrix} />
+              <ClosingMatrixTable matrix={filteredMatrix} office={filteredOffice} />
             ) : (
               <p className="px-4 py-8 text-center text-sm text-slate-500">
                 No closing rows match the current filters.
