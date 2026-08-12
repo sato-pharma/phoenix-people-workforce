@@ -550,6 +550,7 @@ import { runDirectOrdersApprovalFlowTests } from "./direct-orders-approval-flow.
 import { runDirectOrdersApprovalDetailNamesTests } from "./direct-orders-approval-detail-names.test.ts";
 import { runDirectOrderFamilyBasketTests } from "./direct-orders-family-basket.test.ts";
 import { runOutstationClaimsReadFlagTests } from "./outstation-claims-read-flag.test.ts";
+import { runExpenseClaimsSelectRlsTests } from "./expense-claims-select-rls.test.ts";
 import { runDirectOrdersUnbookedQueueTests } from "./direct-orders-unbooked-queue.test.ts";
 import { runApiErrorsMustBeThrownTests } from "./api-errors-must-be-thrown.test.ts";
 import { runDirectOrderReportColumnsTests } from "./direct-orders-report-columns.test.ts";
@@ -1376,6 +1377,7 @@ await runTest("direct orders approval flow (ladder per role, sequential gating, 
 await runTest("direct orders approval detail (names never codes, medical rep, notification completeness)", runDirectOrdersApprovalDetailNamesTests);
 await runTest("direct orders family basket (Lacto only, confidential excluded, form offers what the service accepts)", runDirectOrderFamilyBasketTests);
 await runTest("outstation claims-read flag (off by default, and the flag gates the import)", runOutstationClaimsReadFlagTests);
+await runTest("expense_claims select RLS (select-only, grant after policy, no predicate widening)", runExpenseClaimsSelectRlsTests);
 await runTest("direct orders unbooked queue (badge wired through all 4 lists, setter-only, filter, graduated ageing, dead tiles gone)", runDirectOrdersUnbookedQueueTests);
 await runTest("api-errors factories are always thrown, never called bare (a dropped error is a guard that does nothing)", runApiErrorsMustBeThrownTests);
 await runTest("direct orders report columns (positional twins, Arabic intact, nulls blank, NaN-safe totals)", runDirectOrderReportColumnsTests);
