@@ -359,7 +359,7 @@ async function verifyReadOnlyDatabaseAlignment() {
           "employees",
           "salary_batches",
           "salary_records",
-          "payroll_expenses",
+          "outstation_expenses",
           "sales_records",
           "employee_probation",
           "employee_contracts",

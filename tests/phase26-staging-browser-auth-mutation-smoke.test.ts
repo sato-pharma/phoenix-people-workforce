@@ -49,7 +49,7 @@ export function runPhase26StagingBrowserAuthMutationSmokeTests() {
 
   assert.match(smoke, /cleanupPhase26Fixtures/);
   assert.match(smoke, /delete from public\.employees/);
-  assert.match(smoke, /delete from public\.payroll_expenses/);
+  assert.match(smoke, /delete from public\.outstation_expenses/);
   assert.match(smoke, /delete from public\.employee_probation/);
   assert.match(smoke, /delete from public\.v2_vacation_requests/);
   assert.match(smoke, /readPhase26Residue/);

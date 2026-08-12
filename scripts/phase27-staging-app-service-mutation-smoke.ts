@@ -524,12 +524,12 @@ async function cleanupPhase27Fixtures(sql: ReturnType<typeof postgres>) {
       where notes like ${`${phaseTag}%`}
     `;
     await transaction`
-      delete from public.payroll_expenses
+      delete from public.outstation_expenses
       where source_file_name = ${`${phaseTag}_APP_SERVICE_SMOKE`}
         or trip_id like ${`${phaseTag}%`}
     `;
     await transaction`
-      delete from public.payroll_expense_reports
+      delete from public.outstation_expense_reports
       where file_name = ${`${phaseTag}_APP_SERVICE_SMOKE`}
     `;
     await transaction`
@@ -543,9 +543,9 @@ async function readPhase27Residue(sql: ReturnType<typeof postgres>) {
   const rows = await sql`
     select 'employees' as table_name, count(*)::int as phase27_rows from public.employees where hr_id like 'PHASE27-%'
     union all
-    select 'payroll_expenses', count(*)::int from public.payroll_expenses where trip_id like 'PHASE27-%' or source_file_name like 'PHASE27-%'
+    select 'outstation_expenses', count(*)::int from public.outstation_expenses where trip_id like 'PHASE27-%' or source_file_name like 'PHASE27-%'
     union all
-    select 'payroll_expense_reports', count(*)::int from public.payroll_expense_reports where file_name like 'PHASE27-%'
+    select 'outstation_expense_reports', count(*)::int from public.outstation_expense_reports where file_name like 'PHASE27-%'
     union all
     select 'employee_probation', count(*)::int from public.employee_probation where notes like 'PHASE27-%' or coalesce(hr_id, '') like 'PHASE27-%' or coalesce(employee_hr_id, '') like 'PHASE27-%'
     union all

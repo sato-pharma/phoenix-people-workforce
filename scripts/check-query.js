@@ -15,7 +15,7 @@ const env = Object.fromEntries(lines.map((line) => {
     const payrollHr = await sb.from('salary_records').select('id', { count: 'exact', head: true }).ilike('hr_id', hr);
     const payrollCode = await sb.from('salary_records').select('id', { count: 'exact', head: true }).ilike('employee_code', hr);
     const sales = await sb.from('sales_records').select('id', { count: 'exact', head: true }).eq('employee_hr_id', hr);
-    const expenses = await sb.from('payroll_expenses').select('id', { count: 'exact', head: true }).eq('hr_id', hr);
+    const expenses = await sb.from('outstation_expenses').select('id', { count: 'exact', head: true }).eq('hr_id', hr);
     console.log(hr, {
       payrollHr: payrollHr.count,
       payrollCode: payrollCode.count,

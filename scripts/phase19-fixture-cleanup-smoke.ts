@@ -192,14 +192,14 @@ async function cleanupEmployees(employees: EmployeeResidue[]) {
     .filter((hrId) => isClearlyDisposableText(hrId));
   if (!executeCleanup || hrIds.length === 0) return;
 
-  const [salesRecords, payrollExpenses, vacationRequests, outstationRequests] = await Promise.all([
+  const [salesRecords, outstationExpenses, vacationRequests, outstationRequests] = await Promise.all([
     countRows("sales_records", "employee_hr_id", hrIds),
-    countRows("payroll_expenses", "hr_id", hrIds),
+    countRows("outstation_expenses", "hr_id", hrIds),
     countRows("v2_vacation_requests", "employee_hr_id", hrIds),
     countRows("outstation_expense_requests", "employee_hr_id", hrIds),
   ]);
 
-  if (salesRecords || payrollExpenses || vacationRequests || outstationRequests) {
+  if (salesRecords || outstationExpenses || vacationRequests || outstationRequests) {
     hrIds.forEach((hrId) => retained.push({
       id: hrId,
       reason: "retained because active workflow tables still reference this disposable employee",

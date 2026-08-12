@@ -756,8 +756,8 @@ async function cleanup() {
   await safeDelete("notification_outbox", "related_entity_id", vacationRequestIds);
   await safeDelete("in_app_notifications", "recipient_hr_id", employeeHrIds);
 
-  await safeDelete("payroll_expenses", "trip_id", expenseTripIds);
-  await safeDeleteIlike("payroll_expense_reports", "file_name", `${fixture}%`);
+  await safeDelete("outstation_expenses", "trip_id", expenseTripIds);
+  await safeDeleteIlike("outstation_expense_reports", "file_name", `${fixture}%`);
   await safeResetSalaryBatchesForCleanup(payrollBatchIds);
   await safeDelete("salary_flags", "batch_id", payrollBatchIds);
   await safeDelete("salary_records", "batch_id", payrollBatchIds);
