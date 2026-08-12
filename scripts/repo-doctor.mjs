@@ -323,17 +323,47 @@ for (const r of live) {
   } catch {
     pr = null;
   }
-  const dirty = (git(["-C", r.dir, "status", "--porcelain"]) ?? "").split("\n").filter(Boolean).length;
-  if (pr) merged.push({ ...r, branch, pr, dirty });
+  // A retirable worktree can hold the only copy of real work in TWO independent ways, and both
+  // have to be reported: uncommitted files, and commits that exist on no origin ref. This block
+  // used to check only the first, so for a worktree carrying unpushed commits it printed an
+  // unqualified `git branch -D` — while the --strip-idle pass below, in the SAME run, refused that
+  // very worktree as "not backed up". Hit live 2026-08-12: `_wt-mm-closing` held 2 unpushed
+  // commits, another session ran the commands as printed, and `git branch -D` left them reachable
+  // only as dangling objects. They were recovered with `git fsck`, but that is luck, not design.
+  //
+  // `?? null`, never `?? ""` — the same trap the post-strip verification documents further down.
+  // git() returns null when the command FAILS and "" when the tree is clean, so collapsing the two
+  // renders a failed check as a verified-clean one. Not knowing must read LOUDER than clean, never
+  // quieter. Fourth instance of this shape in this file.
+  const status = git(["-C", r.dir, "status", "--porcelain"]);
+  const dirty = status === null ? null : status.split("\n").filter(Boolean).length;
+  const unpushed = unpushedCount(r.dir); // null = could not determine
+  if (pr) merged.push({ ...r, branch, pr, dirty, unpushed });
 }
 
 if (merged.length) {
   console.log(`RETIRABLE worktrees (PR already merged): ${merged.length}`);
   for (const m of merged) {
-    const note = m.dirty ? `  -- ${m.dirty} uncommitted file(s), review before removing` : "";
+    // The warning goes on BOTH the header and the `git branch -D` line, on purpose. The header is
+    // what a human skims; the branch -D line is what actually gets copied, and copying it is the
+    // irreversible step. A caveat that lives only in the header is a caveat that gets scrolled past.
+    const warn = [];
+    if (m.dirty === null) warn.push("CANNOT READ git status");
+    else if (m.dirty) warn.push(`${num(m.dirty)} uncommitted file(s)`);
+    if (m.unpushed === null) warn.push("CANNOT DETERMINE what is pushed");
+    else if (m.unpushed) warn.push(`${num(m.unpushed)} commit(s) on NO origin ref`);
+    const note = warn.length ? `  -- ${warn.join(" + ")}, review before removing` : "";
     console.log(`  PR #${m.pr}  ${m.branch}${note}`);
     console.log(`    git worktree remove "${m.dir}"`);
     console.log(`    git branch -D ${m.branch}    # -D: a squash merge is never an ancestor of main`);
+    if (m.unpushed === null) {
+      console.log("    # ^^ STOP — cannot determine what is pushed here. Verify by hand first.");
+    } else if (m.unpushed > 0) {
+      console.log(
+        `    # ^^ STOP — ${num(m.unpushed)} commit(s) exist on NO origin ref. That line strands them as`,
+      );
+      console.log("    #    dangling objects. Push or `git branch rescue/<name> <tip>` them FIRST.");
+    }
     console.log(`    node scripts/repo-doctor.mjs --fix   # then clear the husk it leaves behind`);
   }
   console.log("  Removal needs owner approval (AGENTS.md section 6) — nothing was removed.");
