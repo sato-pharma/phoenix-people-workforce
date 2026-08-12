@@ -46,6 +46,8 @@ export async function GET(request: Request) {
       cycleMonthMode: mode("monthMode"),
       weekNumbers: parseList("weekNum").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
       weekNumberMode: mode("weekNumMode"),
+      // Individual uploads by weekly_sales_batches.id — see the Upload picker on the dashboard.
+      batchIds: parseList("batch"),
       accessScope,
     });
     return NextResponse.json({ success: true, data });

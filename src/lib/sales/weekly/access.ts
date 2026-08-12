@@ -65,9 +65,10 @@ type WeeklyAccessTier =
       tier: "territory";
       allowedLineNames: Set<string> | null;
       /**
-       * Region bound applied to rows that carry NO area (the norm — see areaCode on the fact row).
-       * This stays the viewer's OWN region label, exactly as before, which is why adding the area
-       * bound below can only ever ADD rows, never remove or leak any.
+       * Region bound. Applies to EVERY row — area-mapped or not — and stays the viewer's OWN region
+       * label, never widened. That is what makes the area bound below purely additive: it can only
+       * ever ADD rows, never remove or leak one. See applyWeeklyTerritoryScope for why the union
+       * matters while area coverage is partial.
        */
       allowedRegionCodes: Set<string> | null;
       /**
@@ -236,16 +237,20 @@ async function resolveRegionCodesForNames(
 
 /**
  * Territory-tier geography filter. Weekly facts are at DISTRIBUTOR BRANCH grain, and only the branches
- * the owner explicitly mapped carry an area — so the two bounds apply to disjoint halves of the data:
+ * the owner explicitly mapped carry an area, so the two bounds are a UNION rather than a split:
  *
- *   row HAS an area    → keep iff it is one of the viewer's own seat areas
+ *   row HAS an area    → keep iff its area is one of the viewer's seat areas OR its region is his
  *   row has NO area    → keep iff its region is in the viewer's own region bound (unchanged behaviour)
  *
- * That split is the whole point. A District Manager whose district reaches into another region (CNS
- * "Kafr El-Sheikh 1" sits in Delta (1) but belongs to the Alex-BHR DM) gains exactly the mapped rows
- * for that area and nothing else from that region — his region bound is never widened. With no area
- * bound, or before any branch is area-mapped, this is byte-identical to the previous
- * applyLineRegionScope call. Pure.
+ * The area bound is therefore purely additive. A District Manager whose district reaches into another
+ * region (CNS "Kafr El-Sheikh 1" sits in Delta (1) but belongs to the Alex-BHR DM) GAINS exactly the
+ * mapped rows for that area — his region bound is never widened, so he still sees nothing else from
+ * that region. With no area bound, or before any branch is area-mapped, this is byte-identical to the
+ * previous applyLineRegionScope call. Pure.
+ *
+ * The area bound does NOT currently subtract: while coverage is partial it cannot hide a sibling
+ * manager's area inside the viewer's own region, because doing so would silently remove rows the
+ * moment a branch gets mapped. See the union comment in the body for when to tighten it.
  */
 export function applyWeeklyTerritoryScope<
   T extends { officialLine?: string | null; regionCode?: string | null; areaCode?: string | null },
@@ -262,14 +267,29 @@ export function applyWeeklyTerritoryScope<
   const regionSet = allowedRegionCodes ? new Set([...allowedRegionCodes].map((code) => code.trim().toUpperCase())) : null;
 
   return lineScoped.filter((row) => {
+    const region = (row.regionCode ?? "").trim().toUpperCase();
+    const inRegion = regionSet ? regionSet.has(region) : false;
     const area = (row.areaCode ?? "").trim().toUpperCase();
-    if (area) {
-      // An area-mapped row is judged ONLY by the area bound. Falling back to the region bound here
-      // would re-admit a sibling manager's mapped areas inside the viewer's own region.
-      return areaSet ? areaSet.has(area) : regionSet ? regionSet.has((row.regionCode ?? "").trim().toUpperCase()) : true;
-    }
-    if (!regionSet) return true;
-    return regionSet.has((row.regionCode ?? "").trim().toUpperCase());
+    if (!area) return regionSet ? inRegion : true;
+    // UNION, not override: an area-mapped row is admitted by EITHER bound.
+    //
+    // This branch used to be judged by the area bound alone, so that a sibling manager's mapped
+    // areas inside the viewer's own region stayed hidden. That is the right end state, but it only
+    // holds once every branch is area-mapped. Area coverage is currently PARTIAL (owner decision,
+    // 2026-08-12): ~24k of 34.8k validated rows carry an area, 6 of 49 areas have no branch at all,
+    // and 261 branches are deliberately region-only because they are wholesale, key-account,
+    // warehouse or hospital channels serving several areas at once.
+    //
+    // Under the exclusive rule, partial coverage SILENTLY REMOVES rows a manager saw the day before:
+    // stamping an area on a branch flips it out of his region bound and into an area bound that may
+    // not list it. The union restores the documented promise above — the area bound can only ever
+    // ADD rows, never take one away — at the cost of leaving the cross-region refinement dormant
+    // (the Delta (1) DM keeps seeing Kafr El-Sheikh 1, which the Alex-BHR DM owns, exactly as he did
+    // before any mapping existed). Nothing is exposed that was not already visible.
+    //
+    // Tighten this to `inArea` alone once coverage is complete and every branch resolves to an area.
+    const inArea = areaSet ? areaSet.has(area) : false;
+    return inArea || inRegion;
   });
 }
 

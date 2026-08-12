@@ -4,13 +4,15 @@ import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
+import { latestUploadedPeriod } from "@/lib/sales/weekly/batch-scope";
+import { listMasterAreas } from "@/lib/sales/weekly/branch-region-map";
 import { loadWeeklyManagerIndex } from "@/lib/sales/weekly/manager-attribution";
 import {
   buildWeeklySummaryWorkbook,
   currentCairoCycleMonth,
   cycleMonthsOfCurrentYear,
 } from "@/lib/sales/weekly/summary-workbook";
-import { loadWeeklyDashboard } from "@/lib/sales/weekly/service";
+import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
@@ -63,6 +65,15 @@ export async function GET(request: Request) {
       productFilterMode: mode("productMode"),
       accessScope,
       includeFactRows: true,
+      // MANDATORY — the same safeguard the BI export has always had (export/route.ts).
+      //
+      // A row whose product never resolved to a mapped master product must never reach a report. It
+      // is not merely noise: the distributor's raw SKU appears as a phantom product carrying units
+      // that belong to a real one, so the real product reads SHORT by exactly that amount and the
+      // total is split across two names. Measured on overseas June W3: 635 units across 4 unmapped
+      // SKUs, one of them "لاكتو ال اف لبن أطفال 400 جرام" — a Lacto the master already lists as
+      // Lacto Advanced / Lacto Basic. Mapping is a precondition for reporting, not a nicety.
+      excludeUnmapped: true,
     } as const;
 
     const cycleMonths = parseList("month");
@@ -71,24 +82,88 @@ export async function GET(request: Request) {
       .filter((value) => Number.isFinite(value));
     const ytdMonths = cycleMonthsOfCurrentYear();
 
+    // "البيع اللي اترفع" — the sheet that was uploaded, not the whole history.
+    //
+    // Scope precedence for Tabs 1-2:
+    //   1. Upload picker (?batch=<uuid>) — exact, and the only unambiguous identity. A week date is
+    //      not: distributors share week dates, and the loader merges dates less than 5 days apart
+    //      into one group and expands any selection back to the whole group. That is what inflated
+    //      overseas Pedia to 11,455 units against a true 1,005.
+    //   2. Month / Week-of-month filters, if he set them.
+    //   3. Neither — fall back to the LATEST (month, week) rather than the whole validated history,
+    //      which is what made the first build show dates going back to May.
+    //
+    // Batch ids are applied inside the loader AFTER de-cumulation, never as a fetch narrowing:
+    // fetching only the chosen sheet would strip the earlier weeks of its month, and each week is
+    // subtracted from the one before, so the sheet would report its cumulative figure instead.
+    const batchIds = parseList("batch");
+    const periodFilterSet = cycleMonths.length > 0 || weekNumbers.length > 0;
+    let effectiveMonths = cycleMonths;
+    let effectiveWeeks = weekNumbers;
+    if (batchIds.length === 0 && !periodFilterSet) {
+      const validated = (await listWeeklyBatches(500)).filter((batch) => batch.status === "validated");
+      const latest = latestUploadedPeriod(validated);
+      if (latest) {
+        effectiveMonths = [latest.cycleMonth];
+        effectiveWeeks = [latest.weekNumber];
+      }
+    }
+
     // allWeeks is mandatory on the MTD/YTD loads: without it the batch query caps at 200 batches
-    // (newest-first) and would silently truncate the year.
-    const [weekly, mtd, ytd, managerIndex] = await Promise.all([
+    // (newest-first) and would silently truncate the year. Tabs 1-2 need it too when no period
+    // filter is set, because a distributor's latest sheet can be months behind the newest.
+    const [weekly, mtd, ytd, managerIndex, masterAreas] = await Promise.all([
       loadWeeklyDashboard({
         ...sharedFilters,
-        cycleMonths,
+        // An explicit upload selection replaces the period filters entirely — the sheet IS the scope.
+        cycleMonths: batchIds.length > 0 ? [] : effectiveMonths,
         cycleMonthMode: mode("monthMode"),
-        weekNumbers,
+        weekNumbers: batchIds.length > 0 ? [] : effectiveWeeks,
         weekNumberMode: mode("weekNumMode"),
+        batchIds,
+        allWeeks: batchIds.length > 0,
       }),
       loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: [currentCairoCycleMonth()] }),
       loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: ytdMonths }),
       loadWeeklyManagerIndex(),
+      // Tab 2's rows are AREAS, and the owner's standing rule is names, never codes. The fact rows
+      // carry only area_code, so the vocabulary comes from the master alongside them.
+      listMasterAreas(),
     ]);
 
-    const monthLabel = cycleMonths.length > 0 ? cycleMonths.map((m) => m.slice(0, 7)).join(", ") : "All months";
-    const weekLabel = weekNumbers.length > 0 ? weekNumbers.map((w) => `W${w}`).join(", ") : "All weeks";
-    const periodLabel = `${monthLabel} · ${weekLabel}`;
+    // The subtitle must say WHICH sheet is on screen. "All months · All weeks" was the old label and
+    // it was actively misleading — it read as the whole history when the tab now shows one upload.
+    // The trend column needs a SERIES, and the selected upload is a single point. Reload the same
+    // scope across every week of whatever cycle months the chosen rows landed in, so each region can
+    // show its trajectory around the selected sheet. Sequential on purpose: the months are only
+    // known once `weekly` has resolved.
+    //
+    // It MUST also inherit the selected upload's DISTRIBUTORS. Inheriting only the line filter drew
+    // every distributor's month behind a table showing one distributor's sheet — two different
+    // populations in one row. June alone carries 8 distinct week dates across 7 distributors, so the
+    // mixed series bore no relation to the numbers beside it (Cairo drew a peak-then-fall against a
+    // PS-only reality of 26 → 42 → 105 → 124, steadily rising).
+    const trendMonths = [...new Set((weekly.factRows ?? []).map((row) => row.cycleMonth).filter(Boolean))];
+    const trendDistributors = [...new Set((weekly.factRows ?? []).map((row) => row.distributorCode).filter(Boolean))];
+    const trend =
+      trendMonths.length > 0
+        ? await loadWeeklyDashboard({
+            ...sharedFilters,
+            allWeeks: true,
+            cycleMonths: trendMonths,
+            distributorCodes: trendDistributors,
+            distributorFilterMode: "include",
+          })
+        : weekly;
+
+    const monthLabel = cycleMonths.length > 0 ? cycleMonths.map((m) => m.slice(0, 7)).join(", ") : null;
+    const weekLabel = weekNumbers.length > 0 ? weekNumbers.map((w) => `W${w}`).join(", ") : null;
+    const periodLabel =
+      batchIds.length > 0
+        ? `${batchIds.length} selected upload${batchIds.length === 1 ? "" : "s"}`
+        : monthLabel || weekLabel
+          ? [monthLabel, weekLabel].filter(Boolean).join(" · ")
+          : "Latest uploaded week";
     const generatedAt = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
 
     const buffer = await buildWeeklySummaryWorkbook({
@@ -99,12 +174,27 @@ export async function GET(request: Request) {
       ytdMonths,
       periodLabel,
       generatedAt,
+      // 0 or 1 line = one combined tab set; more than one = a tab set per picked line.
+      lineFilter: parseList("line"),
+      masterAreas,
+      trend,
     });
 
+    // Name the file after what is actually in it. "all-months" was left over from the old scope and
+    // now lies: with no period filter the workbook holds each distributor's latest sheet, not the
+    // whole history. Line and distributor filters are named too, so two downloads never collide.
     const periodSegment =
-      cycleMonths.length > 0 ? cycleMonths.map((m) => m.slice(0, 7)).join("-") : "all-months";
+      batchIds.length > 0
+        ? `${batchIds.length}-upload${batchIds.length === 1 ? "" : "s"}`
+        : cycleMonths.length > 0
+          ? cycleMonths.map((m) => m.slice(0, 7)).join("-")
+          : "latest-sheet";
     const weekSegment = weekNumbers.length > 0 ? `_${weekNumbers.map((w) => `w${w}`).join("-")}` : "";
-    const filename = `phoenix-weekly-summary_${periodSegment}${weekSegment}.xlsx`;
+    const slug = (values: string[]) =>
+      values.length === 0 ? "" : `_${values.map((v) => v.toLowerCase().replace(/[^a-z0-9]+/g, "-")).join("-")}`;
+    const filename =
+      `phoenix-weekly-summary_${periodSegment}${weekSegment}` +
+      `${slug(parseList("line"))}${slug(parseList("distributor"))}.xlsx`;
 
     return new Response(new Uint8Array(buffer), {
       status: 200,

@@ -261,11 +261,28 @@ export type WeeklyFactExportRow = {
   line: string;
   regionCode: string;
   regionName: string;
+  /**
+   * Sales AREA, from the branch->area map. null for the many branches that are deliberately
+   * region-only: a key account, chain, wholesale depot, warehouse or governorate customer book
+   * serves several areas at once, so no single area is correct for it. Measured 2026-08-12, that is
+   * 98% of the unmapped VOLUME — so those rows must still be reported, under a named bucket, never
+   * dropped.
+   */
+  areaCode: string | null;
   branchCode: string;
   branchName: string;
   cycleMonth: string;
   weekNumber: number | null;
   weekStart: string;
+  /** The upload this row came from (weekly_sales_batches.id) — the only unambiguous sheet identity. */
+  batchId: string;
+  /**
+   * Product family NAME from the master (e.g. "Tebofortin" covers its 7 concentrations).
+   *
+   * The name, never family_code: the code is not unique — "DO" belongs to both Dopaminict and
+   * Dolabactin, so grouping on it silently merges two families. Empty when the master has no family.
+   */
+  family: string;
   salesValue: number;
   salesUnits: number;
   stockUnits: number;
@@ -285,6 +302,13 @@ export type WeeklyDashboard = {
   availableMonths: WeeklyDistributorOption[];
   /** Week-of-month numbers present in the data (subset of 1–4), ascending. */
   availableWeekNumbers: number[];
+  /**
+   * Individual uploads the viewer can pick, newest first — `code` is `weekly_sales_batches.id`.
+   *
+   * The only unambiguous way to say "the sheet I am looking at". A week_start is not: two
+   * distributors routinely share one, and computeWeekGroups() merges near dates into one group.
+   */
+  availableUploads: WeeklyDistributorOption[];
   distributors: WeeklyDistributorOption[];
   appliedFilters: {
     weekStart: string | null;

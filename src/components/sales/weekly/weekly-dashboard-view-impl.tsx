@@ -75,6 +75,8 @@ type WeeklyFilters = {
   monthMode: WeeklyFilterMode;
   weekNumberCodes: string[];
   weekNumberMode: WeeklyFilterMode;
+  /** weekly_sales_batches.id values — pick individual uploads. Empty = every upload in scope. */
+  uploadIds: string[];
 };
 
 export function WeeklyDashboardView({ initial, initialError }: { initial: WeeklyDashboard | null; initialError: string | null }) {
@@ -96,6 +98,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     monthMode: initial?.appliedFilters.cycleMonthMode ?? "include",
     weekNumberCodes: (initial?.appliedFilters.weekNumbers ?? []).map((value) => String(value)),
     weekNumberMode: initial?.appliedFilters.weekNumberMode ?? "include",
+    uploadIds: [],
   });
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +117,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
     for (const code of filters.weekNumberCodes) params.append("weekNum", code);
     if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
+    for (const id of filters.uploadIds) params.append("batch", id);
     (async () => {
       // Defer the loading flag off the synchronous effect tick (avoids cascading-render lint).
       await Promise.resolve();
@@ -151,6 +155,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     filters.monthMode,
     filters.weekNumberCodes,
     filters.weekNumberMode,
+    filters.uploadIds,
   ]);
 
   const distributorOptions = useMemo(
@@ -177,6 +182,10 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     () => (data?.availableWeekNumbers ?? []).map((week) => ({ code: String(week), label: `Week ${week}` })),
     [data],
   );
+  const uploadOptions = useMemo(
+    () => (data?.availableUploads ?? []).map((upload) => ({ code: upload.code, label: upload.name })),
+    [data],
+  );
   // Both exports send the SAME filter query — they differ only in the endpoint and the fallback
   // filename. Shared so the two downloads can never drift into disagreeing about what the user is
   // looking at, which is the whole point of the summarized report reconciling to this screen.
@@ -194,6 +203,7 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
     if (filters.monthMode === "exclude") params.set("monthMode", "exclude");
     for (const code of filters.weekNumberCodes) params.append("weekNum", code);
     if (filters.weekNumberMode === "exclude") params.set("weekNumMode", "exclude");
+    for (const id of filters.uploadIds) params.append("batch", id);
     return params;
   }, [filters]);
 
@@ -327,6 +337,20 @@ export function WeeklyDashboardView({ initial, initialError }: { initial: Weekly
           )}
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {/* Pick individual uploaded sheets. This is the only unambiguous way to say "the file I
+              just uploaded" — a date is not, because distributors share week dates and the loader
+              merges dates less than 5 days apart into one group. */}
+          <MultiSelectFilter
+            label="Upload"
+            icon={<FileSpreadsheet className="h-3.5 w-3.5" />}
+            options={uploadOptions}
+            selected={filters.uploadIds}
+            mode="include"
+            onSelectedChange={(next) => setFilters((f) => ({ ...f, uploadIds: next }))}
+            onModeChange={() => undefined}
+            allLabel="All uploads"
+            searchPlaceholder="Search distributor or date…"
+          />
           <MultiSelectFilter
             label="Month"
             icon={<CalendarDays className="h-3.5 w-3.5" />}
