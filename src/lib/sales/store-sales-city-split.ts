@@ -22,6 +22,23 @@
 import { closingAreaOf, isRebookedRow } from "@/lib/sales/closing-row-area";
 import { isStoreCustomer } from "@/lib/sales/customer-channel";
 
+/**
+ * OWNER RULING 2026-08-10, RE-APPLIED 2026-08-12: the wholesaler city split is OFF. A wholesaler's
+ * sales stay in the area it physically sits in.
+ *
+ * Measured on July 2026 CNS against his own manual closing, the split was the single largest
+ * disagreement between Phoenix and his sheet, and his closing has never applied it. The first
+ * disable (cc6edee4) was LOST in the #2015 squash merge, so production kept splitting — which is
+ * why the downloaded closing kept diverging from his approved numbers after every data fix.
+ *
+ * Deliberately a flag at the APPLY points rather than emptying SPLIT_LINE_KEYS or gating
+ * isSplitEligible: the pure functions must keep telling the truth (CNS IS a rep line, the split
+ * arithmetic IS as tested) so the ~35 assertions covering the geography and the even-share maths
+ * stay honest and covered for the day this is switched back on. The maths still runs in tests;
+ * it simply is not applied at runtime.
+ */
+export const STORE_CITY_SPLIT_ENABLED = false;
+
 /** The three rep-carrying lines. Head Office is excluded on purpose — see the header. */
 const SPLIT_LINE_KEYS = new Set(["pedia", "anti infective", "antiinfective", "anti inf", "cns"]);
 

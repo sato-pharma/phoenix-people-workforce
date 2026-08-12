@@ -18,6 +18,7 @@
 // reports it, and the workbook states it on the Total sheet as its own reconciliation line, so the
 // Difference row still proves the audit sheet reproduces the headline.
 
+import type { ClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
 import {
   narrowClosingDetailsToAreas,
   type ClosingDetailsResult,
@@ -64,18 +65,32 @@ export type ClosingStoreSplitExport = {
  * `monthRows` must be the export's rows WITHOUT place narrowing. Row-level filters (distributor,
  * Included/Excluded, free-text search) belong on it already — they define the population being
  * allocated. `scopeAreaCodes` is the areas the filtered matrix kept; empty means the whole month.
+ *
+ * `shared` is the SCREEN's own split (loadClosingStoreSplit), and passing it is what stops the
+ * workbook and the Closing Matrix disagreeing. Until 2026-08-11 this function always derived its
+ * own, so the export ran live while the screen read a cache with a 1h TTL — a cross-city customer
+ * re-point moved the workbook's area rows and left the screen's alone. Pass it whenever
+ * `monthRows` really is the whole month; pass nothing when a row-level filter has narrowed the
+ * population, because then the two are legitimately describing different sets of rows and the
+ * workbook says so in its filter note.
  */
 export function prepareClosingStoreSplit(
   monthRows: ClosingDetailsResult,
   scopeAreaCodes: readonly string[],
+  shared?: ClosingStoreSplit | null,
 ): ClosingStoreSplitExport {
   // Split ONCE. Both write-backs — the matrix's and the channel grids' — read this one result, so
   // the two sheets cannot describe different movements of the same money.
-  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
+  const split = shared ?? deriveSplit(monthRows);
   return {
     details: narrowClosingDetailsToAreas(monthRows, scopeAreaCodes),
-    exemptStoreValueByBrick,
-    movements,
-    net: netStoreSplitByAreaProduct(movements),
+    exemptStoreValueByBrick: split.exemptStoreValueByBrick,
+    movements: split.movements,
+    net: split.net,
   };
+}
+
+function deriveSplit(monthRows: ClosingDetailsResult): ClosingStoreSplit {
+  const { exemptStoreValueByBrick, movements } = splitStoreSalesAcrossCityAreas(monthRows.rows);
+  return { exemptStoreValueByBrick, movements, net: netStoreSplitByAreaProduct(movements) };
 }

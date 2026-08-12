@@ -19,6 +19,7 @@ import {
   type MonthlyClosingDirectCell,
   type MonthlyClosingMatrix,
 } from "../src/lib/sales/monthly-distributor-import.ts";
+import { areaProductKey, STORE_CITY_SPLIT_ENABLED } from "../src/lib/sales/store-sales-city-split.ts";
 import { applyStoreSplitToMatrix } from "../src/lib/sales/store-split-matrix.ts";
 
 // A FILTERED Monthly Closing export whose city straddles the filter must not lose sales value.
@@ -331,13 +332,88 @@ function runRouteWiringChecks() {
   );
   assert.match(
     route,
-    /prepareClosingStoreSplit\(monthRows,\s*scopedAreaCodes\)/,
+    /prepareClosingStoreSplit\(monthRows,\s*scopedAreaCodes\b/,
     "the route narrows through prepareClosingStoreSplit, which is what guarantees allocate-then-narrow",
+  );
+  // The third argument is what keeps the workbook equal to the SCREEN: it hands the route the
+  // screen's own cached split instead of letting the export derive a second one. Without it the two
+  // drift apart whenever the cache is older than the data (see closing-store-split-net.ts).
+  assert.match(
+    route,
+    /prepareClosingStoreSplit\(monthRows,\s*scopedAreaCodes,\s*await\s+sharedSplitPromise\)/,
+    "the route must pass the SHARED split into prepareClosingStoreSplit — deriving a second one is "
+      + "how the workbook and the Closing Matrix came to disagree about a wholesaler's areas",
+  );
+  assert.match(
+    route,
+    /rowLevelActive && STORE_CITY_SPLIT_ENABLED\s*\n?\s*\?\s*Promise\.resolve\(null\)/,
+    "the shared split may be skipped only under a row-level filter AND only while the split is "
+      + "enabled — with the split OFF, a null here would make prepareClosingStoreSplit derive a "
+      + "live split from the rows, re-applying the rule the owner turned off",
+  );
+  // OWNER RULING 2026-08-10 (re-applied 2026-08-12 after the first disable was lost in the #2015
+  // squash): the wholesaler city split is OFF. His manual closing has never applied it, and it was
+  // the single largest disagreement between Phoenix and his sheet. Flipping this back on is an
+  // owner decision — never a code cleanup.
+  assert.equal(
+    STORE_CITY_SPLIT_ENABLED,
+    false,
+    "the wholesaler city split must stay OFF until the owner explicitly orders it back on",
   );
 }
 
 export async function runMonthlyClosingExportStoreSplitFilteredTests() {
   runRouteWiringChecks();
+
+  // ── The export must USE the screen's split, never derive a second one ────────────────────────
+  // The screen reads a cached split (closing-store-split-net.ts); the export used to recompute one
+  // from its own freshly read rows. Two derivations of one rule, one of them up to an hour old, so
+  // a cross-city customer re-point moved the workbook's areas and left the screen's alone. Passing
+  // the screen's result in is what makes them equal BY CONSTRUCTION rather than by luck.
+  {
+    const monthRows = detailsFor(MONTH_ROWS);
+    const own = prepareClosingStoreSplit(monthRows, []);
+
+    // Stands in for the screen's cached split after the data moved underneath it. Deliberately
+    // unlike anything these rows would produce, so following the wrong one is unmistakable.
+    const shared = {
+      exemptStoreValueByBrick: new Map([["B-AB1|AB1", 12_345]]),
+      movements: [{
+        areaCode: "AB1", city: "Alexandria", inQty: 1, inValue: 2,
+        line: LINE, outQty: 3, outValue: 4, productCode: PRODUCT,
+      }],
+      net: new Map([[areaProductKey("AB1", PRODUCT), { qty: -999, value: -999_000 }]]),
+    };
+
+    // Not vacuous: the stand-in must genuinely disagree with what these rows derive.
+    assert.notDeepEqual(
+      [...own.net.entries()],
+      [...shared.net.entries()],
+      "fixture sanity: the shared split must differ from the rows' own, or this proves nothing",
+    );
+
+    const used = prepareClosingStoreSplit(monthRows, [], shared);
+    assert.equal(used.net, shared.net, "the export must hand back the SHARED net, not a re-derivation");
+    assert.equal(used.movements, shared.movements, "the Channel Breakdown must read the SHARED movements");
+    assert.equal(
+      used.exemptStoreValueByBrick,
+      shared.exemptStoreValueByBrick,
+      "the exempt-by-brick map must come from the SAME computation as the movements beside it",
+    );
+
+    // Falling back is still correct — a row-level filter, or a failed cache read, derives its own.
+    assert.ok(own.net.size > 0, "with no shared split the export still derives one from its own rows");
+
+    // Which split was used must not change allocate-then-narrow: `details` always comes from the
+    // rows, so a place filter still narrows AFTER the whole month was allocated.
+    const narrowed = prepareClosingStoreSplit(monthRows, ["AB1"], shared);
+    assert.deepEqual(
+      [...new Set(narrowed.details.rows.map((row) => row.areaCode))],
+      ["AB1"],
+      "a place filter still narrows the rows even when the split came from the screen",
+    );
+    assert.equal(narrowed.net, shared.net, "narrowing must not re-derive the split it was handed");
+  }
 
   // ── A month WITH direct orders: the Total sheet must still bridge to zero ──
   // Direct orders never arrive as a distributor invoice line, so they have no row on the Data
