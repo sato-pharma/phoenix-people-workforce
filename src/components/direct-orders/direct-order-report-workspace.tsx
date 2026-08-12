@@ -11,13 +11,19 @@ import {
 import { showsAwaitingFinanceMonth } from "@/lib/direct-orders/types";
 import type { DirectOrderReportRow, DirectOrderReportScope } from "@/lib/direct-orders/types";
 
-// The report is mounted only by app/(admin)/admin/direct-orders/report/page.tsx, so the detail
-// route is unambiguous. It matters that every row can reach it: the request detail page is the
-// ONLY place DirectOrderSalesMonthControl renders, and booking an approved order into a sales
-// month is Finance's job (canSetDirectOrderSalesMonth). Until this link existed the report could
-// tell Finance which orders were unbooked and give them no way to open one — they had to copy an
-// id out of the table and hand-assemble the URL.
-const DIRECT_ORDER_DETAIL_BASE = "/admin/direct-orders";
+// The shell this report was opened in, so a row's link stays inside it.
+//
+// This was a hardcoded "/admin/direct-orders" const, above a comment claiming the report is
+// "mounted only by app/(admin)/…". That has not been true since the consolidation:
+// app/employee-portals/direct-orders/report/page.tsx mounts the same component, so every District /
+// Regional / National Sales / Product Manager clicking a row was sent into the ADMIN shell. It
+// worked — the admin detail page redirects portal-mode viewers back — but it cost a server round
+// trip and a flash of the wrong chrome to reach the page they should have gone to directly.
+//
+// It matters that every row can reach the detail: that page is the ONLY place
+// DirectOrderSalesMonthControl renders, and booking an approved order into a sales month is
+// Finance's job (canSetDirectOrderSalesMonth).
+const DEFAULT_DETAIL_BASE = "/admin/direct-orders";
 
 // The local STATUS_TONE map that used to live here is gone (2026-08-12). Its values were
 // byte-identical to RING_TONE in direct-order-status-pill.tsx, and it rendered the raw database
@@ -115,9 +121,12 @@ export function DirectOrderReportWorkspace({
   rows,
   scope,
   initialUnbookedOnly = false,
+  detailBasePath = DEFAULT_DETAIL_BASE,
 }: {
   rows: DirectOrderReportRow[];
   scope: DirectOrderReportScope;
+  /** The mounting shell's Direct Orders base, so a row opens in the shell the reader is already in. */
+  detailBasePath?: string;
   /**
    * Deep-link default, read from `?unbooked=1` by the page (a server component) rather than by
    * useSearchParams here — that would put this whole workspace behind a Suspense boundary for one
@@ -328,7 +337,7 @@ export function DirectOrderReportWorkspace({
                 <td className="whitespace-nowrap px-3 py-1.5 text-left">
                   <Link
                     className="font-bold text-orange-700 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
-                    href={`${DIRECT_ORDER_DETAIL_BASE}/${row.id}`}
+                    href={`${detailBasePath}/${row.id}`}
                   >
                     {showsAwaitingFinanceMonth(row.status, row.salesMonth) ? "Book month" : "View"}
                   </Link>

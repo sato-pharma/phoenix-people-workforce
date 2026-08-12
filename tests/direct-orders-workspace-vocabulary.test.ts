@@ -7,6 +7,7 @@ import {
   countDirectOrderNeedsAction,
   type DirectOrderQueueRow,
 } from "../src/lib/direct-orders/needs-action.ts";
+import { resolveDirectOrderReturnHref } from "../src/lib/direct-orders/workspace-data.ts";
 import {
   DIRECT_ORDER_STAGE_SEQUENCE,
   describeDirectOrderOwner,
@@ -268,4 +269,126 @@ export function runDirectOrderWorkspaceVocabularyTests() {
     /const label = presentation\.label;/,
     "THE RAW-STATUS FALLBACK IS BACK IN THE PILL: the label must come from the shared vocabulary, or the four surfaces render the database value again",
   );
+
+  // ── 7. "See all N" must actually show all N ────────────────────────────────
+  //
+  // Every Needs Action group's seeAllHref has carried `&queue=<kind>` since the inbox was built,
+  // and NOTHING read it — so "See all 12" navigated to the view the reader was already on and still
+  // showed five. They would reasonably conclude the other seven do not exist.
+  //
+  // Pinned from BOTH ends: the link must emit the param, and the component must consume it. Either
+  // half alone passes while the feature is broken, which is exactly how it shipped dead.
+  const needsAction = readFileSync(
+    new URL("../src/lib/direct-orders/needs-action.ts", import.meta.url),
+    "utf8",
+  );
+  const workspaceSource = readFileSync(
+    new URL("../src/components/direct-orders/workspace/direct-orders-workspace.tsx", import.meta.url),
+    "utf8",
+  );
+  for (const kind of ["approve", "correct", "verify_customer", "assign_month"]) {
+    assert.ok(
+      needsAction.includes(`view=needs-action&queue=${kind}`),
+      `the ${kind} group must offer a see-all link naming its own queue`,
+    );
+  }
+  assert.match(
+    workspaceSource,
+    /searchParams\.get\("queue"\)/,
+    "the workspace must READ ?queue= — a see-all link nothing consumes is a link that restates its own page",
+  );
+  assert.match(
+    workspaceSource,
+    /const expanded = expandedKind === group\.kind/,
+    "the named group must be the one expanded, not merely highlighted",
+  );
+  assert.match(
+    workspaceSource,
+    /const shown = expanded \? group\.items : group\.items\.slice\(0, NEEDS_ACTION_PREVIEW\)/,
+    "expanding must show EVERY item — a preview that stays a preview is the bug this fixes",
+  );
+  assert.match(
+    workspaceSource,
+    /group\.items\.length > shown\.length/,
+    "the see-all row must disappear once everything is shown, or it offers to do what it just did",
+  );
+
+  console.log("  direct-orders needs action: ?queue= expands the group its see-all link names");
+
+  // ── 8. Back returns you to YOUR list — and cannot be turned into a redirect ─
+  //
+  // The detail pages hardcoded the workspace root, so opening an order from
+  // ?view=orders&group=in-progress&page=3 came back to an unfiltered Overview on page 1. An
+  // approver works down a queue one order at a time, so that cost was paid on every single order.
+  //
+  // The fix reads a path out of the QUERY STRING, which is an open-redirect vector the moment it is
+  // trusted. These are the cases that matter, and each one is a real technique rather than a
+  // variation on the same idea.
+  const BASE = "/admin/direct-orders";
+  assert.equal(
+    resolveDirectOrderReturnHref(`${BASE}?view=orders&group=in-progress&page=3`, BASE),
+    `${BASE}?view=orders&group=in-progress&page=3`,
+    "the honest case must survive intact — filters, chip and page",
+  );
+  assert.equal(resolveDirectOrderReturnHref(null, BASE), BASE, "absent falls back to the workspace");
+  assert.equal(resolveDirectOrderReturnHref("", BASE), BASE, "empty falls back to the workspace");
+  assert.equal(
+    resolveDirectOrderReturnHref("https://evil.example/phish", BASE),
+    BASE,
+    "an absolute url must never be followed",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref("//evil.example/phish", BASE),
+    BASE,
+    "PROTOCOL-RELATIVE: a browser reads //host as a different SITE, not a path — this is the one " +
+      "that slips past a naive startsWith('/') check",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref("/\\evil.example", BASE),
+    BASE,
+    "BACKSLASH: some browsers normalise \\ to /, turning /\\host into //host after the check ran",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref("/\tevil", BASE),
+    BASE,
+    "CONTROL CHARACTER: browsers strip tab/newline from urls, so the string checked is not the " +
+      "string fetched",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref("/employee-portals/direct-orders?view=orders", BASE),
+    BASE,
+    "the OTHER SHELL is still not this base path — an in-app redirect is a smaller problem than an " +
+      "external one, and still not what Back means",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref("/admin/payroll", BASE),
+    BASE,
+    "any other in-app path is refused: Back means back to the list, not anywhere in Phoenix",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref(`${BASE}/some-order-id`, BASE),
+    BASE,
+    "a DETAIL page under the same base is refused too — Back must not quietly mean sideways",
+  );
+  assert.equal(
+    resolveDirectOrderReturnHref(`${BASE}-evil?x=1`, BASE),
+    BASE,
+    "PREFIX MATCH: '/admin/direct-orders-evil' starts with the base as a STRING and is a different " +
+      "route — the check compares the path, not a prefix",
+  );
+
+  // And the workspace must actually emit it, or the whole thing is a validator with no input.
+  assert.match(
+    workspaceSource,
+    /function withReturnTo/,
+    "the list must attach where it is returning from — the server-built hrefs cannot know the query " +
+      "string the reader assembled",
+  );
+  assert.match(
+    workspaceSource,
+    /`\$\{href\}\?from=\$\{encodeURIComponent\(returnTo\)\}`/,
+    "the return path must be encoded — it contains & and = of its own",
+  );
+
+  console.log("  direct-orders return-to: filters survive Back; 8 redirect vectors refused");
 }

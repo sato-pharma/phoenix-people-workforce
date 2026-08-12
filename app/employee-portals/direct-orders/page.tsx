@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { DirectOrdersWorkspace } from "@/components/direct-orders/workspace/direct-orders-workspace";
 import { loadDirectOrderWorkspaceView, resolveDirectOrderWorkspaceTab } from "@/lib/direct-orders/workspace-data";
+import { resolveDirectOrderStatusGroup } from "@/lib/direct-orders/operational-query";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
@@ -29,7 +30,14 @@ const BASE_PATH = "/employee-portals/direct-orders";
 export default async function PortalDirectOrdersWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string }>;
+  searchParams: Promise<{
+    view?: string;
+    scope?: string;
+    status?: string;
+    group?: string;
+    q?: string;
+    page?: string;
+  }>;
 }) {
   const access = await resolveAccessContextFromPage();
   await assertDirectOrdersPageAccess(access);
@@ -37,12 +45,26 @@ export default async function PortalDirectOrdersWorkspacePage({
     redirect("/admin/direct-orders");
   }
 
-  const { view } = await searchParams;
+  const { view, scope, status, group, q, page } = await searchParams;
   // Same legacy-alias handling as the admin shell — the portal's old ?view= links are in
   // bookmarks and in next.config.ts's retired-approvals redirect.
   const requestedTab = resolveDirectOrderWorkspaceTab(view);
 
-  const workspace = await loadDirectOrderWorkspaceView(access, { basePath: BASE_PATH, view: requestedTab });
+  const workspace = await loadDirectOrderWorkspaceView(access, {
+    basePath: BASE_PATH,
+    view: requestedTab,
+    ordersPage: Number(page) || 1,
+    // Filters go INTO the query, not onto a fetched array. "mine" is the default, so it is absent
+    // from the URL rather than spelled out — the shortest URL is the common case.
+    ordersFilters: {
+      scopeFilter: scope === "all" ? "all" : "mine",
+      status: status ?? null,
+      // The filter chips' vocabulary, resolved server-side so an unknown value in a hand-edited URL
+      // falls back to "all" rather than reaching the query.
+      statusGroup: resolveDirectOrderStatusGroup(group),
+      q: q ?? null,
+    },
+  });
 
   // The portal shell carries no admin desks (adminTools is empty below), so the three authority
   // views are filtered out here rather than rendered as empty sections. The Report stays reachable
@@ -67,6 +89,7 @@ export default async function PortalDirectOrdersWorkspacePage({
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
         allOrders={workspace.allOrders}
+        ordersPage={workspace.orders}
         adminTools={[]}
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}
         reportHref={`/employee-portals/direct-orders/report`}

@@ -21,7 +21,7 @@ export default async function PortalDirectOrdersReportPage() {
       title="Direct Orders Report"
       description="Every direct order — requests, approvals, pharmacies, and money — filter, sort, and export."
     >
-      <DirectOrderReportWorkspace rows={rows} scope={scope} />
+      <DirectOrderReportWorkspace rows={rows} scope={scope} detailBasePath="/employee-portals/direct-orders" />
     </EmployeePortalPageShell>
   );
 }

@@ -33,7 +33,16 @@ export type DirectOrderWorkflowActionKey =
   | "approve_final"
   | "reject"
   | "return"
-  | "reverse";
+  | "reverse"
+  // Added 2026-08-12 with migration 20260812140000_direct_orders_repair_approval_rung.sql, and the
+  // call site (reassignDirectOrderApprovalRung) landed in the same commit — the union, the DB row
+  // and the caller together, per the rule three lines up that F2 was written about.
+  //
+  // Its 'from' and 'to' are BOTH `pending_approval`: re-addressing a rung whose approver does not
+  // exist in the directory moves nothing. The order still owes the same approvals to the same
+  // seats. `keep_held` set the precedent that an action worth auditing is an action worth
+  // declaring, even when it does not move the status.
+  | "repair_approval_rung";
 
 /** Map a request status to the registry status vocabulary (identical here — kept explicit for safety). */
 export function toDirectOrderWorkflowStatus(status: DirectOrderStatus | string | null | undefined): string {

@@ -969,7 +969,28 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       new URL("../src/components/direct-orders/direct-order-submit-form.tsx", import.meta.url),
       "utf8",
     );
-    assert.match(adminList, /\/admin\/direct-orders\/\$\{encodeURIComponent\(r\.id\)\}/, "admin rows must link to the tracking view");
+    assert.match(
+      adminList,
+      /\$\{basePath\}\/\$\{encodeURIComponent\(r\.id\)\}/,
+      "rows must link to the tracking view",
+    );
+    // In the READER'S OWN SHELL. This was pinned to a literal "/admin/direct-orders", which is the
+    // wrong shell for almost everyone who uses this form — portalNavigationRoles sends every
+    // District / Regional / National Sales Manager and Product / Group Product Manager to the
+    // portal, and they are the people who raise direct orders. It resolved only because the admin
+    // detail page redirects them back.
+    // Comments stripped first. An assertion that cannot tell a comment from a call site is one that
+    // gets "fixed" by deleting the explanation — the docblock on the basePath prop says the literal
+    // out loud precisely so nobody puts it back.
+    const adminListCode = adminList
+      .split("\n")
+      .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+      .join("\n");
+    assert.doesNotMatch(
+      adminListCode,
+      /"\/admin\/direct-orders/,
+      "the submit form must not hardcode the admin shell — the base path is a prop, set by whichever shell mounts it",
+    );
 
     // A requester must NEVER see Approve on their own request. Both decision panels bail out
     // when no action is available — that is what keeps this page read-only for them.

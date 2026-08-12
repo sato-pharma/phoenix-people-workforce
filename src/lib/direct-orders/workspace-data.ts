@@ -2,7 +2,7 @@ import type { AccessContext } from "@/lib/auth/permissions";
 import { currentCairoDateOnlyIso } from "@/lib/i18n/format";
 import {
   buildDirectOrderNeedsAction,
-  buildDirectOrderWorkspaceSummary,
+  countDirectOrderNeedsAction,
   type DirectOrderNeedsActionGroup,
   type DirectOrderQueueRow,
   type DirectOrderWorkspaceSummary,
@@ -15,9 +15,16 @@ import {
   canSetDirectOrderSalesMonth,
   getDirectOrderReport,
   getDirectOrderWorkspaceData,
+  listDirectOrderAwaitingFinanceMonth,
+  countDirectOrderWorkspaceTotals,
+  listDirectOrderOperationalPage,
   listMyDirectOrders,
   resolveDirectOrderReportScope,
 } from "@/lib/direct-orders/service";
+import type {
+  DirectOrderOperationalFilters,
+  DirectOrderOperationalPage,
+} from "@/lib/direct-orders/operational-query";
 import { isDirectOrderRequesterRole } from "@/lib/direct-orders/types";
 import type { DirectOrderApprovalListItem, DirectOrderReportScope } from "@/lib/direct-orders/types";
 
@@ -101,6 +108,44 @@ const LEGACY_TAB_ALIASES: Record<string, DirectOrderWorkspaceTabKey> = {
  * Falls back to Overview for anything unrecognised — the tab list itself is then filtered against
  * the viewer's capabilities by the component, so this never grants access to a view a role lacks.
  */
+/**
+ * Where an order detail's Back link should return the reader.
+ *
+ * The detail pages hardcoded the workspace ROOT, so someone who opened an order from
+ * `?view=orders&group=in-progress&page=3&q=salam` came back to an unfiltered Overview on page 1 and
+ * had to rebuild the list they were working through. That is the single most repeated action in the
+ * module — an approver works down a queue one order at a time.
+ *
+ * SECURITY: this value comes from the query string, so it is an open-redirect vector if trusted.
+ * Three rules, all of which must hold:
+ *
+ *   1. It must be RELATIVE — a single leading "/" and no scheme.
+ *   2. It must not begin "//", which a browser reads as a protocol-relative ABSOLUTE url
+ *      (`//evil.example` is a different host, not a path).
+ *   3. It must sit inside the caller's own basePath, so a link from the portal cannot bounce a
+ *      reader into the admin shell or anywhere else in the app.
+ *
+ * Anything else falls back to the base path. Falling back costs the reader their filters; trusting
+ * it costs them rather more, and a Back button is not worth an open redirect.
+ */
+export function resolveDirectOrderReturnHref(
+  from: string | null | undefined,
+  basePath: string,
+): string {
+  const candidate = String(from ?? "").trim();
+  if (!candidate) return basePath;
+  if (!candidate.startsWith("/") || candidate.startsWith("//")) return basePath;
+  // Backslashes are read as forward slashes by some browsers, so "/\evil.example" would slip
+  // past the "//" check above. Control characters and spaces do the same once a browser strips
+  // them, so the whole range below \x20 is refused rather than enumerated.
+  if (/[\\\x00-\x20]/.test(candidate)) return basePath;
+  // EXACTLY the workspace, not merely something underneath it: `${basePath}/<id>` is another
+  // order's detail, and Back must never quietly mean sideways.
+  const path = candidate.split(/[?#]/)[0];
+  if (path !== basePath) return basePath;
+  return candidate;
+}
+
 export function resolveDirectOrderWorkspaceTab(view: string | null | undefined): DirectOrderWorkspaceTabKey {
   const raw = String(view ?? "").trim();
   if (!raw) return "overview";
@@ -112,7 +157,24 @@ export type DirectOrderWorkspaceView = {
   summary: DirectOrderWorkspaceSummary;
   needsAction: DirectOrderNeedsActionGroup[];
   myOrders: DirectOrderApprovalListItem[];
-  /** Everything the viewer may see, tiered. Empty for a viewer whose scope is "own" — they use myOrders. */
+  /**
+   * ONE PAGE of the Orders view, scoped/filtered/paginated in the database. Null for every view
+   * other than `orders` — this is the read that view uses, and no other.
+   *
+   * This is what replaced `allOrders` for the Orders list. `allOrders` below still exists, but only
+   * because Overview's counters and the Needs Action Finance queue are still derived from it; once
+   * those move to their own aggregate reads it can go, and with it the last full-table read on a
+   * routine screen.
+   */
+  orders: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
+  /**
+   * Everything the viewer may see, tiered. Empty for a viewer whose scope is "own" — they use
+   * myOrders.
+   *
+   * NO LONGER FEEDS THE ORDERS LIST. Retained ONLY for the Overview summary and the Finance queue,
+   * which still count across the whole permitted set. Do not reintroduce it as a list source — that
+   * is the full-table read this work exists to remove.
+   */
   allOrders: DirectOrderQueueRow[];
   scope: DirectOrderReportScope;
   /** Which tabs to render. A tab the viewer cannot use is never shown — not shown-and-empty. */
@@ -185,25 +247,32 @@ function reportRowToQueueRow(row: {
  * viewer's scope and decorates it. Before this list it ran on EVERY workspace open regardless of
  * which view the user asked for, so opening Overview paid for the All-Orders dataset.
  *
- * TWO views are still on this list for reasons that are known costs, not oversights, and BOTH are
- * correctness constraints rather than laziness — dropping either would silently show a smaller
- * number than the truth, which is worse than a slow page:
+ * BOTH ORIGINAL REASONS ARE NOW GONE (2026-08-12). The summary counters are
+ * `countDirectOrderWorkspaceTotals` (four COUNT queries) and the Finance queue is
+ * `listDirectOrderAwaitingFinanceMonth` (its own focused read). Nothing in this loader consumes
+ * `allOrders` any more.
  *
- *   `overview`     — the summary counters (in-progress / returned / completed-this-month) are
- *                    computed across the viewer's WHOLE scope. For a wide-scope viewer they cannot
- *                    be derived from `myOrders` without under-reporting.
- *   `needs-action` — the Finance "assign a sales month" queue is filtered out of these same rows.
- *                    Skipping the report here would empty Finance's inbox rather than shorten it.
+ * SO WHY ARE `overview` AND `needs-action` STILL HERE? Because the workspace switches tabs
+ * CLIENT-SIDE. A viewer who loads `?view=overview` and then clicks Orders gets a component whose
+ * `ordersPage` prop is null — it was fetched for overview, not for orders — and the list falls back
+ * to `allOrders`. Empty that, and clicking the Orders tab shows a blank list to anyone who did not
+ * arrive at `?view=orders` directly.
  *
- * The real fix for both is cheap targeted queries — aggregate COUNTs for the summary, and a
- * dedicated `status = 'approved' AND sales_month IS NULL` read for the Finance queue — instead of
- * loading every row and counting in JavaScript. That is the next step; it is deliberately NOT done
- * by simply removing these two entries, because that trades a slow page for a wrong one.
+ * The remaining full-table read is therefore blocked on NAVIGATION, not on queries: once tab
+ * changes become URL navigations (the URL-state work), each view fetches its own data on arrival,
+ * `allOrders` has no readers left, and this list can go to empty along with `getDirectOrderReport`
+ * disappearing from this file entirely.
+ *
+ * Do not empty this list before that lands. It would trade a slow page for a blank one.
  */
 const VIEWS_NEEDING_FULL_REPORT: readonly DirectOrderWorkspaceTabKey[] = [
   "overview",
   "needs-action",
-  "orders",
+  // `orders` was HERE until 2026-08-12. It is gone because the Orders view now reads
+  // `listDirectOrderOperationalPage` — scoped, filtered and paginated in the database, decorating
+  // one page rather than the whole population. Opening Orders no longer touches the report at all.
+  //
+  // Overview and Needs Action remain for the correctness reasons above, and are the last two.
   "reports",
 ];
 
@@ -217,6 +286,10 @@ export async function loadDirectOrderWorkspaceView(
      * so an omitted value is the conservative case (loads the most), never the silently-empty one.
      */
     view?: DirectOrderWorkspaceTabKey;
+    /** Orders view only: which page, and the filters to apply IN THE QUERY. */
+    ordersPage?: number | null;
+    ordersPageSize?: number | null;
+    ordersFilters?: DirectOrderOperationalFilters | null;
   },
 ): Promise<DirectOrderWorkspaceView> {
   const scope = resolveDirectOrderReportScope(access);
@@ -244,24 +317,37 @@ export async function loadDirectOrderWorkspaceView(
     canDecideCustomerValidations &&
     (view === "overview" || view === "needs-action" || view === "pharmacy-control");
 
-  const [workspace, myOrders, reportRows, pendingValidations] = await Promise.all([
+  // The Orders view's page is fetched ONLY for that view, and it is the only read that view needs:
+  // the query scopes, filters and paginates in the database and decorates just the returned page.
+  const needsOrdersPage = view === "orders";
+
+  const [workspace, myOrders, reportRows, pendingValidations, ordersPage] = await Promise.all([
     getDirectOrderWorkspaceData(access),
     listMyDirectOrders(access),
     needsFullReport ? getDirectOrderReport(access) : Promise.resolve([]),
     needsValidations
       ? listDirectOrderPharmacyValidations(access, { status: "pending" })
       : Promise.resolve([]),
+    needsOrdersPage
+      ? listDirectOrderOperationalPage(access, {
+          page: options.ordersPage ?? null,
+          pageSize: options.ordersPageSize ?? null,
+          filters: options.ordersFilters ?? null,
+        })
+      : Promise.resolve(null),
   ]);
 
   const allOrders = reportRows.map(reportRowToQueueRow);
 
-  // The Finance queue is derived from the SAME report rows already loaded above
-  // rather than a second query — and only for the person who can actually book a
-  // month, because a queue nobody can clear is how people learn to ignore queues
-  // (the reasoning getDirectOrderUnbookedBadge already applies to the sidebar badge).
-  const awaitingFinanceMonth = canAssignFinanceMonth
-    ? allOrders.filter((row) => row.status === "approved" && !row.salesMonth)
-    : [];
+  // The Finance queue is its OWN focused read (2026-08-12) — `status = 'approved' AND sales_month
+  // IS NULL`, straight from the database — rather than a filter over the whole report. It used to
+  // be derived from `allOrders`, which meant opening the inbox loaded the entire Direct Orders
+  // population to surface a handful of rows.
+  //
+  // The capability gate lives INSIDE listDirectOrderAwaitingFinanceMonth rather than out here, so
+  // it cannot be forgotten by a future caller: a queue nobody can clear is how people learn to
+  // ignore queues, and that rule now sits with the query instead of beside it.
+  const awaitingFinanceMonth = await listDirectOrderAwaitingFinanceMonth(access);
 
   const needsAction = buildDirectOrderNeedsAction({
     awaitingMyApproval: workspace.awaiting,
@@ -271,13 +357,21 @@ export async function loadDirectOrderWorkspaceView(
     basePath: options.basePath,
   });
 
-  const summary = buildDirectOrderWorkspaceSummary({
-    needsAction,
-    // A viewer with a wider scope reads the wider set; everyone else reads their own.
-    // Same numbers either way for an "own"-scope viewer, one query fewer.
-    scopedOrders: canSeeAllOrders ? allOrders : myOrders,
-    currentSalesMonth: currentCairoSalesMonth(options.now),
-  });
+  // Overview's three order counters now come from COUNT queries rather than from walking every row
+  // the viewer can see (2026-08-12). `needsMyAction` still comes from the already-built Needs Action
+  // groups — it is a count of things already in memory, so it costs nothing and must not drift from
+  // the inbox it summarises.
+  //
+  // Only fetched for the view that renders them. Every other view got these four numbers for free
+  // from a full-table read it was doing anyway; now nobody does that read, so nobody gets them by
+  // accident either.
+  const totals = view === "overview"
+    ? await countDirectOrderWorkspaceTotals(access, currentCairoSalesMonth(options.now))
+    : { inProgress: 0, returned: 0, completedThisMonth: 0 };
+  const summary: DirectOrderWorkspaceSummary = {
+    needsMyAction: countDirectOrderNeedsAction(needsAction),
+    ...totals,
+  };
 
   // ROLE-SHAPED, not permission-shaped. A view the viewer cannot use is absent, never present and
   // empty — an empty tab still costs a glance and teaches people the module is bigger than their
@@ -309,6 +403,7 @@ export async function loadDirectOrderWorkspaceView(
     summary,
     needsAction,
     myOrders,
+    orders: ordersPage,
     allOrders,
     scope,
     tabs,

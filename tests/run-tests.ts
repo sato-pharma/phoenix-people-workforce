@@ -564,7 +564,12 @@ import { runDirectOrderCountersRefusedTests } from "./direct-orders-counters-ref
 import { runDirectOrderFinanceMonthBadgeTests } from "./direct-orders-finance-month-badge.test.ts";
 import { runDirectOrderCollectionTests } from "./direct-orders-collection.test.ts";
 import { runDirectOrderRlsCoverageTests } from "./direct-orders-rls-coverage.test.ts";
-import { runDirectOrderUnresolvedManagerRungTests } from "./direct-orders-unresolved-manager-rung.test.ts";
+import { runDirectOrderRegistryReplayTests } from "./direct-orders-registry-replay.test.ts";
+import {
+  runDirectOrderApprovalExceptionTests,
+  runDirectOrderUnresolvedManagerRungTests,
+} from "./direct-orders-unresolved-manager-rung.test.ts";
+import { runDirectOrderOperationalQueryTests } from "./direct-orders-operational-query.test.ts";
 import { runDirectOrderSecondReviewFixTests } from "./direct-orders-second-review-fixes.test.ts";
 import { runFinanceManagerMonthlyClosingRowTests } from "./finance-manager-monthly-closing-row.test.ts";
 import { runFinanceManagerCalendarRowTests } from "./finance-manager-calendar-row.test.ts";
@@ -1379,6 +1384,9 @@ await runTest("direct orders finance-month badge (approved never shows alone, on
 await runTest("direct orders collection (identity gate not role gate, remainder derived, approved-only, and recording cash never moves the sales month)", runDirectOrderCollectionTests);
 await runTest("direct orders RLS coverage (every direct_order_* table has RLS; a public table without it is reachable with the anon key)", runDirectOrderRlsCoverageTests);
 await runTest("direct orders unresolved manager rung (a directory gap makes a rung that says it is broken, not one that looks healthy and blocks forever)", runDirectOrderUnresolvedManagerRungTests);
+await runTest("direct orders approval exceptions (a stuck rung can be re-addressed, a healthy one cannot — the difference between a repair and an override)", runDirectOrderApprovalExceptionTests);
+await runTest("direct orders registry replay (the migration chain must be replayable from scratch: no action may reference a status not yet declared)", runDirectOrderRegistryReplayTests);
+await runTest("direct orders operational query (scope is a WHERE clause applied before pagination and before the count; every tier fails closed)", runDirectOrderOperationalQueryTests);
 await runTest("direct orders second-review fixes (returned orders correct in place keeping their chain, no phantom draft queue, sales month approved-only server-side, Finance authority in one module)", runDirectOrderSecondReviewFixTests);
 await runTest("finance manager monthly closing row (export-only surface not the upload workspace, both gates, no sales:import, full-sheet branch intact)", runFinanceManagerMonthlyClosingRowTests);
 await runTest("finance manager calendar row (authoring page off the sidebar, planning calendar on it, and BOTH gates of the destination pinned)", runFinanceManagerCalendarRowTests);

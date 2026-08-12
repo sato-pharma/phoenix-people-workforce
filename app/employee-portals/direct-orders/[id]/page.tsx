@@ -10,6 +10,7 @@ import { canCaptureDirectOrderValidation } from "@/lib/direct-orders/validation-
 import { resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { assertDirectOrdersPageAccess } from "@/lib/direct-orders/page-access";
+import { resolveDirectOrderReturnHref } from "@/lib/direct-orders/workspace-data";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +19,24 @@ export const dynamic = "force-dynamic";
  * permission gate. Same component, same payload, same detail the approver sees; only the framing
  * and the back link differ.
  */
-export default async function PortalMyDirectOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PortalMyDirectOrderDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ from?: string }>;
+}) {
   const access = await resolveAccessContextFromPage();
   await assertDirectOrdersPageAccess(access);
   const { id } = await params;
+  const { from } = await searchParams;
   if (resolveNavigationMode(access) !== "employee-portal") {
-    redirect(`/admin/direct-orders/${encodeURIComponent(id)}`);
+    redirect(
+      `/admin/direct-orders/${encodeURIComponent(id)}` +
+        // Carried across the hop, same as its twin: the redirect is meant to be invisible, and
+        // dropping the return context would make it visible by losing their place.
+        (from ? `?from=${encodeURIComponent(from)}` : ""),
+    );
   }
   const detail = await getDirectOrderApprovalDetail(access, id);
 
@@ -50,9 +63,12 @@ export default async function PortalMyDirectOrderDetailPage({ params }: { params
             `DirectOrderApprovalDetail` payload — and the mobile approval-window hardening
             (tests/direct-orders-approval-window-mobile.test.ts) was done on THIS one, so the
             portal was the copy running the older layout. */}
+        {/* Back to the LIST THEY CAME FROM - tab, filter, search and page intact.
+            resolveDirectOrderReturnHref refuses anything that is not this exact workspace path,
+            so a crafted ?from= cannot turn Back into an open redirect. */}
         <DirectOrderRequestDetail
           detail={detail}
-          backHref="/employee-portals/direct-orders"
+          backHref={resolveDirectOrderReturnHref(from, "/employee-portals/direct-orders")}
           backLabel="Back to Direct Orders"
         />
         {showValidation && detail?.pharmacy ? (

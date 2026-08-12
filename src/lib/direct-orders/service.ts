@@ -10,7 +10,7 @@ import {
   type EmployeeDirectoryData,
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
-import { canonicalHrIdKey } from "@/lib/hr-id";
+import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { validationError } from "@/lib/http/api-errors";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
@@ -51,6 +51,18 @@ import {
   deriveDirectOrderSalesMonthChange,
 } from "@/lib/direct-orders/finance-authority";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
+import type { DirectOrderQueueRow } from "@/lib/direct-orders/needs-action";
+import {
+  clampDirectOrderPage,
+  clampDirectOrderPageSize,
+  looksLikeDirectOrderId,
+  requesterCandidatesExceedUrlBudget,
+  resolveDirectOrderScopePredicate,
+  resolveDirectOrderStatusGroup,
+  resolveDirectOrderStatusGroupFilter,
+  type DirectOrderOperationalFilters,
+  type DirectOrderOperationalPage,
+} from "@/lib/direct-orders/operational-query";
 import { isHeadOfficeLine, RESTRICTED_PRODUCT_CODES } from "@/lib/sales/access-scope";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 import {
@@ -235,7 +247,13 @@ async function notifyDirectOrder(input: {
    */
   idempotencySuffix?: string;
 }): Promise<void> {
-  const href = input.href ?? `/admin/approvals/direct-orders/${encodeURIComponent(input.requestId)}`;
+  // The LIVE order route, not the retired approvals one.
+  //
+  // `/admin/approvals/direct-orders/:id` still resolves — next.config.ts redirects it permanently —
+  // so this was working. But it minted a retired URL into every notification row and every email,
+  // and an email is the one artefact that outlives the redirect that rescues it. resolveHref()
+  // still remaps this to the reader's own shell; it now has a current path to remap.
+  const href = input.href ?? `/admin/direct-orders/${encodeURIComponent(input.requestId)}`;
   // Order matters: the FIRST recipient is the concerned person and becomes the email's To;
   // everyone after is Cc (owner rule, 2026-08-04: one email per event, never N copies). Call
   // sites already lead with the requester / the acting approver. In-app and Telegram remain
@@ -4843,6 +4861,408 @@ const DIRECT_ORDER_REPORT_SEE_ALL_ROLES: PhoenixRole[] = [
   "Finance Manager",
 ];
 
+/**
+ * The OPERATIONAL Orders page — scoped, filtered and paginated IN THE DATABASE.
+ *
+ * This is deliberately not `getDirectOrderReport`. That function selects every request in scope and
+ * decorates all of them, which is right for a report and wrong for the list screen: the client then
+ * showed 25 rows out of however many were loaded. Here the database returns 25 rows and one count.
+ *
+ * ORDER OF OPERATIONS IS THE WHOLE POINT:
+ *   1. resolve the scope tier   (resolveDirectOrderReportScope — not re-derived here)
+ *   2. turn it into a predicate (fails closed at every tier)
+ *   3. apply it to the query    ← authorization is a WHERE clause, not a post-filter
+ *   4. apply the user's filters
+ *   5. count + range            ← the count reflects the SCOPED, FILTERED set
+ *
+ * Steps 3 and 5 must never swap. Paginating first and trimming after gives short pages and a total
+ * that describes rows the viewer may not see.
+ */
+/**
+ * How many pharmacies / people a search term may resolve to before it stops being a search.
+ *
+ * NOT a silent truncation. Overflow is reported to the person as "narrow this down", because a
+ * quietly capped list looks exactly like "your order is not here" — and the whole point of moving
+ * this query server-side was to stop the list lying about what it contains.
+ */
+const DIRECT_ORDER_SEARCH_MATCH_LIMIT = 400;
+
+type SearchMatches = { values: string[]; overflowed: boolean };
+
+/** PostgREST needs `in.()` members quoted once a value can hold a comma, a space or a paren. */
+function quoteInList(values: readonly string[]): string {
+  return values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",");
+}
+
+/**
+ * Pharmacies whose NAME or CUSTOMER CODE matches, as ids this table can be filtered by.
+ *
+ * `direct_order_requests` holds `pharmacy_id` and nothing else about the pharmacy, so searching by
+ * name means resolving ids first. One indexed query, bounded — still far cheaper than the
+ * full-table report read that used to back this search.
+ */
+async function findPharmacyIdsMatchingSearch(term: string): Promise<SearchMatches> {
+  const like = `%${term.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  const { data, error } = await getSupabaseAdmin()
+    .from("direct_order_pharmacies")
+    .select("id")
+    .or(`pharmacy_name.ilike.${like},phoenix_pharmacy_code.ilike.${like}`)
+    // One over the limit, so overflow is DETECTED rather than assumed from a full page.
+    .limit(DIRECT_ORDER_SEARCH_MATCH_LIMIT + 1);
+  if (error) throw error;
+  const ids = ((data ?? []) as Array<{ id: string }>).map((row) => String(row.id));
+  return { values: ids.slice(0, DIRECT_ORDER_SEARCH_MATCH_LIMIT), overflowed: ids.length > DIRECT_ORDER_SEARCH_MATCH_LIMIT };
+}
+
+/**
+ * People whose name matches, as the requester_hr_id values actually stored on the row.
+ *
+ * Costs no query: `getEmployeeDirectory` is cached and every other path here already warms it.
+ * Each match is expanded through `hrIdLookupKeys` for the same reason the scope predicate is —
+ * the column's casing is not guaranteed, and an exact match would silently lose rows.
+ */
+async function findRequesterHrIdsMatchingSearch(term: string): Promise<SearchMatches> {
+  const needle = term.trim().toLowerCase();
+  const directory = await getEmployeeDirectory();
+  const keys = new Set<string>();
+  let matched = 0;
+  for (const employee of directory.employees) {
+    const haystack = `${employee.displayName ?? ""} ${employee.fullName ?? ""}`.toLowerCase();
+    if (!haystack.includes(needle)) continue;
+    matched += 1;
+    if (matched > DIRECT_ORDER_SEARCH_MATCH_LIMIT) break;
+    for (const key of hrIdLookupKeys(employee.hrId)) keys.add(key);
+  }
+  return { values: Array.from(keys), overflowed: matched > DIRECT_ORDER_SEARCH_MATCH_LIMIT };
+}
+
+export async function listDirectOrderOperationalPage(
+  access: AccessContext,
+  input: {
+    page?: number | null;
+    pageSize?: number | null;
+    filters?: DirectOrderOperationalFilters | null;
+  } = {},
+): Promise<DirectOrderOperationalPage<DirectOrderQueueRow>> {
+  await assertPermission(access, "direct_orders", "read");
+
+  const filters = input.filters ?? {};
+  const page = clampDirectOrderPage(input.page);
+  const pageSize = clampDirectOrderPageSize(input.pageSize);
+  const scope = resolveDirectOrderReportScope(access);
+
+  // Only pay for the subtree walk / line lookup the tier actually needs.
+  const needsRequesterSet = scope === "own" || scope === "hierarchy";
+  const [visibleKeys, viewerLine] = await Promise.all([
+    needsRequesterSet && filters.scopeFilter !== "mine"
+      ? resolveVisibleRequesterHrIds(access)
+      : Promise.resolve(null),
+    scope === "line" && filters.scopeFilter !== "mine"
+      ? resolveDirectOrderRequesterLineName(access)
+      : Promise.resolve(null),
+  ]);
+
+  const predicate = resolveDirectOrderScopePredicate({
+    scope,
+    viewerHrId: resolveEmployeeIdentityId(access) ?? access.hrId ?? null,
+    visibleRequesterKeys: visibleKeys,
+    viewerLine,
+    scopeFilter: filters.scopeFilter ?? null,
+  });
+
+  const appliedFilters = { ...filters, scope };
+
+  // FAIL CLOSED. An unresolvable tier returns an empty page, never an unfiltered one — and it costs
+  // no query at all.
+  if (predicate.kind === "none") {
+    return { rows: [], totalCount: 0, page, pageSize, appliedFilters };
+  }
+
+  // The chip's grouping, turned into buckets a query can apply. Resolved here rather than inline
+  // below so the "matches no status at all" case can return an empty page instead of being
+  // expressed as a never-true predicate — see the group clause further down.
+  const statusGroup = resolveDirectOrderStatusGroupFilter(
+    resolveDirectOrderStatusGroup(filters.statusGroup),
+  );
+  const statusGroupClauses = statusGroup
+    ? [
+        ...(statusGroup.statuses.length ? [`status.in.(${statusGroup.statuses.join(",")})`] : []),
+        ...statusGroup.unbookedStatuses.map((s) => `and(status.eq.${s},sales_month.is.null)`),
+        ...statusGroup.bookedStatuses.map((s) => `and(status.eq.${s},sales_month.not.is.null)`),
+      ]
+    : [];
+  if (statusGroup && statusGroupClauses.length === 0) {
+    // Only reachable if the status vocabulary changes so a chip covers nothing. Showing an empty
+    // list is the honest answer; omitting the predicate would show EVERYTHING under a chip that
+    // matches nothing, which is the failure direction that actually hurts.
+    return { rows: [], totalCount: 0, page, pageSize, appliedFilters };
+  }
+  if (predicate.kind === "requesters" && requesterCandidatesExceedUrlBudget(predicate.hrIdCandidates)) {
+    // Truncating the list would silently shrink the manager's visible set. Refusing is loud, and a
+    // subtree this deep is a real signal rather than a routine case.
+    throw new Error(
+      `Direct order scope resolved to ${predicate.hrIdCandidates.length} requester keys, beyond the ` +
+        "safe URL budget for a single query. This needs the RPC path rather than a silently truncated list.",
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("direct_order_requests")
+    .select("*", { count: "exact" })
+    .order("created_at", { ascending: false });
+
+  // ── 3. AUTHORIZATION, as a predicate on the query ──────────────────────────
+  if (predicate.kind === "requesters") {
+    query = query.in("requester_hr_id", predicate.hrIdCandidates);
+  } else if (predicate.kind === "line") {
+    // ilike with no wildcard is an exact, case-insensitive match — the SQL equivalent of the
+    // trim+lowercase comparison the report does in JavaScript.
+    query = query.ilike("line", predicate.line);
+  }
+
+  // ── 4. The user's own filters ──────────────────────────────────────────────
+  // A separate `.or()` from the free-text one below — PostgREST ANDs repeated `or=` params, so
+  // "In Progress" AND "matches el salam" narrows correctly instead of one clause eating the other.
+  if (statusGroupClauses.length > 0) query = query.or(statusGroupClauses.join(","));
+  if (filters.status) query = query.eq("status", filters.status);
+  if (filters.requesterHrId) query = query.in("requester_hr_id", hrIdLookupKeys(filters.requesterHrId));
+  if (filters.pharmacyId) query = query.eq("pharmacy_id", filters.pharmacyId);
+  if (filters.productCode) query = query.eq("product_code", filters.productCode);
+  if (filters.line) query = query.ilike("line", filters.line);
+  if (filters.createdFrom) query = query.gte("created_at", filters.createdFrom);
+  // Inclusive of the whole end day, not midnight at its start.
+  if (filters.createdTo) query = query.lte("created_at", `${filters.createdTo}T23:59:59.999Z`);
+  if (filters.salesMonth === "none") {
+    // The Finance queue: approved with no month booked. See the GOLDEN RULE.
+    query = query.eq("status", "approved").is("sales_month", null);
+  } else if (filters.salesMonth) {
+    query = query.eq("sales_month", filters.salesMonth);
+  }
+
+  // Free text over the columns this table actually holds. Pharmacy name/code, area and region live
+  // on joined tables and are resolved for display AFTER the page is fetched, so they are not
+  // searchable here yet — see the note in the Orders view. Promising a field the query cannot match
+  // is worse than omitting it.
+  const q = (filters.q ?? "").trim();
+  if (q) {
+    const like = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+    // `id.eq.` is added ONLY for something actually shaped like a uuid.
+    //
+    // This replaced an unconditional `id.eq.${q}` plus a retry-on-cast-error fallback, and the
+    // fallback was a SCOPE LEAK: Postgres rejects `id.eq.el salam` before it evaluates anything,
+    // so every non-uuid search errored into a retry that built a FRESH query — one with no scope
+    // predicate and none of the filters above. An own-scope viewer typing any ordinary word got a
+    // page drawn from the whole table. Introduced by me in 94579054; never pushed or deployed.
+    //
+    // Testing the shape first means the error path does not exist, so there is no second query
+    // builder that can drift out of sync with this one. That is the actual fix — a corrected copy
+    // of the predicates would have been one more place to forget them.
+    const clauses = [`product_name.ilike.${like}`, `product_code.ilike.${like}`];
+    if (looksLikeDirectOrderId(q)) clauses.push(`id.eq.${q}`);
+
+    // Pharmacy and person are what people actually search by, and neither is a column on this
+    // table — so they are resolved to ids first and matched here. Without this the server search
+    // would be NARROWER than the client-side one it replaces: a regression dressed as an
+    // optimisation, and one nobody would report as a bug. They would just stop trusting the box.
+    const [pharmacies, requesters] = await Promise.all([
+      findPharmacyIdsMatchingSearch(q),
+      findRequesterHrIdsMatchingSearch(q),
+    ]);
+    if (pharmacies.overflowed || requesters.overflowed) {
+      badRequest(
+        `"${q}" matches too many pharmacies or people to search by. Add a few more letters — a ` +
+          "partial list would look exactly like the order not being there.",
+      );
+    }
+    if (pharmacies.values.length) clauses.push(`pharmacy_id.in.(${quoteInList(pharmacies.values)})`);
+    if (requesters.values.length) clauses.push(`requester_hr_id.in.(${quoteInList(requesters.values)})`);
+
+    query = query.or(clauses.join(","));
+  }
+
+  // ── 5. Count + page, in that order ─────────────────────────────────────────
+  const from = (page - 1) * pageSize;
+  const { data, error, count } = await query.range(from, from + pageSize - 1);
+  // No retry-on-error path. A query error is a real fault and is thrown — the previous fallback
+  // silently answered from an unscoped query, which is strictly worse than an error page.
+  if (error) throw error;
+
+  return {
+    rows: await decorateDirectOrderPage(((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow)),
+    totalCount: count ?? 0,
+    page,
+    pageSize,
+    appliedFilters,
+  };
+}
+
+/**
+ * Turn ONE PAGE of raw requests into the rows the Orders list renders.
+ *
+ * This is where the saving actually lands. The list shows pharmacy name and code, area, region and
+ * requester name — all of which live on other tables. `getDirectOrderReport` resolves them for
+ * EVERY request in scope; here the joins are bounded by the page size, so the cost is 25 rows'
+ * worth of lookups regardless of how many orders the company has.
+ *
+ * `bonusOverCap` is deliberately false, matching `reportRowToQueueRow`'s existing reasoning: the
+ * flag only ever ADDS a warning chip, so false reads as "nothing flagged", never as "checked and
+ * clear" — and the chip is still shown on the order's own page, where the decision is taken.
+ */
+async function decorateDirectOrderPage(requests: DirectOrderRequest[]): Promise<DirectOrderQueueRow[]> {
+  if (requests.length === 0) return [];
+  const [pharmacies, nameOf, geo] = await Promise.all([
+    loadPharmaciesByIds(requests.map((r) => r.pharmacyId)),
+    nameLookup(),
+    loadDirectOrderGeoNames(),
+  ]);
+  return requests.map((request) => {
+    const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+    return {
+      id: request.id,
+      requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
+      productName: request.productName,
+      qty: request.qty,
+      pharmacyName: pharmacy?.pharmacyName ?? "—",
+      pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
+      // `medicalRepName` is deliberately LEFT UNSET, not set to a placeholder. Resolving the
+      // covering rep needs a live seat-model walk, which was removed from hot paths for its cost —
+      // and the workspace's search placeholder is already worded per-tab precisely so it never
+      // promises a field the rows on that tab cannot match.
+      areaName: (pharmacy?.areaCode ? geo.areaNameByCode.get(pharmacy.areaCode) : null) ?? "—",
+      regionName: (pharmacy?.regionCode ? geo.regionNameByCode.get(pharmacy.regionCode) : null) ?? "—",
+      salesValue: request.salesValue,
+      createdAt: request.createdAt,
+      status: request.status,
+      salesMonth: request.salesMonth,
+      bonusOverCap: false,
+    } satisfies DirectOrderQueueRow;
+  });
+}
+
+/**
+ * Overview's three order counters, as COUNT queries instead of a full-table read.
+ *
+ * WHAT THIS REPLACES. `buildDirectOrderWorkspaceSummary` walked every row the viewer could see and
+ * tallied them in JavaScript, which meant Overview — four numbers on a landing screen — paid for
+ * the entire Direct Orders population. These are `count: exact, head: true` reads: Postgres returns
+ * the number and no rows at all.
+ *
+ * THE STATUS→STAGE MAPPING IS COPIED FROM status-labels.ts, NOT INVENTED. Getting it wrong would
+ * silently misreport, so it is spelled out:
+ *   returned                          → counted as `returned`
+ *   pending_approval | held           → `inProgress`  (stages approval / customer_check)
+ *   approved AND sales_month IS NULL  → `inProgress`  (stage finance — "Waiting for Finance")
+ *   approved AND sales_month = <this> → `completedThisMonth`
+ *   draft                             → counted nowhere (stage draft)
+ *   rejected|expired|cancelled|reversed → counted nowhere (stage stopped)
+ *
+ * THE SUBTLETY THAT MATTERS: `returned` maps to stage "approval" in status-labels, but the original
+ * JavaScript tested it FIRST and `continue`d, so a returned order counts as returned and never also
+ * as in-progress. These queries reproduce that exactly — `inProgress` names its statuses explicitly
+ * rather than selecting "everything at the approval stage", which would have double-counted.
+ *
+ * SCOPE IS THE SAME PREDICATE the Orders list uses, from the same resolver. Overview's counters
+ * must span the viewer's whole permitted scope, which is precisely why they could not simply be
+ * derived from `myOrders`.
+ */
+export async function countDirectOrderWorkspaceTotals(
+  access: AccessContext,
+  currentSalesMonth: string,
+): Promise<{ inProgress: number; returned: number; completedThisMonth: number }> {
+  await assertPermission(access, "direct_orders", "read");
+
+  const scope = resolveDirectOrderReportScope(access);
+  const [visibleKeys, viewerLine] = await Promise.all([
+    scope === "own" || scope === "hierarchy" ? resolveVisibleRequesterHrIds(access) : Promise.resolve(null),
+    scope === "line" ? resolveDirectOrderRequesterLineName(access) : Promise.resolve(null),
+  ]);
+  const predicate = resolveDirectOrderScopePredicate({
+    scope,
+    viewerHrId: resolveEmployeeIdentityId(access) ?? access.hrId ?? null,
+    visibleRequesterKeys: visibleKeys,
+    viewerLine,
+  });
+
+  // Fails closed, and costs nothing: an unresolvable tier counts zero rather than counting the
+  // company. Same rule as the Orders page.
+  if (predicate.kind === "none") return { inProgress: 0, returned: 0, completedThisMonth: 0 };
+  if (predicate.kind === "requesters" && requesterCandidatesExceedUrlBudget(predicate.hrIdCandidates)) {
+    throw new Error(
+      `Direct order summary scope resolved to ${predicate.hrIdCandidates.length} requester keys, beyond ` +
+        "the safe URL budget for a single query. This needs the RPC path rather than a truncated list.",
+    );
+  }
+
+  const supabase = getSupabaseAdmin();
+  // head: true — Postgres returns the count and NO rows. This is the whole point.
+  const scoped = () => {
+    let q = supabase.from("direct_order_requests").select("id", { count: "exact", head: true });
+    if (predicate.kind === "requesters") q = q.in("requester_hr_id", predicate.hrIdCandidates);
+    else if (predicate.kind === "line") q = q.ilike("line", predicate.line);
+    return q;
+  };
+
+  const [returnedRes, activeRes, awaitingFinanceRes, completedRes] = await Promise.all([
+    scoped().eq("status", "returned"),
+    scoped().in("status", ["pending_approval", "held"]),
+    scoped().eq("status", "approved").is("sales_month", null),
+    scoped().eq("status", "approved").eq("sales_month", currentSalesMonth),
+  ]);
+  for (const res of [returnedRes, activeRes, awaitingFinanceRes, completedRes]) {
+    if (res.error) throw res.error;
+  }
+
+  return {
+    returned: returnedRes.count ?? 0,
+    inProgress: (activeRes.count ?? 0) + (awaitingFinanceRes.count ?? 0),
+    completedThisMonth: completedRes.count ?? 0,
+  };
+}
+
+/**
+ * The Finance inbox: approved orders carrying no sales month.
+ *
+ * WHAT THIS REPLACES. Needs Action derived this by loading the ENTIRE report and filtering it in
+ * JavaScript for `status === "approved" && !salesMonth`. Opening the inbox therefore cost the whole
+ * Direct Orders population to find, typically, a handful of rows.
+ *
+ * GATED ON THE ABILITY TO CLEAR IT, not merely on being able to read orders. Returning this queue
+ * to a sales manager would light a red count on a job they are structurally forbidden from doing —
+ * `canAssignDirectOrderSalesMonth` admits B-185 and Super Admin and nobody else — and a queue you
+ * cannot clear is what teaches people to ignore queues. Same rule `getDirectOrderUnbookedBadge`
+ * already applies to the sidebar badge; this is that rule, applied to the inbox it summarises, so
+ * the two cannot disagree.
+ *
+ * NO SCOPE PREDICATE, deliberately. Finance's report scope is already "all" by explicit exception
+ * (see DIRECT_ORDER_REPORT_SEE_ALL_ROLES and the incident recorded there: without it the one person
+ * allowed to book a month could not open a single order, and 177,124.80 EGP sat unbooked). Adding a
+ * requester filter here would re-create that bug. The capability gate above IS the boundary.
+ *
+ * PRESERVES THE GOLDEN RULE. This only READS. Injection still happens nowhere but
+ * `setDirectOrderSalesMonth`, and approval still passes `p_sales_month: null`.
+ */
+export async function listDirectOrderAwaitingFinanceMonth(
+  access: AccessContext,
+  options: { limit?: number } = {},
+): Promise<DirectOrderQueueRow[]> {
+  await assertPermission(access, "direct_orders", "read");
+  if (!canSetDirectOrderSalesMonth(access)) return [];
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("status", "approved")
+    .is("sales_month", null)
+    // Oldest first: the money that has been waiting longest is the money to book next.
+    .order("decided_at", { ascending: true, nullsFirst: false })
+    .limit(options.limit ?? 200);
+  if (error) throw error;
+
+  return decorateDirectOrderPage(((data ?? []) as Array<Record<string, unknown>>).map(mapRequestRow));
+}
+
 export function resolveDirectOrderReportScope(access: AccessContext): DirectOrderReportScope {
   if (access.scope === "system" || DIRECT_ORDER_REPORT_SEE_ALL_ROLES.includes(access.role)) return "all";
   if (access.role === "National Sales Manager") return "line";
@@ -6140,4 +6560,319 @@ export async function confirmDirectOrderCleanup(
 
   pingDirectOrderSheet("cleanup_applied");
   return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPROVAL EXCEPTIONS — orders stuck on a rung nobody can act on.
+//
+// THE FAILURE. `buildApprovalChain` climbs `manager_hr_id` from the requester upward. When a link
+// points at an HR_ID the employee directory does not carry — someone departed, or the field was
+// mistyped — the rung is still created, bound to that raw HR_ID. Nobody can ever act on it: a
+// session's HR_ID always comes FROM the directory, so it can never equal one that is not in it. The
+// order sits at `pending_approval` indefinitely, and the only symptom is a requester eventually
+// asking why nothing has happened.
+//
+// fe60edc0 made the break VISIBLE — the rung is labelled `Unresolved manager (<hr_id>)` and a
+// `direct_order_chain_unresolved_manager` line is logged. This is the other half: a way to FIND
+// them without reading logs, and a way OUT that weakens nothing.
+//
+// WHY A REBIND AND NOT AN OVERRIDE. The tempting fix is "let a System Admin approve on their
+// behalf". That silently deletes an approval the business asked for, at the exact moment nobody is
+// watching closely. Re-addressing the rung keeps every approval the chain demanded — the order
+// still owes the same number of yeses, from the same seats — and changes only the fact that the
+// person it is addressed to exists.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type DirectOrderApprovalExceptionRow = {
+  requestId: string;
+  stepId: string;
+  stepOrder: number;
+  /** The HR_ID on the rung — the one the directory has no record of. Shown so it can be fixed at source too. */
+  unresolvedApproverHrId: string;
+  stepLabel: string;
+  requesterHrId: string;
+  requesterName: string;
+  requesterRole: PhoenixRole;
+  productName: string;
+  qty: number;
+  salesValue: number;
+  pharmacyName: string;
+  createdAt: string | null;
+  /** Whole days this order has been waiting on a rung nobody can act on. */
+  daysStuck: number;
+  /**
+   * The requester's manager AS THE DIRECTORY READS IT TODAY, where that resolves.
+   *
+   * A SUGGESTION, never an automatic action. The directory is the thing that was wrong, so a System
+   * Admin confirms the person rather than the system quietly picking one. Null means even today's
+   * chain cannot resolve a manager, and the repair needs a name typed in.
+   */
+  suggestedApproverHrId: string | null;
+  suggestedApproverName: string | null;
+  suggestedApproverJobTitle: string | null;
+};
+
+/** Super Admin only, exactly like the Held Desk — the desk's action is a repair, and its gate says so. */
+function assertApprovalExceptionDeskAccess(access: AccessContext): void {
+  if (!(access.scope === "system" || access.role === "Super Admin")) {
+    throw new Error("Forbidden: the Approval Exceptions desk is System Admin only.");
+  }
+}
+
+/**
+ * Every in-flight order whose PENDING rung is addressed to somebody the directory does not know.
+ *
+ * Deliberately NOT scoped to the viewer's line. This is a system-integrity desk, not a management
+ * view: a District Manager's departed manager is precisely the record a System Admin has to see,
+ * and the gate above already decides who reaches it.
+ *
+ * Role rungs (SFE Manager, CEO) cannot appear here by construction — they carry no
+ * `approver_hr_id` and resolve to whoever holds the post today, which is why they can never strand
+ * an order.
+ */
+export async function listDirectOrderApprovalExceptions(
+  access: AccessContext,
+): Promise<DirectOrderApprovalExceptionRow[]> {
+  assertApprovalExceptionDeskAccess(access);
+  const supabase = getSupabaseAdmin();
+
+  // Pending PERSON rungs. `approver_hr_id is not null` excludes the role rungs without depending on
+  // `approver_kind`, and a role rung with a stray HR_ID would still be worth surfacing.
+  const { data: stepRows, error: stepError } = await supabase
+    .from("direct_order_approval_steps")
+    .select("id, request_id, step_order, approver_hr_id, label, status")
+    .eq("status", "pending")
+    .not("approver_hr_id", "is", null);
+  if (stepError) throw stepError;
+
+  const steps = (stepRows ?? []) as Array<Record<string, unknown>>;
+  if (steps.length === 0) return [];
+
+  const directory = await getEmployeeDirectory();
+  const lookup = directoryLookup(directory);
+
+  // THE TEST IS DIRECTORY MEMBERSHIP, and that is not a shortcut: getEmployeeDirectory returns
+  // `activeEmployees`, so "not in the directory" already means "not an active employee". A separate
+  // liveness check would be a SECOND rule that could disagree with the one buildApprovalChain uses,
+  // and disagreeing copies of one rule is the failure mode this module keeps re-learning.
+  const broken = steps.filter((step) => !lookup(String(step.approver_hr_id ?? "")));
+  if (broken.length === 0) return [];
+
+  // Only the affected requests, and only those still IN FLIGHT. A pending step survives on a
+  // rejected or cancelled order; listing those would be a queue of work nobody needs to do.
+  const requestIds = Array.from(new Set(broken.map((step) => String(step.request_id))));
+  const { data: requestRows, error: requestError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .in("id", requestIds)
+    .eq("status", "pending_approval");
+  if (requestError) throw requestError;
+
+  const requests = new Map(
+    ((requestRows ?? []) as Array<Record<string, unknown>>)
+      .map(mapRequestRow)
+      .map((request) => [request.id, request] as const),
+  );
+  if (requests.size === 0) return [];
+
+  const pharmacies = await loadPharmaciesByIds(
+    Array.from(requests.values()).map((request) => request.pharmacyId),
+  );
+  const resolveName = await nameLookup();
+  const now = Date.now();
+
+  const rows: DirectOrderApprovalExceptionRow[] = [];
+  for (const step of broken) {
+    const request = requests.get(String(step.request_id));
+    if (!request) continue;
+
+    // Today's answer to "who is this person's manager", offered as a starting point. The requester
+    // is looked up FRESH rather than read off the stored chain — the stored chain is the thing
+    // that is wrong.
+    const requester = lookup(request.requesterHrId);
+    const suggested = requester?.managerHrId ? lookup(requester.managerHrId) : null;
+
+    const createdAt = request.createdAt ? new Date(request.createdAt).getTime() : null;
+    rows.push({
+      requestId: request.id,
+      stepId: String(step.id),
+      stepOrder: Number(step.step_order ?? 0),
+      unresolvedApproverHrId: String(step.approver_hr_id ?? ""),
+      stepLabel: String(step.label ?? ""),
+      requesterHrId: request.requesterHrId,
+      requesterName: resolveName(request.requesterHrId) ?? request.requesterHrId,
+      requesterRole: request.requesterRole,
+      productName: request.productName,
+      qty: request.qty,
+      salesValue: request.salesValue,
+      pharmacyName: pharmacies.get(request.pharmacyId)?.pharmacyName ?? "—",
+      createdAt: request.createdAt,
+      daysStuck: createdAt ? Math.max(0, Math.floor((now - createdAt) / 86_400_000)) : 0,
+      suggestedApproverHrId: suggested?.hrId ?? null,
+      suggestedApproverName: suggested ? resolveName(suggested.hrId) ?? suggested.hrId : null,
+      suggestedApproverJobTitle: suggested?.jobTitle?.trim() || null,
+    });
+  }
+
+  // Longest-stuck first: these are orders somebody has already been waiting on.
+  rows.sort((a, b) => b.daysStuck - a.daysStuck);
+  return rows;
+}
+
+/**
+ * Re-address ONE stuck rung to a person who exists. The order itself does not move.
+ *
+ * EVERY GUARD BELOW IS THE DIFFERENCE BETWEEN A REPAIR AND AN OVERRIDE, so none of them is
+ * defensive boilerplate:
+ *
+ *   - Super Admin only, matching the registry row and the desk's own gate.
+ *   - The registry transition is asserted, so this is governed like every other action in the
+ *     module rather than being its one hand-rolled exception.
+ *   - THE RUNG MUST ACTUALLY BE BROKEN. Repairing a healthy rung is not repairing anything — it
+ *     is choosing somebody else's approver, which IS the approval chain. This is the guard that
+ *     stops the desk becoming a way around an approver who keeps saying no.
+ *   - The new approver must resolve in the directory, or the repair recreates the fault it fixes.
+ *   - The new approver may not be the requester. Nobody approves their own order, and a repair path
+ *     is exactly where that would slip in unnoticed.
+ *   - Compare-and-swap on the status AND the broken HR_ID, so two admins acting at once cannot
+ *     overwrite a decision that landed in between.
+ *   - A reason is required and recorded — the registry declares requiresReason, and the next
+ *     person to read this order needs to know why its chain changed.
+ */
+export async function repairDirectOrderApprovalRung(
+  access: AccessContext,
+  input: { requestId: string; stepId: string; newApproverHrId: string; reason: string },
+): Promise<{ stepId: string; approverHrId: string; label: string }> {
+  assertApprovalExceptionDeskAccess(access);
+
+  const reason = String(input.reason ?? "").trim();
+  if (!reason) badRequest("A reason is required: this changes who an in-flight order is waiting on.");
+
+  const supabase = getSupabaseAdmin();
+
+  const { data: requestRow, error: requestError } = await supabase
+    .from("direct_order_requests")
+    .select("*")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (requestError) throw requestError;
+  if (!requestRow) badRequest("That direct order no longer exists.");
+  const request = mapRequestRow(requestRow as Record<string, unknown>);
+
+  // Gated on the ROW'S REAL STATUS (audit F6), never a constant. A request approved or rejected
+  // while this desk sat open must be refused here rather than repaired against an assumption.
+  await assertDirectOrderWorkflowTransition({
+    access,
+    actionKey: "repair_approval_rung",
+    expectedNextStatus: "pending_approval",
+    status: request.status,
+  });
+
+  const { data: stepRow, error: stepError } = await supabase
+    .from("direct_order_approval_steps")
+    .select("id, request_id, step_order, approver_hr_id, label, status")
+    .eq("id", input.stepId)
+    .maybeSingle();
+  if (stepError) throw stepError;
+  if (!stepRow) badRequest("That approval step no longer exists.");
+  const step = stepRow as Record<string, unknown>;
+
+  if (String(step.request_id) !== request.id) {
+    badRequest("That approval step belongs to a different direct order.");
+  }
+  if (String(step.status) !== "pending") {
+    badRequest("That rung has already been decided — there is nothing stuck to repair.");
+  }
+
+  const currentApproverHrId = step.approver_hr_id ? String(step.approver_hr_id) : "";
+  if (!currentApproverHrId) {
+    badRequest(
+      "That rung is a ROLE rung — it resolves to whoever holds the post today and cannot strand an order.",
+    );
+  }
+
+  const directory = await getEmployeeDirectory();
+  const lookup = directoryLookup(directory);
+
+  if (lookup(currentApproverHrId)) {
+    badRequest(
+      `${currentApproverHrId} is a current employee, so this rung is not stuck. This desk repairs ` +
+        "chains addressed to records the directory has lost; it is not a way to change who approves an order.",
+    );
+  }
+
+  const nextApprover = lookup(input.newApproverHrId);
+  if (!nextApprover) {
+    badRequest(
+      `${input.newApproverHrId} is not an active employee, so addressing the rung to them would leave ` +
+        "the order exactly as stuck as it is now.",
+    );
+  }
+  if (canonicalHrIdKey(nextApprover.hrId) === canonicalHrIdKey(request.requesterHrId)) {
+    badRequest("The person who raised an order cannot be made its approver.");
+  }
+
+  const label = nextApprover.jobTitle?.trim() || "Manager";
+  const { data: updated, error: updateError } = await supabase
+    .from("direct_order_approval_steps")
+    .update({ approver_hr_id: nextApprover.hrId, label })
+    .eq("id", input.stepId)
+    .eq("status", "pending")
+    .eq("approver_hr_id", currentApproverHrId)
+    .select("id");
+  if (updateError) throw updateError;
+  if ((updated ?? []).length === 0) {
+    badRequest("That rung changed a moment ago — reload the desk and check its current state.");
+  }
+
+  const resolveName = await nameLookup();
+  const requesterName = resolveName(request.requesterHrId) ?? request.requesterHrId;
+  const newApproverName = resolveName(nextApprover.hrId) ?? nextApprover.hrId;
+
+  await writeRequiredAuditLog({
+    actorLoginId: access.loginId ?? access.hrId,
+    entityType: "direct_order_request",
+    // Namespaced on the STEP, following the `pharmacy:<id>` convention already used here: the row
+    // that changed is the step, and an audit line pointing at the request alone would not say which.
+    entityId: `approval_step:${String(step.id)}`,
+    oldValues: { approverHrId: currentApproverHrId, label: String(step.label ?? "") },
+    newValues: { approverHrId: nextApprover.hrId, label, reason, requestId: request.id },
+    summary:
+      `Direct order approval rung ${Number(step.step_order ?? 0)} re-addressed from unresolvable ` +
+      `${currentApproverHrId} to ${newApproverName}`,
+  });
+
+  await insertEvent({
+    requestId: request.id,
+    actorHrId: access.hrId,
+    eventType: "approval_rung_repaired",
+    message:
+      `Step ${Number(step.step_order ?? 0)} was addressed to ${currentApproverHrId}, who is not in the ` +
+      `employee directory, so nobody could act on it. Re-addressed to ${newApproverName}. Reason: ${reason}`,
+    metadata: {
+      stepId: String(step.id),
+      previousApproverHrId: currentApproverHrId,
+      newApproverHrId: nextApprover.hrId,
+      reason,
+    },
+  });
+
+  // The new approver has inherited a queue item they never saw arrive, and the requester has been
+  // waiting without being told why. Both are told.
+  await notifyDirectOrder({
+    requestId: request.id,
+    subjectHrId: request.requesterHrId,
+    eventType: "approval_rung_repaired",
+    recipients: [nextApprover.hrId, request.requesterHrId],
+    title: "A direct order is now waiting on you",
+    message:
+      `${request.productName} × ${request.qty} for ${requesterName} was stuck: its next approval was ` +
+      "addressed to an employee record that no longer exists. It is now with you.",
+    metrics: [
+      { label: "Reason", value: reason },
+      { label: "Previously addressed to", value: currentApproverHrId },
+    ],
+  });
+
+  return { stepId: String(step.id), approverHrId: nextApprover.hrId, label };
 }

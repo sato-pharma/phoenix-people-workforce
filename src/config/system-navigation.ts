@@ -58,6 +58,7 @@ import {
   TriangleAlert,
   Trash2,
   Undo2,
+  Unlink,
   UserCog,
   UsersRound,
   Waypoints,
@@ -2711,6 +2712,17 @@ export const directOrdersPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "direct_orders", action: "read" }],
     // System Admin only: the desk's one action is the bulk held-notice email, and the service
     // refuses anyone else — offering the link wider would only lead to a 403.
+    roles: ["Super Admin"],
+  },
+  {
+    href: "/admin/direct-orders/approval-exceptions",
+    icon: Unlink,
+    label: "Approval Exceptions",
+    description: "Orders waiting on an employee record the directory has lost — nobody can act on them, and they show in no queue.",
+    permissions: [{ resource: "direct_orders", action: "read" }],
+    // System Admin only, matching listDirectOrderApprovalExceptions, the repair service and the
+    // workflow-registry row for repair_approval_rung. A wider link would only lead to a 403 — and
+    // the action re-addresses an in-flight approval, which is not a judgement to spread around.
     roles: ["Super Admin"],
   },
   {
