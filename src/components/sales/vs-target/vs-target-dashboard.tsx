@@ -733,10 +733,15 @@ export function VsTargetDashboard({
 
       {!data.salesLoaded ? (
         <div className="border border-border bg-card px-4 py-12 text-center">
-          <p className="text-sm font-bold text-foreground">Sales for {formatPeriod(data.period)} have not been uploaded yet.</p>
+          <p className="text-sm font-bold text-foreground">
+            Source of Sales for {formatPeriod(data.period)} has not been uploaded yet.
+          </p>
           <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
-            This is not a zero. No Source of Sales or Direct Order rows exist for this month, so there is nothing to
-            measure against target yet.
+            This is not a zero. The distributor files for this month have not arrived, so there is nothing to measure
+            against target yet.
+            {data.pendingDirectValue !== 0
+              ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the upload lands.`
+              : ""}
             {data.totals.targetValue !== 0
               ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the sales arrive.`
               : ""}
@@ -872,6 +877,13 @@ export function VsTargetDashboard({
                       it counts at team and region level only.
                     </p>
                   ) : null}
+                  {data.unplacedValue !== 0 ? (
+                    <p className="border-t border-border pt-3 text-[11px] leading-4 text-muted-foreground">
+                      A further {formatEgpFull(data.unplacedValue)} could not be placed in any area or region. It is real
+                      invoiced sales and is counted in the total above — the same figure Monthly Closing reports — but it
+                      reaches no region, area or rep, and no target measures it.
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <p className="px-4 py-10 text-center text-xs text-muted-foreground">
@@ -964,11 +976,18 @@ export function VsTargetDashboard({
               bricks={bricks}
               bricksLoading={bricksLoading}
             />
-            {data.areaUnattributedValue !== 0 && level !== "teams" && level !== "regions" && level !== "products" ? (
+            {(data.areaUnattributedValue !== 0 || data.unplacedValue !== 0) &&
+            level !== "teams" &&
+            level !== "regions" &&
+            level !== "products" ? (
               <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
                 This level totals {formatEgpFull(nodesForLevel[level].reduce((sum, node) => sum + node.current.actualValue, 0))}.
-                A further {formatEgpFull(data.areaUnattributedValue)} of Direct Orders could not be placed in a single area,
-                so it counts at team and region level only.
+                {data.areaUnattributedValue !== 0
+                  ? ` A further ${formatEgpFull(data.areaUnattributedValue)} of Direct Orders could not be placed in a single area, so it counts at team and region level only.`
+                  : ""}
+                {data.unplacedValue !== 0
+                  ? ` ${formatEgpFull(data.unplacedValue)} could not be placed in any area or region at all, so it counts in the headline total only.`
+                  : ""}
               </p>
             ) : null}
           </SectionCard>

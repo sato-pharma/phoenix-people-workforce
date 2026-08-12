@@ -130,6 +130,15 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // left as strict `=` exactly as this file specifies, and anon/authenticated revoked with
   // service_role granted.
   "20260801150100_au_direct_counts_toward_achievement.sql",
+  // Applied 2026-08-12 to production AND staging via MCP apply_migration, which stamps its own
+  // clock — production recorded it as version 20260812130058, so the filename below will never
+  // match the ledger. Verified live on production by direct inspection of pg_proc, not by
+  // schema_migrations: `where a.channel` is gone from au.f_monthly_achievement's body, both
+  // line_code rejoins read `is not distinct from`, has_actual comes off coalesce(ac.matched,
+  // false), SECURITY DEFINER and search_path=au,public survive, and service_role has execute
+  // while anon/authenticated do not. phx_sales_vs_target_range then reconciled to
+  // phx_monthly_attribution at 0.00 variance on all three lines for 2026-07.
+  "20260812150000_au_achievement_counts_unmapped_sales.sql",
   // Applied: verified 0 tables matching `email_backfill_backup%` remain on staging, which is this
   // file's own end state.
   "20260801100000_drop_email_backfill_backup.sql",
