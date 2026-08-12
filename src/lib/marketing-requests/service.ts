@@ -32,6 +32,9 @@ import {
   type MarketingDecisionOverlap,
   type MarketingDecisionPharmacy,
 } from "@/lib/marketing-requests/request-loaders";
+// Reused rather than re-implemented: this module already owns the "render a recorded instant in
+// Cairo, never raw UTC" formatter, and it imports nothing from here, so there is no cycle.
+import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
 import { calculateMarketingRoiPreview } from "@/lib/marketing-requests/roi";
 import {
   assertMarketingWorkflowTransition,
@@ -480,6 +483,31 @@ export type MarketingRequestStepProgress = {
   totalGatingSteps: number;
 };
 
+/**
+ * The refusal, as a reader needs it: who said no, at which rung, when, and why.
+ *
+ * `decidedByName` credits `decisionByHrId` over `assignedHrId` so a rung decided by a stand-in is
+ * attributed to the person who actually decided it, not to the person it was addressed to.
+ */
+export type MarketingRequestRejection = {
+  /** ISO instant, for machines. */
+  decidedAt: string | null;
+  /**
+   * Africa/Cairo, display-ready — formatted HERE rather than in the component.
+   *
+   * The existing approval timeline hands the client a raw ISO string
+   * ({@link MarketingRequestTimelineStep.decisionAt}, commented "render in Africa/Cairo") and
+   * `marketing-approval-timeline.tsx` renders it verbatim, so it shows UTC on screen against the
+   * standing rule. Pre-formatting removes the chance to repeat that.
+   */
+  decidedAtLabel: string | null;
+  decidedByName: string;
+  /** Null, never "", when no reason was recorded — the two must not render the same. */
+  reason: string | null;
+  sequence: number;
+  stepName: string;
+};
+
 export type MarketingRequestTimelineStep = {
   assignedHrId: string | null;
   assignedName: string;
@@ -523,6 +551,16 @@ export type MarketingRequestDraftWorkspace = {
   pharmaciesByCustomer: Record<string, MarketingRequestPharmacyOption[]>;
   inApproval: MarketingRequest[];
   products: MarketingProduct[];
+  /**
+   * Refused requests visible to this viewer.
+   *
+   * Scoped exactly like `returned` — own requests for company-wide roles, the hierarchy subtree for
+   * line roles. Before this existed, `rejected` was the one requester-reachable status the workspace
+   * never queried, so a refused request appeared in no list at all, not even to its author.
+   */
+  rejected: MarketingRequest[];
+  /** Keyed by request id, for the requests in `rejected`. Absent when the chain could not be read. */
+  rejectionByRequestId: Record<string, MarketingRequestRejection>;
   requestTypes: MarketingRequestType[];
   requesterLineId: number | null;
   requesterLineName: string | null;
@@ -2705,6 +2743,37 @@ function buildMarketingStepProgress(
   };
 }
 
+/**
+ * Why a request was refused, and by whom — read off the rung that actually said no.
+ *
+ * Separate from buildMarketingStepProgress rather than folded into it: a refused request has no
+ * `current` rung, so that function's last-step fallback would name whoever happens to sit at the
+ * end of the chain as the person holding it. Nobody is holding it. The question a reader has about
+ * a rejected request is not "where is it" but "who said no, when, and why".
+ *
+ * `reason` is null-not-empty when the note is blank. decideMarketingRequestWorkflow makes a note
+ * mandatory on reject, so a null here means the row predates that rule or was written by the
+ * importer — which is worth showing as "no reason recorded" rather than as an empty line.
+ */
+export function buildMarketingRejectionSummary(
+  steps: MarketingRequestApprovalStep[],
+  employeeRows: EmployeeDirectoryRow[],
+): MarketingRequestRejection | null {
+  const rejectedStep = steps
+    .filter((step) => !step.isCc && step.status === "rejected")
+    .sort((left, right) => left.sequence - right.sequence)[0];
+  if (!rejectedStep) return null;
+  const reason = cleanText(rejectedStep.decisionNote);
+  return {
+    decidedAt: rejectedStep.decisionAt ?? null,
+    decidedAtLabel: cairoDateTime(rejectedStep.decisionAt),
+    decidedByName: employeeNameByHrId(employeeRows, rejectedStep.decisionByHrId ?? rejectedStep.assignedHrId),
+    reason: reason || null,
+    sequence: rejectedStep.sequence,
+    stepName: rejectedStep.stepName,
+  };
+}
+
 /** Ordered, display-ready timeline of every approval step (gating + CC). */
 function buildMarketingTimeline(
   steps: MarketingRequestApprovalStep[],
@@ -4639,7 +4708,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   assertMarketingWorkspaceAccess(access);
 
   const supabase = getSupabaseAdmin();
-  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, pharmaciesResult, distributorCodesResult, returnedResult, inApprovalResult] = await Promise.all([
+  const [typesResult, productsResult, distributorsResult, customersResult, validatedLinksResult, draftsResult, approvedRequestsResult, pharmaciesResult, distributorCodesResult, returnedResult, inApprovalResult, rejectedResult] = await Promise.all([
     supabase.from("marketing_request_types").select("*").or("active.is.null,active.eq.true").order("sort_order"),
     supabase.from("marketing_products").select("*").or("active.is.null,active.eq.true").order("product_name"),
     supabase.from("marketing_distributors").select("*").or("active.is.null,active.eq.true").order("display_name"),
@@ -4670,6 +4739,11 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .or("active.is.null,active.eq.true"),
     supabase.from("marketing_requests").select("*").eq("status", "returned").order("updated_at", { ascending: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
     supabase.from("marketing_requests").select("*").eq("status", "pending_approval").order("submitted_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
+    // Rejected. Every other status a requester can reach was already queried above; this one was
+    // not, so a refused request appeared in NO list on the workspace — not even to the person who
+    // raised it. The rejection note is the single most valuable sentence on the whole record (it is
+    // the only place the "why" is written down at all), and it was unreachable from any screen.
+    supabase.from("marketing_requests").select("*").eq("status", "rejected").order("rejected_at", { ascending: false, nullsFirst: false }).limit(MARKETING_WORKSPACE_SAFETY_LIMIT),
   ]);
 
   if (typesResult.error) throw typesResult.error;
@@ -4681,6 +4755,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   if (approvedRequestsResult.error) throw approvedRequestsResult.error;
   if (returnedResult.error) throw returnedResult.error;
   if (inApprovalResult.error) throw inApprovalResult.error;
+  if (rejectedResult.error) throw rejectedResult.error;
 
   const [employeeRows, rawProductOverride] = await Promise.all([
     loadEmployeeDirectoryRows(),
@@ -4742,6 +4817,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     ...((approvedRequestsResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
     ...((returnedResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
     ...((inApprovalResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
+    ...((rejectedResult.data ?? []) as MarketingRequestDbRow[]).filter(passesHierarchyCheck),
   ];
   // Batch-load product codes for product-code-restricted viewers (e.g. Ahmed Sharaf).
   const productCodeFilter = makeProductCodeFilter(allowedProductCodes);
@@ -4777,11 +4853,27 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       .filter(passesProductFilter)
       .map(mapRequest),
   );
+  const rejected = narrowToOwnRequests(
+    ((rejectedResult.data ?? []) as MarketingRequestDbRow[])
+      .filter(passesHierarchyCheck)
+      .filter(passesProductFilter)
+      .map(mapRequest),
+  );
 
   // Batch-load approval steps for every in-flight request so the tracking UI can
   // show "currently with <step> — <approver>" without an N+1 query per request.
-  const trackedRequestIds = Array.from(new Set([...inApproval, ...returned].map((request) => request.id)));
+  //
+  // Rejected requests ride the SAME batch — it costs no extra query — but they are deliberately
+  // kept out of stepProgressByRequestId: buildMarketingStepProgress falls back to the LAST gating
+  // step when there is no `current` and no `returned` rung, which on a refused request would
+  // render "Currently with: Finance Execution" for a request nobody is holding. They get their own
+  // summary instead, built from the rung that actually said no.
+  const rejectedRequestIds = new Set(rejected.map((request) => request.id));
+  const trackedRequestIds = Array.from(
+    new Set([...inApproval, ...returned, ...rejected].map((request) => request.id)),
+  );
   const stepProgressByRequestId: Record<string, MarketingRequestStepProgress> = {};
+  const rejectionByRequestId: Record<string, MarketingRequestRejection> = {};
   if (trackedRequestIds.length > 0) {
     const stepsByRequest = new Map<string, MarketingRequestApprovalStep[]>();
     for (const batch of chunk(trackedRequestIds)) {
@@ -4799,6 +4891,11 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
       }
     }
     for (const [requestId, requestSteps] of stepsByRequest) {
+      if (rejectedRequestIds.has(requestId)) {
+        const rejection = buildMarketingRejectionSummary(requestSteps, employeeRows);
+        if (rejection) rejectionByRequestId[requestId] = rejection;
+        continue;
+      }
       const progress = buildMarketingStepProgress(requestSteps, employeeRows);
       if (progress) stepProgressByRequestId[requestId] = progress;
     }
@@ -4877,6 +4974,8 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     requestTypes: ((typesResult.data ?? []) as MarketingRequestTypeDbRow[]).map(mapRequestType),
     requesterLineId: productScope.requesterLineId,
     requesterLineName: productScope.requesterLineName,
+    rejected,
+    rejectionByRequestId,
     returned,
     // Only requests the current user personally submitted may be edited after a return.
     // Managers can see their team's returned requests above (read-only) but must never

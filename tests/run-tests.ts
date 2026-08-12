@@ -704,6 +704,9 @@ import { runMarketingSalesEvidenceAccessTests } from "./marketing-sales-evidence
 // Registered beside its marketing siblings rather than appended at the end of the file: every PR
 // appends there, so a branch parked on that anchor conflicts with each one that lands.
 import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
+// Same anchor, same reason as the line above: beside its marketing siblings, not appended at the
+// end of the file where every other in-flight branch is also adding a line.
+import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected-request-visibility.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1587,6 +1590,11 @@ await runTest(
 await runTest(
   "marketing request case file (a failed read is never a clean one; a draft/rejected request is never dropped by the ROI status scope; too-early is not zero sales)",
   runMarketingCaseFileTests,
+);
+
+await runTest(
+  "marketing rejected-request visibility (a requester can see their own refusal and its reason; the refusing rung is credited, not the last rung; Cairo not UTC)",
+  runMarketingRejectedRequestVisibilityTests,
 );
 
 await runTest(
