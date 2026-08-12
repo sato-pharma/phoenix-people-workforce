@@ -31,21 +31,20 @@
 -- RENAMED TWICE ON 2026-08-12, WHICH IS THE POINT. Written as 20260812160100_direct_orders_sos_injection_per_item.sql and
 -- applied to STAGING under that name. The outstation expense_claims phases were landing on main
 -- in parallel and took that timestamp, so check:migrations refused the push; moved to 20260812170100
--- and applied to PRODUCTION under THAT name. This file's own timestamp never collided again — it
--- moved a second time only to stay immediately after the items table it reads, which is the whole
--- reason these two have to travel together. The minute-precise slot is deliberately off the
--- round-hour cadence the expense_claims sequence walks.
--- The CONTENT never changed through any of it.
+-- and applied to PRODUCTION under THAT name; expense_claims then took that slot too. Hence the
+-- minute-precise timestamp here, deliberately off the round-hour cadence that sequence walks.
+-- The CONTENT never changed through any of it — verified 2026-08-12 by fingerprinting the live
+-- objects on both projects: the rebuild RPC, the family guard and the items table's column shape
+-- all md5-match between staging and production.
 --
--- APPLIED TO PRODUCTION 2026-08-12 via scripts/apply-sql-file.mjs, which does not write to
--- schema_migrations at all. The apply was verified by direct schema inspection, and this file is
--- listed in scripts/check-migrations-applied.ts with that evidence. That list, not a hand-edited
--- ledger row, is where a script-applied migration gets recorded in this repo.
+-- APPLIED TO BOTH PROJECTS via scripts/apply-sql-file.mjs, which does not write to
+-- schema_migrations at all. So NEITHER ledger has a row for this file under ANY name — not the old
+-- timestamps, not the new one. (An earlier version of this note claimed staging recorded the old
+-- timestamp. It does not; staging's ledger has no row for it whatsoever. Checked, not assumed.)
 --
--- So NEITHER project's ledger will ever match this filename: production because nothing recorded
--- it, staging because it recorded 20260812160100. The daily Migration Drift Check will keep
--- reporting this file as missing on staging until somebody reconciles it deliberately. That is a
--- real state — do NOT quieten it by adding staging to the allowlist or by editing the ledger.
+-- That is why the file is listed in scripts/check-migrations-applied.ts, whose exceptions set is
+-- global and therefore covers both legs of the daily drift check. The evidence there — direct
+-- schema inspection, never schema_migrations — is what records the apply in this repo.
 
 begin;
 

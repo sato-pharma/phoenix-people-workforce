@@ -153,13 +153,39 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // Both files were renamed TWICE on the day, chasing the expense_claims phases as they landed on
   // main: written as 20260812160000/160100 and applied to STAGING under those names, moved to
   // 20260812170000/170100 and applied to PRODUCTION under THOSE, then moved to the minute-precise
-  // slots below, off the round-hour cadence that sequence walks. The SQL never changed.
+  // slots below, off the round-hour cadence that sequence walks.
   //
-  // So staging records 160000/160100 and will keep reporting these two as missing until somebody
-  // reconciles it deliberately. That is a real state, not a bookkeeping wrinkle — do not add
-  // staging to this list to quieten it.
+  // The SQL never changed through any of it, and that is checked rather than asserted: on
+  // 2026-08-12 the live objects were fingerprinted on both projects and the rebuild RPC, the family
+  // guard and the items table's column shape all md5-match between staging and production.
+  //
+  // NEITHER ledger has a row for these under any name — apply-sql-file.mjs does not write
+  // schema_migrations at all. An earlier version of this comment claimed staging recorded the old
+  // timestamps; it does not, and staging was surveyed to establish that rather than reasoned about.
+  // This set is global, so listing them here covers both legs of the drift check, which is the
+  // whole reason it is the right home for a script-applied migration.
   "20260812184500_direct_orders_request_items.sql",
   "20260812184600_direct_orders_sos_injection_per_item.sql",
+  // ── Applied to STAGING 2026-08-12 to close a real gap, again via apply-sql-file.mjs, so again no
+  // ledger row. Production already had both — checked before applying, which is what made it safe:
+  // hold_release_ground, duplicate_of_request_id and merged_into_pharmacy_id all present there, with
+  // the direct_orders registry row intact.
+  //
+  // WHAT THIS UNCOVERED, and it is the more important half. duplicate_cleanup refused to commit on
+  // staging with "action cancel_duplicate -> undeclared target 'cancelled'" — its own guard against
+  // the 2026-08-05 outage shape, where an action pointing at an undeclared status makes the loader
+  // skip the WHOLE module. The cause: staging's ledger CLAIMS 20260805150000_direct_orders_cancel_held
+  // is applied while its effect is absent — no `cancelled` status, no `cancel_held` action. A row
+  // that says "applied" for a migration that did not take is worse than a missing row, because this
+  // very check reads it as green and never lists the file. It has been quietly green on it for a
+  // week. Consistent with the pre-data-only restore described in migration-drift-check.yml's header:
+  // registry rows are DATA, so a schema-only restore keeps the ledger and loses the content.
+  //
+  // Re-applied 20260805150000 (both its registry updates are `not exists`-guarded, so idempotent),
+  // then duplicate_cleanup committed. Staging's direct_orders registry now matches production
+  // exactly: the same 9 statuses and the same 16 actions, no undeclared targets on either.
+  "20260808214500_direct_orders_release_held.sql",
+  "20260809031500_direct_orders_duplicate_cleanup.sql",
   // Applied: verified 0 tables matching `email_backfill_backup%` remain on staging, which is this
   // file's own end state.
   "20260801100000_drop_email_backfill_backup.sql",
