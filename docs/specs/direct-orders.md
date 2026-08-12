@@ -89,12 +89,58 @@ correctable.
 
 Collections are separate from the month: recording cash never moves a period and never re-injects.
 
-### Documented limitation for the coming Finance phase
+### The collection model, and exactly what it cannot represent
 
-The collection model is **not a payment ledger**. It holds approximately one paid amount, one
-payment date and one remaining amount; a later call replaces the previous values. There is no
-installment ledger, no transfer proof per payment, no per-payment verification history and no
-multiple payment records. Do not build on the assumption that these exist.
+Documented 2026-08-12 against the code, not from memory. **Nothing here was expanded** — this
+records what the model is, so the next person decides with the real shape in front of them.
+
+**What is stored.** Three columns on `direct_order_requests`, and nothing else: `paid_amount`,
+`payment_date`, `remaining_amount`. The remainder is **derived server-side** from the order value on
+every write and never accepted from the client, because two sources of truth for the same money
+drift the moment someone edits one.
+
+**`paid_amount` is a RUNNING TOTAL, not a payment.** The control pre-fills with the stored figure
+and a save replaces it. Recording a second instalment means entering the sum of both. This is the
+single most important thing to know about the model and it is now said in every label on the
+control — the arithmetic was always right, the words were not.
+
+> A review once called this a bug and proposed accumulating the input instead. That was **withdrawn
+> and must stay withdrawn**: accumulating would store 700 the moment Finance corrected a typo from
+> 200 to 500.
+
+**What it therefore cannot represent:**
+
+| Not supported | Consequence |
+| --- | --- |
+| An instalment ledger | Three payments of 200/300/500 are one row reading `1000` |
+| Per-payment dates | `payment_date` is the date of the **most recent recorded total**, not of the first payment or of settlement |
+| Per-payment transfer proof or verification | No attachment, reference or approver per payment |
+| Overpayment | A total above the order value is refused, so a genuine overpayment cannot be recorded at all |
+| Refunds or negative movements | The amount must be `> 0`; money going back out has nowhere to live |
+| Currency other than EGP | No currency column; EGP is implicit everywhere |
+| Collection against a non-approved order | Refused by design — no agreed debt exists yet |
+
+**History IS kept, just not as a ledger.** Every write goes through
+`writeRequiredAuditLog` with full `oldValues`/`newValues`, plus a `direct_order_events` row
+(`collection_recorded` / `collection_cleared`). So the sequence of *totals* is reconstructable, and
+individual payments can be inferred by differencing consecutive totals. What does not exist is a
+payments table you can query, sum or age. Any reporting on collections today reads the current
+total only.
+
+**Clearing** sets all three columns to null together. A payment date left behind with no amount is
+what would make the check below misfire.
+
+**It reaches outside the module.** `pharmacy-probation.ts` treats *any* direct order with a non-null
+`payment_date` as proof its pharmacy is real. So recording a collection can end a pharmacy's
+probation, and **clearing one can un-prove a pharmacy**. A payments table would need to preserve
+that signal deliberately rather than inherit it.
+
+**Safe today, and why.** `remaining_amount` is stored rather than computed on read, which would
+drift if the order value moved underneath it. It cannot: `sales_value` is written at submit, at
+revise (guarded on `status = 'returned'`) and on a reversal, which creates a new request. No path
+changes the value of an approved order in place.
+
+Do not build on the assumption that any row in the table above exists.
 
 ## Performance
 

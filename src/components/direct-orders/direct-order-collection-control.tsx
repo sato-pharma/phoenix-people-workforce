@@ -91,11 +91,22 @@ export function DirectOrderCollectionControl({
 
   return (
     <div className="border-t border-[#eef1f3] px-4 py-3">
-      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Collection (Finance)</p>
+      {/* TOTAL COLLECTED, said in every label on this control.
+
+          The field is pre-filled with what is already stored and REPLACES it on save — it is a
+          running total, and the arithmetic is right. But it used to be labelled "Amount
+          collected", which reads just as easily as "the amount collected THIS TIME". Finance
+          looking at 200 already collected, typing 300 for a second instalment, would store 300
+          and lose 100. Nothing in the control said otherwise.
+
+          The fix is the WORDS, not the arithmetic. An earlier review called this a bug and
+          proposed accumulating the input instead; that was withdrawn, and rightly — it would
+          have stored 700 the moment Finance corrected a typo from 200 to 500. */}
+      <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total collected (Finance)</p>
 
       {recorded ? (
         <div className="mt-1 flex flex-wrap items-baseline gap-x-5 gap-y-1">
-          <span className="text-sm font-semibold text-slate-900">{money(paidAmount)} collected</span>
+          <span className="text-sm font-semibold text-slate-900">{money(paidAmount)} collected in total</span>
           <span
             className={`text-sm font-semibold ${
               (remainingAmount ?? 0) > 0 ? "text-amber-700" : "text-emerald-700"
@@ -124,8 +135,8 @@ export function DirectOrderCollectionControl({
                 min="0"
                 step="0.01"
                 inputMode="decimal"
-                aria-label="Amount collected in EGP"
-                placeholder="Amount (EGP)"
+                aria-label="Total collected to date, in EGP — replaces any amount already recorded"
+                placeholder="Total collected (EGP)"
                 className="w-40 border border-slate-300 px-2 py-1 text-sm tabular-nums"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
@@ -167,6 +178,14 @@ export function DirectOrderCollectionControl({
                 ? `Order value ${money(salesValue)} — this leaves ${money(preview)} outstanding.`
                 : `Order value ${money(salesValue)}. This records the money only; it does not change the sales month.`}
             </p>
+            {/* Named explicitly, and only when there is something to overwrite. Telling someone the
+                field is a total is weaker than telling them which number they are about to replace. */}
+            {recorded ? (
+              <p className="text-[11px] font-semibold text-amber-700">
+                This is the RUNNING TOTAL, not a new payment: saving replaces the {money(paidAmount)} already
+                recorded. For a second instalment, enter the two added together.
+              </p>
+            ) : null}
           </div>
         )
       ) : null}
