@@ -30,6 +30,8 @@ import {
 import { assertExportRateLimit } from "@/lib/http/assert-export-rate-limit";
 import { isApiRateLimitError } from "@/lib/security/api-rate-limit";
 import { prepareClosingStoreSplit } from "@/lib/sales/closing-store-split-export";
+import { loadClosingStoreSplit } from "@/lib/sales/closing-store-split-net";
+import { STORE_CITY_SPLIT_ENABLED } from "@/lib/sales/store-sales-city-split";
 import { applyJulyDirectAreasToBreakdown } from "@/lib/sales/july-direct-channel-breakdown";
 import { loadMonthlySourceCoverage } from "@/lib/sales/source-coverage";
 import {
@@ -252,17 +254,46 @@ export async function POST(request: Request) {
         ? loadMonthlyClosingChannelBreakdown(matrix.line, matrix.period).catch(() => null)
         : Promise.resolve(null);
 
+      // THE SCREEN'S OWN SPLIT, so the workbook cannot disagree with the Closing Matrix.
+      //
+      // Until 2026-08-11 this route always re-derived the split from its own freshly read rows while
+      // the screen read loadClosingStoreSplit's cache — two derivations of one rule, one live and one
+      // up to an hour old. A cross-city customer re-point therefore moved the workbook's area rows
+      // and left the screen's alone, which is indistinguishable to a reader from the recalculation
+      // bug fixed in monthly-closing-export.ts. Same computation now, or none.
+      //
+      // Skipped under a ROW-LEVEL filter only. There the population is genuinely different — a
+      // distributor or Included/Excluded slice is not the whole month — so the split must be derived
+      // from those rows, and the workbook's filter note already says it covers a narrowed slice.
+      // A PLACE filter does not disqualify it: prepareClosingStoreSplit allocates over the whole
+      // month and narrows afterwards, which is the entire point of that module.
+      //
+      // `includeConfidential` deliberately does NOT disqualify it either. The shared split is
+      // computed with confidential products excluded, which is exactly the population the Closing
+      // Matrix holds (every closing RPC hard-excludes them in SQL) — so it is the correct input for
+      // the matrix write-back whether or not the reader opted into the confidential DATA sheet.
+      // `&& STORE_CITY_SPLIT_ENABLED`: with the split OFF (owner, 2026-08-10 — the original disable
+      // was lost in the #2015 squash), the loader returns the EMPTY split, and even a row-level
+      // filter must receive it rather than `null` — null tells prepareClosingStoreSplit to derive
+      // its own split live from the rows, which is exactly the apply path being switched off.
+      const sharedSplitPromise = rowLevelActive && STORE_CITY_SPLIT_ENABLED
+        ? Promise.resolve(null)
+        : loadClosingStoreSplit(matrix.line, matrix.period).catch(() => null);
+
       // Every row of the month in the caller's scope, place filter NOT yet applied — the input the
       // store split has to see to allocate a city correctly.
       const monthRows = await detailsPromise;
       // Allocate over the whole month, THEN narrow to the areas on show. That order is the fix and
-      // it lives in the domain module, not here — see closing-store-split-export.ts.
+      // it lives in the domain module, not here — see closing-store-split-export.ts. A null shared
+      // split (row-level filter, or a cache read that failed) falls back to deriving it from these
+      // rows, which is the previous behaviour and still correct — just no longer guaranteed to equal
+      // the screen.
       const {
         details,
         exemptStoreValueByBrick: storeSplitExemptByBrick,
         movements: storeSplitMovements,
         net: storeSplitNet,
-      } = prepareClosingStoreSplit(monthRows, scopedAreaCodes);
+      } = prepareClosingStoreSplit(monthRows, scopedAreaCodes, await sharedSplitPromise);
       const comparison = aggregateComparisonPromise
         ? await aggregateComparisonPromise
         : await loadMonthlyClosingComparisonFromRows(

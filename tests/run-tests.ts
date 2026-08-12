@@ -1589,7 +1589,7 @@ await runTest(
 );
 
 await runTest(
-  "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero and the share belonging to excluded areas is named)",
+  "filtered monthly closing export, city straddling the filter (Total sheet Difference is zero, the share belonging to excluded areas is named, and the export uses the SCREEN's split rather than deriving a second one)",
   runMonthlyClosingExportStoreSplitFilteredTests,
 );
 
