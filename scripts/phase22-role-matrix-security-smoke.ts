@@ -348,25 +348,37 @@ async function verifyReadOnlyDatabaseAlignment() {
       ].includes(role));
     addCheck("live app_auth_users roles align with Phoenix role names", unknownRoles.length === 0, unknownRoles);
 
+    const roleSensitiveTables = [
+      "app_auth_users",
+      "user_access_profiles",
+      "employees",
+      "salary_batches",
+      "salary_records",
+      "outstation_expenses",
+      // Same expense data as outstation_expenses, rebuilt by phx_refresh_expense_claims.
+      "expense_claims",
+      "sales_records",
+      "employee_probation",
+      "employee_contracts",
+      "v2_vacation_requests",
+    ];
+
     const rlsRows = await sql<{ relname: string; relrowsecurity: boolean }[]>`
       select c.relname, c.relrowsecurity
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public'
-        and c.relname = any(${[
-          "app_auth_users",
-          "user_access_profiles",
-          "employees",
-          "salary_batches",
-          "salary_records",
-          "outstation_expenses",
-          "sales_records",
-          "employee_probation",
-          "employee_contracts",
-          "v2_vacation_requests",
-        ]})
+        and c.relname = any(${roleSensitiveTables})
       order by c.relname
     `;
+    // Presence first: an absent table drops out of the row set silently, so `every` would pass
+    // vacuously for it and the RLS check below would prove nothing. See #2074.
+    const absentTables = roleSensitiveTables.filter((table) => !rlsRows.some((row) => row.relname === table));
+    addCheck("every role-sensitive table in the list still exists", absentTables.length === 0, {
+      absentTables,
+      expected: roleSensitiveTables.length,
+      found: rlsRows.length,
+    });
     addCheck(
       "role-sensitive business tables keep RLS enabled",
       rlsRows.length > 0 && rlsRows.every((row) => row.relrowsecurity),
