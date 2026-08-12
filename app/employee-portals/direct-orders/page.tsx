@@ -88,7 +88,6 @@ export default async function PortalDirectOrdersWorkspacePage({
         summary={workspace.summary}
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
-        allOrders={workspace.allOrders}
         ordersPage={workspace.orders}
         adminTools={[]}
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}

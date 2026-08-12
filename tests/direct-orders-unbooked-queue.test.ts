@@ -36,7 +36,9 @@ const BADGE_STORE_PATH = "src/lib/nav-badge-store.ts";
 const BADGE_COUNTS_ROUTE_PATH = "app/api/approvals/badge-counts/route.ts";
 const DASHBOARD_PATH = "src/components/admin/finance-command-center.tsx";
 const DASHBOARD_SERVICE_PATH = "src/lib/finance/command-center.ts";
-const REPORT_PAGE_PATH = "app/(admin)/admin/direct-orders/report/page.tsx";
+// Under (desks)/ since 2026-08-12 — a ROUTE GROUP, so the URL is unchanged and only the file
+// moved. The group scopes the persistent Direct Orders tab strip to the ten desks.
+const REPORT_PAGE_PATH = "app/(admin)/admin/direct-orders/(desks)/report/page.tsx";
 
 function read(path: string): string {
   return readFileSync(path, "utf8");

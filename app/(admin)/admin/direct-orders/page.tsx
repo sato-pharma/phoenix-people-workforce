@@ -111,7 +111,6 @@ export default async function AdminDirectOrdersWorkspacePage({
         summary={workspace.summary}
         needsAction={workspace.needsAction}
         myOrders={workspace.myOrders}
-        allOrders={workspace.allOrders}
         ordersPage={workspace.orders}
         adminTools={adminTools}
         canSeeAllOrders={workspace.capabilities.canSeeAllOrders}

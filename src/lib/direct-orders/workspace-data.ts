@@ -13,7 +13,6 @@ import {
 } from "@/lib/direct-orders/pharmacy-validation";
 import {
   canSetDirectOrderSalesMonth,
-  getDirectOrderReport,
   getDirectOrderWorkspaceData,
   listDirectOrderAwaitingFinanceMonth,
   countDirectOrderWorkspaceTotals,
@@ -35,14 +34,21 @@ import type { DirectOrderApprovalListItem, DirectOrderReportScope } from "@/lib/
 // returns was produced by the function that already owned that question, with its
 // own `assertPermission` and its own scope tiering intact:
 //
-//   getDirectOrderWorkspaceData  -> awaiting / held / decision history
-//   listMyDirectOrders           -> the caller's own orders
-//   getDirectOrderReport         -> the tiered "all orders" view
+//   getDirectOrderWorkspaceData        -> awaiting / held / decision history
+//   listMyDirectOrders                 -> the caller's own orders
+//   listDirectOrderOperationalPage     -> ONE page of the Orders list, scoped and
+//                                         filtered in the database
+//   countDirectOrderWorkspaceTotals    -> the Overview counters, as COUNTs
+//   listDirectOrderAwaitingFinanceMonth-> the Finance queue
 //   listDirectOrderPharmacyValidations -> the Super-Admin validation queue
+//
+// `getDirectOrderReport` used to be on that list and is deliberately absent now —
+// see the note above VIEWS_NEEDING_FULL_REPORT's grave, further down. The report
+// still backs the report PAGE, which legitimately wants everything to export it.
 //
 // Nothing here queries Supabase directly, precisely so that no visibility rule
 // gets a second definition. The one thing this file decides is WHAT NOT TO LOAD:
-// each of the four reads is skipped for a viewer who cannot use its result, which
+// each read is skipped for a viewer who cannot use its result, which
 // is what keeps a consolidated screen from becoming the "one enormous page that
 // loads every dataset" the brief warns about.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +152,48 @@ export function resolveDirectOrderReturnHref(
   return candidate;
 }
 
+/**
+ * Which tabs this viewer gets. PURE CAPABILITY — no queries, so the desk shell can render the strip
+ * without paying for the workspace's data.
+ *
+ * ROLE-SHAPED, not permission-shaped. A view the viewer cannot use is absent, never present and
+ * empty — an empty tab still costs a glance and teaches people the module is bigger than their job.
+ * Overview / Needs Action / Orders are universal; the rest appear only with the authority they
+ * serve.
+ *
+ * Extracted from `loadDirectOrderWorkspaceView` when the desks moved under a shared shell
+ * (2026-08-12). The layout above every desk needs this answer and nothing else the loader fetches;
+ * calling the loader there would have run four counts and a needs-action build to draw six buttons.
+ * The loader now calls this too, so the strip on a desk and the strip in the workspace cannot
+ * disagree about which tabs exist.
+ */
+export function resolveDirectOrderWorkspaceTabs(access: AccessContext): DirectOrderWorkspaceTabKey[] {
+  const scope = resolveDirectOrderReportScope(access);
+  const canAssignFinanceMonth = canSetDirectOrderSalesMonth(access);
+  const canDecideCustomerValidations = canDecideDirectOrderPharmacyValidations(access);
+  // "own" scope means the report would return exactly what listMyDirectOrders already returned, so
+  // the wider views have nothing to add.
+  const canSeeAllOrders = scope !== "own";
+
+  const tabs: DirectOrderWorkspaceTabKey[] = ["overview", "needs-action", "orders"];
+
+  // Pharmacy Control is the "is this pharmacy real, mapped, trusted?" domain: the validation desk,
+  // the held lane, the registry and the data-quality workflows. An ordinary requester never sees
+  // it — all the pharmacy work their job needs is already inside New Order.
+  if (canDecideCustomerValidations || scope === "all") tabs.push("pharmacy-control");
+
+  // Reports & Monitoring: the report, per-rep behaviour counters, reconciliation, and the approval
+  // exceptions desk. Anyone whose scope reaches past their own orders has a monitoring question.
+  if (canSeeAllOrders || canAssignFinanceMonth) tabs.push("reports");
+
+  // Commercial Controls: bonus/discount caps. Deliberately NOT inside Pharmacy Control — caps are
+  // commercial configuration, not pharmacy work, and mixing them was part of what made a single
+  // "Admin Tools" bucket unreadable.
+  if (scope === "all") tabs.push("controls");
+
+  return tabs;
+}
+
 export function resolveDirectOrderWorkspaceTab(view: string | null | undefined): DirectOrderWorkspaceTabKey {
   const raw = String(view ?? "").trim();
   if (!raw) return "overview";
@@ -167,15 +215,6 @@ export type DirectOrderWorkspaceView = {
    * routine screen.
    */
   orders: DirectOrderOperationalPage<DirectOrderQueueRow> | null;
-  /**
-   * Everything the viewer may see, tiered. Empty for a viewer whose scope is "own" — they use
-   * myOrders.
-   *
-   * NO LONGER FEEDS THE ORDERS LIST. Retained ONLY for the Overview summary and the Finance queue,
-   * which still count across the whole permitted set. Do not reintroduce it as a list source — that
-   * is the full-table read this work exists to remove.
-   */
-  allOrders: DirectOrderQueueRow[];
   scope: DirectOrderReportScope;
   /** Which tabs to render. A tab the viewer cannot use is never shown — not shown-and-empty. */
   tabs: DirectOrderWorkspaceTabKey[];
@@ -202,79 +241,24 @@ export function currentCairoSalesMonth(now: Date = new Date()): string {
   return currentCairoDateOnlyIso(now).slice(0, 7);
 }
 
-/**
- * `DirectOrderReportRow` carries no `bonusOverCap` — that flag is computed by the
- * approvals path, not the report path. Defaulting it to false here is deliberate
- * and safe: the flag only ever ADDS a warning chip, so a false reads as "nothing
- * flagged", never as "checked and clear". The chip is still shown on the row's own
- * order page, which is where the decision is actually taken.
- */
-function reportRowToQueueRow(row: {
-  id: string;
-  requesterName: string;
-  productName: string;
-  qty: number;
-  pharmacyName: string;
-  pharmacyCode: string;
-  areaName: string;
-  regionName: string;
-  salesValue: number;
-  createdAt: string;
-  status: string;
-  salesMonth: string | null;
-}): DirectOrderQueueRow {
-  return {
-    id: row.id,
-    requesterName: row.requesterName,
-    productName: row.productName,
-    qty: row.qty,
-    pharmacyName: row.pharmacyName,
-    pharmacyCode: row.pharmacyCode,
-    areaName: row.areaName,
-    regionName: row.regionName,
-    salesValue: row.salesValue,
-    createdAt: row.createdAt,
-    status: row.status,
-    salesMonth: row.salesMonth,
-    bonusOverCap: false,
-  };
-}
+// reportRowToQueueRow was removed on 2026-08-12 along with `allOrders`, its only caller. It
+// adapted a DirectOrderReportRow into a queue row for the Orders list; the list now reads
+// listDirectOrderOperationalPage, which returns queue rows directly and never loads the report.
 
-/**
- * Which views actually need the full report row set.
- *
- * `getDirectOrderReport` is the expensive read in this module — it selects every request in the
- * viewer's scope and decorates it. Before this list it ran on EVERY workspace open regardless of
- * which view the user asked for, so opening Overview paid for the All-Orders dataset.
- *
- * BOTH ORIGINAL REASONS ARE NOW GONE (2026-08-12). The summary counters are
- * `countDirectOrderWorkspaceTotals` (four COUNT queries) and the Finance queue is
- * `listDirectOrderAwaitingFinanceMonth` (its own focused read). Nothing in this loader consumes
- * `allOrders` any more.
- *
- * SO WHY ARE `overview` AND `needs-action` STILL HERE? Because the workspace switches tabs
- * CLIENT-SIDE. A viewer who loads `?view=overview` and then clicks Orders gets a component whose
- * `ordersPage` prop is null — it was fetched for overview, not for orders — and the list falls back
- * to `allOrders`. Empty that, and clicking the Orders tab shows a blank list to anyone who did not
- * arrive at `?view=orders` directly.
- *
- * The remaining full-table read is therefore blocked on NAVIGATION, not on queries: once tab
- * changes become URL navigations (the URL-state work), each view fetches its own data on arrival,
- * `allOrders` has no readers left, and this list can go to empty along with `getDirectOrderReport`
- * disappearing from this file entirely.
- *
- * Do not empty this list before that lands. It would trade a slow page for a blank one.
- */
-const VIEWS_NEEDING_FULL_REPORT: readonly DirectOrderWorkspaceTabKey[] = [
-  "overview",
-  "needs-action",
-  // `orders` was HERE until 2026-08-12. It is gone because the Orders view now reads
-  // `listDirectOrderOperationalPage` — scoped, filtered and paginated in the database, decorating
-  // one page rather than the whole population. Opening Orders no longer touches the report at all.
-  //
-  // Overview and Needs Action remain for the correctness reasons above, and are the last two.
-  "reports",
-];
+// getDirectOrderReport IS GONE FROM THIS FILE (2026-08-12).
+//
+// It selected every request in the viewer's scope, with no limit, and decorated all of it — on a
+// routine screen. Three reads replaced it, each fetching only what its view shows: the Orders
+// list uses listDirectOrderOperationalPage (scoped, filtered and paginated in the database), the
+// Overview counters use countDirectOrderWorkspaceTotals (four COUNTs), and the Finance queue uses
+// listDirectOrderAwaitingFinanceMonth.
+//
+// The last thing holding it here was `allOrders`, the Orders list's fallback, kept alive only
+// because tab switching was CLIENT-side: someone who loaded ?view=overview and clicked Orders got
+// a component whose ordersPage prop was null. Once tabs became real URL navigations each view
+// fetches its own data on arrival, that fallback became unreachable, and both it and this read
+// could go. The report itself still exists for the report PAGE, which legitimately wants
+// everything in order to export it.
 
 export async function loadDirectOrderWorkspaceView(
   access: AccessContext,
@@ -309,8 +293,6 @@ export async function loadDirectOrderWorkspaceView(
   // now gated on `canUse && viewNeedsIt`, so opening the workspace on a view that shows none of
   // this costs nothing for it.
   const view = options.view ?? "overview";
-  const needsFullReport =
-    (canSeeAllOrders || canAssignFinanceMonth) && VIEWS_NEEDING_FULL_REPORT.includes(view);
   // Pharmacy Control renders the validation queue; Overview and Needs Action need only its COUNT,
   // which the list already gives us for free once loaded. No other view mentions it.
   const needsValidations =
@@ -321,10 +303,9 @@ export async function loadDirectOrderWorkspaceView(
   // the query scopes, filters and paginates in the database and decorates just the returned page.
   const needsOrdersPage = view === "orders";
 
-  const [workspace, myOrders, reportRows, pendingValidations, ordersPage] = await Promise.all([
+  const [workspace, myOrders, pendingValidations, ordersPage] = await Promise.all([
     getDirectOrderWorkspaceData(access),
     listMyDirectOrders(access),
-    needsFullReport ? getDirectOrderReport(access) : Promise.resolve([]),
     needsValidations
       ? listDirectOrderPharmacyValidations(access, { status: "pending" })
       : Promise.resolve([]),
@@ -337,7 +318,6 @@ export async function loadDirectOrderWorkspaceView(
       : Promise.resolve(null),
   ]);
 
-  const allOrders = reportRows.map(reportRowToQueueRow);
 
   // The Finance queue is its OWN focused read (2026-08-12) — `status = 'approved' AND sales_month
   // IS NULL`, straight from the database — rather than a filter over the whole report. It used to
@@ -373,28 +353,10 @@ export async function loadDirectOrderWorkspaceView(
     ...totals,
   };
 
-  // ROLE-SHAPED, not permission-shaped. A view the viewer cannot use is absent, never present and
-  // empty — an empty tab still costs a glance and teaches people the module is bigger than their
-  // job. Overview / Needs Action / Orders are universal; the rest appear only with the authority
-  // they serve.
-  const tabs: DirectOrderWorkspaceTabKey[] = ["overview", "needs-action", "orders"];
-
-  // Pharmacy Control is the "is this pharmacy real, mapped, trusted?" domain: the validation desk,
-  // the held lane, the registry and the data-quality workflows. An ordinary requester never sees
-  // it — all the pharmacy work their job needs is already inside New Order.
-  const canOpenPharmacyControl = canDecideCustomerValidations || scope === "all";
-  if (canOpenPharmacyControl) tabs.push("pharmacy-control");
-
-  // Reports & Monitoring: the report, per-rep behaviour counters, reconciliation. Anyone whose
-  // scope reaches past their own orders has a monitoring question worth answering.
-  const canOpenReports = canSeeAllOrders || canAssignFinanceMonth;
-  if (canOpenReports) tabs.push("reports");
-
-  // Commercial Controls: bonus/discount caps. Deliberately NOT inside Pharmacy Control — caps are
-  // commercial configuration, not pharmacy work, and mixing them was part of what made a single
-  // "Admin Tools" bucket unreadable.
-  const canOpenControls = scope === "all";
-  if (canOpenControls) tabs.push("controls");
+  const tabs = resolveDirectOrderWorkspaceTabs(access);
+  const canOpenPharmacyControl = tabs.includes("pharmacy-control");
+  const canOpenReports = tabs.includes("reports");
+  const canOpenControls = tabs.includes("controls");
 
   // Retained for the component's existing capability checks and for the admin-desk link list.
   const canOpenAdminTools = canOpenPharmacyControl || canOpenReports || canOpenControls;
@@ -404,7 +366,6 @@ export async function loadDirectOrderWorkspaceView(
     needsAction,
     myOrders,
     orders: ordersPage,
-    allOrders,
     scope,
     tabs,
     capabilities: {

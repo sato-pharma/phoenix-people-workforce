@@ -319,41 +319,49 @@ export async function runDirectOrderSecondReviewFixTests() {
     "utf8",
   );
 
+  // STRENGTHENED 2026-08-12. This used to assert that the full report was GATED on the view
+  // (`needsFullReport ? getDirectOrderReport(access) : …`) and that Overview and Needs Action stayed
+  // on the gate list, because their counters and Finance queue were derived from those rows and
+  // dropping them would have silently under-reported.
+  //
+  // Both counts now come from their own cheap reads — countDirectOrderWorkspaceTotals and
+  // listDirectOrderAwaitingFinanceMonth — and the Orders list from listDirectOrderOperationalPage.
+  // The last holder of the report was the `allOrders` fallback, alive only while tab switching was
+  // client-side; once a tab became a navigation it was unreachable. So the correct assertion is no
+  // longer "gated" but ABSENT, which is strictly stronger: a gate can be widened by accident, and a
+  // call that does not exist cannot be.
+  const workspaceDataCode = workspaceDataSource
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
+    .join("\n");
   assert.ok(
-    workspaceDataSource.includes("VIEWS_NEEDING_FULL_REPORT"),
-    "the expensive report read must be gated on the view, not run on every workspace open",
+    !workspaceDataCode.includes("getDirectOrderReport("),
+    "THE FULL-TABLE READ IS BACK IN THE WORKSPACE LOADER. Every view now has a read sized to what " +
+      "it shows; getDirectOrderReport belongs to the report PAGE, which wants everything in order " +
+      "to export it. Reintroducing it here puts the whole Direct Orders population back on the " +
+      "module's most-opened screen.",
   );
   assert.ok(
-    workspaceDataSource.includes("needsFullReport ? getDirectOrderReport(access) : Promise.resolve([])"),
-    "getDirectOrderReport must be skipped for views that cannot show its rows",
+    !workspaceDataCode.includes("VIEWS_NEEDING_FULL_REPORT"),
+    "the gate list should be gone with the read it gated — a list of views needing a report nothing " +
+      "fetches is a rule with no subject",
   );
-
-  // The two views that MUST keep it. Removing either from the list is a correctness regression,
-  // not an optimisation: Overview's counters span the viewer's whole scope, and Needs Action's
-  // Finance queue is filtered out of these same rows. This assertion exists so a future tidy-up
-  // that "removes the last heavy load" fails loudly instead of silently under-reporting.
-  const reportListBlock = workspaceDataSource.slice(
-    workspaceDataSource.indexOf("const VIEWS_NEEDING_FULL_REPORT"),
-    workspaceDataSource.indexOf("export async function loadDirectOrderWorkspaceView"),
-  );
-  for (const required of ['"overview"', '"needs-action"']) {
+  // The cheap reads that replaced it must actually be the ones in use.
+  for (const replacement of [
+    "countDirectOrderWorkspaceTotals",
+    "listDirectOrderAwaitingFinanceMonth",
+    "listDirectOrderOperationalPage",
+  ]) {
     assert.ok(
-      reportListBlock.includes(required),
-      `${required} must keep the full report until its counts come from a cheap query — dropping it under-reports`,
+      workspaceDataCode.includes(replacement),
+      `${replacement} must still back its view — removing the report only helps if these remain`,
     );
   }
 
-  // ORDERS IS NO LONGER ON THE LIST (2026-08-12). It reads listDirectOrderOperationalPage instead —
-  // scoped, filtered and paginated in the database, decorating one page rather than the whole
-  // population. If "orders" reappears here, the list has silently gone back to loading every row a
-  // viewer may see in order to render 25 of them, which is the defect the operational query exists
-  // to remove.
-  for (const cheapView of ["orders", "pharmacy-control", "controls"]) {
-    assert.ok(
-      !reportListBlock.includes(`"${cheapView}"`),
-      `${cheapView} shows no order rows and must not trigger the report read`,
-    );
-  }
+  // The per-view checks that used to live here — "orders", "pharmacy-control" and "controls" must
+  // not appear on the gate list — are subsumed by the assertion above. A call that does not exist
+  // cannot be triggered by ANY view, so enumerating the views that must not trigger it would now be
+  // restating the same fact once per view.
 
   // Both shells must actually PASS the view, or the gate above can never fire.
   for (const page of [
