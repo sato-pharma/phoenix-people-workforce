@@ -454,14 +454,21 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(groupProductManagerDefault.showOrganogramTab, true, "Group Product Manager should see the line-scoped Organogram tab in nav");
 
   // Monthly Closing -- portal render of /sales/monthly-closing, gated by PORTAL_CLOSING_ROLES
-  // (monthly-closing-portal.ts). Every line-owning field-sales management role sees it; Medical Rep
-  // (no line) and Marketing Manager (Head-Office line) do not. The layout/registry/catalog all gate
-  // the tab on showMonthlyClosingTab, so this flag is the single sidebar switch for the module.
+  // (monthly-closing-portal.ts). Every line-owning field-sales management role sees it, plus the
+  // Marketing Manager (owner, 2026-08-12 -- her three oversight lines); Medical Rep (no line) does
+  // not. The layout/registry/catalog all gate the tab on showMonthlyClosingTab, so this flag is the
+  // single sidebar switch for the module.
   assert.equal(districtManager.showMonthlyClosingTab, true, "District Manager should see Monthly Closing");
   assert.equal(regionalManager.showMonthlyClosingTab, true, "Regional Manager should see Monthly Closing");
   assert.equal(nationalSalesManager.showMonthlyClosingTab, true, "National Sales Manager should see Monthly Closing");
   assert.equal(productManagerDefault.showMonthlyClosingTab, true, "Product Manager should see Monthly Closing");
   assert.equal(groupProductManagerDefault.showMonthlyClosingTab, true, "Group Product Manager should see Monthly Closing");
+  assert.equal(
+    resolveEmployeePortalNavVisibility("Marketing Manager").showMonthlyClosingTab,
+    true,
+    "Marketing Manager should see Monthly Closing -- her tab is the portal answer to the admin " +
+      "/sales/monthly-closing URL, which redirects her as a portal-navigation role",
+  );
   assert.equal(medicalRep.showMonthlyClosingTab, false, "Medical Rep should NOT see Monthly Closing (no product line to resolve)");
   // The legacy "Manager" alias for District Manager must resolve to the same access.
   assert.equal(
@@ -511,18 +518,21 @@ export function runEmployeePortalNavigationTests() {
 
   const marketingManagerDefault = resolveEmployeePortalNavVisibility("Marketing Manager");
   assert.equal(marketingManagerDefault.showDirectOrdersTab, false, "Marketing Manager is NOT a Direct Orders requester role");
-  // MM mirrors GPM on every nav surface EXCEPT six intentional differences:
+  // MM mirrors GPM on every nav surface EXCEPT five intentional differences:
   // - Incentive stays hidden from Marketing Manager per portal policy
   // - Attendance Analytics is visible for team attendance oversight
   // - Double Visit Report is hidden: MM is NOT in DV_FOCUS_ROLES, so its page would reject MM
   // - Direct Orders submit/report are hidden: MM is NOT in DIRECT_ORDER_REQUESTER_ROLES,
   //   so the module's own server-side gate would reject an MM submission anyway
-  // - Monthly Closing is hidden: MM is NOT in PORTAL_CLOSING_ROLES (Head-Office line, so the portal
-  //   can never resolve a meaningful published closing for them — see monthly-closing-portal.ts)
   // - All Marketing Requests is VISIBLE to MM but not GPM: the company-wide request register is
   //   the oversight trio only (Marketing Manager / SFE Manager / Super Admin), owner instruction
   //   2026-08-03. A GPM keeps its bounded subtree through the normal workspace, so this is a
   //   deliberate divergence — see canUseEmployeePortalMarketingAllRequests.
+  //
+  // Monthly Closing was a sixth difference until 2026-08-12, when the owner gave the Marketing
+  // Manager her own Monthly Closing tab. It is deliberately NOT overridden below any more: both
+  // roles now see it, so leaving it out of the override list makes this assertion PROVE they agree
+  // rather than paper over a divergence that no longer exists.
   assert.deepEqual(
     {
       ...marketingManagerDefault,
@@ -530,11 +540,10 @@ export function runEmployeePortalNavigationTests() {
       showFingerprintReportTab: groupProductManagerDefault.showFingerprintReportTab,
       showDoubleVisitReportTab: groupProductManagerDefault.showDoubleVisitReportTab,
       showDirectOrdersTab: groupProductManagerDefault.showDirectOrdersTab,
-      showMonthlyClosingTab: groupProductManagerDefault.showMonthlyClosingTab,
       showMarketingAllRequestsTab: groupProductManagerDefault.showMarketingAllRequestsTab,
     },
     groupProductManagerDefault,
-    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, Monthly Closing, and the company-wide All Marketing Requests register)",
+    "Marketing Manager sidebar visibility must mimic Group Product Manager (apart from the hidden Incentive tab, the Attendance Analytics tab, the Double Visit Report tab, Direct Orders submit/report, and the company-wide All Marketing Requests register)",
   );
   assert.equal(marketingManagerDefault.showMarketingAllRequestsTab, true, "Marketing Manager sees the company-wide request register");
   assert.equal(groupProductManagerDefault.showMarketingAllRequestsTab, false, "Group Product Manager stays scoped to its own subtree — no company-wide register");
@@ -552,7 +561,7 @@ export function runEmployeePortalNavigationTests() {
     false,
     "Group Product Manager does not get the Attendance Analytics tab",
   );
-  assert.equal(marketingManagerDefault.showMonthlyClosingTab, false, "Marketing Manager does NOT get Monthly Closing (Head-Office line, not in PORTAL_CLOSING_ROLES)");
+  assert.equal(marketingManagerDefault.showMonthlyClosingTab, true, "Marketing Manager DOES get Monthly Closing (owner, 2026-08-12) — her three oversight lines, exported as the full closing workbook");
   assert.equal(marketingManagerDefault.showMyPerformanceTab, true, "Marketing Manager sees Sales Dashboard like GPM");
   assert.equal(marketingManagerDefault.showPlansTab, true, "Marketing Manager should see plans like PM/GPM");
   assert.equal(marketingManagerDefault.showVacanciesTab, true, "Marketing Manager should see Vacancies like PM/GPM");

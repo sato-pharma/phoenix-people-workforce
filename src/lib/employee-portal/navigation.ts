@@ -489,13 +489,16 @@ export function resolveEmployeePortalNavVisibility(
       resolvedRole === "Marketing Manager",
     // Monthly Closing — mirrors PORTAL_CLOSING_ROLES (monthly-closing-portal.ts), the server-side
     // gate this flag must stay in sync with. isDistrictManager already folds in the legacy "Manager"
-    // alias. Marketing Manager and Medical Rep are excluded (no resolvable product line).
+    // alias. Medical Rep is excluded (no resolvable product line). Marketing Manager added
+    // 2026-08-12 (owner) — she opens her three oversight lines here; see PORTAL_CLOSING_ROLES for
+    // why this tab, and not the admin /sales/monthly-closing URL she named, is her door.
     showMonthlyClosingTab:
       isDistrictManager ||
       isRegionalManager ||
       isNationalSalesManager ||
       isProductManager ||
-      isGroupProductManager,
+      isGroupProductManager ||
+      isMarketingManager,
     // Portal Sales Analytics module (/employee-portals/sales-analytics) — hidden from every role,
     // owner request 2026-08-08. Was: Medical Rep, District Manager, Regional Manager, National
     // Sales Manager, Product Manager, Group Product Manager, Marketing Manager (Medical Rep +

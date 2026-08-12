@@ -117,12 +117,20 @@ export function runMonthlyClosingRegionScopeTests() {
     "National Sales Manager",
     "Product Manager",
     "Group Product Manager",
+    // Marketing Manager moved here from the denied list 2026-08-12 (owner: she needs a Monthly
+    // Closing tab able to export any line's full closing sheet). She was denied on the reasoning
+    // that she "sits on Head Office, not a product line, so the portal can never resolve meaningful
+    // published data" — which resolvePortalClosingScope had already stopped being true: it resolves
+    // her lines from the head-office oversight set (Anti Infective / Pedia / CNS), not her own
+    // label. See tests/marketing-manager-monthly-closing.test.ts for the full gate set.
+    "Marketing Manager",
   ] as PhoenixRole[]) {
     assert.equal(gate(allowed), true, `${allowed} may open the portal Monthly Closing`);
   }
+  // These denials are the ones that carry meaning and must not follow her out: Medical Rep and
+  // Employee have no line, and CEO / Super Admin / SFE Manager have the admin surface instead.
   for (const denied of [
     "Medical Rep",
-    "Marketing Manager",
     "Employee",
     "CEO",
     "Super Admin",
