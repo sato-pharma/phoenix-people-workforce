@@ -752,6 +752,7 @@ import { runEarlyBirdsPeriodTests } from "./early-birds-period.test.ts";
 import { runEarlyBirdsScoringTests } from "./early-birds-scoring.test.ts";
 import { runEarlyBirdsDecisionTests } from "./early-birds-decisions.test.ts";
 import { runEarlyBirdsScopeTests } from "./early-birds-scope.test.ts";
+import { runEarlyBirdsLineStarsTests } from "./early-birds-line-stars.test.ts";
 import { runCrmDepartedAgentScanTests } from "./crm-departed-agent-scan.test.ts";
 import { runApiErrorInfrastructureRedactionTests } from "./api-error-infrastructure-redaction.test.ts";
 import { runSchemaShapeDefaultAclTests } from "./schema-shape-default-acl.test.ts";
@@ -1804,6 +1805,10 @@ await runTest(
 await runTest(
   "early birds scope (an NSM is scoped by LINE, and no line's manager can ever see another line's district)",
   runEarlyBirdsScopeTests,
+);
+await runTest(
+  "early birds line stars (one star per LINE, never a company-wide best-of-the-best, so a rep always sees their own line)",
+  runEarlyBirdsLineStarsTests,
 );
 await runTest(
   "departed-agent CRM scan (one-statement distinct, page-walk fallback, no silent empty exclusion)",
