@@ -250,10 +250,16 @@ export async function runDirectOrderSecondReviewFixTests() {
     "the product is re-resolved from the stored code, never taken from the caller",
   );
 
-  // And the money must go through the one shared pricing helper, not a second copy of the rules.
+  // And the money must go through the one shared resolver, not a second copy of the rules.
+  //
+  // The name changed on 2026-08-12 when a request became a basket: both callers now reach
+  // resolveDirectOrderPricing through resolveDirectOrderBasket, which prices every line and applies
+  // the same-family rule. The property this pins is unchanged — a correction is valued by the same
+  // code a fresh submission is — and direct-orders-approval-flow.test.ts additionally asserts that
+  // the pricing helper has exactly one call site, so no third path can price independently.
   assert.ok(
-    revise.includes("resolveDirectOrderPricing"),
-    "a correction must be repriced through the SAME helper submitDirectOrder uses",
+    revise.includes("resolveDirectOrderBasket"),
+    "a correction must be repriced through the SAME resolver submitDirectOrder uses",
   );
   assert.ok(
     serviceSource.includes("async function resolveDirectOrderPricing"),

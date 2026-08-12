@@ -212,6 +212,15 @@ export function groupDuplicatePharmacies(pharmacies: ReadonlyArray<PharmacyForDe
  */
 export const DEDUPE_OPEN_STATUSES = ["draft", "held", "pending_approval", "returned"] as const;
 
+/** One product on a request. A request with several is a family basket — today, Lacto only. */
+export type DedupeLine = {
+  productCode: string;
+  qty: number;
+  bonus: number;
+  dealType: string;
+  discountPct: number | null;
+};
+
 export type RequestForDedupe = {
   id: string;
   pharmacyId: string;
@@ -226,6 +235,14 @@ export type RequestForDedupe = {
   submittedAt: string | null;
   /** Rungs already decided. The real measure of how much human work a cancellation would discard. */
   approvedStepCount: number;
+  /**
+   * EVERY product on the request, not just the first.
+   *
+   * Optional so a caller that has not loaded the line items still works: it falls back to the
+   * request's singular columns, which for a one-product order are exactly the same thing. But a
+   * caller that CAN load them must, and the reason is in `basketKey` below.
+   */
+  lines?: readonly DedupeLine[];
 };
 
 export type DuplicateRequestProposal = {
@@ -236,7 +253,10 @@ export type DuplicateRequestProposal = {
   /** The fields that were identical — the evidence, shown on screen. */
   matchedOn: {
     pharmacyId: string;
+    /** The first line's code — kept because every existing reader expects one product. */
     productCode: string;
+    /** EVERY product that matched. One entry for an ordinary order, several for a family basket. */
+    productCodes: string[];
     qty: number;
     bonus: number;
     dealType: string;
@@ -248,8 +268,48 @@ export type DuplicateRequestProposal = {
 
 const STATUS_RANK: Record<string, number> = { pending_approval: 3, returned: 2, held: 1, draft: 0 };
 
+function lineKey(line: DedupeLine): string {
+  return [
+    String(line.productCode ?? "").trim().toUpperCase(),
+    Number(line.qty ?? 0),
+    Number(line.bonus ?? 0),
+    String(line.dealType ?? "").trim().toLowerCase(),
+    line.discountPct == null ? "" : Number(line.discountPct),
+  ].join("~");
+}
+
 /**
- * Two open requests are the same order when the pharmacy, product and commercial terms all match.
+ * The commercial identity of a request: EVERY product on it, on identical terms.
+ *
+ * A request may now carry more than one product (Lacto Advanced 1 + 2 on one order). Its singular
+ * `product_code`/`qty`/`bonus` columns hold only the FIRST line, so keying on them alone would call
+ * "Lacto 1 + Lacto 2" and "Lacto 1 alone" the same order whenever their first lines happened to
+ * match — and an SFE Manager, shown two orders the system says are identical, would confirm the
+ * cancellation of a line the pharmacy actually wants.
+ *
+ * Sorted, so the two concentrations entered in either order are still recognised as one order.
+ *
+ * Falls back to the singular columns when a caller supplies no lines, which keeps a one-product
+ * request keyed exactly as it was before baskets existed.
+ */
+function basketKey(request: RequestForDedupe): string {
+  const lines: readonly DedupeLine[] = request.lines?.length
+    ? request.lines
+    : [
+        {
+          productCode: request.productCode,
+          qty: request.qty,
+          bonus: request.bonus,
+          dealType: request.dealType,
+          discountPct: request.discountPct,
+        },
+      ];
+  return lines.map(lineKey).sort().join("+");
+}
+
+/**
+ * Two open requests are the same order when the pharmacy, EVERY product, and the commercial terms
+ * on each of them all match.
  *
  * The REQUESTER is deliberately not part of the key. Two people entering the same order for the same
  * pharmacy on the same collection date is still one order — arguably a worse duplicate, since
@@ -270,15 +330,7 @@ export function findDuplicateRequestGroups(
   const groups = new Map<string, RequestForDedupe[]>();
   for (const request of open) {
     const pharmacyId = pharmacyIdToCanonical.get(request.pharmacyId) ?? request.pharmacyId;
-    const key = [
-      pharmacyId,
-      String(request.productCode ?? "").trim().toUpperCase(),
-      Number(request.qty ?? 0),
-      Number(request.bonus ?? 0),
-      String(request.dealType ?? "").trim().toLowerCase(),
-      request.discountPct == null ? "" : Number(request.discountPct),
-      request.collectionDate ?? "",
-    ].join("|");
+    const key = [pharmacyId, basketKey(request), request.collectionDate ?? ""].join("|");
     const bucket = groups.get(key) ?? [];
     bucket.push(request);
     groups.set(key, bucket);
@@ -307,6 +359,9 @@ export function findDuplicateRequestGroups(
       matchedOn: {
         pharmacyId: pharmacyIdToCanonical.get(keeper.pharmacyId) ?? keeper.pharmacyId,
         productCode: keeper.productCode,
+        productCodes: (keeper.lines?.length ? keeper.lines : [{ productCode: keeper.productCode }]).map((line) =>
+          String(line.productCode ?? "").trim().toUpperCase(),
+        ),
         qty: keeper.qty,
         bonus: keeper.bonus,
         dealType: keeper.dealType,

@@ -57,9 +57,35 @@ function request(overrides: Partial<DirectOrderRequest> = {}): DirectOrderReques
   };
 }
 
+/** One line matching the single-product request fixture — what the backfill gives every old order. */
+function singleItem(): DirectOrderApprovalDetail["items"] {
+  return [
+    {
+      lineNo: 1,
+      productCode: "CN001",
+      productName: "Roya",
+      familyCode: "CN",
+      dealType: "bonus",
+      qty: 100,
+      bonus: 25,
+      discountPct: null,
+      publicPriceSnapshot: null,
+      pharmacyPriceSnapshot: 111.15,
+      salesValue: 11115,
+      overCap: false,
+    },
+  ];
+}
+
 function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrderApprovalDetail {
   return {
     request: request(),
+    // A request ALWAYS has at least one line. The fixture omitted this at first and TypeScript did
+    // not object — spreading a Partial<T> into a literal annotated T does not flag a property the
+    // spread might supply — so `items` was undefined in every assertion and a basket was never
+    // exercised. A fixture that cannot represent the shape under test is a fixture that agrees
+    // with whatever the code does.
+    items: singleItem(),
     requesterName: "Mahmoud Adel",
     pharmacyRegisteredByName: "Mahmoud Adel",
     pharmacy: {
@@ -261,6 +287,82 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const fields = buildDirectOrderDetailFields(detail());
     const labels = fields.map((field) => field.label);
     const valueOf = (label: string) => fields.find((field) => field.label === label)?.value ?? "";
+
+  // ── A FAMILY BASKET: every line visible, every core label still present ─────
+  //
+  // An approver decides a number, so they must see every line that adds up to it. Before this
+  // existed the singular request fields WERE the order; on a basket they describe line 1 only, and
+  // an approver reading them alone would be approving money they cannot see.
+  //
+  // The completeness bar is re-asserted HERE and not only on the single-line path, because the
+  // first cut of the basket branch swapped "Product", "Sato product code" and "Deal type" out for a
+  // per-line block — and the suite passed, because no fixture built a basket.
+  {
+    const basketItems: DirectOrderApprovalDetail["items"] = [
+      {
+        lineNo: 1,
+        productCode: "LA001",
+        productName: "Lacto Advanced 1",
+        familyCode: "LA",
+        dealType: "bonus",
+        qty: 100,
+        bonus: 5,
+        discountPct: null,
+        publicPriceSnapshot: null,
+        pharmacyPriceSnapshot: 10,
+        salesValue: 1000,
+        overCap: false,
+      },
+      {
+        lineNo: 2,
+        productCode: "LA002",
+        productName: "Lacto Advanced 2",
+        familyCode: "LA",
+        dealType: "bonus",
+        qty: 100,
+        bonus: 40,
+        discountPct: null,
+        publicPriceSnapshot: null,
+        pharmacyPriceSnapshot: 20,
+        salesValue: 2000,
+        overCap: true,
+      },
+    ];
+    const basket = buildDirectOrderDetailFields(
+      detail({ items: basketItems, request: { ...request(), salesValue: 3000 } }),
+    );
+    const basketLabels = basket.map((field) => field.label);
+    const basketValue = (label: string) => basket.find((field) => field.label === label)?.value ?? "";
+
+    for (const label of DIRECT_ORDER_CORE_FIELD_LABELS) {
+      assert.ok(
+        basketLabels.includes(label),
+        `a BASKET must still show "${label}" — the completeness bar is not waived by having more lines`,
+      );
+    }
+
+    assert.ok(basketLabels.includes("Products (2)"), "the line block names how many lines there are");
+    const lines = basketValue("Products (2)");
+    assert.match(lines, /Lacto Advanced 1/, "line 1 must be listed");
+    assert.match(lines, /Lacto Advanced 2/, "line 2 must be listed — the one the old fields hid");
+    assert.match(lines, /1,000 EGP/, "each line carries its OWN money, not the basket total");
+    assert.match(lines, /2,000 EGP/, "…including the second line's");
+    assert.match(lines, /over cap/, "an over-cap LINE says so, so an approver knows WHICH one");
+
+    // The total is labelled as a total. On one line "Sales value" is unambiguous; on a basket it is
+    // the only figure that is not per-line.
+    assert.equal(basketValue("Sales value (total)"), "3,000 EGP", "the basket total is the request's value");
+    assert.equal(
+      basketValue("Product"),
+      "Lacto Advanced 1 + Lacto Advanced 2",
+      "the Product field summarises the basket rather than naming only line 1",
+    );
+    assert.equal(basketValue("Sato product code"), "LA001 + LA002", "…and so does the code field");
+
+    // Quantity is deliberately ABSENT on a basket: one number cannot stand for lines that each
+    // carry their own, and a single figure there would be read as the order's quantity.
+    assert.ok(!basketLabels.includes("Quantity"), "a basket must not show one Quantity for many lines");
+  }
 
     // Completeness bar: everything the approved-order email has always shown must also appear
     // on the screen where the decision is actually made.

@@ -213,6 +213,70 @@ export function runDirectOrderDuplicateCleanupTests() {
     );
   }
 
+  // ── A request may now carry SEVERAL products (Lacto Advanced 1 + 2 on one order) ──────────
+  //
+  // The request's singular product_code/qty/bonus columns hold only the FIRST line. Keying on those
+  // alone would call two different baskets the same order whenever their first lines matched, and an
+  // SFE Manager — shown two orders the system says are identical — would confirm the cancellation of
+  // a line the pharmacy actually wants. So the key is EVERY line, on identical terms.
+  {
+    const LACTO_1 = { productCode: "LA001", qty: 240, bonus: 0, dealType: "discount", discountPct: 25 };
+    const LACTO_2 = { productCode: "LA002", qty: 60, bonus: 0, dealType: "discount", discountPct: 25 };
+    const basket = (id: string, lines: typeof LACTO_1[]) =>
+      request({ id, lines, productCode: lines[0].productCode, qty: lines[0].qty, bonus: lines[0].bonus });
+
+    assert.equal(
+      findDuplicateRequestGroups([basket("basket-a", [LACTO_1, LACTO_2]), basket("basket-b", [LACTO_1, LACTO_2])]).length,
+      1,
+      "the same basket entered twice is still one order",
+    );
+
+    assert.deepEqual(
+      findDuplicateRequestGroups([basket("both", [LACTO_1, LACTO_2]), basket("just-one", [LACTO_1])]),
+      [],
+      "THE REGRESSION: a two-product basket and a one-product order sharing a first line are DIFFERENT " +
+        "orders — proposing them as duplicates would cancel a Lacto Advanced 2 line somebody ordered",
+    );
+
+    assert.deepEqual(
+      findDuplicateRequestGroups([
+        basket("qty-a", [LACTO_1, LACTO_2]),
+        basket("qty-b", [LACTO_1, { ...LACTO_2, qty: 120 }]),
+      ]),
+      [],
+      "a different quantity on the SECOND line makes it a different order, exactly as it does on the first",
+    );
+
+    assert.equal(
+      findDuplicateRequestGroups([basket("in-order", [LACTO_1, LACTO_2]), basket("reversed", [LACTO_2, LACTO_1])]).length,
+      1,
+      "the two concentrations entered in either order are the same basket — the key is sorted, so " +
+        "which one the requester picked first is not a commercial difference",
+    );
+
+    // A caller that has not loaded the lines must behave EXACTLY as it did before baskets existed —
+    // otherwise adding line items would quietly change what the cleanup pass proposes.
+    assert.equal(
+      findDuplicateRequestGroups([request({ id: "no-lines-a" }), request({ id: "no-lines-b" })]).length,
+      1,
+      "with no lines supplied the request's own columns are the key, unchanged",
+    );
+    assert.deepEqual(
+      findDuplicateRequestGroups([basket("with-lines", [LACTO_1]), request({ id: "without-lines" })]).map((p) => p.duplicateIds.length),
+      [1],
+      "a single-line basket and the same order expressed in the singular columns are the SAME order — " +
+        "which is what the migration's backfill made every existing request",
+    );
+
+    const [proposal] = findDuplicateRequestGroups([basket("ev-a", [LACTO_1, LACTO_2]), basket("ev-b", [LACTO_1, LACTO_2])]);
+    assert.deepEqual(
+      proposal.matchedOn.productCodes,
+      ["LA001", "LA002"],
+      "the evidence names every product that matched, not just the first — an SFE Manager confirming " +
+        "a cancellation must see the whole order they are closing",
+    );
+  }
+
   // Two people entering the same order for the same pharmacy IS a duplicate — arguably a worse one,
   // since neither knows about the other. The requester is deliberately not part of the key.
   assert.equal(

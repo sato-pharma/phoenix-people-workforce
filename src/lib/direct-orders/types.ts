@@ -8,11 +8,17 @@ import type { DirectOrderAutoLinkRefusal } from "@/lib/direct-orders/hold-decisi
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Order Request module — shared types.
 //
-// A Direct Order Request is a SINGLE line (one product + one pharmacy) submitted
-// by a sales/marketing manager and approved up a sequential chain that always
-// ends at the CEO. Money-critical: for a BONUS deal `salesValue` is `approvedQty ×
-// pharmacyPrice` (bonus units never enter value); the bonus is separately capped, and
-// exceeding that cap FLAGS the request rather than blocking it.
+// A Direct Order Request is one pharmacy and AT LEAST ONE product line, submitted
+// by a sales/marketing manager and approved up a sequential chain that always ends
+// at the CEO. It was one product per request until 2026-08-12; several lines are
+// now possible, but ONLY from one product family and only from a family allowed to
+// combine — today Lacto alone (see product-family.ts). Every order raised before
+// that, and every non-Lacto order after it, still has exactly one line.
+//
+// Money-critical: for a BONUS deal a line's `salesValue` is `qty × pharmacyPrice`
+// (bonus units never enter value), and the REQUEST's `salesValue` is the sum of its
+// lines. The bonus is separately capped per product, and exceeding that cap FLAGS
+// the request rather than blocking it.
 //
 // Requesters (phase 1, managers only): District Manager, Regional Manager,
 // National Sales Manager, Product Manager, Group Product Manager.
@@ -578,6 +584,25 @@ export type DirectOrderPossibleDistributorMatch = {
   ownedByPharmacyName: string | null;
 };
 
+/** One product line of a direct order. A request has at least one; only a family basket has more. */
+export type DirectOrderRequestItem = {
+  lineNo: number;
+  productCode: string;
+  productName: string;
+  /** The family every line of a request shares — enforced in the database, not just here. */
+  familyCode: string;
+  dealType: DirectOrderDealType;
+  qty: number;
+  bonus: number;
+  discountPct: number | null;
+  publicPriceSnapshot: number | null;
+  pharmacyPriceSnapshot: number | null;
+  /** THIS line's money. The request's salesValue is the sum of every line's. */
+  salesValue: number;
+  /** Over this product's own cap. Flagged, never blocking — see the note on the request. */
+  overCap: boolean;
+};
+
 export type DirectOrderApprovalDetail = {
   request: DirectOrderRequest;
   requesterName: string;
@@ -599,6 +624,16 @@ export type DirectOrderApprovalDetail = {
    */
   productPharmacyPrice: number | null;
   productPublicPrice: number | null;
+  /**
+   * EVERY line on this request, in entry order.
+   *
+   * An approver decides a number, so they must see every line that adds up to it. Before baskets a
+   * request had one product and the singular fields above WERE the whole order; a Lacto basket
+   * makes those fields line 1 only, and an approver reading them alone would be approving money
+   * they cannot see. Always populated — a one-item request returns its single line here, so no
+   * reader needs to branch on "is this a basket".
+   */
+  items: DirectOrderRequestItem[];
   /** "Ibn Sina: 1234567; Overseas: 7654321" — the same projection the report and email use. */
   distributorCodesText: string;
   /** The same pairs as display rows, with codes kept and mapped geography resolved to names. */

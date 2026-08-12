@@ -139,6 +139,27 @@ const ACKNOWLEDGED_EXCEPTIONS = new Set<string>([
   // while anon/authenticated do not. phx_sales_vs_target_range then reconciled to
   // phx_monthly_attribution at 0.00 variance on all three lines for 2026-07.
   "20260812150000_au_achievement_counts_unmapped_sales.sql",
+  // ── Direct Orders family basket, applied to PRODUCTION 2026-08-12 via scripts/apply-sql-file.mjs,
+  // which does not write to schema_migrations at all — so neither file will ever match the ledger.
+  //
+  // Verified live on production by direct inspection, never from schema_migrations. Before the
+  // apply: direct_order_request_items absent, direct_order_requests.family_code absent,
+  // phx_direct_order_item_family_guard absent. After: 32 requests, 32 items, 0 requests without a
+  // line, 0 requests whose lines fail to sum to their own sales_value, 0 with a null family_code,
+  // 0 turned into multi-line requests by the backfill, the guard trigger present, RLS on, and
+  // pg_get_functiondef(phx_rebuild_direct_order_sos_batch) containing direct_order_request_items —
+  // which is the only proof that the PER-ITEM injection is what is actually live.
+  //
+  // Both files were renamed TWICE on the day, chasing the expense_claims phases as they landed on
+  // main: written as 20260812160000/160100 and applied to STAGING under those names, moved to
+  // 20260812170000/170100 and applied to PRODUCTION under THOSE, then moved to the minute-precise
+  // slots below, off the round-hour cadence that sequence walks. The SQL never changed.
+  //
+  // So staging records 160000/160100 and will keep reporting these two as missing until somebody
+  // reconciles it deliberately. That is a real state, not a bookkeeping wrinkle — do not add
+  // staging to this list to quieten it.
+  "20260812184500_direct_orders_request_items.sql",
+  "20260812184600_direct_orders_sos_injection_per_item.sql",
   // Applied: verified 0 tables matching `email_backfill_backup%` remain on staging, which is this
   // file's own end state.
   "20260801100000_drop_email_backfill_backup.sql",
