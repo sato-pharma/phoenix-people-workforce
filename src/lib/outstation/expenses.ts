@@ -744,6 +744,35 @@ export async function listUnifiedOutstationExpenses(
   reportId: string | undefined,
   accessContext: AccessContext,
 ) {
+  // ── PHASE 2 read switch (OFF by default) ───────────────────────────────────────────────────
+  // `expense_claims` already holds the same trips this union produces, and
+  // `v_expense_claims_parity` proves the two agree row by row. When PHOENIX_EXPENSE_CLAIMS_READ
+  // is set, read the ONE table instead of unioning two and deduping.
+  //
+  // Deliberately NOT on a money path. The two paths that decide what payroll actually PAYS read
+  // `outstation_expenses` directly and are untouched here:
+  //   - src/lib/automated-payroll/recommend.ts  (the wizard's Expenses step)
+  //   - getApprovedExpenseTotalsForPayroll      (the payroll template pre-fill)
+  // Flipping this flag changes what an approver SEES, never what an employee is PAID. Those two
+  // move in a later, separately reviewable step.
+  //
+  // Dynamic import, not static: claims-read.ts imports resolveExpenseAccessFilter and
+  // applyEmployeeHrIdInFilter from THIS file, so a static import would close a module cycle.
+  //
+  // `reportId` stays on the legacy path on purpose. It scopes to an `outstation_expense_reports`
+  // row, and 36 of those 38 are the synthetic `.workflow` artefacts the new model deliberately
+  // does not reproduce — `expense_claims.import_id` points only at the 2 real uploads. Serving a
+  // report-scoped read from the new model would quietly return a different set, which is exactly
+  // the divergence this phase exists to rule out.
+  if (!reportId) {
+    const { expenseClaimsReadEnabled, listExpenseClaims } = await import(
+      "@/lib/outstation/claims-read"
+    );
+    if (expenseClaimsReadEnabled()) {
+      return listExpenseClaims(month, year, accessContext);
+    }
+  }
+
   const [historicalExpenses, requestExpenses] = await Promise.all([
     listPayrollExpenses(month, year, reportId, accessContext),
     listOutstationRequestExpenses(accessContext),
