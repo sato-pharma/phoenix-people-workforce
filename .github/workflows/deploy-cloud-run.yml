@@ -115,9 +115,15 @@ jobs:
           fi
 
           # CI must have SUCCEEDED for this exact commit. `--jq` picks the newest run for
-          # the SHA; a re-run that later went green therefore counts. No CI run at all
-          # (e.g. a docs-only commit that only matched ci-docs-fallback) is NOT success,
-          # so we refuse rather than guess.
+          # the SHA; a re-run that later went green therefore counts. No CI run at all is
+          # NOT success, so we refuse rather than guess.
+          #
+          # This reads ci.yml specifically, and always could: ci.yml's `push` trigger never
+          # carried a path filter, so every commit on main has a real CI run. The example this
+          # comment used to give — "a docs-only commit that only matched ci-docs-fallback" —
+          # named a workflow that only ever triggered on `pull_request`, so it could not have
+          # produced a main commit without CI. That workflow was deleted on 2026-08-12 when
+          # ci.yml took over answering "is this docs-only?" internally; nothing here changes.
           CI_CONCLUSION=$(gh api \
             "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=$SHA&per_page=1" \
             --jq '.workflow_runs[0].conclusion // "none"')
