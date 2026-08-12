@@ -65,7 +65,7 @@ export type SchemaShape = {
   check_total: number;
   indexes_total: number;
   triggers_total: number;
-  schema_usage: { anon: boolean; authenticated: boolean; service_role: boolean };
+  schema_usage: SchemaUsage;
   tables_exposed_without_rls: string[];
   tables_rls_disabled: string[];
   tables_without_primary_key: string[];
@@ -82,6 +82,27 @@ export type SchemaShape = {
    */
   default_acl_leaks?: DefaultAclLeak[];
   /**
+   * USAGE on schema `private`, where every RLS helper lives.
+   *
+   * `schema_usage` above only ever looked at `public`. On 2026-08-12 staging was found with
+   * nspacl = NULL on `private` — no grants at all — while EXECUTE on each individual helper
+   * was intact, so every grant anyone thought to check looked right. Without USAGE on the
+   * containing schema the call raises 42501 before the function is entered, and every RLS
+   * policy built on a helper becomes untestable there.
+   *
+   * `null`/`undefined` means "not measurable on this target" — either the RPC predates
+   * 20260813120000_ci_schema_shape_private_usage.sql, or the database has no `private`
+   * schema at all. Both must stay silent rather than invent a violation.
+   */
+  private_schema_usage?: SchemaUsage | null;
+  /**
+   * How many policies in `public` reference a `private.` object. This is what makes the
+   * check above an invariant rather than a golden snapshot: USAGE is only demanded while
+   * something actually depends on it, so a database with no such policies needs no
+   * allowlist and raises nothing.
+   */
+  policies_using_private_schema?: number;
+  /**
    * Dated snapshot schemas past the retention window.
    *
    * `check:sql-backups` stops a snapshot being created in `public`; nothing used to check
@@ -95,6 +116,9 @@ export type SchemaShape = {
    */
   stale_snapshot_schemas?: StaleSnapshotSchema[];
 };
+
+/** Whether each browser-facing/server role holds USAGE on a given schema. */
+export type SchemaUsage = { anon: boolean; authenticated: boolean; service_role: boolean };
 
 /** A dated snapshot schema that is older than the retention window. */
 export type StaleSnapshotSchema = {
@@ -187,6 +211,68 @@ export function evaluateSchemaShape(shape: SchemaShape): Violation[] {
         "service_role has no USAGE on schema public — server-side code, CI and the migration " +
         "drift check cannot reach any table. This is what happened on 2026-07-30.",
     });
+  }
+
+  // --- Fault 1b: the same wipe, one schema over -------------------------------
+  // The check above only ever looked at `public`. On 2026-08-12 staging was found with
+  // nspacl = NULL on schema `private` — where every RLS helper lives — while production had
+  // `authenticated=U | service_role=U`. EXECUTE on each individual helper was intact on
+  // staging, so the grants anyone thought to check all looked right; the call still raised
+  // 42501 "permission denied for schema private" before the function was entered.
+  //
+  // That made all 67 policies built on those helpers untestable on staging: impersonating
+  // `authenticated` to exercise one failed on the permission error, so every RLS test run
+  // there was vacuous. It is the same class of fault as the 2026-07-30 wipe above and the
+  // pre-data-only restore this whole file exists for — a database that looks protected,
+  // reports a clean migration history, and is not.
+  //
+  // Gated on `policies_using_private_schema` so this is an invariant, not a snapshot: USAGE
+  // is only demanded while policies actually depend on reaching `private`.
+  if (shape.private_schema_usage) {
+    const usage = shape.private_schema_usage;
+    const dependents = shape.policies_using_private_schema ?? 0;
+
+    if (dependents > 0 && !usage.authenticated) {
+      v.push({
+        severity: "error",
+        code: "private_schema_no_usage_for_authenticated",
+        message:
+          `${dependents} RLS policies in public call into schema private, but \`authenticated\` has ` +
+          "no USAGE on it — every one of those calls raises 42501 before the helper runs, so no " +
+          "policy that uses one can be enforced OR tested against this database. Per-function " +
+          "EXECUTE grants do not substitute for schema USAGE and may all look correct. " +
+          "Fix with: grant usage on schema private to authenticated;",
+      });
+    }
+
+    // The opposite direction, and a genuine widening: `private` is where the helpers that
+    // DECIDE access live, and production does not grant anon USAGE on it.
+    if (usage.anon) {
+      v.push({
+        severity: "error",
+        code: "private_schema_exposed_to_anon",
+        message:
+          "`anon` has USAGE on schema private, which holds the helpers that decide row-level " +
+          "access. Production grants it to authenticated and service_role only. " +
+          "Fix with: revoke all on schema private from anon;",
+      });
+    }
+
+    // Not an error: nothing in CI reaches `private` as service_role (PostgREST does not
+    // expose the schema), so this breaks no check today. It is still drift from production,
+    // and the 2026-08-12 finding was that BOTH grants were missing on staging while only the
+    // `authenticated` half was noticed.
+    if (!usage.service_role) {
+      v.push({
+        severity: "warning",
+        code: "private_schema_no_usage_for_service_role",
+        message:
+          "`service_role` has no USAGE on schema private, where production grants it. Nothing in " +
+          "CI depends on it today, so this is convergence drift rather than a breakage — but it " +
+          "is the other half of the grant that went missing on staging on 2026-08-12. " +
+          "Fix with: grant usage on schema private to service_role;",
+      });
+    }
   }
 
   // --- Fault 2: wholesale loss of the post-data section -----------------------
@@ -320,6 +406,17 @@ async function main() {
       `${shape.policies_total} policies · ${shape.primary_keys_total} PKs · ` +
       `${shape.foreign_keys_total} FKs · ${shape.indexes_total} indexes · ${shape.triggers_total} triggers`,
   );
+
+  // Printed even when green: the 2026-08-12 gap survived because nothing ever stated this
+  // out loud, so there was no baseline to notice a change against.
+  if (shape.private_schema_usage) {
+    const u = shape.private_schema_usage;
+    console.log(
+      `[schema-shape] schema private USAGE — authenticated: ${u.authenticated} · ` +
+        `service_role: ${u.service_role} · anon: ${u.anon} ` +
+        `(${shape.policies_using_private_schema ?? 0} policies depend on it)`,
+    );
+  }
 
   if (process.argv.includes("--json")) console.log(JSON.stringify(shape, null, 2));
 
