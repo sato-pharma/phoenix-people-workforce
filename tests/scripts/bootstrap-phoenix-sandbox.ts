@@ -12,14 +12,30 @@ type MigrationResult = {
 
 const localEnvPath = ".env.staging.rls.local";
 const productionRef = "ozucdzovmcqvepbozvqf";
+// Checked live against the CURRENT schema, unlike baseMigrations below. The approved sandbox
+// (PHOENIX_APPROVED_STAGING_REF, currently cifwmndunmlxjhyjugxa) is a clone of production, not a
+// blank slate — it already has outstation_expenses/outstation_expense_reports (renamed from
+// payroll_expenses/payroll_expense_reports by 20260713120000_rename_payroll_expenses_to_outstation.sql).
+// Checking for the old names here made this script's presence probe silently see 0 of 7 required
+// tables on that sandbox, skip the "already bootstrapped" early-return, and go on to apply every
+// baseMigrations file for real - including phoenix-payroll-expenses.sql's
+// `create table if not exists public.payroll_expenses`, which would have resurrected a second,
+// empty, dead-named table shadowing the real one.
+//
+// baseMigrations is deliberately left as-is: it still produces the pre-rename table names, so a
+// bootstrap against a genuinely blank sandbox (not the currently-approved one, which already has
+// the current schema) still lands on payroll_expenses/payroll_expense_reports today. Chaining the
+// rename migration onto the end of baseMigrations would close that gap but needs a real fresh
+// sandbox to verify end to end (the rename migration's ALTER POLICY ... RENAME statements depend
+// on policy names created later in this same list) - not done here.
 const requiredTables = [
   "employees",
   "app_auth_users",
   "user_access_profiles",
   "salary_records",
   "salary_batches",
-  "payroll_expenses",
-  "payroll_expense_reports",
+  "outstation_expenses",
+  "outstation_expense_reports",
 ];
 
 const baseMigrations = [
