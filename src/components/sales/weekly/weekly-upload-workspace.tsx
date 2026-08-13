@@ -16,6 +16,7 @@ import type { SourceOfSalesProduct } from "@/lib/sales/monthly-distributor-impor
 import { SearchableSelect } from "@/components/ui/searchable-select";
 
 import { WeeklyBranchMappingManager } from "./weekly-branch-mapping-manager";
+import { WeeklyProductMappingManager } from "./weekly-product-mapping-manager";
 
 
 // No money formatter here on purpose: this whole screen — Validate preview AND the stored-upload
@@ -843,7 +844,10 @@ function extractQuoted(message: string): string | null {
   return match && match[1] ? match[1] : null;
 }
 
-type MapAction = { label: string; kind: "branch" } | { label: string; kind: "products"; search: string | null };
+type MapAction =
+  | { label: string; kind: "branch" }
+  | { label: string; kind: "products"; search: string | null }
+  | { label: string; kind: "product-alias"; alias: string | null };
 
 type IssueGroup = {
   key: string;
@@ -853,13 +857,19 @@ type IssueGroup = {
   action: MapAction | null;
 };
 
-// Every blocking field maps to exactly one existing manager that can resolve it inline — an alias
-// resolving to a missing/bad master product is Source of Sales master data, out of Weekly's own
-// tables (see resolveProduct/resolveRegion in parser.ts); an unmapped branch is Weekly's own
-// branch->region table. A Direct-channel region code not in the SoS master region list has no
-// editable UI (regions derive from the brick/area master, not a flat list) — null means "show the
-// valid codes instead of a map action" (see UnresolvedItemRow).
+// Every blocking field maps to exactly one existing manager that can resolve it inline. A missing
+// alias (no distributor code/name maps to a Phoenix product yet) is Weekly's own alias table — the
+// operator adds one. An alias that resolves to missing/bad master product data (no price, no line,
+// or resolves to a code that isn't in the master at all) is Source of Sales master data, out of
+// Weekly's own tables — nothing to "map," it's the master row itself that needs fixing, so that
+// stays a read-only reference lookup. An unmapped branch is Weekly's own branch->region table. A
+// Direct-channel region code not in the SoS master region list has no editable UI (regions derive
+// from the brick/area master, not a flat list) — null means "show the valid codes instead of a map
+// action" (see UnresolvedItemRow).
 function actionForIssue(field: string, message: string): MapAction | null {
+  if (field === "productCode" && message.startsWith("No product alias maps")) {
+    return { label: "Map now", kind: "product-alias", alias: extractQuoted(message) };
+  }
   if (field === "productCode" || field === "officialLine" || field === "factoryPrice") {
     return { label: "Map now", kind: "products", search: extractQuoted(message) };
   }
@@ -1108,6 +1118,16 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
         </MapNowModal>
       )}
       {modal?.kind === "products" && <InlineSosProductsModal onClose={() => setModal(null)} search={modal.search} />}
+      {modal?.kind === "product-alias" && (
+        <MapNowModal onClose={() => setModal(null)} title="Weekly Mapping — Product Alias">
+          <WeeklyProductMappingManager
+            initial={null}
+            initialError={null}
+            lockedDistributor={result.distributor.code}
+            prefillAlias={modal.alias ?? undefined}
+          />
+        </MapNowModal>
+      )}
     </div>
   );
 }

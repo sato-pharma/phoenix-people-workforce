@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Download, Loader2, Plus, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Plus, Sparkles, Trash2, Upload } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { WeeklyAliasKind, WeeklyProductAliasAdmin } from "@/lib/sales/weekly/product-aliases";
@@ -16,6 +16,7 @@ export function WeeklyProductMappingManager({
   initialError,
   initialDistributor,
   lockedDistributor,
+  prefillAlias,
 }: {
   initial: WeeklyProductAliasAdmin | null;
   initialError: string | null;
@@ -23,13 +24,17 @@ export function WeeklyProductMappingManager({
   initialDistributor?: string;
   /** Force a distributor and hide the internal selector (embedded in a distributor-scoped page). */
   lockedDistributor?: string;
+  /** Pre-fill the add-alias field with the exact raw code/name that blocked an upload. */
+  prefillAlias?: string;
 }) {
   const [data, setData] = useState<WeeklyProductAliasAdmin | null>(initial);
   const [error, setError] = useState<string | null>(initialError);
   const [distributor, setDistributor] = useState<string>(lockedDistributor || initialDistributor || initial?.distributors[0]?.code || "IS");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [draft, setDraft] = useState<Draft>(prefillAlias ? { ...EMPTY_DRAFT, alias: prefillAlias } : EMPTY_DRAFT);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -88,7 +93,49 @@ export function WeeklyProductMappingManager({
       return;
     }
     const ok = await mutate({ alias: draft.alias.trim(), aliasKind: draft.aliasKind, productCode: draft.productCode });
-    if (ok) setDraft((prev) => ({ ...EMPTY_DRAFT, aliasKind: prev.aliasKind }));
+    if (ok) {
+      setDraft((prev) => ({ ...EMPTY_DRAFT, aliasKind: prev.aliasKind }));
+      setAiConfidence(null);
+    }
+  }
+
+  // Suggest-only: pre-fills the Master product picker, never saves on its own — the operator still
+  // has to review and hit "Add alias". Same engine + contract as WeeklyNormalizationTab's "AI suggest".
+  async function aiSuggestOne() {
+    if (!draft.alias.trim()) {
+      setError("Enter the distributor alias first.");
+      return;
+    }
+    setAiBusy(true);
+    setError(null);
+    setAiConfidence(null);
+    try {
+      const response = await fetch("/api/sales/weekly/ai-suggest", {
+        body: JSON.stringify({ unknowns: [{ raw: draft.alias.trim() }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = (await response.json()) as {
+        success?: boolean;
+        data?: { suggestions: { raw: string; code: string; confidence?: number }[] };
+        error?: string;
+      };
+      if (!payload?.success || !payload.data) {
+        setError(payload?.error ?? "AI suggestion failed.");
+        return;
+      }
+      const suggestion = payload.data.suggestions[0];
+      if (!suggestion) {
+        setError("AI found no confident match for this alias — pick the product manually.");
+        return;
+      }
+      setDraft((prev) => ({ ...prev, productCode: suggestion.code }));
+      setAiConfidence(typeof suggestion.confidence === "number" ? suggestion.confidence : null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI suggestion failed.");
+    } finally {
+      setAiBusy(false);
+    }
   }
 
   async function onUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -233,7 +280,10 @@ export function WeeklyProductMappingManager({
           <SearchableSelect
             className="h-9 w-72 border border-[#E2E8F0] bg-white px-2 text-sm font-semibold text-[#0F172A] outline-none focus:border-[#FDBA74]"
             disabled={busy}
-            onChange={(event) => setDraft((prev) => ({ ...prev, productCode: event.target.value }))}
+            onChange={(event) => {
+              setDraft((prev) => ({ ...prev, productCode: event.target.value }));
+              setAiConfidence(null);
+            }}
             value={draft.productCode}
           >
             <option value="">Select…</option>
@@ -244,6 +294,24 @@ export function WeeklyProductMappingManager({
             ))}
           </SearchableSelect>
         </Field>
+        <button
+          className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-violet-600 bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-60"
+          disabled={aiBusy || busy || !draft.alias.trim()}
+          onClick={() => void aiSuggestOne()}
+          title="Let AI pre-fill the master product from the alias"
+          type="button"
+        >
+          {aiBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
+        </button>
+        {aiConfidence != null && (
+          <span
+            className={`inline-flex h-9 items-center rounded-[6px] px-2 text-xs font-black tabular-nums ${
+              aiConfidence >= 80 ? "bg-emerald-100 text-emerald-700" : aiConfidence >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"
+            }`}
+          >
+            {Math.round(aiConfidence)}% confidence
+          </span>
+        )}
         <button
           className="inline-flex h-9 items-center gap-1 rounded-[6px] bg-[#F97316] px-4 text-sm font-black text-white transition hover:bg-[#EA6A0C] disabled:opacity-60"
           disabled={busy}

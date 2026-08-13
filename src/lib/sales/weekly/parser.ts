@@ -993,9 +993,7 @@ type ResolvedProduct = {
   productName: string;
   officialLine: string;
   factoryPrice: number;
-  /** no alias found → stored with warning; auto-heals when alias is added */
-  warning: { field: string; message: string } | null;
-  /** alias found but master data is invalid → hard block */
+  /** no alias, or alias found but master data is invalid → hard block */
   failure: { field: string; message: string } | null;
 };
 
@@ -1016,7 +1014,6 @@ function resolveProduct(
         productName: obs.rawItemName || obs.rawItemCode || "",
         officialLine: "",
         factoryPrice: 0,
-        warning: null,
         failure: {
           field: "productCode",
           message: `Product ID "${obs.rawItemCode || "(blank)"}" is not in the Source of Sales master product table.`,
@@ -1037,7 +1034,6 @@ function resolveProduct(
       productName: (master.productName || master.productCode).trim(),
       officialLine: line,
       factoryPrice: Number(master.factoryPrice) || 0,
-      warning: null,
       failure,
     };
   }
@@ -1053,11 +1049,10 @@ function resolveProduct(
       productName: obs.rawItemName || obs.rawItemCode || "",
       officialLine: "",
       factoryPrice: 0,
-      warning: {
+      failure: {
         field: "productCode",
-        message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. This row was skipped as a non-Phoenix product. If it is one of our products, add the alias and re-upload.`,
+        message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. Map it below, then re-validate.`,
       },
-      failure: null,
     };
   }
 
@@ -1068,7 +1063,6 @@ function resolveProduct(
       productName: masterCode,
       officialLine: "",
       factoryPrice: 0,
-      warning: null,
       failure: {
         field: "productCode",
         message: `Alias resolves to product "${masterCode}", which is not in the Source of Sales master.`,
@@ -1097,7 +1091,6 @@ function resolveProduct(
     productName: (master.productName || master.productCode).trim(),
     officialLine: line,
     factoryPrice: safePrice,
-    warning: null,
     failure,
   };
 }
@@ -1375,7 +1368,6 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   // ── resolve + aggregate over the UNION of (product, branch) keys across all sides ─────────────
   const aggregates = new Map<AggKey, Agg>();
-  const skippedProductIssues: WeeklyValidationIssue[] = [];
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
@@ -1383,21 +1375,6 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
     // Excluded branch → drop the cell from totals entirely (not a failure, no fact row).
     if (region.excluded) continue;
-
-    // Unknown product + mapped branch: warn and skip. Unknown product + unmapped branch must still
-    // flow into the aggregate below so the branch/geography failure blocks the upload.
-    if (product.warning && !region.failure) {
-      if (!skippedProductIssues.some((i) => i.rowNumber === obs.sourceRowNumber && i.field === product.warning!.field && i.message === product.warning!.message)) {
-        skippedProductIssues.push({
-          field: product.warning.field,
-          message: product.warning.message,
-          rowNumber: obs.sourceRowNumber,
-          severity: "warning",
-          value: obs.rawItemCode || obs.rawItemName || null,
-        });
-      }
-      continue;
-    }
 
     const key = aggKeyOf(product.productCode, obs);
     let agg = aggregates.get(key);
@@ -1451,17 +1428,8 @@ export async function parseWeeklyWorkbookBuffer(input: {
     if (obs.sheetValue != null) agg.sheetValue += obs.sheetValue;
     if (obs.directRegionCodeRaw != null && obs.rawBranchName) agg.pharmacyNames.add(obs.rawBranchName);
 
-    // No-alias is a soft warning — row stored as-is and auto-heals when the alias is added.
-    // Bad master data (no price / no line) and unmapped region are hard failures that block the batch.
-    if (product.warning && !agg.issues.some((i) => i.field === product.warning!.field && i.message === product.warning!.message)) {
-      agg.issues.push({
-        field: product.warning.field,
-        message: product.warning.message,
-        rowNumber: obs.sourceRowNumber,
-        severity: "warning",
-        value: obs.rawItemCode || obs.rawItemName || null,
-      });
-    }
+    // No alias, or master data invalid (no price / no line) — all product failures, plus an
+    // unmapped region, are hard failures that block the batch. Nothing here is silently skipped.
     if (product.failure && !agg.issues.some((i) => i.field === product.failure!.field && i.message === product.failure!.message)) {
       agg.issues.push({
         field: product.failure.field,
@@ -1578,7 +1546,6 @@ export async function parseWeeklyWorkbookBuffer(input: {
     sheetName: adapted.sheetName,
     weekStart,
     blockingReasons,
-    skippedIssues: skippedProductIssues,
   });
   return { ok: true, rows, result };
 }
@@ -1612,21 +1579,16 @@ export function summarizeWeekly(input: {
   sheetName: string;
   weekStart: string | null;
   blockingReasons: string[];
-  skippedIssues?: WeeklyValidationIssue[];
 }): WeeklySalesValidationResult {
   const { rows } = input;
   const totals = emptyTotals();
   const regions = new Map<string, { regionName: string; totals: WeeklyTotals }>();
   const products = new Map<string, { productName: string; officialLine: string; totals: WeeklyTotals }>();
   const branches = new Map<string, { branchName: string; regionCode: string; regionName: string; totals: WeeklyTotals }>();
-  const issues: WeeklyValidationIssue[] = [...(input.skippedIssues ?? [])];
+  const issues: WeeklyValidationIssue[] = [];
   let importableRows = 0;
   let failedRows = 0;
-  let warningRows = new Set(
-    (input.skippedIssues ?? [])
-      .filter((issue) => issue.severity === "warning")
-      .map((issue) => issue.rowNumber),
-  ).size;
+  let warningRows = 0;
 
   for (const row of rows) {
     addTotals(totals, row);

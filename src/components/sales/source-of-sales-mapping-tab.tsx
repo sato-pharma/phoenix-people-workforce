@@ -54,7 +54,7 @@ type PreviewResponse = {
   missingGroups?: HeaderValidationFailure[];
   fingerprintWarning?: { likelyCode: string; likelyName: string } | null;
 };
-type AiResponse = { success: boolean; data?: { suggestions: { raw: string; code: string }[] }; error?: string };
+type AiResponse = { success: boolean; data?: { suggestions: { raw: string; code: string; confidence?: number }[] }; error?: string };
 
 const panelClassName = "rounded-3xl border border-[#D8E0EA] bg-white/95 shadow-[0_18px_42px_rgba(15,23,42,0.07)]";
 
@@ -938,13 +938,74 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/** Small violet "AI suggest" trigger + confidence badge, shared by the three add-one forms below. */
+function AiSuggestButton({ busy, disabled, onClick }: { busy: boolean; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      className="inline-flex h-9 items-center gap-1 rounded-[6px] border border-violet-600 bg-violet-600 px-3 text-xs font-bold text-white transition hover:bg-violet-700 disabled:opacity-60"
+      disabled={disabled}
+      onClick={onClick}
+      title="Let AI pre-fill the match from the raw text"
+      type="button"
+    >
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} AI suggest
+    </button>
+  );
+}
+
+function AiConfidenceBadge({ confidence }: { confidence: number }) {
+  return (
+    <span
+      className={`inline-flex h-9 items-center rounded-[6px] px-2 text-xs font-black tabular-nums ${
+        confidence >= 80 ? "bg-emerald-100 text-emerald-700" : confidence >= 50 ? "bg-amber-100 text-amber-700" : "bg-rose-100 text-rose-700"
+      }`}
+    >
+      {Math.round(confidence)}% confidence
+    </span>
+  );
+}
+
 /** Inline "add one" — distributor item code/name -> Phoenix product (no upload needed). */
-function ProductAddForm({ distributorCode, products }: { distributorCode: string; products: { code: string; name: string }[] }) {
-  const [alias, setAlias] = useState("");
+export function ProductAddForm({
+  distributorCode,
+  products,
+  prefillAlias,
+  onSaved,
+}: {
+  distributorCode: string;
+  products: { code: string; name: string }[];
+  /** Pre-fill the alias field with the exact raw text that blocked an upload. */
+  prefillAlias?: string;
+  /** Called after a successful save — lets a caller (e.g. the monthly wizard) re-run its preview in place. */
+  onSaved?: () => void;
+}) {
+  const [alias, setAlias] = useState(prefillAlias ?? "");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function aiSuggestOne() {
+    if (!alias.trim()) { setError("Enter the alias first."); return; }
+    setAiBusy(true); setError(null); setAiConfidence(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/ai-suggest", {
+        body: JSON.stringify({ kind: "product", unknowns: [{ raw: alias.trim() }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<AiResponse>(response, { success: false });
+      const suggestion = payload.success ? payload.data?.suggestions[0] : undefined;
+      if (suggestion?.code) { setCode(suggestion.code); if (typeof suggestion.confidence === "number") setAiConfidence(suggestion.confidence); }
+      else setError(payload.error ?? "AI found no confident match — pick the product manually.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI suggestion failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   async function add() {
     if (!alias.trim() || !code) { setError("Enter the alias and pick a product."); return; }
@@ -957,7 +1018,7 @@ function ProductAddForm({ distributorCode, products }: { distributorCode: string
         method: "POST",
       });
       const payload = await readJson<ImportResponse>(response, { success: false });
-      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setAlias(""); setCode(""); }
+      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setAlias(""); setCode(""); setAiConfidence(null); onSaved?.(); }
       else setError(payload.error ?? "Add failed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Add failed.");
@@ -971,19 +1032,21 @@ function ProductAddForm({ distributorCode, products }: { distributorCode: string
       <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
       <div className="flex flex-wrap items-end gap-2">
         <Field label="Alias (item code or name)">
-          <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => setAlias(event.target.value)} placeholder="distributor's item code or name" value={alias} />
+          <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => { setAlias(event.target.value); setAiConfidence(null); }} placeholder="distributor's item code or name" value={alias} />
         </Field>
         <Field label="Phoenix product">
           <div className="w-64">
             <MappingCombobox
               disabled={busy}
-              onChange={(value) => setCode(value)}
+              onChange={(value) => { setCode(value); setAiConfidence(null); }}
               options={products.map((product) => ({ code: product.code, name: product.name }))}
               placeholder="Search product code or name"
               value={code}
             />
           </div>
         </Field>
+        <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !alias.trim()} onClick={() => void aiSuggestOne()} />
+        {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
         <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
@@ -995,14 +1058,48 @@ function ProductAddForm({ distributorCode, products }: { distributorCode: string
 }
 
 /** Inline "add one" — customer code -> brick (Area/Region derive from the brick). */
-function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: string; bricks: { id: string; name: string }[] }) {
-  const [customerCode, setCustomerCode] = useState("");
+export function CustomerBrickAddForm({
+  distributorCode,
+  bricks,
+  prefillCustomerCode,
+  onSaved,
+}: {
+  distributorCode: string;
+  bricks: { id: string; name: string }[];
+  /** Pre-fill the customer code field with the exact raw code that blocked an upload. */
+  prefillCustomerCode?: string;
+  onSaved?: () => void;
+}) {
+  const [customerCode, setCustomerCode] = useState(prefillCustomerCode ?? "");
   const [customerName, setCustomerName] = useState("");
   const [address, setAddress] = useState("");
   const [brickId, setBrickId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  async function aiSuggestOne() {
+    const raw = customerName.trim() || customerCode.trim();
+    if (!raw) { setError("Enter the customer code or name first."); return; }
+    setAiBusy(true); setError(null); setAiConfidence(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/ai-suggest", {
+        body: JSON.stringify({ kind: "territory", unknowns: [{ raw }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<AiResponse>(response, { success: false });
+      const suggestion = payload.success ? payload.data?.suggestions[0] : undefined;
+      if (suggestion?.code) { setBrickId(suggestion.code); if (typeof suggestion.confidence === "number") setAiConfidence(suggestion.confidence); }
+      else setError(payload.error ?? "AI found no confident match — pick the brick manually.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI suggestion failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   async function add() {
     if (!customerCode.trim() || !brickId) { setError("Enter the customer code and pick a brick."); return; }
@@ -1014,7 +1111,7 @@ function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: st
         method: "POST",
       });
       const payload = await readJson<ImportResponse>(response, { success: false });
-      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setCustomerCode(""); setCustomerName(""); setAddress(""); setBrickId(""); }
+      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setCustomerCode(""); setCustomerName(""); setAddress(""); setBrickId(""); setAiConfidence(null); onSaved?.(); }
       else setError(payload.error ?? "Add failed.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Add failed.");
@@ -1040,14 +1137,105 @@ function CustomerBrickAddForm({ distributorCode, bricks }: { distributorCode: st
           <div className="w-64">
             <MappingCombobox
               disabled={busy}
-              onChange={(value) => setBrickId(value)}
+              onChange={(value) => { setBrickId(value); setAiConfidence(null); }}
               options={bricks.map((brick) => ({ code: brick.id, name: brick.name }))}
               placeholder="Search brick code or name (ex: B10, Mont)"
               value={brickId}
             />
           </div>
         </Field>
+        <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !(customerName.trim() || customerCode.trim())} onClick={() => void aiSuggestOne()} />
+        {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
         <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy || !distributorCode} onClick={() => void add()} type="button">
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
+        </Button>
+      </div>
+      {message ? <p className="text-xs font-bold text-emerald-600">{message}</p> : null}
+      {error ? <p className="text-xs font-bold text-rose-600">{error}</p> : null}
+    </div>
+  );
+}
+
+/** Inline "add one" — raw territory/district text -> brick. Global (not per-distributor), unlike
+ * product and customer aliases, matching how territoryAliasByKey is looked up in the normalizer. */
+export function TerritoryAddForm({
+  bricks,
+  prefillRaw,
+  onSaved,
+}: {
+  bricks: { id: string; name: string }[];
+  /** Pre-fill the raw-text field with the exact territory text that blocked an upload. */
+  prefillRaw?: string;
+  onSaved?: () => void;
+}) {
+  const [raw, setRaw] = useState(prefillRaw ?? "");
+  const [brickId, setBrickId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function aiSuggestOne() {
+    if (!raw.trim()) { setError("Enter the raw territory text first."); return; }
+    setAiBusy(true); setError(null); setAiConfidence(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/ai-suggest", {
+        body: JSON.stringify({ kind: "territory", unknowns: [{ raw: raw.trim() }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<AiResponse>(response, { success: false });
+      const suggestion = payload.success ? payload.data?.suggestions[0] : undefined;
+      if (suggestion?.code) { setBrickId(suggestion.code); if (typeof suggestion.confidence === "number") setAiConfidence(suggestion.confidence); }
+      else setError(payload.error ?? "AI found no confident match — pick the brick manually.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "AI suggestion failed.");
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  async function add() {
+    if (!raw.trim() || !brickId) { setError("Enter the raw territory text and pick a brick."); return; }
+    setBusy(true); setMessage(null); setError(null);
+    try {
+      const response = await fetch("/api/sales/monthly-import/save-mappings", {
+        body: JSON.stringify({ mappings: [{ type: "territory", raw: raw.trim(), code: brickId }] }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      });
+      const payload = await readJson<ImportResponse>(response, { success: false });
+      if (payload.success) { setMessage(payload.message ?? "Mapping added."); setRaw(""); setBrickId(""); setAiConfidence(null); onSaved?.(); }
+      else setError(payload.error ?? "Add failed.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Add failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#64748B]">Or add one by field</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Raw territory / district text">
+          <input className={cn(fieldInputClass, "w-56")} disabled={busy} onChange={(event) => { setRaw(event.target.value); setAiConfidence(null); }} placeholder="exact text from the distributor sheet" value={raw} />
+        </Field>
+        <Field label="Brick">
+          <div className="w-64">
+            <MappingCombobox
+              disabled={busy}
+              onChange={(value) => { setBrickId(value); setAiConfidence(null); }}
+              options={bricks.map((brick) => ({ code: brick.id, name: brick.name }))}
+              placeholder="Search brick code or name (ex: B10, Mont)"
+              value={brickId}
+            />
+          </div>
+        </Field>
+        <AiSuggestButton busy={aiBusy} disabled={aiBusy || busy || !raw.trim()} onClick={() => void aiSuggestOne()} />
+        {aiConfidence != null ? <AiConfidenceBadge confidence={aiConfidence} /> : null}
+        <Button className="h-9 gap-1 rounded-xl bg-[#F97316] font-black text-white transition hover:bg-[#EA6A0C]" disabled={busy} onClick={() => void add()} type="button">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Add
         </Button>
       </div>

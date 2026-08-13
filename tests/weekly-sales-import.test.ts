@@ -842,7 +842,11 @@ export async function runWeeklySalesImportTests() {
   {
     const branch = branchIndex({ branches: [{ key: "B01", fileType: "sales", region: "CA" }, { key: "B01", fileType: "stock", region: "CA" }] });
 
-    // (1) Unmapped alias → validated with warning (stored for auto-heal when alias is added).
+    // (1) Unmapped alias → BLOCKS the whole batch (Phase A, 2026-08-14). Previously this validated
+    // with a warning and silently skipped the row from the batch; the owner asked for an unmapped
+    // product to carry the same weight as an unmapped branch/region, so nothing imports until the
+    // alias is mapped — the row still surfaces (with its raw values) so the operator can fix it
+    // inline, it is just no longer eligible to import on its own.
     const unmappedAlias = await parseWeeklyWorkbookBuffer({
       buffer: await issWorkbook(),
       distributorCode: "IS-S",
@@ -854,11 +858,18 @@ export async function runWeeklySalesImportTests() {
     });
     assert.equal(unmappedAlias.ok, true);
     if (unmappedAlias.ok) {
-      assert.equal(unmappedAlias.result.status, "validated", "unmapped alias validates with warning (not blocked)");
-      assert.equal(unmappedAlias.result.rowCount, 0, "unresolved-product rows are skipped");
-      assert.equal(unmappedAlias.result.importableRows, 0, "skipped product rows are not importable");
-      assert.equal(unmappedAlias.rows.length, 0, "no unresolved-product fact rows are emitted");
-      assert.ok(unmappedAlias.result.issues.some((i) => i.field === "productCode" && i.severity === "warning"), "no-alias recorded as warning");
+      assert.equal(unmappedAlias.result.status, "blocked", "unmapped alias now blocks the batch, not just a warning");
+      assert.equal(unmappedAlias.result.failedRows, 1, "the unresolved-product row is counted as failed");
+      assert.equal(unmappedAlias.result.importableRows, 0, "a failed row is never importable");
+      assert.equal(unmappedAlias.rows.length, 1, "the row is still surfaced for the operator to fix, not silently dropped");
+      assert.ok(
+        unmappedAlias.result.issues.some((i) => i.field === "productCode" && i.severity === "failure"),
+        "no-alias is now recorded as a failure, not a warning",
+      );
+      assert.ok(
+        unmappedAlias.result.blockingReasons.some((r) => r.startsWith("Validation failed:")),
+        "blockingReasons explains why the batch is blocked",
+      );
     }
 
     // (2) Unpriced master → blocked.
@@ -909,6 +920,8 @@ export async function runWeeklySalesImportTests() {
       assert.ok(unmappedBranch.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "branch failure recorded");
     }
 
+    // Both an unmapped branch AND an unmapped product on the same row → both are now failures
+    // (previously the product miss was only a warning riding along with the branch failure).
     const unmappedProductAndBranch = await parseWeeklyWorkbookBuffer({
       buffer: await issWorkbook(),
       distributorCode: "IS-S",
@@ -920,9 +933,12 @@ export async function runWeeklySalesImportTests() {
     });
     assert.equal(unmappedProductAndBranch.ok, true);
     if (unmappedProductAndBranch.ok) {
-      assert.equal(unmappedProductAndBranch.result.status, "blocked", "unmapped branch blocks even when product is skipped");
-      assert.ok(unmappedProductAndBranch.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "branch failure still recorded");
-      assert.ok(unmappedProductAndBranch.result.issues.some((i) => i.field === "productCode" && i.severity === "warning"), "product miss remains a warning");
+      assert.equal(unmappedProductAndBranch.result.status, "blocked", "unmapped branch and product both block");
+      assert.ok(unmappedProductAndBranch.result.issues.some((i) => i.field === "regionCode" && i.severity === "failure"), "branch failure recorded");
+      assert.ok(
+        unmappedProductAndBranch.result.issues.some((i) => i.field === "productCode" && i.severity === "failure"),
+        "product miss is now also a failure, not a warning",
+      );
     }
 
     // excluded branch → cell dropped from totals, NOT a failure.
