@@ -84,6 +84,14 @@ export function runPhase24RealAuthRlsApiSmokeTests() {
   assert.match(smoke, /status: "skipped"/);
   assert.match(smoke, /failed\.length > 0 \|\| skipped\.length > 0/);
 
+  // salary_records_select_access grants full visibility via TWO disjuncts —
+  // phx_can_manage_payroll() OR phx_has_company_access() — not one. A company-reader role (CEO,
+  // isCompanyReader:true, canManagePayroll:false) can legitimately see a payroll row for someone
+  // with no live employees row (a resigned employee whose row was later removed — see
+  // deleting-an-employee-needs-a-full-text-scan), and that is not a leak. Both flags must gate the
+  // scoped-containment check, or a company-reader fails a test that can never legitimately pass.
+  assert.match(smoke, /canManagePayroll \|\| expectedByRole\[role\]\.isCompanyReader\) return/);
+
   assert.match(smoke, /assertSourceContains\("app\/api\/payroll\/upload\/route\.ts"/);
   assert.match(smoke, /assertPermission\\\(access, "payroll", "import"\\\)/);
   assert.match(smoke, /assertPermission\\\(access, "sales", "import"\\\)/);
