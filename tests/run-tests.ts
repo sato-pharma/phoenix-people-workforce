@@ -708,6 +708,7 @@ import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
 // end of the file where every other in-flight branch is also adding a line.
 import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected-request-visibility.test.ts";
 import { runMarketingRequestCaseFilePageTests } from "./marketing-request-case-file-page.test.ts";
+import { runMarketingRequestEventsMigrationTests } from "./marketing-request-events-migration.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1601,6 +1602,11 @@ await runTest(
 await runTest(
   "marketing request case file page (the notification URL finally renders the request; one-tap decisions still redirect; a failed read never renders as an empty one)",
   runMarketingRequestCaseFilePageTests,
+);
+
+await runTest(
+  "marketing request events (append-only survives TRUNCATE and the owner's own privileges; events outlive a deleted request; a backfilled row is never mistaken for a captured one)",
+  runMarketingRequestEventsMigrationTests,
 );
 
 await runTest(
