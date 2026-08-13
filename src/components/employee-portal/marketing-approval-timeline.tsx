@@ -4,6 +4,7 @@ import type {
   MarketingRequestStepProgress,
   MarketingRequestTimelineStep,
 } from "@/lib/marketing-requests/service";
+import type { MarketingRequestStatus } from "@/lib/marketing-requests/types";
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 /* --------- Status pill styling ------------------------------------------------------------------------------------------------------------------ */
@@ -51,10 +52,26 @@ function statusLabel(status: MarketingRequestTimelineStep["status"]): string {
 /* --------- Compact progress strip --------------------------------------------------------------------------------------------------------------- */
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */
 
+/**
+ * Where the request is, in one line.
+ *
+ * `status` is REQUIRED and is the whole point. MarketingRequestStepProgress carries no status, so
+ * this strip used to print "Currently with: Finance Execution" on every request it was given —
+ * including refused ones, where it names a rung Finance never saw and asserts that somebody is
+ * still holding a request that ended weeks ago. This is the tracking surface the audit called the
+ * module's headline failure, and that sentence was the failure.
+ *
+ * A finished request says what happened to it. Only a request actually in flight says who has it.
+ */
 export function MarketingProgressStrip({
   progress,
+  requestId,
+  status,
 }: {
   progress: MarketingRequestStepProgress | null;
+  /** When given, the strip offers the full record rather than being the end of the road. */
+  requestId?: string;
+  status: MarketingRequestStatus;
 }) {
   if (!progress) {
     return (
@@ -64,6 +81,7 @@ export function MarketingProgressStrip({
     );
   }
 
+  const inFlight = status === "pending_approval";
   const currentApprover =
     progress.currentApproverName.trim().length > 0
       ? ` — ${progress.currentApproverName}`
@@ -72,17 +90,52 @@ export function MarketingProgressStrip({
   return (
     <div className="space-y-1">
       <p className="text-[11px] font-bold text-slate-600">
-        Step {progress.sequence}/{progress.totalGatingSteps} · Currently with:{" "}
-        {progress.currentStepName}
-        {currentApprover}
+        {inFlight ? (
+          <>
+            Step {progress.sequence}/{progress.totalGatingSteps} · Currently with:{" "}
+            {progress.currentStepName}
+            {currentApprover}
+          </>
+        ) : (
+          <>
+            {progress.approvedGatingCount}/{progress.totalGatingSteps} approvals ·{" "}
+            {terminalSentence(status)}
+          </>
+        )}
       </p>
       {progress.returnReason ? (
         <p className="rounded-sm border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-medium text-amber-800">
           Returned: {progress.returnReason}
         </p>
       ) : null}
+      {requestId ? (
+        <a
+          className="inline-block text-[10px] font-bold text-orange-700 underline underline-offset-2 hover:text-orange-800"
+          href={`/marketing-requests/${requestId}`}
+        >
+          Open the full record
+        </a>
+      ) : null}
     </div>
   );
+}
+
+/** What happened to a request that is no longer moving. Never "currently with". */
+function terminalSentence(status: MarketingRequestStatus): string {
+  switch (status) {
+    case "rejected":
+      return "Refused — nobody is waiting on this";
+    case "returned":
+      return "Returned to the requester for changes";
+    case "approved":
+      return "Approved — no approvals outstanding";
+    case "active":
+      return "Approved and executing";
+    case "draft":
+      return "Draft — not submitted yet";
+    default:
+      return `No longer in approval (${status.replace(/_/g, " ")})`;
+  }
 }
 
 /* --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- */

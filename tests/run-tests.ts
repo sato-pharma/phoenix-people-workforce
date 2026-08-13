@@ -710,6 +710,11 @@ import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected
 import { runMarketingRequestCaseFilePageTests } from "./marketing-request-case-file-page.test.ts";
 import { runMarketingRequestEventsMigrationTests } from "./marketing-request-events-migration.test.ts";
 import { runMarketingSelfApprovalTests } from "./marketing-self-approval.test.ts";
+import { runMarketingRejectTerminalisesTests } from "./marketing-reject-terminalises.test.ts";
+import { runMarketingRequestHistoryTests } from "./marketing-request-history.test.ts";
+import { runMarketingProgressStripStatusTests } from "./marketing-progress-strip-status.test.ts";
+import { runMarketingWorkQueuePageTests } from "./marketing-work-queue-page.test.ts";
+import { runMarketingConfigGrantsTests } from "./marketing-config-grants.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1614,6 +1619,31 @@ await runTest(
 await runTest(
   "marketing self-approval refused (the requester cannot decide their own request at the chain, the service or the RPC; casing does not defeat it; a different approver still can)",
   runMarketingSelfApprovalTests,
+);
+
+await runTest(
+  "marketing reject terminalises the chain (later rungs stop reading as pending work, the return is no longer erased, decided rungs and a RETURN are untouched)",
+  runMarketingRejectTerminalisesTests,
+);
+
+await runTest(
+  "marketing request history (a comment the step row overwrote is still visible; a failed read is never an empty timeline; an unrecorded actor is never 'the system')",
+  runMarketingRequestHistoryTests,
+);
+
+await runTest(
+  "marketing progress strip (a finished request stops claiming a named colleague is holding it; the status is a required prop)",
+  runMarketingProgressStripStatusTests,
+);
+
+await runTest(
+  "marketing work queue page (/marketing-requests finally exists; a failed read is never an empty queue; scoped by actor, not by a role switch)",
+  runMarketingWorkQueuePageTests,
+);
+
+await runTest(
+  "marketing config table grants (the browser roles lose TRUNCATE, which no RLS policy could ever stop; SELECT and service_role survive)",
+  runMarketingConfigGrantsTests,
 );
 
 await runTest(

@@ -2589,7 +2589,11 @@ function MarketingRequestDraftWorkspaceInner() {
                     </div>
 
                     <div className="mt-2">
-                      <MarketingProgressStrip progress={progress} />
+                      <MarketingProgressStrip
+                        progress={progress}
+                        requestId={request.id}
+                        status={request.status}
+                      />
                     </div>
 
                     {expanded ? (

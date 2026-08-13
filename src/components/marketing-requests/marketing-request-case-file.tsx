@@ -2,6 +2,7 @@ import type {
   CaseFileBlock,
   MarketingCaseFileChain,
   MarketingCaseFileCustomer,
+  MarketingCaseFileHistory,
   MarketingCaseFileProducts,
   MarketingCaseFileTargetPharmacies,
   MarketingCaseFileWarning,
@@ -137,17 +138,30 @@ function rungClasses(rung: MarketingCaseFileChain["rungs"][number]) {
 }
 
 function Chain({ chain, status }: { chain: MarketingCaseFileChain; status: MarketingRequestStatus }) {
-  // Nobody is holding a request that has already ended. `chain.currentStepName` still names a rung
-  // on a refused request (the underlying steps were never closed out — see below), and rendering
-  // "now with Finance Execution" on a request Finance never saw is exactly the kind of confident
-  // wrong answer this page exists to stop. Caught in the browser against the live rejected request.
+  // Nobody is holding a request that has already ended. `chain.currentStepName` is derived from the
+  // step rows, so it named a rung on a refused request for as long as those rows stayed `pending`,
+  // and rendering "now with Finance Execution" on a request Finance never saw is exactly the kind
+  // of confident wrong answer this page exists to stop. Caught in the browser against the live
+  // rejected request. The guard stays even though the rows are now closed out at the source: the
+  // sentence is only ever true of a request still in flight, whatever the chain happens to say.
   const isInFlight = status === "pending_approval";
 
-  // A `pending` rung on a REFUSED request was never reached and never will be. The decision RPC
-  // does not mark the remaining rungs `skipped` when it rejects, so the raw status says "pending" —
-  // which on screen reads as four people who still owe a decision. Rendering the truth here does
-  // not change the data; closing the rungs out properly is a separate migration.
-  const neverReached = status === "rejected";
+  // A rung below the refusal was never reached and never will be.
+  //
+  // The decision RPC now closes these out as `skipped` in the same transaction as the reject, and
+  // the migration backfilled the rows that were already stranded — so this normally reads real data
+  // rather than compensating for it.
+  //
+  // `skipped` alone is NOT enough to say "not reached", because three different things write it: a
+  // CC row (informational, skipped from birth), a rung the requester was assigned to (skipped with
+  // a decision note explaining why), and a rung the refusal closed out. Only the third was never
+  // reached, and it is the only one with no note and no CC tag. `pending` stays as a fallback for
+  // rows written before the migration — "pending" on a dead request is the outcome worth defending
+  // against, because it reads as work somebody still owes.
+  const neverReached = (rung: MarketingCaseFileChain["rungs"][number]) =>
+    status === "rejected" &&
+    !rung.isCc &&
+    (rung.status === "pending" || (rung.status === "skipped" && !rung.decisionNote));
 
   return (
     <>
@@ -193,14 +207,10 @@ function Chain({ chain, status }: { chain: MarketingCaseFileChain; status: Marke
               </div>
               <span
                 className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] ${
-                  neverReached && rung.status === "pending"
-                    ? "bg-slate-100 text-slate-400"
-                    : rungClasses(rung)
+                  neverReached(rung) ? "bg-slate-100 text-slate-400" : rungClasses(rung)
                 }`}
               >
-                {neverReached && rung.status === "pending"
-                  ? "not reached"
-                  : rung.status.replace(/_/g, " ")}
+                {neverReached(rung) ? "not reached" : rung.status.replace(/_/g, " ")}
               </span>
             </div>
             {rung.decisionAt || rung.decisionNote ? (
@@ -219,6 +229,52 @@ function Chain({ chain, status }: { chain: MarketingCaseFileChain; status: Marke
           </li>
         ))}
       </ol>
+    </>
+  );
+}
+
+/* ── history ──────────────────────────────────────────────────────────────── */
+
+function History({ history }: { history: MarketingCaseFileHistory }) {
+  return (
+    <>
+      <p className="mt-2 text-[12px] font-medium text-slate-600">
+        {history.commentCount > 0
+          ? `${history.commentCount} comment${history.commentCount === 1 ? "" : "s"} · ${history.entries.length} event${history.entries.length === 1 ? "" : "s"}`
+          : `${history.entries.length} event${history.entries.length === 1 ? "" : "s"}`}
+      </p>
+      <ol className="mt-2 space-y-1.5">
+        {history.entries.map((entry) => (
+          <li
+            className={`border px-3 py-2.5 ${
+              // A comment is the reason this section exists — the step row can only ever hold the
+              // latest one, so an earlier comment appears HERE or nowhere.
+              entry.kind === "step_commented"
+                ? "border-orange-200 bg-orange-50/40"
+                : "border-slate-200 bg-white"
+            }`}
+            key={`${entry.occurredAt}-${entry.kind}-${entry.stepName ?? ""}`}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="min-w-0 text-[13px] font-medium text-slate-950">{entry.headline}</p>
+              <span className="shrink-0 text-[11px] text-slate-500">{entry.atLabel}</span>
+            </div>
+            {entry.note ? (
+              <p className="mt-1 break-words text-[12px] font-medium leading-5 text-slate-700">
+                {entry.note}
+              </p>
+            ) : null}
+            {/* A reconstruction is labelled as one. A row derived from the request's own columns
+                during the backfill did not witness the event, and must not pass as if it had. */}
+            {entry.isBackfilled ? (
+              <p className="mt-1 text-[10px] uppercase tracking-[0.06em] text-slate-400">
+                Reconstructed from the request&apos;s own rows
+              </p>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-2 text-[11px] leading-5 text-slate-400">{history.coverageSentence}</p>
     </>
   );
 }
@@ -424,7 +480,7 @@ function Customer({ customer, canSeePii }: { customer: MarketingCaseFileCustomer
 /* ── the page view ────────────────────────────────────────────────────────── */
 
 export function MarketingRequestCaseFileView({ caseFile }: { caseFile: MarketingRequestCaseFile }) {
-  const { chain, customer, header, lazySections, money, outcome, products, targetPharmacies, viewer, warnings } =
+  const { chain, customer, header, history, lazySections, money, outcome, products, targetPharmacies, viewer, warnings } =
     caseFile;
 
   return (
@@ -543,6 +599,11 @@ export function MarketingRequestCaseFileView({ caseFile }: { caseFile: Marketing
 
           <SectionLabel>Approval chain</SectionLabel>
           <Block block={chain}>{(value) => <Chain chain={value} status={header.status} />}</Block>
+
+          {/* Directly under the chain: the chain says WHERE the request is, this says how it got
+              there — and holds the comments the step rows overwrote. */}
+          <SectionLabel>History and comments</SectionLabel>
+          <Block block={history}>{(value) => <History history={value} />}</Block>
 
           <SectionLabel>Customer</SectionLabel>
           <Block block={customer}>

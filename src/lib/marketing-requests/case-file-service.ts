@@ -35,6 +35,7 @@ import {
   type MarketingCaseFileChain,
   type MarketingCaseFileChainRung,
   type MarketingCaseFileCustomer,
+  type MarketingCaseFileHistory,
   type MarketingCaseFileLazySection,
   type MarketingCaseFileMoney,
   type MarketingCaseFileOutcome,
@@ -47,7 +48,9 @@ import {
   type MarketingCaseFileViewer,
   type MarketingCaseFileWarning,
   type MarketingRequestCaseFile,
+  type MarketingRequestEventKind,
 } from "@/lib/marketing-requests/case-file-types";
+import { cairoDateTime } from "@/lib/marketing-requests/request-report-columns";
 import { loadMarketingEvidencePhoto } from "@/lib/marketing-requests/evidence-photo-storage";
 import {
   loadMarketingCustomerSpendHistory,
@@ -664,6 +667,7 @@ export async function getMarketingRequestCaseFile(
     pharmaciesResult,
     customerResult,
     spentBeforeBlock,
+    historyBlock,
     overlaps,
   ] = await Promise.all([
     loadMarketingRequestTypeName(supabase, request.requestTypeId).catch(() => null),
@@ -671,6 +675,9 @@ export async function getMarketingRequestCaseFile(
     loadTargetPharmacies(supabase, cleanRequestId, canSeeCustomerPii),
     loadCustomerBlock(supabase, request, canSeeCustomerPii, nameOf),
     loadSpentBefore(supabase, request),
+    // Joins the same batch rather than adding a round trip of its own: every DB call from here
+    // crosses to Frankfurt, so what costs is the number of trips, not the size of one.
+    loadHistoryBlock(supabase, cleanRequestId, nameOf),
     // The ONE place a caught failure is allowed to become a value — and it becomes `null`, which
     // buildCaseFileWarnings renders as "UNKNOWN", never as "clear".
     loadMarketingRequestOverlaps(supabase, request).then(
@@ -764,6 +771,7 @@ export async function getMarketingRequestCaseFile(
       status: request.status,
       submittedAt: request.submittedAt,
     },
+    history: historyBlock,
     lazySections: buildLazySections(cleanRequestId, access, admittedAs),
     money: buildMoney(request, spentBeforeBlock),
     outcome,
@@ -1091,6 +1099,124 @@ async function loadSpentBefore(
       "The customer's earlier requests could not be read, so what has already been spent here is unknown — it is NOT a clean slate.",
     );
   }
+}
+
+/**
+ * Prose for each event kind. A raw `step_commented` must never reach a screen.
+ *
+ * Exported so this is tested for what it SAYS rather than for how it is written — in particular
+ * that an unrecorded actor never renders as "the system", which is the one substitution that turns
+ * a gap in the record into a false statement about who acted.
+ */
+export function marketingHistoryHeadline(
+  row: Pick<MarketingRequestEventRow, "from_status" | "kind" | "step_name" | "to_status">,
+  actorName: string | null,
+): string {
+  const who = actorName ?? "Someone (not recorded)";
+  const step = row.step_name ? ` at ${row.step_name}` : "";
+  switch (row.kind) {
+    case "request_created":
+      return `${who} raised the request`;
+    case "request_submitted":
+      return `${who} submitted it for approval`;
+    case "request_status_changed":
+      // The status words are the DB's own vocabulary; underscores are not for reading.
+      return `Status changed${row.from_status ? ` from ${row.from_status.replace(/_/g, " ")}` : ""}${
+        row.to_status ? ` to ${row.to_status.replace(/_/g, " ")}` : ""
+      }`;
+    case "request_value_changed":
+      return `${who} changed the requested figures`;
+    case "request_deleted":
+      return `${who} deleted the request`;
+    case "step_opened":
+      return `Opened${step}`;
+    case "step_decided":
+      // A rung a REFUSAL closed out arrives here too: the reject marks every waiting rung
+      // 'skipped', which is a status change, so the capture trigger records it as `step_decided`
+      // with `decision_by_hr_id` still null — and the trigger then falls back to `assigned_hr_id`
+      // for the actor. Naming that person would say they skipped their own step. Nobody decided it;
+      // the refusal ended the chain above it. Caught on staging by reading the events a reject
+      // actually writes, not by reading the trigger.
+      if (row.to_status === "skipped") return `Closed out without a decision${step}`;
+      return `${who} ${row.to_status ? row.to_status.replace(/_/g, " ") : "decided"}${step}`;
+    case "step_commented":
+      return `${who} commented${step}`;
+  }
+}
+
+export type MarketingRequestEventRow = {
+  actor_hr_id: string | null;
+  from_status: string | null;
+  kind: MarketingRequestEventKind;
+  note: string | null;
+  occurred_at: string;
+  payload: Record<string, unknown> | null;
+  step_name: string | null;
+  step_sequence: number | null;
+  to_status: string | null;
+};
+
+/**
+ * The event log — the only record of a comment that was later overwritten.
+ *
+ * `postMarketingAdvisoryComment` writes the comment into ONE text column on the CC step, so a
+ * reviewer's second comment replaces their first and the row can only ever show the latest. The
+ * `marketing_request_steps_capture_event` trigger records each write as its own `step_commented`
+ * row, so the history survives — but nothing read it until this function, which made a preserved
+ * comment indistinguishable from a destroyed one for anyone actually using the app.
+ *
+ * A failed read is `unavailable`, never an empty list: "there is no history" and "the history could
+ * not be read" are the two answers this whole contract exists to keep apart.
+ */
+async function loadHistoryBlock(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  requestId: string,
+  nameOf: (hrId: string | null | undefined) => string,
+): Promise<CaseFileBlock<MarketingCaseFileHistory>> {
+  const result = await supabase
+    .from("marketing_request_events")
+    .select("kind,actor_hr_id,occurred_at,from_status,to_status,step_sequence,step_name,note,payload")
+    .eq("request_id", requestId)
+    .order("occurred_at", { ascending: true })
+    .order("id", { ascending: true });
+
+  if (result.error) {
+    return caseFileUnavailable(
+      `The history could not be read (${result.error.message}). Nothing is being shown rather than an empty timeline, which would read as "nothing ever happened".`,
+    );
+  }
+
+  const rows = (result.data ?? []) as MarketingRequestEventRow[];
+  const entries = rows.map((row) => {
+    const name = nameOf(row.actor_hr_id);
+    // nameOf falls back to the upper-cased HR_ID for an id it cannot resolve; an empty string is
+    // what it returns for no id at all, and THAT is the "not recorded" case.
+    const actorName = name === "" ? null : name;
+    return {
+      actorHrId: row.actor_hr_id,
+      actorName,
+      atLabel: cairoDateTime(row.occurred_at) ?? row.occurred_at,
+      headline: marketingHistoryHeadline(row, actorName),
+      isBackfilled: row.payload?.backfilled === true || row.payload?.backfilled === "true",
+      kind: row.kind,
+      note: row.note,
+      occurredAt: row.occurred_at,
+      stepName: row.step_name,
+    };
+  });
+
+  const commentCount = entries.filter((entry) => entry.kind === "step_commented").length;
+
+  return caseFileOk({
+    commentCount,
+    // Never present a short list as a complete one. The table starts on 2026-08-13; a comment a
+    // reviewer overwrote before that was only ever held in one column and is genuinely gone.
+    coverageSentence:
+      entries.length === 0
+        ? "No history has been recorded for this request. Events have only been captured since 13 Aug 2026 — anything earlier was not kept."
+        : `${entries.length} recorded event${entries.length === 1 ? "" : "s"}. Events have been captured since 13 Aug 2026; entries marked as reconstructed were derived from the request's own rows rather than recorded as they happened.`,
+    entries,
+  });
 }
 
 /**
