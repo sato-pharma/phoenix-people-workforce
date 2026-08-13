@@ -775,6 +775,7 @@ import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.te
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-canonical.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
 import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
@@ -1914,6 +1915,11 @@ await runTest(
 await runTest(
   "marketing manager monthly closing (portal tab, three gates agree, full workbook, no sales:import)",
   runMarketingManagerMonthlyClosingTests,
+);
+
+await runTest(
+  "portal home plan count (reads canonical countPlanAwaiting, never the superseded empty weekly_plans table)",
+  runPortalHomePlanCountCanonicalTests,
 );
 
 await runTest(

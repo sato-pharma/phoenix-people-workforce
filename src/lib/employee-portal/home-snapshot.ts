@@ -18,6 +18,7 @@ import {
 } from "@/lib/employees/employee-directory";
 import { approvedMarketingRequestStatuses, getMarketingOverview, type MarketingOverviewMetrics } from "@/lib/marketing-requests/service";
 import { getAwaitingMyActionItems } from "@/lib/action-center/service";
+import { countPlanAwaiting } from "@/lib/approvals-hub/service";
 import { getDoubleVisitPortalFocus } from "@/lib/double-visit-analytics/service";
 import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types";
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
@@ -634,15 +635,19 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
       : Promise.resolve(null);
 
   // Plans waiting for this user's manager approval (non-MR portal managers only).
+  //
+  // Reads the canonical approvals-hub responder logic, NOT a raw table count. This used to query
+  // `weekly_plans` directly, which is the SUPERSEDED plan generation — the live plan engine is
+  // `employee_plan_headers`/`_items`/`_decisions`, and `weekly_plans` holds ZERO rows in
+  // production. Every portal manager therefore saw "0 plans awaiting approval" on their home page
+  // no matter how many were actually queued. Found by the 2026-08-13 rationalization audit.
+  //
+  // countPlanAwaiting() is the same function behind the sidebar badge
+  // (/api/approvals/plan/pending-count), so the home card and the badge can no longer disagree —
+  // it resolves the responder chain (manager vs CEO step) rather than matching one column.
   const managerPlanCountPromise =
     !isMr && hrId
-      ? wrapPromise(
-          supabase
-            .from("weekly_plans")
-            .select("id", { count: "exact", head: true })
-            .eq("manager_hr_id", (canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase()))
-            .eq("status", "submitted"),
-        )
+      ? wrapPromise(countPlanAwaiting(access).then((count) => ({ count })))
       : Promise.resolve(null);
 
   // All three fire in parallel (sequential in dev to protect Turbopack workers).
