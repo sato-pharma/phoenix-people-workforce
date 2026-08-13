@@ -35,7 +35,7 @@
 
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
-import type { AchievementRow } from "@/lib/sales/monthly-targets";
+import { resolveTargetLineCode, type AchievementRow } from "@/lib/sales/monthly-targets";
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
 
@@ -233,84 +233,100 @@ export async function loadBrickSales(period: string): Promise<BrickSalesRow[]> {
 }
 
 /**
- * Source-of-Sales distributor codes that are not a distributor at all.
+ * The `${lineCode}|${period}` pairs whose Monthly Closing has been PUBLISHED.
  *
- * `DirectReq` is the pseudo-distributor the Direct Orders module injects approved orders
- * under; `DIRECT` is the legacy manual direct upload. Both write into Source of Sales one
- * order at a time, all month long. Neither is evidence that the month's distributor files
- * have arrived.
+ * Distributor files landing is necessary but not sufficient for a live dashboard to trust a
+ * month: Monthly Closing publication is a separate, LATER, admin-gated action (see
+ * monthly-closing-publication.ts) — the owner reconciles a line's numbers and clicks Publish
+ * only once they are final. [Owner ruling, 2026-08-13]: the live "sales vs target" and keycard
+ * dashboards must show a period ONLY once its Monthly Closing is published, per line — a blank
+ * dashboard is the correct, intended state until then, never a live-but-unclosed number.
+ *
+ * This replaced the earlier "any real distributor upload landed" signal (loadUploadedPeriods),
+ * which fixed the August-direct-order regression but still let the dashboard show a month's
+ * raw, not-yet-reconciled figures for up to 12 days before that line's closing was actually
+ * published (July 2026: Anti Infective published 2026-08-08, Pedia 2026-08-10, CNS 2026-08-12
+ * — all landed their distributor files well before that).
+ *
+ * Deliberately NOT caught by the caller: an error boundary is recoverable, whereas an empty
+ * set would make the UI assert that a published month was never published — the exact false
+ * certainty this whole module exists to prevent.
  */
-const NON_DISTRIBUTOR_BATCH_CODES = new Set(["direct", "directreq"]);
-
-/**
- * The periods whose monthly Source-of-Sales distributor upload has actually landed.
- *
- * `has_actual` cannot answer this, and believing it cost the dashboard its credibility:
- * on 2026-08-10 Finance booked ONE direct order into August (20 units of Guamusin,
- * 1,309.50 EGP, area GZ1). That single row set `has_actual`, August ranked as the newest
- * loaded month, and every viewer with company scope opened Sales vs Target on 1,309.50 EGP
- * against a 17,508,935 EGP target — 0.0% achievement for every line, region, area and rep,
- * on the screen the field force reads daily. The distributor batch ledger is the only
- * honest signal for "this month is in".
- *
- * Deliberately NOT caught by the caller: an error boundary is recoverable, whereas an
- * empty set would make the UI assert that a month nobody has questioned was never
- * uploaded — the exact false certainty this whole module exists to prevent.
- */
-export async function loadUploadedPeriods(from: string, to: string): Promise<Set<string>> {
+export async function loadPublishedPeriodKeys(from: string, to: string): Promise<Set<string>> {
   if (!isValidVsTargetPeriod(from) || !isValidVsTargetPeriod(to) || to < from) return new Set();
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
-    .from("source_of_sales_import_batches")
-    .select("period,distributor_code")
+    .from("monthly_closing_publications")
+    .select("line,period")
     .gte("period", from)
     .lte("period", to);
   if (error) throw error;
-  return uploadedPeriodsOf((data ?? []) as Record<string, unknown>[]);
+  return publishedPeriodKeysOf((data ?? []) as Record<string, unknown>[]);
 }
 
-/** Pure half of the loader, so the direct-order exclusion is testable without a database. */
-export function uploadedPeriodsOf(batches: Array<Record<string, unknown>>): Set<string> {
-  const periods = new Set<string>();
-  for (const batch of batches) {
-    const period = str(batch.period).trim();
-    // Case-insensitive: the ledger holds both `DIRECT` and `DirectReq`.
-    const code = str(batch.distributor_code).trim().toLowerCase();
-    if (!period || NON_DISTRIBUTOR_BATCH_CODES.has(code)) continue;
-    periods.add(period);
+/**
+ * Pure half of the loader, so the line-spelling resolution is testable without a database.
+ *
+ * `monthly_closing_publications.line` holds the verbatim official Source-of-Sales line label
+ * ("Anti Infective", "CNS", "Pedia" — see monthly-closing-portal.ts), not the short code
+ * AchievementRow carries. resolveTargetLineCode is the SAME resolver the Closing Matrix itself
+ * uses to look up targets for a line it is showing, so this cannot drift into its own second
+ * definition of "which line is this". A row whose `line` text does not resolve is silently
+ * dropped — fail SAFE, matching monthly-closing-publication.ts's own convention: a wiring or
+ * spelling problem must read as "not published", never crash the dashboard or, worse, publish
+ * everything.
+ */
+export function publishedPeriodKeysOf(closings: Array<Record<string, unknown>>): Set<string> {
+  const keys = new Set<string>();
+  for (const closing of closings) {
+    const period = str(closing.period).trim();
+    const lineCode = resolveTargetLineCode(str(closing.line));
+    if (!period || !lineCode) continue;
+    keys.add(`${lineCode}|${period}`);
   }
-  return periods;
+  return keys;
+}
+
+/** True when a row's own (line, period) has a published Monthly Closing. */
+export function isRowPublished(
+  row: Pick<AchievementRow, "lineCode" | "period">,
+  publishedKeys: ReadonlySet<string>,
+): boolean {
+  return row.lineCode != null && publishedKeys.has(`${row.lineCode}|${row.period}`);
 }
 
 /**
  * The month the dashboard opens on.
  *
- * Two conditions, BOTH required: the month's distributor upload has landed, and this
- * viewer has sales inside it. Ranking on sales alone is what put the whole company on
- * August's single direct order.
+ * Two conditions, BOTH required: the month's (line-scoped) Monthly Closing is published, and
+ * this viewer has sales inside it. Ranking on sales alone is what put the whole company on
+ * August's single direct order; ranking on "any distributor file landed" is what kept showing
+ * a month's raw figures for up to 12 days before that line's owner actually published them.
  *
- * When the viewer has no sales in any uploaded month we still open on the newest UPLOADED
- * month rather than on the newest month carrying any row at all: "nothing in your scope"
- * is a fact the viewer can act on, a confident 0% against a month nobody has uploaded is
- * not. `fallback` (the current month) is reached only when no month has been uploaded.
+ * When the viewer has no sales in any published month we still open on the newest PUBLISHED
+ * month rather than on the newest month carrying any row at all: "nothing in your scope" is a
+ * fact the viewer can act on, a confident 0% against a month nobody has closed is not.
+ * `fallback` (the current month) is reached only when nothing has been published at all.
  */
 export function pickLandingPeriod(
   rows: AchievementRow[],
-  uploadedPeriods: ReadonlySet<string>,
+  publishedKeys: ReadonlySet<string>,
   fallback: string,
 ): string {
   let withSales: string | null = null;
   for (const row of rows) {
-    if (!row.hasActual || !uploadedPeriods.has(row.period)) continue;
+    if (!row.hasActual || !isRowPublished(row, publishedKeys)) continue;
     if (withSales == null || row.period > withSales) withSales = row.period;
   }
   if (withSales) return withSales;
 
-  let newestUploaded: string | null = null;
-  for (const period of uploadedPeriods) {
-    if (newestUploaded == null || period > newestUploaded) newestUploaded = period;
+  let newestPublished: string | null = null;
+  for (const key of publishedKeys) {
+    const period = key.slice(key.indexOf("|") + 1);
+    if (!period) continue;
+    if (newestPublished == null || period > newestPublished) newestPublished = period;
   }
-  return newestUploaded ?? fallback;
+  return newestPublished ?? fallback;
 }
 
 // ── Totals with target-coverage accounting ───────────────────────────────────

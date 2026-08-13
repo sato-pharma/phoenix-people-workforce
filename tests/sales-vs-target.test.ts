@@ -8,12 +8,12 @@ import {
   isValidVsTargetPeriod,
   pickLandingPeriod,
   priorPeriodOf,
+  publishedPeriodKeysOf,
   rollupBricks,
   rollupByArea,
   rollupByRep,
   shiftPeriod,
   totalRows,
-  uploadedPeriodsOf,
   type BrickSalesRow,
   type VsTargetNames,
 } from "../src/lib/sales/vs-target.ts";
@@ -173,8 +173,8 @@ export function runSalesVsTargetTests() {
   assert.equal(repNodes.length, 1, "a row with no resolved occupant is dropped rather than shown under an invented rep");
   assert.equal(repNodes[0].name, "Mona Farid", "reps are shown by name");
 
-  // ── "Not uploaded yet" is not "sold nothing" ───────────────────────────────
-  // August 2026 carries targets copied forward from July but no Source-of-Sales upload.
+  // ── "Not published yet" is not "sold nothing" ──────────────────────────────
+  // August 2026 carries targets copied forward from July but no published Monthly Closing.
   // Every figure computes to a confident 0, which on the field force's daily dashboard
   // reads as company-wide collapse. This is the guard against that.
   //
@@ -182,16 +182,24 @@ export function runSalesVsTargetTests() {
   // the wrong reason: on 2026-08-10 Finance booked ONE direct order into August (20 units
   // of Guamusin, 1,309.50 EGP, area GZ1). That single row made August rank as the newest
   // loaded month, and every company-scope viewer opened on 1,309.50 EGP against a
-  // 17,508,935 EGP target — 0.0% for every line, region, area and rep. The landing month
-  // is now gated on the DISTRIBUTOR upload, which is the only thing that means "month in".
-  const uploaded = uploadedPeriodsOf([
-    { period: "2026-07", distributor_code: "EG" },
-    { period: "2026-07", distributor_code: "Office" },
-    // Both direct pseudo-distributors, in the two casings the ledger actually holds.
-    { period: "2026-08", distributor_code: "DirectReq" },
-    { period: "2026-08", distributor_code: "DIRECT" },
+  // 17,508,935 EGP target — 0.0% for every line, region, area and rep. A later guard gated
+  // on the distributor upload landing, but that still showed a month's raw, unclosed figures
+  // for up to 12 days before the owner actually published that line's Monthly Closing (July
+  // 2026: Anti Infective 2026-08-08, Pedia 2026-08-10, CNS 2026-08-12). The landing month is
+  // now gated on PUBLICATION, per line — the only thing that means "this month is done"
+  // [owner ruling, 2026-08-13].
+  const published = publishedPeriodKeysOf([
+    { line: "CNS", period: "2026-07" },
+    { line: "Anti Infective", period: "2026-07" },
+    // A line whose spelling does not resolve is silently dropped — fail SAFE, never
+    // crashes and never silently "publishes everything".
+    { line: "Not A Real Line", period: "2026-07" },
   ]);
-  assert.deepEqual([...uploaded], ["2026-07"], "a month carrying only direct-order batches has not been uploaded");
+  assert.deepEqual(
+    [...published].sort(),
+    ["anti_infective|2026-07", "cns|2026-07"],
+    "a publication row keys by lineCode (not the raw official-line spelling), and an unresolvable line is dropped",
+  );
 
   const targetOnlyMonth = [
     row({ period: "2026-08", actualValue: 0, targetValue: 549702.94, hasTarget: true, hasActual: false }),
@@ -200,24 +208,24 @@ export function runSalesVsTargetTests() {
   const loadedMonth = [row({ period: "2026-07", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true })];
 
   assert.equal(
-    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth, directOrderOnly], uploaded, "2026-08"),
+    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth, directOrderOnly], published, "2026-08"),
     "2026-07",
-    "one direct order booked into an un-uploaded month must not pull the whole dashboard onto that month",
+    "one direct order booked into an unpublished month must not pull the whole dashboard onto that month",
   );
   assert.equal(
-    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth], uploaded, "2026-08"),
+    pickLandingPeriod([...loadedMonth, ...targetOnlyMonth], published, "2026-08"),
     "2026-07",
-    "the landing month is the newest UPLOADED month with sales, not the newest month that merely has target rows",
+    "the landing month is the newest PUBLISHED month with sales, not the newest month that merely has target rows",
   );
   assert.equal(
-    pickLandingPeriod(targetOnlyMonth, uploaded, "2026-08"),
+    pickLandingPeriod(targetOnlyMonth, published, "2026-08"),
     "2026-07",
-    "a viewer with no sales anywhere still lands on the newest uploaded month, so the page can say 'nothing in your scope' instead of inventing a 0% month",
+    "a viewer with no sales anywhere still lands on the newest published month, so the page can say 'nothing in your scope' instead of inventing a 0% month",
   );
   assert.equal(
     pickLandingPeriod([...loadedMonth, directOrderOnly], new Set<string>(), "2026-08"),
     "2026-08",
-    "with no month uploaded at all the caller's fallback wins, and the UI renders the not-uploaded panel",
+    "with nothing published at all the caller's fallback wins, and the UI renders the not-published panel",
   );
 
   // ── Trend keeps empty months visible ───────────────────────────────────────
