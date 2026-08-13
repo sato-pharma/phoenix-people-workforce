@@ -20,17 +20,31 @@ import { normalizeCustomerCode } from "@/lib/direct-orders/hold-decision";
 // HELP EMPLOYEES?" If the system can prove two records are one pharmacy, it should merge them
 // rather than hand the mistake back to the person who made it.
 //
-// IDENTITY IS THE DISTRIBUTOR CUSTOMER CODE, and nothing else. Not the name — names are typed by
-// hand, in two languages, with the code sometimes in the wrong box. Not the brick — thousands of
-// pharmacies share one. The code is the only field whose match is a fact rather than a resemblance,
-// which is the same reasoning the hold rule and the auto-link rule already run on. A pharmacy
-// contributes two kinds of key: the codes actually LINKED to it, and — for the wrong-box case — the
-// code its digit-shaped NAME resolves to.
+// IDENTITY IS THE DISTRIBUTOR CUSTOMER CODE, wherever a code exists. Not the name — names are
+// typed by hand, in two languages, with the code sometimes in the wrong box. Not the brick —
+// thousands of pharmacies share one. The code is the only field whose match is a fact rather than a
+// resemblance, which is the same reasoning the hold rule and the auto-link rule already run on. A
+// pharmacy contributes two kinds of key: the codes actually LINKED to it, and — for the wrong-box
+// case — the code its digit-shaped NAME resolves to.
 //
 // EVERYTHING HERE IS A PROPOSAL. Nothing in this module writes. It returns a plan for an SFE
 // Manager to read, edit and confirm (owner rule 5), because a wrong merge is expensive and hard to
 // unpick: it moves live approval chains onto a different pharmacy and cancels orders. Same shape as
 // the standing rule on deductions — recommend, a human confirms, then it applies.
+//
+// THE NAME+AREA FALLBACK (owner, 2026-08-13) exists for a case the code match cannot see at all: a
+// pharmacy registered with NO distributor code, ever — explicitly allowed, "owner rule 2026-08-04",
+// so a rep who does not know the code is never blocked. Such a record carries zero identity keys,
+// so the code matcher above has nothing to compare it against, not even a wrong answer. Confirmed
+// live: "حضانه زمزم", area D15, registered twice the same day by the same rep — DOP-000018 and
+// DOP-000019, both codeless, neither ever surfaced.
+//
+// This does NOT weaken "identity is the code": the fallback fires ONLY for pharmacies that carry
+// ZERO identity keys on both sides of the comparison. A pharmacy with even one linked code is never
+// pulled into a name cluster, and never loses a code-based match to one — the two passes below
+// partition the input by "has a code" versus "has none" before either one runs. Matching is exact
+// (Arabic-normalized name, same area), not fuzzy, because this feeds an actionable MERGE proposal —
+// the same caution that makes survivorRank prefer a coded record over a coincidence.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A (distributor, customer) pair, however it reached the pharmacy. */
@@ -50,7 +64,19 @@ export type PharmacyForDedupe = {
   linkedCodes: ReadonlyArray<PharmacyCodePair>;
   /** Pairs the digit-shaped NAME resolves to in the distributor master — the wrong-box case. */
   nameCodeCandidates: ReadonlyArray<PharmacyCodePair>;
+  /**
+   * `phx_normalize_arabic(pharmacyName)`, computed by the caller (duplicate-resolution.ts has no
+   * database access and must not reimplement that folding). Empty string if not computed — a
+   * pharmacy that already carries an identity key never reads this field, so callers that only
+   * populate it for the codeless subset lose nothing.
+   */
+  normalizedName: string;
 };
+
+/** The evidence that two pharmacy records are one real pharmacy — a fact, or a strong resemblance. */
+export type PharmacyMergeEvidence =
+  | { kind: "code"; distributorCode: string; customerCode: string }
+  | { kind: "name"; normalizedName: string; areaCode: string };
 
 export type PharmacyMergeProposal = {
   /** The record that survives and receives every request. */
@@ -59,8 +85,8 @@ export type PharmacyMergeProposal = {
   survivorName: string;
   /** Records folded into the survivor and then deactivated. */
   mergedIds: string[];
-  /** The shared distributor customer that proves they are one pharmacy. */
-  provenBy: PharmacyCodePair;
+  /** What proves these are one pharmacy — a shared code, or a codeless name+area match. */
+  provenBy: PharmacyMergeEvidence;
   /** Why this record won, in words. */
   reason: string;
 };
@@ -166,12 +192,36 @@ export function groupDuplicatePharmacies(pharmacies: ReadonlyArray<PharmacyForDe
     }
   }
   // Remember which shared pair proved each cluster, for the "why" on screen.
-  const provenByCluster = new Map<string, PharmacyCodePair>();
+  const provenByCluster = new Map<string, PharmacyMergeEvidence>();
   for (const [key, ids] of byKey) {
     if (ids.length < 2) continue;
     for (let i = 1; i < ids.length; i += 1) union(ids[0], ids[i]);
     const [distributorCode, customerCode] = key.split("|");
-    provenByCluster.set(find(ids[0]), { distributorCode, customerCode });
+    provenByCluster.set(find(ids[0]), { kind: "code", distributorCode, customerCode });
+  }
+
+  // ── The name+area fallback, for pharmacies the code match cannot see at all ─────────────────
+  //
+  // Restricted to pharmacies with ZERO identity keys — a codeless record has nothing for the pass
+  // above to compare, right or wrong, so this never competes with or dilutes a code-proven cluster.
+  // Requires BOTH a normalized name and an area: area is the anchor that stops two unrelated
+  // pharmacies sharing a common name (a very ordinary occurrence) from being proposed as one.
+  const byNameKey = new Map<string, string[]>();
+  for (const pharmacy of pharmacies) {
+    if (pharmacyIdentityKeys(pharmacy).length > 0) continue;
+    const name = pharmacy.normalizedName.trim();
+    const area = String(pharmacy.areaCode ?? "").trim().toUpperCase();
+    if (!name || !area) continue;
+    const key = `${name}|${area}`;
+    const bucket = byNameKey.get(key) ?? [];
+    bucket.push(pharmacy.id);
+    byNameKey.set(key, bucket);
+  }
+  for (const [key, ids] of byNameKey) {
+    if (ids.length < 2) continue;
+    for (let i = 1; i < ids.length; i += 1) union(ids[0], ids[i]);
+    const [normalizedName, areaCode] = key.split("|");
+    provenByCluster.set(find(ids[0]), { kind: "name", normalizedName, areaCode });
   }
 
   const clusters = new Map<string, PharmacyForDedupe[]>();
@@ -192,7 +242,7 @@ export function groupDuplicatePharmacies(pharmacies: ReadonlyArray<PharmacyForDe
       survivorCode: survivor.phoenixPharmacyCode,
       survivorName: survivor.pharmacyName,
       mergedIds: ordered.slice(1).map((pharmacy) => pharmacy.id),
-      provenBy: provenByCluster.get(root) ?? { distributorCode: "", customerCode: "" },
+      provenBy: provenByCluster.get(root) ?? { kind: "code", distributorCode: "", customerCode: "" },
       reason: describeSurvivor(survivor),
     });
   }
