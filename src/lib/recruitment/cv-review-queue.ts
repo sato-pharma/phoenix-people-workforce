@@ -120,29 +120,58 @@ export function selectPendingReviewFields(input: {
 }
 
 /**
- * Prefill for the review board, with the identity triple forced to the candidate's STORED values.
+ * Prefill for the review board, with anything the CANDIDATE already holds winning over the AI.
  *
- * The board renders every schema field, including identity, and its save writes all of them. For a
- * manually created candidate that is fine — the reviewer typed the identity moments earlier. For an
- * auto-intake candidate it is not: `createCandidate` already resolved identity (choosing between the
- * CV's and the sender's per identitySource) and derived the dedupe norms from that choice. Prefilling
- * the board from the raw extraction instead would show a competing identity that a reviewer could
- * save without noticing, silently overwriting the resolved one. Seeding from the candidate makes the
- * default save a no-op for identity while still leaving it editable on purpose.
+ * The board renders every schema field and its save writes ALL of them, so whatever this function
+ * puts in a slot is what gets persisted. That makes the prefill the only thing standing between a
+ * review and the rest of the record, and seeding it purely from the extraction had two silent
+ * failure modes on an existing candidate:
+ *
+ *   - a column the AI never extracted reached the board empty and was saved back as `null`,
+ *     clearing a value a human had typed (updateCandidate treats an explicit null as "clear it");
+ *   - a column the AI DID extract but that was already filled reached the board holding the AI's
+ *     competing value, overwriting the human's on save.
+ *
+ * Neither is a decision the reviewer asked to make. selectPendingReviewFields deliberately surfaces
+ * only blank columns (gate 4), so a filled column is already settled — the queue's own contract is
+ * that it fills gaps and touches nothing else. Seeding from the candidate makes the default save a
+ * no-op for everything already answered, while leaving each field editable on purpose.
+ *
+ * The identity triple keeps an unconditional override: it shows the stored identity even when that
+ * is blank, so a reviewer can never save the CV's competing identity over the one createCandidate
+ * resolved (choosing between the CV's and the sender's per identitySource) and derived the
+ * national_id_norm/email_norm/phone_norm dedupe keys from.
  */
 export function buildReviewBoardFields(input: {
   extractedFields: ReviewQueueExtractedFields | null | undefined;
-  candidate: Pick<Candidate, "fullName" | "email" | "phone">;
+  positionKey: string;
+  candidate: Record<string, unknown>;
 }): ReviewQueueExtractedFields {
   const fields: ReviewQueueExtractedFields = { ...(input.extractedFields ?? {}) };
-  const stored: Record<string, string | null> = {
-    email: input.candidate.email,
-    fullName: input.candidate.fullName,
-    phone: input.candidate.phone,
-  };
+
+  const schema = getCvPositionSchema(input.positionKey);
+  for (const definition of schema?.fields ?? []) {
+    // Same storage gate as selectPendingReviewFields — a jsonb field is not a candidate column,
+    // so there is no stored column value to prefer over the proposal.
+    if (definition.storage !== "column") continue;
+    const stored = input.candidate[definition.key];
+    if (isBlankCandidateValue(stored)) continue;
+    // A stored value has to be board-shaped, then has to match the field's DECLARED type — the
+    // same defence selectPendingReviewFields applies to a malformed proposal, for the same reason:
+    // the board renders strings and booleans as different controls. (The first check is also what
+    // narrows `stored` off `unknown`; the declared-type pair alone does not, because it turns on
+    // `definition.type`.)
+    if (typeof stored !== "string" && typeof stored !== "boolean") continue;
+    if (definition.type === "boolean" && typeof stored !== "boolean") continue;
+    if (definition.type === "string" && typeof stored !== "string") continue;
+    // "high" because this is no longer the AI's guess — a stored value must not carry the
+    // low-confidence "Check this" badge.
+    fields[definition.key] = { confidence: "high", value: stored };
+  }
+
   for (const key of CV_IDENTITY_FIELD_KEYS) {
-    if (!(key in stored)) continue;
-    fields[key] = { confidence: "high", value: stored[key] ?? null };
+    const stored = input.candidate[key];
+    fields[key] = { confidence: "high", value: typeof stored === "string" ? stored : null };
   }
   return fields;
 }
@@ -207,15 +236,20 @@ export async function listCvReviewQueue(): Promise<CvReviewQueue> {
     if (!candidate) continue;
 
     const positionKey = String(row.position_key ?? "");
+    const candidateRecord = candidate as unknown as Record<string, unknown>;
     const pendingFields = selectPendingReviewFields({
-      candidate: candidate as unknown as Record<string, unknown>,
+      candidate: candidateRecord,
       extractedFields: row.extracted_fields,
       positionKey,
     });
     if (pendingFields.length === 0) continue;
 
     items.push({
-      boardFields: buildReviewBoardFields({ candidate, extractedFields: row.extracted_fields }),
+      boardFields: buildReviewBoardFields({
+        candidate: candidateRecord,
+        extractedFields: row.extracted_fields,
+        positionKey,
+      }),
       candidateId,
       candidateName: candidate.fullName,
       candidateSource: candidate.source,
