@@ -411,7 +411,16 @@ async function verifyScopedPayrollRows(
     .limit(500);
   if (error) throw error;
 
-  if (expectedByRole[role].canManagePayroll) return;
+  // salary_records_select_access grants full, unconditional visibility through two disjuncts:
+  // phx_can_manage_payroll() OR phx_has_company_access() (verified against pg_policy in both
+  // staging and production, 2026-08-13). A company-reader role's scope IS "every row" by design, so
+  // testing containment against "currently-live employees" is the wrong test for that role — it can
+  // never legitimately fail, and a row for a resigned employee whose employees row is gone (e.g.
+  // B-165, deleted 2026-08-05 after a duplicate-cleanup pass — see
+  // deleting-an-employee-needs-a-full-text-scan) is not a leak, it is exactly what "sees everything"
+  // means. Only the scoped branch (self OR visible-hr-ids, excluding resigned hr_ids) needs this
+  // check at all.
+  if (expectedByRole[role].canManagePayroll || expectedByRole[role].isCompanyReader) return;
 
   const allowed = new Set([...visibleEmployeeHrIds, user.hrId.toLowerCase()]);
   const leakedRows = (data ?? []).filter((row) => {
