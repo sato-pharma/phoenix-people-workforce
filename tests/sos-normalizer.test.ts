@@ -3,12 +3,11 @@ import { readFileSync } from "node:fs";
 
 import ExcelJS from "exceljs";
 
-import type { DistributorSalesValidationResult } from "../src/lib/sales/monthly-distributor-import.ts";
 import { normalizeRawWorkbook } from "../src/lib/sales/normalizer/engine.ts";
 import { distinctUnknowns, suggestProduct, type ProductRef } from "../src/lib/sales/normalizer/mapping.ts";
 import { deriveHierarchy, normalizeAliasKey, normalizeCodeKey, resolveBrick, resolveProduct } from "../src/lib/sales/normalizer/resolvers.ts";
 import type { Crosswalks, DistributorProfile, NormalizeException } from "../src/lib/sales/normalizer/types.ts";
-import { attachSkippedProductWarnings, productExceptionToWarningIssue, skippedProductRowsAdvisory } from "../src/lib/sales/source-of-sales-upload.ts";
+import { exceptionToIssue } from "../src/lib/sales/source-of-sales-upload.ts";
 
 const maps: Crosswalks = {
   brickById: new Map([
@@ -176,39 +175,40 @@ export async function runSosNormalizerTests() {
   assert.equal(du.customers[0]!.count, 2);
   assert.equal(du.customers[0]!.rawName, "Pharma C");
 
-  const productOnlyWarning = productExceptionToWarningIssue(exceptions[0]!);
-  assert.equal(productOnlyWarning.severity, "warning");
-  assert.match(productOnlyWarning.message, /skipped and not imported/);
-  assert.match(skippedProductRowsAdvisory([exceptions[0]!, exceptions[1]!]) ?? "", /did not block the upload/);
-  const baseValidationResult: DistributorSalesValidationResult = {
-    advisories: [],
-    blockingReasons: [],
-    byArea: [],
-    byBrick: [],
-    byLine: [],
-    byProduct: [],
-    byRegion: [],
-    distributor: { code: "IS", name: "Ibn Sina" },
-    failedRows: 0,
-    fileName: "raw.xlsx",
-    importableRows: 1,
-    issues: [],
-    period: "2026-04",
-    rowCount: 1,
-    sheetName: "Sheet1",
-    status: "validated",
-    templateKey: "normalizer",
-    templateName: "Raw distributor sheet",
-    totals: { rowCount: 1, totalBonusQty: 0, totalQty: 6, totalValue: 60 },
-    warningRows: 0,
-  };
-  const validatedWithSkippedProducts = attachSkippedProductWarnings(baseValidationResult, [exceptions[0]!, exceptions[1]!]);
-  assert.equal(validatedWithSkippedProducts.status, "validated");
-  assert.equal(validatedWithSkippedProducts.failedRows, 0);
-  assert.equal(validatedWithSkippedProducts.warningRows, 2);
-  assert.equal(validatedWithSkippedProducts.issues.every((issue) => issue.severity === "warning"), true);
+  // An unmapped product is now a hard failure — the same weight as an unmapped brick/territory —
+  // so it blocks the whole batch instead of silently dropping the row (owner rule, 2026-08-14).
+  const productOnlyIssue = exceptionToIssue(exceptions[0]!);
+  assert.equal(productOnlyIssue.severity, "failure");
+  assert.match(productOnlyIssue.message, /not mapped to a Phoenix product/);
+  const brickOnlyIssue = exceptionToIssue(exceptions[2]!);
+  assert.equal(brickOnlyIssue.severity, "failure");
 
   const workspaceSource = readFileSync("src/components/sales/normalizer-workspace.tsx", "utf8");
   assert.match(workspaceSource, /quietFailure/, "post-save coverage refresh must not overwrite a successful save with a generic fetch error");
   assert.match(workspaceSource, /Automatic coverage refresh could not complete/, "post-save refresh fallback must keep the successful save visible");
+
+  // importSourceOfSalesFile talks to the DB (distributor profiles, product/brick reference data),
+  // so it isn't unit-testable directly — pin its source text instead, the same way the workspace
+  // check above does for an equally DB/UI-bound path. This guards Phase C (2026-08-14): a
+  // product-only exception must block the raw/Normalizer upload path exactly like brick/territory
+  // already did, not get filtered out and downgraded to an advisory.
+  const uploadSource = readFileSync("src/lib/sales/source-of-sales-upload.ts", "utf8");
+  assert.doesNotMatch(
+    uploadSource,
+    /reason\s*!==\s*["']product["']/,
+    'the blocking set must not carve "product" exceptions back out — that reintroduces the silent-skip bug',
+  );
+  assert.match(
+    uploadSource,
+    /if \(exceptions\.length > 0\)/,
+    "every normalizer exception (product, brick, territory, customer) must block — the check must not filter by reason first",
+  );
+  assert.match(
+    uploadSource,
+    /issues = exceptions\.map\(exceptionToIssue\)/,
+    "blocked issues must come from the FULL exceptions list via exceptionToIssue, not a warning-only builder",
+  );
+  for (const removed of ["productExceptionToWarningIssue", "skippedProductRowsAdvisory", "ValidationResultWithNullableBatch"]) {
+    assert.doesNotMatch(uploadSource, new RegExp(removed), `${removed} was retired with the product-block fix and must not reappear`);
+  }
 }

@@ -1444,7 +1444,7 @@ export function SalesImportWorkspace({ distributors, initialBatches, initialDash
             refreshing={isRefreshingDashboard}
           />
         ) : activeTab === "monthly-sales" ? (
-          <MonthlySalesWizard />
+          <MonthlySalesWizard bricks={mappingReferences.bricks} products={mappingReferences.products} />
         ) : activeTab === "approvals" ? (
           <SalesQueue initialData={initialQueue} initialError={initialQueueError} />
         ) : activeTab === "sheets" ? (

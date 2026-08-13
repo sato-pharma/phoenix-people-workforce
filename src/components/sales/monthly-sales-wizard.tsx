@@ -9,6 +9,7 @@ import {
   LockOpen,
   SkipForward,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { useMemo, useRef, useState, useCallback } from "react";
 
@@ -16,8 +17,9 @@ import { AdminCallout } from "@/components/admin/admin-design-system";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { PreviewResult } from "@/components/sales/import-preview-modal";
+import { ProductAddForm, CustomerBrickAddForm, TerritoryAddForm } from "@/components/sales/source-of-sales-mapping-tab";
 import { formatCurrency, formatNumber } from "@/lib/sales/format";
-import type { DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
+import type { DistributorSalesValidationIssue, DistributorSalesValidationResult } from "@/lib/sales/monthly-distributor-import";
 import type { MonthlySalesRun, MonthlySalesStep } from "@/lib/sales/monthly-sales-run";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +28,76 @@ type ValidateResponse = { success: boolean; data?: DistributorSalesValidationRes
 type PreviewResponse = { success: boolean; data?: PreviewResult; error?: string };
 
 const OFFICE = "OFFICE";
+
+// Blocking issues from the raw/Normalizer fallback path (source-of-sales-upload.ts's exceptionToIssue)
+// carry one of these exact field labels — the coded-template path uses different field labels (sheet
+// header names) with no alias step behind them, so those stay text-only (nothing to "map").
+type MapNowKind = "product" | "customer" | "territory";
+type MapNowGroup = {
+  key: string;
+  field: string;
+  message: string;
+  count: number;
+  kinds: MapNowKind[];
+  productAlias: string | null;
+  customerCode: string | null;
+  territoryRaw: string | null;
+};
+
+// "Product & Territory" issues embed BOTH raw values as quoted substrings in the message (the
+// structured `value` field only ever carries one) — pull both out by position, product first.
+function extractQuotedPair(message: string): [string | null, string | null] {
+  const matches = [...message.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? null);
+  return [matches[0] ?? null, matches[1] ?? null];
+}
+
+function mapNowGroupsFromIssues(issues: DistributorSalesValidationIssue[]): MapNowGroup[] {
+  const groups = new Map<string, MapNowGroup>();
+  for (const issue of issues) {
+    if (issue.severity !== "failure") continue;
+    let kinds: MapNowKind[] | null = null;
+    let productAlias: string | null = null;
+    let customerCode: string | null = null;
+    let territoryRaw: string | null = null;
+    if (issue.field === "Product") { kinds = ["product"]; productAlias = issue.value ?? null; }
+    else if (issue.field === "Customer code") { kinds = ["customer"]; customerCode = issue.value ?? null; }
+    else if (issue.field === "Territory") { kinds = ["territory"]; territoryRaw = issue.value ?? null; }
+    else if (issue.field === "Product & Territory") {
+      kinds = ["product", "territory"];
+      [productAlias, territoryRaw] = extractQuotedPair(issue.message);
+    }
+    if (!kinds) continue;
+    const key = `${issue.field}::${issue.message}`;
+    const existing = groups.get(key);
+    if (existing) { existing.count += 1; continue; }
+    groups.set(key, { customerCode, field: issue.field, kinds, key, message: issue.message, count: 1, productAlias, territoryRaw });
+  }
+  return [...groups.values()];
+}
+
+function MapNowModal({ children, onClose, title }: { children: React.ReactNode; onClose: () => void; title: string }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+      <div
+        aria-modal="true"
+        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[6px] border border-[#D8E0EA] bg-white shadow-[0_28px_90px_rgba(15,23,42,0.28)]"
+        role="dialog"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-[#E2E8F0] bg-white px-5 py-3">
+          <h2 className="text-sm font-black text-[#0F172A]">{title}</h2>
+          <button
+            className="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-[#E2E8F0] text-[#64748B] transition hover:border-[#FDBA74]"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
 
 function statusTone(status: MonthlySalesStep["stepStatus"]): string {
   switch (status) {
@@ -43,13 +115,22 @@ async function readJson<T>(response: Response, fallback: T): Promise<T> {
   try { return JSON.parse(text) as T; } catch { return fallback; }
 }
 
-export function MonthlySalesWizard() {
+export function MonthlySalesWizard({
+  products = [],
+  bricks = [],
+}: {
+  /** Master products, for the inline "Map now" product-alias form. */
+  products?: { code: string; name: string }[];
+  /** Master bricks, for the inline "Map now" customer/territory forms. */
+  bricks?: { id: string; name: string }[];
+}) {
   const [period, setPeriod] = useState("");
   const [run, setRun] = useState<MonthlySalesRun | null>(null);
   const [activeCode, setActiveCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: "error" | "success" } | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
+  const [mapNowGroup, setMapNowGroup] = useState<MapNowGroup | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   // Captured at preview time so Confirm always uses the file that was actually reviewed,
   // even if the user accidentally triggers the file picker again between Preview and Confirm.
@@ -109,6 +190,15 @@ export function MonthlySalesWizard() {
       }
     } finally { setBusy(false); }
   }
+
+  // A "Map now" save closes the modal and re-runs the SAME preview in place — never a page navigation,
+  // never a re-pick of the file (fileRef still holds it from the original Preview click).
+  async function handleMappingSaved() {
+    setMapNowGroup(null);
+    await distributorPreview();
+  }
+
+  const mapNowGroups = useMemo(() => mapNowGroupsFromIssues(preview?.issues ?? []), [preview]);
 
   // Step 2 — persist the previewed upload, then record confirmation against the run with the batch id.
   // Uses previewFileRef (captured at preview time) rather than re-reading fileRef.current.files[0],
@@ -448,6 +538,24 @@ export function MonthlySalesWizard() {
                       <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Total value</p><p className="text-sm font-bold text-slate-800">{formatCurrency(preview.totals.totalValue)}</p></div>
                       <div className="rounded-xl border border-[#D8E0EA] bg-slate-50 p-3"><p className="text-xs font-black uppercase text-slate-500">Period</p><p className="text-sm font-bold text-slate-800">{preview.period ?? "—"}</p></div>
                     </div>
+                    {mapNowGroups.length > 0 ? (
+                      <div className="flex flex-col gap-2 rounded-xl border border-[#D8E0EA] bg-white p-3">
+                        <p className="text-xs font-black uppercase tracking-wide text-slate-500">Fix inline, without leaving this page</p>
+                        <ul className="flex flex-col gap-2">
+                          {mapNowGroups.map((group) => (
+                            <li key={group.key} className="flex items-center justify-between gap-3 rounded-lg border border-[#F1E4D8] bg-slate-50 px-3 py-2">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-bold text-slate-800">{group.message}</p>
+                                <p className="text-xs text-slate-500">{group.count} row{group.count === 1 ? "" : "s"}</p>
+                              </div>
+                              <Button className="shrink-0 gap-1 rounded-xl font-black" onClick={() => setMapNowGroup(group)} size="sm" variant="secondary">
+                                Map now
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     {preview.issues.length > 0 ? (
                       <div className="max-h-72 overflow-auto rounded-xl border border-[#D8E0EA]">
                         <table className="w-full text-sm">
@@ -488,6 +596,34 @@ export function MonthlySalesWizard() {
           <p className="text-sm text-slate-500">Pick a month and start the guided monthly close. You&apos;ll be walked through every distributor — upload, validate, confirm — then Office is computed last and the period is locked.</p>
         </Card>
       )}
+
+      {mapNowGroup && activeStep ? (
+        <MapNowModal onClose={() => setMapNowGroup(null)} title={`Map now — ${mapNowGroup.field}`}>
+          {mapNowGroup.kinds.includes("product") ? (
+            <ProductAddForm
+              distributorCode={activeStep.distributorCode}
+              onSaved={() => void handleMappingSaved()}
+              prefillAlias={mapNowGroup.productAlias ?? undefined}
+              products={products}
+            />
+          ) : null}
+          {mapNowGroup.kinds.includes("customer") ? (
+            <CustomerBrickAddForm
+              bricks={bricks}
+              distributorCode={activeStep.distributorCode}
+              onSaved={() => void handleMappingSaved()}
+              prefillCustomerCode={mapNowGroup.customerCode ?? undefined}
+            />
+          ) : null}
+          {mapNowGroup.kinds.includes("territory") ? (
+            <TerritoryAddForm
+              bricks={bricks}
+              onSaved={() => void handleMappingSaved()}
+              prefillRaw={mapNowGroup.territoryRaw ?? undefined}
+            />
+          ) : null}
+        </MapNowModal>
+      ) : null}
     </div>
   );
 }
