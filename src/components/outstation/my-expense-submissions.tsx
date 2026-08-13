@@ -42,7 +42,7 @@ const EGP = new Intl.NumberFormat("en-EG", {
   style: "currency",
 });
 
-function money(value: number | null | undefined): string {
+export function money(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return EGP.format(value);
 }
@@ -54,9 +54,9 @@ type PhotoState =
   | { kind: "error"; message: string };
 
 /** Where a submission has got to. Drives both the row pill and the timeline. */
-type StageKey = "submitted" | "arrival" | "departure" | "workload" | "decision" | "paid";
+export type StageKey = "submitted" | "arrival" | "departure" | "workload" | "decision" | "paid";
 
-type Stage = {
+export type Stage = {
   detail: string;
   key: StageKey;
   label: string;
@@ -98,7 +98,12 @@ function sequenceStages(stages: Stage[]): Stage[] {
   });
 }
 
-function buildStages(submission: MyOutstationSubmission): Stage[] {
+/**
+ * Exported so the manager's read-only single-request review (manager-outstation-review.tsx)
+ * renders the SAME stage sequence and headline logic as the employee's own view — a trip's
+ * status must never have two competing definitions depending on who is looking at it.
+ */
+export function buildStages(submission: MyOutstationSubmission): Stage[] {
   const { decision, gateBlocker } = submission;
 
   const arrivalDone = submission.hasArrivalPhoto;
@@ -216,7 +221,7 @@ function buildStages(submission: MyOutstationSubmission): Stage[] {
  * photo" tells an employee his money is coming when nothing is moving. Whatever is actually
  * blocking the payment wins the headline; the approval is still shown in full in the detail.
  */
-function headlineStatus(submission: MyOutstationSubmission): {
+export function headlineStatus(submission: MyOutstationSubmission): {
   label: string;
   tone: "amber" | "emerald" | "rose" | "slate";
 } {
@@ -232,14 +237,14 @@ function headlineStatus(submission: MyOutstationSubmission): {
   return { label: "In review", tone: "slate" };
 }
 
-const TONE_CLASSES: Record<"amber" | "emerald" | "rose" | "slate", string> = {
+export const TONE_CLASSES: Record<"amber" | "emerald" | "rose" | "slate", string> = {
   amber: "bg-amber-100 text-amber-800",
   emerald: "bg-emerald-100 text-emerald-800",
   rose: "bg-rose-100 text-rose-800",
   slate: "bg-slate-100 text-slate-700",
 };
 
-function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
+export function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {
   return (
     <div className="min-w-0">
       <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -251,7 +256,7 @@ function Fact({ icon, label, value }: { icon?: React.ReactNode; label: string; v
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
+export function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <h3 className="text-[11px] font-black uppercase tracking-wider text-slate-500">{children}</h3>
   );

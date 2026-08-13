@@ -1,10 +1,13 @@
 ﻿
 import {
+  normalizeHrId,
   normalizeHrIdForAccess,
   normalizeRole,
   resolveEmployeeIdentityId,
+  resolveNavigationMode,
   systemAccessContext,
   type AccessContext,
+  type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { resolveJobFunctionRole } from "@/lib/employees/job-function";
 import { hrIdLookupKeys } from "@/lib/hr-id";
@@ -69,6 +72,7 @@ import { createSystemNotification, createSystemNotificationForRecipients } from 
 import { resolveNotificationRoleEnabled, resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
 import { logError } from "@/lib/observability/log";
 import {
+  canViewEmployeeExpenseScope,
   EXPENSE_DECISION_SELECT,
   isPayrollExpensesSchemaMissing,
   resyncPayrollExpenseStepForRemovedTrips,
@@ -1255,9 +1259,57 @@ export async function calculateOutstationExpense(
 // underlying submit. See submit-recipients.ts for who lands in To/Cc/Bcc and why.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
+const OUTSTATION_REVIEW_PORTAL_ROLES = [
+  "District Manager",
+  "Manager",
+  "Regional Manager",
+  "National Sales Manager",
+  "Product Manager",
+  "Group Product Manager",
+  "Marketing Manager",
+  "Training Manager",
+] as const;
 
 function formatEgp(value: number) {
   return `${Number(value || 0).toLocaleString("en-EG", { maximumFractionDigits: 2 })} EGP`;
+}
+
+async function authRoleForHrId(hrId: string | null | undefined): Promise<PhoenixRole | null> {
+  const normalized = normalizeHrId(hrId);
+  if (!normalized) return null;
+  const { data, error } = await getSupabaseAdmin()
+    .from("app_auth_users")
+    .select("role")
+    .eq("hr_id", normalized)
+    .maybeSingle();
+  if (error || !data) return null;
+  const role = (data as { role?: string | null }).role;
+  return role ? (role as PhoenixRole) : null;
+}
+
+/**
+ * The submit notification must deep-link to the shell the ADDRESSED recipient actually lives in
+ * (his manager, skip-level, or the Super Admin fallback — see submit-recipients.ts), not the
+ * shell of whoever happens to open it later. Portal-mode managers (District/Regional/National
+ * Sales Manager, Product/Group Product/Marketing/Training Manager, generic Manager) land on the
+ * read-only employee-portal review page; Super Admin — the only admin-shell role that can occupy
+ * this recipient slot, since the CEO is excluded outright by submit-recipients.ts — lands on the
+ * existing admin queue, unchanged. Defaults to the admin queue when the role can't be resolved.
+ */
+async function outstationSubmitActionUrl(hrId: string | null | undefined, requestId: number): Promise<string> {
+  let mode: "admin" | "employee-portal" = "admin";
+  try {
+    const role = await authRoleForHrId(hrId);
+    if (role) {
+      mode = resolveNavigationMode({ hrId: normalizeHrId(hrId), role, scope: "self", source: "session" });
+    }
+  } catch {
+    // best-effort — fall back to the admin queue
+  }
+  if (mode === "employee-portal") {
+    return `/employee-portals/outstation-review/${requestId}`;
+  }
+  return `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(requestId))}`;
 }
 
 // Fires once per fresh submission: the employee wizard, offline sync, the
@@ -1291,7 +1343,14 @@ async function notifyOutstationSubmitted(
 
     const claimedAmount = formatEgp(request.claimedTotalAmount || request.expectedTotalAmount);
     const destination = text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—";
-    const actionUrl = `${OUTSTATION_ADMIN_QUEUE_URL}&requestId=${encodeURIComponent(String(request.id))}`;
+    // Resolved for the SPECIFIC recipient this send is addressed to (routing.toHrId) — not a
+    // generic default. roleHrefs below is the separate, durable fallback so the stored in-app row
+    // still resolves correctly whenever/however it is later read (viewer role changes, etc.).
+    const actionUrl = await outstationSubmitActionUrl(routing.toHrId, request.id);
+    const portalOutstationReviewUrl = `/employee-portals/outstation-review/${request.id}`;
+    const roleHrefs = Object.fromEntries(
+      OUTSTATION_REVIEW_PORTAL_ROLES.map((role) => [role, portalOutstationReviewUrl]),
+    );
     const tripLength = request.sameDayTrip ? "Same-day" : `${request.overnightDays} night(s)`;
 
     const managerName = text(routing.managerName) || "—";
@@ -1409,7 +1468,7 @@ async function notifyOutstationSubmitted(
     ];
 
     await createSystemNotification({
-      actionUrl: OUTSTATION_EMPLOYEE_PORTAL_URL,
+      actionUrl,
       category: "general",
       channels: ["in_app", "email", "telegram", "push"],
       email: { bcc: bccAddresses, cc: ccAddresses, metrics },
@@ -1422,6 +1481,12 @@ async function notifyOutstationSubmitted(
         employeeName: request.employeeName,
         idempotencyKey: `outstation:${request.id}:request_submitted`,
         requestId: String(request.id),
+        // Lets notificationHrefForViewerRole (src/lib/notifications/hrefs.ts) resolve the correct
+        // destination for whoever actually opens the in-app row, independent of the actionUrl
+        // already resolved above for THIS send's specific recipient. No Employee/Medical Rep
+        // entry: submit-recipients.ts excludes the submitting employee from every slot, so he can
+        // never be the viewer of his own submit notification.
+        roleHrefs,
         status: "Submitted",
         // Recorded so a "who was copied?" question is answerable from the audit row alone,
         // without re-deriving a reporting line that may have changed since.
@@ -1437,7 +1502,11 @@ async function notifyOutstationSubmitted(
       recipientHrId: routing.toHrId,
       recordId: String(request.id),
       subjectHrId: request.employeeHrId,
-      telegram: { buttons: [{ label: "Open my expenses", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
+      // "Open Phoenix", not "Open my expenses" — the recipient is now his manager (or the
+      // Super Admin fallback), never the submitter, so a label naming "my expenses" would be
+      // read by someone it is factually not about. Matches the label the decision notification
+      // below already uses for the same reason.
+      telegram: { buttons: [{ label: "Open Phoenix", url: actionUrl }] },
       title: heldForReview
         ? `${request.employeeName}'s outstation expense request needs review — ${claimedAmount}`
         : `${request.employeeName} submitted an outstation expense request — ${claimedAmount}`,
@@ -4273,6 +4342,80 @@ export type MyOutstationSubmission = {
 };
 
 /**
+ * Maps one raw request row (plus its resolved captured location and payroll decision) into the
+ * detail-view shape shared by the caller's own submissions list and the manager's read-only
+ * review of a single report's submission — one mapping, so the two views can never drift apart
+ * on what a "stage" or a "gate blocker" means.
+ */
+function buildMyOutstationSubmission(
+  request: OutstationExpenseRequest,
+  capturedLocation: Awaited<ReturnType<typeof resolveOutstationCapturedLocation>>,
+  decision: MyOutstationSubmissionDecision | null,
+): MyOutstationSubmission {
+  const gate = resolveOutstationGateState({
+    evidenceGateStatus: request.evidenceGateStatus,
+    hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+    hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+    workloadGateStatus: request.workloadGateStatus,
+  });
+
+  return {
+    allowanceAmount: request.allowanceAmount,
+    amWorkload: request.amWorkload ?? 0,
+    canCaptureDeparturePhoto: gate.blocker === "departure_photo",
+    canRetakeDeparturePhoto:
+      Boolean(request.departureEvidenceImagePath) &&
+      isWithinDepartureWindow({
+        capturedAt: new Date().toISOString(),
+        tripEndDate: request.tripEndDate,
+      }),
+    capturedArea: capturedLocation.areaLabel,
+    capturedBrick: capturedLocation.brickLabel,
+    capturedConfidence: capturedLocation.confidence,
+    capturedRegion: capturedLocation.regionLabel,
+    claimedTotalAmount: request.claimedTotalAmount,
+    decision,
+    departureCapturedAt: request.departureCapturedAt,
+    departureDeadline: request.tripEndDate,
+    departureDistanceFromArrivalKm: request.departureEvidenceMetadata?.distanceFromArrivalKm ?? null,
+    departureFlags: request.departureEvidenceMetadata?.flags ?? [],
+    departureLocationLabel: request.departureEvidenceMetadata?.capturedLocationLabel ?? null,
+    departureMinutesAfterArrival: request.departureEvidenceMetadata?.minutesAfterArrival ?? null,
+    departureRetakeCount: Math.max(0, (request.departureEvidenceMetadata?.version ?? 1) - 1),
+    destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",
+    distanceKm: request.distanceFromResidenceKm,
+    expectedTotalAmount: request.expectedTotalAmount,
+    fuelAmount: request.fuelAmount,
+    gateBlocker: gate.blocker,
+    gateMessage: gate.message,
+    hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
+    hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
+    id: request.id,
+    isPayrollEligible: gate.isPayrollEligible,
+    meetingAmount: request.reportMeetingAmount ?? 0,
+    notes: employeeVisibleNotes(request.notes),
+    origin:
+      [request.residenceArea, request.residenceCity].filter(Boolean).join(", ") ||
+      text(request.residenceAddress) ||
+      "—",
+    otherAmount: request.reportOtherAmount ?? 0,
+    overnightDays: request.overnightDays,
+    pmWorkload: request.pmWorkload ?? 0,
+    sameDayTrip: request.sameDayTrip,
+    status: request.status,
+    submittedAt: request.submittedAt,
+    ticketAmount: request.ticketAmount ?? 0,
+    ticketAttachmentCount: request.attachmentCount,
+    transportationType: request.transportationType,
+    travelCost: request.reportTravelCost ?? request.fuelAmount,
+    tripEndDate: request.tripEndDate,
+    tripStartDate: request.tripStartDate,
+    tripType: request.reportTripType,
+    workloadSource: request.workloadSource,
+  };
+}
+
+/**
  * Every submission belonging to the caller, newest first.
  *
  * Scoped by the caller's own HR ID and never by a client-supplied one — the id in the URL of the
@@ -4323,70 +4466,41 @@ export async function listOwnOutstationSubmissions(
     ),
   );
 
-  return requests.map((request, index) => {
-    const capturedLocation = capturedLocations[index];
-    const gate = resolveOutstationGateState({
-      evidenceGateStatus: request.evidenceGateStatus,
-      hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
-      hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
-      workloadGateStatus: request.workloadGateStatus,
-    });
+  return requests.map((request, index) =>
+    buildMyOutstationSubmission(request, capturedLocations[index], decisions.get(request.id) ?? null),
+  );
+}
 
-    return {
-      allowanceAmount: request.allowanceAmount,
-      amWorkload: request.amWorkload ?? 0,
-      canCaptureDeparturePhoto: gate.blocker === "departure_photo",
-      canRetakeDeparturePhoto:
-        Boolean(request.departureEvidenceImagePath) &&
-        isWithinDepartureWindow({
-          capturedAt: new Date().toISOString(),
-          tripEndDate: request.tripEndDate,
-        }),
-      capturedArea: capturedLocation.areaLabel,
-      capturedBrick: capturedLocation.brickLabel,
-      capturedConfidence: capturedLocation.confidence,
-      capturedRegion: capturedLocation.regionLabel,
-      claimedTotalAmount: request.claimedTotalAmount,
-      decision: decisions.get(request.id) ?? null,
-      departureCapturedAt: request.departureCapturedAt,
-      departureDeadline: request.tripEndDate,
-      departureDistanceFromArrivalKm: request.departureEvidenceMetadata?.distanceFromArrivalKm ?? null,
-      departureFlags: request.departureEvidenceMetadata?.flags ?? [],
-      departureLocationLabel: request.departureEvidenceMetadata?.capturedLocationLabel ?? null,
-      departureMinutesAfterArrival: request.departureEvidenceMetadata?.minutesAfterArrival ?? null,
-      departureRetakeCount: Math.max(0, (request.departureEvidenceMetadata?.version ?? 1) - 1),
-      destination: text(request.toLabel) || text(request.toCity) || text(request.toArea) || "—",
-      distanceKm: request.distanceFromResidenceKm,
-      expectedTotalAmount: request.expectedTotalAmount,
-      fuelAmount: request.fuelAmount,
-      gateBlocker: gate.blocker,
-      gateMessage: gate.message,
-      hasArrivalPhoto: Boolean(request.carEvidenceImagePath),
-      hasDeparturePhoto: Boolean(request.departureEvidenceImagePath),
-      id: request.id,
-      isPayrollEligible: gate.isPayrollEligible,
-      meetingAmount: request.reportMeetingAmount ?? 0,
-      notes: employeeVisibleNotes(request.notes),
-      origin:
-        [request.residenceArea, request.residenceCity].filter(Boolean).join(", ") ||
-        text(request.residenceAddress) ||
-        "—",
-      otherAmount: request.reportOtherAmount ?? 0,
-      overnightDays: request.overnightDays,
-      pmWorkload: request.pmWorkload ?? 0,
-      sameDayTrip: request.sameDayTrip,
-      status: request.status,
-      submittedAt: request.submittedAt,
-      ticketAmount: request.ticketAmount ?? 0,
-      ticketAttachmentCount: request.attachmentCount,
-      transportationType: request.transportationType,
-      travelCost: request.reportTravelCost ?? request.fuelAmount,
-      tripEndDate: request.tripEndDate,
-      tripStartDate: request.tripStartDate,
-      tripType: request.reportTripType,
-      workloadSource: request.workloadSource,
-    };
-  });
+export type ManagerOutstationSubmissionView = MyOutstationSubmission & {
+  employeeHrId: string;
+  employeeName: string;
+};
+
+/**
+ * One direct/indirect report's outstation submission, read-only, for the manager the submit
+ * notification addressed — never a browse-anyone-by-id lookup. Authorization is re-checked here
+ * against the caller's live expense scope (resolveExpenseAccessFilter's SELF/TEAM/HIERARCHY/
+ * LINE/COMPANY rule via canViewEmployeeExpenseScope), the same primitive the admin queue and
+ * team-expenses already trust — a request id lifted from a notification link must never turn
+ * into a view of someone outside the caller's own reporting line. Returns null on "not found" AND
+ * on "not yours to see" alike, so the page can render one honest empty state without leaking
+ * which case it was.
+ */
+export async function getOutstationSubmissionForManager(
+  access: AccessContext,
+  requestId: number,
+): Promise<ManagerOutstationSubmissionView | null> {
+  const request = await getOutstationRequestById(requestId);
+  if (!request) return null;
+  if (!(await canViewEmployeeExpenseScope(access, request.employeeHrId))) return null;
+
+  const decisions = await getOwnOutstationSubmissionDecisions([request.id]);
+  const submission = buildMyOutstationSubmission(
+    request,
+    request.capturedLocation,
+    decisions.get(request.id) ?? null,
+  );
+  return { ...submission, employeeHrId: request.employeeHrId, employeeName: request.employeeName };
 }
 
 /**
