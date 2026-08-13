@@ -273,8 +273,8 @@ async function backup(sql: postgres.Sql) {
         'salary_records',
         'salary_batches',
         'salary_flags',
-        'payroll_expenses',
-        'payroll_expense_reports',
+        'outstation_expenses',
+        'outstation_expense_reports',
         'sales_records'
       )
   `;
@@ -309,6 +309,13 @@ async function dryRunInspectMigration() {
   const text = buffer.toString("utf8");
   const hash = createHash("sha256").update(buffer).digest("hex");
 
+  // Substring assertions against the 2026-05-11 migration FILE, not live schema. That file
+  // predates the 2026-07-13 payroll_expenses -> outstation_expenses rename
+  // (20260713120000_rename_payroll_expenses_to_outstation.sql) and still contains that text
+  // verbatim, so the two payroll_expense* entries below are CORRECT and must keep the old
+  // name. The live-database checks that needed the rename (backup(), validateDangerousPolicies's
+  // uncorrelatedExpenses/scopedWrites, and dryRunLocateHarness's harness-content check below) were
+  // fixed separately — see the payroll_expenses -> outstation_expenses cleanup PRs.
   const sections: Array<[string, string[]]> = [
     ["phoenix_role column handling", ["add column if not exists phoenix_role", "user_access_profiles_phoenix_role_check"]],
     ["scope_type column handling", ["add column if not exists scope_type", "user_access_profiles_scope_type_check"]],
@@ -355,7 +362,7 @@ async function dryRunLocateHarness() {
   requireText(harness, "authenticated RLS harness", [
     "signInWithPassword",
     "current_phoenix_role",
-    "payroll_expenses",
+    "outstation_expenses",
     "user_access_profiles",
   ]);
   return harnessPath;
@@ -500,10 +507,10 @@ async function validateDangerousPolicies(sql: postgres.Sql) {
     from pg_policies
     where schemaname = 'public'
       and (
-        qual ilike '%exists%payroll_expenses%'
-        or with_check ilike '%exists%payroll_expenses%'
+        qual ilike '%exists%outstation_expenses%'
+        or with_check ilike '%exists%outstation_expenses%'
       )
-      and coalesce(qual, '') || coalesce(with_check, '') not ilike '%payroll_expenses%hr_id%'
+      and coalesce(qual, '') || coalesce(with_check, '') not ilike '%outstation_expenses%hr_id%'
       and coalesce(qual, '') || coalesce(with_check, '') not ilike '%pe.hr_id%'
   `;
 
@@ -512,8 +519,8 @@ async function validateDangerousPolicies(sql: postgres.Sql) {
     from pg_policies
     where schemaname = 'public'
       and tablename in (
-        'payroll_expenses',
-        'payroll_expense_reports',
+        'outstation_expenses',
+        'outstation_expense_reports',
         'salary_records',
         'salary_batches',
         'salary_flags',

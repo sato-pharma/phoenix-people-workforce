@@ -29,8 +29,8 @@ type TestResult = {
 };
 
 type CleanupState = {
-  payrollExpenseIds: string[];
-  payrollExpenseReportIds: string[];
+  outstationExpenseIds: string[];
+  outstationExpenseReportIds: string[];
 };
 
 const roles: PhoenixRole[] = [
@@ -365,29 +365,29 @@ function stagingMutationsEnabled() {
   return process.env.PHOENIX_RLS_ALLOW_STAGING_MUTATIONS === "1";
 }
 
-async function verifyPayrollExpenses(client: SupabaseClient, role: PhoenixRole, user: TestUser, cleanup: CleanupState): Promise<TestResult[]> {
+async function verifyOutstationExpenses(client: SupabaseClient, role: PhoenixRole, user: TestUser, cleanup: CleanupState): Promise<TestResult[]> {
   const results: TestResult[] = [];
   const tripId = `PHX_RLS_TEST_${role.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}_${Date.now()}`;
 
   try {
     const { data, error } = await client
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .select("id, hr_id")
       .limit(500);
-    assertAllowed(error, "payroll_expenses select");
-    results.push(pass(role, "payroll_expenses select", "payroll_expenses", `${data?.length ?? 0} visible rows`));
+    assertAllowed(error, "outstation_expenses select");
+    results.push(pass(role, "outstation_expenses select", "outstation_expenses", `${data?.length ?? 0} visible rows`));
   } catch (error) {
-    results.push(fail(role, "payroll_expenses select", "payroll_expenses", error));
+    results.push(fail(role, "outstation_expenses select", "outstation_expenses", error));
   }
 
   if (!stagingMutationsEnabled()) {
-    results.push(pass(role, "payroll_expenses mutations skipped", "payroll_expenses", "set PHOENIX_RLS_ALLOW_STAGING_MUTATIONS=1"));
+    results.push(pass(role, "outstation_expenses mutations skipped", "outstation_expenses", "set PHOENIX_RLS_ALLOW_STAGING_MUTATIONS=1"));
     return results;
   }
 
   try {
     const { data, error } = await client
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .insert({
         expense_date: new Date().toISOString().slice(0, 10),
         hr_id: user.hrId,
@@ -402,70 +402,70 @@ async function verifyPayrollExpenses(client: SupabaseClient, role: PhoenixRole, 
       .maybeSingle();
 
     const insertShouldPass = expectedByRole[role].canManagePayroll || role === "Employee" || role === "Medical Rep";
-    if (data?.id) cleanup.payrollExpenseIds.push(String(data.id));
+    if (data?.id) cleanup.outstationExpenseIds.push(String(data.id));
     if (insertShouldPass) {
-      assertAllowed(error, "own payroll_expenses insert");
-      results.push(pass(role, "payroll_expenses insert own", "payroll_expenses"));
+      assertAllowed(error, "own outstation_expenses insert");
+      results.push(pass(role, "outstation_expenses insert own", "outstation_expenses"));
     } else {
-      assertDeniedOrNoRows(error, data ? 1 : 0, "own payroll_expenses insert");
-      results.push(pass(role, "payroll_expenses insert denied", "payroll_expenses"));
+      assertDeniedOrNoRows(error, data ? 1 : 0, "own outstation_expenses insert");
+      results.push(pass(role, "outstation_expenses insert denied", "outstation_expenses"));
       return results;
     }
 
     const insertedId = data?.id;
     const { count: updateCount, error: updateError } = await client
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .update({ hr_comment: "PHX_RLS_STAGING_TEST" }, { count: "exact" })
       .eq("id", insertedId);
 
     if (expectedByRole[role].canManagePayroll) {
-      assertAllowed(updateError, "payroll_expenses update");
-      results.push(pass(role, "payroll_expenses update allowed", "payroll_expenses"));
+      assertAllowed(updateError, "outstation_expenses update");
+      results.push(pass(role, "outstation_expenses update allowed", "outstation_expenses"));
     } else {
-      assertDeniedOrNoRows(updateError, updateCount, "payroll_expenses update");
-      results.push(pass(role, "payroll_expenses update denied", "payroll_expenses"));
+      assertDeniedOrNoRows(updateError, updateCount, "outstation_expenses update");
+      results.push(pass(role, "outstation_expenses update denied", "outstation_expenses"));
     }
 
     const { count: deleteCount, error: deleteError } = await client
-      .from("payroll_expenses")
+      .from("outstation_expenses")
       .delete({ count: "exact" })
       .eq("id", insertedId);
 
     if (expectedByRole[role].canManagePayroll) {
-      assertAllowed(deleteError, "payroll_expenses delete");
-      results.push(pass(role, "payroll_expenses delete allowed", "payroll_expenses"));
+      assertAllowed(deleteError, "outstation_expenses delete");
+      results.push(pass(role, "outstation_expenses delete allowed", "outstation_expenses"));
     } else {
-      assertDeniedOrNoRows(deleteError, deleteCount, "payroll_expenses delete");
-      results.push(pass(role, "payroll_expenses delete denied", "payroll_expenses"));
+      assertDeniedOrNoRows(deleteError, deleteCount, "outstation_expenses delete");
+      results.push(pass(role, "outstation_expenses delete denied", "outstation_expenses"));
     }
   } catch (error) {
-    results.push(fail(role, "payroll_expenses mutations", "payroll_expenses", error));
+    results.push(fail(role, "outstation_expenses mutations", "outstation_expenses", error));
   }
 
   return results;
 }
 
-async function verifyPayrollExpenseReports(client: SupabaseClient, role: PhoenixRole, cleanup: CleanupState): Promise<TestResult[]> {
+async function verifyOutstationExpenseReports(client: SupabaseClient, role: PhoenixRole, cleanup: CleanupState): Promise<TestResult[]> {
   const results: TestResult[] = [];
   try {
     const { data, error } = await client
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .select("id")
       .limit(100);
-    assertAllowed(error, "payroll_expense_reports select");
-    results.push(pass(role, "payroll_expense_reports select", "payroll_expense_reports", `${data?.length ?? 0} visible rows`));
+    assertAllowed(error, "outstation_expense_reports select");
+    results.push(pass(role, "outstation_expense_reports select", "outstation_expense_reports", `${data?.length ?? 0} visible rows`));
   } catch (error) {
-    results.push(fail(role, "payroll_expense_reports select", "payroll_expense_reports", error));
+    results.push(fail(role, "outstation_expense_reports select", "outstation_expense_reports", error));
   }
 
   if (!stagingMutationsEnabled()) {
-    results.push(pass(role, "payroll_expense_reports mutations skipped", "payroll_expense_reports", "set PHOENIX_RLS_ALLOW_STAGING_MUTATIONS=1"));
+    results.push(pass(role, "outstation_expense_reports mutations skipped", "outstation_expense_reports", "set PHOENIX_RLS_ALLOW_STAGING_MUTATIONS=1"));
     return results;
   }
 
   try {
     const { data, error } = await client
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .insert({
         file_name: `PHX_RLS_STAGING_TEST_${role}_${Date.now()}.xlsx`,
         row_count: 0,
@@ -475,33 +475,33 @@ async function verifyPayrollExpenseReports(client: SupabaseClient, role: Phoenix
       .maybeSingle();
 
     if (expectedByRole[role].canManagePayroll) {
-      assertAllowed(error, "payroll_expense_reports insert");
-      if (data?.id) cleanup.payrollExpenseReportIds.push(String(data.id));
-      results.push(pass(role, "payroll_expense_reports insert allowed", "payroll_expense_reports"));
+      assertAllowed(error, "outstation_expense_reports insert");
+      if (data?.id) cleanup.outstationExpenseReportIds.push(String(data.id));
+      results.push(pass(role, "outstation_expense_reports insert allowed", "outstation_expense_reports"));
     } else {
-      if (data?.id) cleanup.payrollExpenseReportIds.push(String(data.id));
-      assertDeniedOrNoRows(error, data ? 1 : 0, "payroll_expense_reports insert");
-      results.push(pass(role, "payroll_expense_reports insert denied", "payroll_expense_reports"));
+      if (data?.id) cleanup.outstationExpenseReportIds.push(String(data.id));
+      assertDeniedOrNoRows(error, data ? 1 : 0, "outstation_expense_reports insert");
+      results.push(pass(role, "outstation_expense_reports insert denied", "outstation_expense_reports"));
       return results;
     }
 
     const insertedId = data?.id;
     const { count: updateCount, error: updateError } = await client
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .update({ file_name: `PHX_RLS_STAGING_TEST_UPDATED_${Date.now()}.xlsx` }, { count: "exact" })
       .eq("id", insertedId);
-    assertAllowed(updateError, "payroll_expense_reports update");
-    results.push(pass(role, "payroll_expense_reports update allowed", "payroll_expense_reports", `${updateCount ?? 0} affected`));
+    assertAllowed(updateError, "outstation_expense_reports update");
+    results.push(pass(role, "outstation_expense_reports update allowed", "outstation_expense_reports", `${updateCount ?? 0} affected`));
 
     const { count: deleteCount, error: deleteError } = await client
-      .from("payroll_expense_reports")
+      .from("outstation_expense_reports")
       .delete({ count: "exact" })
       .eq("id", insertedId);
-    assertAllowed(deleteError, "payroll_expense_reports delete");
-    cleanup.payrollExpenseReportIds = cleanup.payrollExpenseReportIds.filter((id) => id !== String(insertedId));
-    results.push(pass(role, "payroll_expense_reports delete allowed", "payroll_expense_reports", `${deleteCount ?? 0} affected`));
+    assertAllowed(deleteError, "outstation_expense_reports delete");
+    cleanup.outstationExpenseReportIds = cleanup.outstationExpenseReportIds.filter((id) => id !== String(insertedId));
+    results.push(pass(role, "outstation_expense_reports delete allowed", "outstation_expense_reports", `${deleteCount ?? 0} affected`));
   } catch (error) {
-    results.push(fail(role, "payroll_expense_reports mutations", "payroll_expense_reports", error));
+    results.push(fail(role, "outstation_expense_reports mutations", "outstation_expense_reports", error));
   }
 
   return results;
@@ -622,8 +622,8 @@ async function runRole(role: PhoenixRole, user: TestUser, cleanup: CleanupState)
 
   results.push(...await verifySalaryRecordsSelect(client, role, user, employeeScope.visibleHrIds));
   results.push(...await verifySalaryBatchesSelect(client, role));
-  results.push(...await verifyPayrollExpenses(client, role, user, cleanup));
-  results.push(...await verifyPayrollExpenseReports(client, role, cleanup));
+  results.push(...await verifyOutstationExpenses(client, role, user, cleanup));
+  results.push(...await verifyOutstationExpenseReports(client, role, cleanup));
   results.push(...await verifyUserAdminRestrictions(client, role, user));
   results.push(...await verifyProtectedMutations(client, role, user));
   results.push(...await verifySalesRecords(client, role));
@@ -637,29 +637,29 @@ async function cleanupStagingRows(users: TestConfig, cleanup: CleanupState): Pro
   const client = await signIn(role, users[role]);
   const results: TestResult[] = [];
 
-  if (cleanup.payrollExpenseIds.length > 0) {
+  if (cleanup.outstationExpenseIds.length > 0) {
     try {
       const { count, error } = await client
-        .from("payroll_expenses")
+        .from("outstation_expenses")
         .delete({ count: "exact" })
-        .in("id", cleanup.payrollExpenseIds);
-      assertAllowed(error, "payroll_expenses cleanup");
-      results.push(pass(role, "cleanup staging payroll_expenses", "payroll_expenses", `${count ?? 0} deleted`));
+        .in("id", cleanup.outstationExpenseIds);
+      assertAllowed(error, "outstation_expenses cleanup");
+      results.push(pass(role, "cleanup staging outstation_expenses", "outstation_expenses", `${count ?? 0} deleted`));
     } catch (error) {
-      results.push(fail(role, "cleanup staging payroll_expenses", "payroll_expenses", error));
+      results.push(fail(role, "cleanup staging outstation_expenses", "outstation_expenses", error));
     }
   }
 
-  if (cleanup.payrollExpenseReportIds.length > 0) {
+  if (cleanup.outstationExpenseReportIds.length > 0) {
     try {
       const { count, error } = await client
-        .from("payroll_expense_reports")
+        .from("outstation_expense_reports")
         .delete({ count: "exact" })
-        .in("id", cleanup.payrollExpenseReportIds);
-      assertAllowed(error, "payroll_expense_reports cleanup");
-      results.push(pass(role, "cleanup staging payroll_expense_reports", "payroll_expense_reports", `${count ?? 0} deleted`));
+        .in("id", cleanup.outstationExpenseReportIds);
+      assertAllowed(error, "outstation_expense_reports cleanup");
+      results.push(pass(role, "cleanup staging outstation_expense_reports", "outstation_expense_reports", `${count ?? 0} deleted`));
     } catch (error) {
-      results.push(fail(role, "cleanup staging payroll_expense_reports", "payroll_expense_reports", error));
+      results.push(fail(role, "cleanup staging outstation_expense_reports", "outstation_expense_reports", error));
     }
   }
 
@@ -671,8 +671,8 @@ async function main() {
   const users = parseUsersConfig();
   const results: TestResult[] = [];
   const cleanup: CleanupState = {
-    payrollExpenseIds: [],
-    payrollExpenseReportIds: [],
+    outstationExpenseIds: [],
+    outstationExpenseReportIds: [],
   };
 
   for (const role of roles) {
