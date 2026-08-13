@@ -18,6 +18,18 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   try {
     const access = await resolveAccessContext(request);
+    // Mirrors the page gate (app/(admin)/sales/database-mapping/page.tsx) -- Super Admin / system
+    // only. `sales:export` alone is NOT sufficient here: the base Employee and Medical Rep roles
+    // both hold it (see permissions.ts), and this workbook is company-wide with no access-scope
+    // narrowing at all -- Raw_Sales carries every validated invoice row nationally, with customer
+    // name, address, quantity and net EGP. The page was Super-Admin-gated while this route, which
+    // is reachable directly, was not.
+    if (access.role !== "Super Admin" && access.scope !== "system") {
+      return NextResponse.json(
+        { success: false, error: "Forbidden: the master workbook export is restricted to Super Admin." },
+        { status: 403 },
+      );
+    }
     await assertPermission(access, "sales", "export");
     await assertExportRateLimit({ actor: access.loginId ?? access.hrId, request, scope: "export:sales:master-workbook" });
 

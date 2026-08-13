@@ -64,6 +64,17 @@ overrides:
   # exclusion entry is needed. Owner decision, 2026-08-04.
   hono: ^4.12.31
   js-yaml: ^4.3.0
+  # Added 2026-08-13 for GHSA-2v37-7h3g-55p8 (high): a custom generator loops indefinitely when
+  # size is zero. Advisory covers `<3.3.18`; the graph had resolved 3.3.17, published 2026-08-03.
+  # The advisory landed mid-afternoon Cairo on 2026-08-13 and `pnpm audit` reads the registry live,
+  # so PRs that had gone green an hour earlier stayed green while every NEW run went red — the
+  # failure looks like it belongs to whatever diff is in flight and does not. Reached only
+  # transitively, under postcss, four ways: next and sanitize-html (both direct `dependencies`,
+  # so this IS production exposure) plus @tailwindcss/postcss and shadcn on the dev side. postcss
+  # requires nanoid in the major-3 line, and 3.3.18 is a patch inside it, so this is a drop-in;
+  # no postcss release resolving >=3.3.18 on its own existed when this was added.
+  # Remove once postcss ships one.
+  nanoid: ^3.3.18
   # Bumped 2026-08-04 for GHSA-fxqj-rqcc-2cmp (incomplete fix of GHSA-6g55-p6wh-862q: an
   # attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset).
   # Advisory covers `<=8.5.22`, patched at 8.5.23; the previous ^8.5.18 floor ALLOWED the fix but
