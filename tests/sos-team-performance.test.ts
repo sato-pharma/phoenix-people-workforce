@@ -29,49 +29,63 @@ function row(overrides: Partial<AchievementRow>): AchievementRow {
 }
 
 export function runSosTeamPerformanceTests() {
-  // ── The 2026-08-10 regression: one stray Direct Order must not activate a month ──
-  // On 2026-08-10 a single Direct Order (1,309.50 EGP, area GZ1) landed in August 2026
-  // before that month's real distributor files arrived. `hasActual` alone said August was
-  // "in", which pulled August's FULL target into every manager's default cumulative
-  // keycard denominator while contributing almost no actual — roughly halving every
-  // keycard's default achievement %. A period counts as active only when it ALSO appears
-  // in `uploadedPeriods` (the real distributor-batch ledger `/sales/vs-target` already
-  // uses for the identical failure — see loadUploadedPeriods in vs-target.ts).
-  const julyUploaded = new Set(["2026-07"]);
+  // ── A month with no published Monthly Closing must not activate ──────────────────
+  // [Owner ruling, 2026-08-13]: a live dashboard may only count a period once that
+  // line's Monthly Closing is PUBLISHED — a later, admin-gated action, not merely a
+  // landed distributor upload. `hasActual` alone previously said a month was "in" (the
+  // 2026-08-10 stray-Direct-Order regression: 1,309.50 EGP pulled the FULL month's
+  // target into every manager's default cumulative keycard denominator against almost
+  // no actual, roughly halving every keycard's default achievement %). A period counts
+  // as active only when its OWN (lineCode, period) key is in `publishedKeys` — see
+  // isRowPublished / loadPublishedPeriodKeys in vs-target.ts.
+  const julyPublished = new Set(["cns|2026-07"]);
 
-  const strayDirectOrderOnly = [
+  const unpublishedAugustOnly = [
     row({ period: "2026-07", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true }),
     row({ period: "2026-08", actualValue: 1309.5, targetValue: 4738.5, hasTarget: true, hasActual: true }),
   ];
   assert.deepEqual(
-    activePeriodsOf(strayDirectOrderOnly, julyUploaded),
+    activePeriodsOf(unpublishedAugustOnly, julyPublished),
     ["2026-07"],
-    "a month whose only actual is a Direct Order booked before its distributor upload landed must not activate — it would pull the full month's target into the default cumulative view against almost no actual",
+    "a month whose Monthly Closing has not been published must not activate — it would pull the full month's target into the default cumulative view against sales nobody has closed yet",
   );
 
-  // ── A month WITH a landed distributor upload is active once it has actual ────────
-  const bothUploaded = new Set(["2026-07", "2026-08"]);
+  // ── A month WITH a published Monthly Closing is active once it has actual ────────
+  const bothPublished = new Set(["cns|2026-07", "cns|2026-08"]);
   const twoRealMonths = [
     row({ period: "2026-07", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true }),
     row({ period: "2026-08", actualValue: 60000, targetValue: 549702.94, hasTarget: true, hasActual: true }),
   ];
   assert.deepEqual(
-    activePeriodsOf(twoRealMonths, bothUploaded),
+    activePeriodsOf(twoRealMonths, bothPublished),
     ["2026-08", "2026-07"],
-    "once a month's real distributor upload has landed, its actual sales activate it normally, newest first",
+    "once a month's Monthly Closing is published, its actual sales activate it normally, newest first",
   );
 
-  // ── A future-target-only month stays excluded even if its upload has landed ──────
+  // ── A future-target-only month stays excluded even if it is published ────────────
   // Existing behavior (pre-dating this fix) must survive: a month that carries a target
-  // but zero actual sales is not a reporting period, regardless of upload status.
-  const targetOnlyButUploaded = [
+  // but zero actual sales is not a reporting period, regardless of publication status.
+  const targetOnlyButPublished = [
     row({ period: "2026-07", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true }),
     row({ period: "2026-09", actualValue: 0, targetValue: 549702.94, hasTarget: true, hasActual: false }),
   ];
   assert.deepEqual(
-    activePeriodsOf(targetOnlyButUploaded, new Set(["2026-07", "2026-09"])),
+    activePeriodsOf(targetOnlyButPublished, new Set(["cns|2026-07", "cns|2026-09"])),
     ["2026-07"],
-    "a month with only a future target and zero actual sales stays excluded even though it is in uploadedPeriods",
+    "a month with only a future target and zero actual sales stays excluded even though it is in publishedKeys",
+  );
+
+  // ── A row's line must match the published key's line, not just the period ────────
+  // monthly_closing_publications keys per (line, period): a CNS row in a period where
+  // only Pedia published must NOT read as active — the old period-only Set could not
+  // express this and would have silently activated every line at once.
+  const wrongLinePublished = [
+    row({ period: "2026-07", lineCode: "cns", actualValue: 91784.8, targetValue: 549702.94, hasTarget: true, hasActual: true }),
+  ];
+  assert.deepEqual(
+    activePeriodsOf(wrongLinePublished, new Set(["pedia|2026-07"])),
+    [],
+    "a published key for a different line must not activate this row's line",
   );
 
   // ── Sorted newest-first and de-duplicated ─────────────────────────────────────────
@@ -82,7 +96,7 @@ export function runSosTeamPerformanceTests() {
     row({ period: "2026-09", actualValue: 100, hasActual: true }),
   ];
   assert.deepEqual(
-    activePeriodsOf(threeMonthsUnordered, new Set(["2026-07", "2026-08", "2026-09"])),
+    activePeriodsOf(threeMonthsUnordered, new Set(["cns|2026-07", "cns|2026-08", "cns|2026-09"])),
     ["2026-09", "2026-08", "2026-07"],
     "active periods are de-duplicated and sorted newest first",
   );

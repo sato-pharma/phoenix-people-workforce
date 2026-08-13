@@ -28,9 +28,10 @@ import {
   coverageRatio,
   emptyTotals,
   growthOf,
+  isRowPublished,
   isValidVsTargetPeriod,
+  loadPublishedPeriodKeys,
   loadTargetBearingPairs,
-  loadUploadedPeriods,
   loadVsTargetRange,
   pickLandingPeriod,
   priorPeriodOf,
@@ -123,16 +124,19 @@ export type VsTargetDashboardData = {
    */
   unplacedValue: number;
   /**
-   * False when this period's Source-of-Sales distributor upload has not arrived yet —
-   * distinct from "sold nothing". Targets can exist for a month whose sales file has not
-   * landed, and the UI must say so instead of rendering a confident 0%.
+   * False when this period's Monthly Closing has not been PUBLISHED yet for this viewer's
+   * line — distinct from "sold nothing". Targets can exist, and distributor files can even
+   * have landed, for a month the owner has not yet reconciled and published; the UI must say
+   * so instead of rendering a confident 0% off raw, unclosed figures.
    */
   salesLoaded: boolean;
   /**
-   * Value already booked into an un-uploaded month. Always Direct Orders: Finance books
-   * those the day they are approved, months before the distributor files arrive. Reported
-   * inside the "not uploaded yet" panel so the money is visibly parked rather than
-   * silently missing — and so nobody reads the panel as "August has nothing at all".
+   * Value already booked into a not-yet-published month, from the raw (unpublished) rows.
+   * Often Direct Orders — Finance books those the day they are approved, weeks before that
+   * month's Monthly Closing is published — but can be any real sales sitting in an
+   * unpublished period. Reported inside the "not published yet" panel so the money is
+   * visibly parked rather than silently missing — and so nobody reads the panel as "August
+   * has nothing at all".
    */
   pendingDirectValue: number;
   /** True when this viewer has no sales territory at all. */
@@ -201,19 +205,24 @@ export async function buildVsTargetDashboard(
       ? windowStartCandidate
       : SALES_VS_TARGET_FLOOR;
 
-  const [rangeRows, areaNames, employeeNames, productNames, targetBearing, uploadedPeriods] = await Promise.all([
+  const [rangeRows, areaNames, employeeNames, productNames, targetBearing, publishedKeys] = await Promise.all([
     loadVsTargetRange(windowStart, current),
     loadAllCanonicalAreaNames(),
     loadEmployeeNameMap(),
     loadProductNameMap(),
     loadTargetBearingPairs().catch(() => new Set<string>()),
-    loadUploadedPeriods(windowStart, current),
+    loadPublishedPeriodKeys(windowStart, current),
   ]);
 
   // Scope FIRST — everything below derives from these arrays.
   // Apply area merges (Fayoum/Beni Suef) immediately after loading before any aggregation.
   const mergedRows = applyAchievementAreaMerges(rangeRows);
-  const scopedAll = filterRowsForBound(mergedRows, bound);
+  const scopedAllRaw = filterRowsForBound(mergedRows, bound);
+  // Only PUBLISHED (line, period) pairs are real numbers on this live dashboard — Monthly
+  // Closing publication is the owner's own "this month is done" gate, separate from and later
+  // than the distributor files simply landing (owner ruling, 2026-08-13). `scopedAllRaw` is
+  // kept alongside for pickLandingPeriod's fallback messaging and pendingDirectValue below.
+  const scopedAll = scopedAllRaw.filter((row) => isRowPublished(row, publishedKeys));
 
   // If the dashboard is scoped to a single line, use that line to look up merged area names (e.g. "Fayoum - Beni Suef").
   const distinctLines = new Set(scopedAll.map((r) => r.lineCode).filter(Boolean));
@@ -226,18 +235,23 @@ export async function buildVsTargetDashboard(
     employeeName: (hrId) => employeeNames.get(hrId) ?? "Unnamed employee",
   };
 
-  // Land on the newest UPLOADED month that has sales in this viewer's scope. "Has any row
-  // with an actual" is not the same question and is not safe to ask: one direct order
-  // booked into a month whose distributor files have not arrived is enough to make that
-  // month rank newest, which opened the whole company on 1,309.50 EGP against a 17.5M
-  // target in August 2026.
-  const period = explicitPeriod ?? pickLandingPeriod(scopedAll, uploadedPeriods, current);
+  // Land on the newest PUBLISHED month that has sales in this viewer's scope. "Has any row
+  // with an actual" is not the same question and is not safe to ask: one direct order booked
+  // into a month whose Monthly Closing has not been published is enough to make that month
+  // rank newest, which opened the whole company on 1,309.50 EGP against a 17.5M target in
+  // August 2026 — and even a genuinely landed distributor file is not "closed" until the
+  // owner publishes it.
+  const period = explicitPeriod ?? pickLandingPeriod(scopedAllRaw, publishedKeys, current);
   const priorPeriod = priorPeriodOf(period);
-  // A company fact, not a scope fact: the month's upload has either landed or it has not.
-  // A viewer with an empty territory in a loaded month is `isEmptyScope`, which says so.
-  const salesLoaded = uploadedPeriods.has(period);
 
-  const rows = scopedAll.filter((row) => row.period === period);
+  const rawRowsForPeriod = scopedAllRaw.filter((row) => row.period === period);
+  const rows = rawRowsForPeriod.filter((row) => isRowPublished(row, publishedKeys));
+  // A company fact, not a scope fact: the month's Monthly Closing has either been published
+  // or it has not. A viewer with an empty territory in a published month is `isEmptyScope`,
+  // which says so — computed from the RAW bound-scoped rows, never from `rows`, so an
+  // unpublished period reads as "not published" and not as "you have no territory".
+  const salesLoaded = rows.length > 0;
+
   const priorRows = priorPeriod ? scopedAll.filter((row) => row.period === priorPeriod) : null;
 
   const totals = totalRows(rows);
@@ -293,8 +307,10 @@ export async function buildVsTargetDashboard(
       .filter((row) => row.areaCode == null && row.regionCode == null)
       .reduce((sum, row) => sum + row.actualValue, 0),
     salesLoaded,
-    pendingDirectValue: salesLoaded ? 0 : totals.actualValue,
-    isEmptyScope: rows.length === 0,
+    pendingDirectValue: salesLoaded
+      ? 0
+      : rawRowsForPeriod.reduce((sum, row) => sum + row.actualValue, 0),
+    isEmptyScope: rawRowsForPeriod.length === 0,
   };
 }
 

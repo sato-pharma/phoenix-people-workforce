@@ -42,7 +42,8 @@ import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import {
   SALES_VS_TARGET_FLOOR,
-  loadUploadedPeriods,
+  isRowPublished,
+  loadPublishedPeriodKeys,
   loadVsTargetRange,
   salesVsTargetPeriods,
   totalRows,
@@ -110,53 +111,66 @@ type MemberAgg = {
 type Grain = "rep" | "dm";
 
 /** Load the whole achievement window (July floor → current Cairo month), area-merged. */
-async function loadWindowRows(): Promise<{ rows: AchievementRow[]; uploadedPeriods: Set<string> }> {
+async function loadWindowRows(): Promise<{ rows: AchievementRow[]; publishedKeys: Set<string> }> {
   const { current } = salesVsTargetPeriods();
-  const [rangeRows, uploadedPeriods] = await Promise.all([
+  const [rangeRows, publishedKeys] = await Promise.all([
     loadVsTargetRange(SALES_VS_TARGET_FLOOR, current),
-    loadUploadedPeriods(SALES_VS_TARGET_FLOOR, current),
+    loadPublishedPeriodKeys(SALES_VS_TARGET_FLOOR, current),
   ]);
-  return { rows: applyAchievementAreaMerges(rangeRows), uploadedPeriods };
+  return { rows: applyAchievementAreaMerges(rangeRows), publishedKeys };
 }
 
 /**
- * Periods that actually carry sales AND whose distributor upload has landed, newest first.
+ * Periods that actually carry sales AND whose (line-scoped) Monthly Closing is PUBLISHED,
+ * newest first.
  *
  * Excludes months that exist only because a FUTURE target was loaded (e.g.
- * August/September Pedia targets with no upload yet) — `hasActual` handles that. It also
- * excludes a month whose only actual is an early Direct Order booked before that month's
- * distributor files arrived: on 2026-08-10 a single such row (1,309.50 EGP, area GZ1) was
- * enough to pull August's full target into every cumulative "default view" denominator and
- * roughly halve every manager's keycard achievement. `/sales/vs-target` hit the identical
- * failure for its own landing-period pick and was fixed with the same signal (see
- * loadUploadedPeriods in vs-target.ts) — this reuses it rather than re-deriving it, so the
- * two surfaces cannot drift back apart.
+ * August/September Pedia targets with no closing yet) — `hasActual` handles that. It also
+ * excludes a month whose Monthly Closing the owner has not yet published for that line —
+ * distributor files landing is not enough: on 2026-08-10 a single Direct Order row
+ * (1,309.50 EGP, area GZ1) was enough to pull August's full target into every cumulative
+ * "default view" denominator and roughly halve every manager's keycard achievement, and even
+ * a real distributor upload sat unpublished (and therefore unclosed) for up to 12 days after
+ * July 2026 ended. `/sales/vs-target` hit the identical failure for its own landing-period
+ * pick and was fixed with the same signal (see loadPublishedPeriodKeys in vs-target.ts) —
+ * this reuses it rather than re-deriving it, so the two surfaces cannot drift back apart.
+ * [Owner ruling, 2026-08-13]: a blank keycard is the correct state until a period is
+ * published, never a live-but-unclosed number.
  */
-export function activePeriodsOf(rows: AchievementRow[], uploadedPeriods: ReadonlySet<string>): string[] {
+export function activePeriodsOf(rows: AchievementRow[], publishedKeys: ReadonlySet<string>): string[] {
   return Array.from(
-    new Set(rows.filter((row) => row.hasActual && uploadedPeriods.has(row.period)).map((row) => row.period)),
+    new Set(rows.filter((row) => row.hasActual && isRowPublished(row, publishedKeys)).map((row) => row.period)),
   ).sort((a, b) => b.localeCompare(a));
 }
 
 /** Load the window scoped to ONE viewer's bound (NSM line, DSM areas, rep self, …). */
 async function loadScopedRows(
   ctx: AccessContext,
-): Promise<{ rows: AchievementRow[]; activePeriods: string[] }> {
+): Promise<{ rows: AchievementRow[]; activePeriods: string[]; publishedKeys: Set<string> }> {
   const bound = await resolveVsTargetBound(ctx);
-  const { rows: windowRows, uploadedPeriods } = await loadWindowRows();
+  const { rows: windowRows, publishedKeys } = await loadWindowRows();
   const rows = filterRowsForBound(windowRows, bound);
-  return { rows, activePeriods: activePeriodsOf(rows, uploadedPeriods) };
+  return { rows, activePeriods: activePeriodsOf(rows, publishedKeys), publishedKeys };
 }
 
-/** Restrict window rows to the active periods, then to the selected periods (if any). */
+/**
+ * Restrict window rows to the active periods, then to the selected periods (if any).
+ *
+ * Filters per-ROW on `isRowPublished`, not just per-period: a single-line viewer's rows are
+ * already all one line (so this is a no-op there), but the company-wide roll-ups mix every
+ * line in one `rows` array — if lines ever publish on different schedules again (as July 2026
+ * did, staggered across 2026-08-08 to 2026-08-12), a period-only filter would let an
+ * unpublished line's raw rows leak in just because a DIFFERENT line made that period "active".
+ */
 function selectRows(
   rows: AchievementRow[],
   activePeriods: string[],
   requested: string | string[] | null | undefined,
+  publishedKeys: ReadonlySet<string>,
 ): AchievementRow[] {
   const active = new Set(activePeriods);
   const selected = normalizePeriods(requested).filter((period) => active.has(period));
-  const base = rows.filter((row) => active.has(row.period));
+  const base = rows.filter((row) => active.has(row.period) && isRowPublished(row, publishedKeys));
   return selected.length > 0 ? base.filter((row) => selected.includes(row.period)) : base;
 }
 
@@ -291,10 +305,10 @@ export async function buildNsmDsmPerformanceFromSos(
   ctx: AccessContext,
   requested: string | string[] | null | undefined,
 ): Promise<NsmDsmPerformanceData> {
-  const { rows, activePeriods } = await loadScopedRows(ctx);
+  const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
 
-  const used = selectRows(rows, activePeriods, requested);
+  const used = selectRows(rows, activePeriods, requested, publishedKeys);
   const nsmHrId = ctx.hrId ? String(ctx.hrId) : null;
   const nsmName = nsmHrId ? employeeNames.get(nsmHrId) ?? null : null;
 
@@ -323,10 +337,10 @@ export async function buildDsmTeamPerformanceFromSos(
   ctx: AccessContext,
   requested: string | string[] | null | undefined,
 ): Promise<DsmTeamPerformanceData> {
-  const { rows, activePeriods } = await loadScopedRows(ctx);
+  const { rows, activePeriods, publishedKeys } = await loadScopedRows(ctx);
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
 
-  const used = selectRows(rows, activePeriods, requested);
+  const used = selectRows(rows, activePeriods, requested, publishedKeys);
   const members = membersFromRows(used, "rep", employeeNames, productNames, repManagerResolver(employeeNames));
   const totals = headlineTotals(used);
   const { unattributedSales, unattributedTarget } = reconcileUnattributed(totals, members);
@@ -352,10 +366,11 @@ export async function buildDsmTeamPerformanceFromSos(
 async function loadCompanyRows(lineCodes: Set<string>): Promise<{
   rows: AchievementRow[];
   activePeriods: string[];
+  publishedKeys: Set<string>;
 }> {
-  const { rows: windowRows, uploadedPeriods } = await loadWindowRows();
+  const { rows: windowRows, publishedKeys } = await loadWindowRows();
   const relevant = windowRows.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode));
-  return { rows: relevant, activePeriods: activePeriodsOf(relevant, uploadedPeriods) };
+  return { rows: relevant, activePeriods: activePeriodsOf(relevant, publishedKeys), publishedKeys };
 }
 
 /**
@@ -367,9 +382,9 @@ export async function buildCompanyMedRepPerformanceFromSos(
   requested: string | string[] | null | undefined,
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyMedRepPerformanceData> {
-  const { rows, activePeriods } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
+  const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
-  const used = selectRows(rows, activePeriods, requested);
+  const used = selectRows(rows, activePeriods, requested, publishedKeys);
 
   const lines: CompanyMedRepPerformanceLine[] = [];
   for (const [lineCode, meta] of lineMetaByCode) {
@@ -422,9 +437,9 @@ export async function buildCompanyDsmPerformanceFromSos(
   requested: string | string[] | null | undefined,
   lineMetaByCode: Map<string, SosCompanyLineMeta>,
 ): Promise<CompanyDsmPerformanceData> {
-  const { rows, activePeriods } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
+  const { rows, activePeriods, publishedKeys } = await loadCompanyRows(new Set(lineMetaByCode.keys()));
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
-  const used = selectRows(rows, activePeriods, requested);
+  const used = selectRows(rows, activePeriods, requested, publishedKeys);
 
   const lines: CompanyDsmPerformanceLine[] = [];
   for (const [lineCode, meta] of lineMetaByCode) {
@@ -492,14 +507,14 @@ export async function buildRmRegionalPerformanceFromSos(
   isInRegion: (hrId: string | null | undefined) => boolean,
   nsm: { hrId: string | null; name: string | null },
 ): Promise<RmRegionalPerformanceData> {
-  const { rows: relevantAll, uploadedPeriods } = await loadWindowRows();
+  const { rows: relevantAll, publishedKeys } = await loadWindowRows();
   const relevant =
     lineCodes.size > 0
       ? relevantAll.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode))
       : relevantAll;
-  const activePeriods = activePeriodsOf(relevant, uploadedPeriods);
+  const activePeriods = activePeriodsOf(relevant, publishedKeys);
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
-  const used = selectRows(relevant, activePeriods, requested);
+  const used = selectRows(relevant, activePeriods, requested, publishedKeys);
 
   const dsms = membersFromRows(used, "dm", employeeNames, productNames, dmManagerResolver(nsm.hrId, nsm.name))
     .filter((dsm) => isInRegion(dsm.hrId))
