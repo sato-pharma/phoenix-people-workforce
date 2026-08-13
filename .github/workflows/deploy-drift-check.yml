@@ -1,0 +1,129 @@
+name: Deploy Drift Check
+
+# WHY THIS EXISTS (added 2026-08-13). Production's Railway service was source-configured to
+# auto-deploy from a git branch literally named `staging`, not `main`. That branch had gone
+# stale, so five already-merged, already-CI-green PRs (#2093, #2095, #2094, #2098, #2097) sat
+# unshipped in production for hours while `main` moved on — with no error, no failed check, and
+# no signal anywhere. AGENTS.md's core claim ("a merge to main SHIPS TO PRODUCTION IMMEDIATELY")
+# was silently false for that window. Found only by a manual `railway status` check.
+#
+# This closes that gap the same way migration-drift-check.yml closes the analogous one for the
+# database: a merged PR and a green CI run are not proof of what's actually live — only checking
+# live state is. A branch-source misconfiguration produces exactly this failure mode again with
+# zero warning, since GitHub shows the merge as completely normal either way.
+#
+# WHAT IT CHECKS. On a schedule (not push/pull_request — this looks for drift that accumulates
+# AFTER merge, the same reasoning migration-drift-check.yml uses), compares `main`'s current HEAD
+# SHA (read live from the GitHub API, not the trigger's own `github.sha` — correct regardless of
+# how the run was triggered, and needs no checkout) against the `revision` production's own
+# /api/healthz reports it is running.
+#
+# GRACE PERIOD. A normal Railway build+deploy takes a few minutes, so a single mismatch is
+# expected right after every merge and is not drift. On a mismatch this waits 3 minutes and
+# checks once more before treating it as real — avoids paging on every ordinary deploy.
+#
+# COST. Deliberately no checkout, no Node, no pnpm install — this needs nothing but curl, so a
+# normal (in-sync) run finishes in a few seconds. Actions cost in this repo has hit the spending
+# cap before and frozen every merge, so this stays cheap: 30-minute cadence, ~48 runs/day, only
+# the rare drifting run pays the 3-minute grace sleep.
+#
+# ALERTING. Reuses the same TELEGRAM_BOT_TOKEN / TELEGRAM_ALERT_CHAT_ID secrets and Bot API call
+# migration-drift-check.yml already uses — the owner's existing Telegram channel, not a new
+# recipient. migration-drift-check.yml's own header documents why this step exists at all: "a
+# failing scheduled workflow notifies no one — GitHub emails the run author, and a cron run has
+# none." A schedule-triggered failure with no notification step is invisible by construction.
+on:
+  schedule:
+    - cron: "9,39 * * * *" # every 30 min, offset from the shared :00/:15/:30/:45 firing minute
+  workflow_dispatch:
+    inputs:
+      test_alert:
+        description: "Send a test Telegram alert and stop (proves the alarm still works)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# A new run's answer always supersedes an older one still mid-grace-period-sleep.
+concurrency:
+  group: deploy-drift-check
+  cancel-in-progress: true
+
+jobs:
+  deploy-drift-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Compare production's deployed revision against main HEAD
+        if: ${{ !inputs.test_alert }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          fetch_live_revision() {
+            curl -fsS --max-time 10 https://phoenix-hr.satopharma.com/api/healthz \
+              | jq -r '.revision // empty'
+          }
+
+          MAIN_SHA=$(curl -fsS --max-time 10 -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/commits/main" | jq -r '.sha')
+          echo "main HEAD: $MAIN_SHA"
+
+          LIVE_SHA="$(fetch_live_revision || true)"
+          echo "production revision (check 1): ${LIVE_SHA:-<unreachable>}"
+
+          if [ "$LIVE_SHA" = "$MAIN_SHA" ]; then
+            echo "In sync."
+            exit 0
+          fi
+
+          echo "Mismatch (or healthz unreachable) — waiting 3 minutes for an in-flight Railway build to land before treating this as real drift..."
+          sleep 180
+
+          LIVE_SHA="$(fetch_live_revision || true)"
+          echo "production revision (check 2): ${LIVE_SHA:-<unreachable>}"
+
+          if [ "$LIVE_SHA" = "$MAIN_SHA" ]; then
+            echo "Caught up during the grace window. In sync."
+            exit 0
+          fi
+
+          echo "::error::Production is NOT serving main HEAD after a 3-minute grace period. main=$MAIN_SHA production=${LIVE_SHA:-<unreachable>}. This is the exact failure mode fixed 2026-08-13 (production silently tracking the wrong Railway source branch). Check: railway status --project dc218ad3-99b7-4aff-be38-953a57524a71 --environment production --json, then inspect .environments.edges[0].node.serviceInstances.edges[].node.latestDeployment.meta.branch — it must read \"main\"."
+          exit 1
+
+      # SELF-TEST, same convention as migration-drift-check.yml: workflow_dispatch with
+      # test_alert=true fires this on a run that never even checked production, so "does the
+      # alarm still work?" is answerable in two minutes without waiting for real drift.
+      - name: Notify Telegram on failure
+        if: ${{ failure() || inputs.test_alert }}
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_ALERT_CHAT_ID: ${{ secrets.TELEGRAM_ALERT_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          IS_TEST: ${{ inputs.test_alert }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_ALERT_CHAT_ID" ]; then
+            echo "::warning::Telegram alert not sent — TELEGRAM_BOT_TOKEN or TELEGRAM_ALERT_CHAT_ID is unset. Production deploy drift went UNDETECTED-BY-A-HUMAN, which is the condition this step exists to prevent."
+            exit 0
+          fi
+          if [ "$IS_TEST" = "true" ]; then
+            TEXT=$(printf 'ALERT SELF-TEST (not an incident)\n\nSomeone ran the deploy drift check with the test flag to confirm this channel still works.\n\nIf you are reading this, a real production deploy-drift failure would also reach you.\n\n%s' "$RUN_URL")
+          else
+            TEXT=$(printf 'PRODUCTION DEPLOY DRIFT DETECTED\n\nProduction is not serving main HEAD, 3 minutes after first noticing. This is the failure mode fixed 2026-08-13 (Railway production tracking the wrong source branch) — check railway status for the production service source branch.\n\n%s' "$RUN_URL")
+          fi
+          HTTP=$(curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_ALERT_CHAT_ID}" \
+            -d "disable_web_page_preview=true" \
+            --data-urlencode "text=${TEXT}" \
+            -o /tmp/tg-response.json -w '%{http_code}')
+          echo "telegram sendMessage HTTP ${HTTP}"
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Telegram alert FAILED to deliver (HTTP ${HTTP}). Production deploy drift reached nobody. Response: $(cat /tmp/tg-response.json 2>/dev/null | head -c 500)"
+            exit 1
+          fi
+          echo "Telegram alert delivered."
