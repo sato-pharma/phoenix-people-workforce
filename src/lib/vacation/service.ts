@@ -67,9 +67,7 @@ import {
   sendVacationDecisionResultEmail,
   sendVacationManagerDecisionEmail,
   sendVacationManagerStepResultEmail,
-  sendVacationResubmitConfirmationEmail,
   sendVacationReturnedEmail,
-  sendVacationSubmissionConfirmationEmail,
 } from "@/lib/vacation/email";
 import { pickDeliverableEmail } from "@/lib/email/email-safety";
 import type {
@@ -2012,22 +2010,6 @@ async function dispatchVacationSubmitted(input: {
     request: input.request,
     title: `${input.request.employeeName} submitted a vacation request`,
   });
-  // Submission confirmation to the employee — completes the 3-channel requirement on submit
-  // (managers/HR are notified above; the employee previously got zero channels).
-  if (input.request.employeeWorkEmail) {
-    void sendVacationSubmissionConfirmationEmail({
-      employeeDisplayName: findEmployeeByHrId(input.directory, input.request.employeeHrId)?.displayName,
-      employeeEmail: input.request.employeeWorkEmail,
-      request: input.request,
-    }).catch(async (error) => {
-      await insertVacationEvent({
-        actorHrId: input.request.employeeHrId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: input.request.id,
-      }).catch(() => undefined);
-    });
-  }
 }
 
 async function dispatchVacationManagerReview(input: {
@@ -2041,6 +2023,10 @@ async function dispatchVacationManagerReview(input: {
     ? `/admin/approvals/vacation/${encodeURIComponent(input.request.id)}`
     : `/leave-management/vacation-report?requestId=${encodeURIComponent(input.request.id)}`;
   await notifyRecipients({
+    // Email is delivered by the templated sendVacationManagerStepResultEmail below; keep this
+    // generic notification to in-app + Telegram + push so the recipients don't also receive a
+    // duplicate generic email.
+    channels: ["in_app", "telegram", "push"],
     href: reportHref,
     message: `${input.request.managerName ?? "Direct manager"} ${input.decision === "approve" ? "approved" : "rejected"} ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} (${input.request.startDate} to ${input.request.endDate}). ${sequential ? "HR acknowledgement is required." : "HR final decision is required."}`,
     metadata: {
@@ -2121,6 +2107,10 @@ async function dispatchVacationNextManagerStep(input: {
   await createSystemNotification({
     actionUrl: actionHref,
     category: "vacation_request",
+    // Email is delivered by the templated sendVacationManagerDecisionEmail below; keep this
+    // generic notification to in-app + Telegram + push so the next approver doesn't also
+    // receive a duplicate generic email.
+    channels: ["in_app", "telegram", "push"],
     eventType: "next_manager_review",
     message: `${actingName} approved ${input.request.employeeName}'s ${vacationTypeLabel(input.request.vacationType)} request (${input.request.startDate} to ${input.request.endDate}). Your review is now required.`,
     metadata: {
@@ -3793,7 +3783,6 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
   if (!hrIdsMatch(actorHrId, request.employeeHrId)) {
     throw new Error("Forbidden: only the employee who submitted this request can resubmit it.");
   }
-  const directory = await getEmployeeDirectory();
 
   const now = new Date().toISOString();
   const { data, error } = await getSupabaseAdmin()
@@ -3859,22 +3848,6 @@ export async function resubmitVacationRequest(access: AccessContext, input: { re
       requestId: resubmitted.id,
     }).catch(() => undefined);
   });
-  if (resubmitted.employeeWorkEmail) {
-    void sendVacationResubmitConfirmationEmail({
-      employeeDisplayName: findEmployeeByHrId(directory, resubmitted.employeeHrId)?.displayName,
-      employeeEmail: resubmitted.employeeWorkEmail,
-      request: resubmitted,
-    }).catch(async (error) => {
-      await insertVacationEvent({
-        actorHrId,
-        actorLoginId: access.loginId,
-        eventType: "notification_failed",
-        message: vacationErrorMessage(error),
-        requestId: resubmitted.id,
-      }).catch(() => undefined);
-    });
-  }
-
   invalidateExecutiveDashboardCache("leave request resubmitted", ["leave"]);
   return resubmitted;
 }

@@ -98,10 +98,19 @@ export async function runMarketingPremiumNotificationTests() {
   assert.match(templates, /\{\{productsTable\}\}/, "marketing_request body must render {{productsTable}}");
   assert.match(templates, /\{\{estimatedCost\}\}/, "marketing_request body must render {{estimatedCost}}");
 
-  // ── Passthrough wiring: both marketing emails fill the template via templateContext ──
+  // ── Passthrough wiring: the workflow email fills the template via templateContext ──
+  // request_submitted stopped sending a templated email in the email-reduction project
+  // (2026-08-13) -- the submitter no longer gets a confirmation of their own submission, so
+  // there is no submittedContext left to wire up. Only the workflow email (assigned/approved/
+  // rejected/returned) still needs it.
   const service = source("src/lib/marketing-requests/service.ts");
   const wiring = service.match(/templateContext: (emailContext|submittedContext)/g) ?? [];
-  assert.equal(wiring.length, 2, "both the workflow and submitted emails must pass templateContext");
+  assert.equal(wiring.length, 1, "the workflow email must pass templateContext");
+  assert.doesNotMatch(
+    service,
+    /submittedContext/,
+    "request_submitted no longer builds or passes an email template context",
+  );
   assert.match(service, /returnNote: comment/, "the decision flow must forward the return reason");
   const email = source("src/lib/notifications/email.ts");
   assert.match(

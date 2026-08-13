@@ -251,6 +251,12 @@ async function notifyDirectOrder(input: {
    * nothing. Callers that repeat pass a qualifier (the date) so each round is its own event.
    */
   idempotencySuffix?: string;
+  /**
+   * Overrides NOTIFY_CHANNELS for events where in-app/Telegram should still reach the usual
+   * recipients but an email is not warranted (e.g. cancelling one's own held order) — dropping
+   * "email" here, not the recipients, is what keeps that distinction possible.
+   */
+  channels?: SystemNotificationChannel[];
 }): Promise<void> {
   // The LIVE order route, not the retired approvals one.
   //
@@ -277,7 +283,7 @@ async function notifyDirectOrder(input: {
   // is exactly the per-recipient-copies bug it was built to close (2026-07-22).
   await createSystemNotificationForRecipients(
     {
-      channels: NOTIFY_CHANNELS,
+      channels: input.channels ?? NOTIFY_CHANNELS,
       actionUrl: href,
       category: "direct_order_request",
       email: input.metrics?.length ? { metrics: input.metrics } : undefined,
@@ -1320,8 +1326,10 @@ async function moveHeldDirectOrdersIntoChain(
     const notifyContext = await buildNotifyContext(request, requesterDisplayName, pharmacy);
     const firstStep = chain[0];
     const firstApprovers = firstStep.kind === "role" && firstStep.role ? await hrIdsForRole(firstStep.role) : [firstStep.approverHrId];
+    // The requester already knows their order moved (they either just passed pharmacy validation
+    // or asked the Held Desk to release it) — only the approver who must now act needs telling.
     await notifyDirectOrder({
-      recipients: [request.requesterHrId, ...firstApprovers],
+      recipients: firstApprovers,
       title: opts.noticeTitle,
       message: `${buildDirectOrderNotificationLine(notifyContext)} ${opts.noticeSuffix}`,
       metrics: buildDirectOrderNotificationMetrics(notifyContext),
@@ -1923,7 +1931,9 @@ export async function cancelHeldDirectOrder(
   });
 
   // The requester is told even when they cancelled it themselves — a Super Admin tidying up on
-  // their behalf is the case that matters, and one rule covers both. One To + CC, never two copies.
+  // their behalf is the case that matters, and one rule covers both. In-app and Telegram still
+  // reach requester + SFE + Super Admin; email is dropped entirely — withdrawing one's own
+  // duplicate is not news worth an inbox entry.
   const resolveName = await nameLookup();
   const requesterDisplayName = resolveName(detail.request.requesterHrId) ?? detail.request.requesterHrId;
   // getDirectOrderRequest returns { request, steps } — it does not carry the pharmacy, so it is
@@ -1933,6 +1943,7 @@ export async function cancelHeldDirectOrder(
   const notifyContext = await buildNotifyContext(detail.request, requesterDisplayName, pharmacy);
   await notifyDirectOrder({
     recipients: [detail.request.requesterHrId, ...(await ccRecipients())],
+    channels: ["in_app", "telegram"],
     title: "Direct order cancelled while held",
     message:
       `${buildDirectOrderNotificationLine(notifyContext)} ` +
@@ -3318,8 +3329,11 @@ export async function submitDirectOrder(
     .filter(Boolean)
     .join(" ");
   const capNote = overCap ? ` This ${dealType} exceeds the cap — flagged, not blocked.` : "";
+  // Only whoever must actually act — SFE Manager and Super Admin no longer ride along by
+  // default. When the first rung IS the SFE Manager (the common case), they still appear here,
+  // because they ARE firstApprovers; this only drops the blanket copy to people who aren't.
   await notifyDirectOrder({
-    recipients: [...firstApprovers, ...(await ccRecipients())],
+    recipients: firstApprovers,
     title: `${tags ? `${tags} ` : ""}Direct order awaiting your approval`,
     message: `${buildDirectOrderNotificationLine(notifyContext)}${capNote}`,
     metrics: buildDirectOrderNotificationMetrics(notifyContext),
@@ -3762,9 +3776,12 @@ export async function decideDirectOrder(
     });
   }
 
-  // Notify the requester on every decision; the next approver when the chain advances.
-  const cc = await ccRecipients();
-  const recipients: Array<string | null | undefined> = [request.requesterHrId, ...cc];
+  // Reject/return are bad news the requester must act on, so they (and the usual CC set) are
+  // told exactly as before. An approve notifies only whoever is next in the chain — or nobody
+  // through this path when it was the final step, since nothing is left to act on and the
+  // separate Finance/CEO notice (dispatchDirectOrderApprovedEmail, below) covers that case.
+  const recipients: Array<string | null | undefined> =
+    input.decision === "approve" ? [] : [request.requesterHrId, ...(await ccRecipients())];
   let nextLabel: string | null = null;
   if (result.status === "pending_approval") {
     const nextSteps = await loadSteps(request.id);
@@ -3783,9 +3800,9 @@ export async function decideDirectOrder(
     nameOf(request.requesterHrId) ?? request.requesterHrId,
     pharmacyForNotice,
   );
-  // Third person, deliberately: this goes to the NEXT approver and the SFE/Super-Admin CC set
-  // as well as the requester, so the old "Your direct order …" was wrong for most of the people
-  // who received it.
+  // Third person, deliberately: who this reaches varies by decision (reject/return: requester +
+  // CC; a continuing approve: only the next approver) — "Your direct order …" would be wrong for
+  // whichever of those audiences it was not written for.
   const actorName = nameOf(access.hrId) ?? access.hrId ?? access.role;
   const decisionSentence =
     `${decisionContext.requesterName}'s direct order for ` +
