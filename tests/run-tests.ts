@@ -685,6 +685,7 @@ import { runWorkflowRegistryRetargetGuardTests } from "./workflow-registry-retar
 
 import { runSalesVsTargetTests } from "./sales-vs-target.test.ts";
 import { runAchievementCountsUnmappedTests } from "./achievement-counts-unmapped.test.ts";
+import { runAchievementHashableJoinKeyTests } from "./achievement-hashable-join-key.test.ts";
 import { runDirectOrdersRegistryChainGrantsTests } from "./direct-orders-registry-chain-grants.test.ts";
 import { runSalesCustomerChannelTests } from "./sales-customer-channel.test.ts";
 import { runStoreSalesCitySplitTests } from "./store-sales-city-split.test.ts";
@@ -1541,6 +1542,10 @@ await runTest("sales vs target (no target reads as null not 0%, July 2026 has no
 await runTest(
   "achievement counts the unmapped channel (no channel filter survives, the line_code rejoins are NULL-safe so a line-less sale is not zeroed, and service_role keeps execute)",
   runAchievementCountsUnmappedTests,
+);
+await runTest(
+  "achievement rejoins on a hashable join_key (folds the four NULL-safe key columns into one =, so the two IS NOT DISTINCT FROM nested loops become hash/merge joins; PARALLEL SAFE re-declared; output identical)",
+  runAchievementHashableJoinKeyTests,
 );
 await runTest("direct orders registry grants every chain rung (SFE can return/reject/advance, never finalize or submit)", runDirectOrdersRegistryChainGrantsTests);
 await runTest(
