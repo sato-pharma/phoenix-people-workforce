@@ -21,18 +21,18 @@ export function runOutstationNotificationsTests() {
   const service = source("src/lib/outstation/service.ts");
   const expenses = source("src/lib/outstation/expenses.ts");
 
-  // ── Rule 1 (revised 2026-08-04): Submit mail → the EMPLOYEE, managers Cc, Super Admin Bcc ──
-  // SUPERSEDES the 2026-07-13 rule below it, which fanned every submission out to every
-  // active Super Admin AND the CEO and told the submitting employee nothing. The CEO was
-  // receiving one mail per outstation submission company-wide; that is the complaint this
-  // replaced. The envelope is now one message: To the employee (it is his confirmation),
-  // Cc his direct manager, Cc the skip-level manager UNLESS that person is the CEO, Bcc
-  // every active Super Admin. See src/lib/outstation/submit-recipients.ts — the envelope
-  // decision itself is unit-tested in outstation-submit-email-routing.test.ts.
+  // ── Rule 1 (revised email-reduction 2026-08-13): Submit mail → the MANAGER, skip-level Cc, ──
+  // ── Super Admin Bcc, the employee is off the email entirely ──────────────────────────────
+  // SUPERSEDES the 2026-08-04 rule, which put the submitting employee on To as a self-confirmation
+  // he did not need (he was just on the submission screen). The envelope is now one message: To
+  // his direct manager (or the skip-level manager, or a Super Admin, whichever is first reachable
+  // — see the fallback chain in submit-recipients.ts), Cc the skip-level manager UNLESS that
+  // person is the CEO, Bcc every active Super Admin. See src/lib/outstation/submit-recipients.ts —
+  // the envelope decision itself is unit-tested in outstation-submit-email-routing.test.ts.
   assert.match(
     service,
     /async function notifyOutstationSubmitted/,
-    "RULE 1: notifyOutstationSubmitted must exist — it is the employee's submit confirmation",
+    "RULE 1: notifyOutstationSubmitted must exist — it is the manager's heads-up on a submission",
   );
 
   const submitNotifySlice = functionSlice(service, "async function notifyOutstationSubmitted");
@@ -44,12 +44,12 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitNotifySlice,
     /recipientHrId: routing\.toHrId/,
-    "the employee must be the To recipient, not a Super Admin",
+    "the To recipient must come from routing — the direct manager by default, never the employee",
   );
   assert.match(
     submitNotifySlice,
     /email: \{ bcc: bccAddresses, cc: ccAddresses, metrics \}/,
-    "managers must ride on Cc and Super Admins on Bcc of that ONE message — never as separate sends",
+    "the skip-level manager must ride on Cc and Super Admins on Bcc of that ONE message — never as separate sends",
   );
   assert.doesNotMatch(
     submitNotifySlice,
@@ -59,7 +59,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitNotifySlice,
     /channels:\s*\["in_app",\s*"email",\s*"telegram",\s*"push"\]/,
-    "submit notification must reach the employee in-app as well as by email/Telegram/push",
+    "submit notification must reach the addressed manager in-app as well as by email/Telegram/push",
   );
   assert.match(
     submitNotifySlice,
@@ -128,7 +128,7 @@ export function runOutstationNotificationsTests() {
   assert.match(
     submitDecisionSlice,
     /notifyOutstationSubmitted\(/,
-    "every submit fires the employee's submit confirmation",
+    "every submit fires the manager's heads-up alert",
   );
   assert.doesNotMatch(
     submitDecisionSlice,
@@ -173,7 +173,7 @@ export function runOutstationNotificationsTests() {
     /existing\.status\.startsWith\("rejected"\)[\s\S]{0,80}notifyOutstationSubmitted\(/,
     "RULE 1: the submit alert fires from approve ONLY when overriding a system rejection — every " +
       "other claim was already alerted at submit, so an unconditional send here would double-mail " +
-      "the employee, his manager and the Super Admins on every single trip",
+      "the manager, the skip-level manager and the Super Admins on every single trip",
   );
   assert.doesNotMatch(
     approveSlice,

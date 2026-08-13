@@ -1248,9 +1248,10 @@ export async function calculateOutstationExpense(
 
 // ── Approval notifications ────────────────────────────────────────────────────
 // Submission auto-approves in the same request (no pending-approval step for a
-// human to act on), so the submit mail is a CONFIRMATION to the employee rather
-// than an action queue, with his reporting line copied for visibility. Every send
-// is best-effort: a notification failure must never roll back or fail the
+// human to act on), so this is a heads-up to the direct manager (Cc: skip-level,
+// Bcc: Super Admin oversight) rather than an action queue — the submitting
+// employee is not on it; he was just on the submission screen. Every send is
+// best-effort: a notification failure must never roll back or fail the
 // underlying submit. See submit-recipients.ts for who lands in To/Cc/Bcc and why.
 const OUTSTATION_EMPLOYEE_PORTAL_URL = "/employee-portals/expenses";
 const OUTSTATION_ADMIN_QUEUE_URL = "/admin/outstation/expense-command?tab=queue";
@@ -1269,15 +1270,16 @@ async function notifyOutstationSubmitted(
   options: { heldForReview?: boolean; reviewReason?: string | null } = {},
 ) {
   try {
-    // To = the employee, Cc = his manager and skip-level, Bcc = active Super Admins. The CEO is
-    // never on this email in any slot (owner, 2026-08-08), so a direct report of his — every NSM,
-    // and 18 others — gets a mail with no Cc at all. Nothing is sent when the employee cannot be
-    // identified: a confirmation with no one to confirm TO is not worth mailing to
-    // his managers alone.
+    // To = the employee's direct manager, Cc = skip-level manager, Bcc = active Super Admins. The
+    // employee himself is never on this email — he was just on the submission screen. The CEO is
+    // never on this email in any slot (owner, 2026-08-08): when the direct manager is the CEO
+    // (every NSM, and 18 others), the skip-level manager steps up to To instead, and if neither is
+    // available a Super Admin is promoted to To so oversight is never silently dropped. Nothing is
+    // sent when no one at all can be addressed.
     const routing = await resolveOutstationSubmitRouting(request.employeeHrId);
     if (!routing.toHrId) {
-      logError("Outstation submit email skipped — submitting employee could not be resolved", {
-        labels: { event: "outstation_submit_email_employee_unresolved", requestId: String(request.id) },
+      logError("Outstation submit email skipped — no recipient could be resolved (unidentifiable employee, or no manager/skip-level/Super Admin available)", {
+        labels: { event: "outstation_submit_email_recipient_unresolved", requestId: String(request.id) },
       });
       return;
     }
@@ -1391,20 +1393,19 @@ async function notifyOutstationSubmitted(
     // Short human summary only — the structured fields above (rendered separately as the
     // template's metrics table) already carry every detail, so repeating them here as a
     // second wall of text made the email read as duplicated content.
-    // Addressed to the employee — he is now the "To", so it reads as his confirmation.
-    // The managers on Cc are reading over his shoulder, which is why the detail table
-    // below it still carries the full request.
+    // Addressed to the direct manager (or the next available person in submit-recipients.ts'
+    // fallback chain) — he is the "To", so this reads as a heads-up about someone else's
+    // submission, not a confirmation to the submitter.
     const messageLines = [
       ...(heldForReview
         ? [
             `HELD FOR REVIEW: this request's residence/destination governorate could not be confirmed automatically, so it was NOT added to payroll yet. A Super Admin will approve or reject it.`,
           ]
         : []),
-      `Your outstation expense request for ${claimedAmount} was submitted on ${formatPhoenixDateTime(request.createdAt)}.`,
+      `${request.employeeName} submitted an outstation expense request for ${claimedAmount} on ${formatPhoenixDateTime(request.createdAt)}.`,
       `Trip: ${formatPhoenixLongDate(request.tripStartDate)} to ${formatPhoenixLongDate(request.tripEndDate)} · Destination: ${destination} · Transportation: ${request.transportationType}`,
       `Captured location: ${capturedLocation.label}`,
       `Eligibility: ${request.eligibilityStatus} · Recommendation: ${request.approvalRecommendation}`,
-      `Your manager${ccAddresses.length > 1 ? "s are" : " is"} copied on this message.`,
     ];
 
     await createSystemNotification({
@@ -1427,7 +1428,7 @@ async function notifyOutstationSubmitted(
         submitEnvelope: {
           bccHrIds: routing.bccHrIds,
           ccHrIds: routing.ccHrIds,
-          routing: "employee_to_manager_cc_superadmin_bcc",
+          routing: "manager_to_skiplevel_cc_superadmin_bcc",
           toHrId: routing.toHrId,
         },
       },
@@ -1438,8 +1439,8 @@ async function notifyOutstationSubmitted(
       subjectHrId: request.employeeHrId,
       telegram: { buttons: [{ label: "Open my expenses", url: OUTSTATION_EMPLOYEE_PORTAL_URL }] },
       title: heldForReview
-        ? `Your outstation expense request needs review — ${claimedAmount}`
-        : `Your outstation expense request was submitted — ${claimedAmount}`,
+        ? `${request.employeeName}'s outstation expense request needs review — ${claimedAmount}`
+        : `${request.employeeName} submitted an outstation expense request — ${claimedAmount}`,
     });
   } catch (error) {
     logError("Outstation submitted notification dispatch failed (non-blocking)", { labels: { event: "outstation_submitted_notification_dispatch_failed" }, error });

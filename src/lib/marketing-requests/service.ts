@@ -5202,22 +5202,11 @@ export async function createMarketingRequestDraft(
         title: "Marketing request assigned",
       });
     }
-    const submittedContext = buildMarketingEmailContext({
-      currentStepName: currentStep?.stepName ?? null,
-      customerName: cleanText((customerResult.data as { display_name?: string | null } | null)?.display_name),
-      products: draftDetail.products,
-      request,
-    });
     const requesterDisplayName = employeeNameByHrId(employeeRows, request.requesterHrId) || request.requesterHrId;
     await createSystemNotification({
       actionUrl: marketingActionUrl(request.id),
       actorId: request.requesterHrId,
-      email: {
-        metrics: [
-          { label: "Employee", value: `${requesterDisplayName} (${request.requesterHrId})` },
-        ],
-        templateContext: submittedContext,
-      },
+      channels: ["in_app", "telegram", "push"],
       eventType: "request_submitted",
       message: `${request.requestCode} was submitted by ${requesterDisplayName}.`,
       metadata: {

@@ -50,7 +50,7 @@ type MessagesResponse = {
 const emptyForm = {
   body: "",
   recipient: "",
-  sendEmail: true,
+  sendEmail: false,
   subject: "",
 };
 

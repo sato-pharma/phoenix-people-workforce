@@ -1632,6 +1632,7 @@ async function notifyEmployeeManagerApproved(plan: PlanHeaderRow) {
   try {
     await notifyRecipients({
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      emailMode: "none",
       eventType: "manager_approve",
       message: `${plan.manager_name ?? "Your manager"} approved your ${plan.plan_kind} plan for ${plan.period_key}.`,
       plan,
@@ -3064,6 +3065,7 @@ async function notifyEmployeeAcknowledged(plan: PlanHeaderRow) {
   try {
     await notifyRecipients({
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      emailMode: "none",
       eventType: "hr_acknowledge",
       message: `Your ${plan.plan_kind} plan (${plan.period_key}) has been acknowledged by HR.`,
       plan,
@@ -3238,6 +3240,9 @@ async function notifyEmployeeEditRequestDecision(
   try {
     await notifyRecipients({
       actionUrl: `/employee-portals/plans?plan=${plan.id}`,
+      // Approval is good news with nothing left to act on; rejection needs the employee's
+      // attention, so only that branch keeps email.
+      emailMode: decision === "approve" ? "none" : "primary_to_cc",
       eventType: decision === "approve" ? "plan_edit_request_approved" : "plan_edit_request_rejected",
       message: decision === "approve"
         ? `Your manager approved your edit request. You can now edit and resubmit your ${plan.plan_kind} plan for ${plan.period_key}.`

@@ -414,6 +414,7 @@ export async function sendInternalMessage(access: AccessContext, input: SendInte
   if (recipient.hrId) {
     await createSystemNotification({
       category: "internal_message",
+      channels: ["in_app", "push"],
       eventType: "internal_message_sent",
       message: `${sender.name}: ${body.slice(0, 180)}`,
       metadata: {
