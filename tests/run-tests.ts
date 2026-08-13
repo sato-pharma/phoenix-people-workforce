@@ -768,6 +768,7 @@ import { runSchemaShapePrivateUsageTests } from "./schema-shape-private-usage.te
 import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
+import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1869,6 +1870,11 @@ await runTest(
 await runTest(
   "marketing manager monthly closing (portal tab, three gates agree, full workbook, no sales:import)",
   runMarketingManagerMonthlyClosingTests,
+);
+
+await runTest(
+  "telegram onboarding campaign cap (caller-supplied limit clamped to DEFAULT_CAMPAIGN_LIMIT, never trusted past it)",
+  runTelegramOnboardingCampaignCapTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
