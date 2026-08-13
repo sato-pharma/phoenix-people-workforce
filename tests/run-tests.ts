@@ -707,6 +707,7 @@ import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
 // Same anchor, same reason as the line above: beside its marketing siblings, not appended at the
 // end of the file where every other in-flight branch is also adding a line.
 import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected-request-visibility.test.ts";
+import { runMarketingRequestCaseFilePageTests } from "./marketing-request-case-file-page.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1595,6 +1596,11 @@ await runTest(
 await runTest(
   "marketing rejected-request visibility (a requester can see their own refusal and its reason; the refusing rung is credited, not the last rung; Cairo not UTC)",
   runMarketingRejectedRequestVisibilityTests,
+);
+
+await runTest(
+  "marketing request case file page (the notification URL finally renders the request; one-tap decisions still redirect; a failed read never renders as an empty one)",
+  runMarketingRequestCaseFilePageTests,
 );
 
 await runTest(
