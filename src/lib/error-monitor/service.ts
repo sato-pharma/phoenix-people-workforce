@@ -46,11 +46,29 @@ export async function pruneOldAppErrorEvents(): Promise<{ deleted: number | null
  * filtering them out on READ is what makes /admin/error-monitor and /admin/system-issues
  * truthful. The write-side gate only stops new ones accumulating.
  *
- * Safe as a plain `neq`: logAppError is the sole writer and always sets `environment` from
- * APP_ENV || NODE_ENV || "development", so the column has no NULLs (verified on production).
+ * NOT safe as a plain `neq` — that was the bug (2026-08-13). The paragraph here used to claim the
+ * column has no NULLs because logAppError "always sets" it. It does not: the insert below took
+ * `input.environment ?? null`, so the stamp was only ever as good as each caller. When
+ * /api/admin/outstation/expenses started logging its own 500s directly (2026-08-12) it passed no
+ * environment, and `NULL != 'development'` is NULL rather than true, so PostgREST's `neq` dropped
+ * those rows from EVERY read. Sixteen production errors — twelve unreadable ones and four real
+ * `permission denied for table expense_claims` — existed in the table and appeared on neither
+ * /admin/error-monitor nor /admin/system-issues. A dashboard that silently hides errors is worse
+ * than no dashboard.
+ *
+ * Fixed at both ends: the writer below now stamps `environment`/`release` itself so a caller
+ * cannot omit them, and reads use the NULL-safe filter so the rows already written stay visible.
  * Staging is unaffected — it builds with NODE_ENV=production and writes to its own project.
  */
 const DEVELOPMENT_ENVIRONMENT = "development";
+
+/** NULL-safe form of "not development", for `.or(...)`. A bare `.neq` drops NULL-stamped rows. */
+const NON_DEVELOPMENT_ENVIRONMENT_FILTER = `environment.is.null,environment.neq.${DEVELOPMENT_ENVIRONMENT}`;
+
+/** The stamp every row gets when its caller does not supply one. Matches /api/errors/client. */
+function currentEnvironmentLabel(): string {
+  return process.env.APP_ENV || process.env.NODE_ENV || DEVELOPMENT_ENVIRONMENT;
+}
 
 function truncate(value: string | null | undefined, max: number): string | null {
   if (!value) return null;
@@ -108,13 +126,15 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
     const supabase = getSupabaseAdmin();
     const { error } = await supabase.from("app_error_events").insert({
       digest: input.digest ?? null,
-      environment: input.environment ?? null,
+      // Defaulted HERE, not left to the caller. A row with no environment is invisible to every
+      // read filter, and a row with no release cannot be told apart from one on the live build.
+      environment: input.environment ?? currentEnvironmentLabel(),
       hr_id: input.hrId ?? null,
       login_id: input.loginId ?? null,
       message: truncate(input.message, MAX_TEXT_LENGTH) ?? "Unknown error",
       module_key: input.moduleKey ?? "other",
       module_label: input.moduleLabel ?? "Other",
-      release: input.release ?? null,
+      release: input.release ?? getCurrentReleaseTag(),
       role: input.role ?? null,
       route: input.route ?? null,
       route_type: input.routeType ?? null,
@@ -177,7 +197,7 @@ export async function getErrorEvents(filter: ErrorEventFilter = {}): Promise<Err
       "id, created_at, source, hr_id, login_id, role, module_key, module_label, route, message, stack, digest, environment",
       { count: "exact" },
     )
-    .neq("environment", DEVELOPMENT_ENVIRONMENT)
+    .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
 
@@ -225,7 +245,7 @@ export async function getActiveErrorSignatures(currentRelease: string): Promise<
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_key, route")
-      .neq("environment", DEVELOPMENT_ENVIRONMENT)
+      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
       .eq("release", currentRelease);
     if (error) throw error;
 
@@ -264,7 +284,7 @@ export async function getErrorClusterAggregates(days = 7): Promise<ErrorClusterA
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_label, route, release, message, created_at")
-      .neq("environment", DEVELOPMENT_ENVIRONMENT)
+      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
       .gte("created_at", since)
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -352,13 +372,13 @@ export async function getWeeklyHealthSummary(days = 7): Promise<WeeklyHealthSumm
       supabase
         .from("app_error_events")
         .select("module_key, module_label, route")
-        .neq("environment", DEVELOPMENT_ENVIRONMENT)
+        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
         .gte("created_at", since),
       // Signatures seen BEFORE the window — anything not here is genuinely new this week.
       supabase
         .from("app_error_events")
         .select("module_key, route")
-        .neq("environment", DEVELOPMENT_ENVIRONMENT)
+        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
         .lt("created_at", since),
       getActiveErrorSignatures(getCurrentReleaseTag()),
     ]);
@@ -678,7 +698,7 @@ export async function getDeployTimeline(currentRelease: string, days = 14): Prom
     const { data, error } = await getSupabaseAdmin()
       .from("app_error_events")
       .select("module_key, module_label, route, release, created_at")
-      .neq("environment", DEVELOPMENT_ENVIRONMENT)
+      .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
       .gte("created_at", since)
       .order("created_at", { ascending: true });
     if (error) throw error;
@@ -913,7 +933,7 @@ export async function getUserAttemptSummary(filter: UserAttemptFilter = {}): Pro
       let query = supabase
         .from("app_error_events")
         .select("hr_id, module_key, module_label, route, message, created_at")
-        .neq("environment", DEVELOPMENT_ENVIRONMENT)
+        .or(NON_DEVELOPMENT_ENVIRONMENT_FILTER)
         .not("hr_id", "is", null)
         .order("created_at", { ascending: false })
         .range(offset, offset + ATTEMPT_FETCH_PAGE_SIZE - 1);

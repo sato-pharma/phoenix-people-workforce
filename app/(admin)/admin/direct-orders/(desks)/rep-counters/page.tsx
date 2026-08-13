@@ -3,7 +3,7 @@ import { Gauge } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { RepCountersTable } from "@/components/direct-orders/rep-counters-table";
 import { getDirectOrderRepCounters } from "@/lib/direct-orders/rep-counters";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * extra role check here would only re-implement — worse, diverge from — that rule.
  */
 export default async function DirectOrdersRepCountersPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   const data = await getDirectOrderRepCounters(access);
   return (
     <div className="space-y-5">

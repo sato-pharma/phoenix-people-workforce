@@ -3,12 +3,12 @@ import { MapPinned } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { PharmacyVarianceManager } from "@/components/direct-orders/pharmacy-variance-manager";
 import { listPharmacyGeoVariances } from "@/lib/direct-orders/service";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function PharmacyVariancesPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   const { rows, canResolve } = await listPharmacyGeoVariances(access);
   return (
     <div className="space-y-5">
