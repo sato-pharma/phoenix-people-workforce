@@ -777,6 +777,7 @@ import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
+import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1923,6 +1924,11 @@ await runTest(
 await runTest(
   "public sales exposure (no achievement data under public/, master-workbook export gated on Super Admin before the national read)",
   runPublicSalesExposureGuardsTests,
+);
+
+await runTest(
+  "sos team performance active periods (a stray Direct Order booked before a month's distributor upload lands must not activate that month's full target in the default cumulative keycard view)",
+  runSosTeamPerformanceTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

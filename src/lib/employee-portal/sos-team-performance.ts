@@ -42,6 +42,7 @@ import type { AchievementRow } from "@/lib/sales/monthly-targets";
 import { loadEmployeeNameMap, loadProductNameMap } from "@/lib/sales/monthly-targets";
 import {
   SALES_VS_TARGET_FLOOR,
+  loadUploadedPeriods,
   loadVsTargetRange,
   salesVsTargetPeriods,
   totalRows,
@@ -109,22 +110,32 @@ type MemberAgg = {
 type Grain = "rep" | "dm";
 
 /** Load the whole achievement window (July floor → current Cairo month), area-merged. */
-async function loadWindowRows(): Promise<AchievementRow[]> {
+async function loadWindowRows(): Promise<{ rows: AchievementRow[]; uploadedPeriods: Set<string> }> {
   const { current } = salesVsTargetPeriods();
-  return applyAchievementAreaMerges(await loadVsTargetRange(SALES_VS_TARGET_FLOOR, current));
+  const [rangeRows, uploadedPeriods] = await Promise.all([
+    loadVsTargetRange(SALES_VS_TARGET_FLOOR, current),
+    loadUploadedPeriods(SALES_VS_TARGET_FLOOR, current),
+  ]);
+  return { rows: applyAchievementAreaMerges(rangeRows), uploadedPeriods };
 }
 
 /**
- * Periods that actually carry sales, newest first.
+ * Periods that actually carry sales AND whose distributor upload has landed, newest first.
  *
  * Excludes months that exist only because a FUTURE target was loaded (e.g.
- * August/September Pedia targets with no upload yet). Summing those into an "all
- * periods" view would divide real sales by targets for months nobody has sold in.
+ * August/September Pedia targets with no upload yet) — `hasActual` handles that. It also
+ * excludes a month whose only actual is an early Direct Order booked before that month's
+ * distributor files arrived: on 2026-08-10 a single such row (1,309.50 EGP, area GZ1) was
+ * enough to pull August's full target into every cumulative "default view" denominator and
+ * roughly halve every manager's keycard achievement. `/sales/vs-target` hit the identical
+ * failure for its own landing-period pick and was fixed with the same signal (see
+ * loadUploadedPeriods in vs-target.ts) — this reuses it rather than re-deriving it, so the
+ * two surfaces cannot drift back apart.
  */
-function activePeriodsOf(rows: AchievementRow[]): string[] {
-  return Array.from(new Set(rows.filter((row) => row.hasActual).map((row) => row.period))).sort(
-    (a, b) => b.localeCompare(a),
-  );
+export function activePeriodsOf(rows: AchievementRow[], uploadedPeriods: ReadonlySet<string>): string[] {
+  return Array.from(
+    new Set(rows.filter((row) => row.hasActual && uploadedPeriods.has(row.period)).map((row) => row.period)),
+  ).sort((a, b) => b.localeCompare(a));
 }
 
 /** Load the window scoped to ONE viewer's bound (NSM line, DSM areas, rep self, …). */
@@ -132,8 +143,9 @@ async function loadScopedRows(
   ctx: AccessContext,
 ): Promise<{ rows: AchievementRow[]; activePeriods: string[] }> {
   const bound = await resolveVsTargetBound(ctx);
-  const rows = filterRowsForBound(await loadWindowRows(), bound);
-  return { rows, activePeriods: activePeriodsOf(rows) };
+  const { rows: windowRows, uploadedPeriods } = await loadWindowRows();
+  const rows = filterRowsForBound(windowRows, bound);
+  return { rows, activePeriods: activePeriodsOf(rows, uploadedPeriods) };
 }
 
 /** Restrict window rows to the active periods, then to the selected periods (if any). */
@@ -341,8 +353,9 @@ async function loadCompanyRows(lineCodes: Set<string>): Promise<{
   rows: AchievementRow[];
   activePeriods: string[];
 }> {
-  const relevant = (await loadWindowRows()).filter((row) => row.lineCode != null && lineCodes.has(row.lineCode));
-  return { rows: relevant, activePeriods: activePeriodsOf(relevant) };
+  const { rows: windowRows, uploadedPeriods } = await loadWindowRows();
+  const relevant = windowRows.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode));
+  return { rows: relevant, activePeriods: activePeriodsOf(relevant, uploadedPeriods) };
 }
 
 /**
@@ -479,12 +492,12 @@ export async function buildRmRegionalPerformanceFromSos(
   isInRegion: (hrId: string | null | undefined) => boolean,
   nsm: { hrId: string | null; name: string | null },
 ): Promise<RmRegionalPerformanceData> {
-  const relevantAll = await loadWindowRows();
+  const { rows: relevantAll, uploadedPeriods } = await loadWindowRows();
   const relevant =
     lineCodes.size > 0
       ? relevantAll.filter((row) => row.lineCode != null && lineCodes.has(row.lineCode))
       : relevantAll;
-  const activePeriods = activePeriodsOf(relevant);
+  const activePeriods = activePeriodsOf(relevant, uploadedPeriods);
   const [employeeNames, productNames] = await Promise.all([loadEmployeeNameMap(), loadProductNameMap()]);
   const used = selectRows(relevant, activePeriods, requested);
 
