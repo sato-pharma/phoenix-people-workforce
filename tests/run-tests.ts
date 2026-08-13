@@ -774,6 +774,7 @@ import { runTerritorySyncTests } from "./territory-sync.test.ts";
 import { runFinanceCommandCenterTests } from "./finance-command-center.test.ts";
 import { runMarketingManagerMonthlyClosingTests } from "./marketing-manager-monthly-closing.test.ts";
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
+import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1905,6 +1906,11 @@ await runTest(
 await runTest(
   "telegram onboarding campaign cap (caller-supplied limit clamped to DEFAULT_CAMPAIGN_LIMIT, never trusted past it)",
   runTelegramOnboardingCampaignCapTests,
+);
+
+await runTest(
+  "public sales exposure (no achievement data under public/, master-workbook export gated on Super Admin before the national read)",
+  runPublicSalesExposureGuardsTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
