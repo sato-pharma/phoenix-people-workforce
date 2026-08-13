@@ -239,7 +239,10 @@ export async function runTelegramOnboardingCampaign(input: {
   }
 
   const available = targets.length;
-  const limit = Number.isFinite(input.limit) && Number(input.limit) > 0 ? Number(input.limit) : DEFAULT_CAMPAIGN_LIMIT;
+  // DEFAULT_CAMPAIGN_LIMIT is a CEILING, not just a fallback -- a caller-supplied limit is
+  // honored only when it narrows the run, never when it would widen it past the documented cap.
+  const requested = Number.isFinite(input.limit) && Number(input.limit) > 0 ? Number(input.limit) : DEFAULT_CAMPAIGN_LIMIT;
+  const limit = Math.min(requested, DEFAULT_CAMPAIGN_LIMIT);
   const truncated = available > limit;
   const batch = targets.slice(0, limit);
 
