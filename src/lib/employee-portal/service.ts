@@ -86,7 +86,7 @@ import { canonicalSalesLine } from "@/lib/sales/others";
 import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/service";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
-import { getVacationReportData } from "@/lib/vacation/service";
+import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2224,13 +2224,17 @@ async function buildEmployeePortalOverviewData(input: {
 }): Promise<MedicalRepPortalData["overview"]> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [vacationReport, marketingWorkspace, vacancyDetails] = await devSafePromiseAll([
-    () => getVacationReportData(input.access).catch(() => null),
+  const [vacationRowsResult, marketingWorkspace, vacancyDetails] = await devSafePromiseAll([
+    // Only two counts are read below (pending approvals, my pending requests), never the full
+    // report — getVacationPlatformMetricRows returns the SAME scoped+decision-marked rows as the
+    // full vacation report builder but skips holiday/eligibility/SLA-run enrichment those counts
+    // never touch. See its own doc comment for the equivalence proof.
+    () => getVacationPlatformMetricRows(input.access).catch(() => null),
     () => getMarketingRequestDraftWorkspace(input.access).catch(() => null),
     () => getEmployeePortalVacancies(input.access).catch(() => null),
   ]);
 
-  const vacationRows = vacationReport?.rows ?? [];
+  const vacationRows = vacationRowsResult ?? [];
   const pendingVacationApprovals = vacationRows.filter((row) => row.status === "pending_manager" && row.canDecide).length;
   const myPendingVacationRequests = vacationRows.filter((row) => {
     return row.status === "pending_manager" && normalizeHrId(row.employeeHrId) === input.currentHrId;
