@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import ExcelJS from "exceljs";
+import { cache } from "react";
 
 import {
   assertPermission,
@@ -5241,9 +5242,8 @@ export async function runVacationSlaDaily(access: AccessContext = systemAccessCo
   };
 }
 
-export async function getVacationReportData(access: AccessContext, filters: VacationReportFilters = {}): Promise<VacationReportData> {
+async function loadVacationReportData(access: AccessContext, clean: VacationReportFilters): Promise<VacationReportData> {
   await assertPermission(access, "leave", "read");
-  const clean = cleanFilters(filters);
   const canAdminManage = isAllVacationVisibility(access) && await canManageVacationRecords(access);
   const canExport = await canAccess(access, "leave", "export");
   const canReviewAttachments = isAllVacationVisibility(access);
@@ -5290,6 +5290,26 @@ export async function getVacationReportData(access: AccessContext, filters: Vaca
     rows: filteredRows,
     summary: buildReportSummary(filteredRows),
   };
+}
+
+// Request-scoped dedup only: 8 surfaces (portal, action center, approvals hub x3, CEO/admin
+// command centers) can each call getVacationReportData with the SAME (access, filters) within one
+// render, and approvals-hub loads it twice outright (once directly, once inside
+// getVacationActionCenterData). React's cache() collapses those into a single DB round trip.
+// Keyed on a canonical JSON string of cleanFilters(), not the raw filters object, because two
+// call sites that both mean "status: all" write two different `{ status: "all" }` object
+// literals — cache() compares object arguments by REFERENCE, so without this every call would
+// still miss. `access` itself is passed through by reference (never cloned) by every caller, so
+// it stays a valid, stable cache key across a request without any extra work.
+// SAFE across writes: every vacation write (decideVacationRequest, resubmitVacationRequest, ...)
+// lives in its own dedicated API route or a Server Action that redirect()s afterward — never in
+// the same function as a getVacationReportData read — and React's cache() scope never spans two
+// requests, so a decision made just now is never served stale by a cache hit here.
+const loadVacationReportDataCached = cache(async (access: AccessContext, filtersKey: string): Promise<VacationReportData> =>
+  loadVacationReportData(access, JSON.parse(filtersKey) as VacationReportFilters));
+
+export async function getVacationReportData(access: AccessContext, filters: VacationReportFilters = {}): Promise<VacationReportData> {
+  return loadVacationReportDataCached(access, JSON.stringify(cleanFilters(filters)));
 }
 
 /**

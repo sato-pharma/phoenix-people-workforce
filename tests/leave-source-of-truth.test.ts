@@ -116,4 +116,15 @@ export function runLeaveSourceOfTruthTests() {
   const dataHealthSource = readFileSync("src/lib/admin/service.ts", "utf8");
   assert.match(dataHealthSource, /buildVacationPlatformMetrics/);
   assert.match(dataHealthSource, /leavePendingRequests/);
+
+  // The employee-portal overview's "vacation approvals waiting" / "vacation requests pending
+  // decision" tiles read only row.status/canDecide/employeeHrId — never holidays, eligibility,
+  // SLA runs, or evidence — so it must use the same lightweight, enrichment-free row fetcher as
+  // the platform KPIs, not the full report builder. Found and fixed 2026-08-14: this call was
+  // loading the entire report (holiday fetches, eligibility table, SLA run) to compute two
+  // integers, and it was one of getVacationReportData's 8 callers on the hottest RPC in
+  // production (phx_vacation_report_rows: 15.3% of all DB time, 320k calls/16.5d).
+  const portalServiceSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
+  assert.match(portalServiceSource, /getVacationPlatformMetricRows/);
+  assert.doesNotMatch(portalServiceSource, /getVacationReportData/);
 }
