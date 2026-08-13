@@ -734,19 +734,19 @@ export function VsTargetDashboard({
       {!data.salesLoaded ? (
         <div className="border border-border bg-card px-4 py-12 text-center">
           <p className="text-sm font-bold text-foreground">
-            Source of Sales for {formatPeriod(data.period)} has not been uploaded yet.
+            Monthly Closing for {formatPeriod(data.period)} has not been published yet.
           </p>
           <p className="mx-auto mt-1.5 max-w-xl text-xs leading-5 text-muted-foreground">
-            This is not a zero. The distributor files for this month have not arrived, so there is nothing to measure
-            against target yet.
+            This is not a zero. Sales for this month are not final until reconciled and published, so there is
+            nothing to measure against target yet.
             {data.pendingDirectValue !== 0
-              ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the upload lands.`
+              ? ` ${formatEgpFull(data.pendingDirectValue)} of Direct Orders is already booked into this month and joins the total the moment the closing is published.`
               : ""}
             {data.totals.targetValue !== 0
-              ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the sales arrive.`
+              ? ` A target of ${formatEgpFull(data.totals.targetValue)} is already loaded and will be measured as soon as the closing is published.`
               : ""}
           </p>
-          <p className="mt-3 text-xs text-muted-foreground">Pick an earlier month above to see loaded results.</p>
+          <p className="mt-3 text-xs text-muted-foreground">Pick an earlier month above to see published results.</p>
         </div>
       ) : data.isEmptyScope ? (
         <div className="border border-border bg-card px-4 py-12 text-center">
