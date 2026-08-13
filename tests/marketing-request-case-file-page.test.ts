@@ -205,16 +205,28 @@ export async function runMarketingRequestCaseFilePageTests() {
   );
 
   // The same screen showed four rungs as "PENDING" on a dead request, because the decision RPC
-  // never closes the remaining rungs out. Until that migration lands, the page must not repeat the
-  // claim that four people still owe a decision.
+  // never closed the remaining rungs out.
+  //
+  // That migration HAS since landed — a reject now marks them `skipped` in the same transaction —
+  // so this is no longer the only thing between a reader and the false claim. The `pending` arm is
+  // still required, because rows written before the migration exist and "pending" on a dead request
+  // is the one outcome worth defending against.
+  //
+  // Asserted THROUGH `neverReached` rather than against a literal expression: the previous version
+  // pinned the exact text `neverReached && rung.status === "pending"` and went red on a change that
+  // made the guard stricter, not weaker. A test that fails when the code improves is pinning the
+  // wrong thing.
   assert.match(
     viewSource,
-    /neverReached && rung\.status === "pending"/,
+    /const neverReached = \(rung:[\s\S]{0,320}?rung\.status === "pending"/,
     "a pending rung on a REFUSED request must not render as 'pending' — it was never reached and never will be",
   );
+  // Anchored to the rendered ternary, not to the bare phrase: the component's own comment explains
+  // when a rung reads "not reached", so `/not reached/` alone passes against that comment even with
+  // the wording deleted from the screen. Proved by breaking it — the bare version did not fire.
   assert.match(
     viewSource,
-    /not reached/,
+    /\? "not reached" :/,
     "the never-reached rungs need their own wording, distinct from a live pending step",
   );
   assert.match(

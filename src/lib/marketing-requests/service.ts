@@ -3240,6 +3240,15 @@ export async function decideMarketingRequestWorkflow(
     nextStep: MarketingRequestApprovalStepDbRow | null;
     request: MarketingRequestDbRow;
     step: MarketingRequestApprovalStepDbRow;
+    /**
+     * How many still-waiting rungs the reject closed out.
+     *
+     * A reject ends the chain, so every `pending` non-CC rung below it is marked `skipped` in the
+     * same transaction — otherwise the inbox, the nav badge and every timeline keep reporting work
+     * that will never happen. Returned by the RPC so this is recorded rather than inferred.
+     * Absent on approve/return.
+     */
+    terminalised?: number;
   };
   const decidedStep = mapApprovalStep(rpcData.step);
   request = mapRequest(rpcData.request);
@@ -3253,7 +3262,11 @@ export async function decideMarketingRequestWorkflow(
       decision,
       request,
       step: decidedStep,
-      summary: `Marketing request ${request.requestCode} ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.`,
+      summary: `Marketing request ${request.requestCode} ${decision === "reject" ? "rejected" : "returned"} at ${decidedStep.stepName}.${
+        decision === "reject" && (rpcData.terminalised ?? 0) > 0
+          ? ` ${rpcData.terminalised} later approval step${rpcData.terminalised === 1 ? "" : "s"} closed out.`
+          : ""
+      }`,
     });
     await notifyMarketingWorkflow({
       actorHrId,

@@ -399,6 +399,7 @@ export type MarketingRequestCaseFile = {
   /** ISO. Render in Africa/Cairo. */
   generatedAt: string;
   header: MarketingCaseFileHeader;
+  history: CaseFileBlock<MarketingCaseFileHistory>;
   lazySections: MarketingCaseFileLazySection[];
   money: MarketingCaseFileMoney;
   outcome: CaseFileBlock<MarketingCaseFileOutcome>;
@@ -406,6 +407,59 @@ export type MarketingRequestCaseFile = {
   targetPharmacies: CaseFileBlock<MarketingCaseFileTargetPharmacies>;
   viewer: MarketingCaseFileViewer;
   warnings: MarketingCaseFileWarning[];
+};
+
+// ── history ──────────────────────────────────────────────────────────────────
+
+export type MarketingRequestEventKind =
+  | "request_created"
+  | "request_submitted"
+  | "request_status_changed"
+  | "request_value_changed"
+  | "request_deleted"
+  | "step_opened"
+  | "step_decided"
+  | "step_commented";
+
+/**
+ * One thing that happened, already resolved for the screen.
+ *
+ * This is the ONLY place a second comment from the same reviewer is visible. `decision_note` on the
+ * approval step holds one string and every comment overwrites it, so the step row shows the latest
+ * and nothing else; the event log keeps each one with its own timestamp.
+ */
+export type MarketingCaseFileHistoryEntry = {
+  /** Cairo-formatted server-side. The owner's standing rule: never a raw UTC stamp on screen. */
+  atLabel: string;
+  /**
+   * The person, by NAME. `null` means the event did not record an actor — which is "not recorded",
+   * NEVER "the system". The two must not render the same.
+   */
+  actorName: string | null;
+  actorHrId: string | null;
+  /** Prose, resolved from the kind. Never a raw `step_commented` on screen. */
+  headline: string;
+  /**
+   * Derived from an existing row during the 2026-08-13 backfill rather than captured when it
+   * happened, so its actor and timing are reconstructions. Shown as such.
+   */
+  isBackfilled: boolean;
+  kind: MarketingRequestEventKind;
+  note: string | null;
+  occurredAt: string;
+  stepName: string | null;
+};
+
+export type MarketingCaseFileHistory = {
+  /** How many `step_commented` entries — the count the step row cannot tell you. */
+  commentCount: number;
+  /**
+   * States the limit of the record in prose. Events begin at the 2026-08-13 backfill: anything a
+   * reviewer overwrote before that is genuinely gone, and the screen must say so rather than
+   * present a short list as a complete one.
+   */
+  coverageSentence: string;
+  entries: MarketingCaseFileHistoryEntry[];
 };
 
 // ── constructors ─────────────────────────────────────────────────────────────
