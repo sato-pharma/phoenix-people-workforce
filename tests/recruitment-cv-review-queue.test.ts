@@ -120,11 +120,13 @@ export function runRecruitmentCvReviewQueueTests() {
       governorate: low("Cairo"),
       phone: high("01199999999"),
     },
+    positionKey: "medical_rep",
   });
   assert.equal(board.fullName?.value, "Stored Name", "board shows the stored identity");
   assert.equal(board.email?.value, "stored@example.com");
   assert.equal(board.phone?.value, "01000000000");
-  // Non-identity proposals pass through untouched — those are what the reviewer is here to judge.
+  // This candidate has no stored governorate, so the proposal is still what the reviewer judges —
+  // and it keeps its "low" confidence so the board's "Check this" badge survives.
   assert.equal(board.governorate?.value, "Cairo");
   assert.equal(board.governorate?.confidence, "low");
 
@@ -132,12 +134,72 @@ export function runRecruitmentCvReviewQueueTests() {
   const boardNulls = buildReviewBoardFields({
     candidate: { email: null, fullName: "Stored Name", phone: null },
     extractedFields: { email: high("cv@example.com"), phone: high("01199999999") },
+    positionKey: "medical_rep",
   });
   assert.equal(boardNulls.email?.value, null);
   assert.equal(boardNulls.phone?.value, null);
 
   // The source extraction object is not mutated — it is the audit trail.
   const source = { governorate: low("Cairo") };
-  buildReviewBoardFields({ candidate: { email: null, fullName: "X", phone: null }, extractedFields: source });
+  buildReviewBoardFields({
+    candidate: { email: null, fullName: "X", phone: null },
+    extractedFields: source,
+    positionKey: "medical_rep",
+  });
   assert.deepEqual(Object.keys(source), ["governorate"], "buildReviewBoardFields must not mutate its input");
+
+  // --- buildReviewBoardFields: a stored column always survives the save --------------------------
+  // The board persists every field it renders, so the prefill is the only thing protecting the rest
+  // of the record. Two ways that used to lose data on an EXISTING candidate, both fixed here:
+  //   (a) a column the AI never extracted arrived blank and was written back as null, wiping it;
+  //   (b) a column the AI DID extract but that was already filled arrived holding the AI's value,
+  //       overwriting the human's.
+  // selectPendingReviewFields only ever queues BLANK columns, so neither was a decision anyone
+  // asked the reviewer to make.
+  const settled = buildReviewBoardFields({
+    candidate: autoIntakeCandidate(),
+    extractedFields: {
+      faculty: low("Faculty of Pharmacy"),
+      governorate: low("Cairo"),
+      hasPriorWorkExperience: high(false),
+    },
+    positionKey: "medical_rep",
+  });
+  assert.equal(settled.governorate?.value, "Assiut", "(b) a stored value beats the AI's proposal");
+  assert.equal(settled.governorate?.confidence, "high", "a stored value is not an AI guess to check");
+  assert.equal(
+    settled.university?.value,
+    "Assiut university",
+    "(a) a stored value the AI never proposed is still on the board, so the save writes it back",
+  );
+  assert.equal(settled.faculty?.value, "Faculty of Pharmacy", "a genuinely blank column keeps the proposal");
+  assert.equal(settled.faculty?.confidence, "low");
+  // Booleans go through the same rule: the candidate's recorded `true` outranks the AI's proposed
+  // `false`. isBlankCandidateValue also treats a stored `false` as an answer rather than an
+  // absence, so a recorded "no" is equally safe from a later extraction proposing "yes".
+  assert.equal(settled.hasPriorWorkExperience?.value, true, "the stored boolean wins over the proposal");
+
+  // Every schema-backed column the candidate holds is on the board. This is the invariant the two
+  // cases above are instances of: if it is filled, the reviewer sees it and saving cannot clear it.
+  const storedKeys = ["governorate", "hasMedicalRepExperience", "hasPriorWorkExperience", "university"] as const;
+  for (const key of storedKeys) {
+    assert.notEqual(settled[key]?.value, null, `${key} must be prefilled, not saved back as null`);
+  }
+
+  // A stored value of the wrong runtime type is ignored rather than rendered into the wrong control
+  // — the same defence selectPendingReviewFields applies to a malformed proposal.
+  const mistyped = buildReviewBoardFields({
+    candidate: autoIntakeCandidate({ governorate: 7 }),
+    extractedFields: { governorate: low("Cairo") },
+    positionKey: "medical_rep",
+  });
+  assert.equal(mistyped.governorate?.value, "Cairo", "a mistyped stored value falls back to the proposal");
+
+  // An unregistered position still yields the identity override rather than throwing.
+  const unknownPosition = buildReviewBoardFields({
+    candidate: autoIntakeCandidate(),
+    extractedFields: { fullName: high("CV Name") },
+    positionKey: "nope",
+  });
+  assert.equal(unknownPosition.fullName?.value, "Yousab Ezzat");
 }

@@ -17,6 +17,25 @@ import type { ExtractedCandidateFields } from "@/lib/recruitment/cv-extraction-f
 import { getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import type { CvReviewQueue, CvReviewQueueItem, PendingReviewField } from "@/lib/recruitment/cv-review-queue";
 
+/**
+ * Drops every null from the board's output, so a review from this queue can only ever FILL a
+ * column — never clear one.
+ *
+ * The board writes each of its fields on save, emitting null for anything unassigned or hidden by
+ * a showWhen rule, and PATCH /api/recruitment/candidates/[id] treats a present null as "clear this
+ * column" (an omitted key is what leaves it untouched). buildReviewBoardFields already prefills
+ * every stored value so the common case never produces a null in the first place; this is the
+ * backstop for the cases it cannot reach — most concretely a conditional field, which the board
+ * hides and nulls whenever its controlling boolean is not `true`, however the candidate row got
+ * into that state.
+ *
+ * Clearing a field stays possible from the candidate editor, which is where a deliberate deletion
+ * belongs. This queue's entire contract is filling gaps the AI found and a human never saw.
+ */
+function fillOnly(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).filter(([, value]) => value !== null));
+}
+
 function formatPendingValue(field: PendingReviewField): string {
   if (field.type === "boolean") return field.value === true ? "Yes" : "No";
   return String(field.value);
@@ -73,7 +92,7 @@ function QueueRow({
     setError(null);
     try {
       const res = await fetch(`/api/recruitment/candidates/${item.candidateId}`, {
-        body: JSON.stringify({ ...values, extractionId: item.extractionId }),
+        body: JSON.stringify({ ...fillOnly(values), extractionId: item.extractionId }),
         headers: { "Content-Type": "application/json" },
         method: "PATCH",
       });
