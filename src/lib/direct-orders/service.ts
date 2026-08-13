@@ -27,6 +27,7 @@ import {
   DEDUPE_OPEN_STATUSES,
   findDuplicateRequestGroups,
   groupDuplicatePharmacies,
+  type PharmacyMergeEvidence,
 } from "@/lib/direct-orders/duplicate-resolution";
 import {
   customerCodesMatch,
@@ -6381,7 +6382,8 @@ export type DirectOrderCleanupPharmacySummary = {
 export type DirectOrderCleanupMerge = {
   survivor: DirectOrderCleanupPharmacySummary;
   merged: DirectOrderCleanupPharmacySummary[];
-  provenBy: { distributorCode: string; customerCode: string };
+  /** A shared distributor code (a fact), or a codeless name+area match (a strong resemblance). */
+  provenBy: PharmacyMergeEvidence;
   reason: string;
   /** Requests that would move onto the survivor. */
   requestsMoved: DirectOrderCleanupRequestSummary[];
@@ -6542,6 +6544,24 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
     openRequestCount: (requestsByPharmacy.get(pharmacy.id) ?? []).length,
   });
 
+  // Arabic-normalized names for the name+area fallback (owner, 2026-08-13) — computed via
+  // phx_normalize_arabic on the server, not reimplemented here, so this can never drift from the
+  // one normalization the search box itself already relies on. Fetched for every pharmacy rather
+  // than only the codeless subset: at today's row counts (tens, not thousands) the simplicity is
+  // worth more than the saved round trip, and groupDuplicatePharmacies ignores the field for any
+  // pharmacy that carries even one identity key.
+  const { data: normalizedRows, error: normalizeError } = await supabase.rpc(
+    "phx_direct_order_pharmacy_normalized_names",
+    { p_ids: pharmacies.map((pharmacy) => pharmacy.id) },
+  );
+  if (normalizeError) throw normalizeError;
+  const normalizedNameById = new Map(
+    ((normalizedRows ?? []) as Array<{ id: string; normalized_name: string | null }>).map((row) => [
+      row.id,
+      row.normalized_name ?? "",
+    ]),
+  );
+
   // ── 4. Which records are one pharmacy? ──────────────────────────────────────────────────
   const mergeProposals = groupDuplicatePharmacies(
     pharmacies.map((pharmacy) => ({
@@ -6561,6 +6581,7 @@ export async function getDirectOrderCleanupPlan(access: AccessContext): Promise<
         distributorCode: match.distributorCode,
         customerCode: match.customerCode,
       })),
+      normalizedName: normalizedNameById.get(pharmacy.id) ?? "",
     })),
   );
 

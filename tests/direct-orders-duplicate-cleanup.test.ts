@@ -39,6 +39,9 @@ function pharmacy(overrides: Partial<PharmacyForDedupe> = {}): PharmacyForDedupe
     createdAt: "2026-08-01T10:00:00.000Z",
     linkedCodes: [],
     nameCodeCandidates: [],
+    // Empty by default: these fixtures carry linkedCodes, so pharmacyIdentityKeys() never falls
+    // through to the name+area fallback and this field is never read for them.
+    normalizedName: "",
     ...overrides,
   };
 }
@@ -114,7 +117,12 @@ export function runDirectOrderDuplicateCleanupTests() {
     "the COMPLETE record survives — real name plus the code in its proper column. DOP-000017 is `verified` and DOP-000021 is not, so ranking verification above the code would keep the broken row and throw away the good one",
   );
   assert.deepEqual(groups[0].mergedIds, ["ph-17"]);
-  assert.equal(groups[0].provenBy.customerCode, "1573270", "the shared customer is the evidence, and the screen shows it");
+  assert.equal(groups[0].provenBy.kind, "code", "these two share a distributor code — that is the strong evidence, not a name resemblance");
+  assert.equal(
+    groups[0].provenBy.kind === "code" ? groups[0].provenBy.customerCode : null,
+    "1573270",
+    "the shared customer is the evidence, and the screen shows it",
+  );
 
   // A verified-but-broken record must never outrank a complete one. This is the specific ranking
   // that would have destroyed the good record, so it gets its own assertion.
@@ -396,6 +404,134 @@ export function runDirectOrderDuplicateCleanupTests() {
     assert.ok(
       !/\.update\(|\.insert\(|\.delete\(/.test(planBody),
       "the plan is a READ — opening the review page must never write anything, or the review is not a review",
+    );
+  }
+
+  // ── The name+area fallback, for pharmacies the code match cannot see at all (owner, 2026-08-13) ──
+  //
+  // THE LIVE CASE. "حضانه زمزم", area D15, registered twice the same day by the same rep — DOP-000018
+  // and DOP-000019, neither carrying a distributor code, so pharmacyIdentityKeys() returns an empty
+  // array for both and the code matcher above has nothing to compare, right or wrong. This block is
+  // the regression test for exactly that shape.
+  {
+    const zamzam1 = pharmacy({
+      id: "ph-18",
+      phoenixPharmacyCode: "DOP-000018",
+      pharmacyName: "حضانه زمزم",
+      areaCode: "D15",
+      // Verified against the real function, not guessed: phx_normalize_arabic('حضانه زمزم') on
+      // staging returns exactly this — ة→ه and the space both fold, ض is untouched (only the
+      // alef/ta-marbuta/ya family folds; ض was never in it, and assuming otherwise by eye is
+      // exactly the class of mistake this design avoids by never re-deriving the fold in TS).
+      normalizedName: "حضانهزمزم",
+      linkedCodes: [],
+      createdAt: "2026-08-06T09:00:00.000Z",
+    });
+    const zamzam2 = pharmacy({
+      id: "ph-19",
+      phoenixPharmacyCode: "DOP-000019",
+      pharmacyName: "حضانه زمزم",
+      areaCode: "D15",
+      normalizedName: "حضانهزمزم",
+      linkedCodes: [],
+      createdAt: "2026-08-06T14:00:00.000Z",
+    });
+
+    const groups = groupDuplicatePharmacies([zamzam1, zamzam2]);
+    assert.equal(groups.length, 1, "two codeless records, same name, same area — the live DOP-000018/19 case must cluster");
+    assert.equal(groups[0].provenBy.kind, "name", "neither record carries a code, so the evidence must be the name+area match, not a code");
+    assert.equal(
+      groups[0].provenBy.kind === "name" ? groups[0].provenBy.areaCode : null,
+      "D15",
+      "the evidence must name the area that anchored the match",
+    );
+    assert.deepEqual([groups[0].survivorId, ...groups[0].mergedIds].sort(), ["ph-18", "ph-19"]);
+
+    // Prove the regression rather than assume it: without the name+area pass, this exact input
+    // produces zero proposals — the shape this feature exists to fix.
+    assert.equal(
+      groupDuplicatePharmacies([zamzam1, zamzam2].map((p) => ({ ...p, normalizedName: "" }))).length,
+      0,
+      "with no normalized name supplied, the two records must NOT cluster — this is what proves the " +
+        "fallback is doing the work, not some other path silently matching on the raw name",
+    );
+  }
+
+  // ── The fallback trusts the CALLER's normalization, and does not re-derive its own ─────────
+  //
+  // duplicate-resolution.ts has no database access and must not reimplement Arabic folding —
+  // phx_normalize_arabic is the one place that logic lives. Two different raw spellings that the
+  // SQL function folds to the same string must cluster.
+  //
+  // This is the EXACT example 20260807120000's own header comment documents (Nermeen Salah's case:
+  // "ابوالفتوح" stored as one word, typed as two) — reused rather than invented, and both fold
+  // strings below are verified against the real function, not guessed:
+  //   phx_normalize_arabic('ابوالفتوح صيدلية') = phx_normalize_arabic('ابو الفتوح صيدلية')
+  //   = 'ابوالفتوحصيدليه'  (checked on staging, 2026-08-13)
+  {
+    const spacedOneWord = pharmacy({
+      id: "ph-30",
+      pharmacyName: "ابوالفتوح صيدلية",
+      areaCode: "A1",
+      normalizedName: "ابوالفتوحصيدليه",
+      linkedCodes: [],
+    });
+    const spacedTwoWords = pharmacy({
+      id: "ph-31",
+      pharmacyName: "ابو الفتوح صيدلية", // different raw spelling, same real place
+      areaCode: "A1",
+      normalizedName: "ابوالفتوحصيدليه",
+      linkedCodes: [],
+    });
+    const clustered = groupDuplicatePharmacies([spacedOneWord, spacedTwoWords]);
+    assert.equal(clustered.length, 1, "two raw spellings sharing a normalized form must cluster — the whole point of reusing phx_normalize_arabic");
+  }
+
+  // ── The area anchor: same name, different area, must NOT cluster ───────────────────────────
+  //
+  // "Al Nour Pharmacy" is not an unusual name. Without an area anchor, every codeless pharmacy
+  // sharing a common name anywhere in the country would be proposed as one merge.
+  //
+  // normalizedName verified against the real function (staging, 2026-08-13):
+  // phx_normalize_arabic('صيدلية النور') = 'صيدليهالنور'.
+  {
+    const cairo = pharmacy({ id: "ph-40", pharmacyName: "صيدلية النور", areaCode: "C1", normalizedName: "صيدليهالنور", linkedCodes: [] });
+    const alex = pharmacy({ id: "ph-41", pharmacyName: "صيدلية النور", areaCode: "X9", normalizedName: "صيدليهالنور", linkedCodes: [] });
+    assert.deepEqual(
+      groupDuplicatePharmacies([cairo, alex]),
+      [],
+      "same normalized name in DIFFERENT areas must not be proposed as one pharmacy",
+    );
+  }
+
+  // ── A coded pharmacy is NEVER pulled into a name cluster, in either direction ───────────────
+  //
+  // A pharmacy with even one linked code has real evidence; a name match must never dilute it, and
+  // a name match must never let a coded record's identity leak onto an unrelated codeless one that
+  // happens to share its name and area.
+  //
+  // normalizedName verified against the real function (staging, 2026-08-13):
+  // phx_normalize_arabic('صيدلية الشفاء') = 'صيدليهالشفاء'.
+  {
+    const coded = pharmacy({
+      id: "ph-50",
+      pharmacyName: "صيدلية الشفاء",
+      areaCode: "B2",
+      normalizedName: "صيدليهالشفاء",
+      linkedCodes: [{ distributorCode: "PS", customerCode: "9999999" }],
+    });
+    const codelessSameNameArea = pharmacy({
+      id: "ph-51",
+      pharmacyName: "صيدلية الشفاء",
+      areaCode: "B2",
+      normalizedName: "صيدليهالشفاء",
+      linkedCodes: [],
+    });
+    assert.deepEqual(
+      groupDuplicatePharmacies([coded, codelessSameNameArea]),
+      [],
+      "a coded pharmacy and a codeless one sharing a name+area must NOT merge on that alone — " +
+        "identity is the code wherever a code exists, and the fallback is scoped to pharmacies with none",
     );
   }
 }

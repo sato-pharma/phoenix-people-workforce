@@ -215,8 +215,18 @@ export function DirectOrderCleanupDesk({ plan }: Props) {
                         {everyone.length} records are one pharmacy
                       </span>
                       <span className="block text-[12px] text-slate-600">
-                        Proven by the same distributor customer: {merge.provenBy.distributorCode} /{" "}
-                        {merge.provenBy.customerCode}. A distributor customer cannot belong to two pharmacies.
+                        {merge.provenBy.kind === "code" ? (
+                          <>
+                            Proven by the same distributor customer: {merge.provenBy.distributorCode} /{" "}
+                            {merge.provenBy.customerCode}. A distributor customer cannot belong to two pharmacies.
+                          </>
+                        ) : (
+                          <>
+                            Same name, same area ({merge.provenBy.areaCode}) — neither record carries a distributor
+                            code, so this is a resemblance, not a distributor-proven fact. Check the names below
+                            before merging.
+                          </>
+                        )}
                       </span>
                     </span>
                   </label>

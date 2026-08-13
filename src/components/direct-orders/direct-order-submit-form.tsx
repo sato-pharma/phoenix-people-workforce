@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -108,6 +108,69 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [distRows, setDistRows] = useState<Array<{ distributorCode: string; customerCode: string }>>([
     { distributorCode: "", customerCode: "" },
   ]);
+
+  // ── "Did you mean this pharmacy?" (owner, 2026-08-13) ───────────────────────────────────────
+  //
+  // A rep hand-typing a pharmacy has no duplicate check ahead of them — createDirectOrderPharmacy
+  // inserts unconditionally, and the ONLY automated duplicate finder (groupDuplicatePharmacies)
+  // matches on distributor codes, which a hand-typed entry very often has none of. Confirmed live:
+  // "حضانه زمزم", area D15, registered twice the same day by the same rep, two different DOP codes,
+  // neither ever caught by the cleanup queue because neither carried a code.
+  //
+  // This is the earlier, softer half of the fix: SUGGEST before the rep finishes typing a pharmacy
+  // that might already exist, using the exact search the combo box already runs — filtered to
+  // `source === "phoenix"` (Phoenix's own pharmacies, not the raw distributor directory) and the
+  // SAME area the rep just picked, so "Al Nour Pharmacy" in one region does not get suggested
+  // against an unrelated "Al Nour Pharmacy" three governorates away.
+  //
+  // NEVER A BLOCK. Picking a suggestion routes into the exact same reuse path a search-and-pick
+  // would have (setPickedHit + pharmacyMode "picked"), so it costs no new server logic — the
+  // creation-avoidance already exists, this only helps a rep reach it without retyping. Dismissing
+  // it, or simply continuing to type, does nothing at all: the rep can still register a genuinely
+  // new pharmacy exactly as before. That is the same design principle as the optional distributor
+  // code (owner rule 2026-08-04) — never cost a rep the ability to keep working.
+  const [nameMatches, setNameMatches] = useState<PharmacySearchHit[]>([]);
+  const [nameMatchDismissed, setNameMatchDismissed] = useState(false);
+  const nameMatchSeq = useRef(0);
+
+  useEffect(() => {
+    // Every setState lives inside the scheduled callback, matching the combo box's own debounced
+    // effect (pharmacy-combo-box.tsx) — never a bare setState in the effect body.
+    const name = newName.trim();
+    const area = newAreaCode.trim();
+    const mySeq = ++nameMatchSeq.current;
+    if (pharmacyMode !== "new" || name.length < 2 || !area) {
+      const timer = setTimeout(() => {
+        if (nameMatchSeq.current !== mySeq) return;
+        setNameMatches([]);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+    const timer = setTimeout(async () => {
+      if (nameMatchSeq.current !== mySeq) return;
+      // A fresh name or area deserves a fresh chance to suggest, even if an earlier suggestion
+      // (for different text) was dismissed.
+      setNameMatchDismissed(false);
+      try {
+        const res = await fetch(`/api/direct-orders/pharmacy-search?q=${encodeURIComponent(name)}`);
+        const data = (await res.json().catch(() => ({}))) as { hits?: PharmacySearchHit[] };
+        if (nameMatchSeq.current !== mySeq) return;
+        const hits = Array.isArray(data.hits) ? data.hits : [];
+        setNameMatches(hits.filter((hit) => hit.source === "phoenix" && hit.areaCode === area));
+      } catch {
+        if (nameMatchSeq.current === mySeq) setNameMatches([]);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [newName, newAreaCode, pharmacyMode]);
+
+  // NOT a hook — named to avoid the "use…" prefix, which react-hooks/rules-of-hooks enforces by
+  // naming convention alone and would (correctly) reject this being called from an onClick handler.
+  function applySuggestedPharmacy(hit: PharmacySearchHit) {
+    setPickedHit(hit);
+    setPharmacyMode("picked");
+    setNameMatches([]);
+  }
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -674,6 +737,43 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                   <p className="text-[11px] text-slate-500">
                     Area {selectedBrick.areaName || selectedBrick.areaCode} · Region {selectedBrick.regionName || selectedBrick.regionCode}
                   </p>
+                ) : null}
+
+                {/* "Did you mean this pharmacy?" — never a block. Picking one switches straight into
+                    the search-and-pick path; dismissing or ignoring it costs the rep nothing. */}
+                {!nameMatchDismissed && nameMatches.length > 0 ? (
+                  <div className="border border-sky-300 bg-sky-50 px-3 py-2">
+                    <p className="text-[12px] font-bold text-sky-800">
+                      Phoenix may already have this pharmacy in this area:
+                    </p>
+                    <div className="mt-1 space-y-1">
+                      {nameMatches.map((hit) => (
+                        <div
+                          key={hit.phoenixPharmacyCode ?? `${hit.distributorCode}-${hit.customerCode}`}
+                          className="flex items-center justify-between gap-2 border border-sky-200 bg-white px-2 py-1"
+                        >
+                          <span className="min-w-0 truncate text-[12px] text-slate-700" dir="auto">
+                            {hit.customerName ?? hit.phoenixPharmacyCode}
+                            {hit.phoenixPharmacyCode ? ` · ${hit.phoenixPharmacyCode}` : ""}
+                          </span>
+                          <button
+                            type="button"
+                            className="shrink-0 text-[12px] font-bold text-sky-700 hover:text-sky-900"
+                            onClick={() => applySuggestedPharmacy(hit)}
+                          >
+                            Use this pharmacy
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 text-[12px] font-semibold text-slate-500 hover:text-slate-700"
+                      onClick={() => setNameMatchDismissed(true)}
+                    >
+                      No, this is a different pharmacy
+                    </button>
+                  </div>
                 ) : null}
                 <input className={inputClass()} value={newDoctor} onChange={(e) => setNewDoctor(e.target.value)} placeholder="Doctor name *" />
                 <input className={inputClass()} value={newAddress} onChange={(e) => setNewAddress(e.target.value)} placeholder="Pharmacy address *" />
