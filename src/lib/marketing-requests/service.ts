@@ -2238,6 +2238,24 @@ async function createMarketingApprovalSteps(params: {
         "marketing_approver_not_employee",
       );
     }
+
+    /**
+     * Nobody approves their own spend.
+     *
+     * A role-resolved rung lands on whoever holds the role, and the requester can BE that person:
+     * production carries MKT-REQ-20260811-FF5B0719, raised by A-9 (Marketing Manager) with A-9
+     * assigned to its own `marketing_review` rung. Nothing refused it.
+     *
+     * The rung is kept and marked `skipped` rather than dropped. Dropping it would erase the fact
+     * that a gate existed, which is the same "absence reads as benign" failure this module keeps
+     * making; and leaving it `pending` would strand the request forever once the RPC refuses a
+     * self-decision (see phx_decide_marketing_request_step). `skipped` is already this table's
+     * marker for "present but not a gate" — CC rows use it — so the chain stays honest and the
+     * request stays decidable.
+     */
+    const isSelfApproval =
+      !input.isCc && normalizeHrId(storedHrId) === normalizeHrId(params.request.requesterHrId);
+
     sequence += 1;
     rows.push({
       allow_reject: input.step.allowReject,
@@ -2245,10 +2263,15 @@ async function createMarketingApprovalSteps(params: {
       assigned_hr_id: storedHrId,
       assigned_role: input.assignedRole,
       decision_labels: input.step.decisionLabels,
+      // Written on a skipped self-approval rung so the timeline says WHY the gate did not apply,
+      // instead of showing a silent gap in the chain.
+      decision_note: isSelfApproval
+        ? "Skipped automatically: the assigned approver raised this request, and nobody approves their own spend."
+        : null,
       is_cc: input.isCc,
       request_id: params.request.id,
       sequence,
-      status: input.isCc ? "skipped" : "pending",
+      status: input.isCc || isSelfApproval ? "skipped" : "pending",
       step_code: input.step.stepCode,
       step_kind: input.step.stepKind,
       step_name: input.stepName,
@@ -2318,8 +2341,21 @@ async function createMarketingApprovalSteps(params: {
     }
   }
 
-  const firstGating = rows.find((row) => row.is_cc === false);
-  if (firstGating) firstGating.status = "current";
+  // `status === "pending"` matters: a self-approval rung is a non-CC row that is already `skipped`,
+  // and opening it as `current` would park the request on a rung its own assignee is forbidden to
+  // decide.
+  const firstGating = rows.find((row) => row.is_cc === false && row.status === "pending");
+  if (firstGating) {
+    firstGating.status = "current";
+  } else if (rows.some((row) => row.is_cc === false)) {
+    // Every gate resolved to the requester. Failing here is the honest outcome: the alternative is
+    // a request submitted into `pending_approval` with no rung anyone may act on, which looks like
+    // it is progressing and never can.
+    throw validationError(
+      "You are the only approver on this request, so nobody else could review it. Ask an administrator to assign a different approver before submitting.",
+      "marketing_requester_is_sole_approver",
+    );
+  }
 
   const { data, error } = await params.supabase
     .from("marketing_request_approval_steps")
@@ -2849,6 +2885,27 @@ function assertMarketingStepAssignedToActor(step: MarketingRequestApprovalStep, 
   }
 }
 
+/**
+ * Nobody decides their own request.
+ *
+ * Both callers of {@link assertMarketingStepAssignedToActor} pair it with this: the decision page
+ * and the decide path. Being ASSIGNED a rung is not sufficient — a role-resolved rung lands on
+ * whoever holds the role, and the requester can be that person (production: A-9 assigned to its own
+ * `marketing_review` rung).
+ *
+ * The database refuses this too, in phx_decide_marketing_request_step, and that is the real
+ * boundary. This exists so the approver is told on the way IN rather than after filling in a
+ * decision — the RPC error would otherwise arrive only on submit, after the reviewer had done the
+ * work.
+ */
+export function assertNotDecidingOwnRequest(request: MarketingRequest, actorHrId: string) {
+  if (normalizeHrId(request.requesterHrId) === normalizeHrId(actorHrId)) {
+    throw forbiddenError(
+      "Forbidden: you raised this marketing request, so you cannot approve, reject or return it. Ask an administrator to reassign this step.",
+    );
+  }
+}
+
 function marketingEgp(value: unknown): string {
   return `EGP ${Math.round(toNumber(value)).toLocaleString("en-US")}`;
 }
@@ -2972,6 +3029,7 @@ export async function getMarketingRequestDecisionSummary(
   const currentStep = steps.find((step) => step.status === "current") ?? null;
   if (!currentStep) throw conflictError("This marketing request has no current approval step.");
   assertMarketingStepAssignedToActor(currentStep, actorHrId);
+  assertNotDecidingOwnRequest(request, actorHrId);
   if (request.status !== "pending_approval") {
     throw conflictError("This marketing request is no longer pending approval.");
   }
@@ -3138,6 +3196,7 @@ export async function decideMarketingRequestWorkflow(
   const currentStep = steps.find((step) => step.status === "current") ?? null;
   if (!currentStep) throw conflictError("This marketing request has no current approval step.");
   assertMarketingStepAssignedToActor(currentStep, actorHrId);
+  assertNotDecidingOwnRequest(request, actorHrId);
   if (request.status !== "pending_approval") {
     throw conflictError("This marketing request is no longer pending approval.");
   }
@@ -3163,6 +3222,15 @@ export async function decideMarketingRequestWorkflow(
   if (rpcErr) {
     if (rpcErr.message?.includes("marketing_step_already_decided")) {
       throw conflictError("This marketing approval step was already decided. Refresh Phoenix and try again.");
+    }
+    // The database refused a self-decision. Reaching here means the chain had the requester on a
+    // gating rung despite the submit-time guard — a request that predates this change, a hand-edited
+    // assignment, or a routing change that re-pointed the rung. Surfaced as a 403 with the reason,
+    // not the raw Postgres text.
+    if (rpcErr.message?.includes("marketing_self_approval_refused")) {
+      throw forbiddenError(
+        "You raised this marketing request, so you cannot approve, reject or return it. Ask an administrator to reassign this step.",
+      );
     }
     throw rpcErr;
   }
