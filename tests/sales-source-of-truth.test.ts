@@ -97,6 +97,11 @@ export function runSalesSourceOfTruthTests() {
 
   const employeePortalSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
   assert.match(employeePortalSource, /buildPortalSalesDashboardMetrics/);
+  // The portal must not grow a second dashboard builder. buildEmployeeSalesDashboard was an
+  // unreferenced copy of the same MAX-target dedupe that had already drifted (it summed territory
+  // targets raw, missing the maxTargetsByTerritory fix), so portal target-math edits could land in
+  // dead code and appear to do nothing.
+  assert.doesNotMatch(employeePortalSource, /function buildEmployeeSalesDashboard/, "the portal calls buildPortalSalesDashboardMetrics and must not re-implement it");
 
   const salesPageSource = readFileSync("app/(admin)/sales/page.tsx", "utf8");
   assert.match(salesPageSource, /getSosDashboard/);
