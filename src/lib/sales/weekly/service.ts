@@ -1,4 +1,3 @@
-import { asyncPool } from "@/lib/utils/async-pool";
 import { normalizeRole } from "@/lib/auth/permissions";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { canonicalHrIdForDisplay, canonicalHrIdKey } from "@/lib/hr-id";
@@ -1003,7 +1002,6 @@ export async function loadWeeklyDashboard(filters?: {
     narrowToSelectedMonths,
   ).map((b) => String(b.id));
   if (batchIdsForRows.length === 0) return empty();
-  const CONCURRENCY = 6;
   const validIds = new Set(batchIdsForRows);
   const allRows: FactRow[] = [];
   const pageSize = 1000;
@@ -1012,7 +1010,6 @@ export async function loadWeeklyDashboard(filters?: {
   // batch_id narrowing is safe: options (weeks, distributors) come from the batch list, not
   // these rows, so filtering here never collapses the filter dropdowns.
   // Region/product/line stay IN MEMORY so exclude-mode and full option lists remain correct.
-  // Page 0 uses count:exact so remaining page offsets can be issued concurrently.
   //
   // The distributor_code column is CASE-SENSITIVE and some codes are mixed-case (e.g. "Direct").
   // distributor.set holds normalised (UPPERCASED) codes, so passing it straight into .in() would match
@@ -1028,103 +1025,70 @@ export async function loadWeeklyDashboard(filters?: {
           ),
         ]
       : null;
+  // `id` is fetched ONLY as the keyset cursor (below); it is never mapped into FactRow.
+  const rowColumns =
+    "id, batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, area_code, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty";
   // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
   // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
   // HeadersOverflowError — batchIdsForRows is unbounded when allWeeks/product-scoped, so chunk it.
-  // Each chunk keeps its own count-exact-first-page + concurrent-remaining-pages fetch; results
-  // merge into the same allRows across chunks.
+  //
+  // Within each chunk we page by KEYSET (WHERE id > lastId ORDER BY id), not OFFSET. The old
+  // count-exact + concurrent-OFFSET paging made every page re-scan the whole batch window and
+  // re-sort it by id — no index yields `batch_id = ANY(...)` already in id order — so a 36-page
+  // load paid an ~81ms full scan+sort 36 times over (measured on prod: this statement was 84% of
+  // all weekly_sales_rows DB time). Keyset lets the PK index scan resume where the previous page
+  // ended and stop after pageSize matches: ~2.4ms/page, identical rows in the identical id order.
+  // The exact row count is gone with it — it only ever drove the OFFSET math.
   let totalPagesFetched = 0;
   for (let bi = 0; bi < batchIdsForRows.length; bi += 100) {
     const batchIdBatch = batchIdsForRows.slice(bi, bi + 100);
-    let p0Query = supabase
-      .from("weekly_sales_rows")
-      .select(
-        "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, area_code, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
-        { count: "exact" },
-      )
-      .order("id", { ascending: true })
-      .range(0, pageSize - 1)
-      .in("batch_id", batchIdBatch);
-    if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
-      p0Query = p0Query.in("distributor_code", distributorCodesForQuery);
-    const firstPage = await p0Query;
-    if (firstPage.error) throw new SalesWorkflowError("load_failed", firstPage.error.message, 500);
-    const totalCount = firstPage.count ?? (firstPage.data?.length ?? 0);
-    totalPagesFetched += 1;
-    for (const row of firstPage.data ?? []) {
-      if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
-      allRows.push({
-        batchId: String(row.batch_id ?? ""),
-        weekStart: String(row.week_start ?? ""),
-        cycleMonth: String(row.cycle_month ?? ""),
-        weekNumber: row.week_number != null ? Number(row.week_number) : null,
-        distributorCode: String(row.distributor_code ?? ""),
-        distributorName: String(row.distributor_name ?? ""),
-        regionCode: String(row.region_code ?? ""),
-        regionName: String(row.region_name ?? ""),
-        areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
-        branchCode: String(row.branch_code ?? ""),
-        branchName: String(row.branch_name ?? ""),
-        productCode: String(row.product_code ?? ""),
-        productName: String(row.product_name ?? ""),
-        officialLine: String(row.official_line ?? ""),
-        salesValue: Number(row.sales_value ?? 0),
-        salesQty: Number(row.sales_qty ?? 0),
-        netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
-        stockQty: Number(row.stock_qty ?? 0),
-      });
-    }
-    const remainingFroms: number[] = [];
-    for (let from = pageSize; from < totalCount; from += pageSize) remainingFroms.push(from);
-    if (remainingFroms.length > 0) {
-      totalPagesFetched += remainingFroms.length;
-      const pages = await asyncPool(CONCURRENCY, remainingFroms, async (from) => {
-        let q = supabase
-          .from("weekly_sales_rows")
-          .select(
-            "batch_id, week_start, cycle_month, week_number, distributor_code, distributor_name, region_code, region_name, area_code, branch_code, branch_name, product_code, product_name, official_line, sales_value, sales_qty, net_qty, stock_qty",
-          )
-          .order("id", { ascending: true })
-          .range(from, from + pageSize - 1)
-          .in("batch_id", batchIdBatch);
-        if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
-          q = q.in("distributor_code", distributorCodesForQuery);
-        const page = await q;
-        if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
-        return page.data ?? [];
-      });
-      for (const pageData of pages) {
-        for (const row of pageData) {
-          if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
-          allRows.push({
-            batchId: String(row.batch_id ?? ""),
-            weekStart: String(row.week_start ?? ""),
-            cycleMonth: String(row.cycle_month ?? ""),
-            weekNumber: row.week_number != null ? Number(row.week_number) : null,
-            distributorCode: String(row.distributor_code ?? ""),
-            distributorName: String(row.distributor_name ?? ""),
-            regionCode: String(row.region_code ?? ""),
-            regionName: String(row.region_name ?? ""),
-            areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
-            branchCode: String(row.branch_code ?? ""),
-            branchName: String(row.branch_name ?? ""),
-            productCode: String(row.product_code ?? ""),
-            productName: String(row.product_name ?? ""),
-            officialLine: String(row.official_line ?? ""),
-            salesValue: Number(row.sales_value ?? 0),
-            salesQty: Number(row.sales_qty ?? 0),
-            netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
-            stockQty: Number(row.stock_qty ?? 0),
-          });
-        }
+    let cursor: number | null = null;
+    for (;;) {
+      let q = supabase
+        .from("weekly_sales_rows")
+        .select(rowColumns)
+        .order("id", { ascending: true })
+        .limit(pageSize)
+        .in("batch_id", batchIdBatch);
+      if (cursor !== null) q = q.gt("id", cursor);
+      if (distributorCodesForQuery && distributorCodesForQuery.length > 0)
+        q = q.in("distributor_code", distributorCodesForQuery);
+      const page = await q;
+      if (page.error) throw new SalesWorkflowError("load_failed", page.error.message, 500);
+      const rows = page.data ?? [];
+      totalPagesFetched += 1;
+      for (const row of rows) {
+        if (!validIds.has(String(row.batch_id))) continue; // skip rows from blocked batches
+        allRows.push({
+          batchId: String(row.batch_id ?? ""),
+          weekStart: String(row.week_start ?? ""),
+          cycleMonth: String(row.cycle_month ?? ""),
+          weekNumber: row.week_number != null ? Number(row.week_number) : null,
+          distributorCode: String(row.distributor_code ?? ""),
+          distributorName: String(row.distributor_name ?? ""),
+          regionCode: String(row.region_code ?? ""),
+          regionName: String(row.region_name ?? ""),
+          areaCode: row.area_code == null || String(row.area_code).trim() === "" ? null : String(row.area_code).trim().toUpperCase(),
+          branchCode: String(row.branch_code ?? ""),
+          branchName: String(row.branch_name ?? ""),
+          productCode: String(row.product_code ?? ""),
+          productName: String(row.product_name ?? ""),
+          officialLine: String(row.official_line ?? ""),
+          salesValue: Number(row.sales_value ?? 0),
+          salesQty: Number(row.sales_qty ?? 0),
+          netQty: Number(row.net_qty ?? row.sales_qty ?? 0),
+          stockQty: Number(row.stock_qty ?? 0),
+        });
       }
+      if (rows.length < pageSize) break; // short page ⇒ chunk exhausted
+      cursor = Number(rows[rows.length - 1].id); // advance by last FETCHED id (before validIds filter)
     }
   }
   console.info(JSON.stringify({
     event: "weekly_sales_rows_fetch",
     totalRows: allRows.length,
     totalPages: totalPagesFetched,
-    concurrency: CONCURRENCY,
+    pagination: "keyset",
     fetchMs: Date.now() - fetchStart,
     batchCount: batchIdsForRows.length,
   }));
