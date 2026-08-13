@@ -8,6 +8,7 @@ import {
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";
+import { isSamePerson } from "@/lib/auth/identity-aliases";
 import { writeAuditLog } from "@/lib/admin/audit";
 // Pure, JSX-free SLA tone helper (see src/lib/approvals-hub/service.ts, which imports it the same
 // way) so the marketing badge graduates to "overdue" on exactly the rule the other badges use.
@@ -2254,7 +2255,7 @@ async function createMarketingApprovalSteps(params: {
      * request stays decidable.
      */
     const isSelfApproval =
-      !input.isCc && normalizeHrId(storedHrId) === normalizeHrId(params.request.requesterHrId);
+      !input.isCc && isSamePerson(storedHrId, params.request.requesterHrId);
 
     sequence += 1;
     rows.push({
@@ -2879,8 +2880,7 @@ function marketingNotificationVariables(params: {
 }
 
 function assertMarketingStepAssignedToActor(step: MarketingRequestApprovalStep, actorHrId: string) {
-  const assignedHrId = normalizeHrId(step.assignedHrId);
-  if (!assignedHrId || assignedHrId !== normalizeHrId(actorHrId)) {
+  if (!isSamePerson(step.assignedHrId, actorHrId)) {
     throw forbiddenError("Forbidden: this marketing request is not assigned to your Phoenix identity.");
   }
 }
@@ -2899,7 +2899,7 @@ function assertMarketingStepAssignedToActor(step: MarketingRequestApprovalStep, 
  * work.
  */
 export function assertNotDecidingOwnRequest(request: MarketingRequest, actorHrId: string) {
-  if (normalizeHrId(request.requesterHrId) === normalizeHrId(actorHrId)) {
+  if (isSamePerson(request.requesterHrId, actorHrId)) {
     throw forbiddenError(
       "Forbidden: you raised this marketing request, so you cannot approve, reject or return it. Ask an administrator to reassign this step.",
     );
@@ -4865,7 +4865,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
   const scopeTrackingToOwnRequests =
     companyMarketingRoles.has(access.role) || access.scope === "system";
   const ownsMarketingRequest = (request: MarketingRequest) =>
-    normalizeHrId(request.requesterHrId) === normalizeHrId(access.hrId);
+    isSamePerson(request.requesterHrId, access.hrId);
   const narrowToOwnRequests = (requests: MarketingRequest[]) =>
     scopeTrackingToOwnRequests ? requests.filter(ownsMarketingRequest) : requests;
 
@@ -5061,7 +5061,7 @@ export async function getMarketingRequestDraftWorkspace(access: AccessContext): 
     // Only requests the current user personally submitted may be edited after a return.
     // Managers can see their team's returned requests above (read-only) but must never
     // get an edit button on another employee's submission.
-    returnedToMe: returned.filter((req) => normalizeHrId(req.requesterHrId) === normalizeHrId(access.hrId)),
+    returnedToMe: returned.filter((req) => isSamePerson(req.requesterHrId, access.hrId)),
     stepProgressByRequestId,
   };
 }
@@ -5265,7 +5265,7 @@ export async function resubmitReturnedMarketingRequest(
   if (existing.status !== "returned") {
     throw conflictError("Only a returned marketing request can be resubmitted.");
   }
-  if (normalizeHrId(existing.requesterHrId) !== normalizeHrId(requester.hrId)) {
+  if (!isSamePerson(existing.requesterHrId, requester.hrId)) {
     throw forbiddenError("Forbidden: only the requester can resubmit this marketing request.");
   }
 
@@ -5799,7 +5799,7 @@ export async function postMarketingAdvisoryComment(
         (step) =>
           step.isCc &&
           step.stepCode === currentGating.stepCode &&
-          normalizeHrId(step.assignedHrId) === normalizeHrId(actorHrId),
+          isSamePerson(step.assignedHrId, actorHrId),
       ) ?? null
     : null;
   if (!ccStep) {
@@ -5879,7 +5879,7 @@ export async function getMarketingRequestDetail(
 
   const actorHrId = normalizeHrId(access.hrId);
   const isAssignedApprover = actorHrId
-    ? steps.some((step) => normalizeHrId(step.assignedHrId) === actorHrId)
+    ? steps.some((step) => isSamePerson(step.assignedHrId, access.hrId))
     : false;
   if (!canSeeMarketingRequest(access, requestRow, employeeRows) && !isAssignedApprover && access.scope !== "system") {
     throw forbiddenError("Forbidden: you cannot view this marketing request.");
@@ -5895,7 +5895,7 @@ export async function getMarketingRequestDetail(
         (step) =>
           step.isCc &&
           step.stepCode === currentGating.stepCode &&
-          normalizeHrId(step.assignedHrId) === actorHrId,
+          isSamePerson(step.assignedHrId, access.hrId),
       ),
   );
 
