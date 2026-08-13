@@ -228,10 +228,15 @@ export function runDirectOrderHoldReleaseTests() {
   // Releasing changes WHERE an order sits, never whether the pharmacy was reviewed.
   const createIdx = service.indexOf("export async function createDirectOrderPharmacy(");
   const createBody = service.slice(createIdx, service.indexOf("export async function acknowledgeDirectOrderPharmacy(", createIdx));
+  // pending_review/manual used to be set in a client-side INSERT here; the code-collision fix
+  // (3ec5c640) moved pharmacy creation onto the atomic phx_create_direct_order_pharmacy RPC, which
+  // pins both values itself (asserted against the migration SQL by
+  // direct-orders-pharmacy-code-collision.test.ts) so no caller can supply anything else. What this
+  // test can still check from the TS side is that creation still goes through that RPC.
   assert.match(
     createBody,
-    /verification_status: "pending_review"/,
-    "a hand-registered pharmacy must still be flagged for review on insert",
+    /supabase\.rpc\("phx_create_direct_order_pharmacy"/,
+    "a hand-registered pharmacy must still be created through the atomic RPC, which pins pending_review/manual itself",
   );
   assert.doesNotMatch(
     createBody,

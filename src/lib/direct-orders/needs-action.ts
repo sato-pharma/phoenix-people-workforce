@@ -1,3 +1,4 @@
+import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -35,8 +36,16 @@ import { describeDirectOrderStatus } from "@/lib/direct-orders/status-labels";
 export type DirectOrderQueueRow = {
   id: string;
   requesterName: string;
+  /** Every product joined with " + " on a basket; line 1's name on a one-product order. */
   productName: string;
+  /** Summed across the basket, so it always matches the products named above it. */
   qty: number;
+  /**
+   * One entry per product. A row's `salesValue` is the WHOLE basket, so naming only line 1 shows
+   * one product's name against two products' money — see @/lib/direct-orders/basket-label.
+   * Optional because a hand-built test row need not supply it.
+   */
+  items?: readonly DirectOrderBasketLine[];
   pharmacyName: string;
   /**
    * Two pharmacies can share a name. The retired portal approvals card carried this for exactly

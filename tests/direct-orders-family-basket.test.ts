@@ -155,14 +155,32 @@ export async function runDirectOrderFamilyBasketTests() {
   // must come out of the report byte-identical, and that is only guaranteed if the single-line path
   // still reads the request's own columns rather than reconstructing them from the items table.
   assert.match(report, /const isBasket = items\.length > 1;/, "the basket path must be gated on a second line");
-  for (const [field, expected] of [
-    ["productCode", /isBasket \? items\.map\(\(item\) => item\.productCode\)\.join\(" \+ "\) : request\.productCode/],
-    ["productName", /isBasket \? items\.map\(\(item\) => item\.productName\)\.join\(" \+ "\) : request\.productName/],
-    ["qty", /qty: isBasket \? items\.reduce\(\(total, item\) => total \+ item\.qty, 0\) : request\.qty/],
-    ["bonus", /bonus: isBasket \? items\.reduce\(\(total, item\) => total \+ item\.bonus, 0\) : request\.bonus/],
-  ] as const) {
-    assert.match(report, expected, `the report's ${field} must fall back to the request's own column for one line`);
+
+  // The composition itself was lifted into summarizeDirectOrderBasket (basket-label.ts) so the
+  // report, the approvals list, the Orders list, the Held Desk and the exception desk share ONE
+  // definition instead of a copy each — this test used to pin the ternary inline here and went stale
+  // the moment that lift happened. basket-label.test.ts pins the actual one-line/basket composition
+  // rule; this only checks the report reads it rather than re-deriving it.
+  assert.match(
+    report,
+    /const basket = summarizeDirectOrderBasket\(request, items\);/,
+    "the report must compose the basket label through the shared function, not a private copy of the rule",
+  );
+  for (const field of ["productCode", "productName", "qty"] as const) {
+    assert.match(
+      report,
+      new RegExp(`${field}: basket\\.${field},`),
+      `the report's ${field} must come from the shared basket summary, not a re-derived ternary`,
+    );
   }
+
+  // bonus is not part of DirectOrderBasketSummary — it still falls back to the request's own column
+  // inline, exactly as before the lift.
+  assert.match(
+    report,
+    /bonus: isBasket \? items\.reduce\(\(total, item\) => total \+ item\.bonus, 0\) : request\.bonus/,
+    "the report's bonus must fall back to the request's own column for one line",
+  );
 
   // Sales value is ALREADY the basket total. Summing the units is what makes the row internally
   // consistent — money and units describing the same set of products.
