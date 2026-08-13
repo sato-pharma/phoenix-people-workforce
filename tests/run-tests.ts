@@ -709,6 +709,7 @@ import { runMarketingCaseFileTests } from "./marketing-case-file.test.ts";
 import { runMarketingRejectedRequestVisibilityTests } from "./marketing-rejected-request-visibility.test.ts";
 import { runMarketingRequestCaseFilePageTests } from "./marketing-request-case-file-page.test.ts";
 import { runMarketingRequestEventsMigrationTests } from "./marketing-request-events-migration.test.ts";
+import { runMarketingSelfApprovalTests } from "./marketing-self-approval.test.ts";
 import { runSourceCoverageTests } from "./source-coverage.test.ts";
 import { runOrganogramDualSeatVisibilityTests } from "./organogram-dual-seat-visibility.test.ts";
 import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
@@ -1607,6 +1608,11 @@ await runTest(
 await runTest(
   "marketing request events (append-only survives TRUNCATE and the owner's own privileges; events outlive a deleted request; a backfilled row is never mistaken for a captured one)",
   runMarketingRequestEventsMigrationTests,
+);
+
+await runTest(
+  "marketing self-approval refused (the requester cannot decide their own request at the chain, the service or the RPC; casing does not defeat it; a different approver still can)",
+  runMarketingSelfApprovalTests,
 );
 
 await runTest(
