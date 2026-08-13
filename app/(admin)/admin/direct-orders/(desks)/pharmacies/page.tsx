@@ -2,7 +2,7 @@ import { Store } from "lucide-react";
 
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { PharmacyRegistryManager } from "@/components/direct-orders/pharmacy-registry-manager";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   listDirectOrderAreaAndBrickOptions,
   listDirectOrderDistributorOptions,
@@ -12,7 +12,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function DirectOrderPharmaciesPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   // The registry read throws for anyone outside it, so this page cannot render a shell for a
   // viewer who is not allowed to see the list at all.
   const [{ rows, canManage, canClearReview }, geo, distributors] = await Promise.all([

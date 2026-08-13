@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { unauthenticatedSessionResponse } from "@/lib/auth/api-session-response";
 import { resolveAccessContext, isForbiddenError } from "@/lib/auth/server";
 import { logAppError } from "@/lib/error-monitor/service";
 import { clientSafeErrorMessage, toApiError } from "@/lib/http/api-errors";
@@ -113,6 +114,12 @@ export async function GET(request: Request) {
   let access: DraftAccess = null;
   try {
     access = await resolveAccessContext(request);
+    // An expired session is not a permissions problem. Without this the guest fallback
+    // (hrId null, role "Employee") reaches assertPermission, throws
+    // "Forbidden: Employee cannot use marketing requests", and lands in app_error_events as an
+    // application error naming a role nobody actually holds.
+    const unauthenticated = unauthenticatedSessionResponse(access);
+    if (unauthenticated) return unauthenticated;
     return NextResponse.json(await getMarketingRequestDraftWorkspace(access));
   } catch (error) {
     const { code, message, status } = marketingDraftApiError(error);
@@ -140,6 +147,8 @@ export async function POST(request: Request) {
     }
 
     access = await resolveAccessContext(request);
+    const unauthenticated = unauthenticatedSessionResponse(access);
+    if (unauthenticated) return unauthenticated;
     const draft = await createMarketingRequestDraft(await request.json(), access);
 
     return NextResponse.json({ draft }, { status: 201 });

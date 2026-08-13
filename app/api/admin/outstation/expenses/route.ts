@@ -48,8 +48,13 @@ function describeThrown(error: unknown): string {
 }
 
 export async function GET(request: Request) {
+  // Hoisted so the catch below can attribute the failure to a person, the same reason
+  // /api/marketing-requests/drafts hoists it. While this was scoped inside the `try`, every row
+  // this route logged was anonymous — the 16 rows it wrote on 2026-08-12 name nobody, which is
+  // most of the value of having captured them at all.
+  let access: Awaited<ReturnType<typeof resolveAccessContext>> | null = null;
   try {
-    const access = await resolveAccessContext(request);
+    access = await resolveAccessContext(request);
     // An expired session must not be reported as a missing permission (see
     // api-session-response.ts). A guest is already denied everything, so this only changes
     // how the denial reads, never who gets through.
@@ -120,6 +125,9 @@ export async function GET(request: Request) {
       source: "server",
       route: "/api/admin/outstation/expenses",
       routeType: "route-handler",
+      hrId: access?.hrId ?? null,
+      loginId: access?.loginId ?? null,
+      role: access?.role ?? null,
       message: describeThrown(error),
       stack: error instanceof Error ? (error.stack ?? null) : null,
     }).catch(() => {

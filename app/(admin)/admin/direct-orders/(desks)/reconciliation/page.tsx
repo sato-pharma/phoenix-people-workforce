@@ -3,12 +3,12 @@ import { Scale } from "lucide-react";
 import { AdminPageHero } from "@/components/admin/admin-design-system";
 import { DirectOrderReconciliationWorkspace } from "@/components/direct-orders/direct-order-reconciliation-workspace";
 import { getDirectSalesReconciliation } from "@/lib/direct-orders/service";
-import { resolveAccessContextFromPage } from "@/lib/auth/server";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function DirectSalesReconciliationPage() {
-  const access = await resolveAccessContextFromPage();
+  const access = await resolveAuthenticatedPageAccess();
   const result = await getDirectSalesReconciliation(access);
   return (
     <div className="space-y-5">

@@ -6,6 +6,32 @@ import { useState } from "react";
 import { systemIdentity } from "@/config/system-settings";
 import { formatHrIdForDisplay } from "@/lib/hr-id";
 
+/**
+ * Pinned locale AND pinned zone, because both sides of hydration must produce the same string.
+ *
+ * This was `new Date(expiresAt).toLocaleString("en-US")`, which uses whatever zone the RUNTIME is
+ * in: the server renders it in UTC (Railway), the phone renders it in Cairo (UTC+3). React saw two
+ * different text nodes and threw hydration error #418 — 36 times between 30 July and 12 August,
+ * once for essentially every new joiner who opened their setup link. The zone also has to be Cairo
+ * regardless: a link that expires "8:00 PM" must not read three hours early to the person reading
+ * it. The zone is named in the copy so nobody has to guess which clock it is.
+ */
+const EXPIRY_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Africa/Cairo",
+});
+
+/**
+ * Guarded because `Intl.format` THROWS on an invalid date where the old `toLocaleString` only
+ * returned "Invalid Date". This page is the single path a new joiner has to a working account, so
+ * a malformed timestamp must degrade to a missing line, never to a blank screen.
+ */
+function formatExpiry(expiresAt: string): string | null {
+  const parsed = new Date(expiresAt);
+  return Number.isNaN(parsed.getTime()) ? null : EXPIRY_FORMAT.format(parsed);
+}
+
 type Props = {
   expiresAt: string;
   hrId: string | null;
@@ -22,6 +48,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
   const [isSaving, setIsSaving] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
   const displayLoginId = formatHrIdForDisplay(hrId) ?? loginId;
+  const expiryLabel = formatExpiry(expiresAt);
 
   async function submitForm(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,7 +113,7 @@ export function PasswordSetupForm({ expiresAt, hrId, loginId, name, purpose, tok
             <ShieldCheck className="h-4 w-4" />
             One-time secure setup
           </div>
-          <p className="mt-2">This link expires on {new Date(expiresAt).toLocaleString("en-US")}.</p>
+          {expiryLabel ? <p className="mt-2">This link expires on {expiryLabel} Cairo time.</p> : null}
         </div>
 
         <form className="mt-8 space-y-5" onSubmit={submitForm}>
