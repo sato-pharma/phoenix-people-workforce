@@ -14,6 +14,7 @@ import {
   type PhoenixRole,
 } from "@/lib/auth/permissions";
 import { sharedIdentityKeys } from "@/lib/auth/identity-aliases";
+import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
@@ -1398,7 +1399,7 @@ function acceptedRequiredEvidenceReviewerHrIds(request: VacationRequestRecord) {
 // sick/compensatory leave permanently unapprovable. Owner-approved exception (2026-07-04): only
 // enforce the guard when a real alternate account is available; fail closed (keep enforcing) if
 // the lookup errors, since that's safer than silently allowing self-acknowledgement.
-async function hasAlternateHrApprover(excludeHrId: string | null) {
+async function hasAlternateHrApprover(excludeHrId: string | null | undefined) {
   const excludedGroup = sharedIdentityKeys(excludeHrId);
   try {
     const { data, error } = await getSupabaseAdmin()
@@ -1408,7 +1409,12 @@ async function hasAlternateHrApprover(excludeHrId: string | null) {
       .eq("is_active", true);
     if (error) throw error;
     return (data ?? []).some((row) => {
-      const hrId = canonicalHrId(text((row as Record<string, unknown>).hr_id));
+      // sharedIdentityKeys()/excludedGroup key on canonicalHrIdKey (lowercased, HYPHENS KEPT —
+      // "b-10", "phx-1"). The local canonicalHrId() strips hyphens ("b10", "phx1") for a different
+      // purpose (self-review-detection matching) and must not be reused here: comparing a
+      // hyphen-stripped id against a hyphen-keeping Set never matches, which silently defeated the
+      // B-10/PHX-1 sole-admin exception below for every hyphenated HR_ID.
+      const hrId = canonicalHrIdKey(text((row as Record<string, unknown>).hr_id));
       return hrId ? !excludedGroup.has(hrId) : false;
     });
   } catch (error) {
@@ -3161,7 +3167,7 @@ async function applyVacationDecisionSequential(input: ApplyVacationDecisionInput
     }
     const reviewerHrId = canonicalHrId(input.actorHrId);
     if (reviewerHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(reviewerHrId)) {
-      if (await hasAlternateHrApprover(reviewerHrId)) {
+      if (await hasAlternateHrApprover(input.actorHrId)) {
         throw new Error("Separation of duties requires a different HR or Super Admin actor to acknowledge after evidence review.");
       }
       await insertVacationEvent({
@@ -3536,7 +3542,7 @@ async function applyVacationDecisionLegacy(input: ApplyVacationDecisionInput) {
     }
     const actorHrId = canonicalHrId(input.actorHrId);
     if (actorHrId && acceptedRequiredEvidenceReviewerHrIds(input.request).includes(actorHrId)) {
-      if (await hasAlternateHrApprover(actorHrId)) {
+      if (await hasAlternateHrApprover(input.actorHrId)) {
         throw new Error("Separation of duties requires a different HR or Super Admin actor to make the final approval after evidence review.");
       }
       await insertVacationEvent({

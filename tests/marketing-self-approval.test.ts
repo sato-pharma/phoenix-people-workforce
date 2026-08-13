@@ -60,6 +60,20 @@ export async function runMarketingSelfApprovalTests() {
     "surrounding whitespace must not defeat the self-approval guard",
   );
 
+  // B-10 (HR Manager) and PHX-1 (the same person's system-administrator console) are declared as
+  // one identity in identity-aliases.ts precisely so this guard cannot be sidestepped by deciding
+  // under the OTHER login than the one that raised the request.
+  assert.throws(
+    () => assertNotDecidingOwnRequest(requestOf("B-10"), "PHX-1"),
+    /you raised this marketing request/i,
+    "a requester must not be able to decide their own request by switching to their aliased console login",
+  );
+  assert.throws(
+    () => assertNotDecidingOwnRequest(requestOf("PHX-1"), "B-10"),
+    /you raised this marketing request/i,
+    "the alias check must work in both directions",
+  );
+
   // And it must not over-block: a real approver deciding someone else's request is the normal path.
   assert.doesNotThrow(
     () => assertNotDecidingOwnRequest(requestOf("B-184"), "AA"),
@@ -81,8 +95,8 @@ export async function runMarketingSelfApprovalTests() {
 
   assert.match(
     serviceSource,
-    /const isSelfApproval\s*=\s*\n?\s*!input\.isCc && normalizeHrId\(storedHrId\) === normalizeHrId\(params\.request\.requesterHrId\)/,
-    "the chain builder must detect a rung that resolves to the requester",
+    /const isSelfApproval\s*=\s*\n?\s*!input\.isCc && isSamePerson\(storedHrId, params\.request\.requesterHrId\)/,
+    "the chain builder must detect a rung that resolves to the requester, including under a shared-identity alias",
   );
   assert.match(
     serviceSource,
@@ -138,5 +152,50 @@ export async function runMarketingSelfApprovalTests() {
     serviceSource,
     /marketing_self_approval_refused[\s\S]{0,220}?forbiddenError/,
     "the RPC refusal must be mapped to a 403 with an explanation, never leaked as a Postgres error",
+  );
+
+  /* ---------------------------------------------------------------------- */
+  /* Layer 4 — every other "is this the same actor" comparison in the        */
+  /* module, not just the self-approval guard. This module predates         */
+  /* identity-aliases.ts and never adopted it, so a step assigned to one     */
+  /* alias could not be acted on from the other (an over-block, the same    */
+  /* shape as the vacation HR-acknowledgement bug), and "my own requests"    */
+  /* views/resubmit could silently miss a request raised under the other.   */
+  /* ---------------------------------------------------------------------- */
+
+  assert.match(
+    serviceSource,
+    /import \{ isSamePerson \} from "@\/lib\/auth\/identity-aliases";/,
+    "the shared-identity primitive must be imported, not re-implemented locally",
+  );
+
+  const assignedByActorHrId = (serviceSource.match(/isSamePerson\(step\.assignedHrId, actorHrId\)/g) ?? []).length;
+  assert.equal(
+    assignedByActorHrId,
+    2,
+    `assertMarketingStepAssignedToActor and the CC-comment eligibility check must both use isSamePerson (found ${assignedByActorHrId})`,
+  );
+
+  const assignedByAccessHrId = (serviceSource.match(/isSamePerson\(step\.assignedHrId, access\.hrId\)/g) ?? []).length;
+  assert.equal(
+    assignedByAccessHrId,
+    2,
+    `the request-detail visibility gate and its comment-eligibility check must both use isSamePerson (found ${assignedByAccessHrId})`,
+  );
+
+  assert.match(
+    serviceSource,
+    /isSamePerson\(request\.requesterHrId, access\.hrId\)/,
+    "the requester's own drafts/tracking view must recognise a request raised under either alias",
+  );
+  assert.match(
+    serviceSource,
+    /returnedToMe: returned\.filter\(\(req\) => isSamePerson\(req\.requesterHrId, access\.hrId\)\)/,
+    "resubmit-edit eligibility for a returned request must recognise either alias",
+  );
+  assert.match(
+    serviceSource,
+    /if \(!isSamePerson\(existing\.requesterHrId, requester\.hrId\)\) \{/,
+    "resubmitting a returned request must not be blocked by an alias mismatch between requester and actor",
   );
 }

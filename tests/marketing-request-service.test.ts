@@ -179,7 +179,7 @@ export async function runMarketingRequestServiceTests() {
   assert.match(serviceSource, /createSystemNotification/, "marketing workflow must use central notification engine");
   assert.match(serviceSource, /eventType:\s*"request_assigned"/, "marketing workflow must notify the assigned approver");
   assert.match(serviceSource, /assertMarketingStepAssignedToActor/, "marketing decisions must require the assigned approver");
-  assert.match(serviceSource, /assignedHrId !== normalizeHrId\(actorHrId\)/, "wrong approver must be blocked");
+  assert.match(serviceSource, /!isSamePerson\(step\.assignedHrId, actorHrId\)/, "wrong approver must be blocked, including under a shared-identity alias");
   assert.match(serviceSource, /allow_return:\s*input\.step\.allowReturn/, "approval-step snapshots must preserve allow_return governance");
   assert.match(serviceSource, /marketingTelegramButtons/, "marketing Telegram buttons must be generated centrally");
   assert.doesNotMatch(serviceSource, /sendTelegramNotification|api\.telegram\.org/, "marketing module must never call Telegram directly");

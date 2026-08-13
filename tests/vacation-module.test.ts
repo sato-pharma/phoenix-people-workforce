@@ -302,7 +302,7 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /fetchVacationEventsForRequests\(report\.rows\.map/);
   assert.doesNotMatch(serviceSource, /Promise\.all\(report\.rows\.map\(\(row\) => getVacationRequestTimeline/);
   assert.match(serviceSource, /Separation of duties requires a different HR or Super Admin actor/);
-  assert.match(serviceSource, /async function hasAlternateHrApprover\(excludeHrId: string \| null\)/);
+  assert.match(serviceSource, /async function hasAlternateHrApprover\(excludeHrId: string \| null \| undefined\)/);
   assert.match(serviceSource, /hr_self_acknowledged_sole_admin_exception/);
   assert.match(serviceSource, /const excludedGroup = sharedIdentityKeys\(excludeHrId\)/, "B-10 and PHX-1 must be treated as one identity for HR separation-of-duties");
   assert.match(serviceSource, /import \{ sharedIdentityKeys \} from "@\/lib\/auth\/identity-aliases"/, "the shared-identity group must come from the one system-wide primitive, not a local list");
