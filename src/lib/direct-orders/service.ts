@@ -11,7 +11,7 @@ import {
   type EmployeeDirectoryRow,
 } from "@/lib/employees/employee-directory";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
-import { validationError } from "@/lib/http/api-errors";
+import { ApiError, validationError } from "@/lib/http/api-errors";
 import { createSystemNotificationForRecipients, type SystemNotificationChannel } from "@/lib/notifications/system";
 import { logError } from "@/lib/observability/log";
 import { canonicalizeRegionName, resolveSalesAccessScope } from "@/lib/sales/access-scope";
@@ -19,6 +19,7 @@ import { listSourceOfSalesProducts, loadSalesReferenceData } from "@/lib/sales/m
 import { resolveRegionalManagerRegionCodes } from "@/lib/sales/portal-sos-dashboard";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { pingDirectOrderSheet } from "@/lib/direct-orders/sheet-webhook";
+import { summarizeDirectOrderBasket } from "@/lib/direct-orders/basket-label";
 import { canCancelHeldDirectOrder } from "@/lib/direct-orders/cancel-visibility";
 import { canViewDirectOrderEvidenceAiNote } from "@/lib/direct-orders/validation-visibility";
 import { getDirectOrderPharmacyValidationForRequest } from "@/lib/direct-orders/pharmacy-validation";
@@ -119,8 +120,10 @@ import {
   type DirectOrderPossibleDistributorMatch,
   type DirectOrderDealType,
   type DirectOrderDecision,
+  type DirectOrderContestedCodeClaim,
   type DirectOrderPharmacy,
   type DirectOrderPharmacyDistributorCode,
+  type DirectOrderPharmacyPreflight,
   type DirectOrderReportRow,
   type DirectOrderReportScope,
   type DirectOrderRequest,
@@ -573,6 +576,35 @@ export async function listMyDirectOrderPharmacies(access: AccessContext): Promis
   return pharmacies;
 }
 
+/**
+ * Read the contested-claim notes off a pharmacy row.
+ *
+ * Defensive on every field because this column is jsonb: it is one `execute_sql` away from holding
+ * whatever a future hand-repair puts there, and a malformed note must degrade to "no claim" rather
+ * than crash the pharmacy picker for everyone. A claim missing either half of its code pair says
+ * nothing and is dropped.
+ */
+function normalizeContestedCodeClaims(value: unknown): DirectOrderContestedCodeClaim[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const claim = entry as Record<string, unknown>;
+    const distributorCode = String(claim.distributorCode ?? "").trim();
+    const customerCode = String(claim.customerCode ?? "").trim();
+    if (!distributorCode || !customerCode) return [];
+    return [
+      {
+        distributorCode,
+        customerCode,
+        heldByPharmacyId: String(claim.heldByPharmacyId ?? "").trim(),
+        heldByPharmacyCode: String(claim.heldByPharmacyCode ?? "").trim(),
+        heldByPharmacyName: String(claim.heldByPharmacyName ?? "").trim(),
+        claimedAt: String(claim.claimedAt ?? "").trim(),
+      },
+    ];
+  });
+}
+
 function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
   return {
     id: String(row.id),
@@ -584,6 +616,7 @@ function mapPharmacyRow(row: Record<string, unknown>): DirectOrderPharmacy {
     doctorName: row.doctor_name ? String(row.doctor_name) : null,
     pharmacyAddress: row.pharmacy_address ? String(row.pharmacy_address) : null,
     distributorCodes: [],
+    contestedCodeClaims: normalizeContestedCodeClaims(row.contested_code_claims),
     geoVarianceResolved: row.geo_variance_resolved === true,
     verificationStatus: normalizePharmacyVerificationStatus(row.verification_status),
     entrySource: String(row.entry_source ?? "catalogue") === "manual" ? "manual" : "catalogue",
@@ -896,16 +929,24 @@ async function resolveCustomerCodeGeography(
   return mapByKey;
 }
 
-/** Child rows for a pharmacy's codes, each carrying whatever geography the customer map knew. */
+/**
+ * Child rows for a pharmacy's codes, each carrying whatever geography the customer map knew.
+ *
+ * `pharmacyId` is nullable because creation no longer knows it: the pharmacy and its codes are now
+ * written by one transactional RPC that assigns the id itself, so the create path builds these rows
+ * BEFORE the pharmacy exists. Every other caller is updating a pharmacy that already does, and
+ * passes its id as before. Building the rows in one place matters more than the null — the
+ * geography mapping below is the part that must never be written twice.
+ */
 function buildDistributorCodeRows(
-  pharmacyId: string,
+  pharmacyId: string | null,
   byDistributor: Map<string, string>,
   mapByKey: Map<string, { brick: string | null; area: string | null; region: string | null }>,
 ): Array<Record<string, unknown>> {
   return Array.from(byDistributor.entries()).map(([distributorCode, customerCode]) => {
     const mapped = mapByKey.get(`${distributorCode}::${customerCode}`);
     return {
-      pharmacy_id: pharmacyId,
+      ...(pharmacyId === null ? {} : { pharmacy_id: pharmacyId }),
       distributor_code: distributorCode,
       customer_code: customerCode,
       mapped_brick_id: mapped?.brick ?? null,
@@ -913,6 +954,81 @@ function buildDistributorCodeRows(
       mapped_region_code: mapped?.region ?? null,
     };
   });
+}
+
+export type DirectOrderCodeOwner = {
+  id: string;
+  phoenixPharmacyCode: string;
+  pharmacyName: string;
+  areaCode: string | null;
+  regionCode: string | null;
+  pharmacyAddress: string | null;
+  verificationStatus: DirectOrderPharmacy["verificationStatus"];
+};
+
+/**
+ * Keep only the rows that are an EXACT (distributor, customer code) pair from the request.
+ *
+ * Split out of the query below so it can be tested without a database, because getting it wrong is
+ * silent and expensive in the one direction that matters. PostgREST's two `.in()` filters are
+ * INDEPENDENT — `.in(distributor, [PS, IBN])` and `.in(customer, [111, 222])` also match PS/222 and
+ * IBN/111, which are pairs nobody asked about. Treating those as conflicts would refuse a code that
+ * is completely free, and the rep would be told her code belongs to a pharmacy that does not hold
+ * it. She would then invent one, which is exactly how "000000" reached production.
+ *
+ * Exported for the regression test only; the query is the sole caller.
+ */
+export function selectExactCodePairOwners(
+  byDistributor: Map<string, string>,
+  rows: Array<Record<string, unknown>>,
+): Map<string, DirectOrderCodeOwner> {
+  const owners = new Map<string, DirectOrderCodeOwner>();
+  for (const row of rows) {
+    const distributorCode = String(row.distributor_code ?? "");
+    const customerCode = String(row.customer_code ?? "");
+    if (byDistributor.get(distributorCode) !== customerCode) continue;
+    // PostgREST returns an embedded row as an object, but returns an ARRAY when it cannot prove the
+    // relationship is to-one. Both shapes have appeared here across schema-cache reloads, and the
+    // array shape used to read as "no owner" — which silently turns a real collision back into the
+    // failed insert this whole change exists to remove.
+    const embedded = row.direct_order_pharmacies;
+    const joined = (Array.isArray(embedded) ? embedded[0] : embedded) as Record<string, unknown> | null | undefined;
+    if (!joined?.id) continue;
+    owners.set(`${distributorCode}::${customerCode}`, {
+      id: String(joined.id),
+      phoenixPharmacyCode: String(joined.phoenix_pharmacy_code ?? ""),
+      pharmacyName: String(joined.pharmacy_name ?? ""),
+      areaCode: joined.area_code ? String(joined.area_code) : null,
+      regionCode: joined.region_code ? String(joined.region_code) : null,
+      pharmacyAddress: joined.pharmacy_address ? String(joined.pharmacy_address) : null,
+      verificationStatus: normalizePharmacyVerificationStatus(joined.verification_status),
+    });
+  }
+  return owners;
+}
+
+/**
+ * Which of these (distributor, customer code) pairs does another pharmacy already hold?
+ *
+ * The unique index on (distributor_code, customer_code) is the real guarantee; this is the lookup
+ * that lets us ASK about a collision instead of discovering it as a failed insert. That distinction
+ * is the whole fix: the insert used to fail after the parent row had already committed, leaving a
+ * codeless duplicate behind and telling the rep nothing had been created.
+ */
+async function findOwnedDistributorCodes(byDistributor: Map<string, string>): Promise<Map<string, DirectOrderCodeOwner>> {
+  if (byDistributor.size === 0) return new Map();
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("direct_order_pharmacy_distributor_codes")
+    .select(
+      "distributor_code, customer_code, pharmacy_id, direct_order_pharmacies!inner(id, phoenix_pharmacy_code, pharmacy_name, area_code, region_code, pharmacy_address, verification_status)",
+    )
+    .in("distributor_code", Array.from(byDistributor.keys()))
+    .in("customer_code", Array.from(byDistributor.values()));
+  if (error) throw error;
+
+  return selectExactCodePairOwners(byDistributor, (data ?? []) as Array<Record<string, unknown>>);
 }
 
 export async function createDirectOrderPharmacy(
@@ -925,6 +1041,15 @@ export async function createDirectOrderPharmacy(
     doctorName?: string | null;
     pharmacyAddress?: string | null;
     distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
+    /**
+     * The submitter was shown the pharmacy that already holds a code they typed, and answered that
+     * theirs is a DIFFERENT pharmacy.
+     *
+     * Without this the call is refused (by name, naming the incumbent) so the question is always
+     * asked before a second pharmacy is registered against a code. With it the pharmacy is created
+     * and the contested code is recorded — but never claimed. See the fork below.
+     */
+    acknowledgedCodeConflict?: boolean;
   },
 ): Promise<DirectOrderPharmacy> {
   await assertPermission(access, "direct_orders", "create");
@@ -948,8 +1073,67 @@ export async function createDirectOrderPharmacy(
   const byDistributor = normalizeDistributorCodePairs(input.distributorCodes, await distributorNameResolver());
 
   const supabase = getSupabaseAdmin();
+
+  // ── The code-collision fork (owner, 2026-08-13) ──────────────────────────────────────────────
+  //
+  // ASK before writing, instead of discovering the collision as a failed insert. The old order of
+  // events was: insert the pharmacy (commits), insert the codes (23505), throw. The rep was told
+  // "Could not create the pharmacy." while a codeless duplicate of it sat in the table — and that
+  // orphan is invisible to BOTH dedupe passes, because the code pass needs a code on each side and
+  // the name pass only considers pharmacies with none on either. Staging DOP-000014 is the proof.
+  //
+  // What follows deliberately does NOT relax the unique index. One customer code belongs to one
+  // pharmacy; that is what keeps a distributor's customer from being attributed twice, and it is
+  // the only reason this was catchable at all.
+  const owners = await findOwnedDistributorCodes(byDistributor);
+  const distributorNameOf = await distributorNameResolver();
+  if (owners.size > 0 && input.acknowledgedCodeConflict !== true) {
+    // Refuse BY NAME, not with the generic fallback. The API is reachable directly, so this
+    // message is the only thing a caller outside the form ever sees — it has to say which code,
+    // which pharmacy holds it, and what the two possible answers are.
+    const described = Array.from(owners.entries())
+      .map(([key, owner]) => {
+        const [distributorCode, customerCode] = key.split("::");
+        return `${distributorNameOf(distributorCode)} ${customerCode} already belongs to ${owner.phoenixPharmacyCode} ("${owner.pharmacyName}")`;
+      })
+      .join("; ");
+    badRequest(
+      `${described}. If that is the same pharmacy, use it instead of registering a second one. ` +
+        "If it is genuinely a different pharmacy, confirm that and it will be registered without " +
+        "the code, for a reviewer to settle.",
+    );
+  }
+
+  // The submitter said "different pharmacy". Keep the claim as EVIDENCE and register without it.
+  //
+  // Refusing instead was the option already known to be wrong here: it does not produce a correct
+  // code, it produces an invented one (owner rule, 2026-08-04). Production carries the proof —
+  // "حضانه زمزم" holds "000000" on one row and "00000" on another, which are two different strings
+  // to the unique index and therefore never collided with anything.
+  const contestedCodeClaims: DirectOrderContestedCodeClaim[] = Array.from(owners.entries()).map(([key, owner]) => {
+    const [distributorCode, customerCode] = key.split("::");
+    return {
+      distributorCode,
+      customerCode,
+      heldByPharmacyId: owner.id,
+      heldByPharmacyCode: owner.phoenixPharmacyCode,
+      heldByPharmacyName: owner.pharmacyName,
+      claimedAt: new Date().toISOString(),
+    };
+  });
+  // Only the free codes are actually claimed. A contested pair is dropped from the insert entirely,
+  // so the incumbent keeps it and the unique index is never even tested.
+  const claimablePairs = new Map(
+    Array.from(byDistributor.entries()).filter(([distributorCode, customerCode]) => !owners.has(`${distributorCode}::${customerCode}`)),
+  );
+
+  // Resolve each (distributor, customer code) → brick via the customer map (best-effort).
+  const mapByKey = await resolveCustomerCodeGeography(claimablePairs);
+
   // Every hand-registered pharmacy starts UNRECOGNISED, and the row says so from the first insert
   // rather than being corrected a moment later (owner rule, 2026-08-04 — "the three situations").
+  // The RPC pins `pending_review`/`manual` itself so no caller can register a pre-approved
+  // pharmacy by passing different values.
   //
   // This is the whole rule in one line, and it is stricter than deriving the state from the codes
   // alone on purpose. Reaching this function AT ALL means the submitter could not find the
@@ -961,9 +1145,12 @@ export async function createDirectOrderPharmacy(
   //
   // Picking an existing pharmacy from the list never calls this function, so an ordinary request
   // is unaffected: it keeps the plain SFE → management → CEO chain.
-  const { data: pharmacyRow, error } = await supabase
-    .from("direct_order_pharmacies")
-    .insert({
+  //
+  // ONE TRANSACTION. phx_create_direct_order_pharmacy writes the pharmacy and its code rows in a
+  // single plpgsql body, so a failure on the codes rolls the pharmacy back with it. Two client
+  // inserts could not do that, and the half-success is what created the orphan.
+  const { data: created, error } = await supabase.rpc("phx_create_direct_order_pharmacy", {
+    p_pharmacy: {
       pharmacy_name: name,
       brick_id: input.brickId ?? null,
       area_code: input.areaCode ?? null,
@@ -971,35 +1158,37 @@ export async function createDirectOrderPharmacy(
       doctor_name: doctorName,
       pharmacy_address: pharmacyAddress,
       created_by_hr_id: access.hrId,
-      verification_status: "pending_review",
-      entry_source: "manual",
-    })
-    .select("*")
-    .single();
+      contested_code_claims: contestedCodeClaims,
+    },
+    p_codes: buildDistributorCodeRows(null, claimablePairs, mapByKey),
+  });
   if (error) throw error;
-  const pharmacyId = String((pharmacyRow as Record<string, unknown>).id);
-
-  // Resolve each (distributor, customer code) → brick via the customer map (best-effort).
-  const mapByKey = await resolveCustomerCodeGeography(byDistributor);
-  if (byDistributor.size > 0) {
-    const { error: childError } = await supabase
-      .from("direct_order_pharmacy_distributor_codes")
-      .insert(buildDistributorCodeRows(pharmacyId, byDistributor, mapByKey));
-    if (childError) throw childError;
+  const pharmacyRow = (Array.isArray(created) ? created[0] : created) as Record<string, unknown> | null;
+  // Not a user mistake — the RPC reported no error, so an empty/malformed row is a backend anomaly.
+  // ApiError instances pass through toApiError untouched, so this reaches the caller as an honest
+  // 500 rather than one that only happens to classify that way because no keyword pattern matched.
+  if (!pharmacyRow?.id) {
+    throw new ApiError(500, "internal_error", "phx_create_direct_order_pharmacy returned no pharmacy row.");
   }
+  const pharmacyId = String(pharmacyRow.id);
 
   // Record WHY this pharmacy is awaiting review, in the reviewer's own terms. The state itself is
   // already decided (every hand-registered pharmacy waits); this is the audit trail that tells the
   // System Admin what to actually check, which is a different question for each situation.
-  const unresolved = Array.from(byDistributor.entries()).filter(
+  const unresolved = Array.from(claimablePairs.entries()).filter(
     ([distributorCode, customerCode]) => !mapByKey.has(`${distributorCode}::${customerCode}`),
   );
+  // A contested claim outranks the other reasons in the reviewer's queue: the other two say a code
+  // could not be confirmed, this one says a human looked at the pharmacy holding it and disagreed.
+  // That is a decision waiting to be made, not a gap waiting to be filled.
   const reviewReason =
-    byDistributor.size === 0
-      ? "no distributor or customer code was given"
-      : unresolved.length > 0
-        ? `${unresolved.length} customer code(s) are not in the distributor's own list`
-        : "the pharmacy was typed in by hand rather than picked from Phoenix";
+    contestedCodeClaims.length > 0
+      ? `${contestedCodeClaims.length} code(s) are claimed by another pharmacy and the submitter says this is a different one`
+      : claimablePairs.size === 0
+        ? "no distributor or customer code was given"
+        : unresolved.length > 0
+          ? `${unresolved.length} customer code(s) are not in the distributor's own list`
+          : "the pharmacy was typed in by hand rather than picked from Phoenix";
 
   await writeRequiredAuditLog({
     actorLoginId: access.loginId ?? access.hrId,
@@ -1010,6 +1199,9 @@ export async function createDirectOrderPharmacy(
       entrySource: "manual",
       reviewReason,
       unrecognisedPairs: unresolved.map(([distributorCode, customerCode]) => `${distributorCode}:${customerCode}`),
+      contestedCodeClaims: contestedCodeClaims.map(
+        (claim) => `${claim.distributorCode}:${claim.customerCode} held by ${claim.heldByPharmacyCode}`,
+      ),
     },
     summary: `Direct-order pharmacy "${name}" registered by hand — awaiting SFE validation and System Admin acknowledgment (${reviewReason}).`,
   });
@@ -1034,6 +1226,158 @@ export async function createDirectOrderPharmacy(
   const correctedName = String((afterRow as { pharmacy_name?: string } | null)?.pharmacy_name ?? "").trim();
   if (correctedName) pharmacy.pharmacyName = correctedName;
   return pharmacy;
+}
+
+/**
+ * What the form asks BEFORE registering a pharmacy by hand (owner, 2026-08-13).
+ *
+ * Two questions, and neither is a block:
+ *
+ *  1. CODE ALREADY OWNED. The pair they typed belongs to another pharmacy. Until now this surfaced
+ *     as a failed insert AFTER the pharmacy row had committed, so the rep read "Could not create
+ *     the pharmacy" and retried — leaving a codeless duplicate behind on every attempt.
+ *
+ *  2. SAME NAME IN THEIR REGION. Asked when they gave NO code, which is precisely when nothing
+ *     else can catch a duplicate: `groupDuplicatePharmacies` matches on codes, so a pharmacy with
+ *     none is invisible to it, and the name+area pass only fires when BOTH sides are codeless.
+ *     Production shows what that costs — "السيد ابوالفتوح" exists twice in D11, once codeless and
+ *     once holding PS/0001556836, and no pass will ever propose the pair.
+ *
+ * The name search covers the master DIRECTORY as well as Phoenix's own pharmacies, which is the
+ * half the client-side suggestion was missing. In the staging case that started this, the real
+ * pharmacy was sitting in the directory the whole time as PS/0001544640 in the rep's own area —
+ * she could not see it, so she typed a code by hand. Showing the distributor and its code is what
+ * makes the answer decidable: a name alone does not tell anyone which pharmacy this is.
+ *
+ * Scoped to REGION rather than area on the owner's instruction. A rep works one area but a
+ * pharmacy sits wherever the brick says, and an over-broad suggestion costs nothing — it is a
+ * question, and "no" is always available.
+ */
+export async function checkDirectOrderPharmacyBeforeCreate(
+  access: AccessContext,
+  input: {
+    pharmacyName: string;
+    areaCode?: string | null;
+    regionCode?: string | null;
+    distributorCodes: Array<{ distributorCode: string; customerCode: string }>;
+  },
+): Promise<DirectOrderPharmacyPreflight> {
+  await assertPermission(access, "direct_orders", "create");
+  const name = String(input.pharmacyName ?? "").trim();
+  const distributorNameOf = await distributorNameResolver();
+  const geoMaps = await loadDirectOrderGeoNames();
+
+  // Only well-formed pairs are checked. A half-filled row is the normalizer's refusal to make, not
+  // this function's — running it here would refuse during type-ahead, before the rep has finished.
+  const pairs = (input.distributorCodes ?? [])
+    .map((pair) => ({
+      distributorCode: String(pair.distributorCode ?? "").trim(),
+      customerCode: String(pair.customerCode ?? "").trim(),
+    }))
+    .filter((pair) => pair.distributorCode && pair.customerCode);
+  const byDistributor = new Map(pairs.map((pair) => [pair.distributorCode, pair.customerCode]));
+
+  const owners = await findOwnedDistributorCodes(byDistributor);
+  const codeConflicts: DirectOrderPharmacyPreflight["codeConflicts"] = Array.from(owners.entries()).map(([key, owner]) => {
+    const [distributorCode, customerCode] = key.split("::");
+    return {
+      distributorCode,
+      customerCode,
+      distributorName: distributorNameOf(distributorCode),
+      heldBy: {
+        id: owner.id,
+        phoenixPharmacyCode: owner.phoenixPharmacyCode,
+        pharmacyName: owner.pharmacyName,
+        areaCode: owner.areaCode,
+        areaName: owner.areaCode ? geoMaps.areaNameByCode.get(owner.areaCode) ?? "" : "",
+        regionCode: owner.regionCode,
+        regionName: owner.regionCode ? geoMaps.regionNameByCode.get(owner.regionCode) ?? "" : "",
+        pharmacyAddress: owner.pharmacyAddress,
+        verificationStatus: owner.verificationStatus,
+      },
+    };
+  });
+
+  // The name question is only worth asking when there is no code to answer it with. A pharmacy that
+  // came with a code has already been identified by the strongest evidence there is.
+  if (name.length < 2 || byDistributor.size > 0) return { codeConflicts, nameMatches: [] };
+
+  // Resolve the rep's region from whatever the form has so far: the region it sent, else the region
+  // that owns the area it sent. Without either there is nothing to scope to, and an unscoped name
+  // search across the country would suggest strangers.
+  const { areas } = await listDirectOrderAreaAndBrickOptions(access);
+  const areaCode = String(input.areaCode ?? "").trim().toUpperCase();
+  const regionCode =
+    String(input.regionCode ?? "").trim().toUpperCase() ||
+    (areaCode ? String(areas.find((area) => area.areaCode.toUpperCase() === areaCode)?.regionCode ?? "").toUpperCase() : "");
+  if (!regionCode) return { codeConflicts, nameMatches: [] };
+
+  const hits = await searchDirectOrderPharmacyDirectory(access, { query: name, limit: 60 });
+  const nameMatches = hits
+    .filter((hit) => String(hit.regionCode ?? "").toUpperCase() === regionCode)
+    .map((hit) => ({
+      source: hit.source,
+      pharmacyName: hit.customerName ?? hit.phoenixPharmacyCode ?? hit.customerCode ?? "",
+      distributorCode: hit.distributorCode,
+      distributorName: hit.distributorCode ? distributorNameOf(hit.distributorCode) : "",
+      customerCode: hit.customerCode,
+      phoenixPharmacyCode: hit.phoenixPharmacyCode,
+      areaCode: hit.areaCode,
+      areaName: hit.areaName,
+      regionCode: hit.regionCode,
+      regionName: hit.regionName,
+      pharmacyAddress: hit.address,
+    }))
+    .slice(0, 8);
+
+  return { codeConflicts, nameMatches };
+}
+
+/**
+ * The rep's own pharmacies, ready to pick again (owner, 2026-08-13).
+ *
+ * "Previously approved" reads two ways and both are the same intent — a pharmacy this person has
+ * already put through successfully — so both count: one they registered that a reviewer has since
+ * VERIFIED, or any pharmacy carrying an APPROVED order of theirs (including ones they picked from
+ * the catalogue, which they never "created" at all and which `listMyDirectOrderPharmacies` cannot
+ * see because it filters on created_by_hr_id).
+ *
+ * The point is to remove the reason duplicates get typed in the first place. Every duplicate in
+ * production was a rep re-entering a pharmacy they had already used — often the same day.
+ *
+ * Deliberately excludes `pending_review` and `rejected`: offering an unsettled pharmacy as a
+ * one-click choice would spread the very records the cleanup desk is trying to resolve.
+ */
+export async function listMyApprovedDirectOrderPharmacies(access: AccessContext): Promise<DirectOrderPharmacy[]> {
+  await assertPermission(access, "direct_orders", "read");
+  const supabase = getSupabaseAdmin();
+
+  const { data: orderRows, error: orderError } = await supabase
+    .from("direct_order_requests")
+    .select("pharmacy_id")
+    .eq("requester_hr_id", access.hrId)
+    .eq("status", "approved");
+  if (orderError) throw orderError;
+  const fromApprovedOrders = new Set(
+    ((orderRows ?? []) as Array<Record<string, unknown>>).map((row) => String(row.pharmacy_id ?? "")).filter(Boolean),
+  );
+
+  const { data: mineRows, error: mineError } = await supabase
+    .from("direct_order_pharmacies")
+    .select("*")
+    .eq("active", true)
+    .eq("verification_status", "verified")
+    .or(
+      fromApprovedOrders.size > 0
+        ? `created_by_hr_id.eq.${access.hrId},id.in.(${Array.from(fromApprovedOrders).join(",")})`
+        : `created_by_hr_id.eq.${access.hrId}`,
+    )
+    .order("pharmacy_name", { ascending: true });
+  if (mineError) throw mineError;
+
+  const pharmacies = ((mineRows ?? []) as Array<Record<string, unknown>>).map(mapPharmacyRow);
+  await attachDistributorCodes(pharmacies);
+  return pharmacies;
 }
 
 /**
@@ -2075,18 +2419,20 @@ export async function listHeldDirectOrders(access: AccessContext): Promise<HeldD
   }
 
   const now = Date.now();
+  const itemsByRequest = await loadDirectOrderItemsForRequests(requests.map((r) => r.id));
   return requests.map((request) => {
     const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
     const heldAtMs = request.heldAt ? Date.parse(request.heldAt) : now;
     const elapsedDays = Math.floor((now - heldAtMs) / (24 * 60 * 60 * 1000));
     const decision = decisionByPharmacy.get(request.pharmacyId) ?? null;
+    const basket = summarizeDirectOrderBasket(request, itemsByRequest.get(request.id));
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
       requesterName: resolveName(request.requesterHrId) ?? request.requesterHrId,
       requesterRole: request.requesterRole,
-      productName: request.productName,
-      qty: request.qty,
+      productName: basket.productName,
+      qty: basket.qty,
       salesValue: request.salesValue,
       pharmacyId: request.pharmacyId,
       pharmacyName: pharmacy?.pharmacyName ?? "(pharmacy missing)",
@@ -4242,16 +4588,23 @@ function toApprovalListItem(
   bonusOverCap: boolean,
   geo: DirectOrderPharmacyGeo,
   rep: AreaRepAssignment | null,
+  items?: readonly DirectOrderRequestItem[],
 ): DirectOrderApprovalListItem {
   const medicalRep = toDirectOrderAreaRep(rep);
+  // A basket's `salesValue` covers every line, so naming only line 1 puts one product's name beside
+  // two products' money — reported by the owner 2026-08-13 against an approved LA001+LA002 order
+  // that read "Lacto Advanced 1 × 72" beside 25,344 EGP. Callers that do not load items still get
+  // exactly the old single-product output.
+  const basket = summarizeDirectOrderBasket(request, items);
   return {
     id: request.id,
     requesterHrId: request.requesterHrId,
     requesterName: requesterName ?? request.requesterHrId,
     requesterRole: request.requesterRole,
     line: request.line,
-    productName: request.productName,
-    qty: request.qty,
+    productName: basket.productName,
+    qty: basket.qty,
+    items: basket.lines,
     bonus: request.bonus,
     dealType: request.dealType,
     discountPct: request.discountPct,
@@ -4361,6 +4714,9 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
   const nameOf = await nameLookup();
   const caps = await loadDirectOrderCaps();
   const decorations = await loadListDecorations(allRequests, pharmacies, nameOf);
+  // One batched read for all three lists, alongside the four this already does. Without it every
+  // basket on this screen names line 1 only against the whole basket's value.
+  const itemsByRequest = await loadDirectOrderItemsForRequests(allRequests.map((r) => r.id));
 
   const awaiting: DirectOrderApprovalListItem[] = [];
   for (const request of pending) {
@@ -4375,6 +4731,7 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
         isRequestOverCap(request, caps),
         decorations.geoFor(request),
         decorations.repFor(request),
+        itemsByRequest.get(request.id),
       ),
     );
   }
@@ -4387,6 +4744,7 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
       isRequestOverCap(request, caps),
       decorations.geoFor(request),
       decorations.repFor(request),
+      itemsByRequest.get(request.id),
     ),
   );
   // A held/expired request has no chain yet (it enters at step 1 only after its pharmacy passes
@@ -4401,6 +4759,7 @@ export async function getDirectOrderWorkspaceData(access: AccessContext): Promis
       isRequestOverCap(request, caps),
       decorations.geoFor(request),
       decorations.repFor(request),
+      itemsByRequest.get(request.id),
     ),
   );
   return { awaiting, history, held };
@@ -4487,6 +4846,7 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
   const nameOf = await nameLookup();
   const caps = await loadDirectOrderCaps();
   const decorations = await loadListDecorations(requests, pharmacies, nameOf);
+  const itemsByRequest = await loadDirectOrderItemsForRequests(requests.map((r) => r.id));
   return requests.map((request) =>
     toApprovalListItem(
       request,
@@ -4496,6 +4856,7 @@ export async function listMyDirectOrders(access: AccessContext): Promise<DirectO
       isRequestOverCap(request, caps),
       decorations.geoFor(request),
       decorations.repFor(request),
+      itemsByRequest.get(request.id),
     ),
   );
 }
@@ -5420,18 +5781,23 @@ export async function listDirectOrderOperationalPage(
  */
 async function decorateDirectOrderPage(requests: DirectOrderRequest[]): Promise<DirectOrderQueueRow[]> {
   if (requests.length === 0) return [];
-  const [pharmacies, nameOf, geo] = await Promise.all([
+  const [pharmacies, nameOf, geo, itemsByRequest] = await Promise.all([
     loadPharmaciesByIds(requests.map((r) => r.pharmacyId)),
     nameLookup(),
     loadDirectOrderGeoNames(),
+    loadDirectOrderItemsForRequests(requests.map((r) => r.id)),
   ]);
   return requests.map((request) => {
     const pharmacy = pharmacies.get(request.pharmacyId) ?? null;
+    // Same rule as the report and the approvals list — one page's worth of items, read in the same
+    // parallel batch as the other three, so a basket names every product it charged for.
+    const basket = summarizeDirectOrderBasket(request, itemsByRequest.get(request.id));
     return {
       id: request.id,
       requesterName: nameOf(request.requesterHrId) ?? request.requesterHrId,
-      productName: request.productName,
-      qty: request.qty,
+      productName: basket.productName,
+      qty: basket.qty,
+      items: basket.lines,
       pharmacyName: pharmacy?.pharmacyName ?? "—",
       pharmacyCode: pharmacy?.phoenixPharmacyCode ?? "—",
       // `medicalRepName` is deliberately LEFT UNSET, not set to a placeholder. Resolving the
@@ -5724,6 +6090,10 @@ export async function getDirectOrderReport(
     // a mixed-deal basket has no single discount to report — the order's own screen shows each line.
     const items = itemsByRequest.get(request.id) ?? [];
     const isBasket = items.length > 1;
+    // The composition rule itself lives in basket-label.ts — the report defined it first, and the
+    // approvals list, Orders list, Held Desk and exception desk now read the same function rather
+    // than each carrying a copy. Output here is unchanged: same join, same sum.
+    const basket = summarizeDirectOrderBasket(request, items);
     return {
       id: request.id,
       requesterHrId: request.requesterHrId,
@@ -5731,10 +6101,10 @@ export async function getDirectOrderReport(
       requesterRole: request.requesterRole,
       status: request.status,
       line: request.line,
-      productCode: isBasket ? items.map((item) => item.productCode).join(" + ") : request.productCode,
-      productName: isBasket ? items.map((item) => item.productName).join(" + ") : request.productName,
+      productCode: basket.productCode,
+      productName: basket.productName,
       pharmacyPriceSnapshot: request.pharmacyPriceSnapshot,
-      qty: isBasket ? items.reduce((total, item) => total + item.qty, 0) : request.qty,
+      qty: basket.qty,
       bonus: isBasket ? items.reduce((total, item) => total + item.bonus, 0) : request.bonus,
       bonusOverrideReason: request.bonusOverrideReason,
       dealType: request.dealType,
@@ -7030,6 +7400,9 @@ export async function listDirectOrderApprovalExceptions(
     Array.from(requests.values()).map((request) => request.pharmacyId),
   );
   const resolveName = await nameLookup();
+  const itemsByRequest = await loadDirectOrderItemsForRequests(
+    Array.from(requests.values()).map((request) => request.id),
+  );
   const now = Date.now();
 
   const rows: DirectOrderApprovalExceptionRow[] = [];
@@ -7044,6 +7417,7 @@ export async function listDirectOrderApprovalExceptions(
     const suggested = requester?.managerHrId ? lookup(requester.managerHrId) : null;
 
     const createdAt = request.createdAt ? new Date(request.createdAt).getTime() : null;
+    const basket = summarizeDirectOrderBasket(request, itemsByRequest.get(request.id));
     rows.push({
       requestId: request.id,
       stepId: String(step.id),
@@ -7053,8 +7427,8 @@ export async function listDirectOrderApprovalExceptions(
       requesterHrId: request.requesterHrId,
       requesterName: resolveName(request.requesterHrId) ?? request.requesterHrId,
       requesterRole: request.requesterRole,
-      productName: request.productName,
-      qty: request.qty,
+      productName: basket.productName,
+      qty: basket.qty,
       salesValue: request.salesValue,
       pharmacyName: pharmacies.get(request.pharmacyId)?.pharmacyName ?? "—",
       createdAt: request.createdAt,

@@ -98,6 +98,7 @@ function detail(overrides: Partial<DirectOrderApprovalDetail> = {}): DirectOrder
       doctorName: "Dr Nour",
       pharmacyAddress: "12 El Merghany Street, Heliopolis, Cairo",
       distributorCodes: [],
+      contestedCodeClaims: [],
       geoVarianceResolved: false,
       verificationStatus: "verified",
       entrySource: "catalogue",
@@ -881,31 +882,30 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const createBody = serviceSource.slice(createIdx, serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(", createIdx));
     assert.match(
       createBody,
-      /const unresolved = Array\.from\(byDistributor\.entries\(\)\)\.filter\(/,
+      /const unresolved = Array\.from\(claimablePairs\.entries\(\)\)\.filter\(/,
       "the review REASON must still be derived by checking each code against the customer map",
     );
-    assert.match(createBody, /verification_status: "pending_review"/, "a hand-registered pharmacy must be flagged");
+    // pending_review/entry_source used to be set in a client-side INSERT here; the code-collision
+    // fix (3ec5c640) moved pharmacy creation onto the atomic phx_create_direct_order_pharmacy RPC,
+    // which pins both values itself so no caller can supply anything else (asserted against the
+    // migration SQL by direct-orders-pharmacy-code-collision.test.ts). What this test can still
+    // check from the TS side is that creation actually goes through that RPC.
+    assert.match(
+      createBody,
+      /supabase\.rpc\("phx_create_direct_order_pharmacy"/,
+      "a hand-registered pharmacy must be created through the atomic RPC, which pins pending_review/manual itself",
+    );
+    assert.doesNotMatch(
+      createBody,
+      /\.from\("direct_order_pharmacies"\)\s*\.insert\(/,
+      "pharmacy creation must not go through a direct client-side insert — that is what produced the orphan row",
+    );
     // …and must NEVER block the submission.
     assert.doesNotMatch(
       createBody,
       /unresolved[\s\S]{0,200}badRequest/,
       "an unrecognised code must flag the pharmacy, never block the request",
     );
-
-    // ── All THREE situations, not just the unrecognised code (owner rule, 2026-08-04) ────────
-    //
-    // The flag is set ON THE INSERT, unconditionally. Reaching createDirectOrderPharmacy means
-    // the submitter could not find the pharmacy in Phoenix and typed it in — which is situation 1
-    // and subsumes the other two. Deriving it from the codes instead would let a hand-typed
-    // pharmacy whose code happened to collide with a real one skip review altogether.
-    const insertIdx = createBody.indexOf('.from("direct_order_pharmacies")');
-    const insertBlock = createBody.slice(insertIdx, createBody.indexOf(".single();", insertIdx));
-    assert.match(
-      insertBlock,
-      /verification_status: "pending_review"/,
-      "the pending_review flag must be part of the INSERT, not a conditional update after it",
-    );
-    assert.match(insertBlock, /entry_source: "manual"/, "a hand-registered pharmacy must record how it got here");
 
     // Situation 3 — no distributor and no code at all — must be accepted. This is the refusal
     // the owner had removed; if it comes back, a submitter who does not know the code is stuck
@@ -920,10 +920,14 @@ export function runDirectOrdersApprovalDetailNamesTests() {
       /byDistributor\.size === 0[\s\S]{0,120}badRequest/,
       "an empty distributor list must never refuse the registration",
     );
-    // With no codes there is nothing to look up, and `.in(col, [])` is not a safe no-op.
+    // With no codes there is nothing to look up, and `.in(col, [])` is not a safe no-op. This guard
+    // used to sit at the createDirectOrderPharmacy call site; the code-collision fix (3ec5c640)
+    // moved it inside resolveCustomerCodeGeography itself, which every caller now goes through.
+    const resolveGeoIdx = serviceSource.indexOf("async function resolveCustomerCodeGeography(");
+    const resolveGeoBody = serviceSource.slice(resolveGeoIdx, serviceSource.indexOf("\n}", resolveGeoIdx));
     assert.match(
-      createBody,
-      /if \(byDistributor\.size > 0\) \{/,
+      resolveGeoBody,
+      /if \(byDistributor\.size === 0\) return mapByKey;/,
       "the customer-map lookup must be skipped entirely when no codes were given",
     );
 
@@ -1520,7 +1524,7 @@ export function runDirectOrdersApprovalDetailNamesTests() {
     const createBody = serviceSource.slice(createIdx, serviceSource.indexOf("export async function acknowledgeDirectOrderPharmacy(", createIdx));
     assert.match(
       createBody,
-      /verification_status: "pending_review"/,
+      /supabase\.rpc\("phx_create_direct_order_pharmacy"/,
       "the order form must keep flagging what it creates, whatever the registry does",
     );
     assert.doesNotMatch(

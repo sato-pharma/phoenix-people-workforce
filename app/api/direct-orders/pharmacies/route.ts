@@ -38,8 +38,17 @@ export async function POST(request: Request) {
       doctorName?: string | null;
       pharmacyAddress?: string | null;
       distributorCodes?: Array<{ distributorCode?: string; customerCode?: string }>;
+      /**
+       * The submitter was shown the pharmacy that already holds a code they typed, and answered
+       * that theirs is a different one. Without it a collision is refused BY NAME (naming the
+       * incumbent) instead of half-creating a codeless duplicate the way it used to. The service
+       * re-checks the conflict itself, so this flag can only ever add the recorded dispute — it
+       * can never skip the check.
+       */
+      acknowledgedCodeConflict?: boolean;
     };
     const pharmacy = await createDirectOrderPharmacy(access, {
+      acknowledgedCodeConflict: body.acknowledgedCodeConflict === true,
       pharmacyName: String(body.pharmacyName ?? "").trim(),
       brickId: body.brickId ?? null,
       areaCode: body.areaCode ?? null,

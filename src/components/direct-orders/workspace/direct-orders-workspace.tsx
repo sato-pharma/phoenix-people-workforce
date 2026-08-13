@@ -433,9 +433,21 @@ function OrderRow({
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-slate-900">
-              {row.productName} × {row.qty.toLocaleString("en-US")}
-            </p>
+            {/* ONE LINE PER PRODUCT on a basket, never a joined string. The value on the right is
+                the WHOLE basket, so a lone "Lacto Advanced 1 × 72" beside 25,344 EGP named one
+                product against two products' money (owner, 2026-08-13). Joining the names would
+                only make the string longer than the row and hand it straight back to `truncate` —
+                and an ellipsis is precisely what must never happen here. Each product gets its own
+                line instead, so the row grows by one line rather than hiding a product.
+                The fallback covers a row built before `items` existed, and any hand-built row. */}
+            {(row.items ?? [{ productCode: "", productName: row.productName, qty: row.qty }]).map((item, index) => (
+              <p
+                key={`${item.productCode || item.productName}-${index}`}
+                className="truncate text-sm font-bold text-slate-900"
+              >
+                {item.productName} × {item.qty.toLocaleString("en-US")}
+              </p>
+            ))}
             <p className="truncate text-[11px] text-slate-500">
               {row.requesterName} · {row.pharmacyName}
             </p>

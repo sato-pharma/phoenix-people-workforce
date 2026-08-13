@@ -24,6 +24,7 @@ import type {
   DirectOrderApprovalListItem,
   DirectOrderDealType,
   DirectOrderPharmacy,
+  DirectOrderPharmacyPreflight,
 } from "@/lib/direct-orders/types";
 
 type ProductOption = {
@@ -96,9 +97,14 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   const [overrideReason, setOverrideReason] = useState("");
   const [collectionDate, setCollectionDate] = useState("");
 
-  // "picked" = chosen from the combo box (the normal path — spec B1); "new" = the explicit
-  // "not in the database" fallback, which will wait for pharmacy validation.
-  const [pharmacyMode, setPharmacyMode] = useState<"picked" | "new">("picked");
+  // "mine" = the rep's own already-approved pharmacies (owner, 2026-08-13) — the fastest correct
+  // answer, and the one that removes the reason duplicates get typed at all; "picked" = chosen from
+  // the combo box (the normal path — spec B1); "new" = the explicit "not in the database" fallback,
+  // which will wait for pharmacy validation.
+  const [pharmacyMode, setPharmacyMode] = useState<"mine" | "picked" | "new">("picked");
+  const [myPharmacies, setMyPharmacies] = useState<DirectOrderPharmacy[] | null>(null);
+  const [myPharmaciesError, setMyPharmaciesError] = useState(false);
+  const [pickedMine, setPickedMine] = useState<DirectOrderPharmacy | null>(null);
   const [pickedHit, setPickedHit] = useState<PharmacySearchHit | null>(null);
   const [newName, setNewName] = useState("");
   const [newAreaCode, setNewAreaCode] = useState("");
@@ -129,47 +135,153 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   // it, or simply continuing to type, does nothing at all: the rep can still register a genuinely
   // new pharmacy exactly as before. That is the same design principle as the optional distributor
   // code (owner rule 2026-08-04) — never cost a rep the ability to keep working.
-  const [nameMatches, setNameMatches] = useState<PharmacySearchHit[]>([]);
+  // 2026-08-13, second pass. The first version of this asked the SERVER nothing and looked only at
+  // Phoenix's own pharmacies in the SAME AREA. Both limits hid the case that started this:
+  //
+  //   · The directory was excluded, yet the real "ابراهيم احمد الجديدة" was sitting in it the whole
+  //     time as PS/0001544640 in the rep's own area. She could not see it, so she typed a code by
+  //     hand — and that invented code is what collided.
+  //   · A name alone does not identify a pharmacy. The owner's instruction is to show the
+  //     distributor and its customer code beside every candidate, so the answer is decidable.
+  //   · Area was too narrow; the scope is now the submitter's REGION.
+  //
+  // And the question it could never ask at all: is the CODE already taken? That one used to surface
+  // as "Could not create the pharmacy." AFTER a codeless duplicate had already been committed.
+  const [preflight, setPreflight] = useState<DirectOrderPharmacyPreflight>({ codeConflicts: [], nameMatches: [] });
   const [nameMatchDismissed, setNameMatchDismissed] = useState(false);
-  const nameMatchSeq = useRef(0);
+  /**
+   * The submitter answered "no, mine is a different pharmacy" to a code collision.
+   *
+   * Sent to the server, which re-checks the collision itself and records the contested claim rather
+   * than trusting this flag. It can only ever ADD the dispute — it can never skip the check.
+   */
+  const [acknowledgedCodeConflict, setAcknowledgedCodeConflict] = useState(false);
+  const preflightSeq = useRef(0);
+
+  const distRowsKey = distRows.map((row) => `${row.distributorCode}:${row.customerCode}`).join("|");
 
   useEffect(() => {
     // Every setState lives inside the scheduled callback, matching the combo box's own debounced
     // effect (pharmacy-combo-box.tsx) — never a bare setState in the effect body.
     const name = newName.trim();
-    const area = newAreaCode.trim();
-    const mySeq = ++nameMatchSeq.current;
-    if (pharmacyMode !== "new" || name.length < 2 || !area) {
+    const mySeq = ++preflightSeq.current;
+    if (pharmacyMode !== "new" || name.length < 2) {
       const timer = setTimeout(() => {
-        if (nameMatchSeq.current !== mySeq) return;
-        setNameMatches([]);
+        if (preflightSeq.current !== mySeq) return;
+        setPreflight({ codeConflicts: [], nameMatches: [] });
       }, 0);
       return () => clearTimeout(timer);
     }
     const timer = setTimeout(async () => {
-      if (nameMatchSeq.current !== mySeq) return;
-      // A fresh name or area deserves a fresh chance to suggest, even if an earlier suggestion
-      // (for different text) was dismissed.
+      if (preflightSeq.current !== mySeq) return;
+      // A fresh name, area or code deserves a fresh chance to ask, even if an earlier suggestion
+      // (for different text) was dismissed. The same applies to the conflict acknowledgement: it
+      // answers ONE specific collision, so changing the codes must retract it.
       setNameMatchDismissed(false);
+      setAcknowledgedCodeConflict(false);
       try {
-        const res = await fetch(`/api/direct-orders/pharmacy-search?q=${encodeURIComponent(name)}`);
-        const data = (await res.json().catch(() => ({}))) as { hits?: PharmacySearchHit[] };
-        if (nameMatchSeq.current !== mySeq) return;
-        const hits = Array.isArray(data.hits) ? data.hits : [];
-        setNameMatches(hits.filter((hit) => hit.source === "phoenix" && hit.areaCode === area));
+        const res = await fetch("/api/direct-orders/pharmacies/check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pharmacyName: name,
+            areaCode: newAreaCode || null,
+            // Read off `bricks` (a prop) rather than the `selectedBrick` memo below: this effect is
+            // declared above it, so naming it in the dependency array would be a TDZ error at
+            // render. The server falls back to the area's own region when this is null anyway.
+            regionCode: bricks.find((brick) => brick.brickId === newBrickId)?.regionCode ?? null,
+            distributorCodes: distRows
+              .map((row) => ({ distributorCode: row.distributorCode.trim(), customerCode: row.customerCode.trim() }))
+              .filter((row) => row.distributorCode && row.customerCode),
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as Partial<DirectOrderPharmacyPreflight>;
+        if (preflightSeq.current !== mySeq) return;
+        setPreflight({
+          codeConflicts: Array.isArray(data.codeConflicts) ? data.codeConflicts : [],
+          nameMatches: Array.isArray(data.nameMatches) ? data.nameMatches : [],
+        });
       } catch {
-        if (nameMatchSeq.current === mySeq) setNameMatches([]);
+        // A failed check must never stop a rep working. It only ever ADDS a question, and the
+        // server re-checks the collision at create time regardless.
+        if (preflightSeq.current === mySeq) setPreflight({ codeConflicts: [], nameMatches: [] });
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [newName, newAreaCode, pharmacyMode]);
+  }, [newName, newAreaCode, newBrickId, bricks, pharmacyMode, distRowsKey]);
+
+  // "My pharmacies" is fetched once, the first time the tab is opened. It is a short, personal list
+  // that only changes when one of this rep's own orders is approved, so re-fetching on every visit
+  // would buy nothing across the Atlantic round trip this costs.
+  useEffect(() => {
+    if (pharmacyMode !== "mine" || myPharmacies !== null) return;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/direct-orders/pharmacies/mine");
+        const data = (await res.json().catch(() => ({}))) as { pharmacies?: DirectOrderPharmacy[]; success?: boolean };
+        if (cancelled) return;
+        if (!res.ok || !data.success || !Array.isArray(data.pharmacies)) {
+          // An empty list and a failed load mean different things to a rep about to type a
+          // pharmacy in by hand, so they must never render the same sentence.
+          setMyPharmaciesError(true);
+          setMyPharmacies([]);
+          return;
+        }
+        setMyPharmaciesError(false);
+        setMyPharmacies(data.pharmacies);
+      } catch {
+        if (cancelled) return;
+        setMyPharmaciesError(true);
+        setMyPharmacies([]);
+      }
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pharmacyMode, myPharmacies]);
 
   // NOT a hook — named to avoid the "use…" prefix, which react-hooks/rules-of-hooks enforces by
   // naming convention alone and would (correctly) reject this being called from an onClick handler.
-  function applySuggestedPharmacy(hit: PharmacySearchHit) {
-    setPickedHit(hit);
+  //
+  // Every "yes, that is the one" answer lands here — a name suggestion AND a code collision — and
+  // all of them leave the rep on the ordinary search-and-pick path. That matters: the server then
+  // resolves the pharmacy from the catalogue by pointer alone, so nothing typed on this form
+  // describes the pharmacy that gets used (spec A1/B3), and no new server path had to exist for
+  // either question to be answerable.
+  function applySuggestedPharmacy(hit: {
+    source: "phoenix" | "directory";
+    pharmacyName: string;
+    distributorCode: string | null;
+    customerCode: string | null;
+    phoenixPharmacyCode: string | null;
+    areaCode: string | null;
+    areaName: string;
+    regionCode: string | null;
+    regionName: string;
+    pharmacyAddress: string | null;
+  }) {
+    setPickedHit({
+      source: hit.source,
+      distributorCode: hit.distributorCode,
+      customerCode: hit.customerCode,
+      customerName: hit.pharmacyName,
+      address: hit.pharmacyAddress,
+      // Deliberately not carried across. The catalogue row is re-read server-side, and guessing a
+      // brick off a half-typed form is exactly the kind of made-up geography this whole change
+      // exists to stop.
+      brickId: null,
+      areaCode: hit.areaCode,
+      areaName: hit.areaName,
+      regionCode: hit.regionCode,
+      regionName: hit.regionName,
+      phoenixPharmacyCode: hit.phoenixPharmacyCode,
+      verificationStatus: null,
+    });
     setPharmacyMode("picked");
-    setNameMatches([]);
+    setPreflight({ codeConflicts: [], nameMatches: [] });
+    setAcknowledgedCodeConflict(false);
   }
 
   const [busy, setBusy] = useState(false);
@@ -257,6 +369,21 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
   // the request round-trip into an error. This mirrors the discount branch's public-price rule.
   const missingBonusBasis = dealType === "bonus" && !!product && !hasPharmacyPrice;
 
+  /**
+   * A code collision the submitter has not answered yet.
+   *
+   * This is a QUESTION, not a refusal: both answers keep her moving. "Yes, that is the pharmacy"
+   * uses the existing record; "No, mine is different" registers hers without the code and sends the
+   * dispute to a reviewer. What it prevents is the third outcome, which is the one that actually
+   * happened — a silent second pharmacy carrying a code that belongs to somebody else, or (once the
+   * rep works around the refusal) carrying an invented one like "000000".
+   *
+   * The server refuses an unacknowledged collision by name regardless, so this only decides whether
+   * she is asked here or told after a round trip.
+   */
+  const unansweredCodeConflict =
+    pharmacyMode === "new" && preflight.codeConflicts.length > 0 && !acknowledgedCodeConflict;
+
   // Mirrors submit()'s hard preconditions only. An over-cap deal is still NOT gated here —
   // over cap is flagged and submitted (owner rule, 2026-08-03).
   const readyToSubmit =
@@ -265,13 +392,22 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
     qtyNum > 0 &&
     /^\d{4}-\d{2}-\d{2}$/.test(collectionDate) &&
     !halfFilledDistRow &&
-    !missingBonusBasis;
+    !missingBonusBasis &&
+    !unansweredCodeConflict &&
+    (pharmacyMode !== "mine" || !!pickedMine);
 
   function updateDistRow(index: number, patch: Partial<{ distributorCode: string; customerCode: string }>) {
     setDistRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   async function createPharmacyIfNeeded(): Promise<string> {
+    // Already one of the rep's own approved pharmacies — there is nothing to create or resolve, and
+    // deliberately no server round trip: the id came from a list the server itself just scoped to
+    // this person. This is the path the other two exist to funnel people into.
+    if (pharmacyMode === "mine") {
+      if (!pickedMine) throw new Error("Pick one of your pharmacies, or search the full database.");
+      return pickedMine.id;
+    }
     if (pharmacyMode === "picked") {
       if (!pickedHit) throw new Error("Search for the pharmacy and pick it from the list.");
       // The body carries only POINTERS at the trusted row — the server copies every stored
@@ -314,6 +450,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
         doctorName: newDoctor.trim(),
         pharmacyAddress: newAddress.trim(),
         distributorCodes: pairs,
+        // "No, mine is a different pharmacy." The server re-checks the collision and records the
+        // contested claim; it never takes this flag as permission to claim the code.
+        acknowledgedCodeConflict,
       }),
     });
     const data = (await res.json().catch(() => ({}))) as { success?: boolean; message?: string; pharmacy?: DirectOrderPharmacy };
@@ -643,11 +782,88 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
             <p className="mt-1 text-[11px] text-slate-400">When you expect this direct order to be collected / paid (تاريخ التحصيل).</p>
           </div>
 
-          {/* Pharmacy — combo box over the master database (spec B1/B2/B3) */}
+          {/* Pharmacy — combo box over the master database (spec B1/B2/B3), now behind three tabs. */}
           <div className="border-t border-[#eef1f3] pt-3">
             <label className={labelClass()}>Pharmacy *</label>
 
-            {pharmacyMode === "picked" ? (
+            {/* Three ways in, ordered by what each one costs the rep AND what it costs the data.
+                "My pharmacies" is first because it is the only one that cannot create anything:
+                every duplicate cluster in production was a rep re-entering a pharmacy she had
+                already used successfully — twice on the same day, in the worst case — and until
+                today her own history was the one list the form never showed her. */}
+            <div className="mt-1 flex overflow-x-auto border border-[#eef1f3]">
+              {(
+                [
+                  { mode: "mine", label: "My pharmacies" },
+                  { mode: "picked", label: "Search" },
+                  { mode: "new", label: "New pharmacy" },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.mode}
+                  type="button"
+                  onClick={() => setPharmacyMode(tab.mode)}
+                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 text-[11px] font-black uppercase tracking-wider ${
+                    pharmacyMode === tab.mode ? "bg-orange-500 text-white" : "bg-white text-slate-500 hover:bg-slate-50"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {pharmacyMode === "mine" ? (
+              <div className="mt-1.5">
+                {myPharmacies === null ? (
+                  <p className="text-[12px] font-semibold text-slate-500">Loading your pharmacies…</p>
+                ) : myPharmaciesError ? (
+                  // An empty list and a failed load must never read the same. One says "you have
+                  // none yet"; the other says "we do not know", and only the second is a reason to
+                  // go and search rather than trust the emptiness.
+                  <p className="border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] font-bold text-amber-800">
+                    Your pharmacies could not be loaded. Use Search before adding a new pharmacy — do
+                    not retype one you have ordered on before.
+                  </p>
+                ) : myPharmacies.length === 0 ? (
+                  <p className="border border-[#eef1f3] px-3 py-2 text-[12px] font-semibold text-slate-500">
+                    No approved pharmacies yet. A pharmacy lands here once one of your orders on it is
+                    approved, and from then on it is one click.
+                  </p>
+                ) : (
+                  <div className="max-h-64 space-y-1 overflow-y-auto">
+                    {myPharmacies.map((pharmacy) => {
+                      const chosen = pickedMine?.id === pharmacy.id;
+                      const codeLine = pharmacy.distributorCodes
+                        .map((code) => `${code.distributorName || code.distributorCode} ${code.customerCode}`)
+                        .join(" · ");
+                      return (
+                        <button
+                          key={pharmacy.id}
+                          type="button"
+                          onClick={() => setPickedMine(pharmacy)}
+                          className={`block w-full overflow-x-auto border px-2.5 py-1.5 text-left ${
+                            chosen ? "border-emerald-400 bg-emerald-50" : "border-[#eef1f3] bg-white hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="block whitespace-nowrap text-[13px] font-black text-slate-900" dir="auto">
+                            {pharmacy.pharmacyName}
+                          </span>
+                          <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                            {pharmacy.phoenixPharmacyCode}
+                            {codeLine ? ` · ${codeLine}` : " · no distributor code"}
+                          </span>
+                          <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                            {areas.find((area) => area.areaCode === pharmacy.areaCode)?.areaName ||
+                              pharmacy.areaCode ||
+                              "No area on file"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : pharmacyMode === "picked" ? (
               pickedHit ? (
                 <div className="mt-1 border border-emerald-300 bg-emerald-50 px-3 py-2.5">
                   <div className="flex items-start justify-between gap-2">
@@ -740,28 +956,43 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                 ) : null}
 
                 {/* "Did you mean this pharmacy?" — never a block. Picking one switches straight into
-                    the search-and-pick path; dismissing or ignoring it costs the rep nothing. */}
-                {!nameMatchDismissed && nameMatches.length > 0 ? (
+                    the search-and-pick path; dismissing or ignoring it costs the rep nothing.
+                    Every candidate carries its distributor AND that distributor's customer code
+                    (owner, 2026-08-13), because a name on its own does not identify a pharmacy —
+                    that is precisely how two "حضانه زمزم" records ended up in D15. */}
+                {!nameMatchDismissed && preflight.nameMatches.length > 0 ? (
                   <div className="border border-sky-300 bg-sky-50 px-3 py-2">
                     <p className="text-[12px] font-bold text-sky-800">
-                      Phoenix may already have this pharmacy in this area:
+                      Did you mean one of these? A pharmacy with this name is already registered in
+                      your region.
                     </p>
                     <div className="mt-1 space-y-1">
-                      {nameMatches.map((hit) => (
+                      {preflight.nameMatches.map((hit) => (
                         <div
-                          key={hit.phoenixPharmacyCode ?? `${hit.distributorCode}-${hit.customerCode}`}
-                          className="flex items-center justify-between gap-2 border border-sky-200 bg-white px-2 py-1"
+                          key={`${hit.source}-${hit.phoenixPharmacyCode ?? ""}-${hit.distributorCode ?? ""}-${hit.customerCode ?? ""}`}
+                          className="flex items-start justify-between gap-2 border border-sky-200 bg-white px-2 py-1.5"
                         >
-                          <span className="min-w-0 truncate text-[12px] text-slate-700" dir="auto">
-                            {hit.customerName ?? hit.phoenixPharmacyCode}
-                            {hit.phoenixPharmacyCode ? ` · ${hit.phoenixPharmacyCode}` : ""}
-                          </span>
+                          <div className="min-w-0 overflow-x-auto">
+                            <span className="block whitespace-nowrap text-[12px] font-bold text-slate-800" dir="auto">
+                              {hit.pharmacyName}
+                            </span>
+                            <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                              {hit.distributorCode
+                                ? `${hit.distributorName || hit.distributorCode} · code ${hit.customerCode}`
+                                : "No distributor code on file"}
+                              {hit.phoenixPharmacyCode ? ` · ${hit.phoenixPharmacyCode}` : ""}
+                            </span>
+                            <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                              {hit.areaName || hit.areaCode || "No area"} · {hit.regionName || hit.regionCode || "No region"}
+                              {hit.pharmacyAddress ? ` · ${hit.pharmacyAddress}` : ""}
+                            </span>
+                          </div>
                           <button
                             type="button"
-                            className="shrink-0 text-[12px] font-bold text-sky-700 hover:text-sky-900"
+                            className="shrink-0 whitespace-nowrap border border-sky-600 px-2 py-1 text-[12px] font-black text-sky-700 hover:bg-sky-100"
                             onClick={() => applySuggestedPharmacy(hit)}
                           >
-                            Use this pharmacy
+                            Yes, this one
                           </button>
                         </div>
                       ))}
@@ -771,7 +1002,7 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                       className="mt-1 text-[12px] font-semibold text-slate-500 hover:text-slate-700"
                       onClick={() => setNameMatchDismissed(true)}
                     >
-                      No, this is a different pharmacy
+                      No, mine is a different pharmacy
                     </button>
                   </div>
                 ) : null}
@@ -804,6 +1035,91 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
                     + Add distributor
                   </button>
                 </div>
+
+                {/* The code is already taken (owner, 2026-08-13).
+                    This is the question that used to be a dead end. The code went to the server, the
+                    unique index refused it, and the rep read "Could not create the pharmacy." — after
+                    a codeless duplicate of her pharmacy had ALREADY been committed by the untransacted
+                    half of the insert. She then either re-typed the pharmacy again or invented a code
+                    ("000000" is in production twice) to get past it.
+
+                    So it is asked here, with the pharmacy that holds the code named on screen, and
+                    BOTH answers move her forward. There is no third outcome where she is simply
+                    stuck. */}
+                {preflight.codeConflicts.length > 0 ? (
+                  <div className="border-2 border-rose-400 bg-rose-50 px-3 py-2.5">
+                    <p className="text-[12px] font-black text-rose-800">
+                      This distributor code already belongs to a registered pharmacy. Did you mean this
+                      one?
+                    </p>
+                    <div className="mt-1.5 space-y-1.5">
+                      {preflight.codeConflicts.map((conflict) => (
+                        <div
+                          key={`${conflict.distributorCode}-${conflict.customerCode}`}
+                          className="border border-rose-200 bg-white px-2 py-1.5"
+                        >
+                          <div className="overflow-x-auto">
+                            <span className="block whitespace-nowrap text-[13px] font-black text-slate-900" dir="auto">
+                              {conflict.heldBy.pharmacyName}
+                            </span>
+                            <span className="block whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                              {conflict.heldBy.phoenixPharmacyCode} · {conflict.distributorName || conflict.distributorCode} · code{" "}
+                              {conflict.customerCode}
+                            </span>
+                            <span className="block whitespace-nowrap text-[11px] text-slate-500" dir="auto">
+                              {conflict.heldBy.areaName || conflict.heldBy.areaCode || "No area"} ·{" "}
+                              {conflict.heldBy.regionName || conflict.heldBy.regionCode || "No region"}
+                              {conflict.heldBy.pharmacyAddress ? ` · ${conflict.heldBy.pharmacyAddress}` : ""}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="mt-1.5 w-full whitespace-nowrap bg-emerald-600 px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-white hover:bg-emerald-700"
+                            onClick={() =>
+                              applySuggestedPharmacy({
+                                source: "phoenix",
+                                pharmacyName: conflict.heldBy.pharmacyName,
+                                distributorCode: conflict.distributorCode,
+                                customerCode: conflict.customerCode,
+                                phoenixPharmacyCode: conflict.heldBy.phoenixPharmacyCode,
+                                areaCode: conflict.heldBy.areaCode,
+                                areaName: conflict.heldBy.areaName,
+                                regionCode: conflict.heldBy.regionCode,
+                                regionName: conflict.heldBy.regionName,
+                                pharmacyAddress: conflict.heldBy.pharmacyAddress,
+                              })
+                            }
+                          >
+                            Yes — use this pharmacy
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* "No" is the answer the owner asked about, and it is the one that had no
+                        design. It cannot hand her the code — it belongs to the pharmacy above, and
+                        two pharmacies sharing one distributor code is exactly how one pharmacy's
+                        retail sales get attributed to another. So her pharmacy is registered WITHOUT
+                        the contested code, and the claim is recorded on the record for a System Admin
+                        to settle. She is not blocked, and nothing is silently overwritten. */}
+                    {acknowledgedCodeConflict ? (
+                      <p className="mt-1.5 border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] font-bold text-amber-800">
+                        Understood — your pharmacy will be registered WITHOUT this distributor code,
+                        and the code dispute goes to a System Admin to settle. The order still submits
+                        and still goes through the normal approval chain.
+                      </p>
+                    ) : (
+                      <button
+                        type="button"
+                        className="mt-1.5 w-full whitespace-nowrap border border-slate-400 bg-white px-3 py-1.5 text-[12px] font-black uppercase tracking-wider text-slate-600 hover:bg-slate-50"
+                        onClick={() => setAcknowledgedCodeConflict(true)}
+                      >
+                        No — mine is a different pharmacy
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+
                 <p className="text-[11px] text-slate-400">Phoenix auto-generates a stable code for this pharmacy so you can reuse it next time.</p>
               </div>
             )}

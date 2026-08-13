@@ -743,6 +743,8 @@ import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submi
 import { runDirectOrdersPharmacyStandingTests } from "./direct-orders-pharmacy-standing.test.ts";
 
 import { runDirectOrdersPharmacyComboboxPlacementTests } from "./direct-orders-pharmacy-combobox-placement.test.ts";
+import { runDirectOrdersPharmacyCodeCollisionTests } from "./direct-orders-pharmacy-code-collision.test.ts";
+import { runDirectOrdersBasketLabelTests } from "./direct-orders-basket-label.test.ts";
 
 import { runDirectOrdersSheetEditableColumnsTests } from "./direct-orders-sheet-editable-columns.test.ts";
 
@@ -1781,6 +1783,16 @@ await runTest(
 await runTest(
   "direct orders pharmacy combo box opens where there is room (measured against visualViewport, flips up, never a fixed 320px)",
   runDirectOrdersPharmacyComboboxPlacementTests,
+);
+
+await runTest(
+  "direct orders pharmacy code collision (one transaction so a failed code insert cannot leave an orphan pharmacy; the collision is asked as a question naming the incumbent; \"no\" registers without the code and records the dispute; the name question covers the codeless case; My Pharmacies offers only settled ones)",
+  runDirectOrdersPharmacyCodeCollisionTests,
+);
+
+await runTest(
+  "direct orders basket label (a multi-product order names EVERY product against its whole-basket value, quantities summed; a one-product order stays byte-identical for the owner's Google Sheet; the card renders one line per product rather than truncating a joined string)",
+  runDirectOrdersBasketLabelTests,
 );
 
 await runTest(

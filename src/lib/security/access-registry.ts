@@ -426,6 +426,15 @@ export const accessRegistry = [
   // "Did you mean…" candidates for a claimed pharmacy name (spec B4). Read-only, area-agnostic on
   // purpose: the point is to show the rep a pharmacy they may have mis-spelled, wherever it sits.
   sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacy-suggestions", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
+  // Code-collision "did you mean this pharmacy?" preflight, asked BEFORE a rep registers one by
+  // hand (owner, 2026-08-13 — the atomic-create fix). POST because the body carries a list of
+  // (distributor, customer code) pairs, but it writes NOTHING — hence no audit classification,
+  // same idiom as invoice-extract above. CSRF stays required: this reports which pharmacy owns a
+  // given distributor code, which a third-party page should not be able to enumerate.
+  sessionApi({ methods: ["POST"], pattern: "/api/direct-orders/pharmacies/check", permission: { resource: "direct_orders", action: "create" }, guard: "domain-helper", csrfRequired: true }),
+  // "My pharmacies" — the caller's own previously-approved pharmacies, offered so a rep picks
+  // instead of re-registering (owner, 2026-08-13). Read-only, own-scope only.
+  sessionApi({ methods: ["GET"], pattern: "/api/direct-orders/pharmacies/mine", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper" }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/pharmacy-validations/:id/decision", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/direct-orders/held/notify", permission: { resource: "direct_orders", action: "read" }, guard: "domain-helper", csrfRequired: true }),
   // Duplicate cleanup (owner rule 5, 2026-08-09): merge pharmacy records that are one pharmacy, and

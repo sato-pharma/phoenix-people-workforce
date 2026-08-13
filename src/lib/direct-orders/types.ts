@@ -1,4 +1,5 @@
 import type { PhoenixRole } from "@/lib/auth/permissions";
+import type { DirectOrderBasketLine } from "@/lib/direct-orders/basket-label";
 import type { DirectOrderValidationRow } from "@/lib/direct-orders/pharmacy-validation";
 import type { DirectOrderGeographyCheck } from "@/lib/direct-orders/geography-check";
 // Type-only, and hold-decision.ts imports type-only from here — a types-only cycle is erased at
@@ -233,6 +234,78 @@ export type DirectOrderPharmacyStanding = {
   noCodeNote: string;
 };
 
+/**
+ * A distributor code a pharmacy CLAIMED but does not own.
+ *
+ * Recorded when the submitter was shown the pharmacy that already holds the code and answered that
+ * theirs is a different pharmacy. The incumbent keeps the code — the unique index on
+ * (distributor_code, customer_code) is what stops one distributor customer being attributed to two
+ * pharmacies, and it stays. This is the reviewer's evidence that a human disagreed.
+ *
+ * The alternative was refusing the registration, and that is the one option already known to be
+ * wrong here: refusing does not produce a correct code, it produces an invented one (owner rule,
+ * 2026-08-04 — and the live proof is the pair of production pharmacies carrying "000000" and
+ * "00000").
+ */
+export type DirectOrderContestedCodeClaim = {
+  distributorCode: string;
+  customerCode: string;
+  /** The pharmacy that holds the code today. */
+  heldByPharmacyId: string;
+  heldByPharmacyCode: string;
+  heldByPharmacyName: string;
+  claimedAt: string;
+};
+
+/**
+ * What the submit form asks BEFORE it registers a pharmacy by hand (owner, 2026-08-13).
+ *
+ * Two independent questions, because a rep can be about to create a duplicate in two different
+ * ways and only one of them was ever checked:
+ *
+ *   codeConflicts — the code they typed already belongs to another pharmacy. Previously this
+ *                   surfaced as "Could not create the pharmacy." AFTER a codeless orphan had
+ *                   already been committed.
+ *   nameMatches   — they gave no code at all, and a pharmacy of the same name already exists in
+ *                   their region. Nothing checked this server-side; a code-only matcher cannot see
+ *                   a pharmacy that has no code.
+ *
+ * Neither is a block. Both are questions, and "no" is always a valid answer.
+ */
+export type DirectOrderPharmacyPreflight = {
+  codeConflicts: Array<{
+    distributorCode: string;
+    distributorName: string;
+    customerCode: string;
+    heldBy: {
+      id: string;
+      phoenixPharmacyCode: string;
+      pharmacyName: string;
+      areaCode: string | null;
+      areaName: string;
+      regionCode: string | null;
+      regionName: string;
+      pharmacyAddress: string | null;
+      verificationStatus: "verified" | "pending_review" | "rejected";
+    };
+  }>;
+  nameMatches: Array<{
+    /** 'phoenix' = a pharmacy already registered here; 'directory' = the distributor's own list. */
+    source: "phoenix" | "directory";
+    pharmacyName: string;
+    /** Both are shown to the rep — a name alone does not tell her which pharmacy this is. */
+    distributorCode: string | null;
+    distributorName: string;
+    customerCode: string | null;
+    phoenixPharmacyCode: string | null;
+    areaCode: string | null;
+    areaName: string;
+    regionCode: string | null;
+    regionName: string;
+    pharmacyAddress: string | null;
+  }>;
+};
+
 export type DirectOrderPharmacy = {
   id: string;
   /** Phoenix-generated stable code, e.g. "DOP-000123". */
@@ -249,6 +322,11 @@ export type DirectOrderPharmacy = {
    * them, and the request picks up the System Admin rung instead of being refused.
    */
   distributorCodes: DirectOrderPharmacyDistributorCode[];
+  /**
+   * Codes this pharmacy claimed but does not own. Empty on almost every pharmacy — see
+   * {@link DirectOrderContestedCodeClaim}.
+   */
+  contestedCodeClaims: DirectOrderContestedCodeClaim[];
   /** Whether an admin has resolved a submitter-brick vs mapped-brick variance. */
   geoVarianceResolved: boolean;
   /**
@@ -456,8 +534,17 @@ export type DirectOrderApprovalListItem = {
   requesterName: string;
   requesterRole: PhoenixRole;
   line: string;
+  /** Every product joined with " + " on a basket; line 1's name on a one-product order. */
   productName: string;
+  /** Summed across the basket, so it always matches the products named above it. */
   qty: number;
+  /**
+   * One entry per product, so a surface can show what the basket's single `salesValue` is FOR.
+   * See @/lib/direct-orders/basket-label — the composed `productName` above cannot be split back
+   * apart safely, and a reader who only sees line 1 is reading one product's name against the
+   * whole basket's money.
+   */
+  items?: readonly DirectOrderBasketLine[];
   bonus: number;
   /** 'bonus' → `bonus` is the meaningful number; 'discount' → `discountPct` is. */
   dealType: DirectOrderDealType;
