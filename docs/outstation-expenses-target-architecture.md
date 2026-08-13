@@ -463,7 +463,7 @@ locked payroll batch.**
 | **3** | Writes switch to `phx_decide_expense_claim`. **The `.workflow` minting stops here.** Old tables become read-only. | flip back within the week | medium — the real cutover |
 | **4** | Payroll link contract goes live in the wizard's Expenses step. First run is **dry-run only**: show what it *would* link against what the operator typed. Compare, then arm it. | do not arm | medium |
 | **5** | IA collapse: 4 routes + redirects. | redirects stay either way | low |
-| **6** | Drop the dead columns and the old tables, after a full payroll cycle on the new path. **Also converts `claimed_total` to `GENERATED` and adds its check** — the only step that needs the deferred two-row ruling (§13), and it is a two-row `UPDATE` by then. | restore from backup | low |
+| **6** | Drop the dead columns and the old tables, after a full payroll cycle on the new path. **Also converts `claimed_total` to `GENERATED` and adds its check** — the only step that needs the deferred two-row ruling (§13), and it is a two-row `UPDATE` by then. **`legacy_request_id`/`legacy_expense_id` need a real provenance column FIRST** — they are load-bearing for RLS, not just traceability (§15). | restore from backup | low |
 
 **Order matters:** phases 0–2 are safe at any time. **Phase 3 should not land mid-payroll-assembly**
 (≈the 10th). Phase 4 wants a fresh month.
@@ -539,6 +539,7 @@ them.
 | Doing it all at once | Phases 0–2 deliver the reconciliation report — real value — before any write path changes |
 | **241 backlog claims approved into a closed period** | Impossible by construction: `payout_*` is resolved at approval to an open period, and the `salary_records` trigger would refuse the write regardless. The re-period is recorded as an event and shown before you decide |
 | **A 289-item queue buries the live claims** | The queue defaults to the payable set (~48) with the backlog counted beside it, not merged into it (§8) |
+| **Phase 6 drops `legacy_request_id`/`legacy_expense_id` and silently widens who reads the ledger** | `expense_claims_select_access` ([PR #2065](https://github.com/Gawish-1997/phoenix-people-workforce/pull/2065), live on staging and production since 2026-08-12) keys its admin arm on those two columns to keep `phx_can_manage_payroll()` (ledger-derived rows) apart from `phx_can_manage_outstation()` (request-derived rows) — the two guards are disjoint; neither role list contains the other. The policy's own fallback arm, written for rows with neither legacy id, is `phx_can_manage_payroll() OR phx_can_manage_outstation()`. Drop the columns with nothing to replace them and every claim falls into that fallback — a District/Regional/National Sales Manager gains the full ledger, not just their own requests. **Phase 6 needs a real provenance column landed and backfilled before the drop, not in the same migration.** Verified live on staging 2026-08-12: a District-Manager session and a Finance-Manager session each see exactly what their respective legacy guard predicts (24/24 and 293/293), which is the behavior this column split is protecting. |
 
 ---
 
