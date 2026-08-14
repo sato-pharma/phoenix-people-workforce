@@ -116,6 +116,9 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
   }, [candidate.id, application.id]);
 
   const cvFile = files.find((file) => file.kind === "cv");
+  // "unsupported" means the preview modal cannot render this file type, so saving it is the
+  // only way to read it — that is the one case where the CV button may still be a download.
+  const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
   const hmInterview = interviews.find((interview) => interview.interviewType === "hiring_manager") ?? null;
   const badge = stageBadge(application.stage);
   const canAct = application.stage === "hiring_manager_interview";
@@ -214,19 +217,25 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
 
       {loaded && cvFile ? (
         <div className="flex flex-wrap items-center gap-2">
+          {/* "View CV" must actually VIEW the CV. It used to be a bare link at the file route,
+              which serves Content-Disposition: attachment unless asked for "inline" — so the
+              browser saved the CV to disk and never showed it, and the portal had no way to
+              read a CV at all. The preview modal renders the real document (PDF pages painted
+              onto canvas, images, .docx page layout), so it IS the view action here; saving a
+              copy stays available next to it rather than being the only behaviour. */}
+          {cvKind !== "unsupported" ? (
+            <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
+              View CV — {cvFile.fileName}
+            </Button>
+          ) : null}
           <a
             className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
             href={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
             rel="noreferrer"
             target="_blank"
           >
-            View CV — {cvFile.fileName}
+            {cvKind === "unsupported" ? `Download — ${cvFile.fileName}` : "Download"}
           </a>
-          {detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) !== "unsupported" ? (
-            <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
-              Preview
-            </Button>
-          ) : null}
         </div>
       ) : loaded ? (
         <p className="text-xs text-slate-400">No CV file on record.</p>
