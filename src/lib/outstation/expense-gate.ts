@@ -24,6 +24,26 @@ import type {
 /** What the request is waiting for right now. `null` means nothing — it may proceed. */
 export type OutstationGateBlocker = "arrival_photo" | "departure_photo" | "workload" | "inconsistent";
 
+/**
+ * True only when the expense actually reached a payroll BATCH.
+ *
+ * The existence of an `outstation_expenses` row is NOT the same thing. That row is written when
+ * the claim is first pushed to the payroll queue and then sits there, unimported, until a batch
+ * picks it up. So testing the row's mere existence reads "queued" as "already paid".
+ *
+ * This lives here, beside the gate it belongs to, because that distinction was drawn correctly in
+ * five places in service.ts and wrongly in one: releaseOutstationRequestToPayrollIfReady tested
+ * the row's existence and so answered "The request is already in payroll." for every request that
+ * had a queued-but-unimported row — which was ALL of them. All 360 rows in production carry a null
+ * `imported_payroll_batch_id`. Held claims could therefore never be released, and the reason given
+ * actively misdirected whoever read it. One definition, so the two readings cannot drift again.
+ */
+export function isOutstationExpenseInPayroll(
+  linked: { importedPayrollBatchId: string | null; importedToPayrollAt: string | null } | null,
+): boolean {
+  return Boolean(linked?.importedPayrollBatchId || linked?.importedToPayrollAt);
+}
+
 export type OutstationGateState = {
   /** The single next thing required, or null when the gate is satisfied. */
   blocker: OutstationGateBlocker | null;

@@ -58,6 +58,7 @@ import {
   type DepartureEvidenceReview,
 } from "@/lib/outstation/departure-evidence";
 import {
+  isOutstationExpenseInPayroll,
   nextEvidenceGateStatus,
   resolveOutstationGateState,
   validateManualWorkloadInput,
@@ -2221,7 +2222,7 @@ export async function addExtraTicketsToOwnOutstationRequest(
   }
 
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
-  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
 
@@ -2587,7 +2588,7 @@ async function syncLinkedOutstationPayrollExpense(input: {
 }) {
   if (!input.linkedPayroll) return 0;
   if (!input.request.status.startsWith("accepted")) return 0;
-  if (input.linkedPayroll.importedPayrollBatchId || input.linkedPayroll.importedToPayrollAt) {
+  if (isOutstationExpenseInPayroll(input.linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
 
@@ -2611,7 +2612,7 @@ async function pushAcceptedOutstationExpenseToPayroll(
   access: AccessContext,
 ): Promise<number> {
   const linkedPayroll = await getLinkedOutstationPayrollExpense(request.id);
-  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
     return 0;
   }
   const expenseRecord = mapOutstationRequestToPayrollExpenseRecord(request, {
@@ -2650,7 +2651,7 @@ export async function approveOutstationRequestForPayroll(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
-  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be changed.");
   }
 
@@ -2778,8 +2779,10 @@ export async function releaseOutstationRequestToPayrollIfReady(
       return { reason: `The request is ${request.status}, so it is not waiting on evidence.`, released: false };
     }
 
+    // A queued-but-unimported expense row is NOT "already in payroll" — releasing is exactly what
+    // still has to happen to it. Testing the row's existence here stranded every held claim.
     const linked = await getLinkedOutstationPayrollExpense(request.id);
-    if (linked) {
+    if (isOutstationExpenseInPayroll(linked)) {
       return { reason: "The request is already in payroll.", released: false };
     }
 
@@ -3210,7 +3213,7 @@ export async function updateManagerExpenseAsAdmin(
   const existing = await getOutstationRequestById(requestId);
   if (!existing) throw new Error("Outstation request was not found.");
   const linkedPayroll = await getLinkedOutstationPayrollExpense(existing.id);
-  if (linkedPayroll?.importedPayrollBatchId || linkedPayroll?.importedToPayrollAt) {
+  if (isOutstationExpenseInPayroll(linkedPayroll)) {
     throw new Error("This outstation expense has already been added to payroll and cannot be edited.");
   }
   await assertOutstationExpenseWorkflowTransition({
@@ -4105,6 +4108,29 @@ export async function captureOutstationDeparturePhoto(
 }
 
 /**
+ * Run the automatic release and record it when it does not happen.
+ *
+ * releaseOutstationRequestToPayrollIfReady never throws — it reports failure in its return value.
+ * Both automatic callers used to discard that value, so a request that stayed held after the
+ * employee's photo capture produced no signal anywhere: the employee saw success, no log line was
+ * written, and the claim simply never reached payroll. The admin-triggered callers already surface
+ * `release.reason`; these two now at least log it under their own event label.
+ */
+async function runAutomaticOutstationRelease(
+  request: OutstationExpenseRequest,
+  access: AccessContext,
+) {
+  const release = await releaseOutstationRequestToPayrollIfReady(request.id, access);
+  if (!release.released) {
+    logError("Outstation request stayed held after an automatic release attempt", {
+      error: new Error(release.reason),
+      labels: { event: "outstation_auto_release_held", requestId: String(request.id) },
+    });
+  }
+  return release;
+}
+
+/**
  * Attempt the CRM workload grab for a request whose photos are complete, then release it into
  * payroll if that closed the last gate.
  *
@@ -4119,7 +4145,7 @@ async function captureWorkloadAndReleaseIfReady(
 ) {
   try {
     if (request.workloadGateStatus !== "pending_workload") {
-      await releaseOutstationRequestToPayrollIfReady(request.id, access);
+      await runAutomaticOutstationRelease(request, access);
       return;
     }
 
@@ -4165,7 +4191,7 @@ async function captureWorkloadAndReleaseIfReady(
       })
       .eq("id", request.id);
 
-    await releaseOutstationRequestToPayrollIfReady(request.id, access);
+    await runAutomaticOutstationRelease(request, access);
   } catch (error) {
     logError("Outstation workload capture failed after the departure photo (non-blocking)", {
       error,
