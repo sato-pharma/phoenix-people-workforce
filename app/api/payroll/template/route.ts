@@ -14,12 +14,17 @@ import {
 import { getApprovedExpenseTotalsForPayroll } from "@/lib/outstation/expenses";
 import { resolveStandardSalaryAllowances } from "@/lib/payroll/allowance-policy";
 import { assertValidPayrollPeriod } from "@/lib/payroll/period";
-import { calculatePayrollParts, payrollPaymentModeLabel, resolveFixedSalaryAmounts } from "@/lib/payroll/policy";
 import {
-  calculateBaseLifecycleProrationDeduction,
+  BASIC_SALARY_RATE,
+  calculatePayrollParts,
+  payrollPaymentModeLabel,
+  resolveFixedSalaryAmounts,
+} from "@/lib/payroll/policy";
+import {
   payrollDaysInMonth,
   payrollMonthMatches,
-  prorationEndDay,
+  readyLifecycleComment,
+  resolveReadyLifecycleSettlement,
 } from "@/lib/payroll/ready-proration";
 import { payrollSheetHeaders } from "@/lib/payroll/salary-sheet-fields";
 import { getLatestSalaryExpenseTotalsBefore, getSalaryBatchExport } from "@/lib/payroll/service";
@@ -27,6 +32,13 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * The First Part cap as a percentage, for prose shown inside the workbook. Derived from the
+ * locked BASIC_SALARY_RATE so the sheet can never claim a different rate from the one that
+ * actually computed the split.
+ */
+const basicSalaryRatePercentLabel = `${Math.round(BASIC_SALARY_RATE * 100)}%`;
 
 const templateFileName = "Phoneix system template.xlsx";
 const dataStartRow = 6;
@@ -74,6 +86,8 @@ type PayrollTemplateRow = {
   fullName: string;
   governmentalDeductions: number;
   grossSalary: number;
+  /** Last paid day charged for, after Rule 1's >25th waiver (resignations only). */
+  effectiveEndDay: number;
   hireDate: string | null;
   incentive: number;
   jobTitle: string | null;
@@ -99,11 +113,16 @@ type PayrollTemplateRow = {
 
 type PayrollTemplateEmployee = {
   employee: EmployeeDirectoryRow;
+  /** True only for a genuine resignation — drives Rule 1's >25th full-pay waiver. */
+  isResignation: boolean;
   isTerminalPayroll: boolean;
   lastWorkingDate: string | null;
 };
 
 const terminalPayrollStatuses = new Set(["resigned", "terminated", "inactive"]);
+// Of the terminal statuses, only a resignation earns Rule 1's >25th generosity.
+// terminated (dismissed) and inactive (deactivated) are prorated with no allowances.
+const resignationPayrollStatus = "resigned";
 
 type CellStyleSnapshot = {
   alignment: Partial<ExcelJS.Alignment>;
@@ -129,8 +148,20 @@ function money(value: number | null | undefined) {
   return Math.round((Number(value ?? 0) + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * The two-part split for this sheet.
+ *
+ * Deliberately NOT a call to calculatePayrollParts: this cap carries a second limb
+ * (`base - otherDeductions`) that the canonical function does not have, so delegating
+ * outright would move money. What it must not do is re-derive the RATE — `basicSalary`
+ * is passed in already computed by calculatePayrollParts from the locked
+ * BASIC_SALARY_RATE, instead of this file multiplying by its own 0.7. That local copy
+ * was a second source of truth for a rate the owner keeps under lock, and it also
+ * compared against an unrounded product where the workbook rounds to 2dp.
+ */
 function resolvePayrollSplit(input: {
   baseSalary: number;
+  basicSalary: number;
   monthSalary: number;
   otherDeductions: number;
   paymentMode: "one_part" | "two_parts";
@@ -148,7 +179,7 @@ function resolvePayrollSplit(input: {
 
   const firstPartCap = money(
     Math.min(
-      input.baseSalary * 0.7,
+      input.basicSalary,
       Math.max(0, input.baseSalary - input.otherDeductions),
     ),
   );
@@ -196,6 +227,7 @@ async function getPayrollTemplateEmployees(
     .filter((employee) => (employee.employmentStatus ?? "active") === "active" && employee.payrollEligible !== false)
     .map((employee) => ({
       employee,
+      isResignation: false,
       isTerminalPayroll: false,
       lastWorkingDate: null,
     }));
@@ -215,6 +247,7 @@ async function getPayrollTemplateEmployees(
     })
     .map((employee) => ({
       employee,
+      isResignation: normalizePayrollStatus(employee.employmentStatus) === resignationPayrollStatus,
       isTerminalPayroll: true,
       lastWorkingDate: terminalPayrollDate(employee),
     }));
@@ -248,7 +281,12 @@ function otherDeductionsFormula(
   const daysInMonth = payrollDaysInMonth(month, year);
 
   if (payrollMonthMatches(row.lastWorkingDate, month, year)) {
-    const endDay = prorationEndDay(row.lastWorkingDate, month, year);
+    // Resignation Rule 1: a RESIGNATION after the 25th is paid base in full, so its end day
+    // is waived to month end; a termination/deactivation is charged to its actual last day.
+    // row.effectiveEndDay is the number the stored proration already used (resolved with the
+    // resignation flag) — the sheet recalculates client-side, so reusing that same number
+    // keeps the formula and the stored value from ever disagreeing.
+    const endDay = row.effectiveEndDay;
     return `ROUND(MAX(0,${baseSalary}-((${baseSalary}/${daysInMonth})*MAX(0,${endDay}-IF(AND(ISNUMBER(${hireDate}),YEAR(${hireDate})=${year},MONTH(${hireDate})=${month}),DAY(${hireDate}),1)+1))),2)`;
   }
 
@@ -494,31 +532,48 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
         positionTitle: employee.positionTitle,
         year,
       });
-      const extraCostOfLiving = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.extraCostOfLiving);
-      const fuelAllowance = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.fuelAllowance);
+      const standardExtraCostOfLiving = money(standardAllowances.extraCostOfLiving);
+      const standardFuelAllowance = money(standardAllowances.fuelAllowance);
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
+      // The CONTRACT structure, always resolved from the STANDARD allowances. calculateBaseSalary
+      // falls back to `net - ECOL - fuel` when neither base nor basic is stored, so feeding it the
+      // lifecycle-reduced allowances would let this month's resignation rule silently redefine the
+      // employee's base salary — and then prorate against that redefined number.
       const fixedSalary = resolveFixedSalaryAmounts({
         baseSalary: employee.baseSalary,
         basicSalary: employee.basicSalary,
         employmentIncomeTax,
-        extraCostOfLiving,
-        fuelAllowance,
+        extraCostOfLiving: standardExtraCostOfLiving,
+        fuelAllowance: standardFuelAllowance,
         grossSalary: employee.grossSalary,
         netSalary: employee.netSalary,
         socialInsurance,
       });
       const baseSalary = money(fixedSalary.baseSalary);
-      const netSalary = money(fixedSalary.netSalary);
       const grossSalary = money(fixedSalary.grossSalary);
       const governmentalDeductions = money(socialInsurance + employmentIncomeTax);
-      const otherDeductions = calculateBaseLifecycleProrationDeduction(
+      // Resignation Rule 1 decides Base, ECOL and Fuel together — a RESIGNATION after the 25th
+      // keeps both allowances in full and is not prorated; on or before the 25th keeps neither;
+      // a termination/deactivation keeps neither and is prorated to its last working day.
+      // Zeroing on isTerminalPayroll alone contradicted the rule for every late-month leaver.
+      const settlement = resolveReadyLifecycleSettlement({
         baseSalary,
-        employee.hireDate,
-        payrollEmployee.lastWorkingDate,
+        extraCostOfLiving: standardExtraCostOfLiving,
+        fuelAllowance: standardFuelAllowance,
+        hireDate: employee.hireDate,
+        isResignation: payrollEmployee.isResignation,
+        lastWorkingDate: payrollEmployee.lastWorkingDate,
         month,
         year,
-      );
+      });
+      const extraCostOfLiving = settlement.extraCostOfLiving;
+      const fuelAllowance = settlement.fuelAllowance;
+      const otherDeductions = settlement.baseProrationDeduction;
+      // Net Salary = base + the SETTLEMENT allowances (0 for a leaver who keeps none), matching
+      // the col-13 formula base+ECOL+Fuel exactly. fixedSalary.netSalary carries the full
+      // standard allowances, which the row's own ECOL/Fuel=0 cells would then contradict.
+      const netSalary = money(baseSalary + extraCostOfLiving + fuelAllowance);
       const parts = calculatePayrollParts({
         baseSalary,
         deductions: otherDeductions,
@@ -530,6 +585,7 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
       const monthSalary = parts.totalPayable;
       const { firstPart, secondPart } = resolvePayrollSplit({
         baseSalary,
+        basicSalary: parts.basicSalary,
         monthSalary,
         otherDeductions,
         paymentMode: parts.paymentMode,
@@ -544,12 +600,10 @@ async function buildUploadRows(month: number, year: number): Promise<PayrollTemp
         baseSalary,
         bonus: 0,
         comment:
-          payrollEmployee.isTerminalPayroll
-            ? "Resignation payroll row. Cost of living and fuel are zero; base salary is prorated through last working date."
-            : parts.paymentMode === "two_parts"
-            ? "Fixed starter row. Add monthly expenses, additions, and deductions before upload."
-            : "Fixed starter row. Add monthly expenses, additions, and deductions before upload.",
+          readyLifecycleComment(settlement) ??
+          "Fixed starter row. Add monthly expenses, additions, and deductions before upload.",
         crm: 0,
+        effectiveEndDay: settlement.effectiveEndDay,
         employeeCode: employee.hrId,
         employmentIncomeTax,
         expenses: 0,
@@ -837,7 +891,7 @@ function rowValues(
         row.monthSalary,
       ),
       formulaValue(
-        `IF(${paymentMode}="One Part",MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),MIN(MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),ROUND(${baseSalary}*0.7,2),MAX(0,${baseSalary}-${otherDeductions})))`,
+        `IF(${paymentMode}="One Part",MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),MIN(MAX(0,${monthSalary}-MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive}))),ROUND(${baseSalary}*${BASIC_SALARY_RATE},2),MAX(0,${baseSalary}-${otherDeductions})))`,
         row.firstPart,
       ),
       formulaValue(`IF(${paymentMode}="One Part",MIN(MAX(0,${monthSalary}),MAX(0,${expenses}+${incentive})),MAX(0,ROUND(${monthSalary}-${firstPart},2)))`, row.secondPart),
@@ -1078,7 +1132,7 @@ function upsertWorkingDaysCalcSheet(workbook: ExcelJS.Workbook, month: number, y
     ["Cost of Living", exampleAllowances.extraCostOfLiving],
     ["Fuel", exampleAllowances.fuelAllowance],
     ["Net Salary", { formula: "B5+B6+B7" }],
-    ["Basic Salary", { formula: "B5*70%" }],
+    ["Basic Salary", { formula: `B5*${basicSalaryRatePercentLabel}` }],
     ["Payroll Calendar Days", payrollDaysInMonth(month, year)],
     ["Base Daily Rate", { formula: "B5/B10" }],
     ["Example Hire-Day-20 Deduction", { formula: "B5-((B5/B10)*(B10-20+1))" }],
@@ -1252,11 +1306,12 @@ function upsertSalaryPolicySheet(workbook: ExcelJS.Workbook) {
     ["Extra Cost of Living", "From April 2026: NSM 5000; DSM 3000; MR 2000; Marketing Manager 3000; Product Manager 3000; Group Product Manager 3000; Training 3000; all other positions 1500."],
     ["Fuel Allowance", "From April 2026: 500 for every employee."],
     ["Net Salary", "Base Salary + Extra Cost of Living + Fuel Allowance."],
-    ["Basic Salary", "Base Salary x 70%."],
+    ["Basic Salary", `Base Salary x ${basicSalaryRatePercentLabel}.`],
     ["Gross Salary", "Base Salary + Social Insurance + Employment Income Tax."],
     ["Ready Sheet Formulas", "Ready payroll rows use Excel formulas for Gross Salary, Net Salary, Total Additions, Governmental Deductions, Other Deductions proration, Total Deductions, Month Salary, First Part, and Second Part."],
-    ["Partial Month Hires", "Payroll prorates on the actual calendar days in the payroll month (28, 29, 30 or 31). If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / days in month) x eligible days). Hire day is included."],
-    ["First Part", "One Part: Month Salary minus Expenses and Incentive. Two Parts: MIN(Month Salary minus Expenses and Incentive, Base Salary x 70%, Base Salary - Other Deductions) so low final dues are paid fully in First Part."],
+    ["Partial Month Hires", "Payroll prorates on the actual calendar days in the payroll month (28, 29, 30 or 31). If Hire Date is inside the payroll month, Other Deductions auto-calculates Base Salary - ((Base Salary / days in month) x eligible days). Hire day is included. Extra Cost of Living and Fuel Allowance are paid in full to a new hire."],
+    ["Resignations", "Last Working Date on or before the 25th: Base Salary is prorated to the days worked, and Extra Cost of Living and Fuel Allowance are both 0. Last Working Date after the 25th: Base Salary is paid in FULL and both Extra Cost of Living and Fuel Allowance are paid in full, with no proration."],
+    ["First Part", `One Part: Month Salary minus Expenses and Incentive. Two Parts: MIN(Month Salary minus Expenses and Incentive, Base Salary x ${basicSalaryRatePercentLabel}, Base Salary - Other Deductions) so low final dues are paid fully in First Part.`],
     ["Second Part", "Expenses and Incentive always pay in Second Part. Two Parts also includes any remaining Month Salary after First Part. Never below 0."],
     ["Ready Sheet Sorting", "Ready payroll rows are ordered in four blocks: One Part, already hired Two Parts, current-month Two Parts new hires, then current-month resignations. Rows inside each block are sorted from oldest to newest by the relevant date."],
     ["Ready Sheet Editing", "Ready payroll locks fixed employee and salary fields. Monthly variable fields stay editable: Expenses, Incentive, Overtime, Bonus, Other Additions, CRM, Finger Print, Unpaid Vacations, Medical Insurance, Loans, and Other Deductions."],
@@ -1400,6 +1455,9 @@ async function buildReadyRows(
           bonus: record.bonus ?? 0,
           comment: record.payrollComment ?? "",
           crm: record.crm ?? 0,
+          // Batch-export rows are already-computed history with no live last-working date, so the
+          // proration formula's leaver branch never runs; month-end keeps the type satisfied.
+          effectiveEndDay: payrollDaysInMonth(month, year),
           employeeCode: record.hrId,
           employmentIncomeTax: record.employmentIncomeTax ?? 0,
           expenses: record.expenses ?? 0,
@@ -1457,21 +1515,35 @@ async function buildReadyRows(
         positionTitle: employee.positionTitle,
         year,
       });
-      const extraCostOfLiving = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.extraCostOfLiving);
-      const fuelAllowance = payrollEmployee.isTerminalPayroll ? 0 : money(standardAllowances.fuelAllowance);
+      const standardExtraCostOfLiving = money(standardAllowances.extraCostOfLiving);
+      const standardFuelAllowance = money(standardAllowances.fuelAllowance);
       const socialInsurance = money(employee.socialInsurance);
       const employmentIncomeTax = money(employee.taxes);
+      // Contract structure from the STANDARD allowances — see the matching note in
+      // buildUploadRows. The lifecycle rule changes what is PAID, never the base it prorates.
       const fixedSalary = resolveFixedSalaryAmounts({
         baseSalary: employee.baseSalary,
         basicSalary: employee.basicSalary,
         employmentIncomeTax,
-        extraCostOfLiving,
-        fuelAllowance,
+        extraCostOfLiving: standardExtraCostOfLiving,
+        fuelAllowance: standardFuelAllowance,
         grossSalary: employee.grossSalary,
         netSalary: employee.netSalary,
         socialInsurance,
       });
       const baseSalary = money(fixedSalary.baseSalary);
+      const settlement = resolveReadyLifecycleSettlement({
+        baseSalary,
+        extraCostOfLiving: standardExtraCostOfLiving,
+        fuelAllowance: standardFuelAllowance,
+        hireDate: employee.hireDate,
+        isResignation: payrollEmployee.isResignation,
+        lastWorkingDate: payrollEmployee.lastWorkingDate,
+        month,
+        year,
+      });
+      const extraCostOfLiving = settlement.extraCostOfLiving;
+      const fuelAllowance = settlement.fuelAllowance;
       const parts = calculatePayrollParts({
         additions: 0,
         baseSalary,
@@ -1492,13 +1564,7 @@ async function buildReadyRows(
       const fingerPrint = 0;
       const unpaidVacations = 0;
       const loans = 0;
-      const otherDeductions = calculateBaseLifecycleProrationDeduction(
-        baseSalary,
-        employee.hireDate,
-        payrollEmployee.lastWorkingDate,
-        month,
-        year,
-      );
+      const otherDeductions = settlement.baseProrationDeduction;
       const totalAdditions = money(
         expenses + incentive + overtime + bonus + extraCostOfLiving + fuelAllowance + otherAdditions,
       );
@@ -1511,7 +1577,11 @@ async function buildReadyRows(
           otherDeductions,
       );
       const paymentMode = payrollPaymentModeLabel(parts.paymentMode);
-      const netSalary = money(fixedSalary.netSalary);
+      // Net Salary = base + the SETTLEMENT allowances (0 for a leaver who keeps none), matching
+      // the col-13 formula base+ECOL+Fuel. Using fixedSalary.netSalary (full standard allowances)
+      // cached a Month Salary inflated by the very ECOL/Fuel this row zeroes — self-contradictory
+      // and, on a raw re-upload, tripping the net-salary mismatch guard that then excludes the row.
+      const netSalary = money(baseSalary + extraCostOfLiving + fuelAllowance);
       const monthSalary = money(
         netSalary +
           expenses +
@@ -1523,6 +1593,7 @@ async function buildReadyRows(
       );
       const { firstPart, secondPart } = resolvePayrollSplit({
         baseSalary,
+        basicSalary: parts.basicSalary,
         monthSalary,
         otherDeductions,
         paymentMode: parts.paymentMode,
@@ -1537,12 +1608,12 @@ async function buildReadyRows(
         baseSalary,
         bonus,
         comment:
-          payrollEmployee.isTerminalPayroll
-            ? "Resignation payroll row. Cost of living and fuel are zero; base salary is prorated through last working date."
-            : parts.paymentMode === "two_parts"
-            ? "Day 1: 70% of base only. Day 10: remaining pay plus expenses and incentive."
-            : "Day 1: net salary. Day 10: expenses and incentive.",
+          readyLifecycleComment(settlement) ??
+          (parts.paymentMode === "two_parts"
+            ? `Day 1: ${basicSalaryRatePercentLabel} of base only. Day 10: remaining pay plus expenses and incentive.`
+            : "Day 1: net salary. Day 10: expenses and incentive."),
         crm,
+        effectiveEndDay: settlement.effectiveEndDay,
         employeeCode: employee.hrId,
         employmentIncomeTax,
         expenses,
