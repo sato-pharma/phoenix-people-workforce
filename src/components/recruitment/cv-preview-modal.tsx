@@ -37,26 +37,60 @@ type Props = {
 // same approach Google Drive/Notion use, so it behaves identically for every user regardless
 // of their browser's PDF settings, and also works on mobile (which can't render PDF iframes
 // at all).
+// The bytes arrive base64-encoded as plain text — src/lib/recruitment/file-response.ts explains
+// why they cannot be sent as a PDF. atob yields a binary string; copy it out into real bytes.
+// The ArrayBuffer is allocated explicitly rather than by length: `new Uint8Array(n)` is typed
+// Uint8Array<ArrayBufferLike>, which BlobPart rejects because it could be a SharedArrayBuffer.
+function base64ToBytes(encoded: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sidePanel }: Props) {
   const dialogRef = useDialogA11y({ open: true, onClose });
   const kind = detectCvFileKind(mimeType ?? "", fileName);
-  // The Download link needs "attachment" (a real save-file prompt); fetch() for in-page
-  // rendering doesn't care either way, but reuses the same inline URL as before for consistency.
-  const inlineUrl = `${downloadUrl}${downloadUrl.includes("?") ? "&" : "?"}disposition=inline`;
+  const separator = downloadUrl.includes("?") ? "&" : "?";
+  // The Download link needs "attachment" (a real save-file prompt); "inline" is for the
+  // open-in-a-tab escape hatch and the <img> source.
+  const inlineUrl = `${downloadUrl}${separator}disposition=inline`;
+  // The in-page renderer deliberately does NOT fetch inlineUrl. A download-manager extension
+  // CANCELS any request whose response looks like a PDF so it can take the file itself, which
+  // surfaced in production as a bare "Failed to fetch" with nothing rendered while the very same
+  // URL downloaded fine through the extension. base64-as-text gives it nothing to match on.
+  const bytesUrl = `${downloadUrl}${separator}format=base64`;
 
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
-  const [loading, setLoading] = useState(kind === "docx" || kind === "pdf");
+  const [loading, setLoading] = useState(kind === "docx" || kind === "pdf" || kind === "image");
   const [error, setError] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (kind !== "docx" && kind !== "pdf") return;
+    if (kind !== "docx" && kind !== "pdf" && kind !== "image") return;
     let active = true;
+    let objectUrl: string | null = null;
     void (async () => {
       try {
-        const res = await fetch(inlineUrl);
+        const res = await fetch(bytesUrl);
         if (!res.ok) throw new Error("Could not load the document.");
-        const buffer = await res.arrayBuffer();
+        const bytes = base64ToBytes(await res.text());
+
+        if (kind === "image") {
+          // Same reasoning as the PDF path below: the bytes are already in hand, so the <img>
+          // never issues a second request that a download-manager extension could intercept.
+          // Photographed CVs arrive this way over WhatsApp, so this is a real intake path.
+          objectUrl = URL.createObjectURL(new Blob([bytes], { type: mimeType ?? "image/jpeg" }));
+          if (!active) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+          }
+          setImageUrl(objectUrl);
+          return;
+        }
 
         if (kind === "pdf") {
           // pdf.js (library AND worker) are loaded as plain static assets from public/pdfjs/
@@ -87,7 +121,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
           // the blocked eval and fall back anyway, but disabling it explicitly avoids a console
           // CSP violation on every render and makes behavior identical between dev and prod.
           // Rendering correctness is unaffected; only the font-JIT optimization is skipped.
-          const doc = await pdfjsLib.getDocument({ data: buffer, isEvalSupported: false }).promise;
+          const doc = await pdfjsLib.getDocument({ data: bytes, isEvalSupported: false }).promise;
           for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
             if (!active) return;
             const page = await doc.getPage(pageNumber);
@@ -111,7 +145,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         // message instead of letting renderAsync throw an opaque unzip error. mammoth (the old
         // text path) couldn't read legacy .doc either — this isn't a new limitation, just a
         // clearer one.
-        const sig = new Uint8Array(buffer.slice(0, 4));
+        const sig = bytes.subarray(0, 4);
         const isOoxmlZip = sig[0] === 0x50 && sig[1] === 0x4b && sig[2] === 0x03 && sig[3] === 0x04;
         if (!isOoxmlZip) {
           throw new Error("This is an older Word (.doc) format that can't be previewed here — use Download to open it.");
@@ -123,7 +157,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         const container = docxContainerRef.current;
         if (!active || !container) return;
         container.innerHTML = "";
-        await renderAsync(new Blob([buffer]), container, undefined, {
+        await renderAsync(new Blob([bytes]), container, undefined, {
           inWrapper: true,
           ignoreWidth: false,
           ignoreHeight: false,
@@ -138,8 +172,9 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
     })();
     return () => {
       active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [kind, inlineUrl]);
+  }, [kind, bytesUrl, mimeType]);
 
   if (typeof document === "undefined") return null;
 
@@ -175,11 +210,14 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
         <div ref={pdfContainerRef} />
       </div>
     ) : kind === "image" ? (
-      // <img> fetches the resource directly rather than navigating the way an <iframe> does, so
-      // it renders fine even under "attachment" — but it's pointed at the same inline URL as the
-      // iframe above for consistency, and in case a browser ever changes that behavior.
-      // eslint-disable-next-line @next/next/no-img-element -- Drive-hosted CV bytes behind our own API route, not a static asset next/image can optimize
-      <img alt={fileName} className="mx-auto max-h-full max-w-full object-contain" src={inlineUrl} />
+      <div className="min-h-full bg-slate-100 p-4">
+        {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
+        {failureNotice}
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- CV bytes already held in memory as a blob, not a static asset next/image can optimize
+          <img alt={fileName} className="mx-auto max-h-full max-w-full object-contain" src={imageUrl} />
+        ) : null}
+      </div>
     ) : kind === "docx" ? (
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
