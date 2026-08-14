@@ -98,7 +98,34 @@ export function runResignationNotificationSubjectTests() {
   assert.match(
     policySource,
     /if \(!subject\) continue;/,
-    "permission_based must still refuse to fall back to a broad recipient list when there is genuinely no subject.",
+    "permission_based must still refuse to match a SUBJECT-SCOPED candidate (self / reports-to / manager chain) when there is genuinely no subject.",
+  );
+
+  // ── …but a company/system-scope role must be decided BEFORE that bail ──────
+  // Many operational alerts carry no subject at all — an ingestion stall, a finished
+  // employee import. Those hit `if (!subject) continue` first, which rejected every
+  // candidate INCLUDING Super Admin and CEO, so the alert resolved to nobody and the
+  // fail-closed guard skipped it on every channel while still writing rows that made
+  // cron look healthy. Production over 60 days: employee_import 4 events / 4 skipped,
+  // attendance 37 skipped, payroll 24 skipped — none of them ever reaching a human.
+  //
+  // This is ordering only. With a subject present the old code already accepted these
+  // candidates via the same scope test, so nothing newly qualifies; and canAccess()
+  // still gates every candidate above, so the audience stays "roles that may access
+  // this resource", never "everyone".
+  const permissionBasedSlice = policySource.slice(
+    policySource.indexOf("async function permissionBasedRecipients"),
+  );
+  const scopeEscapeIndex = permissionBasedSlice.indexOf('context.scope === "company"');
+  const subjectBailIndex = permissionBasedSlice.indexOf("if (!subject) continue;");
+  assert.ok(
+    scopeEscapeIndex !== -1 && subjectBailIndex !== -1,
+    "permissionBasedRecipients must still contain both the company/system-scope escape and the no-subject bail",
+  );
+  assert.ok(
+    scopeEscapeIndex < subjectBailIndex,
+    "the company/system-scope escape must come BEFORE `if (!subject) continue` — behind it, a subject-less " +
+      "ops alert (ingestion stall, employee import) resolves to zero recipients and is silently skipped on every channel",
   );
 
   // The fail-closed guard itself must survive — it exists because a failed
