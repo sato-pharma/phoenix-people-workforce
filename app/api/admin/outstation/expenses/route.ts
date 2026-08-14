@@ -19,33 +19,13 @@ import { assertSameOriginMutation } from "@/lib/security/api-csrf";
 import type { ExpenseTripRecord } from "@/lib/payroll/types";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { logAppError } from "@/lib/error-monitor/service";
+// Was a private copy in this file (#2062). Shared now because instrumentation.ts's app-wide
+// onRequestError needed the identical logic and had kept the broken `String(error)` version —
+// one route was fixed while the net under all of them still recorded "[object Object]".
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-/**
- * What was actually thrown, in words.
- *
- * NOT every throw is an Error. Supabase hands back a plain `{ message, details, hint, code }` and
- * this codebase rethrows it as-is, so `String(error)` yields the useless "[object Object]" — which
- * is exactly what the first version of this logging recorded on 2026-08-12, turning a captured
- * error into a captured shrug. Own properties are enumerated so a PostgrestError's `code` and
- * `details` survive, and JSON.stringify is guarded because a cyclic throw must not replace one
- * unreadable log line with a second failure.
- */
-function describeThrown(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object" && error !== null) {
-    try {
-      return JSON.stringify(error, Object.getOwnPropertyNames(error));
-    } catch {
-      return Object.getOwnPropertyNames(error)
-        .map((key) => `${key}=${String((error as Record<string, unknown>)[key])}`)
-        .join(" ");
-    }
-  }
-  return String(error);
-}
 
 export async function GET(request: Request) {
   // Hoisted so the catch below can attribute the failure to a person, the same reason

@@ -4,6 +4,11 @@
 
 import type { Instrumentation } from "next";
 
+// Zero-import pure module, chosen so this stays edge-safe (see the note below and the file's own
+// header). It is the reason a Supabase `{ message, code, hint }` throw reaches the error table as
+// its own text rather than as "[object Object]".
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+
 // Starts the continuous iReports360 live poller (src/lib/crm/live-poller.ts) exactly once per
 // server process. The import MUST stay dynamic and inside the nodejs-runtime guard: this hook is
 // bundled for BOTH runtimes (see the edge-safety note below), and the poller pulls in the whole
@@ -56,7 +61,12 @@ async function forwardServerErrorToIngestion(
 
     await fetch(`${origin}/api/errors/client`, {
       body: JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
+        // NOT `String(error)` — that was the bug. This hook is the catch-all under every route
+        // handler and server component, so a plain-object throw (every Supabase PostgrestError)
+        // arrived here and was forwarded as the literal string "[object Object]". The receiving
+        // route stores whatever it is handed, so the loss happened HERE and nothing downstream
+        // could recover it. 7 such rows on /api/auth/heartbeat are still in production.
+        message: describeThrown(error),
         route: request.path || null,
         routeType: context?.routeType ?? null,
         source: "server",
