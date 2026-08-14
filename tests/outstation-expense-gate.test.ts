@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  isOutstationExpenseInPayroll,
   nextEvidenceGateStatus,
   outstationRequestMayReachPayroll,
   resolveOutstationGateState,
@@ -188,6 +189,20 @@ export function runOutstationExpenseGateTests() {
     /getLinkedOutstationPayrollExpense/,
     "and must refuse to push a request that is already in payroll, or a retry pays the same trip twice",
   );
+  // …but LOOKING UP the linked row is not the same as reading it correctly, which is why the
+  // assertion above passed for months while the release was broken. The row exists as soon as the
+  // claim is QUEUED; only a batch id or an import timestamp means it was actually paid.
+  assert.doesNotMatch(
+    releaseSlice.slice(0, 2500),
+    /if \(linked\) \{/,
+    "the release gate must not test the expense ROW's existence — a queued row is not a paid one, " +
+      "and that reading answered 'already in payroll' for all 360 production rows, stranding every held claim",
+  );
+  assert.match(
+    releaseSlice.slice(0, 2500),
+    /isOutstationExpenseInPayroll\(linked\)/,
+    "it must ask the shared predicate, so this reading and the five others in service.ts cannot drift apart",
+  );
 
   // ── A held request must always be REACHABLE by the person who can clear it ──────
   // The gate withholds money, so the surface that lets an employee clear it is load-bearing.
@@ -215,5 +230,33 @@ export function runOutstationExpenseGateTests() {
     /resolveOutstationGateState\(/,
     "it must decide membership with the SAME resolver the payroll gate uses, so the queue and the " +
       "thing withholding the money can never disagree",
+  );
+
+  // ── "Has an expense row" is NOT "is in payroll" ─────────────────────────────────
+  // A row is written when the claim is QUEUED and stays unimported until a batch takes it. The
+  // release path used to test the row's mere existence, so it answered "already in payroll" for
+  // every queued claim — which was all 360 rows in production, every one carrying a null
+  // imported_payroll_batch_id. Held claims could never be released, and the stated reason
+  // misdirected whoever read it. These four cases are the whole distinction.
+  assert.equal(
+    isOutstationExpenseInPayroll({ importedPayrollBatchId: null, importedToPayrollAt: null }),
+    false,
+    "a QUEUED expense row with no batch and no import timestamp has NOT reached payroll — this is " +
+      "the shape of all 360 production rows, and reading it as 'already in payroll' stranded every held claim",
+  );
+  assert.equal(
+    isOutstationExpenseInPayroll(null),
+    false,
+    "no expense row at all is certainly not in payroll",
+  );
+  assert.equal(
+    isOutstationExpenseInPayroll({ importedPayrollBatchId: "batch-7", importedToPayrollAt: null }),
+    true,
+    "a row carrying a batch id HAS reached payroll and must never be released into it twice",
+  );
+  assert.equal(
+    isOutstationExpenseInPayroll({ importedPayrollBatchId: null, importedToPayrollAt: "2026-08-09T09:00:00Z" }),
+    true,
+    "an import timestamp alone also means it reached payroll — either column is sufficient",
   );
 }
