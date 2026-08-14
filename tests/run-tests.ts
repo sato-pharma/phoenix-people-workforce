@@ -736,6 +736,7 @@ import { runClosingExcludesHeadOfficeTests } from "./closing-excludes-head-offic
 import { runClosingRegionGroupingPerLineTests } from "./closing-region-grouping-per-line.test.ts";
 import { runPayrollFractionalDeductionDayScalingTests } from "./payroll-fractional-deduction-day-scaling.test.ts";
 import { runDeductionsCrmSingleMonthScanTests } from "./deductions-crm-single-month-scan.test.ts";
+import { runCrmDayMapPushdownTests } from "./crm-day-map-pushdown.test.ts";
 import { runSfeManagerNavDeadLinksTests } from "./sfe-manager-nav-dead-links.test.ts";
 import { runCrmDepartedExclusionHandoverTests } from "./crm-departed-exclusion-handover.test.ts";
 import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arrival-photo-capture-reachable.test.ts";
@@ -1761,6 +1762,11 @@ await runTest(
 await runTest(
   "deductions CRM single month scan (one shared company-wide visit scan, never one per leaver — a wider window cannot change a leaver's charge)",
   runDeductionsCrmSingleMonthScanTests,
+);
+
+await runTest(
+  "CRM day-map pushdown (a bounded employee set is fetched by index and merged into the exact one-row-per-id, id-ascending shape a single company-wide scan produced)",
+  runCrmDayMapPushdownTests,
 );
 
 await runTest(
