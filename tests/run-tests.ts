@@ -793,6 +793,7 @@ import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-ob
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
 import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
+import { runReassignOwnershipFrozenWriteTests } from "./reassign-ownership-frozen-write.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2009,6 +2010,10 @@ await runTest(
 await runTest(
   "deleting a sales batch cannot destroy frozen sales_records (guard runs BEFORE the batch delete, refuses with a 409 the route surfaces, and the batch FK is ON DELETE RESTRICT not CASCADE)",
   runSalesBatchDeleteGuardTests,
+);
+await runTest(
+  "phx_reassign_replacement_ownership never writes frozen sales_records (SECURITY DEFINER runs as owner, so the Rule #1 revoke does not stop it) while every other reassignment survives",
+  runReassignOwnershipFrozenWriteTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
