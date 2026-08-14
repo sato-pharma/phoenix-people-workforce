@@ -305,8 +305,21 @@ function parseGoogleHolidayIcs(value: string) {
   return events;
 }
 
+/**
+ * Google's Egypt public-holiday calendar mixes two event types: entries whose DESCRIPTION is
+ * exactly "Public holiday" (a real day off) and entries whose DESCRIPTION starts with
+ * "Observance" (a cultural/religious date Google notes for awareness only — its own event text
+ * literally says "To hide observances, go to Google Calendar Settings"). An observance is never a
+ * day off; treating it as one is how e.g. "Flooding of the Nile" (Wafaa El-Nil, Aug 15) ended up
+ * silently marked as a national holiday everywhere with no admin ever confirming it.
+ */
+function isObservanceOnly(description: string | null | undefined) {
+  return /^observance/i.test(String(description ?? "").trim());
+}
+
 function googleEventsToHolidays(events: GoogleCalendarEvent[], monthStart: string, monthEnd: string) {
   return mergeHolidayRows(events
+    .filter((event) => !isObservanceOnly(event.description))
     .map((event): EgyptianNationalHoliday | null => {
       const startDate = dateOnlyFromGoogle(event.start);
       if (!startDate) return null;
@@ -327,6 +340,7 @@ function googleEventsToHolidays(events: GoogleCalendarEvent[], monthStart: strin
 
 function icsEventsToHolidays(events: ParsedIcsEvent[], monthStart: string, monthEnd: string) {
   return mergeHolidayRows(events
+    .filter((event) => !isObservanceOnly(event.description))
     .map((event): EgyptianNationalHoliday | null => {
       if (!event.startDate) return null;
       const endDate = event.endDate ?? event.startDate;
