@@ -9,14 +9,17 @@ import {
 } from "../src/lib/auth/permissions.ts";
 
 export function runEmployeeAccessProvisioningTests() {
-  // GOVERNANCE: a job title is descriptive only and is never a permission
+  // GOVERNANCE: a job title is descriptive only and is never a general permission
   // source. Provisioning resolves every job/position title — including ones that
-  // look senior — to the least-privilege Employee role. The real access role is
-  // assigned explicitly on app_auth_users afterwards.
+  // look senior — to the least-privilege Employee role, EXCEPT the two field-force
+  // titles allowlisted in access-role.ts (owner-approved 2026-08-10, asserted
+  // below). The real access role for anyone else is assigned explicitly on
+  // app_auth_users afterwards.
+  //
+  // Regional/National Sales Manager stay on this list on purpose: HIERARCHY and
+  // LINE scope reach far beyond one team, so they are elevated by hand.
   for (const title of [
     "Regional Sales Manager",
-    "District Sales Manager",
-    "Medical Representative",
     "Admin Assistant",
     "Admin Assist",
     "HR Manager",
@@ -40,8 +43,74 @@ export function runEmployeeAccessProvisioningTests() {
     );
   }
 
-  // The company job titles remain known *display labels* in the model, but a
-  // label is never a permission source: each one still provisions as Employee.
+  // ── Field-force titles DO provision with their role (owner-approved 2026-08-10) ──────
+  // Six accounts (PD-0004, PD-0006, PD-0008, PD-0009, PD-0010, CN-0005) sat crippled on
+  // the Employee role for weeks because the manual elevation step was forgotten. A DSM on
+  // Employee cannot even approve his own reps' leave. These two titles are the entire
+  // allowlist; both are privilege rank 100, so nothing gains admin reach.
+  for (const [title, expected] of [
+    ["District Sales Manager", "District Manager"],
+    ["district sales manager", "District Manager"],
+    ["  District   Sales   Manager  ", "District Manager"],
+    ["DSM", "District Manager"],
+    ["Medical Representative", "Medical Rep"],
+    ["medical representative", "Medical Rep"],
+    ["Medical Rep", "Medical Rep"],
+  ] as const) {
+    assert.equal(
+      resolveEmployeeAccessRole({ jobTitle: title }),
+      expected,
+      `Job title "${title}" must provision as ${expected}, not Employee`,
+    );
+    assert.equal(
+      resolveEmployeeAccessRole({ positionTitle: title }),
+      expected,
+      `Position title "${title}" must provision as ${expected}, not Employee`,
+    );
+  }
+
+  // ── ANTI-ESCALATION: typed text must never become a privileged role ──────────────────
+  // resolveEmployeeAccessRole must NOT delegate to normalizeRole/resolveJobFunctionRole:
+  // both parse any canonical role string, and these are REAL employees.job_title values in
+  // production. A parser fallback would hand out CEO from a job title.
+  for (const title of [
+    "Ceo",
+    "CEO",
+    "Super Admin",
+    "Sfe Manager",
+    "SFE Manager",
+    "Talent Acquisition",
+    "Finance Manager",
+    "Marketing Manager",
+    "Training Manager",
+    "Group Product Manager",
+    "Regional Manager",
+    "Manager",
+  ]) {
+    assert.equal(
+      resolveEmployeeAccessRole({ jobTitle: title }),
+      "Employee",
+      `Job title "${title}" must NOT auto-grant a privileged role — that would make typed text a permission source`,
+    );
+  }
+
+  // The guardrail that keeps the above true: no parser fallback in the module.
+  const accessRoleSource = readFileSync("src/lib/employees/access-role.ts", "utf8");
+  for (const forbidden of ["normalizeRole", "resolveJobFunctionRole", "parseRoleStrict"]) {
+    assert.ok(
+      !accessRoleSource.includes(`${forbidden}(`),
+      `access-role.ts must not call ${forbidden} — it resolves any role string and would turn a job title into a privilege grant`,
+    );
+  }
+
+  // Blank/unknown titles fall back to least privilege.
+  for (const title of [null, undefined, "", "   ", "Buffet", "Qppv", "Totally Made Up Title"]) {
+    assert.equal(resolveEmployeeAccessRole({ jobTitle: title }), "Employee");
+  }
+
+  // The company job titles remain known *display labels* in the model. Outside the
+  // field-force allowlist above, a label is never a permission source.
+  const fieldForceTitles = new Set(["District Sales Manager", "Medical Representative"]);
   const expectedCompanyTitles = [
     "District Sales Manager",
     "Medical Representative",
@@ -69,6 +138,7 @@ export function runEmployeeAccessProvisioningTests() {
       (phoenixCompanyJobTitles as readonly string[]).includes(title),
       `${title} must remain in the Phoenix company title list`,
     );
+    if (fieldForceTitles.has(title)) continue;
     assert.equal(
       resolveEmployeeAccessRole({ jobTitle: title }),
       "Employee",
