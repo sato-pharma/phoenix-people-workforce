@@ -23,6 +23,7 @@ const GRANDFATHERED_DUPLICATE_TIMESTAMPS = new Set([
   '20260616120000', // attendance_deferred_atomic_ops / dv_non_mr_status / position_vacancies_status_integrity
   '20260617130000', // coaching_scale_5 / product_aliases_per_distributor
   '20260728100000', // au_resign_vacate_all_open_seats (#1416) / restore_report_rpc_statement_timeouts (#1415) — authored in parallel, each green alone, collided at merge; BOTH already applied to prod under distinct schema_migrations versions (20260728092516 / 20260728091832), so renaming either would desync migration history
+  '20260814150000', // phx_rep_bulk_dependency (#2131) / cv_extraction_any_job_title (#2130) — the same parallel-authoring collision as the line above, three minutes apart: #2131 merged green at 13:00 UTC, #2130 merged green at 13:03, and the duplicate only exists once BOTH are on main, so neither PR could have caught it. BOTH already applied to prod under distinct schema_migrations versions (20260814125822 / 20260814125938), so renaming either would desync migration history
 ]);
 
 let errors = 0;
