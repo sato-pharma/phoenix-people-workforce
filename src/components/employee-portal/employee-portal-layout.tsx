@@ -36,6 +36,7 @@ import {
   IdCard,
   CalendarDays,
   Headphones,
+  HeartPulse,
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
@@ -372,10 +373,17 @@ function buildEmployeePortalSections({
       ],
     },
     // Talent Acquisition's portal mirror of the admin-shell hrAuthorityNavigationRoles
-    // tools (see app/employee-portals/{recruitment,cv-database,hiring-documents,
-    // vacation-control,support-requests}/page.tsx). Empty — and dropped by the
-    // items.length filter below — for every other role. HR Support Requests lives in
-    // the "HR Support" section below, alongside Request Support.
+    // tools (see app/employee-portals/{recruitment,cv-review-queue,cv-database,
+    // hiring-documents,cv-extraction-analytics,intake-health,vacation-control,
+    // support-requests}/page.tsx). Empty — and dropped by the items.length filter
+    // below — for every other role. HR Support Requests lives in the "HR Support"
+    // section below, alongside Request Support.
+    //
+    // This list must cover every tool on the admin hub (recruitmentHiringPageItems),
+    // because the hub itself is unreachable for this role: app/(admin)/layout.tsx
+    // redirects portal-mode users out of the entire admin group. A tool added there
+    // and not here is invisible to the only role that works it —
+    // tests/recruitment-hub-portal-coverage.test.ts fails when the two drift.
     {
       title: "Recruitment & Hiring",
       items: [
@@ -383,6 +391,8 @@ function buildEmployeePortalSections({
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-review-queue", label: "CV Review Queue", icon: ClipboardList }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-extraction-analytics", label: "CV Extraction Accuracy", icon: ChartColumnBig }] : []),
+        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/intake-health", label: "Inbound Intake Health", icon: HeartPulse }] : []),
       ],
     },
     // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline

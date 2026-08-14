@@ -73,6 +73,11 @@ export function runEmployeePortalBottomNavTests() {
     "/employee-portals/cv-review-queue",
     "/employee-portals/cv-database",
     "/employee-portals/hiring-documents",
+    // CV Extraction Accuracy and Inbound Intake Health: same Talent-Acquisition-only class again,
+    // and both are wide read-only tables (per-position × per-field correction rates; a 30-day
+    // funnel plus the dead-letter list). Desk work, not a phone shortcut.
+    "/employee-portals/cv-extraction-analytics",
+    "/employee-portals/intake-health",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",
