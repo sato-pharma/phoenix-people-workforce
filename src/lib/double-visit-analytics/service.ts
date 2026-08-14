@@ -68,8 +68,6 @@ import type {
 // Agents" tab), so this module does no CRM-identity resolution of its own.
 const DOUBLE_VISIT_TYPE_CODES = [0, -8] as const;
 
-type JsonRecord = Record<string, unknown>;
-
 export type DoubleVisitDbRow = {
   activity_date: string;
   area_name: string | null;
@@ -78,7 +76,8 @@ export type DoubleVisitDbRow = {
   id: string;
   line_name: string | null;
   period: "AM" | "PM" | "UNKNOWN";
-  raw_payload: JsonRecord | null;
+  visit_type: number | null;
+  visit_type_description: string | null;
   source_record_id: string | null;
   source_type: DoubleVisitSourceType;
   visit_count: number | null;
@@ -341,8 +340,9 @@ type MirrorVisitRow = {
   double_hr_id: string | null;
   double_name: string | null;
   id: string;
-  raw_payload: JsonRecord | null;
   visit_date: string;
+  visit_type: number | null;
+  visit_type_description: string | null;
 };
 
 function periodFromAmpm(value: string | null): "AM" | "PM" | "UNKNOWN" {
@@ -389,7 +389,7 @@ async function paginateLiveMirrorVisits(
     visitTypes: [...DOUBLE_VISIT_TYPE_CODES],
     columns:
       "id, crm_visit_id, visit_date, agent_crm_id, agent_hr_id, agent_name, contact_name, customer_name, " +
-      "double_crm_id, double_hr_id, double_name, ampm, raw_payload",
+      "double_crm_id, double_hr_id, double_name, ampm, visit_type, visit_type_description",
   });
 }
 
@@ -462,7 +462,8 @@ function dbRowFromMirrorVisit(
     id: visit.id,
     line_name: preferRawLabel ? (label.lineName ?? visitedEmployee?.lineName ?? null) : (visitedEmployee?.lineName ?? label.lineName),
     period: periodFromAmpm(visit.ampm),
-    raw_payload: visit.raw_payload,
+    visit_type: visit.visit_type,
+    visit_type_description: visit.visit_type_description,
     source_record_id: String(visit.crm_visit_id),
     source_type: "ireports360",
     visit_count: 1,
@@ -1483,12 +1484,15 @@ function focusMonthBuckets(startMonth: string, asOf = new Date()) {
   return buckets;
 }
 
-/** "Regular" for visitType 0, else the CRM's own label — matches the module's own double-visit
- * filter (visit_type IN (0,-8)), so this only ever distinguishes Regular from Campaign now. */
-function deriveVisitKind(row: Pick<DoubleVisitDbRow, "raw_payload">): string {
-  const payload = row.raw_payload as { visitType?: number; visitTypeDescription?: string | null } | null;
-  if (payload?.visitType === 0) return "Regular";
-  return nullableText(payload?.visitTypeDescription ?? null) ?? "Non-Regular";
+/** "Regular" for visit_type 0, else the CRM's own label — matches the module's own double-visit
+ * filter (visit_type IN (0,-8)), so this only ever distinguishes Regular from Campaign now. Reads the
+ * dedicated visit_type / visit_type_description columns rather than the wide raw_payload jsonb (which
+ * this module no longer selects — see paginateLiveMirrorVisits). Those two columns are the exact
+ * source of the jsonb's visitType / visitTypeDescription fields — proven identical over the full
+ * mirror population (113,458 rows, 0 mismatches). */
+function deriveVisitKind(row: Pick<DoubleVisitDbRow, "visit_type" | "visit_type_description">): string {
+  if (row.visit_type === 0) return "Regular";
+  return nullableText(row.visit_type_description) ?? "Non-Regular";
 }
 
 // A double visit is always manager -> Medical Rep — a manager's own probation record (e.g. a

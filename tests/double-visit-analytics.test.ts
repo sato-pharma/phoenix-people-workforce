@@ -34,7 +34,8 @@ function dvRow(input: DvRowInput): Record<string, unknown> {
     id: `${input.dvHrId}-${input.date}-${input.visitedHrId ?? "x"}-${input.period ?? "PM"}-${input.visit}`,
     line_name: input.line ?? null,
     period: input.period ?? "PM",
-    raw_payload: null,
+    visit_type: null,
+    visit_type_description: null,
     source_record_id: null,
     source_type: "ireports360",
     visit_count: input.visit,
@@ -563,7 +564,8 @@ export function runDoubleVisitAnalyticsTests() {
     double_hr_id: input.double,
     double_name: input.doubleName ?? null,
     id: input.id,
-    raw_payload: null,
+    visit_type: null,
+    visit_type_description: null,
     visit_date: input.date ?? "2026-07-01",
   });
   type MirrorRows = Parameters<typeof resolveDoubleVisitChains>[0];
