@@ -1586,6 +1586,7 @@ async function resolveVacationPilotHrApprovers(directory: EmployeeDirectoryData)
 async function resolveVacationParallelApprovalRecipients(
   directory: EmployeeDirectoryData,
   employee: EmployeeDirectoryRow,
+  requesterRole: PhoenixRole,
 ): Promise<VacationApprovalRecipient[]> {
   const { manager, managerOfManager } = managerChain(directory, employee);
   // The direct manager is required. The manager-of-manager step is included only
@@ -1594,6 +1595,13 @@ async function resolveVacationParallelApprovalRecipients(
   if (!manager?.hrId) {
     throw new Error("Vacation approval chain is incomplete. Please contact HR before submitting a vacation request.");
   }
+
+  // Owner rule (2026-08-15): District Manager vacation requests skip the second
+  // management step entirely. Approval stops at the direct manager (typically the
+  // NSM; RSM for the minority of DMs who report through one) before going to HR —
+  // whoever would otherwise sit above the direct manager (usually the CEO) is
+  // dropped from the chain.
+  const includeManagerOfManager = requesterRole !== "District Manager";
 
   const hrApprovers = await resolveVacationPilotHrApprovers(directory);
   return [
@@ -1604,7 +1612,7 @@ async function resolveVacationParallelApprovalRecipients(
       stepKey: "direct_manager",
       userId: null,
     },
-    ...(managerOfManager?.hrId
+    ...(includeManagerOfManager && managerOfManager?.hrId
       ? [
           {
             email: managerOfManager.workEmail,
@@ -2615,7 +2623,9 @@ export async function getVacationRequestPageData(access: AccessContext) {
     dayPartOptions: VACATION_DAY_PARTS,
     employee: summarizeEmployee(employee),
     manager: manager ? summarizeEmployee(manager) : null,
-    managerOfManager: managerOfManager ? summarizeEmployee(managerOfManager) : null,
+    // District Managers never get a manager-of-manager approval step (owner rule,
+    // 2026-08-15), so the submission preview must not show one either.
+    managerOfManager: access.role !== "District Manager" && managerOfManager ? summarizeEmployee(managerOfManager) : null,
     vacationTypeOptions: VACATION_REQUEST_TYPES,
     weeklyOffPolicy,
   };
@@ -2665,11 +2675,14 @@ export async function createVacationRequest(access: AccessContext, input: Create
   const { manager, managerOfManager } = managerChain(directory, employee);
   // Only the direct manager is required; manager-of-manager is optional (top-of-org
   // reports, e.g. direct reports to the CEO, have no manager above their manager).
+  // District Managers never get a manager-of-manager step (owner rule, 2026-08-15) —
+  // see resolveVacationParallelApprovalRecipients.
+  const includesManagerOfManagerStep = access.role !== "District Manager";
   const usesSequentialWorkflow = isSequentialWorkflowType(resolvedVacationType);
   let approvalRecipients: VacationApprovalRecipient[];
   let initialRequestStatus: VacationRequestStatus = "pending_manager";
   if (manager?.hrId) {
-    approvalRecipients = await resolveVacationParallelApprovalRecipients(directory, employee);
+    approvalRecipients = await resolveVacationParallelApprovalRecipients(directory, employee, access.role);
   } else if (usesSequentialWorkflow) {
     // Broken reporting line on a sequential-workflow type (Annual/Other/Compensatory): create
     // only the HR step and park the request in `needs_assignment` so HR can assign the first
@@ -2749,8 +2762,8 @@ export async function createVacationRequest(access: AccessContext, input: Create
       line_name: employee.lineName,
       manager_hr_id: manager?.hrId ?? null,
       manager_name: manager?.fullName ?? null,
-      manager_of_manager_hr_id: managerOfManager?.hrId ?? null,
-      manager_of_manager_name: managerOfManager?.fullName ?? null,
+      manager_of_manager_hr_id: includesManagerOfManagerStep ? managerOfManager?.hrId ?? null : null,
+      manager_of_manager_name: includesManagerOfManagerStep ? managerOfManager?.fullName ?? null : null,
       notes: otherReason,
       payment_status: balance.paymentStatus,
       paid_duration_days: balance.paidDurationDays,

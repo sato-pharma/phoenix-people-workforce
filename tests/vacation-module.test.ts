@@ -256,10 +256,17 @@ export function runVacationModuleTests() {
   assert.match(serviceSource, /managerOfManagerHrId/);
   // CEO-direct-reports: the parallel chain requires only a direct manager; the
   // manager-of-manager step is included only when one exists (no manager above the CEO).
+  // District Managers additionally never get this step at all (owner rule, 2026-08-15) —
+  // see the includeManagerOfManager gate in resolveVacationParallelApprovalRecipients.
   assert.match(
     serviceSource,
-    /\.\.\.\(managerOfManager\?\.hrId\s*\n\s*\?\s*\[/,
-    "manager-of-manager approval step must be optional so direct reports to the top of the org can submit",
+    /\.\.\.\(includeManagerOfManager && managerOfManager\?\.hrId\s*\n\s*\?\s*\[/,
+    "manager-of-manager approval step must be optional so direct reports to the top of the org can submit, and skippable for District Manager requesters",
+  );
+  assert.match(
+    serviceSource,
+    /const includeManagerOfManager = requesterRole !== "District Manager";/,
+    "District Manager vacation requests must skip the manager-of-manager approval step entirely (owner rule, 2026-08-15: DM submit -> direct manager approves -> HR acknowledges, no CEO step)",
   );
   assert.doesNotMatch(
     serviceSource,
