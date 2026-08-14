@@ -1097,9 +1097,16 @@ const employeePortalNavigationSectionSeeds = [
   },
   // ── Recruitment & Hiring: Talent Acquisition's portal-side mirror of the
   // admin-shell hrAuthorityNavigationRoles tools (app/(admin)/recruitment,
-  // /cv-database, /hiring-documents, /leave-management/vacation-control,
-  // /admin/support-requests). Super Admin never sees this — resolveNavigationMode
-  // keeps Super Admin on the admin shell, where the originals still live.
+  // /recruitment/cv-review-queue, /cv-database, /hiring-documents,
+  // /recruitment/cv-extraction-analytics, /recruitment/intake-health,
+  // /leave-management/vacation-control, /admin/support-requests). Super Admin never
+  // sees this — resolveNavigationMode keeps Super Admin on the admin shell, where the
+  // originals still live.
+  //
+  // This mirror is the ONLY route Talent Acquisition has to these tools. The hub that
+  // lists the admin copies (/admin/recruitment-hiring) sits inside the (admin) route
+  // group, whose layout redirects every portal-mode role away — so an admin-only
+  // recruitment page is Super-Admin-only in practice, however its `roles` read.
   {
     id: "recruitment-hiring",
     items: [
@@ -1107,6 +1114,8 @@ const employeePortalNavigationSectionSeeds = [
       { href: "/employee-portals/cv-review-queue", icon: ClipboardList, label: "CV Review Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/cv-extraction-analytics", icon: ChartColumnBig, label: "CV Extraction Accuracy", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
+      { href: "/employee-portals/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests", action: "read" }], roles: ["Talent Acquisition"] },
     ],

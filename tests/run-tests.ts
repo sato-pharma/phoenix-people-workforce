@@ -122,6 +122,7 @@ import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extra
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
 import { runRecruitmentCvReviewQueueTests } from "./recruitment-cv-review-queue.test.ts";
+import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
 import { runRecruitmentEmailIntakeTests } from "./recruitment-email-intake.test.ts";
 import { runRecruitmentWhatsAppIntakeTests } from "./recruitment-whatsapp-intake.test.ts";
@@ -947,6 +948,7 @@ await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionA
 await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
 await runTest("recruitment cv auto-apply (high-confidence gap-fill rules)", runRecruitmentCvAutoApplyTests);
 await runTest("recruitment cv review queue (pending-proposal selection)", runRecruitmentCvReviewQueueTests);
+await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
 await runTest("recruitment email intake", runRecruitmentEmailIntakeTests);
 await runTest("recruitment whatsapp intake", runRecruitmentWhatsAppIntakeTests);
