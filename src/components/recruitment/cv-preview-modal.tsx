@@ -143,11 +143,33 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
 
   if (typeof document === "undefined") return null;
 
+  // A failed in-page render must never be a dead end. Whatever went wrong — a document the
+  // renderer cannot read, a dropped connection, or a lazily-loaded chunk that no longer exists
+  // because production redeployed while this tab was open (which surfaces as the browser's own
+  // bare "Failed to fetch" text) — the reader still needs to READ the CV. So the failure notice
+  // always carries a direct inline link to the real file, which does not depend on any of the
+  // in-page rendering that just failed.
+  const failureNotice = error ? (
+    <div className="p-1 text-sm">
+      <p className="text-rose-600">{error}</p>
+      <p className="mt-1">
+        <a
+          className="font-semibold text-slate-900 underline underline-offset-2"
+          href={inlineUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          Open the CV in a new tab
+        </a>
+      </p>
+    </div>
+  ) : null;
+
   const documentBody =
     kind === "pdf" ? (
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
-        {error ? <p className="p-1 text-sm text-rose-600">{error}</p> : null}
+        {failureNotice}
         {/* One <canvas> per page, painted by pdfjs-dist — see the useEffect above for why this
             isn't an <iframe> on the browser's native PDF viewer. */}
         <div ref={pdfContainerRef} />
@@ -161,7 +183,7 @@ export function CvPreviewModal({ fileName, mimeType, downloadUrl, onClose, sideP
     ) : kind === "docx" ? (
       <div className="min-h-full bg-slate-100 p-4">
         {loading ? <p className="p-1 text-sm text-slate-500">Loading preview…</p> : null}
-        {error ? <p className="p-1 text-sm text-rose-600">{error}</p> : null}
+        {failureNotice}
         {/* docx-preview renders its own page-styled markup into this container. */}
         <div ref={docxContainerRef} />
       </div>
