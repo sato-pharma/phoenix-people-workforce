@@ -292,7 +292,14 @@ export function runVacationModuleTests() {
   assert.doesNotMatch(serviceSource, /\.limit\(1000\)/);
   assert.match(serviceSource, /createVacationAttachmentReviewUrl/);
   assert.match(serviceSource, /createSignedUrl/);
-  assert.match(serviceSource, /\.rpc\("phx_vacation_report_rows"/);
+  // The vacation report no longer calls phx_vacation_report_rows per request — that RPC was the single
+  // heaviest query in production by share of DB time. The per-request call was replaced by a
+  // cross-request unstable_cache of the base rows, scoped + filtered in memory (equivalence proven to
+  // the piastre against the live RPC in tests/vacation-report-filter-equivalence.test.ts). Guard that
+  // the per-request RPC call cannot silently return, and that the cached read + in-memory filter stay wired.
+  assert.doesNotMatch(serviceSource, /\.rpc\("phx_vacation_report_rows"/);
+  assert.match(serviceSource, /unstable_cache\(\s*loadAllVacationRequestRowsRaw/);
+  assert.match(serviceSource, /filterVacationRowsInMemory\(scopedRows, input\.filters\)/);
   assert.match(serviceSource, /reviewVacationEvidence/);
   assert.match(serviceSource, /getVacationRequestTimeline/);
   assert.match(serviceSource, /generateVacationAuditExportWorkbook/);

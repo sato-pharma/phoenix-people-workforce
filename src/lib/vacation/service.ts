@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import ExcelJS from "exceljs";
+import { unstable_cache } from "next/cache";
 import { cache } from "react";
 
 import {
@@ -19,7 +20,7 @@ import { canonicalHrIdKey } from "@/lib/hr-id";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { resolveNotificationRoleRecipients } from "@/lib/notifications/role-recipients";
-import { invalidateExecutiveDashboardCache } from "@/lib/dashboard/invalidation";
+import { invalidateExecutiveDashboardCache, VACATION_REPORT_ROWS_CACHE_TAG } from "@/lib/dashboard/invalidation";
 import {
   getEmployeeDirectory,
   getEmployeeDirectoryRows,
@@ -104,6 +105,7 @@ import type {
   VacationWeeklyOffPolicyRecord,
 } from "@/lib/vacation/types";
 import { VACATION_DAY_PARTS, VACATION_REQUEST_TYPES, VACATION_TYPES, VACATION_WEEKLY_OFF_MODES } from "@/lib/vacation/types";
+import { filterVacationRowsInMemory } from "@/lib/vacation/report-filter";
 
 const vacationRequestsTable = "v2_vacation_requests";
 const vacationEventsTable = "v2_vacation_request_events";
@@ -4265,93 +4267,74 @@ function buildReportSummary(rows: VacationRequestRecord[]): VacationReportData["
   return summarizeVacationRequests(rows);
 }
 
-type VacationReportQuery = {
-  eq: (column: string, value: unknown) => VacationReportQuery;
-  gte: (column: string, value: unknown) => VacationReportQuery;
-  ilike: (column: string, value: string) => VacationReportQuery;
-  in: (column: string, values: string[]) => VacationReportQuery;
-  lte: (column: string, value: unknown) => VacationReportQuery;
-};
+// ---------------------------------------------------------------------------------------------
+// Vacation report base rows: ONE cached, unscoped, unfiltered read shared by every surface.
+//
+// phx_vacation_report_rows was the single heaviest query in production by share of DB time
+// (~779 calls/hour, ~15% of all query time) — NOT because it is slow (v2_vacation_requests is
+// ~300 rows, fully cached, ~7ms per call) but because ~8 dashboard/approval surfaces each re-fetch
+// it on every page load. The table is tiny and changes only on a vacation write, so the raw row set
+// is cached cross-request and every caller applies its own scope + filters in memory. The cached
+// value carries NO access context, so sharing it across users is safe — scoping stays per-request
+// in fetchVacationReportRowsFromDatabase below (identical to the RPC's own
+// `employee_hr_id = any(p_visible_employee_hr_ids)`), and canSeeVacation still re-checks downstream.
+//
+// Freshness: every vacation write already calls invalidateExecutiveDashboardCache(reason, ['leave']),
+// which revalidateTag()s VACATION_REPORT_ROWS_CACHE_TAG, so a decision is visible on the very next
+// read. The short TTL is only a backstop that self-heals within a minute if a write path is ever
+// missed — the tag is the real mechanism, not the clock.
+// ---------------------------------------------------------------------------------------------
 
-function applyVacationReportDatabaseFilters(
-  query: VacationReportQuery,
-  filters: VacationReportFilters,
-  visibleEmployeeHrIds: Set<string>,
-  shouldScopeEmployees: boolean,
-) {
-  let scopedQuery = query;
+/** Backstop only — tag invalidation on every leave write is the real freshness mechanism. */
+const VACATION_REPORT_ROWS_REVALIDATE_SECONDS = 60;
 
-  if (filters.status && filters.status !== "all") scopedQuery = scopedQuery.eq("status", filters.status);
-  if (filters.paymentStatus && filters.paymentStatus !== "all") scopedQuery = scopedQuery.eq("payment_status", filters.paymentStatus);
-  if (filters.vacationType && filters.vacationType !== "all") scopedQuery = scopedQuery.eq("vacation_type", filters.vacationType);
-  if (filters.employee) scopedQuery = scopedQuery.eq("employee_hr_id", filters.employee.toUpperCase());
-  if (filters.manager) scopedQuery = scopedQuery.eq("manager_hr_id", filters.manager.toUpperCase());
-  if (filters.department) scopedQuery = scopedQuery.eq("department_name", filters.department);
-  if (filters.line) scopedQuery = scopedQuery.eq("line_name", filters.line);
-  if (filters.dateFrom) scopedQuery = scopedQuery.gte("start_date", filters.dateFrom);
-  if (filters.dateTo) scopedQuery = scopedQuery.lte("start_date", filters.dateTo);
-
-  if (shouldScopeEmployees) {
-    const employeeIds = Array.from(visibleEmployeeHrIds);
-    scopedQuery = scopedQuery.in("employee_hr_id", employeeIds.length > 0 ? employeeIds : ["__no_visible_employees__"]);
+async function loadAllVacationRequestRowsRaw(): Promise<VacationRequestDbRow[]> {
+  const pageSize = 1000;
+  const rows: VacationRequestDbRow[] = [];
+  try {
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1;
+      const { data, error } = await getSupabaseAdmin()
+        .from(vacationRequestsTable)
+        .select("*")
+        .order("created_at", { ascending: false })
+        .range(from, to);
+      if (error) throwVacationDatabaseError(error);
+      const page = (data ?? []) as VacationRequestDbRow[];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+  } catch (error) {
+    if (!isVacationSchemaMissingError(error)) throw error;
+    return [];
   }
-
-  return scopedQuery;
+  return rows;
 }
+
+const loadAllVacationRequestRowsCached = unstable_cache(
+  loadAllVacationRequestRowsRaw,
+  ["vacation-report-all-rows"],
+  { revalidate: VACATION_REPORT_ROWS_REVALIDATE_SECONDS, tags: [VACATION_REPORT_ROWS_CACHE_TAG] },
+);
+
+// The scope + WHERE-clause mirror of phx_vacation_report_rows lives in the pure, dependency-free
+// ./report-filter module (filterVacationRowsInMemory) so it can be unit-tested without loading this
+// file's heavy graph — see tests/vacation-report-filter-equivalence.test.ts.
 
 async function fetchVacationReportRowsFromDatabase(input: {
   access: AccessContext;
   filters: VacationReportFilters;
   visibleEmployeeHrIds: Set<string>;
-}) {
-  const pageSize = 1000;
-  const rows: VacationRequestDbRow[] = [];
+}): Promise<VacationRequestDbRow[]> {
+  const allRows = await loadAllVacationRequestRowsCached();
   const shouldScopeEmployees = !isAllVacationVisibility(input.access);
-  const scopedEmployeeIds = shouldScopeEmployees ? Array.from(input.visibleEmployeeHrIds) : null;
-
-  try {
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await getSupabaseAdmin().rpc("phx_vacation_report_rows", {
-        p_filters: input.filters,
-        p_limit: pageSize,
-        p_offset: offset,
-        p_visible_employee_hr_ids: scopedEmployeeIds,
-      });
-      if (error) throwVacationDatabaseError(error);
-      const page = (data ?? []) as VacationRequestDbRow[];
-      rows.push(...page);
-      if (page.length < pageSize) return rows;
-    }
-  } catch (error) {
-    if (!isVacationSchemaMissingError(error)) throw error;
-    rows.length = 0;
-  }
-
-  for (let from = 0; ; from += pageSize) {
-    const to = from + pageSize - 1;
-    const query = applyVacationReportDatabaseFilters(
-      getSupabaseAdmin()
-        .from(vacationRequestsTable)
-        .select("*")
-        .order("created_at", { ascending: false })
-        .range(from, to) as unknown as VacationReportQuery,
-      input.filters,
-      input.visibleEmployeeHrIds,
-      shouldScopeEmployees,
-    );
-
-    const { data, error } = await (query as unknown as PromiseLike<{
-      data: VacationRequestDbRow[] | null;
-      error: { message?: string } | null;
-    }>);
-    if (error) throw new Error(typeof (error as { message?: unknown }).message === "string" ? (error as { message: string }).message : String(error));
-
-    const page = (data ?? []) as VacationRequestDbRow[];
-    rows.push(...page);
-    if (page.length < pageSize) break;
-  }
-
-  return rows;
+  // Mirror the RPC's `employee_hr_id = any(p_visible_employee_hr_ids)` scope — exact match against
+  // the very same set — before the WHERE filters. An unscoped (HR / all-visibility) caller sees
+  // every row, exactly as passing p_visible_employee_hr_ids = null did.
+  const scopedRows = shouldScopeEmployees
+    ? allRows.filter((row) => row.employee_hr_id != null && input.visibleEmployeeHrIds.has(row.employee_hr_id))
+    : allRows;
+  return filterVacationRowsInMemory(scopedRows, input.filters);
 }
 
 async function fetchVacationSlaSettings() {
