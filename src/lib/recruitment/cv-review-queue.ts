@@ -29,6 +29,7 @@
 import { CV_IDENTITY_FIELD_KEYS, isBlankCandidateValue } from "@/lib/recruitment/cv-auto-apply";
 import { getCvPositionSchema, type CvFieldType } from "@/lib/recruitment/cv-field-schemas";
 import { mapCandidate, type CandidateDbRow } from "@/lib/recruitment/db";
+import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -187,9 +188,14 @@ type ExtractionQueueDbRow = {
 /**
  * Candidates whose newest never-reviewed extraction still has something worth a human decision.
  *
- * Newest-unreviewed-per-candidate rather than every row: 7 of 24 candidates already carry multiple
- * extractions (a re-run makes another), and one worklist entry per candidate is what a reviewer
- * actually works through. Older unreviewed rows for the same candidate stay in the table untouched.
+ * Newest-unreviewed-per-candidate rather than every row. Extractions are one-to-many against a
+ * candidate — every "re-run extraction" adds a row and never replaces one — so a per-row worklist
+ * would show the same person repeatedly, each entry proposing into the same columns. One entry per
+ * candidate is what a reviewer actually works through, and the newest row is the only one whose
+ * proposals reflect the current CV. (Rough shape on production at the time of writing, purely to
+ * show this is not hypothetical: a third of candidates carrying an extraction had more than one.
+ * Do not treat that ratio as current — the rule above holds whatever it is today.) Older unreviewed
+ * rows for the same candidate stay in the table untouched.
  */
 export async function listCvReviewQueue(): Promise<CvReviewQueue> {
   const supabase = getSupabaseAdmin();
@@ -217,14 +223,14 @@ export async function listCvReviewQueue(): Promise<CvReviewQueue> {
     return { generatedAt: new Date().toISOString(), items: [], truncated };
   }
 
-  const { data: candidateData, error: candidateError } = await supabase
-    .from("ats_candidates")
-    .select("*")
-    .in("id", Array.from(newestByCandidate.keys()));
-  if (candidateError) throw candidateError;
+  // Up to MAX_EXTRACTION_ROWS candidate ids reach here, which is far past what one .in() filter
+  // can carry in the request URL — batch it (see db-batch.ts).
+  const candidateData = await fetchRowsInBatches<CandidateDbRow>(Array.from(newestByCandidate.keys()), (batch) =>
+    supabase.from("ats_candidates").select("*").in("id", batch),
+  );
 
   const candidatesById = new Map<string, Candidate>();
-  for (const row of (candidateData ?? []) as CandidateDbRow[]) {
+  for (const row of candidateData) {
     const candidate = mapCandidate(row);
     candidatesById.set(candidate.id, candidate);
   }

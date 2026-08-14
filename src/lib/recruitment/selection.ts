@@ -15,6 +15,7 @@ import {
   type CandidateDbRow,
   type InterviewDbRow,
 } from "@/lib/recruitment/db";
+import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { Application, Candidate, InterviewType } from "@/lib/recruitment/types";
 
@@ -58,31 +59,33 @@ export async function getRequisitionSelectionBoard(
   const candidateIds = Array.from(new Set(applications.map((a) => a.candidateId)));
   const appIds = applications.map((a) => a.id);
 
-  const [
-    { data: candRows, error: candError },
-    { data: intRows, error: intError },
-    { data: rejRows, error: rejError },
-  ] = await Promise.all([
-    supabase.from("ats_candidates").select("*").in("id", candidateIds),
-    supabase.from("ats_interviews").select("*").in("application_id", appIds),
-    supabase
-      .from("ats_applications")
-      .select("candidate_id,stage")
-      .in("candidate_id", candidateIds)
-      .in("stage", ["application_rejected", "application_withdrawn"]),
+  // One mass-hire requisition can carry hundreds of applicants, so these id lists outgrow a single
+  // .in() filter's room in the request URL — batch each one (see db-batch.ts). The three still run
+  // concurrently; only each individual query is split.
+  const [candRows, intRows, rejRows] = await Promise.all([
+    fetchRowsInBatches<CandidateDbRow>(candidateIds, (batch) =>
+      supabase.from("ats_candidates").select("*").in("id", batch),
+    ),
+    fetchRowsInBatches<InterviewDbRow>(appIds, (batch) =>
+      supabase.from("ats_interviews").select("*").in("application_id", batch),
+    ),
+    fetchRowsInBatches<{ candidate_id: string }>(candidateIds, (batch) =>
+      supabase
+        .from("ats_applications")
+        .select("candidate_id,stage")
+        .in("candidate_id", batch)
+        .in("stage", ["application_rejected", "application_withdrawn"]),
+    ),
   ]);
-  if (candError) throw candError;
-  if (intError) throw intError;
-  if (rejError) throw rejError;
 
   const candidatesById = new Map<string, Candidate>();
-  for (const row of (candRows ?? []) as CandidateDbRow[]) {
+  for (const row of candRows) {
     const candidate = mapCandidate(row);
     candidatesById.set(candidate.id, candidate);
   }
 
   const interviewsByApp = new Map<string, SelectionBoardInterview[]>();
-  for (const row of (intRows ?? []) as InterviewDbRow[]) {
+  for (const row of intRows) {
     const interview = mapInterview(row);
     const summary = summarizeScorecard(interview.interviewType, interview.score);
     const list = interviewsByApp.get(interview.applicationId) ?? [];
@@ -91,7 +94,7 @@ export async function getRequisitionSelectionBoard(
   }
 
   const priorByCandidate = new Map<string, number>();
-  for (const row of (rejRows ?? []) as Array<{ candidate_id: string }>) {
+  for (const row of rejRows) {
     const id = String(row.candidate_id);
     priorByCandidate.set(id, (priorByCandidate.get(id) ?? 0) + 1);
   }
