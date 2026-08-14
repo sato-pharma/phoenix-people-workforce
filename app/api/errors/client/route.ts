@@ -17,6 +17,7 @@ type ClientErrorPayload = {
   routeType?: unknown;
   source?: unknown;
   componentStack?: unknown;
+  clientContext?: unknown;
 };
 
 // Best-effort ingestion endpoint for crash reports. Used directly by browsers
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
       const activityModule = resolveActivityModule(route);
 
       await logAppError({
+        clientContext: typeof body?.clientContext === "string" ? body.clientContext : null,
         componentStack: typeof body?.componentStack === "string" ? body.componentStack : null,
         digest: typeof body?.digest === "string" ? body.digest : null,
         environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
