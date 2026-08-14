@@ -1448,6 +1448,44 @@ export async function replaceSalesBatch(
   return getSalesBatchDetail(replacementId);
 }
 
+/**
+ * Refuses to delete a batch while it still holds `sales_records` rows.
+ *
+ * The Rule #1 freeze revoked service_role's DELETE on `sales_records`, but that revoke does NOT
+ * protect the table here: `sales_records_batch_id_fkey` is `ON DELETE CASCADE`, and a referential
+ * cascade executes with the TABLE OWNER's rights, not the caller's. Measured on staging (identical
+ * schema and grants), as service_role:
+ *
+ *   delete from sales_records         -> ERROR 42501 permission denied for table sales_records
+ *   delete from sales_import_batches  -> succeeded, and the child sales_records row went with it
+ *
+ * So deleting a batch is a back door around the freeze. Three batches hold all 11,267 rows — the
+ * only record of what H1 2026 was actually paid on — and production runs without PITR (daily
+ * snapshots only), so a single delete here is not recoverable in place.
+ *
+ * Rejecting or replacing a batch still works; both leave the rows alone.
+ */
+async function assertSalesBatchHoldsNoFrozenRecords(batchId: string) {
+  const supabase = getSupabaseAdmin();
+  const { count, error } = await supabase
+    .from("sales_records")
+    .select("id", { count: "exact", head: true })
+    .eq("batch_id", batchId);
+  if (error) {
+    throw error;
+  }
+
+  const frozenRowCount = count ?? 0;
+  if (frozenRowCount > 0) {
+    throw new SalesWorkflowError(
+      "sales_batch_holds_frozen_records",
+      `This closing sheet still holds ${frozenRowCount.toLocaleString("en-US")} imported records, and deleting the sheet would delete those records with it. They are the only record of what H1 2026 was actually paid on, so the sheet cannot be deleted. Reject or replace it instead.`,
+      409,
+      { batchId, frozenRowCount },
+    );
+  }
+}
+
 export async function deleteSalesBatch(batchId: string, actorUsername: string, actorDisplayName: string) {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase.from("sales_import_batches").select("line, period").eq("id", batchId).maybeSingle();
@@ -1455,6 +1493,8 @@ export async function deleteSalesBatch(batchId: string, actorUsername: string, a
     throw error;
   }
   if (!data) return null;
+
+  await assertSalesBatchHoldsNoFrozenRecords(batchId);
 
   const deleteResult = await supabase.from("sales_import_batches").delete().eq("id", batchId);
   if (deleteResult.error) {

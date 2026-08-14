@@ -792,6 +792,7 @@ import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sale
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
+import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2004,6 +2005,10 @@ await runTest(
 await runTest(
   "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets still cascades)",
   runManagerCascadeFrozenTablesTests,
+);
+await runTest(
+  "deleting a sales batch cannot destroy frozen sales_records (guard runs BEFORE the batch delete, refuses with a 409 the route surfaces, and the batch FK is ON DELETE RESTRICT not CASCADE)",
+  runSalesBatchDeleteGuardTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

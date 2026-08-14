@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { deleteSalesBatch, updateSalesBatchStatus } from "@/lib/sales/service";
+import { SalesWorkflowError } from "@/lib/sales/contracts";
 import { assertPermission, resolveEmployeeIdentityId } from "@/lib/auth/permissions";
 import { isForbiddenError, resolveAccessContext } from "@/lib/auth/server";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -73,6 +74,15 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json(
         { success: false, error: clientSafeErrorMessage(error, "Forbidden.") },
         { status: 403 },
+      );
+    }
+    // Carries the refusal from assertSalesBatchHoldsNoFrozenRecords through with its own status and
+    // wording. Without this it would land as a bare 500 and read like a bug rather than a deliberate
+    // block on destroying H1 history.
+    if (error instanceof SalesWorkflowError) {
+      return NextResponse.json(
+        { success: false, error: error.message, code: error.code, details: error.details },
+        { status: error.status },
       );
     }
     return NextResponse.json(
