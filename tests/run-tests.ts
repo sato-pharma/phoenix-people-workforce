@@ -789,6 +789,7 @@ import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
+import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1988,6 +1989,10 @@ await runTest(
 await runTest(
   "national holidays drop Google 'Observance' events (cultural notes, not real days off) while keeping genuine Public holidays",
   runNationalHolidaysObservanceFilterTests,
+);
+await runTest(
+  "thrown-error serialization (PostgrestError keeps message/code/hint, never '[object Object]'; instrumentation.ts routes through it)",
+  runDescribeThrownTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
