@@ -191,7 +191,7 @@ export default async function AnalyticsHubPage() {
       <AnalyticsSection title="Data pipelines connected">
         <ul className="list-disc list-inside space-y-1 ml-1 text-xs text-muted-foreground">
           <li>Source of Sales — distributor invoice aggregates via <code>source_of_sales_fact_rollup</code></li>
-          <li>Monthly Closing — employee target/actual via <code>sales_records</code></li>
+          <li>Monthly Closing — employee target/actual via <code>phx_monthly_achievement</code></li>
           <li>Weekly Sales — distributor weekly sell-out via <code>weekly_sales_rows</code></li>
         </ul>
         <p className="mt-3 text-xs text-muted-foreground">
