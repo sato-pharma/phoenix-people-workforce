@@ -352,8 +352,9 @@ export async function requestDirectOrderPharmacyValidation(
   //
   // WRAPPED SO IT CANNOT FAIL THE FILING. The rep is standing in front of the pharmacy; a model
   // being busy, rate-limited, or returning nonsense must leave their evidence filed and this column
-  // null. Same reasoning as pingDirectOrderSheet being void-and-unawaitable, and looksLikeCv failing
-  // open: an assist that can block the thing it assists is not an assist.
+  // null. Same reasoning as pingDirectOrderSheet being void-and-unawaitable, and
+  // extractCvFieldsFromBytes' is_cv gate failing open: an assist that can block the thing it
+  // assists is not an assist.
   //
   // A null column means "no answer", never "passed" — the desk renders it as such.
   try {

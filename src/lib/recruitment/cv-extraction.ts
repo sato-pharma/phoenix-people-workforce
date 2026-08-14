@@ -26,7 +26,6 @@ import {
   createOpenAiResponseText,
   hasOpenAiApiKey,
   OPENAI_COPILOT_DEFAULT_MODEL,
-  OPENAI_EMAIL_TIMEOUT_MS,
   OPENAI_ROUTE_BUDGET_MS,
   PhoenixOpenAiError,
 } from "@/lib/ai/openai-client";
@@ -185,67 +184,6 @@ export function buildVisionInput(bytes: Buffer, mimeType: string) {
       role: "user" as const,
     },
   ];
-}
-
-// ---------------------------------------------------------------------------
-// Lightweight "is this actually a CV" classification — runs BEFORE a candidate record
-// exists (inbound email/WhatsApp intake sees plenty of non-CV business correspondence with
-// a PDF/DOCX/image attached: vendor pitches, supplier registration letters, invoices).
-// Deliberately a separate, cheap/fast yes-no call rather than reusing the full structured
-// extraction above, which needs a real candidate + uploaded file to attach its audit row to.
-// ---------------------------------------------------------------------------
-
-const CV_CLASSIFICATION_INSTRUCTIONS =
-  "You are screening an email/WhatsApp attachment arriving at a recruitment inbox. Decide whether " +
-  "the document is a CV/resume from a person applying for a job (any language, any format/layout). " +
-  'Answer "no" for anything else — invoices, vendor/supplier offers or registration letters, ' +
-  "brochures, contracts, or other business correspondence that is not a personal CV/resume.";
-
-const CV_CLASSIFICATION_TEXT_FORMAT = {
-  format: {
-    name: "phoenix_cv_classification",
-    schema: {
-      additionalProperties: false,
-      properties: { is_cv: { type: "boolean" as const } },
-      required: ["is_cv"],
-      type: "object" as const,
-    },
-    strict: true as const,
-    type: "json_schema" as const,
-  },
-};
-
-// Fails open (returns true) whenever it can't reach a confident answer — an AI hiccup, a
-// missing key, or an unreadable/empty attachment must never block a real candidate. Only a
-// clear "no" from the model suppresses candidate creation.
-export async function looksLikeCv(bytes: Buffer, mimeType: string, fileName: string): Promise<boolean> {
-  if (!hasOpenAiApiKey()) return true;
-
-  const kind = detectCvFileKind(mimeType, fileName);
-  let input: string | ReturnType<typeof buildVisionInput>;
-  if (kind === "image") {
-    input = buildVisionInput(bytes, mimeType);
-  } else if (kind === "pdf" || kind === "docx") {
-    const rawText = await extractRawTextFromFile(bytes, mimeType, fileName);
-    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
-    if (!cleanedText) return true;
-    input = `Attachment text:\n\n${cleanedText}`;
-  } else {
-    return true;
-  }
-
-  const response = await createOpenAiResponseText({
-    input,
-    instructions: CV_CLASSIFICATION_INSTRUCTIONS,
-    maxOutputTokens: 200,
-    purpose: "recruitment-cv-classification",
-    reasoning: { effort: "low" },
-    text: CV_CLASSIFICATION_TEXT_FORMAT,
-    timeoutMs: OPENAI_EMAIL_TIMEOUT_MS,
-  });
-
-  const parsed = parseAiJson(response.outputText);
-  return parsed.is_cv !== false;
 }
 
 // ---------------------------------------------------------------------------
