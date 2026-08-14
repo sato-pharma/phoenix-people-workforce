@@ -1847,18 +1847,23 @@ function CandidatesTab({
               ) : null}
               {!retryExtraction && profile.files.some((file) => file.kind === "cv") ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
-                    disabled={retryBusy}
-                    onChange={(event) => setRetryPositionKey(event.target.value)}
-                    value={retryPositionKey}
-                  >
-                    {listCvPositionSchemas().map((option) => (
-                      <option key={option.positionKey} value={option.positionKey}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Only rendered if a second schema ever exists. The schema is universal now and
+                      the job title is an extracted field, so there is nothing to choose — a
+                      one-option dropdown would just be a control that does nothing. */}
+                  {listCvPositionSchemas().length > 1 ? (
+                    <select
+                      className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+                      disabled={retryBusy}
+                      onChange={(event) => setRetryPositionKey(event.target.value)}
+                      value={retryPositionKey}
+                    >
+                      {listCvPositionSchemas().map((option) => (
+                        <option key={option.positionKey} value={option.positionKey}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                   <Button
                     disabled={retryBusy}
                     onClick={() => void startRetryExtraction(profile.candidate.id, retryPositionKey)}

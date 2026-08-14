@@ -78,6 +78,11 @@ export function runEmployeePortalBottomNavTests() {
     // funnel plus the dead-letter list). Desk work, not a phone shortcut.
     "/employee-portals/cv-extraction-analytics",
     "/employee-portals/intake-health",
+    // CV Field Settings: same Talent-Acquisition-only class, and it is a set-once configuration
+    // page — 36 switches across six sections, deciding what the extractor asks of every future CV.
+    // Nobody reaches for that from a phone between visits, and putting it in the quick-nav grid
+    // would spend one of a handful of pinnable slots on the portal's least-visited page.
+    "/employee-portals/cv-field-settings",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",

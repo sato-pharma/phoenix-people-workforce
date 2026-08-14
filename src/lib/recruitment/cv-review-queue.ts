@@ -27,6 +27,7 @@
 // matching cv-auto-apply.ts and cv-extraction-analytics.ts.
 
 import { CV_IDENTITY_FIELD_KEYS, isBlankCandidateValue } from "@/lib/recruitment/cv-auto-apply";
+import type { ExtractedCvValue } from "@/lib/recruitment/cv-extraction-fields";
 import { getCvPositionSchema, type CvFieldType } from "@/lib/recruitment/cv-field-schemas";
 import { mapCandidate, type CandidateDbRow } from "@/lib/recruitment/db";
 import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
@@ -34,13 +35,14 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import type { Candidate } from "@/lib/recruitment/types";
 
 /** The AI's per-field proposal shape, narrowed to what this decision needs. */
-export type ReviewQueueExtractedFields = Record<string, { value: string | boolean | null; confidence: "high" | "low" }>;
+export type ReviewQueueExtractedFields = Record<string, { value: ExtractedCvValue; confidence: "high" | "low" }>;
 
+// Repeating blocks never become a pending row (see gate 1), so this stays scalar.
 export type PendingReviewField = {
   key: string;
   label: string;
   type: CvFieldType;
-  value: string | boolean;
+  value: string | boolean | number;
   confidence: "high" | "low";
 };
 
@@ -74,8 +76,11 @@ const MAX_EXTRACTION_ROWS = 1000;
  *
  * Four gates, mirroring cv-auto-apply.ts so the two modules can never disagree about what is
  * eligible — this is the same field population, minus the confidence gate:
- *   1. storage === "column" — jsonb/position_specific_fields has different merge semantics and
- *      stays out of both modules until that write path is deliberately designed.
+ *   1. storage === "column" — repeating blocks are excluded, and since 2026-08-14 that is a
+ *      CONCLUSION rather than a deferral. cv-auto-apply.ts now writes blocks itself whenever the
+ *      candidate holds none, so a block reaches gate 4 only when the candidate already has entries
+ *      — i.e. never blank, never pending. There is nothing for a human to decide here; replacing
+ *      an existing history belongs to the candidate profile, not to a gap-filling worklist.
  *   2. not an identity field — shared CV_IDENTITY_FIELD_KEYS. createCandidate owns identity, and
  *      intake sometimes MATCHES an existing candidate, so offering it here could repoint someone
  *      else's record and its dedupe norms.
@@ -103,8 +108,11 @@ export function selectPendingReviewFields(input: {
 
     const value = proposal.value;
     if (value === null || value === undefined) continue;
+    if (Array.isArray(value)) continue;
     if (definition.type === "boolean" && typeof value !== "boolean") continue;
-    if (definition.type === "string" && typeof value !== "string") continue;
+    if (definition.type === "number" && typeof value !== "number") continue;
+    // "date" values are YYYY-MM-DD strings, so they share the string check.
+    if ((definition.type === "string" || definition.type === "date") && typeof value !== "string") continue;
     if (typeof value === "string" && value.trim().length === 0) continue;
 
     if (!isBlankCandidateValue(input.candidate[definition.key])) continue;
@@ -151,20 +159,36 @@ export function buildReviewBoardFields(input: {
   const fields: ReviewQueueExtractedFields = { ...(input.extractedFields ?? {}) };
 
   const schema = getCvPositionSchema(input.positionKey);
+  const storedBlocks = (input.candidate.positionSpecificFields as Record<string, unknown> | undefined) ?? {};
+
   for (const definition of schema?.fields ?? []) {
-    // Same storage gate as selectPendingReviewFields — a jsonb field is not a candidate column,
-    // so there is no stored column value to prefer over the proposal.
+    // Repeating blocks live in position_specific_fields, not in a column of their own, so they are
+    // read from there. They still need the same protection: the board's save writes every block it
+    // was handed, so a queue review of a NEW extraction would otherwise replace a work history a
+    // human had corrected with the model's fresh guess at it.
+    if (definition.type === "array") {
+      const held = storedBlocks[definition.key];
+      if (!Array.isArray(held) || held.length === 0) continue;
+      const entries = held.filter(
+        (entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object" && !Array.isArray(entry),
+      );
+      if (entries.length === 0) continue;
+      fields[definition.key] = { confidence: "high", value: entries };
+      continue;
+    }
+
     if (definition.storage !== "column") continue;
     const stored = input.candidate[definition.key];
     if (isBlankCandidateValue(stored)) continue;
     // A stored value has to be board-shaped, then has to match the field's DECLARED type — the
     // same defence selectPendingReviewFields applies to a malformed proposal, for the same reason:
-    // the board renders strings and booleans as different controls. (The first check is also what
-    // narrows `stored` off `unknown`; the declared-type pair alone does not, because it turns on
-    // `definition.type`.)
-    if (typeof stored !== "string" && typeof stored !== "boolean") continue;
+    // the board renders strings, numbers and booleans as different controls. (The first check is
+    // also what narrows `stored` off `unknown`; the declared-type checks alone do not, because they
+    // turn on `definition.type`.)
+    if (typeof stored !== "string" && typeof stored !== "boolean" && typeof stored !== "number") continue;
     if (definition.type === "boolean" && typeof stored !== "boolean") continue;
-    if (definition.type === "string" && typeof stored !== "string") continue;
+    if (definition.type === "number" && typeof stored !== "number") continue;
+    if ((definition.type === "string" || definition.type === "date") && typeof stored !== "string") continue;
     // "high" because this is no longer the AI's guess — a stored value must not carry the
     // low-confidence "Check this" badge.
     fields[definition.key] = { confidence: "high", value: stored };

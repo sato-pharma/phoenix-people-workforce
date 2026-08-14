@@ -60,6 +60,20 @@ export function canReviewCvExtractions(access: Pick<AccessContext, "role" | "sco
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 
+// The per-field include/exclude switch (src/lib/recruitment/cv-field-settings.ts). Super Admin and
+// Talent Acquisition, per the owner's ruling 2026-08-14 — TA decides what is worth reading off a
+// CV, so this is her setting, not an administrative one.
+//
+// Its own helper for the same reason canReviewCvExtractions is: this one is CONFIGURATION, not
+// data. Switching a field off means no CV is ever read for it again, and the resulting gap is
+// invisible after the fact — nothing marks a candidate as "we stopped asking". If that ever needs
+// to be narrower than reviewing, it must be able to narrow without dragging the queue with it.
+// The page gate is UX; PATCH /api/recruitment/cv-field-settings asserts recruitment:update
+// server-side before any write.
+export function canManageCvFieldSettings(access: Pick<AccessContext, "role" | "scope">): boolean {
+  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
+}
+
 // Roles whose hiring-manager visibility extends beyond their own requisitions to an
 // org-scoped set (resolved via resolveHiringManagerScopeHrIds). Every other role
 // (District Manager included) stays on the exact hrIdsMatch check only.

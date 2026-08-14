@@ -285,6 +285,14 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     // hiccup), and only a confident is_cv:false suppresses a candidate (a vendor pitch / invoice /
     // letter that merely arrived as a PDF). This replaces the previous separate looksLikeCv call —
     // exactly one AI round-trip per CV now instead of a classify then an extract.
+    //
+    // No positionKey is passed, and that is deliberate — do NOT add one. This defaulted to the
+    // Medical Rep template until 2026-08-14, which meant every inbound CV was read as though the
+    // applicant were a medical rep: a pharmacist, an accountant or a sales manager had their CV
+    // mined for "medical rep employer" and little else, and the job they had actually applied for
+    // was recorded nowhere. defaultCvPositionKey is now "universal" and the job title is an
+    // EXTRACTED FIELD (currentJobTitle), not a precondition of extraction — so intake reads
+    // whatever the CV contains, and supporting a new role costs no code change at all.
     let extraction: CvFieldExtraction | null = null;
     try {
       extraction = await extractCvFieldsFromBytes({

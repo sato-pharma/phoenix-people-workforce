@@ -9,7 +9,7 @@ import {
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { chunkIds } from "@/lib/recruitment/db-batch";
-import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import { cvPositionSchemas, defaultCvPositionKey, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
   findDuplicateFlags,
@@ -63,9 +63,20 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     email_norm: keys.emailNorm,
     phone: textOrNull(input.phone),
     phone_norm: keys.phoneNorm,
+    whatsapp: textOrNull(input.whatsapp),
+    linkedin_url: textOrNull(input.linkedinUrl),
+    nationality: textOrNull(input.nationality),
+    date_of_birth: textOrNull(input.dateOfBirth),
+    place_of_birth: textOrNull(input.placeOfBirth),
+    gender: textOrNull(input.gender),
+    marital_status: textOrNull(input.maritalStatus),
+    military_status: textOrNull(input.militaryStatus),
     address: textOrNull(input.address),
     governorate: textOrNull(input.governorate),
+    current_job_title: textOrNull(input.currentJobTitle),
+    professional_summary: textOrNull(input.professionalSummary),
     current_employer: textOrNull(input.currentEmployer),
+    current_role_responsibilities: textOrNull(input.currentRoleResponsibilities),
     years_experience: numberOrNull(input.yearsExperience),
     expected_salary: numberOrNull(input.expectedSalary),
     notice_period: textOrNull(input.noticePeriod),
@@ -75,6 +86,9 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     notes: textOrNull(input.notes),
     faculty: textOrNull(input.faculty),
     university: textOrNull(input.university),
+    degree: textOrNull(input.degree),
+    graduation_year: numberOrNull(input.graduationYear),
+    grade: textOrNull(input.grade),
     has_prior_work_experience: boolOrNull(input.hasPriorWorkExperience),
     has_medical_rep_experience: boolOrNull(input.hasMedicalRepExperience),
     medical_rep_employer: textOrNull(input.medicalRepEmployer),
@@ -85,10 +99,19 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
   };
 }
 
-// Merges a position's "jsonb"-storage field values into whatever's already stored on the
-// candidate, leaving other keys untouched. Unexercised today — Medical Rep's fields are all
-// storage:"column" — this is the write path a future position's schema (cv-field-schemas.ts)
-// would use instead.
+// The schema applyPositionSpecificFields merges through. A candidate row carries no position key,
+// and since the schema rewrite there is only one field list anyway — `medical_rep` and
+// `district_manager` are aliases onto the universal schema (cv-field-schemas.ts) — so resolving it
+// once here is exact, not a fallback.
+const universalCvSchema: CvPositionSchema = cvPositionSchemas[defaultCvPositionKey];
+
+// Merges the schema's "jsonb"-storage field values into whatever's already stored on the
+// candidate, leaving other keys untouched. Used by updateCandidate: all five repeating blocks
+// (workHistory, educationHistory, certifications, skills, languages) share the single
+// position_specific_fields column, and a caller normally submits only the block it edited — so a
+// wholesale assignment would silently wipe the blocks it did not send (editing work history would
+// clear skills). Keys the schema does not declare `storage: "jsonb"` are ignored, which keeps a
+// scalar out of the jsonb column even when a caller passes one.
 export function applyPositionSpecificFields(
   schema: CvPositionSchema,
   existing: Record<string, unknown>,
@@ -230,7 +253,9 @@ export async function updateCandidateStatus(id: string, status: string): Promise
 // identity-match columns (national_id_norm/email_norm/phone_norm) are only recomputed
 // for whichever of nationalId/email/phone is actually present in this call, so editing
 // one identity field never wipes the norm of an untouched one.
-function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unknown> {
+// `existing` is the candidate as currently stored; it is needed only for the repeating blocks in
+// position_specific_fields, which merge over what is there rather than replacing it.
+function updateCandidatePayload(input: UpdateCandidateInput, existing: Candidate): Record<string, unknown> {
   const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (input.fullName !== undefined) payload.full_name = String(input.fullName ?? "").trim();
   if (input.nationalId !== undefined) {
@@ -245,9 +270,22 @@ function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unk
     payload.phone = textOrNull(input.phone);
     payload.phone_norm = normalizePhone(input.phone);
   }
+  if (input.whatsapp !== undefined) payload.whatsapp = textOrNull(input.whatsapp);
+  if (input.linkedinUrl !== undefined) payload.linkedin_url = textOrNull(input.linkedinUrl);
+  if (input.nationality !== undefined) payload.nationality = textOrNull(input.nationality);
+  if (input.dateOfBirth !== undefined) payload.date_of_birth = textOrNull(input.dateOfBirth);
+  if (input.placeOfBirth !== undefined) payload.place_of_birth = textOrNull(input.placeOfBirth);
+  if (input.gender !== undefined) payload.gender = textOrNull(input.gender);
+  if (input.maritalStatus !== undefined) payload.marital_status = textOrNull(input.maritalStatus);
+  if (input.militaryStatus !== undefined) payload.military_status = textOrNull(input.militaryStatus);
   if (input.address !== undefined) payload.address = textOrNull(input.address);
   if (input.governorate !== undefined) payload.governorate = textOrNull(input.governorate);
+  if (input.currentJobTitle !== undefined) payload.current_job_title = textOrNull(input.currentJobTitle);
+  if (input.professionalSummary !== undefined) payload.professional_summary = textOrNull(input.professionalSummary);
   if (input.currentEmployer !== undefined) payload.current_employer = textOrNull(input.currentEmployer);
+  if (input.currentRoleResponsibilities !== undefined) {
+    payload.current_role_responsibilities = textOrNull(input.currentRoleResponsibilities);
+  }
   if (input.yearsExperience !== undefined) payload.years_experience = numberOrNull(input.yearsExperience);
   if (input.expectedSalary !== undefined) payload.expected_salary = numberOrNull(input.expectedSalary);
   if (input.noticePeriod !== undefined) payload.notice_period = textOrNull(input.noticePeriod);
@@ -257,6 +295,9 @@ function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unk
   if (input.notes !== undefined) payload.notes = textOrNull(input.notes);
   if (input.faculty !== undefined) payload.faculty = textOrNull(input.faculty);
   if (input.university !== undefined) payload.university = textOrNull(input.university);
+  if (input.degree !== undefined) payload.degree = textOrNull(input.degree);
+  if (input.graduationYear !== undefined) payload.graduation_year = numberOrNull(input.graduationYear);
+  if (input.grade !== undefined) payload.grade = textOrNull(input.grade);
   if (input.hasPriorWorkExperience !== undefined) {
     payload.has_prior_work_experience = boolOrNull(input.hasPriorWorkExperience);
   }
@@ -271,7 +312,13 @@ function updateCandidatePayload(input: UpdateCandidateInput): Record<string, unk
     payload.medical_rep_experience_to = textOrNull(input.medicalRepExperienceTo);
   }
   if (input.positionSpecificFields !== undefined) {
-    payload.position_specific_fields = input.positionSpecificFields ?? {};
+    // Merge the submitted blocks over the stored ones — see applyPositionSpecificFields. An
+    // explicit `null` still means "clear the whole column", consistent with every other key here;
+    // only an object is treated as a partial submission.
+    payload.position_specific_fields =
+      input.positionSpecificFields === null
+        ? {}
+        : applyPositionSpecificFields(universalCvSchema, existing.positionSpecificFields, input.positionSpecificFields);
   }
   return payload;
 }
@@ -285,7 +332,7 @@ export async function updateCandidate(id: string, input: UpdateCandidateInput): 
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_candidates")
-    .update(updateCandidatePayload(input))
+    .update(updateCandidatePayload(input, existing))
     .eq("id", id)
     .select("*")
     .single();

@@ -1,10 +1,14 @@
 "use client";
 
 // Talent Acquisition — create a candidate from an uploaded CV. AI extracts the fields
-// (src/lib/recruitment/cv-extraction.ts) for the selected position's schema
-// (src/lib/recruitment/cv-field-schemas.ts — only Medical Rep has real fields today); this
-// panel then hands the raw extraction to the drag-and-drop review board
-// (cv-extraction-review-board.tsx) before saving.
+// (src/lib/recruitment/cv-extraction.ts) against the universal schema
+// (src/lib/recruitment/cv-field-schemas.ts); this panel then hands the raw extraction to the
+// drag-and-drop review board (cv-extraction-review-board.tsx) before saving.
+//
+// The position picker below is deliberately conditional. There used to be two templates and the
+// reviewer had to declare the role BEFORE the CV was read — which is backwards, since the CV is
+// what says what the role is. The schema is now universal and the job title is an extracted field,
+// so the picker renders only if some future schema is added alongside it.
 
 import { useRef, useState } from "react";
 
@@ -119,18 +123,20 @@ export function CvExtractionPanel({ onCreated }: { onCreated: (candidateId: stri
   if (stage !== "review") {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
-          disabled={busy}
-          onChange={(event) => setPositionKey(event.target.value)}
-          value={positionKey}
-        >
-          {positionOptions.map((option) => (
-            <option key={option.positionKey} value={option.positionKey}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {positionOptions.length > 1 ? (
+          <select
+            className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+            disabled={busy}
+            onChange={(event) => setPositionKey(event.target.value)}
+            value={positionKey}
+          >
+            {positionOptions.map((option) => (
+              <option key={option.positionKey} value={option.positionKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" type="file" />
         <Button disabled={busy} onClick={() => void startFromCv()} variant="secondary">
           {busy ? "Reading CV…" : "Create from CV"}

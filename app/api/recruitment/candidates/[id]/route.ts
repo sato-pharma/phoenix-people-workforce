@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { deleteCandidate, getCandidateProfile, updateCandidate } from "@/lib/recruitment/candidates";
 import { getLatestCvExtraction, recordAppliedExtractionFields } from "@/lib/recruitment/cv-extraction";
+import { listJsonbCvFields, listWritableCvFields } from "@/lib/recruitment/cv-field-storage";
 import type { UpdateCandidateInput } from "@/lib/recruitment/types";
 import {
   assertSameOriginMutation,
@@ -49,31 +50,59 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
 
     const input: UpdateCandidateInput = {};
-    if (has("fullName")) input.fullName = str(body.fullName) ?? "";
-    if (has("nationalId")) input.nationalId = str(body.nationalId);
-    if (has("email")) input.email = str(body.email);
-    if (has("phone")) input.phone = str(body.phone);
-    if (has("address")) input.address = str(body.address);
-    if (has("governorate")) input.governorate = str(body.governorate);
-    if (has("currentEmployer")) input.currentEmployer = str(body.currentEmployer);
-    if (has("yearsExperience")) input.yearsExperience = num(body.yearsExperience);
-    if (has("expectedSalary")) input.expectedSalary = num(body.expectedSalary);
-    if (has("noticePeriod")) input.noticePeriod = str(body.noticePeriod);
+
+    // Non-extraction fields — a human types these, no CV proposes them, so they stay listed here.
     if (has("source")) input.source = str(body.source);
     if (has("cvReferenceName")) input.cvReferenceName = str(body.cvReferenceName);
     if (has("cvExternalUrl")) input.cvExternalUrl = str(body.cvExternalUrl);
     if (has("notes")) input.notes = str(body.notes);
-    if (has("faculty")) input.faculty = str(body.faculty);
-    if (has("university")) input.university = str(body.university);
-    if (has("hasPriorWorkExperience")) input.hasPriorWorkExperience = bool(body.hasPriorWorkExperience);
-    if (has("hasMedicalRepExperience")) input.hasMedicalRepExperience = bool(body.hasMedicalRepExperience);
-    if (has("medicalRepEmployer")) input.medicalRepEmployer = str(body.medicalRepEmployer);
-    if (has("medicalRepExperienceFrom")) input.medicalRepExperienceFrom = str(body.medicalRepExperienceFrom);
-    if (has("medicalRepExperienceTo")) input.medicalRepExperienceTo = str(body.medicalRepExperienceTo);
+
+    // Extraction fields are driven from the schema registry rather than enumerated by hand.
+    //
+    // This used to be a hand-written list of all 21 keys, and it was the single biggest trap in
+    // the module: the review board renders whatever cv-field-schemas.ts declares, so a field added
+    // to the schema was rendered, edited, dragged and submitted — then silently dropped right
+    // here, with no error anywhere and no way to tell from the UI. Reading the allow-list from
+    // CV_FIELD_COLUMNS means the schema and the save path cannot drift apart again.
+    //
+    // The cast is the narrow escape hatch: field.key is a `string` at runtime but every key comes
+    // from CV_FIELD_COLUMNS, which cvFieldStorageDrift() asserts against the schema and
+    // tests/recruitment-cv-field-storage.test.ts pins — so an unknown key cannot reach here.
+    const writable = input as Record<string, unknown>;
+    for (const field of listWritableCvFields()) {
+      if (!has(field.key)) continue;
+      const raw = body[field.key];
+      switch (field.type) {
+        case "boolean":
+          writable[field.key] = bool(raw);
+          break;
+        case "number":
+          writable[field.key] = num(raw);
+          break;
+        // "date" values are YYYY-MM-DD strings; see cv-field-schemas.ts.
+        default:
+          writable[field.key] = str(raw);
+      }
+    }
+    // fullName is the one extraction field that is never nullable — a candidate row must carry a
+    // name — so it keeps the empty-string floor the hand-written version applied.
+    if (has("fullName")) input.fullName = str(body.fullName) ?? "";
+
+    // Repeating blocks (workHistory, educationHistory, certifications, skills, languages) are
+    // storage:"jsonb", so the review board submits them as top-level keys but they belong inside
+    // position_specific_fields. Collect them here; updateCandidate merges rather than replaces, so
+    // saving work history alone does not wipe the candidate's skills.
+    const blocks: Record<string, unknown> = {};
+    for (const field of listJsonbCvFields()) {
+      if (!has(field.key)) continue;
+      const raw = body[field.key];
+      blocks[field.key] = Array.isArray(raw) ? raw : [];
+    }
     if (has("positionSpecificFields")) {
       const raw = body.positionSpecificFields;
-      input.positionSpecificFields = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+      Object.assign(blocks, raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {});
     }
+    if (Object.keys(blocks).length > 0) input.positionSpecificFields = blocks;
 
     const candidate = await updateCandidate(id, input);
 

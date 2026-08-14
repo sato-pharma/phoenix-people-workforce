@@ -169,6 +169,67 @@ export function runRecruitmentCvExtractionAnalyticsTests() {
   assert.equal(neverProposed.byPosition[0].fields[0].notProposedCount, 2);
   assert.equal(neverProposed.overallCorrectionRate, 0, "no proposals at all means no correction rate, not a perfect miss");
 
+  // --- an UNCHANGED repeating block saved straight back is not a correction --------------------
+  // `===` on two arrays is identity, so the untouched work history the review board round-trips on
+  // every save scored as a correction on EVERY review — silently inflating the measured correction
+  // rate for all five history fields, the exact class of over-count this module was repaired for
+  // once already. jsonb does not preserve key order either, so the compare has to be about content
+  // only: below, the saved copy is a DIFFERENT array whose second entry holds the same keys in a
+  // different order.
+  const unchangedBlock = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: {
+        workHistory: [
+          { employer: "Sanofi", from: "2019-01-01", jobTitle: "Medical Rep" },
+          { jobTitle: "Senior Medical Rep", from: "2022-03-01", employer: "Novartis" },
+        ],
+      },
+      extractedFields: {
+        workHistory: {
+          confidence: "high",
+          value: [
+            { employer: "Sanofi", from: "2019-01-01", jobTitle: "Medical Rep" },
+            { employer: "Novartis", from: "2022-03-01", jobTitle: "Senior Medical Rep" },
+          ],
+        },
+      },
+    }),
+  ]);
+  assert.equal(unchangedBlock.byPosition[0].fields[0].proposedCount, 1, "a non-empty block IS a proposal");
+  assert.equal(
+    unchangedBlock.byPosition[0].fields[0].correctedCount,
+    0,
+    "identical content in a different array, with sub-object keys in a different order, is not a correction",
+  );
+  assert.equal(unchangedBlock.overallCorrectionRate, 0);
+
+  // --- a genuinely changed block DOES count as a correction ------------------------------------
+  const changedBlock = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: { workHistory: [{ employer: "Sanofi", jobTitle: "District Manager" }] },
+      extractedFields: {
+        workHistory: { confidence: "high", value: [{ employer: "Sanofi", jobTitle: "Medical Rep" }] },
+      },
+    }),
+  ]);
+  assert.equal(
+    changedBlock.byPosition[0].fields[0].correctionRate,
+    1,
+    "a human rewriting an entry the AI read wrong is a real correction and must still be measured",
+  );
+
+  // An empty block is "the CV listed none" — the AI proposed nothing, so a human adding entries is
+  // filling a gap, not correcting a mistake. Same rule as a blank string.
+  const emptyBlock = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: { skills: [{ name: "Selling skills" }] },
+      extractedFields: { skills: { confidence: "low", value: [] } },
+    }),
+  ]);
+  assert.equal(emptyBlock.byPosition[0].fields[0].proposedCount, 0, "an empty block is not a proposal");
+  assert.equal(emptyBlock.byPosition[0].fields[0].notProposedCount, 1);
+  assert.equal(emptyBlock.byPosition[0].fields[0].correctedCount, 0);
+
   // --- per-position breakdown splits correctly, sorted by totalReviewed descending -------------
   const perPosition = summarizeCvExtractionAccuracy([
     row({ positionKey: "medical_rep", appliedFields: { fullName: "A" }, extractedFields: { fullName: { confidence: "high", value: "A" } } }),
