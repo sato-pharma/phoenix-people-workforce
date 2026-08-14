@@ -8,6 +8,7 @@ import {
 } from "@/lib/uploads/exceljs-rows";
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
+import { chunkIds } from "@/lib/recruitment/db-batch";
 import type { CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
@@ -123,12 +124,19 @@ async function loadSourceContextByCandidate(ids: string[]): Promise<Map<string, 
   const map = new Map<string, CandidateSourceContext>();
   if (ids.length === 0) return map;
   const supabase = recruitmentDb();
-  const { data, error } = await supabase
-    .from("ats_candidate_source_context")
-    .select("candidate_id,channel,subject,raw_metadata")
-    .in("candidate_id", ids);
-  if (error || !data) return map;
-  for (const row of data as SourceContextRow[]) {
+  // listCandidates passes the WHOLE pool through here, so the id list is unbounded and must be
+  // batched (see db-batch.ts). chunkIds rather than fetchRowsInBatches because this stays
+  // best-effort: one failed batch drops its own enrichment, it does not break the candidate list.
+  const rows: SourceContextRow[] = [];
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase
+      .from("ats_candidate_source_context")
+      .select("candidate_id,channel,subject,raw_metadata")
+      .in("candidate_id", batch);
+    if (error || !data) continue;
+    rows.push(...(data as SourceContextRow[]));
+  }
+  for (const row of rows) {
     const candidateId = textOrNull((row as { candidate_id?: unknown }).candidate_id);
     if (!candidateId) continue;
     map.set(candidateId, describeCandidateSource(row));

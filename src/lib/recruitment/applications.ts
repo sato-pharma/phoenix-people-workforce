@@ -8,6 +8,7 @@
 // that employee's HR_ID.
 
 import type { AccessContext } from "@/lib/auth/permissions";
+import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { hrIdsMatch } from "@/lib/hr-id";
 import { createSystemNotification } from "@/lib/notifications/system";
 import { createInitialProbationRecord } from "@/lib/probation/provisioning";
@@ -105,20 +106,14 @@ export async function listApplications(access: AccessContext): Promise<Applicati
 
   const candidateIds = Array.from(new Set(visible.map((application) => application.candidateId)));
   const candidatesById = new Map<string, Candidate>();
-  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
-  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
-  // HeadersOverflowError. listApplications is company-wide for HR/admin viewers, so batch.
-  for (let i = 0; i < candidateIds.length; i += 100) {
-    const batch = candidateIds.slice(i, i + 100);
-    const { data: candidateRows, error: candidateError } = await supabase
-      .from("ats_candidates")
-      .select("*")
-      .in("id", batch);
-    if (candidateError) throw candidateError;
-    for (const row of (candidateRows ?? []) as CandidateDbRow[]) {
-      const candidate = mapCandidate(row);
-      candidatesById.set(candidate.id, candidate);
-    }
+  // listApplications is company-wide for HR/admin viewers, so the id list is unbounded — batch it
+  // (see db-batch.ts for why an unbatched .in() eventually fails, and how).
+  const candidateRows = await fetchRowsInBatches<CandidateDbRow>(candidateIds, (batch) =>
+    supabase.from("ats_candidates").select("*").in("id", batch),
+  );
+  for (const row of candidateRows) {
+    const candidate = mapCandidate(row);
+    candidatesById.set(candidate.id, candidate);
   }
 
   return visible.map((application) => ({
