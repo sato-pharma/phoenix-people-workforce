@@ -6,6 +6,10 @@ import type { CvExtractionAccuracyAnalytics, PositionAccuracy } from "@/lib/recr
 // Read-only CV-extraction accuracy view. Visibility only — does not change extraction
 // behavior. Fields are already sorted worst-first (highest correction rate) by the
 // aggregation lib, so the most-corrected fields are immediately visible per position.
+//
+// "Proposed" is the correction-rate denominator, not the review count: the rate only covers
+// fields the AI actually put a value on. "Not found" is the rest — reviews where it proposed
+// nothing for that field, which is a schema signal of its own, not a correction.
 
 function pct(n: number): string {
   return `${Math.round(n * 100)}%`;
@@ -24,20 +28,21 @@ function PositionTable({ position }: { position: PositionAccuracy }) {
         {label} <span className="font-normal text-slate-400">— {position.totalReviewed} reviewed</span>
       </h2>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[480px] text-sm">
+        <table className="w-full min-w-[600px] text-sm">
           <thead className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">Field</th>
-              <th className="px-3 py-2">Reviewed</th>
+              <th className="px-3 py-2">Proposed</th>
               <th className="px-3 py-2">Corrected</th>
               <th className="px-3 py-2">Correction rate</th>
+              <th className="px-3 py-2">Not found</th>
             </tr>
           </thead>
           <tbody>
             {position.fields.map((field) => (
               <tr key={field.fieldKey} className="border-t border-slate-100">
                 <td className="px-3 py-2 font-medium text-slate-800">{fieldLabel(position.positionKey, field.fieldKey)}</td>
-                <td className="px-3 py-2 text-slate-700">{field.totalReviewed}</td>
+                <td className="px-3 py-2 text-slate-700">{field.proposedCount}</td>
                 <td className="px-3 py-2 text-slate-700">{field.correctedCount}</td>
                 <td
                   className={`px-3 py-2 font-medium ${
@@ -50,6 +55,7 @@ function PositionTable({ position }: { position: PositionAccuracy }) {
                 >
                   {pct(field.correctionRate)}
                 </td>
+                <td className="px-3 py-2 text-slate-500">{field.notProposedCount}</td>
               </tr>
             ))}
           </tbody>
@@ -59,7 +65,11 @@ function PositionTable({ position }: { position: PositionAccuracy }) {
   );
 }
 
-export function CvExtractionAnalyticsView({ data }: { data: CvExtractionAccuracyAnalytics }) {
+export function CvExtractionAnalyticsView({
+  data,
+}: {
+  data: CvExtractionAccuracyAnalytics & { truncated?: boolean; rowsScanned?: number };
+}) {
   if (data.overallTotalReviewed === 0) {
     return (
       <div className="rounded-lg border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
@@ -71,6 +81,12 @@ export function CvExtractionAnalyticsView({ data }: { data: CvExtractionAccuracy
 
   return (
     <div className="space-y-4">
+      {data.truncated ? (
+        <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          Showing the first {data.rowsScanned?.toLocaleString() ?? "capped number of"} reviewed extractions only —
+          there are more than this page reads, so these rates cover part of the history, not all of it.
+        </p>
+      ) : null}
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center gap-6">
           <div>

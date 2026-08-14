@@ -37,7 +37,8 @@ export function runRecruitmentCvExtractionAnalyticsTests() {
   assert.equal(neverCorrected.overallCorrectionRate, 0);
   assert.equal(neverCorrected.byPosition[0].fields[0].correctionRate, 0);
   assert.equal(neverCorrected.byPosition[0].fields[0].correctedCount, 0);
-  assert.equal(neverCorrected.byPosition[0].fields[0].totalReviewed, 2);
+  assert.equal(neverCorrected.byPosition[0].fields[0].proposedCount, 2);
+  assert.equal(neverCorrected.byPosition[0].fields[0].notProposedCount, 0);
 
   // --- a field always corrected -> 100% correction rate ---------------------------------------
   const alwaysCorrected = summarizeCvExtractionAccuracy([
@@ -95,6 +96,11 @@ export function runRecruitmentCvExtractionAnalyticsTests() {
     0,
     "an empty-string AI proposal vs a null saved value should not count as a correction",
   );
+  assert.equal(
+    emptyEquivalence.byPosition[0].fields[0].proposedCount,
+    0,
+    "an empty-string proposal is not a proposal, so it must not sit in the rate's denominator",
+  );
 
   // --- a field missing from appliedFields entirely (undefined) counts as corrected if the AI
   //     proposed a real value ------------------------------------------------------------------
@@ -105,6 +111,63 @@ export function runRecruitmentCvExtractionAnalyticsTests() {
     }),
   ]);
   assert.equal(missingApplied.byPosition[0].fields[0].correctionRate, 1);
+
+  // --- THE OVER-COUNT: a field the AI proposed nothing for is not a correction -----------------
+  // The review board saves every schema field and seeds the empty ones from the candidate record
+  // (seedReviewFieldsFromCandidate), so a value lands in applied_fields for fields the AI honestly
+  // reported finding nothing in. Diffing those scored the AI as wrong for not guessing.
+  const unproposed = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: { governorate: "Cairo", phone: "01000000000" },
+      extractedFields: {
+        governorate: { confidence: "low", value: null }, // AI found nothing; TA's saved value seeded
+        phone: { confidence: "high", value: "01000000000" }, // AI proposed, kept as-is
+      },
+    }),
+  ]);
+  const unproposedGovernorate = unproposed.byPosition[0].fields.find((f) => f.fieldKey === "governorate");
+  assert.ok(unproposedGovernorate, "governorate must still be reported, not dropped");
+  assert.equal(
+    unproposedGovernorate.correctedCount,
+    0,
+    "a field the AI proposed nothing for must never count as a human correction",
+  );
+  assert.equal(unproposedGovernorate.proposedCount, 0, "an unproposed field must not enter the denominator");
+  assert.equal(unproposedGovernorate.notProposedCount, 1, "it must be reported as not-found, not silently dropped");
+  assert.equal(
+    unproposed.overallCorrectionRate,
+    0,
+    "overall rate must count only the one real proposal, which was kept — not 1 of 2 'corrected'",
+  );
+
+  // --- a boolean false IS a proposal, and correcting it still counts --------------------------
+  const booleanFinding = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: { hasMedicalRepExperience: true },
+      extractedFields: { hasMedicalRepExperience: { confidence: "low", value: false } },
+    }),
+  ]);
+  assert.equal(
+    booleanFinding.byPosition[0].fields[0].proposedCount,
+    1,
+    "false means 'no medical rep experience' — a real finding, not an empty field",
+  );
+  assert.equal(booleanFinding.byPosition[0].fields[0].correctionRate, 1, "overturning a false must count as a correction");
+
+  // --- a field the AI never once proposed reports 0%, not 100% --------------------------------
+  const neverProposed = summarizeCvExtractionAccuracy([
+    row({
+      appliedFields: { university: "Cairo University" },
+      extractedFields: { university: { confidence: "low", value: null } },
+    }),
+    row({
+      appliedFields: { university: "Ain Shams" },
+      extractedFields: { university: { confidence: "low", value: null } },
+    }),
+  ]);
+  assert.equal(neverProposed.byPosition[0].fields[0].correctionRate, 0);
+  assert.equal(neverProposed.byPosition[0].fields[0].notProposedCount, 2);
+  assert.equal(neverProposed.overallCorrectionRate, 0, "no proposals at all means no correction rate, not a perfect miss");
 
   // --- per-position breakdown splits correctly, sorted by totalReviewed descending -------------
   const perPosition = summarizeCvExtractionAccuracy([
