@@ -18,7 +18,7 @@
 // nor a CP-type visit exists does an Annual-Vacation/Health-Day entry count
 // as CRM-recorded leave.
 
-import { scanVisitsForRange } from "@/lib/crm/reads";
+import { queryVisits, scanVisitsForRange } from "@/lib/crm/reads";
 import { normalizeAttendanceHrId } from "@/lib/attendance/metrics";
 import { isIsoDate } from "@/lib/attendance/working-days";
 
@@ -60,6 +60,67 @@ function describeCrmDay(rows: CrmDayVisitRow[]): string | null {
   return detail ? `${label}: ${detail}` : label;
 }
 
+const DAY_MAP_VISIT_COLUMNS =
+  "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id";
+
+/** Above this many distinct employees, fetching each person's own visits by index stops being
+ * cheaper than one sequential window scan, so we fall back to the company-wide scan. The
+ * per-employee day report asks for exactly one id; a small team is a handful — those are the cases
+ * that were paying for a full-company scan and get the biggest win. The whole-company caller (the
+ * fingerprint report) sits far above this and keeps the original single scan unchanged. */
+const DAY_MAP_PUSHDOWN_MAX_IDS = 40;
+
+/** Merge the agent-role and double-role visit pages into the SAME shape a single company-wide keyset
+ * scan returns: one row per visit `id` (a visit whose agent AND double are both wanted is returned by
+ * both reads — keep the first, they are the same row), ordered by `id` ascending so the downstream
+ * classification counts and the `describeCrmDay` first-match label are byte-identical to the old scan.
+ * Pure and side-effect-free so the merge/dedup/order is unit-tested without a database. */
+export function mergeDayMapVisitPages<T extends { id: string }>(pages: ReadonlyArray<readonly T[]>): T[] {
+  const byId = new Map<string, T>();
+  for (const page of pages) {
+    for (const row of page) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+  }
+  return [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Fetch exactly the visits the day map needs for `wantedIds` over the window.
+ *
+ * For a bounded id set (the per-employee / small-team callers) this reads only those people's rows
+ * via the existing `(agent_hr_id, visit_date)` / `(double_hr_id, visit_date)` indexes — a visit
+ * counts whether the person was the agent OR the double, so both roles are queried and merged —
+ * instead of scanning EVERY company visit in the window and discarding ~all of them in JS. The two
+ * reads run in parallel, are de-duplicated by `id` (a visit whose agent AND double are both wanted
+ * is returned by both), and returned in the SAME `id`-ascending order the company-wide keyset scan
+ * produced, so the downstream classification and the `describeCrmDay` first-match label stay
+ * byte-identical. `queryVisits` applies the identical date range and departed-agent exclusion as
+ * {@link scanVisitsForRange}, and matches hr ids case-insensitively (`expandHrIdFilterValues`), so
+ * the fetched set is a superset of the rows the caller's own `normalizeAttendanceHrId` gate keeps —
+ * the gate below stays the exact decision. Stored `agent_hr_id`/`double_hr_id` are already canonical
+ * (upper, no whitespace — 0 of 123,657 rows differ), so the superset is exact in practice.
+ */
+async function fetchDayMapVisits(
+  dateFromIso: string,
+  dateToIso: string,
+  wantedIds: string[],
+): Promise<CrmDayVisitRow[]> {
+  if (wantedIds.length > DAY_MAP_PUSHDOWN_MAX_IDS) {
+    return scanVisitsForRange<CrmDayVisitRow>({
+      dateFrom: dateFromIso,
+      dateTo: dateToIso,
+      columns: DAY_MAP_VISIT_COLUMNS,
+    });
+  }
+  type KeyedRow = CrmDayVisitRow & { id: string };
+  const [asAgent, asDouble] = await Promise.all([
+    queryVisits<KeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, agentHrIds: wantedIds }),
+    queryVisits<KeyedRow>({ dateFrom: dateFromIso, dateTo: dateToIso, columns: DAY_MAP_VISIT_COLUMNS, doubleHrIds: wantedIds }),
+  ]);
+  return mergeDayMapVisitPages<KeyedRow>([asAgent, asDouble]);
+}
+
 async function scanCompanyVisitsByEmployee(input: {
   dateFromIso: string;
   dateToIso: string;
@@ -73,11 +134,7 @@ async function scanCompanyVisitsByEmployee(input: {
   );
   if (wanted.size === 0) return result;
 
-  const visits = await scanVisitsForRange<CrmDayVisitRow>({
-    dateFrom: input.dateFromIso,
-    dateTo: input.dateToIso,
-    columns: "visit_date,visit_type,visit_type_description,comment,customer_name,agent_hr_id,double_hr_id",
-  });
+  const visits = await fetchDayMapVisits(input.dateFromIso, input.dateToIso, [...wanted]);
 
   for (const visit of visits) {
     const dateIso = (visit.visit_date ?? "").slice(0, 10);
