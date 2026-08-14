@@ -27,6 +27,15 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>({
 }) {
   const ref = useRef<T>(null);
   const returnFocusRef = useRef<Element | null>(null);
+  // Hold the latest onClose in a ref so it is NOT an effect dependency. Callers
+  // routinely pass an inline `() => setOpen(false)` that is a new function on
+  // every render; if the focus-move effect below depended on onClose it would
+  // re-run on every parent re-render and yank focus back into the dialog after
+  // each keystroke — a controlled field then accepts only its first character.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -55,7 +64,7 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>({
       if (!ref.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key === "Tab") {
@@ -76,7 +85,7 @@ export function useDialogA11y<T extends HTMLElement = HTMLDivElement>({
       document.removeEventListener("keydown", handleKeyDown, true);
       document.body.style.overflow = previousOverflow;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   // Return focus when dialog closes
   useEffect(() => {
