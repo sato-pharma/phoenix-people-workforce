@@ -1566,6 +1566,23 @@ export function PlansWorkspace({
     setMessage(submit ? "Plan submitted for direct manager review." : "Plan draft saved.");
   }
 
+  // Guard against an accidental "empty week" submit: if every day is still an
+  // untouched blank Office placeholder (no activity, area, objective, or notes),
+  // confirm before sending it to the manager. Deliberately a soft nudge, not a
+  // block — a genuine all-office week is valid, the user just clicks through.
+  function requestSubmit() {
+    const allBlank = rows.length > 0 && rows.every(isUntouchedRow);
+    if (
+      allBlank &&
+      !window.confirm(
+        "Every day in this plan is still a blank 'Office' placeholder: no activity, area, or notes have been added.\n\nSubmit it to your manager anyway?",
+      )
+    ) {
+      return;
+    }
+    runAction(() => submitPlan(true));
+  }
+
   async function decide(planId: string, action: string) {
     const rowNotes = action.includes("return")
       ? Object.entries(returnNotes[planId] ?? {})
@@ -2103,7 +2120,7 @@ export function PlansWorkspace({
                   <Button
                     className="flex-1"
                     disabled={isPending || submitBlocked}
-                    onClick={() => runAction(() => submitPlan(true))}
+                    onClick={requestSubmit}
                   >
                     <Send className="mr-2 h-4 w-4" />
                     Submit
@@ -2698,7 +2715,7 @@ export function PlansWorkspace({
                 </Button>
                 <Button
                   disabled={isPending || submitBlocked}
-                  onClick={() => runAction(() => submitPlan(true))}
+                  onClick={requestSubmit}
                 >
                   <Send className="mr-2 h-4 w-4" />
                   Submit
