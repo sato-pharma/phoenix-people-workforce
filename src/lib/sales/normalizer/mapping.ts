@@ -185,6 +185,8 @@ export async function backfillCustomerRows(
         supabase.rpc("phx_refresh_sos_customer_directory_rollup", { p_batch_id: batchId }),
         supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId }),
       ]);
+      // Channel totals rollup — reads the fact + directory rollups above, so after the trio.
+      await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
     } catch {
       // Intentionally swallowed — see above.
     }

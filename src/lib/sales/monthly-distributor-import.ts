@@ -3001,6 +3001,10 @@ export async function persistDistributorSalesUpload(
     if (customerRollupRefresh.error) throw customerRollupRefresh.error;
     const roiRefresh = await supabase.rpc("phx_refresh_marketing_roi_facts", { p_batch_id: batchId });
     if (roiRefresh.error) throw roiRefresh.error;
+    // Channel totals rollup — after fact+directory, which it reads. The main (period-known) path
+    // gets this inside phx_finalize_sos_batch; this fallback refreshes each rollup individually.
+    const channelRollupRefresh = await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
+    if (channelRollupRefresh.error) throw channelRollupRefresh.error;
     invalidateSalesDashboardCache("source of sales multi-period import (fallback refresh)");
   }
 
