@@ -566,15 +566,23 @@ async function permissionBasedRecipients(input: ResolveNotificationRecipientsInp
       output.push(candidate.recipient);
       continue;
     }
+    // Company/system-scope roles (e.g. Super Admin, CEO) already see every employee, so they
+    // never have to match the subject's org chain — and this MUST be decided before the
+    // `!subject` bail below. Many operational alerts have no subject at all (an ingestion
+    // stall, a completed employee import); resolving those hit `if (!subject) continue` first
+    // and so rejected every candidate INCLUDING company-scope ones, leaving zero recipients.
+    // The fail-closed guard then skipped the alert on every channel while writing rows that
+    // made cron look healthy. Ordering is the whole fix: nothing new is accepted here that the
+    // clause below did not already accept whenever a subject happened to exist.
+    if (context.scope === "company" || context.scope === "system") {
+      output.push(candidate.recipient);
+      continue;
+    }
     if (!subject) continue;
     if (
       candidate.recipient.hrId === subject.recipient.hrId ||
       reportsTo(candidate, subject) ||
-      inManagerChain(candidate, subject, employeesByHrId) ||
-      // Company/system-scope roles (e.g. Super Admin, CEO) already see every
-      // employee — never require them to also match the subject's org chain.
-      context.scope === "company" ||
-      context.scope === "system"
+      inManagerChain(candidate, subject, employeesByHrId)
     ) {
       output.push(candidate.recipient);
     }
