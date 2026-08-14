@@ -19,6 +19,12 @@ import type { PhoenixRole } from "@/lib/auth/permissions";
 import { canViewRestrictedProducts, restrictedProductNameSet, stripRestrictedRowsByName } from "@/lib/sales/access-scope";
 import { getPmProductCodes, resolvePmSalesFamilies } from "@/lib/employee-360/pm-products";
 import {
+  loadCanonicalEmployee360SalesRows,
+  maskRestrictedEmployee360Rows,
+  selectEmployee360RowsForFamilies,
+  selectEmployee360RowsForHrIds,
+} from "@/lib/employee-360/sales-canonical";
+import {
   CAMPAIGN_TYPE,
   classifyVisit,
   defaultWindow,
@@ -92,47 +98,44 @@ function chunk<T>(items: T[], size = 100): T[][] {
 // Confidential products (LA003/LA004/SS001 — see src/lib/sales/access-scope.ts,
 // the single source of truth) are stripped BEFORE any aggregation, same as the
 // Sales module: they must never surface in a total, KPI, chart, or product list
-// for a non-CEO/Super-Admin viewer. sales_records keys products by NAME, so the
-// name-based strip (not the code-based one) is the one that reaches this table.
+// for a non-CEO/Super-Admin viewer.
+//
+// This is now the BACKSTOP, not the primary mask. Canonical rows carry product_code,
+// so maskRestrictedEmployee360Rows strips by code first — exact, and immune to the
+// product-name drift this name pass has to tolerate. The name pass still runs after
+// it, to catch a product renamed into a restricted name ahead of the master.
 // Pure, DB-free filter step — exported so the masking wiring is unit-testable
 // without a Supabase round trip (see stripRestrictedRowsByName's own tests in
 // tests/sales-restricted-products.test.ts for the underlying strip logic).
-export function applyRestrictedProductFilter(
-  rows: SalesRow[],
+export function applyRestrictedProductFilter<T extends SalesRow>(
+  rows: T[],
   viewerRole: PhoenixRole,
   restrictedNames: Set<string>,
-): SalesRow[] {
+): T[] {
   if (canViewRestrictedProducts(viewerRole)) return rows;
   return stripRestrictedRowsByName(rows, restrictedNames, (r) => r.product, true);
 }
 
 async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): Promise<SalesSummary> {
-  const supabase = getSupabaseAdmin();
+  // One range load for the whole company, then narrowed in memory. This replaced a paged
+  // sales_records scan (1,000 rows per request, per chunk of 100 HR-id keys) that cost an NSM's
+  // line dozens of sequential round trips to eu-central-1 — and, more importantly, answered
+  // from the wrong engine: it read B-158's H1 as 700,019.87 while every other surface read
+  // 460,228.50. See sales-canonical.ts.
   const keys = Array.from(new Set(teamHrIds.flatMap((id) => hrIdLookupKeys(id))));
-  // PostgREST caps a response at ~1000 rows regardless of .limit(), and a large
-  // team (e.g. an NSM's whole line ≈ 3.7k sales rows) exceeds that — so PAGE with
-  // .range() or the manager sales roll-up silently under-counts.
-  const PAGE = 1000;
-  let rows: SalesRow[] = [];
-  for (const keyBatch of chunk(keys)) {
-    for (let from = 0; from < 100000; from += PAGE) {
-      const { data, error } = await supabase
-        .from("sales_records")
-        .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-        .in("employee_hr_id", keyBatch)
-        .order("id", { ascending: true })
-        .range(from, from + PAGE - 1);
-      if (error) throw new Error(`Employee 360 sales: ${error.message}`);
-      const batch = (data ?? []) as SalesRow[];
-      rows = rows.concat(batch);
-      if (batch.length < PAGE) break;
-    }
-  }
+  const all = await loadCanonicalEmployee360SalesRows();
+  let rows = maskRestrictedEmployee360Rows(selectEmployee360RowsForHrIds(all, keys), viewerRole);
+  // Code-based masking above is exact; the name pass stays as a backstop for a product whose
+  // name matches a restricted one but whose code does not (a rename that outran the master).
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }
-  const subjectKey = String(teamHrIds[0] ?? "").trim().toLowerCase();
-  const contributingReps = new Set(rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && k !== subjectKey));
+  // The subject's OWN aliases must not count as contributing team-mates, or a solo rep whose
+  // rows carry an alias of their HR id reads as a one-person "team roll-up".
+  const subjectKeys = new Set(hrIdLookupKeys(String(teamHrIds[0] ?? "")).map((k) => k.trim().toLowerCase()));
+  const contributingReps = new Set(
+    rows.map((r) => String(r.employee_hr_id ?? "").trim().toLowerCase()).filter((k) => k && !subjectKeys.has(k)),
+  );
   const isTeamRollup = teamHrIds.length > 1 && contributingReps.size > 0;
   return aggregateSalesRows(rows, isTeamRollup, contributingReps.size);
 }
@@ -140,10 +143,11 @@ async function getEmployeeSales(teamHrIds: string[], viewerRole: PhoenixRole): P
 /**
  * PM / Group PM sales attributed by the PRODUCTS they own (product-manager master),
  * not a team roll-up — a PM has no reports, so the team path returns nothing.
- * sales_records has no product code, so we attribute by `family` — the SKU-agnostic
- * grouping that matches the master's family (resolved from the assigned codes). This
- * is exact for a PM who owns a whole brand and avoids the SKU-level name drift/typos
- * in sales_records.product (e.g. "Royafloxacin 500mg tab", "Tebofrtin drops").
+ *
+ * Attribution stays at `family` grain — the SKU-agnostic grouping that matches the master's
+ * family, resolved from the assigned codes — because that is what a PM actually owns: a whole
+ * brand, not a SKU list. (The canonical engine does carry product_code, unlike the legacy table
+ * this replaced, so a code-grain variant is now possible; it is not what the PM master models.)
  */
 export async function getEmployeeSalesByFamilies(
   families: string[],
@@ -151,24 +155,10 @@ export async function getEmployeeSalesByFamilies(
 ): Promise<SalesSummary> {
   const fams = Array.from(new Set(families.map((f) => String(f).trim()).filter(Boolean)));
   if (fams.length === 0) return aggregateSalesRows([], false, 0);
-  const supabase = getSupabaseAdmin();
-  // A whole family spans 2 sales channels × SKUs × months (thousands of rows), and
-  // PostgREST caps a single response (~1000 rows) regardless of .limit(), so we MUST
-  // page through with .range() or the total silently under-counts by ~half.
-  const PAGE = 1000;
-  let rows: SalesRow[] = [];
-  for (let from = 0; from < 100000; from += PAGE) {
-    const { data, error } = await supabase
-      .from("sales_records")
-      .select("employee_hr_id,line,family,product,month,year,sales_value,target_value")
-      .in("family", fams)
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(`Employee 360 product sales: ${error.message}`);
-    const batch = (data ?? []) as SalesRow[];
-    rows = rows.concat(batch);
-    if (batch.length < PAGE) break;
-  }
+  // Same single canonical load as the team path — memoized per request, so a profile that
+  // resolves a PM does not pay for it twice.
+  const all = await loadCanonicalEmployee360SalesRows();
+  let rows = maskRestrictedEmployee360Rows(selectEmployee360RowsForFamilies(all, fams), viewerRole);
   if (!canViewRestrictedProducts(viewerRole)) {
     rows = applyRestrictedProductFilter(rows, viewerRole, await restrictedProductNameSet());
   }

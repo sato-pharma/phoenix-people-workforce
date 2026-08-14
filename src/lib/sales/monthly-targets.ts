@@ -468,6 +468,26 @@ export function regionName(code: string | null | undefined): string {
   return key ? (REGION_NAMES[key] ?? key) : "";
 }
 
+/**
+ * line_code -> the official line name. Never show a code to a user (owner rule).
+ *
+ * The engine returns codes; every canonical read module needs the name. This map had been
+ * copy-pasted into each of them, which is how two of them would eventually disagree about
+ * what "anti_infective" is called. It lives here now, beside regionName, for the same reason.
+ * An unknown code falls through to itself rather than to "" — a visible oddity beats a row
+ * that silently loses its line.
+ */
+const LINE_NAMES: Record<string, string> = {
+  cns: "CNS",
+  pedia: "Pedia",
+  anti_infective: "Anti Infective",
+};
+
+export function lineName(code: string | null | undefined): string {
+  const key = str(code).trim();
+  return key ? (LINE_NAMES[key] ?? key) : "";
+}
+
 /** product_code (upper) -> product name, for display (codes are never shown to the user). */
 export async function loadProductNameMap(): Promise<Map<string, string>> {
   const supabase = getSupabaseAdmin();
@@ -494,6 +514,46 @@ export async function loadProductPriceMap(): Promise<Map<string, number>> {
     const code = str(record.product_code).trim().toUpperCase();
     const price = optNum(record.factory_price);
     if (code && price != null) map.set(code, price);
+  }
+  return map;
+}
+
+/** product_code (upper) -> family, for the family/therapeutic-area breakdowns. */
+export async function loadProductFamilyMap(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("source_of_sales_products").select("product_code,family");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.product_code).trim().toUpperCase();
+    const family = str(record.family).trim();
+    if (code && family) map.set(code, family);
+  }
+  return map;
+}
+
+/**
+ * area_code (upper) -> area name, from the Source of Sales master.
+ *
+ * Deliberately the SoS master and not au_v_canonical_areas: the canonical view holds the 42
+ * areas that carry a seat, while the engine also attributes to spillover/"Other" areas that
+ * only exist in the master. Reading the narrower view would leave those rows labelled with a
+ * raw code, and the owner's standing rule is names in the UI, never codes.
+ *
+ * The portal and the admin dashboard both resolve territory labels through here, so the same
+ * area cannot be called two different things on two screens.
+ */
+export async function loadAreaNameMap(): Promise<Map<string, string>> {
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase.from("source_of_sales_areas").select("area_code,area_name");
+  if (error) throw error;
+  const map = new Map<string, string>();
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const code = str(record.area_code).trim().toUpperCase();
+    const name = str(record.area_name).trim();
+    if (code) map.set(code, name || code);
   }
   return map;
 }

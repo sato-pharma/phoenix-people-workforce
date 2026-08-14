@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 // Two surfaces that could not honour an area bound, handled in the only honest ways available.
 //
-// 1. RECONCILIATION. analytics_cross_source takes only p_lines; its view aggregates three legs to
-//    (period, line) and the closing leg has no area dimension at all, so there is nothing to push a
-//    bound into. A geography-scoped viewer was served whole-line NATIONAL SoS / Closing / Weekly /
+// 1. RECONCILIATION. analytics_cross_source takes only p_lines; its view aggregates all three legs
+//    to (period, line), so there is nothing to push a bound into. (The closing leg does now carry a
+//    territory, since it reads SoS Monthly Closing — but cross_source_period_line still sums it
+//    away, so the refusal below stands until that view is re-cut at area grain.)
+//    A geography-scoped viewer was served whole-line NATIONAL SoS / Closing / Weekly /
 //    TARGET totals on a page presenting itself as their scope, with the region picker hidden. Until
 //    the view is re-cut, refusing beats showing a manager national figures they will read as theirs.
 //

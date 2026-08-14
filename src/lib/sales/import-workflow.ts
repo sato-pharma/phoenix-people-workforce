@@ -1,4 +1,4 @@
-import { createSalesImport } from "@/lib/sales/service";
+import { assertLegacySalesImportOpen, createSalesImport } from "@/lib/sales/service";
 import {
   makeBatchSummary,
   salesSuccess,
@@ -167,6 +167,10 @@ export async function runSalesImportWorkflow(input: {
   line: string;
   uploadedBy: string;
 }): Promise<SalesActionResponse<UploadSummaryDetails>> {
+  // Refused before the workbook is even parsed — see LEGACY_SALES_IMPORT_FROZEN. Validating a
+  // file for minutes and then refusing it would be the same waste with extra steps.
+  assertLegacySalesImportOpen();
+
   if (!(input.file instanceof File)) {
     throw new SalesWorkflowError("invalid_input", "Sales workbook is required.", 400);
   }

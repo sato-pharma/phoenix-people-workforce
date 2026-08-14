@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, FileSpreadsheet } from "lucide-react";
+import { AlertTriangle, Download, FileSpreadsheet } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { S1_VIEWS, type S1Line, type S1View } from "@/lib/business-review-s1/service";
@@ -14,7 +14,7 @@ type LineTag = { line: string; lineId: S1Line };
 type CoDmRow = DmRow & LineTag & { keyProducts: string[]; families: string[]; visitsAvailable: boolean };
 type CoAreaRow = AreaRow & LineTag;
 type Thresholds = { repFailBelow: number; dsmFailBelow: number };
-type Shared = { viewerRole: string; company: S1Company };
+type Shared = { viewerRole: string; company: S1Company; restatementNotice: string };
 /** Discriminated on `view`: the company rollup consolidates every line's areas and DM
  * seats; a line view carries exactly one dataset. Keeps each branch free of null checks. */
 type Props =
@@ -57,6 +57,17 @@ const BAND_LABEL: Record<string, string> = {
 const Band = ({ band }: { band: string }) => (
   <span className={cn("rounded px-1.5 py-0.5 text-[10px] font-bold", BAND_STYLE[band] ?? BAND_STYLE["not-eligible"])}>{BAND_LABEL[band] ?? band}</span>
 );
+
+/** Rebuilt from canonical SoS, this review can show different bands than what H1 was
+ * actually paid on. Every render of this dashboard carries this banner — see canonical.ts. */
+function RestatementBanner({ notice }: { notice: string }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+      <p className="text-sm font-semibold text-amber-900">{notice}</p>
+    </div>
+  );
+}
 
 const TABS = [
   { id: "achievers", label: "Achievers" },
@@ -124,7 +135,7 @@ export function S1ReviewDashboard(props: Props) {
 }
 
 function CompanyDashboard({
-  company, viewerRole, companyDms, companyAreas, companyProductTables, companyThresholds,
+  company, viewerRole, companyDms, companyAreas, companyProductTables, companyThresholds, restatementNotice,
 }: Extract<Props, { view: "company" }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
@@ -151,6 +162,8 @@ function CompanyDashboard({
         </label>
       </ReviewHeader>
 
+      <RestatementBanner notice={restatementNotice} />
+
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <Kpi label="Company achievement" value={pct(T.allProducts.ach)} sub="all 3 lines · all areas" accent={achColor(T.allProducts.ach)} />
         <Kpi label="Sales (total)" value={egp(T.allProducts.sales)} sub={`of ${egp(T.allProducts.target)}`} />
@@ -175,7 +188,7 @@ function CompanyDashboard({
   );
 }
 
-function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine }: Extract<Props, { ds: S1Dataset }>) {
+function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine, restatementNotice }: Extract<Props, { ds: S1Dataset }>) {
   const [tab, setTab] = useState<TabId>("achievers");
   const [excludeVacant, setExcludeVacant] = useState(false);
   const M = ds.meta.months;
@@ -205,6 +218,8 @@ function LineDashboard({ ds, dms, areas, viewerRole, view: currentLine }: Extrac
           <span className="text-sm font-medium">Exclude vacant</span>
         </label>
       </ReviewHeader>
+
+      <RestatementBanner notice={restatementNotice} />
 
       <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Line achievement" value={pct(line.ach)} sub="all areas · all products" accent={achColor(line.ach)} />

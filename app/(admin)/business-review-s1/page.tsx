@@ -1,9 +1,9 @@
 // S1 Business Review — READ-ONLY analytical page inside the Phoenix admin shell
 // (sidebar/topbar provided by app/(admin)/layout.tsx). Visible only to CEO,
-// SFE Manager, and Super Admin. Reads the bundled, pre-verified S1 dataset (one
-// line at a time, chosen via ?line=) — it does not touch any other Phoenix
-// domain, service, or table. Line switch is a URL search param so every switch
-// re-runs the role gate server-side, same as any other navigation.
+// SFE Manager, and Super Admin. Loads the LIVE canonical S1 bundle (one line at a
+// time, chosen via ?line=) from SoS Monthly Closing — it does not touch any other
+// Phoenix domain, service, or table. Line switch is a URL search param so every
+// switch re-runs the role gate server-side, same as any other navigation.
 import { redirect } from "next/navigation";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import {
@@ -16,7 +16,9 @@ import {
   getS1CompanyThresholds,
   getS1Dataset,
   isS1View,
+  loadS1Review,
   payoutPercentageFor,
+  S1_RESTATEMENT_NOTICE,
   type S1View,
 } from "@/lib/business-review-s1/service";
 import { S1ReviewDashboard } from "@/components/business-review-s1/dashboard.client";
@@ -39,7 +41,10 @@ export default async function BusinessReviewS1Page({ searchParams }: PageProps) 
   const params = await searchParams;
   const requested = firstSearchParam(params?.line);
   const view: S1View = isS1View(requested) ? requested : DEFAULT_S1_VIEW;
-  const company = getS1Company();
+
+  // One canonical range call for all three lines, all six months — never per-view.
+  const review = await loadS1Review();
+  const company = getS1Company(review);
 
   // The company rollup is cross-line: it consolidates every line's areas and DM seats
   // instead of loading a single per-line dataset.
@@ -49,25 +54,26 @@ export default async function BusinessReviewS1Page({ searchParams }: PageProps) 
         view="company"
         company={company}
         viewerRole={access.role}
-        companyDms={getS1CompanyDms().map((d) => ({
+        restatementNotice={S1_RESTATEMENT_NOTICE}
+        companyDms={getS1CompanyDms(review).map((d) => ({
           ...d,
           payoutPct: payoutPercentageFor(d.allProducts.ach),
           band: bandFor(d.allProducts.ach),
           activePayoutPct: payoutPercentageFor(d.activeIncludeOnly.ach),
           activeBand: bandFor(d.activeIncludeOnly.ach),
         }))}
-        companyAreas={getS1CompanyAreas().map((a) => ({
+        companyAreas={getS1CompanyAreas(review).map((a) => ({
           ...a,
           payoutPct: payoutPercentageFor(a.allProducts.ach),
           band: bandFor(a.allProducts.ach),
         }))}
-        companyProductTables={getS1CompanyProductTables()}
-        companyThresholds={getS1CompanyThresholds()}
+        companyProductTables={getS1CompanyProductTables(review)}
+        companyThresholds={getS1CompanyThresholds(review)}
       />
     );
   }
 
-  const ds = getS1Dataset(view);
+  const ds = getS1Dataset(review, view);
   const dms = ds.dms.map((d) => ({
     ...d,
     payoutPct: payoutPercentageFor(d.allProducts.ach),
@@ -89,6 +95,7 @@ export default async function BusinessReviewS1Page({ searchParams }: PageProps) 
       areas={areas}
       viewerRole={access.role}
       company={company}
+      restatementNotice={S1_RESTATEMENT_NOTICE}
     />
   );
 }

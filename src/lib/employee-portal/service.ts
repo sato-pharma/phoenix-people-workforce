@@ -87,6 +87,10 @@ import { getMarketingRequestDraftWorkspace } from "@/lib/marketing-requests/serv
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
 import { mapOutstationRequestRowToPayrollApproval } from "@/lib/outstation/payroll-expense-mapping";
 import { getVacationPlatformMetricRows } from "@/lib/vacation/service";
+import {
+  loadCanonicalPortalSalesRows,
+  selectCanonicalRowsForHrIds,
+} from "@/lib/employee-portal/portal-sales-canonical";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -273,7 +277,6 @@ type PortalAuthRow = {
 export const EMPLOYEE_PORTAL_PROFILE_NOT_LINKED_MESSAGE =
   "Your employee profile is not linked yet. Please contact HR.";
 
-type PortalSalesSourceRow = Record<string, unknown>;
 type PortalSalesNormalized = {
   hrId: string;
   managerHrId: string | null;
@@ -753,28 +756,6 @@ function buildSalaryTrendFromRecords(records: PortalPayrollRecord[]): SalaryTren
   return rows.slice(-6);
 }
 
-function mapSalesRow(row: PortalSalesSourceRow): PortalSalesNormalized {
-  const period = pickText(row as unknown as PortalPayrollSourceRow, ["period"]);
-  const year = parseIntValue(row, ["year", "payroll_year"]);
-  const month = parseIntValue(row, ["month", "payroll_month"]);
-  const normalizedPeriod = period || (year && month ? `${year}-${String(month).padStart(2, "0")}` : "");
-  return {
-    hrId: pickText(row as unknown as PortalPayrollSourceRow, ["hr_id", "employee_hr_id"]),
-    managerHrId: pickOptionalText(row as Record<string, unknown>, ["manager_hr_id", "manager_id"]),
-    family: pickText(row as unknown as PortalPayrollSourceRow, ["family"]),
-    line: pickOptionalText(row as unknown as PortalPayrollSourceRow, ["line", "employee_line"]),
-    month,
-    period: normalizedPeriod,
-    product: pickText(row as unknown as PortalPayrollSourceRow, ["product"]),
-    salesType: pickText(row as unknown as PortalPayrollSourceRow, ["sales_type", "salesType"]),
-    salesUnits: toNumber((row as unknown as PortalPayrollSourceRow).sales_units ?? (row as unknown as PortalPayrollSourceRow).salesUnits),
-    salesValue: toNumber((row as unknown as PortalPayrollSourceRow).sales_value ?? (row as unknown as PortalPayrollSourceRow).salesValue),
-    targetValue: toNumber((row as unknown as PortalPayrollSourceRow).target_value ?? (row as unknown as PortalPayrollSourceRow).targetValue),
-    territory: pickText(row as unknown as PortalPayrollSourceRow, ["territory"]),
-    year,
-  };
-}
-
 function normalizeFilter(value: unknown) {
   return isPortalFilterText(value) ? value.trim() : null;
 }
@@ -826,44 +807,6 @@ async function resolveDirectManagerName(employeeHrId: string | null | undefined)
   const managerRow = manager as { full_name?: string | null; nickname?: string | null } | null;
   const fullName = managerRow?.full_name;
   return fullName ? resolveEmployeeDisplayName(String(fullName), managerRow?.nickname) : null;
-}
-
-type SalesFilterQuery = {
-  or: (filter: string) => SalesFilterQuery;
-  eq: (column: string, value: number | string) => SalesFilterQuery;
-  ilike: (column: string, pattern: string) => SalesFilterQuery;
-  in: (column: string, values: string[]) => SalesFilterQuery;
-};
-
-function applySalesFiltersToQuery(query: SalesFilterQuery, filters: PortalSalesFilters) {
-  let nextQuery = query;
-  if (filters.year) nextQuery = nextQuery.eq("year", Number(filters.year));
-  if (filters.month) nextQuery = nextQuery.eq("month", Number(filters.month));
-  if (filters.product) nextQuery = nextQuery.eq("product", filters.product);
-  if (filters.family) nextQuery = nextQuery.eq("family", filters.family);
-  if (filters.salesType) nextQuery = nextQuery.eq("sales_type", filters.salesType);
-  if (filters.sales_type) nextQuery = nextQuery.eq("sales_type", filters.sales_type);
-  if (filters.territory) nextQuery = nextQuery.eq("territory", filters.territory);
-  if (filters.line) {
-    const lineFilters = Array.from(
-      new Set(Array.isArray(filters.line) ? filters.line : [filters.line]),
-    ).filter(Boolean);
-    if (lineFilters.length === 1) {
-      nextQuery = nextQuery.ilike("line", lineFilters[0] as string);
-    } else if (lineFilters.length > 1) {
-      nextQuery = nextQuery.or(lineFilters.map((line) => `line.ilike.${line}`).join(","));
-    }
-  }
-  if (filters.products && filters.products.length > 0) nextQuery = nextQuery.in("product", filters.products);
-  if (filters.period) {
-    const [yearText, monthText] = String(filters.period).split("-");
-    const year = Number(yearText);
-    const month = Number(monthText);
-    if (Number.isFinite(year) && Number.isFinite(month)) {
-      nextQuery = nextQuery.eq("year", year).eq("month", month);
-    }
-  }
-  return nextQuery;
 }
 
 function formatBatchLabel(month?: number | null, year?: number | null) {
@@ -1280,36 +1223,21 @@ async function fetchPortalSalesRecords(
   if (queryHrIds.length === 0 && !filters.line) return [];
 
   const normalizedFilters = resolveSalesFilterValues(filters);
-  const supabase = getSupabaseAdmin();
 
   try {
-    const buildSalesQuery = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase.from("v_employee_portal_sales").select("*");
-      
-      if (queryHrIds.length > 0) {
-        if (queryHrIds.length === 1) {
-          const singleHrId = queryHrIds[0].toUpperCase();
-          q = q.or(`hr_id.eq.${singleHrId},manager_hr_id.eq.${singleHrId}`);
-        } else {
-          // HR IDs are always stored uppercase — use IN instead of per-ID ILIKE ORs
-          const upperIds = queryHrIds.map((id: string) => id.toUpperCase());
-          const idList = upperIds.join(",");
-          q = q.or(`hr_id.in.(${idList}),manager_hr_id.in.(${idList})`);
-        }
-      }
-
-      q = applySalesFiltersToQuery(q, normalizedFilters);
-      return q.order("year", { ascending: false }).order("month", { ascending: false });
-    };
-
-    const data = await fetchAllRows(buildSalesQuery, "id");
-    const directRecords = data.map((row) => mapSalesRow(row as PortalSalesSourceRow));
-    const continuityRecords = await fetchPortalSalesSeatContinuityRecords({
+    // Rule #1: SoS Monthly Closing is the only sales truth, so the portal reads the same
+    // engine as the closing view and /sales-vs-target rather than the legacy
+    // `v_employee_portal_sales`, which restates the same reps by up to −34%.
+    //
+    // One load for the whole window, narrowed in memory twice — the seat-continuity pass
+    // below needs the same rows, and re-querying for them would buy nothing.
+    const canonicalRows = await loadCanonicalPortalSalesRows(normalizedFilters);
+    const directRecords =
+      queryHrIds.length > 0 ? selectCanonicalRowsForHrIds(canonicalRows, queryHrIds) : canonicalRows;
+    const continuityRecords = await selectPortalSalesSeatContinuityRecords({
+      canonicalRows,
       currentHrIds: queryHrIds,
       filters,
-      normalizedFilters,
-      supabase,
     });
     return mergePortalSalesRecords([...directRecords, ...continuityRecords]);
   } catch (error) {
@@ -1378,19 +1306,27 @@ async function fetchPreviousSeatHrIdsForReplacement(
   }
 }
 
-async function fetchPortalSalesSeatContinuityRecords({
+/**
+ * The rows a person inherits from the seat they took over.
+ *
+ * Canonical attribution resolves the occupant as of each period, so a replacement's own rows
+ * start the month they arrived — the predecessor's months stay attributed to the predecessor.
+ * That is correct bookkeeping and wrong for a portal, where the rep opens the page expecting
+ * their territory's history. This pass adds those months back, using the SAME line+area+manager
+ * predicate the legacy path used, applied to rows already loaded rather than re-queried.
+ */
+async function selectPortalSalesSeatContinuityRecords({
+  canonicalRows,
   currentHrIds,
   filters,
-  normalizedFilters,
-  supabase,
 }: {
+  canonicalRows: PortalSalesNormalized[];
   currentHrIds: string[];
   filters: PortalSalesFilters;
-  normalizedFilters: ReturnType<typeof resolveSalesFilterValues>;
-  supabase: ReturnType<typeof getSupabaseAdmin>;
 }) {
   if (currentHrIds.length === 0 || filters.line) return [];
 
+  const supabase = getSupabaseAdmin();
   const directory = await getEmployeeDirectory();
   const seats = (
     await devSafePromiseAll(
@@ -1409,51 +1345,35 @@ async function fetchPortalSalesSeatContinuityRecords({
 
   if (seats.length === 0) return [];
 
-  const continuityLines = Array.from(
-    new Set(seats.map((seat) => seat.employee.lineName).filter((line): line is string => Boolean(line))),
-  );
-  const continuityFilters = {
-    ...normalizedFilters,
-    line: normalizedFilters.line ?? (continuityLines.length > 0 ? continuityLines : undefined),
-  };
-
-  const buildContinuityQuery = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase.from("v_employee_portal_sales").select("*");
-    q = applySalesFiltersToQuery(q, continuityFilters);
-    return q.order("year", { ascending: false }).order("month", { ascending: false });
-  };
-
   try {
-    const data = await fetchAllRows(buildContinuityQuery, "id");
-    return data
-      .map((row) => mapSalesRow(row as PortalSalesSourceRow))
-      .filter((record) =>
-        seats.some(({ currentHrId, employee, previousHrIds }) =>
-          salesRecordMatchesSeatContinuity(
-            {
-              employeeHrId: record.hrId,
-              hrId: record.hrId,
-              line: record.line,
-              managerHrId: record.managerHrId,
-              territory: record.territory,
-            },
-            {
-              areaId: employee.areaId,
-              areaName: employee.areaName,
-              currentHrId,
-              lineId: employee.lineId,
-              lineName: employee.lineName,
-              managerHrId: employee.managerHrId,
-              positionId: employee.positionId,
-              positionTitle: employee.positionTitle,
-              previousHrIds,
-            },
-          ),
+    // The predicate itself requires the line to match, so narrowing the rows by line first —
+    // as the legacy query did — would only save work, never change the answer.
+    return canonicalRows.filter((record) =>
+      seats.some(({ currentHrId, employee, previousHrIds }) =>
+        salesRecordMatchesSeatContinuity(
+          {
+            employeeHrId: record.hrId,
+            hrId: record.hrId,
+            line: record.line,
+            managerHrId: record.managerHrId,
+            territory: record.territory,
+          },
+          {
+            areaId: employee.areaId,
+            areaName: employee.areaName,
+            currentHrId,
+            lineId: employee.lineId,
+            lineName: employee.lineName,
+            managerHrId: employee.managerHrId,
+            positionId: employee.positionId,
+            positionTitle: employee.positionTitle,
+            previousHrIds,
+          },
         ),
-      );
+      ),
+    );
   } catch (error) {
-    logPortalFailure("sales continuity query failed", { currentHrIds, error });
+    logPortalFailure("sales continuity match failed", { currentHrIds, error });
     return [];
   }
 }
@@ -2098,8 +2018,14 @@ export type MedicalRepPortalData = {
     currentMonthLabel: string;
     currentMonthSales: number;
     currentMonthTarget: number;
-    /** The semester the incentive figures are computed over, e.g. "H1 2026". */
+    /** The semester the incentive figures are computed over, e.g. "H2 2026". */
     incentiveSemesterLabel: string | null;
+    /** Sales and target summed over that semester alone. `incentiveSemesterTarget` is what tells a
+     * 0% achievement apart from an absent one: it is 0 for every rep until their first month of the
+     * semester is uploaded, and `overviewAchievementPercent` is 0 with it. Render "No target yet",
+     * never "0.0%" — one is a fact about the data, the other is an accusation. */
+    incentiveSemesterSales: number;
+    incentiveSemesterTarget: number;
     /** Non-null when that semester is not fully loaded — names the months, so a rep can never read
      * a partial figure as their settled payout. See describeIncompleteWindow. */
     incentiveWindowNotice: string | null;
@@ -2477,6 +2403,8 @@ export async function getPayslipPortalData(access: AccessContext): Promise<Medic
       // No sales data at all: there is no semester to name and nothing to call provisional. The
       // surrounding empty state already tells the rep their data is not linked yet.
       incentiveSemesterLabel: null,
+      incentiveSemesterSales: 0,
+      incentiveSemesterTarget: 0,
       incentiveWindowNotice: null,
       overviewAchievementPercent: 0,
       overviewSales: 0,
@@ -3121,7 +3049,6 @@ async function resolveSalesRankInTeam(params: {
 
   if (teamHrIds.size === 0) return null;
 
-  const supabase = getSupabaseAdmin();
   const queryHrIds = new Set<string>(Array.from(originalHrIds).map((id) => normalizeHrId(id)).filter(Boolean) as string[]);
   teamHrCanonicalIds.forEach((id) => queryHrIds.add(id));
   const buildHrSearchCandidates = (value: string | null | undefined) => {
@@ -3140,64 +3067,47 @@ async function resolveSalesRankInTeam(params: {
 
   const periodFilter = parsePeriodToMonthYear(params.comparisonPeriod ?? "");
 
-  const buildRankQuery = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase
-      .from("v_employee_portal_sales")
-      .select("employee_name,employee_hr_id,hr_id,manager_hr_id,sales_value,target_value,month,year,product,territory");
-
-    if (queryCandidates.length === 1) {
-      const singleHrId = queryCandidates[0];
-      if (isLineManagersMode) {
-        // DSM comparison: fetch all rows where the candidate is a manager (team sales)
-        // or is an employee (DSM's own rows) — both rolled up to the DSM
-        q = q.or(`manager_hr_id.ilike.${singleHrId},hr_id.ilike.${singleHrId}`);
-      } else {
-        // Med Rep comparison: only fetch rows owned by this employee (hr_id = COALESCE result)
-        // Do NOT include manager_hr_id to avoid pulling in sub-reports that don't exist
-        q = q.or(`hr_id.ilike.${singleHrId},employee_hr_id.ilike.${singleHrId}`);
-      }
-    } else {
-      const candidateFilters = queryCandidates.flatMap((id) => {
-        if (isLineManagersMode) {
-          return [`manager_hr_id.ilike.${id}`, `hr_id.ilike.${id}`];
-        }
-        return [`hr_id.ilike.${id}`, `employee_hr_id.ilike.${id}`];
-      });
-      q = q.or(candidateFilters.join(","));
-    }
-
-    if (periodFilter) {
-      q = q.eq("year", periodFilter.year).eq("month", periodFilter.month);
-    }
-    return q;
-  };
+  // Rule #1: the rank a rep sees beside their name has to be computed from the same sales
+  // the rest of the system reports for them, so this reads SoS Monthly Closing too.
+  //
+  // `employee_name` is intentionally absent from the projected rows — the legacy view carried
+  // a denormalized name that could disagree with the directory, and resolveMemberIdFromRow
+  // already prefers the directory. The name-matching fallback simply never fires now.
+  const candidateSet = new Set(queryCandidates.map((id) => id.toLowerCase()));
+  const projectRankRows = (rows: PortalSalesNormalized[]) =>
+    rows.map((row) => ({
+      employee_hr_id: row.hrId,
+      hr_id: row.hrId,
+      manager_hr_id: row.managerHrId,
+      month: row.month,
+      product: row.product,
+      sales_value: row.salesValue,
+      target_value: row.targetValue,
+      territory: row.territory,
+      year: row.year,
+    }));
 
   let data: unknown[] = [];
   let error: unknown = null;
   try {
-    data = await fetchAllRows(buildRankQuery, "id");
+    const canonicalRows = await loadCanonicalPortalSalesRows(
+      periodFilter ? { month: periodFilter.month, year: String(periodFilter.year) } : {},
+    );
+    // DSM comparison rolls a manager's whole team up to them; med-rep comparison ranks
+    // individuals, so pulling in rows via manager_hr_id would credit a rep with their
+    // teammates' sales.
+    const scoped = isLineManagersMode
+      ? selectCanonicalRowsForHrIds(canonicalRows, queryCandidates)
+      : canonicalRows.filter((row) => candidateSet.has(row.hrId.toLowerCase()));
+
+    data = projectRankRows(scoped);
+
+    if (data.length === 0 && queryHrIds.size > 0) {
+      // Fallback: attribute every row in application logic instead, exactly as before.
+      data = projectRankRows(canonicalRows);
+    }
   } catch (err) {
     error = err;
-  }
-
-  if (!error && data.length === 0 && queryHrIds.size > 0) {
-    // Fallback: retry without HR filtering; attribute rows in application logic.
-    const buildFallbackQuery = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let q: any = supabase
-        .from("v_employee_portal_sales")
-        .select("employee_name,employee_hr_id,hr_id,manager_hr_id,sales_value,target_value,month,year,product,territory");
-      if (periodFilter) {
-        q = q.eq("year", periodFilter.year).eq("month", periodFilter.month);
-      }
-      return q;
-    };
-    try {
-      data = await fetchAllRows(buildFallbackQuery, "id");
-    } catch (fallbackErr) {
-      error = fallbackErr;
-    }
   }
 
   if (error) {
@@ -3521,18 +3431,27 @@ export async function getMedicalRepPortalData(
 
   const allTimeTrend = (salesDashboard && Array.isArray(salesDashboard.trend))
     ? salesDashboard.trend
-        .map((item) => ({
-          period: String((item as Record<string, unknown>).period ?? ""),
-          sales: Number((item as Record<string, unknown>).sales ?? 0),
-          target: Number((item as Record<string, unknown>).target ?? 0),
-        }))
+        .map((item) => {
+          const row = item as Record<string, unknown>;
+          const sales = Number(row.sales ?? 0);
+          return {
+            period: String(row.period ?? ""),
+            sales,
+            // Sales on a key that has a target — the only part an achievement may divide. A trend
+            // from an engine that does not separate it reports nothing here, and falling back to
+            // `sales` keeps the previous meaning; falling back to 0 would zero a payout figure.
+            coveredSales: row.coveredSales == null ? sales : Number(row.coveredSales),
+            target: Number(row.target ?? 0),
+          };
+        })
         .filter((item) => item.period)
     : [];
 
-  // The payout window is a DECLARED semester, not "the last six rows that happen to exist".
-  // `slice(-6)` gave different-length semesters to different reps (June 2026 was half-loaded: 26
-  // reps had five periods and one had four while 56 colleagues had six) and would silently straddle
-  // the H1/H2 boundary the moment a July sheet landed, quietly changing everyone's payout. See
+  // The payout window is the DECLARED CALENDAR semester — today that is H2 2026 (Jul–Dec) — not
+  // "the last six rows that happen to exist" and not the rep's own latest month. `slice(-6)` gave
+  // different-length semesters to different reps (June 2026 was half-loaded: 26 reps had five
+  // periods and one had four while 56 colleagues had six) and would silently straddle the H1/H2
+  // boundary the moment a July sheet landed, quietly changing everyone's payout. See
   // src/lib/incentives/semester.ts. The 2026 payout curve itself is untouched.
   const cairoNow = currentCairoDateParts();
   const todayPeriod = `${cairoNow.year}-${String(cairoNow.month).padStart(2, "0")}`;
@@ -3540,12 +3459,17 @@ export async function getMedicalRepPortalData(
     periods: allTimeTrend.map((point) => point.period),
     todayPeriod,
   });
-  const salesTrend = incentiveWindow
+  // The semester window governs the INCENTIVE figures and nothing else. Every other sales surface
+  // on this payload — the trend chart, the team-comparison period picker, the latest-month ring,
+  // the "no sales data" empty state — describes what the rep actually HAS, and must keep seeing
+  // every loaded month. Scoping those to the payout window would blank a rep's entire sales section
+  // on 1 July, the moment H2 is declared and before anything has been uploaded into it.
+  const semesterTrend = incentiveWindow
     ? allTimeTrend.filter((point) => incentiveWindow.present.includes(point.period))
     : [];
 
-  const latestTrend = salesTrend[salesTrend.length - 1] ?? null;
-  const previousTrend = salesTrend[salesTrend.length - 2] ?? null;
+  const latestTrend = allTimeTrend[allTimeTrend.length - 1] ?? null;
+  const previousTrend = allTimeTrend[allTimeTrend.length - 2] ?? null;
 
   // All-time totals kept for the "All-time" dashboard lens and reach-target widget.
   const overviewSales = salesDashboard?.summary?.totalApprovedSales ??
@@ -3553,16 +3477,26 @@ export async function getMedicalRepPortalData(
   const overviewTarget = salesDashboard?.summary?.totalApprovedTarget ??
     allTimeTrend.reduce((sum, point) => sum + Number((point as Record<string, unknown>).target ?? 0), 0);
 
-  // Semester achievement: computed over the declared semester window (salesTrend), NOT all-time
+  // Semester achievement: computed over the declared semester window (semesterTrend), NOT all-time
   // totals, so the incentive tab reflects the semester a rep is actually paid on. When that window
   // is incomplete the figure is still shown, but `incentiveWindowNotice` forces it to be read as
   // provisional rather than settled — see describeIncompleteWindow.
-  const semesterSales = salesTrend.reduce((sum, p) => sum + p.sales, 0);
-  const semesterTarget = salesTrend.reduce((sum, p) => sum + p.target, 0);
-  const overviewAchievementPercent =
-    semesterTarget > 0
-      ? (semesterSales / semesterTarget) * 100
-      : Number(base.sales.achievementRate ?? 0) * 100;
+  //
+  // With no semester target this is 0 and the callers below must read `incentiveSemesterTarget`
+  // before rendering it — a rep with nothing in H2 yet has NO achievement, and the old fallback
+  // here (`base.sales.achievementRate`, an ALL-TIME rate carrying closed H1 months) would have put
+  // an H1 number on screen labelled as this semester's, and fed it to the payout curve. Under the
+  // calendar anchor that is no longer an edge case: it is every rep until their July lands.
+  //
+  // The percentage divides COVERED sales, not total sales. Rule #1 is that a rep's month reads
+  // identically everywhere, and /sales-vs-target and Monthly Closing both measure achievement as
+  // covered ÷ target — a product sold with no target beside it is real revenue but cannot be
+  // credited against a target that does not exist. Dividing the whole month by a partial target
+  // manufactures over-achievement, and on this tab over-achievement is money.
+  const semesterSales = semesterTrend.reduce((sum, p) => sum + p.sales, 0);
+  const semesterCoveredSales = semesterTrend.reduce((sum, p) => sum + p.coveredSales, 0);
+  const semesterTarget = semesterTrend.reduce((sum, p) => sum + p.target, 0);
+  const overviewAchievementPercent = semesterTarget > 0 ? (semesterCoveredSales / semesterTarget) * 100 : 0;
   const growthVsLastMonthPercent =
     latestTrend && previousTrend && previousTrend.sales > 0
       ? ((latestTrend.sales - previousTrend.sales) / previousTrend.sales) * 100
@@ -3570,9 +3504,10 @@ export async function getMedicalRepPortalData(
 
   const currentMonthSales = latestTrend?.sales ?? 0;
   const currentMonthTarget = latestTrend?.target ?? 0;
-  const achievementPercent = currentMonthTarget > 0
-    ? (currentMonthSales / currentMonthTarget) * 100
-    : Number(base.sales.achievementRate ?? 0) * 100;
+  // Same rule as the semester figure above: with no target for the month there is no achievement.
+  // The all-time fallback that used to sit here paired a 140% ring with "EGP 0 of EGP 0 target"
+  // underneath it, because the ring's own value and target come from this same empty month.
+  const achievementPercent = currentMonthTarget > 0 ? (currentMonthSales / currentMonthTarget) * 100 : 0;
 
   // Enhance product contribution to be based on the latest month if available, otherwise all-time
   const productContribution = (salesDashboard && Array.isArray(salesDashboard.productPerformance))
@@ -3767,16 +3702,21 @@ export async function getMedicalRepPortalData(
     latestRecord,
     previousRecord,
     salaryTrend: base.salaryTrend,
+    // The SEMESTER pair, not the all-time one. computeInsights gates its achievement line on
+    // `targetValue > 0` and then quotes the rate beside the gap still to close; pairing a semester
+    // rate with all-time totals made those two sentences describe two different periods. It also
+    // means a rep with no semester target gets no achievement line at all, rather than being told
+    // their achievement is 0.0%.
     sales: {
       achievementRate: overviewAchievementPercent / 100,
-      targetValue: overviewTarget,
-      totalValue: overviewSales,
+      targetValue: semesterTarget,
+      totalValue: semesterSales,
     },
   };
   const portalInsights = computeInsights(insightInput);
   const insights: string[] = portalInsights.map((i) => i.message);
   
-  if (!salesTrend.length) insights.push("Sales data has not been uploaded yet.");
+  if (!allTimeTrend.length) insights.push("Sales data has not been uploaded yet.");
   
   const fallbackAllowances = resolveStandardSalaryAllowances({
     departmentName: employee.departmentName,
@@ -3855,7 +3795,9 @@ export async function getMedicalRepPortalData(
     empty: {
       payroll: (payrollDashboard ? payrollDashboard.records.length : 0) === 0,
       profile: !profileLinked,
-      sales: salesTrend.length === 0,
+      // "This rep has no sales data at all", not "none in the current payout semester" — this flag
+      // replaces the whole Sales Performance section with an empty card.
+      sales: allTimeTrend.length === 0,
     },
     hrContract: {
       contractRenewalDate: base.employmentJourney.contractRenewalDate,
@@ -3913,6 +3855,8 @@ export async function getMedicalRepPortalData(
       currentMonthSales,
       currentMonthTarget,
       incentiveSemesterLabel: incentiveWindow?.semesterLabel ?? null,
+      incentiveSemesterSales: semesterSales,
+      incentiveSemesterTarget: semesterTarget,
       incentiveWindowNotice: describeIncompleteWindow(incentiveWindow),
       overviewAchievementPercent: Number.isFinite(overviewAchievementPercent) ? overviewAchievementPercent : 0,
       overviewSales,
@@ -3928,7 +3872,11 @@ export async function getMedicalRepPortalData(
       leadingMedicalRep,
       topProduct,
       topProductSalesValue,
-      trend: salesTrend,
+      // Every loaded month, not the payout window: this feeds the trend chart, the quarter lens and
+      // the team-comparison period picker, and narrowing it to the semester would quietly delete
+      // months from a control the rep uses to look back. `coveredSales` stays server-side — it is
+      // an input to the achievement, not something any of those controls render.
+      trend: allTimeTrend.map((point) => ({ period: point.period, sales: point.sales, target: point.target })),
       units: Number(salesDashboard?.summary?.unitsSold ?? 0),
     },
     workload: {
@@ -4039,6 +3987,11 @@ export async function getEmployeePortalIncentiveData(access: AccessContext): Pro
 // ---------------------------------------------------------------------------
 
 export type DsmTeamMemberProductData = {
+  /**
+   * ONLY MEANINGFUL WHEN `target` > 0. A zero target yields 0 here, and that 0 means "no
+   * target was set", not "achieved nothing" — au.monthly_targets starts 2026-07, so real
+   * sales with no target beside them is an ordinary case. Render "No target", never "0%".
+   */
   achievementPercent: number;
   family: string;
   product: string;
@@ -4048,6 +4001,7 @@ export type DsmTeamMemberProductData = {
 };
 
 export type DsmTeamMemberData = {
+  /** Only meaningful when `totalTarget` > 0 — see DsmTeamMemberProductData.achievementPercent. */
   achievementPercent: number;
   hrId: string;
   name: string;

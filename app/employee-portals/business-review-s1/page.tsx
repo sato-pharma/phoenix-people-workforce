@@ -1,5 +1,5 @@
-// S1 Business Review — employee-portal surface. Same verified S1 datasets as the admin module
-// at /business-review-s1, but every viewer sees only their own scope:
+// S1 Business Review — employee-portal surface. Same LIVE canonical S1 bundle as the admin
+// module at /business-review-s1, but every viewer sees only their own scope:
 //
 //   CEO / SFE Manager / Marketing Manager / Super Admin  → all company, all three lines
 //   NSM / GPM / Product Manager                          → their whole line
@@ -8,9 +8,8 @@
 //   Medical Representative                               → no access (owner ruling)
 //
 // Scope is resolved by src/lib/business-review-s1/portal-scope.ts against a snapshot of the live
-// organogram seat map, NOT by matching region labels or DM display names. Both shortcuts have
-// produced real defects here (#1479, and the name-mismatch class of bugs found while building
-// this module's datasets).
+// organogram seat map, NOT by matching region labels or DM display names. That shortcut has
+// produced a real defect here before (#1479).
 //
 // Two different timeframes meet on this page and are deliberately not merged: the S1 numbers are
 // Jan–Jun history, while the seat map is today. An area that was vacant during S1 can be occupied
@@ -18,12 +17,12 @@
 // seat map (who may look).
 import { EmployeePortalEmptyState, EmployeePortalPageShell } from "@/components/employee-portal/enterprise-shell";
 import { S1PortalReview } from "@/components/business-review-s1/portal-review.client";
-import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
-  applyAreaScope,
+  applySeatScope,
   resolveS1PortalScope,
   s1AccessMapGeneratedAt,
 } from "@/lib/business-review-s1/portal-scope";
+import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import {
   bandFor,
   getS1Company,
@@ -32,7 +31,9 @@ import {
   getS1CompanyProductTables,
   getS1CompanyThresholds,
   getS1Dataset,
+  loadS1Review,
   payoutPercentageFor,
+  S1_RESTATEMENT_NOTICE,
 } from "@/lib/business-review-s1/service";
 import type { AreaSummary, DmSummary } from "@/lib/business-review-s1/types";
 
@@ -69,13 +70,16 @@ export default async function PortalBusinessReviewS1Page() {
     );
   }
 
+  // One canonical range call for all three lines, all six months — never per-scope.
+  const review = await loadS1Review();
+
   // ---- company scope: every line, consolidated ----
   if (scope.kind === "company") {
-    const company = getS1Company();
+    const company = getS1Company(review);
     return shell(
       <S1PortalReview
-        areas={getS1CompanyAreas().map(withAreaBand)}
-        dms={getS1CompanyDms().map(withDmBand)}
+        areas={getS1CompanyAreas(review).map(withAreaBand)}
+        dms={getS1CompanyDms(review).map(withDmBand)}
         headline="All Company — Semester 1 2026"
         // Per-product columns are omitted company-wide: the three lines sell entirely different
         // catalogues, so one shared product column set would be meaningless.
@@ -83,18 +87,17 @@ export default async function PortalBusinessReviewS1Page() {
         lineRows={company.lines}
         mapGeneratedAt={s1AccessMapGeneratedAt()}
         months={company.meta.months}
-        productTables={getS1CompanyProductTables()}
+        productTables={getS1CompanyProductTables(review)}
         scopeLabel={scope.label}
-        thresholds={getS1CompanyThresholds()}
-        // Every area of every line is on this page, so nothing is missing from these totals.
-        caveat={{ kind: "none" }}
+        thresholds={getS1CompanyThresholds(review)}
+        restatementNotice={S1_RESTATEMENT_NOTICE}
         visitsAvailable
       />,
       `Semester 1 2026 across all three lines, as ${access.role}.`,
     );
   }
 
-  const ds = getS1Dataset(scope.line);
+  const ds = getS1Dataset(review, scope.line);
   const keyProducts = ds.products.filter((p) => p.include).map((p) => p.product);
   const headline = `${ds.meta.line} Line — Semester 1 2026`;
 
@@ -118,25 +121,23 @@ export default async function PortalBusinessReviewS1Page() {
         ]}
         scopeLabel={scope.label}
         thresholds={ds.meta.thresholds}
-        // The whole line is on the page, so nothing is missing from these totals.
-        caveat={{ kind: "none" }}
+        restatementNotice={S1_RESTATEMENT_NOTICE}
         visitsAvailable={ds.visits.available}
       />,
       `Semester 1 2026 for the ${ds.meta.line} line, as ${access.role}.`,
     );
   }
 
-  // ---- area scope (RM / DSM): only their own territory ----
+  // ---- seat scope (RM / DSM): only their own territory ----
   // Filtering happens before any ranking or truncation (PR #1487), and every figure the component
-  // renders is summed from these rows — it never reads ds.line.*, which is the whole line.
-  const { areas, dms } = applyAreaScope(scope.line, scope.areaNames);
+  // renders is summed from these rows — it never reads ds.line.*, which is the whole line. The
+  // canonical engine attributes every area to a DM seat directly, so this is an exact match, not
+  // a reconciliation against a workbook label — see portal-scope.ts's header.
+  const { areas, dms } = applySeatScope(ds, scope.dmSeatIds);
   if (areas.length === 0) {
-    // resolveS1PortalScope guarantees a non-empty area list, so reaching here means the access
-    // map names areas this dataset no longer has. Fail closed and say so, rather than render an
-    // empty review that reads as "you sold nothing".
     return shell(
       <EmployeePortalEmptyState
-        message={`Your territory resolved to ${scope.areaNames.length} area(s) that are not present in the ${ds.meta.line} dataset. This is a mapping fault, not a performance result — please report it before drawing any conclusion.`}
+        message={`No S1 sales were attributed to your DM seat${scope.dmSeatIds.length > 1 ? "s" : ""} in the ${ds.meta.line} line's canonical data. This may be a seat-mapping gap rather than an empty territory — please report it before drawing any conclusion.`}
         title="Territory could not be matched"
       />,
       `Semester 1 2026 for your territory, as ${access.role}.`,
@@ -155,10 +156,7 @@ export default async function PortalBusinessReviewS1Page() {
       productTables={[]}
       scopeLabel={scope.label}
       thresholds={ds.meta.thresholds}
-      // No area names from outside their team, ever. The only caveat they can see is that their
-      // OWN seat could not be reconciled 1:1 with the workbook — empty for every seat but
-      // Pedia's Giza/Cairo pair, so a normal district sees no warning at all.
-      caveat={{ kind: "partial", seats: scope.partialSeats }}
+      restatementNotice={S1_RESTATEMENT_NOTICE}
       visitsAvailable={ds.visits.available}
     />,
     `Semester 1 2026 for your territory, as ${access.role}.`,

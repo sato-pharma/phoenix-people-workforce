@@ -34,7 +34,10 @@ from openpyxl.utils import get_column_letter
 
 DL  = r"C:\Users\satoh\Downloads"
 DL2 = r"C:\Users\satoh\Downloads\New folder (2)"
-DATA_DIR = r"F:\Phoenix Workforce\_wt-s1-review\src\lib\business-review-s1\data"
+# Always this repo's own data/ dir, wherever this checkout or worktree happens to live.
+# Used to hardcode a sibling worktree path (_wt-s1-review) that only existed on the
+# owner's machine, so nobody else could reproduce the output.
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 OUT = r"C:\Users\satoh\Downloads\Phoenix S1 Business Review - ACCESS MAPPING (fill me).xlsx"
 
 # Phoenix export identity — same palette as src/lib/attendance/monthly-summary-export.ts

@@ -16,11 +16,8 @@ import {
   restrictedProductNameSet,
   stripRestrictedRowsByName,
 } from "@/lib/sales/access-scope";
-import {
-  isActiveSalesImportBatch,
-  salesAchievementRate,
-  selectCurrentSalesRecords,
-} from "@/lib/sales/metrics";
+import { loadCanonicalDashboardRecords } from "@/lib/sales/dashboard-canonical";
+import { salesAchievementRate } from "@/lib/sales/metrics";
 import {
   buildSalesOwnershipContext,
   classifySalesOwnership,
@@ -57,31 +54,6 @@ type SalesAccessFilter = {
   allowedLine?: string;
   includeManagerOwnedHrId?: string;
 };
-const SALES_DASHBOARD_RECORD_SELECT = [
-  "batch_id",
-  "row_number",
-  "employee_hr_id",
-  "employee_crm_id",
-  "employee_lookup_key",
-  "employee_name",
-  "manager_hr_id",
-  "line",
-  "territory",
-  "sales_type",
-  "family",
-  "product",
-  "factory_price",
-  "month",
-  "year",
-  "sales_units",
-  "sales_value",
-  "target_units",
-  "target_value",
-  "validation_state",
-  "validation_notes",
-  "link_status",
-  "link_confidence",
-].join(",");
 const SALES_DASHBOARD_TRANSACTION_LIMIT = 500;
 
 function toSafeArray<T = unknown>(value: readonly T[] | null | undefined): T[] {
@@ -342,6 +314,21 @@ function performanceMetric(sales: number, target: number) {
 
 function sumTargetValues(items: ScopedRecord[]) {
   return sum(items, (item) => item.targetValue);
+}
+
+/**
+ * The part of these rows' sales that sits on a key carrying a target.
+ *
+ * Every achievement % on this dashboard divides THIS, never the raw sales total. Only 36 of
+ * 142 (line, area) pairs with July sales had a target at all, so summing untargeted sales over
+ * whatever targets happen to exist reports an over-achievement nobody earned — the identical
+ * defect the portal's incentive tab carried. Falls back to the full sales value so a row shape
+ * without the field keeps its previous meaning rather than silently reading as zero.
+ */
+function sumCoveredSalesValues(items: ScopedRecord[]) {
+  return sum(items, (item) =>
+    typeof item.coveredSalesValue === "number" ? item.coveredSalesValue : item.salesValue,
+  );
 }
 
 function aggregate<T>(items: T[], keyBuilder: (item: T) => string) {
@@ -637,83 +624,6 @@ async function readAllSupabaseRows(
   return batches.flat();
 }
 
-function parseSalesPeriods(filters: SalesDashboardFilters) {
-  return [
-    ...toFilterStringList(filters.period),
-    ...toFilterStringList(filters.periods),
-  ]
-    .map((period) => {
-      const [year, month] = period.split("-").map(Number);
-      return Number.isInteger(year) && Number.isInteger(month) ? { month, period, year } : null;
-    })
-    .filter((period): period is { month: number; period: string; year: number } => Boolean(period));
-}
-
-type SalesRecordQuery = {
-  eq(column: string, value: unknown): SalesRecordQuery;
-  in(column: string, values: unknown[]): SalesRecordQuery;
-};
-
-function applyDashboardRecordFilters<TQuery extends SalesRecordQuery>(query: TQuery, filters: SalesDashboardFilters): TQuery {
-  let q: SalesRecordQuery = query;
-  if (filters.line) q = q.eq("line", filters.line);
-  if (filters.salesType) q = q.eq("sales_type", filters.salesType);
-  if (filters.territory) q = q.eq("territory", filters.territory);
-  if (filters.family) q = q.eq("family", filters.family);
-
-  const productFilter = [
-    ...toFilterStringList(filters.product),
-    ...toFilterStringList(filters.products),
-  ].filter(Boolean);
-  if (productFilter.length === 1) q = q.eq("product", productFilter[0]);
-  if (productFilter.length > 1) q = q.in("product", productFilter);
-
-  const periods = parseSalesPeriods(filters);
-  if (periods.length === 1) {
-    q = q.eq("year", periods[0].year).eq("month", periods[0].month);
-  } else if (periods.length > 1) {
-    const years = Array.from(new Set(periods.map((period) => period.year)));
-    const months = Array.from(new Set(periods.map((period) => period.month)));
-    q = q.in("year", years).in("month", months);
-  }
-
-  return q as TQuery;
-}
-
-async function readDashboardSalesRecordRows(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  activeBatchIds: string[],
-  filters: SalesDashboardFilters,
-) {
-  const pageSize = 1000;
-  const rows: Array<Record<string, unknown>> = [];
-  // PostgREST folds every .in() value into the request URL; an unbatched array of a few hundred
-  // ids can push the URL past undici's ~16KB header limit and throw "TypeError: fetch failed" /
-  // HeadersOverflowError — activeBatchIds is unbounded over the batch table's full history, so
-  // chunk it (nested inside the existing result-row pagination).
-  for (let b = 0; b < activeBatchIds.length; b += 100) {
-    const batchIdBatch = activeBatchIds.slice(b, b + 100);
-    let from = 0;
-    while (true) {
-      let query = supabase
-        .from("sales_records")
-        .select(SALES_DASHBOARD_RECORD_SELECT)
-        .in("batch_id", batchIdBatch);
-      query = applyDashboardRecordFilters(query, filters);
-      // ORDER BY id: an offset walk with no total order silently loses and duplicates rows between
-      // pages — the #1446 defect, which cost 1,262 of 49,713 mappings and looked like bad source data.
-      const result = await query.order("id", { ascending: true }).range(from, from + pageSize - 1);
-      if (result.error) throw result.error;
-      const page = toSafeArray(result.data) as unknown as Array<Record<string, unknown>>;
-      rows.push(...page);
-      if (page.length < pageSize) break;
-      from += pageSize;
-    }
-  }
-
-  return rows;
-}
-
 async function readSalesData(options?: { batchId?: string; approvedOnly?: boolean; includeRecords?: boolean }) {
   const supabase = getSupabaseAdmin();
   const includeRecords = options?.includeRecords ?? true;
@@ -896,55 +806,14 @@ export async function getSalesDashboard(
   accessContext?: AccessContext | null,
   options?: { transactionLimit?: number },
 ): Promise<SalesDashboardData> {
-  const supabase = getSupabaseAdmin();
+  // Sales come from SoS Monthly Closing, not from the closing-sheet import table. Everything
+  // below — access scoping, restricted products, ownership classification, the aggregations —
+  // is unchanged; only the row source moved. See src/lib/sales/dashboard-canonical.ts.
+  const canonicalRecords = await loadCanonicalDashboardRecords();
 
-  // 1. Get active, non-replaced batches. The dashboard reflects the latest uploaded usable sheet.
-  const { data: batchRows, error: batchError } = await supabase
-    .from("sales_import_batches")
-    .select("*")
-    .is("replaced_by_batch_id", null)
-    .order("year", { ascending: false })
-    .order("month", { ascending: false })
-    .order("created_at", { ascending: false });
-
-  if (batchError) throw batchError;
-
-  const batches: SalesBatch[] = toSafeArray(batchRows).map((row) => ({
-    id: String(row.id),
-    fileName: String(row.file_name),
-    line: String(row.line),
-    month: Number(row.month),
-    year: Number(row.year),
-    period: String(row.period),
-    status: String(row.status) as SalesBatch["status"],
-    schemaType: (row.schema_type as SalesBatch["schemaType"]) || "closing_sheet",
-    totalRecords: Number(row.total_records ?? 0),
-    validRecords: Number(row.valid_records ?? 0),
-    warningRecords: Number(row.warning_records ?? 0),
-    failedRecords: Number(row.failed_records ?? 0),
-    linkedRecords: Number(row.linked_records ?? 0),
-    linkageRate: Number(row.linkage_rate ?? 0),
-    uploadedBy: String(row.uploaded_by ?? "system"),
-    createdAt: new Date(String(row.created_at)).toISOString(),
-    version: Number(row.version ?? 1),
-    duplicateHash: String(row.duplicate_hash ?? ""),
-    isDuplicate: Boolean(row.is_duplicate),
-    canApprove: false,
-    replacementForBatchId: row.replacement_for_batch_id ? String(row.replacement_for_batch_id) : null,
-    replacedByBatchId: row.replaced_by_batch_id ? String(row.replaced_by_batch_id) : null,
-    approvedBy: row.approved_by ? String(row.approved_by) : null,
-    approvedAt: row.approved_at ? new Date(String(row.approved_at)).toISOString() : null,
-    rejectedBy: row.rejected_by ? String(row.rejected_by) : null,
-    rejectedAt: row.rejected_at ? new Date(String(row.rejected_at)).toISOString() : null,
-    previewUrl: `/sales/import?tab=approvals&batch=${row.id}`,
-    approvalBlockedReason: null,
-  }));
-
-  const activeBatches = batches.filter(isActiveSalesImportBatch);
-  const activeBatchIds = activeBatches.map((batch) => batch.id);
-
-  if (activeBatchIds.length === 0) {
-    // Return empty dashboard if no active batches
+  if (canonicalRecords.length === 0) {
+    // No month has landed yet. An empty dashboard is the honest answer; zeros with a populated
+    // filter list would read as "the company sold nothing".
     return {
       summary: {
         totalApprovedSales: 0,
@@ -980,50 +849,22 @@ export async function getSalesDashboard(
     };
   }
 
-  // 2. Fetch only records that can contribute to this dashboard. Supabase's
-  // default select page is 1,000 rows, so keep pagination while pushing the
-  // active-batch and request filters into PostgREST.
-  const allRecordRows = await readDashboardSalesRecordRows(supabase, activeBatchIds, filters);
-
-  let records: ScopedRecord[] = allRecordRows.map((row) => ({
-    batchId: String(row.batch_id),
-    period: `${row.year}-${String(row.month).padStart(2, "0")}`,
-    rowNumber: Number(row.row_number),
-    employeeHrId: row.employee_hr_id ? String(row.employee_hr_id) : null,
-    employeeCrmId: row.employee_crm_id ? String(row.employee_crm_id) : null,
-    employeeLookupKey: row.employee_lookup_key ? String(row.employee_lookup_key) : null,
-    employeeName: row.employee_name ? String(row.employee_name) : null,
-    managerHrId: row.manager_hr_id ? String(row.manager_hr_id) : null,
-    line: String(row.line),
-    territory: String(row.territory),
-    salesType: String(row.sales_type),
-    family: String(row.family),
-    product: String(row.product),
-    factoryPrice: Number(row.factory_price ?? 0),
-    month: Number(row.month),
-    year: Number(row.year),
-    salesUnits: Number(row.sales_units ?? 0),
-    salesValue: Number(row.sales_value ?? 0),
-    targetUnits: Number(row.target_units ?? 0),
-    targetValue: Number(row.target_value ?? 0),
-    validationState: row.validation_state as SalesValidationState,
-    validationNotes: Array.isArray(row.validation_notes) ? row.validation_notes.map(String) : [],
-    linkStatus: (row.link_status ?? "unlinked") as SalesLinkStatus,
-    linkConfidence: Number(row.link_confidence ?? 0),
-  }));
-  records = await filterSalesRecordsForAccess(records, accessContext);
+  let records: ScopedRecord[] = await filterSalesRecordsForAccess(canonicalRecords, accessContext);
 
   // Confidential products (LA003 / LA004 — "Lacto Basic 1 & 2") are visible only to CEO /
-  // Super Admin. The legacy pipeline keys products by NAME, so strip by name HERE — before any
-  // aggregation — so every downstream total, KPI, chart, table, filter list, transactions feed
-  // and recent-batch row is automatically clean. A missing accessContext fails closed.
+  // Super Admin. The rows are keyed by product NAME here, so strip by name — before any
+  // aggregation — so every downstream total, KPI, chart, table, filter list and transactions
+  // feed is automatically clean. A missing accessContext fails closed.
   const canSeeRestrictedProducts = accessContext ? canViewRestrictedProducts(accessContext.role) : false;
   if (!canSeeRestrictedProducts) {
     const restrictedNames = await restrictedProductNameSet();
     records = stripRestrictedRowsByName(records, restrictedNames, (record) => record.product, true);
   }
 
-  const approvedRecords = selectCurrentSalesRecords(records, activeBatches);
+  // No superseded-batch pass: the canonical engine returns the current truth for every month,
+  // so there is no replaced upload to filter out. That selection used to be the dashboard's
+  // job precisely because `sales_records` kept every version of every sheet.
+  const approvedRecords = records;
 
   const productFilter = [...new Set([
     ...toFilterStringList(filters.product),
@@ -1060,6 +901,7 @@ export async function getSalesDashboard(
   const companyRecords = classifiedRecords.filter((record) => record.ownership.include_in_company_total);
 
   const totalSales = sum(companyRecords, (record) => record.salesValue);
+  const totalCoveredSales = sumCoveredSalesValues(companyRecords);
   const totalTarget = sumTargetValues(companyRecords);
   const unitsSold = sum(companyRecords, (record) => record.salesUnits);
   const periodGroups = aggregate(companyRecords, (record) => record.period);
@@ -1068,10 +910,19 @@ export async function getSalesDashboard(
     const items = periodGroups.get(period) ?? [];
     const sales = sum(items, (item) => item.salesValue);
     const target = sumTargetValues(items);
-    return { period, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countPersonalSalesEmployees(items) };
+    return {
+      period,
+      sales,
+      target,
+      achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
+      linkedEmployees: countPersonalSalesEmployees(items),
+    };
   });
 
-  const channelMix = [...aggregate(companyRecords, (record) => record.salesType).entries()]
+  // Only rows that actually carry a sales type. The canonical engine records no Retail/Stores
+  // split, so this comes back empty and the chart renders its "No channel data." state rather
+  // than one giant "Unassigned" slice claiming to be a channel breakdown.
+  const channelMix = [...aggregate(companyRecords.filter((record) => record.salesType), (record) => record.salesType).entries()]
     .map(([name, items]) => ({ name, value: sum(items, (item) => item.salesValue) }))
     .sort((left, right) => right.value - left.value);
 
@@ -1079,7 +930,7 @@ export async function getSalesDashboard(
   const familyMatrix = [...familyGroupsMap.entries()].map(([name, items]) => {
     const sales = sum(items, (item) => item.salesValue);
     const target = sumTargetValues(items);
-    const achievementRate = performanceMetric(sales, target);
+    const achievementRate = performanceMetric(sumCoveredSalesValues(items), target);
     const status: "green" | "yellow" | "red" | "neutral" =
       target === 0 ? "neutral" : achievementRate >= 1 ? "green" : achievementRate >= 0.8 ? "yellow" : "red";
     return { name, sales, target, achievementRate, units: sum(items, (item) => item.salesUnits), status };
@@ -1089,11 +940,14 @@ export async function getSalesDashboard(
   const productPerformance = [...productGroupsMap.entries()]
     .map(([product, items]) => {
       const sales = sum(items, (item) => item.salesValue);
-      // For products, we still sum all targets because targets are usually per-product
-      // if they are listed on the product row. If they are per-employee, this will still double count
-      // but there's no way to divide an employee target across products without more info.
       const target = sum(items, (item) => item.targetValue);
-      return { product, family: items[0]?.family ?? "Unknown", sales, target, achievementRate: performanceMetric(sales, target) };
+      return {
+        product,
+        family: items[0]?.family ?? "Unknown",
+        sales,
+        target,
+        achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
+      };
     })
     .sort((left, right) => right.sales - left.sales);
 
@@ -1108,15 +962,25 @@ export async function getSalesDashboard(
     .map(([name, items]) => {
       const sales = sum(items, (item) => item.salesValue);
       const target = sumTargetValues(items);
-      return { name, sales, target, achievementRate: performanceMetric(sales, target) };
+      return { name, sales, target, achievementRate: performanceMetric(sumCoveredSalesValues(items), target) };
     })
     .sort((left, right) => right.sales - left.sales);
 
   const linePerformance = [...aggregate(companyRecords.filter((record) => record.ownership.include_in_line_total), (record) => record.line).entries()]
     .map(([line, items]) => {
       const sales = sum(items, (item) => item.salesValue);
+      const coveredSales = sumCoveredSalesValues(items);
       const target = sumTargetValues(items);
-      return { line, sales, target, achievementRate: performanceMetric(sales, target), linkedEmployees: countPersonalSalesEmployees(items) };
+      return {
+        line,
+        sales,
+        // Carried so a consumer computing its own rate (the SFE targets widget) divides the
+        // same numerator this row's achievementRate does.
+        coveredSales,
+        target,
+        achievementRate: performanceMetric(coveredSales, target),
+        linkedEmployees: countPersonalSalesEmployees(items),
+      };
     })
     .sort((left, right) => right.sales - left.sales);
 
@@ -1156,7 +1020,7 @@ export async function getSalesDashboard(
         manager,
         sales,
         target,
-        achievementRate: performanceMetric(sales, target),
+        achievementRate: performanceMetric(sumCoveredSalesValues(items), target),
         line: items[0]?.line ?? "Unknown",
         topProduct: topProductEntry?.product ?? "Unknown",
         retailSales: sum(retailItems, (item) => item.salesValue),
@@ -1204,10 +1068,6 @@ export async function getSalesDashboard(
     ambiguous: companyRecords.filter((record) => record.linkStatus === "ambiguous").length,
   };
 
-  const openReviewBatches = batches.filter(
-    (batch) => batch.status === "staged" || batch.status === "validated" || batch.status === "needs_review"
-  ).length;
-
   const topManagerEntry = managerPerformance[0];
   const allProducts = new Set(companyRecords.map((record) => record.product));
   const factoryPrices = companyRecords.filter((record) => record.factoryPrice > 0).map((record) => record.factoryPrice);
@@ -1236,19 +1096,20 @@ export async function getSalesDashboard(
     ]),
   );
 
-  const recentBatches = mapHistoryRows(batches, records).slice(0, 5);
-
   return {
     summary: {
       totalApprovedSales: totalSales,
       totalApprovedTarget: totalTarget,
-      achievementRate: performanceMetric(totalSales, totalTarget),
+      achievementRate: performanceMetric(totalCoveredSales, totalTarget),
       approvedRecords: companyRecords.length,
       dsmLinkedRecords: linkedCount,
       dsmTotalRecords: linkageTotal,
       linkedRecords: linkedCount,
       linkedEmployees: countPersonalSalesEmployees(companyRecords),
-      openReviewBatches,
+      // Both belong to the closing-sheet import queue, which no longer feeds this dashboard.
+      // Batch provenance lives on /sales/import, where it can still be acted on; repeating a
+      // frozen ledger beside SoS numbers would claim a lineage these figures do not have.
+      openReviewBatches: 0,
       activeTargetRecords: 0,
       unitsSold,
       averageFactoryPrice: avgFactoryPrice,
@@ -1278,7 +1139,7 @@ export async function getSalesDashboard(
     anomalies: anomalyInsights(filteredRecords),
     transactions,
     linkage: linkageStats,
-    recentBatches,
+    recentBatches: [],
   };
 }
 
@@ -1288,12 +1149,46 @@ export async function getSalesPlatformMetrics(accessContext?: AccessContext | nu
     achievementRate: Number(sales.summary.achievementRate ?? 0),
     activeProducts: Number(sales.summary.activeProducts ?? 0),
     dataQualityRate: Number(sales.summary.dataQualityRate ?? 1),
+    // Linkage over the CANONICAL closing: rows the engine tied to an occupied seat, out of every
+    // row it reported. The Command Center's Sales health card used to divide sales_records by
+    // link_status, which measured a table no sales surface reads any more.
+    linkedRecords: Number(sales.summary.linkedRecords ?? 0),
+    totalRecords: Number(sales.summary.approvedRecords ?? 0),
     salesValue: Number(sales.summary.totalApprovedSales ?? 0),
     targetValue: Number(sales.summary.totalApprovedTarget ?? 0),
   };
 }
 
+/**
+ * The legacy closing-sheet import is CLOSED TO NEW WRITES. Flip to `false` to reopen it.
+ *
+ * `createSalesImport` is the only code path that writes `sales_records`, and no sales surface
+ * reads that table any more: the monthly dashboard, its API and export, the /admin KPIs, the CEO
+ * and SFE tiles, the portal, the reconciliation view and the data-health audit all read SoS
+ * Monthly Closing. An upload accepted here would take a real workbook, spend real minutes
+ * validating it, report a confident success — and change nothing anyone can see. That failure is
+ * silent, and silent is the expensive kind.
+ *
+ * What is NOT frozen: the 11,267 existing rows stay (they are the record of what H1 was actually
+ * paid on), and approving, rejecting or replacing a batch already in the queue still works. Only
+ * new rows are refused.
+ */
+const LEGACY_SALES_IMPORT_FROZEN = true;
+
+const LEGACY_SALES_IMPORT_FROZEN_MESSAGE =
+  "Monthly closing sheets are no longer imported here. Every sales screen now reads Source of Sales Monthly Closing, so a sheet uploaded on this page would change nothing. Upload the distributor files under Sales > Source of Sales instead.";
+
+/** Throws a 410 when the legacy closing-sheet import is frozen. Called at both write entries. */
+export function assertLegacySalesImportOpen() {
+  if (LEGACY_SALES_IMPORT_FROZEN) {
+    throw new SalesWorkflowError("legacy_sales_import_frozen", LEGACY_SALES_IMPORT_FROZEN_MESSAGE, 410);
+  }
+}
+
 export async function createSalesImport(payload: SalesImportPayload) {
+  // Defence in depth: runSalesImportWorkflow refuses first, but this is the function that
+  // actually inserts, so it must refuse on its own account too.
+  assertLegacySalesImportOpen();
   const supabase = getSupabaseAdmin();
   const linked = await linkSalesRecords(payload.records);
   const linkageBreakdown = await summarizeSalesLinkage(linked);

@@ -48,6 +48,23 @@ const PERIOD_RE = /^\d{4}-\d{2}$/;
  */
 export const SALES_VS_TARGET_FLOOR = "2026-07";
 
+/**
+ * The first month the CANONICAL ENGINE holds data for — a data floor, not a policy one.
+ *
+ * These are two different facts and conflating them is what kept ten surfaces on the legacy
+ * `sales_records` engine. SoS actuals run from 2026-01 (verified live: 50-51 areas x 4 lines
+ * every month Jan-Jul 2026); the July floor above is the /sales-vs-target DASHBOARD's own
+ * decision about what it offers in its picker. A surface that legitimately reports history —
+ * employee-360, the monthly dashboard, the admin KPI, reconciliation — needs the engine's
+ * range, not the dashboard's, and previously had no way to ask for it: loadVsTargetRange
+ * returns [] below the dashboard floor.
+ *
+ * So: read history through this floor, render the dashboard through the one above. Neither
+ * moves the other. The SQL clamp in au.f_sales_vs_target_range is the third lock and is what
+ * actually bounds the data.
+ */
+export const SALES_HISTORY_FLOOR = "2026-01";
+
 function str(value: unknown): string {
   return value == null ? "" : String(value);
 }
@@ -65,6 +82,11 @@ function optNum(value: unknown): number | null {
 
 export function isValidVsTargetPeriod(period: string | null | undefined): period is string {
   return typeof period === "string" && PERIOD_RE.test(period) && period >= SALES_VS_TARGET_FLOOR;
+}
+
+/** Same shape check against the engine's data floor, for history-reporting surfaces. */
+export function isValidHistoryPeriod(period: string | null | undefined): period is string {
+  return typeof period === "string" && PERIOD_RE.test(period) && period >= SALES_HISTORY_FLOOR;
 }
 
 // ── Period arithmetic ────────────────────────────────────────────────────────
@@ -147,6 +169,22 @@ export type BrickSalesRow = {
  */
 export async function loadVsTargetRange(from: string, to: string): Promise<AchievementRow[]> {
   if (!isValidVsTargetPeriod(from) || !isValidVsTargetPeriod(to) || to < from) return [];
+  return loadAchievementRange(from, to);
+}
+
+/**
+ * The same rows, bounded by the ENGINE's floor instead of the dashboard's.
+ *
+ * Identical query and identical mapping — the only difference is which floor rejects the
+ * range. Reach for this from a surface that reports history (employee-360, the monthly
+ * dashboard, the admin KPI, reconciliation, the S1 review); reach for loadVsTargetRange
+ * from /sales-vs-target and anything that must obey the owner's July picker decision.
+ *
+ * One round trip for the whole range. Do NOT loop a per-period RPC over this instead —
+ * every call crosses the Atlantic to eu-central-1.
+ */
+export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {
+  if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return [];
   const supabase = getSupabaseAdmin();
   const rows = await rpcAll<Record<string, unknown>>(
     supabase,
@@ -262,6 +300,55 @@ export async function loadPublishedPeriodKeys(from: string, to: string): Promise
     .lte("period", to);
   if (error) throw error;
   return publishedPeriodKeysOf((data ?? []) as Record<string, unknown>[]);
+}
+
+/**
+ * Source-of-Sales distributor codes that are not a distributor at all.
+ *
+ * `DirectReq` is the pseudo-distributor the Direct Orders module injects approved orders
+ * under; `DIRECT` is the legacy manual direct upload. Both write into Source of Sales one
+ * order at a time, all month long. Neither is evidence that the month's distributor files
+ * have arrived.
+ */
+const NON_DISTRIBUTOR_BATCH_CODES = new Set(["direct", "directreq"]);
+
+/**
+ * The uploaded-month ledger over the engine's floor, for history-reporting surfaces.
+ *
+ * Every surface that sums more than one month needs this, not `has_actual` — the August 2026
+ * single direct order documented above is not a hypothetical, and a cumulative window that
+ * trusts `has_actual` divides July's real sales by July+August's targets.
+ */
+export async function loadUploadedPeriodsInRange(from: string, to: string): Promise<Set<string>> {
+  if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return new Set();
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("source_of_sales_import_batches")
+    .select("period,distributor_code")
+    .gte("period", from)
+    .lte("period", to);
+  if (error) throw error;
+  return uploadedPeriodsOf((data ?? []) as Record<string, unknown>[]);
+}
+
+/**
+ * Pure half of the loader, so the direct-order exclusion is testable without a database.
+ *
+ * Returns BARE periods (`2026-07`), not the `lineCode|period` keys publishedPeriodKeysOf
+ * returns. The two sets are not interchangeable and a merge once silently swapped them, which
+ * types cannot catch — both are Set<string> — and which empties every history surface, since
+ * `.has("2026-07")` never matches `"cns|2026-07"`.
+ */
+export function uploadedPeriodsOf(batches: Array<Record<string, unknown>>): Set<string> {
+  const periods = new Set<string>();
+  for (const batch of batches) {
+    const period = str(batch.period).trim();
+    // Case-insensitive: the ledger holds both `DIRECT` and `DirectReq`.
+    const code = str(batch.distributor_code).trim().toLowerCase();
+    if (!period || NON_DISTRIBUTOR_BATCH_CODES.has(code)) continue;
+    periods.add(period);
+  }
+  return periods;
 }
 
 /**
@@ -615,7 +702,7 @@ export type BrickNode = {
 };
 
 /** Sentinel key for sales inside an area that carried no brick id at all. */
-const UNASSIGNED_BRICK_KEY = " no-brick";
+const UNASSIGNED_BRICK_KEY = "\u0000no-brick";
 
 /**
  * Bricks for one area, paired with the prior period.

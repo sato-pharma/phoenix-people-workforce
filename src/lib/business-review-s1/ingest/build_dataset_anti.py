@@ -55,7 +55,10 @@ SRC = (r"C:\Users\satoh\AppData\Local\Microsoft\Olk\Attachments"
        r"\ooa-726337bc-3526-4ed1-b7ee-b1aae0a06981"
        r"\f63970581aa125a97b2ce2a7f69a604cbff9642bb8a98aa849d88cedb291979b"
        r"\S1-2026 Anti-Line.xlsx")
-OUT_DIR = r"F:\Phoenix Workforce\_wt-s1-review\src\lib\business-review-s1\data"
+# Always this repo's own data/ dir, wherever this checkout or worktree happens to live.
+# Used to hardcode a sibling worktree path (_wt-s1-review) that only existed on the
+# owner's machine, so nobody else could reproduce the output.
+OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 os.makedirs(OUT_DIR, exist_ok=True)
 MO = ['Jan','Feb','Mar','Apr','May','Jun']
 

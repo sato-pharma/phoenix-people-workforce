@@ -274,6 +274,9 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
   });
 
   // ── Recent Batches ────────────────────────────────────────────────────────
+  // These figures now come from SoS Monthly Closing, which has no closing-sheet upload batch
+  // behind it, so this sheet reports nothing rather than reprinting a ledger that no longer
+  // explains where the numbers came from. Upload provenance lives on /sales/import.
   const recentBatches = asArray<RecentBatchRow>(data.recentBatches);
   const batchSheet = workbook.addWorksheet(sanitizeSheetName("Recent Batches"));
   writeTable(batchSheet, 1, {
@@ -298,7 +301,10 @@ export async function buildMonthlySalesDashboardWorkbook(input: {
       batch.totalRecords,
       batch.approvedSalesValue ?? 0,
     ]),
-    note: `${recentBatches.length} batch(es) shown.`,
+    note:
+      recentBatches.length === 0
+        ? "This report reads Source of Sales Monthly Closing. Upload history is on Sales > Import."
+        : `${recentBatches.length} batch(es) shown.`,
   });
 
   // ── Transactions (detailed rows) ─────────────────────────────────────────

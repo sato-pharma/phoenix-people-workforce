@@ -27,10 +27,15 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 
-const ROOT = "F:/Phoenix Workforce/_wt-s1-review";
+// Always this repo's own root, wherever this checkout or worktree happens to live.
+// Used to hardcode a sibling worktree path (_wt-s1-review) that only existed on the
+// owner's machine, so nobody else could reproduce the output.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "..", "..", "..", "..");
 const DATA = path.join(ROOT, "src/lib/business-review-s1/data");
 const OUT = "C:/Users/satoh/Downloads/Phoenix S1 Business Review - ACCESS MAPPING (confirm me).xlsx";
 const PROD_REF = "ozucdzovmcqvepbozvqf";

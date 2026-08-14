@@ -54,6 +54,30 @@ export function runSalesSourceOfTruthTests() {
   assert.equal(portalDashboard.summary.totalApprovedTarget, 100);
   assert.equal(portalDashboard.summary.achievementRate, 1.2);
 
+  // Covered sales — the part of a month sitting on a key that HAS a target, and the only part an
+  // achievement may divide (the portal incentive tab pays on it). The Stores row above carries no
+  // target of its own but shares product A's key, so both rows are covered: 120 of 120.
+  const portalJanuary = portalDashboard.trend.find((point) => point.period === "2026-01");
+  assert.equal(portalJanuary?.sales, 120);
+  assert.equal(portalJanuary?.coveredSales, 120, "a target-0 echo row on a targeted key is still covered sales");
+
+  // The case that must NOT inflate an achievement: a product with no target anywhere. Its 90 EGP is
+  // real revenue and belongs in `sales`, but crediting it against product A's 100 target would read
+  // as 210% where /sales-vs-target and Monthly Closing both say 120%.
+  const portalUntargeted = buildPortalSalesDashboardMetrics([
+    { family: "Pain", hrId: "MR-1", line: "CNS", month: 1, period: "2026-01", product: "A", salesType: "Retail", salesUnits: 10, salesValue: 100, targetValue: 100, territory: "Nasr City", year: 2026 },
+    { family: "Pain", hrId: "MR-1", line: "CNS", month: 1, period: "2026-01", product: "A", salesType: "Stores", salesUnits: 2, salesValue: 20, targetValue: 0, territory: "Nasr City", year: 2026 },
+    { family: "Pain", hrId: "MR-1", line: "CNS", month: 1, period: "2026-01", product: "B", salesType: "Retail", salesUnits: 9, salesValue: 90, targetValue: 0, territory: "Nasr City", year: 2026 },
+  ]);
+  const untargetedJanuary = portalUntargeted.trend.find((point) => point.period === "2026-01");
+  assert.equal(untargetedJanuary?.sales, 210, "every sale is reported, targeted or not");
+  assert.equal(
+    untargetedJanuary?.coveredSales,
+    120,
+    "a product with no target anywhere stays OUT of the achievement numerator — 210/100 is an over-achievement nobody earned",
+  );
+  assert.equal(untargetedJanuary?.target, 100, "and it contributes no target either");
+
   const managerGroups = buildSalesManagerPerformanceGroups([
     { managerHrId: "DSM-2", managerName: "Z Manager", totalSales: 75, totalTarget: 100 },
     { managerHrId: "DSM-1", managerName: "A Manager", totalSales: 50, totalTarget: 100 },
@@ -69,8 +93,108 @@ export function runSalesSourceOfTruthTests() {
   assert.equal(productAnalytics.topProducts[0].product, "A");
 
   const salesServiceSource = readFileSync("src/lib/sales/service.ts", "utf8");
-  assert.match(salesServiceSource, /selectCurrentSalesRecords/);
   assert.match(salesServiceSource, /getSalesPlatformMetrics/);
+
+  // Rule #1: the admin dashboard reads SoS Monthly Closing, like every other sales surface.
+  // It used to page `sales_records` and pick the current batch with selectCurrentSalesRecords —
+  // both gone, because the canonical engine returns the current truth and has no batches. The
+  // negative assertion is the one that matters: re-adding a sales_records read here is exactly
+  // how the admin KPIs start disagreeing with the portal again.
+  assert.match(
+    salesServiceSource,
+    /loadCanonicalDashboardRecords/,
+    "getSalesDashboard sources its rows from the canonical SoS loader",
+  );
+  assert.doesNotMatch(
+    salesServiceSource,
+    /from\("sales_records"\)\s*\n?\s*\.select\(SALES_DASHBOARD_RECORD_SELECT\)/,
+    "the dashboard no longer reads the legacy sales_records table",
+  );
+  // Achievement divides covered sales only — sales sitting on a key that carries a target.
+  assert.match(
+    salesServiceSource,
+    /achievementRate: performanceMetric\(totalCoveredSales, totalTarget\)/,
+    "the headline achievement % divides covered sales, not every sale over whatever targets exist",
+  );
+
+  // Rule #1 reaches the reconciliation dashboard too, and that leg is SQL — no TypeScript sits
+  // between analytics.closing_fact and the screen, so these are the only assertions that can guard
+  // it. The view feeds closing_by_line/_employee/_product and both reconciliation mounts.
+  const closingFactMigration = readFileSync(
+    "supabase/migrations/20260814090000_closing_fact_reads_source_of_sales.sql",
+    "utf8",
+  );
+  assert.match(
+    closingFactMigration,
+    /create or replace view analytics\.closing_fact as[\s\S]*au\.f_monthly_achievement/,
+    "the closing leg is built from the canonical engine",
+  );
+  assert.doesNotMatch(
+    closingFactMigration,
+    /create or replace view analytics\.closing_fact as[\s\S]*from\s+public\.sales_records/,
+    "and never again from the legacy closing-sheet table",
+  );
+  // The August trap, in SQL. au.monthly_targets holds 17,508,935 for 2026-08 against ONE 1,309.50
+  // direct order. Without this gate the dashboard publishes a 0.01% month for a month nobody
+  // uploaded — and a direct order must not count as evidence the month landed.
+  assert.match(
+    closingFactMigration,
+    /uploaded_periods as \([\s\S]*not in \('direct', 'directreq'\)/,
+    "targets are gated on the distributor upload ledger, excluding direct orders",
+  );
+  assert.match(
+    closingFactMigration,
+    /case when up\.period is not null then a\.target_value end\s+as target_value/,
+    "a month with no distributor upload carries no target, so it cannot publish an achievement",
+  );
+  // The gap column stays gone. Closing IS SoS at line grain — attribution moves value down a line,
+  // never between lines — so it read a flat 0.00% and asserted a check that never happened.
+  assert.doesNotMatch(
+    closingFactMigration,
+    /closing_vs_sos_gap_pct/,
+    "the tautological gap column is not reintroduced by this migration",
+  );
+  const analyticsServiceSource = readFileSync("src/lib/analytics/service.ts", "utf8");
+  assert.doesNotMatch(
+    analyticsServiceSource,
+    /closingVsSosGapPct/,
+    "and no closing-vs-SoS gap survives on the row type the dashboard renders",
+  );
+
+  // The legacy closing-sheet import is closed to new writes. createSalesImport is the ONLY writer
+  // of sales_records, and nothing reads that table any more — an accepted upload would validate a
+  // real workbook, report success, and move no number on any screen. A disabled button in
+  // sales-queue.tsx is UX; the endpoint is still reachable, so the guard has to live server-side.
+  assert.match(
+    salesServiceSource,
+    /const LEGACY_SALES_IMPORT_FROZEN = true/,
+    "the legacy closing-sheet import stays frozen",
+  );
+  assert.match(
+    salesServiceSource,
+    /export async function createSalesImport\([\s\S]{0,400}?assertLegacySalesImportOpen\(\)/,
+    "the function that inserts sales_records refuses on its own account, not only via the workflow",
+  );
+  const importWorkflowSource = readFileSync("src/lib/sales/import-workflow.ts", "utf8");
+  assert.match(
+    importWorkflowSource,
+    /assertLegacySalesImportOpen\(\)/,
+    "and the workflow refuses before it spends minutes parsing a workbook it will not keep",
+  );
+
+  // /admin/data-health audits the rows the product reports on. Auditing sales_records gave a clean
+  // bill of health for a table no employee or manager can see the numbers from.
+  const adminServiceSource = readFileSync("src/lib/admin/service.ts", "utf8");
+  assert.match(
+    adminServiceSource,
+    /loadCanonicalDashboardRecords\(\)/,
+    "the governance audit classifies canonical SoS rows",
+  );
+  assert.doesNotMatch(
+    adminServiceSource,
+    /\.from\("sales_records"\)/,
+    "and no longer reads the legacy table it used to grade",
+  );
 
   // M1: the sales-import duplicate-batch race is closed by a partial unique index on duplicate_hash
   // (the batch INSERT becomes the atomic arbiter). createSalesImport must surface the losing

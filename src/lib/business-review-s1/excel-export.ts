@@ -14,7 +14,17 @@
 import ExcelJS from "exceljs";
 
 import { systemDocuments } from "@/config/system-settings";
-import { bandFor, getS1Company, getS1Dataset, payoutPercentageFor, S1_LINES, type S1Line, type S1View } from "./service";
+import {
+  bandFor,
+  getS1Company,
+  loadS1Review,
+  payoutPercentageFor,
+  S1_LINES,
+  S1_RESTATEMENT_NOTICE,
+  type S1Line,
+  type S1Review,
+  type S1View,
+} from "./service";
 import type { AreaSummary, DmSummary, S1Company, S1Dataset } from "./types";
 
 const ORANGE = "FFC2410C";
@@ -136,6 +146,13 @@ const pctOr = (v: number | null): number | string => (v == null ? "—" : v);
 function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) {
   const sheet = wb.addWorksheet("Cover", { properties: { tabColor: { argb: ORANGE } } });
   titleBand(sheet, 4, "PHOENIX · S1 2026 BUSINESS REVIEW", `${company.meta.period} · ${scopeLabel}`);
+  sheet.mergeCells(3, 1, 3, 4);
+  const notice = sheet.getCell(3, 1);
+  notice.value = S1_RESTATEMENT_NOTICE;
+  notice.font = { bold: true, color: { argb: "FF92400E" }, size: 9, italic: true };
+  notice.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+  notice.alignment = { wrapText: true, vertical: "middle" };
+  sheet.getRow(3).height = 30;
   sheet.getColumn(1).width = 34;
   sheet.getColumn(2).width = 26;
   sheet.getColumn(3).width = 26;
@@ -195,7 +212,7 @@ function addCover(wb: ExcelJS.Workbook, company: S1Company, scopeLabel: string) 
 }
 
 // ============================== COMPANY ==============================
-function addCompanySheets(wb: ExcelJS.Workbook, company: S1Company) {
+function addCompanySheets(wb: ExcelJS.Workbook, review: S1Review, company: S1Company) {
   const T = company.total;
 
   // -- Line comparison --
@@ -250,7 +267,7 @@ function addCompanySheets(wb: ExcelJS.Workbook, company: S1Company) {
   headerRow(s2, 4, dl);
   r = 5;
   company.dms.forEach((d, i) => {
-    const region = regionOfDm(d.lineId as S1Line, d.dm);
+    const region = regionOfDm(review, d.lineId as S1Line, d.dm);
     bodyRow(s2, r++, dl, [
       i + 1, d.dm, d.line, region, d.vacant ? "VACANT" : "active",
       pctOr(d.allProducts.ach), bandLabel(d.allProducts.ach),
@@ -272,14 +289,8 @@ function addCompanySheets(wb: ExcelJS.Workbook, company: S1Company) {
   bodyRow(s3, 6, mt, ["Doctors reached (unique)", ...months.map((m) => T.customersByMonth[m] ?? 0)], { zebra: true });
 }
 
-const REGION_CACHE = new Map<string, string>();
-function regionOfDm(line: S1Line, dm: string): string {
-  const key = `${line}:${dm}`;
-  if (!REGION_CACHE.has(key)) {
-    const found = getS1Dataset(line).dms.find((d) => d.dm === dm);
-    REGION_CACHE.set(key, found?.region ?? "");
-  }
-  return REGION_CACHE.get(key) ?? "";
+function regionOfDm(review: S1Review, line: S1Line, dm: string): string {
+  return review.datasets[line].dms.find((d) => d.dm === dm)?.region ?? "";
 }
 function bandLabel(ach: number | null): string {
   const b = bandFor(ach);
@@ -482,22 +493,23 @@ const fmt = (n: number) => `EGP ${Math.round(n).toLocaleString("en-US")}`;
 /** Executive one-pager: the headline numbers, the line table and the full DSM ranking —
  * no per-area, per-product or per-month detail. Same stored values as the full
  * workbook, so the two can never disagree. */
-function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View) {
+function addSummarySheet(wb: ExcelJS.Workbook, review: S1Review, company: S1Company, view: S1View) {
   const isCompany = view === "company";
   const T = company.total;
   const sheet = wb.addWorksheet("Executive Summary", { properties: { tabColor: { argb: ORANGE } } });
   const NC = 9;
+  const lineLabel = isCompany ? "" : review.datasets[view as S1Line].meta.line;
   titleBand(
     sheet, NC,
     isCompany ? "PHOENIX · S1 2026 BUSINESS REVIEW — EXECUTIVE SUMMARY"
-              : `PHOENIX · S1 2026 — ${getS1Dataset(view).meta.line.toUpperCase()} EXECUTIVE SUMMARY`,
-    `${company.meta.period} · ${isCompany ? "3 lines consolidated" : `${getS1Dataset(view).meta.line} line`}`,
-    "≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.",
+              : `PHOENIX · S1 2026 — ${lineLabel.toUpperCase()} EXECUTIVE SUMMARY`,
+    `${company.meta.period} · ${isCompany ? "3 lines consolidated" : `${lineLabel} line`}`,
+    `${S1_RESTATEMENT_NOTICE} · ≥90% unlocks incentive (locked 2026 curve). Vacant areas are a coverage gap, never an earner or a rep failure.`,
   );
   [26, 16, 16, 14, 14, 13, 11, 11, 24].forEach((w, i) => { sheet.getColumn(i + 1).width = w; });
 
   // headline block
-  const scoped = isCompany ? null : getS1Dataset(view);
+  const scoped = isCompany ? null : review.datasets[view as S1Line];
   const ach = scoped ? scoped.line.allProducts.ach : T.allProducts.ach;
   const sales = scoped ? scoped.line.allProducts.sales : T.allProducts.sales;
   const target = scoped ? scoped.line.allProducts.target : T.allProducts.target;
@@ -582,11 +594,11 @@ function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View)
   headerRow(sheet, r, dc); r += 1;
   const seats = isCompany
     ? company.dms.map((d) => ({
-        dm: d.dm, line: d.line, region: regionOfDm(d.lineId as S1Line, d.dm), vacant: d.vacant,
+        dm: d.dm, line: d.line, region: regionOfDm(review, d.lineId as S1Line, d.dm), vacant: d.vacant,
         ach: d.allProducts.ach, sales: d.allProducts.sales, mkt: d.marketingCost, exp: d.outstationCost,
       }))
-    : getS1Dataset(view).dms.filter((d) => d.allProducts.target > 0).map((d) => ({
-        dm: d.dm, line: getS1Dataset(view).meta.line, region: d.region, vacant: d.vacant,
+    : (scoped as S1Dataset).dms.filter((d) => d.allProducts.target > 0).map((d) => ({
+        dm: d.dm, line: lineLabel, region: d.region, vacant: d.vacant,
         ach: d.allProducts.ach, sales: d.allProducts.sales, mkt: d.marketingCost, exp: d.outstationCost,
       }));
   seats.sort((a, b) => (b.ach ?? -1) - (a.ach ?? -1));
@@ -608,8 +620,14 @@ function addSummarySheet(wb: ExcelJS.Workbook, company: S1Company, view: S1View)
 // ============================== ENTRY ==============================
 export type S1WorkbookVariant = "full" | "summary";
 
+/**
+ * Builds the whole workbook from ONE canonical range call — all three lines, all six
+ * months. The caller (the export route) does not load the review itself, so a company
+ * export and a single-line export never risk reading two different snapshots.
+ */
 export async function generateS1ReviewWorkbook(view: S1View, variant: S1WorkbookVariant = "full") {
-  const company = getS1Company();
+  const review = await loadS1Review();
+  const company = getS1Company(review);
   const wb = new ExcelJS.Workbook();
   wb.creator = systemDocuments.workbookCreator;
   wb.company = systemDocuments.workbookCompany;
@@ -619,25 +637,25 @@ export async function generateS1ReviewWorkbook(view: S1View, variant: S1Workbook
   const isCompany = view === "company";
   const scopeLabel = isCompany
     ? "All company — 3 lines consolidated"
-    : `${getS1Dataset(view).meta.line} line`;
+    : `${review.datasets[view as S1Line].meta.line} line`;
 
   if (variant === "summary") {
-    addSummarySheet(wb, company, view);
+    addSummarySheet(wb, review, company, view);
     return wb;
   }
 
   addCover(wb, company, scopeLabel);
   if (isCompany) {
-    addCompanySheets(wb, company);
-    for (const { id } of S1_LINES) addLineSheets(wb, id, getS1Dataset(id));
+    addCompanySheets(wb, review, company);
+    for (const { id } of S1_LINES) addLineSheets(wb, id, review.datasets[id]);
   } else {
-    addLineSheets(wb, view, getS1Dataset(view));
+    addLineSheets(wb, view, review.datasets[view as S1Line]);
   }
   return wb;
 }
 
 export function s1WorkbookFileName(view: S1View, variant: S1WorkbookVariant = "full") {
-  const scope = view === "company" ? "All-Company" : getS1Dataset(view).meta.line.replace(/\s+/g, "-");
+  const scope = view === "company" ? "All-Company" : (S1_LINES.find((l) => l.id === view)?.label ?? view).replace(/\s+/g, "-");
   const suffix = variant === "summary" ? "-Summary" : "";
   return `Phoenix-S1-2026-Business-Review-${scope}${suffix}.xlsx`;
 }

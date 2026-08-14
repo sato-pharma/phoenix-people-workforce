@@ -128,7 +128,9 @@ export type CrossSourceRow = {
   weeklyValue: number | null;
   weeklyUnits: number | null;
   closingAchievementPct: number | null;
-  closingVsSosGapPct: number | null;
+  // There is deliberately no closing-vs-SoS gap here. Closing IS SoS at (period, line) grain —
+  // attribution moves value down a line, never between lines — so the gap was 0.00% on every
+  // row. See supabase/migrations/20260814090000_closing_fact_reads_source_of_sales.sql.
 };
 
 // ── Dimension loaders ─────────────────────────────────────────────────────────
@@ -898,6 +900,5 @@ function mapCrossSourceRow(r: Record<string, unknown>): CrossSourceRow {
     weeklyValue:             r.weekly_value      != null ? n(r.weekly_value)               : null,
     weeklyUnits:             r.weekly_units      != null ? n(r.weekly_units)               : null,
     closingAchievementPct:   r.closing_achievement_pct   != null ? n(r.closing_achievement_pct)  : null,
-    closingVsSosGapPct:      r.closing_vs_sos_gap_pct    != null ? n(r.closing_vs_sos_gap_pct)   : null,
   };
 }

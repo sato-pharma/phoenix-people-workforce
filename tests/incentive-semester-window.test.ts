@@ -8,11 +8,19 @@ import {
 } from "../src/lib/incentives/semester.ts";
 
 /**
- * The incentive payout is a semester figure, and before this module the semester was whatever six
- * rows of sales data happened to exist for a rep (`allTimeTrend.slice(-6)`). Production on
- * 2026-08-04: June was half-loaded, so 26 reps were scored over five months and one over four while
- * 56 colleagues got six — and the day a July sheet landed, the window would have silently become
- * February-July, half of one semester and half of the next.
+ * The incentive payout is a semester figure, and it has drifted twice.
+ *
+ * First it was whatever six rows of sales data happened to exist for a rep (`allTimeTrend.slice(-6)`).
+ * Production on 2026-08-04: June was half-loaded, so 26 reps were scored over five months and one
+ * over four while 56 colleagues got six.
+ *
+ * Then it was the semester containing the rep's LATEST period — which fixed the length but left the
+ * WINDOW itself moving per rep: the day a July batch was approved, that rep silently jumped from H1
+ * to H2 while the colleague beside him stayed on H1, with no deploy and nothing on screen changing.
+ *
+ * It is now the CALENDAR semester containing today (owner decision, 2026-08-13: the incentive moves
+ * forward to Semester 2 from canonical July achievement onward, and H1 payouts are closed rather
+ * than restated). These tests pin that: one window for everybody, holding still.
  */
 export function runIncentiveSemesterWindowTests() {
   // ── The semester is a declared calendar fact ─────────────────────────────────────────────────
@@ -24,38 +32,41 @@ export function runIncentiveSemesterWindowTests() {
   assert.deepEqual(semesterPeriods("2026-S1"), ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]);
   assert.deepEqual(semesterPeriods("2026-S2"), ["2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
 
-  // ── A fully-loaded semester is settled ───────────────────────────────────────────────────────
+  // ── A fully-loaded semester, viewed while it is the current one, is settled ───────────────────
   const full = resolveIncentiveWindow({
     periods: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
-    todayPeriod: "2026-08",
+    todayPeriod: "2026-06",
   });
   assert.equal(full?.semester, "2026-S1");
   assert.equal(full?.complete, true, "all six months present and elapsed — the payout is a settled figure");
   assert.equal(describeIncompleteWindow(full), null, "a complete window carries no provisional notice");
 
-  // ── The real production shape: June missing for a rep ────────────────────────────────────────
-  const juneMissing = resolveIncentiveWindow({
-    periods: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"],
+  // ── H1 is CLOSED, not restated ───────────────────────────────────────────────────────────────
+  // The same rep, same data, read in August. The old data anchor answered "H1, complete, 140%" and
+  // put a closed semester's payout on the screen as if it were the live one.
+  const closedH1 = resolveIncentiveWindow({
+    periods: ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"],
     todayPeriod: "2026-08",
   });
-  assert.equal(juneMissing?.semester, "2026-S1", "the semester is anchored on the data, so a rep missing June still sits in H1");
-  assert.deepEqual(juneMissing?.missing, ["2026-06"], "an ELAPSED month with no data is a gap, not an absence of obligation");
-  assert.deepEqual(juneMissing?.remaining, [], "nothing is still to come — H1 is over");
-  assert.equal(juneMissing?.complete, false);
-  assert.match(
-    String(describeIncompleteWindow(juneMissing)),
-    /June/,
-    "the notice must NAME the month — 'incomplete' alone tells a rep nothing they can act on",
-  );
+  assert.equal(closedH1?.semester, "2026-S2", "August is H2 — six months of closed H1 data must not pull the window back to H1");
+  assert.deepEqual(closedH1?.present, [], "not one H1 month counts toward an H2 payout");
+  assert.deepEqual(closedH1?.missing, ["2026-07"], "July elapsed with nothing uploaded for this rep — that is a gap, and the notice has to name it");
+  assert.deepEqual(closedH1?.remaining, ["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]);
+  assert.equal(closedH1?.complete, false);
+  assert.match(String(describeIncompleteWindow(closedH1)), /July/, "the missing month is named, never just 'incomplete'");
 
-  // ── The boundary that would have silently blended two semesters ──────────────────────────────
-  // Old behaviour: with Feb..Jul loaded, slice(-6) returns Feb,Mar,Apr,May,Jun,Jul — three months of
-  // H1 and one of H2 summed into one achievement. The declared window must instead move to H2.
+  // ── The landmine: two reps, different data, SAME window ──────────────────────────────────────
+  // Under the data anchor this rep was on H2 and the one above was on H1 — different semesters,
+  // same screen, same day, decided by whose batch happened to be approved.
   const julyLanded = resolveIncentiveWindow({
     periods: ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"],
     todayPeriod: "2026-08",
   });
-  assert.equal(julyLanded?.semester, "2026-S2", "once July exists the rep is in H2 — H1 months must not be summed into it");
+  assert.equal(
+    julyLanded?.semester,
+    closedH1?.semester,
+    "the rep whose July landed and the rep whose July has not are scored on the SAME semester",
+  );
   assert.deepEqual(julyLanded?.present, ["2026-07"], "only H2 periods count toward an H2 payout");
   assert.deepEqual(julyLanded?.missing, [], "August is the current month, not a gap");
   assert.deepEqual(
@@ -70,6 +81,15 @@ export function runIncentiveSemesterWindowTests() {
     "a semester in progress must say so, or a one-month figure reads as a full-semester payout",
   );
 
+  // ── A rep with no data at all still has a semester ───────────────────────────────────────────
+  // The data anchor returned null here, which left the incentive tab with no semester label and no
+  // provisional notice — a blank figure with nothing explaining it.
+  const noData = resolveIncentiveWindow({ periods: [], todayPeriod: "2026-08" });
+  assert.equal(noData?.semester, "2026-S2", "'H2 has not started for you yet' is a fact; the absence of a window is not");
+  assert.deepEqual(noData?.present, [], "nothing present, and nothing invented to fill it");
+  assert.equal(noData?.complete, false, "an empty window is never 'complete' — that would read as a settled zero payout");
+  assert.match(String(describeIncompleteWindow(noData)), /July/, "the elapsed month with no data is still named");
+
   // ── Both kinds of hole at once ───────────────────────────────────────────────────────────────
   const mixed = resolveIncentiveWindow({ periods: ["2026-07", "2026-09"], todayPeriod: "2026-10" });
   assert.deepEqual(mixed?.missing, ["2026-08"], "August elapsed with no data → a gap");
@@ -79,11 +99,15 @@ export function runIncentiveSemesterWindowTests() {
   assert.match(notice, /still to come/, "and the in-progress remainder is stated separately");
 
   // ── Degenerate inputs must not manufacture a window ──────────────────────────────────────────
-  assert.equal(resolveIncentiveWindow({ periods: [], todayPeriod: "2026-08" }), null, "no data → no window, never an empty-but-'complete' one");
+  const malformedPeriods = resolveIncentiveWindow({
+    periods: [null, undefined, "", "not-a-period"],
+    todayPeriod: "2026-08",
+  });
+  assert.deepEqual(malformedPeriods?.present, [], "malformed periods are discarded rather than coerced into the semester");
   assert.equal(
-    resolveIncentiveWindow({ periods: [null, undefined, "", "not-a-period"], todayPeriod: "2026-08" }),
+    resolveIncentiveWindow({ periods: ["2026-07"], todayPeriod: "not-a-period" }),
     null,
-    "malformed periods are discarded rather than coerced into a semester",
+    "a malformed today has no semester, and the window must NOT quietly fall back to the rep's data",
   );
   assert.equal(describeIncompleteWindow(null), null, "no window → no notice to render");
 }

@@ -22,7 +22,7 @@
  * month is a data gap that makes the payout untrustworthy, while a future month simply means the
  * semester is still running.
  *
- * Pure by design (no clock, no database) so every boundary is testable: the anchor period and
+ * Pure by design (no clock, no database) so every boundary is testable: the rep's periods and
  * "today" are both passed in.
  */
 
@@ -85,26 +85,34 @@ export type IncentiveWindow = {
 /**
  * Which semester window applies, and how much of it this rep actually has.
  *
- * The semester is anchored on the rep's LATEST period rather than on today's date, deliberately:
- * on 2026-08-04 the calendar says H2 while the loaded data ends in June, and anchoring on the
- * calendar would show every rep an empty H2 and hide the H1 result they are actually being paid on.
- * Anchoring on the data keeps the meaningful semester on screen and moves to H2 the moment July
- * lands — at which point `remaining` correctly reports the five months still to come instead of
- * silently blending them with H1.
+ * The semester is the CALENDAR one containing `todayPeriod`. Today (August 2026) that is H2, and
+ * every rep is scored on H2 whether or not any of it has been uploaded for them yet.
  *
- * `todayPeriod` separates a gap from a month that has not happened yet, and is passed in rather than
- * read from a clock so the boundary is testable.
+ * It used to be anchored on the rep's LATEST data period instead, and that was a live landmine: the
+ * displayed payout would flip from H1 to H2 for every rep the instant a July batch was approved —
+ * no deploy, nothing on screen having changed. It also made the window a per-rep fact, so a rep
+ * whose July had landed was scored on H2 while the colleague beside him was still on H1. The owner's
+ * decision on 2026-08-13 settles which is right: the incentive moves FORWARD to Semester 2 (Jul–Dec)
+ * from canonical July achievement onward, and H1 payouts are closed and are not restated. The
+ * calendar is therefore the anchor.
+ *
+ * A rep with NO data in the semester still gets a window — every month either missing or still to
+ * come. "H2 has not started for you yet" is a fact worth stating, and returning null there would
+ * leave the tab with no semester label and no notice at all.
+ *
+ * `todayPeriod` also separates a gap from a month that has not happened yet, and is passed in rather
+ * than read from a clock so the boundary is testable.
  */
 export function resolveIncentiveWindow(input: {
   periods: readonly (PeriodKey | null | undefined)[];
   todayPeriod: PeriodKey;
 }): IncentiveWindow | null {
-  const valid = input.periods.filter(isPeriodKey);
-  if (valid.length === 0) return null;
-
-  const anchor = valid.reduce((latest, period) => (period > latest ? period : latest), valid[0]);
-  const semester = resolveSemesterKey(anchor);
+  const semester = resolveSemesterKey(input.todayPeriod);
   if (!semester) return null;
+
+  // Periods outside the semester are not "extra data" — they belong to a closed payout and are
+  // simply not part of this window. They drop out because `all` only contains the semester's months.
+  const valid = input.periods.filter(isPeriodKey);
 
   const all = semesterPeriods(semester);
   const presentSet = new Set(valid);

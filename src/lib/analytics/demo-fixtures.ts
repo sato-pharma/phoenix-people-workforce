@@ -161,7 +161,6 @@ export function demoCrossSource(): CrossSourceRow[] {
         weeklyValue: sosValue * 0.3,
         weeklyUnits: 1800 + i * 90,
         closingAchievementPct: safeDividePct(closingValue, targetValue),
-        closingVsSosGapPct: safeDividePct(closingValue - sosValue, sosValue),
       };
     }),
   );

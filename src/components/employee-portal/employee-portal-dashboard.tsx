@@ -1104,7 +1104,10 @@ function IncentiveSimulatorCard({
         <div className="rounded border border-orange-100 bg-orange-50/40 px-3 py-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-[11px] font-bold text-orange-800">
-              Your actual: {data.sales.overviewAchievementPercent.toFixed(1)}%
+              Your actual:{" "}
+              {data.sales.incentiveSemesterTarget > 0
+                ? `${data.sales.overviewAchievementPercent.toFixed(1)}%`
+                : "No target yet"}
             </p>
             <p className="text-[11px] font-bold text-orange-600">
               Simulating: {simAchievement.toFixed(0)}%
@@ -1124,6 +1127,9 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
   }
 
   const actualAchievement = data.sales.overviewAchievementPercent;
+  // No semester target yet means there is no "you are here" to draw. A line at 0% would put the rep
+  // at the bottom of the payout curve, which is a claim about their performance, not about the data.
+  const hasSemesterTarget = data.sales.incentiveSemesterTarget > 0;
 
   return (
     <Card className="rounded border border-slate-200 bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
@@ -1162,7 +1168,9 @@ function IncentivePayoutCurveChart({ data }: { data: MedicalRepPortalData }) {
                   width={48}
                 />
                 <ReferenceLine x={90} stroke="#dc2626" strokeDasharray="6 3" strokeOpacity={0.4} label={{ value: "90%", position: "top", fill: "#dc2626", fontSize: 9, fontWeight: 700 }} />
-                <ReferenceLine x={Math.round(actualAchievement)} stroke="#f97316" strokeWidth={2} strokeDasharray="4 2" strokeOpacity={0.7} label={{ value: `You: ${actualAchievement.toFixed(0)}%`, position: "top", fill: "#f97316", fontSize: 9, fontWeight: 700 }} />
+                {hasSemesterTarget ? (
+                  <ReferenceLine x={Math.round(actualAchievement)} stroke="#f97316" strokeWidth={2} strokeDasharray="4 2" strokeOpacity={0.7} label={{ value: `You: ${actualAchievement.toFixed(0)}%`, position: "top", fill: "#f97316", fontSize: 9, fontWeight: 700 }} />
+                ) : null}
                 <Tooltip
                   content={({ active, payload }) => {
                     if (!active || !payload?.length) return null;
@@ -1297,6 +1305,10 @@ function IncentiveSchemeDescriptionCard() {
 
 function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalData; isSalaryVisible: boolean }) {
   const achievementPercent = data.sales.overviewAchievementPercent;
+  // The semester runs Jul-Dec and its first month is only uploaded partway through. Until then the
+  // achievement is 0 because there is nothing to divide, NOT because the rep sold nothing — and
+  // "0.0%, 90.0% to threshold" reads as an accusation. Say what is actually true instead.
+  const hasSemesterTarget = data.sales.incentiveSemesterTarget > 0;
   const gapToThreshold = Math.max(0, 90 - achievementPercent);
   const salaryRef = calculateIncentive2026({
     achievementPercent: 100,
@@ -1313,9 +1325,11 @@ function IncentiveKpiCards({ data, isSalaryVisible }: { data: MedicalRepPortalDa
   const cards: Array<{ label: string; value: string; note: string; accent: MetricAccent }> = [
     {
       label: "Semester Achievement",
-      value: `${achievementPercent.toFixed(1)}%`,
-      note: achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)}% to threshold`,
-      accent: achievementPercent >= 100 ? "green" : achievementPercent >= 90 ? "amber" : "orange",
+      value: hasSemesterTarget ? `${achievementPercent.toFixed(1)}%` : "No target yet",
+      note: !hasSemesterTarget
+        ? `${data.sales.incentiveSemesterLabel ?? "This semester"} not uploaded yet`
+        : achievementPercent >= 100 ? "Above target" : achievementPercent >= 90 ? "Eligible zone" : `${gapToThreshold.toFixed(1)}% to threshold`,
+      accent: !hasSemesterTarget ? "blue" : achievementPercent >= 100 ? "green" : achievementPercent >= 90 ? "amber" : "orange",
     },
     {
       label: "Base Salary",
@@ -1452,8 +1466,11 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
       <div className="space-y-2">
         {rows.map((row) => {
           const pct = row.achievementPercent;
+          // No target means the percent is undefined, not zero — flagging that row "Below
+          // target" would accuse someone of missing a target nobody set for them.
+          const hasTarget = row.target > 0;
           const fillWidth = Math.max(6, Math.min(100, pct));
-          const belowTarget = pct < 70;
+          const belowTarget = hasTarget && pct < 70;
           const [fromColor, toColor] = achievementGradient(pct).split(",");
           return (
             <div key={`${row.position}-${row.name}`} className="rounded border border-slate-100 bg-white px-3 py-3 shadow-[0_2px_8px_rgba(15,23,42,0.04)] transition-colors hover:border-orange-200 hover:bg-orange-50/30">
@@ -1471,7 +1488,9 @@ function TeamRankComparisonWidget({ data }: { data: MedicalRepPortalData }) {
                   ) : null}
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="font-mono text-sm font-black tabular-nums text-slate-700">{pct.toFixed(1)}%</p>
+                  <p className="font-mono text-sm font-black tabular-nums text-slate-700">
+                    {hasTarget ? `${pct.toFixed(1)}%` : "No target"}
+                  </p>
                   <p className="break-words font-mono text-[11px] text-slate-400 tabular-nums">{egp(row.sales)}</p>
                 </div>
               </div>
@@ -1557,10 +1576,16 @@ function OverviewInsightsAlerts({ data }: { data: MedicalRepPortalData }) {
     });
   }
 
-  // Overall achievement standing.
-  items.push(achievement >= 100
-    ? { text: `You have reached your all-period target at ${achievement.toFixed(0)}%.`, tone: "positive" }
-    : { text: `Overall achievement is ${achievement.toFixed(1)}% of the all-period target.`, tone: "insight" });
+  // Semester achievement standing. This number is the SEMESTER figure — it was labelled
+  // "all-period" here, which is not what it measures — and it is 0 when no target sits behind it,
+  // so a rep whose semester has not been uploaded yet gets no standing stated at all rather than
+  // being told they are at 0%.
+  const semesterName = data.sales.incentiveSemesterLabel ?? "This semester";
+  if (data.sales.incentiveSemesterTarget > 0) {
+    items.push(achievement >= 100
+      ? { text: `You have reached your ${semesterName} target at ${achievement.toFixed(0)}%.`, tone: "positive" }
+      : { text: `${semesterName} achievement is ${achievement.toFixed(1)}% of target.`, tone: "insight" });
+  }
 
   // Product concentration.
   if (topProduct) {

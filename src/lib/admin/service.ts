@@ -14,7 +14,8 @@ import {
   type SalesOwnershipVacancySignal,
 } from "@/lib/workforce-classification";
 import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
-import { isDisposableFixtureText, isDisposableSalesRecordRow } from "@/lib/fixture-hygiene";
+import { isDisposableFixtureText, isDisposableFixtureYear } from "@/lib/fixture-hygiene";
+import { loadCanonicalDashboardRecords, type CanonicalDashboardRecord } from "@/lib/sales/dashboard-canonical";
 import { isManagerOptionalHrId } from "@/lib/employees/hierarchy-governance";
 import {
   getOperationalMonitoringStats,
@@ -74,6 +75,8 @@ export type DataHealthStats = {
   salesIssues: Array<{
     record_id: string | null;
     batch_id: string | null;
+    /** The closing month the exception sits in — the only locator the canonical engine has. */
+    period: string | null;
     row_number: number | null;
     employee_hr_id: string | null;
     manager_hr_id: string | null;
@@ -181,10 +184,10 @@ const dataHealthAccessContext: AccessContext = {
   scope: "system",
   source: "system",
 };
-// The full governance audit scans every sales_records row to build the classification
-// breakdown, so it is intentionally heavy (it only runs on /admin/data-health now that
-// the Command Center derives its summary cheaply). A longer cache keeps repeat visits
-// instant without staling the audit meaningfully — it is a read-only review surface.
+// The full governance audit classifies every canonical sales row to build the breakdown, so it
+// is intentionally heavy (it only runs on /admin/data-health now that the Command Center derives
+// its summary cheaply). A longer cache keeps repeat visits instant without staling the audit
+// meaningfully — it is a read-only review surface.
 // unstable_cache (not a plain module-level variable) so the cache actually survives
 // across serverless invocations on separate Lambda instances — a module-level `let`
 // only helps repeat requests lucky enough to land on the same still-warm instance.
@@ -262,15 +265,15 @@ function vacancySignalFromRow(row: Record<string, unknown>): SalesOwnershipVacan
   };
 }
 
-function salesOwnershipRecordFromRow(row: Record<string, unknown>): SalesOwnershipRecord {
+function salesOwnershipRecordFromCanonical(record: CanonicalDashboardRecord): SalesOwnershipRecord {
   return {
-    employeeCrmId: rowText(row, "employee_crm_id"),
-    employeeHrId: rowText(row, "employee_hr_id"),
-    employeeLookupKey: rowText(row, "employee_lookup_key"),
-    employeeName: rowText(row, "employee_name"),
-    line: rowText(row, "line"),
-    managerHrId: rowText(row, "manager_hr_id"),
-    territory: rowText(row, "territory"),
+    employeeCrmId: record.employeeCrmId,
+    employeeHrId: record.employeeHrId,
+    employeeLookupKey: record.employeeLookupKey,
+    employeeName: record.employeeName,
+    line: record.line,
+    managerHrId: record.managerHrId,
+    territory: record.territory,
   };
 }
 
@@ -294,11 +297,10 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
     fetchAllRows<Record<string, unknown>>(() =>
       supabase.from("user_access_profiles").select("hr_id,is_active,auth_user_id,login_id"),
     "hr_id"),
-    fetchAllRows<Record<string, unknown>>(() =>
-      supabase
-        .from("sales_records")
-        .select("id,batch_id,row_number,employee_hr_id,employee_crm_id,employee_lookup_key,employee_name,manager_hr_id,line,territory,product,sales_value,validation_state,month,year"),
-    "id"),
+    // Rule #1: the governance audit classifies the rows the product actually reports on. It used
+    // to page `sales_records`, so it audited the ownership of a table no sales surface reads any
+    // more — a clean bill of health there said nothing about what employees and managers see.
+    loadCanonicalDashboardRecords(),
     fetchAllRows<Record<string, unknown>>(() =>
       supabase
         .from("position_vacancies")
@@ -320,7 +322,16 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
   const businessEmployees = directory.employees.filter((employee) =>
     !isDisposableFixtureText(employee.hrId) && !isDisposableFixtureText(employee.fullName),
   );
-  const businessSalesRows = salesRows.filter((row) => !isDisposableSalesRecordRow(row));
+  // Same fixture hygiene the legacy path applied, against the canonical record's own fields.
+  const businessSalesRows = salesRows.filter((record) =>
+    !isDisposableFixtureYear(record.year) &&
+    !isDisposableFixtureText(record.employeeHrId) &&
+    !isDisposableFixtureText(record.employeeLookupKey) &&
+    !isDisposableFixtureText(record.employeeName) &&
+    !isDisposableFixtureText(record.managerHrId) &&
+    !isDisposableFixtureText(record.territory) &&
+    !isDisposableFixtureText(record.product),
+  );
   const businessVacancyRows = vacancyRows.filter((row) => !isDisposableFixtureText(rowText(row, "vacancy_code")));
   const businessVacationRows = vacationRows.filter((row) => !isDisposableFixtureText(rowText(row, "employee_hr_id")));
 
@@ -438,26 +449,29 @@ async function getDataHealthStatsUncached(): Promise<DataHealthStats> {
   const salesClassification = emptySalesClassificationSummary();
   const salesIssues: DataHealthStats["salesIssues"] = [];
 
-  for (const row of businessSalesRows) {
-    const ownership = classifySalesOwnership(salesOwnershipRecordFromRow(row), ownershipContext);
-    const salesValue = rowNumber(row, "sales_value") ?? 0;
+  for (const record of businessSalesRows) {
+    const ownership = classifySalesOwnership(salesOwnershipRecordFromCanonical(record), ownershipContext);
+    const salesValue = record.salesValue;
     salesClassification[ownership.classification].records += 1;
     salesClassification[ownership.classification].salesValue += salesValue;
 
     if (ownership.classification === "unresolved_sales_exception") {
       salesIssues.push({
-        record_id: rowText(row, "id"),
-        batch_id: rowText(row, "batch_id"),
+        // The canonical engine has no row id and no upload batch — a row exists because the
+        // closing says it does. The month plus the line/area/product identifies it instead.
+        record_id: null,
+        batch_id: record.batchId,
+        period: record.period,
         classification: ownership.classification,
-        employee_hr_id: rowText(row, "employee_hr_id"),
-        line: rowText(row, "line"),
+        employee_hr_id: record.employeeHrId ?? null,
+        line: record.line,
         linkage_health_status: ownership.classification,
-        manager_hr_id: rowText(row, "manager_hr_id"),
-        product: rowText(row, "product") ?? "Unknown",
+        manager_hr_id: record.managerHrId ?? null,
+        product: record.product ?? "Unknown",
         reason: ownership.reason,
-        row_number: rowNumber(row, "row_number"),
+        row_number: record.rowNumber,
         sales_value: salesValue,
-        territory: rowText(row, "territory"),
+        territory: record.territory,
       });
     }
   }
