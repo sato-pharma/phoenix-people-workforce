@@ -726,6 +726,7 @@ import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
 import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
+import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1730,6 +1731,14 @@ await runTest(
   + "folds per row; money stays live; population stays an INDEPENDENT source-tables re-read, not "
   + "sum(tagged); CASE order and emitted array preserved)",
   runClosingChannelBreakdownRollupEquivalenceTests,
+);
+
+await runTest(
+  "monthly attribution rollup equivalence (sales-vs-target: gated reader reads the precomputed rollup "
+  + "not a live recompute; covered path shares the achievement math BYTE-FOR-BYTE with the live "
+  + "fallback; gate falls back on no-coverage OR config drift; fingerprint covers exactly the five "
+  + "config tables; per-batch refresh wired into every fact-refresh path after the fact rollup)",
+  runMonthlyAttributionRollupEquivalenceTests,
 );
 
 await runTest(
