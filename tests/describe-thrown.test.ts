@@ -9,8 +9,12 @@
  *
  * The expenses route grew a private fix (#2062). instrumentation.ts — the app-wide onRequestError
  * catch-all sitting under EVERY route handler and server component — did not, which is where the
- * heartbeat rows came from. This pins the shared function and, separately, pins that the
- * catch-all actually calls it: a correct serializer nothing routes through fixes nothing.
+ * heartbeat rows came from. This pins the shared function and, separately, pins that every writer
+ * actually calls it: a correct serializer nothing routes through fixes nothing.
+ *
+ * Three writers reach app_error_events — instrumentation.ts, the expenses route, and the browser's
+ * report-client-error.ts. #2129 fixed the first two; the browser reporter was still stringifying
+ * its own throws, so the same bug survived on the client path. All three are pinned below.
  */
 
 import assert from "node:assert/strict";
@@ -84,6 +88,24 @@ export function runDescribeThrownTests() {
     "the String(error) forwarding bug must not come back — this is the exact expression that wrote the heartbeat rows",
   );
 
+  // ── …and so must the browser's own reporter, the third writer ──────────────────────────────
+  // Three code paths write into app_error_events: this one, instrumentation.ts, and the expenses
+  // route. #2129 fixed the two server-side ones and left the client reporter still calling
+  // String(error) — a serializer only helps the callers that actually reach it, so pin all three.
+  const clientReporter = readFileSync(new URL("../src/lib/error-monitor/report-client-error.ts", import.meta.url), "utf8");
+
+  assert.match(
+    clientReporter,
+    /import \{ describeThrown \} from "@\/lib\/error-monitor\/describe-thrown"/,
+    "report-client-error.ts must use the shared serializer, not its own stringification",
+  );
+  assert.match(clientReporter, /const message = describeThrown\(error\)/, "the reported message must be the described throw");
+  assert.doesNotMatch(
+    clientReporter,
+    /const message = error instanceof Error \? error\.message : String\(error\)/,
+    "a browser throw is often a plain object; this expression is what turns it into '[object Object]'",
+  );
+
   // The edge-safety constraint is load-bearing: instrumentation.ts is bundled for the Edge
   // Runtime, so the module it now imports must stay import-free or the edge build breaks.
   const serializer = readFileSync(new URL("../src/lib/error-monitor/describe-thrown.ts", import.meta.url), "utf8");
@@ -92,4 +114,5 @@ export function runDescribeThrownTests() {
 
   console.log("  describeThrown: PostgrestError keeps message/code/hint, never '[object Object]', never blank");
   console.log("  describeThrown: instrumentation.ts routes through it and stays import-free for the edge build");
+  console.log("  describeThrown: the browser reporter routes through it too — all three writers pinned");
 }
