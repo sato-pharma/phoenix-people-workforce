@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 
 import { buildReviewBoardFields, selectPendingReviewFields } from "../src/lib/recruitment/cv-review-queue.ts";
 
-const high = (value: string | boolean | null) => ({ confidence: "high" as const, value });
-const low = (value: string | boolean | null) => ({ confidence: "low" as const, value });
+// Every value the universal schema can propose: scalars, a number (graduationYear,
+// yearsExperience) and a repeating block (workHistory and its four siblings).
+type ProposedValue = string | boolean | number | Array<Record<string, unknown>> | null;
+const high = (value: ProposedValue) => ({ confidence: "high" as const, value });
+const low = (value: ProposedValue) => ({ confidence: "low" as const, value });
 
 // A candidate as it looks straight out of automated intake AFTER cv-auto-apply has run: identity
 // written by createCandidate, the confident fields already filled, the hedged ones still empty.
@@ -20,6 +23,7 @@ function autoIntakeCandidate(overrides: Record<string, unknown> = {}) {
     medicalRepExperienceFrom: null,
     medicalRepExperienceTo: null,
     phone: "01229035737",
+    positionSpecificFields: {},
     university: "Assiut university",
     ...overrides,
   };
@@ -96,6 +100,37 @@ export function runRecruitmentCvReviewQueueTests() {
   });
   assert.deepEqual(boolPending.map((field) => field.key), ["hasMedicalRepExperience"]);
   assert.equal(boolPending[0]?.value, false, "a proposed false is a reviewable answer, not an absence");
+
+  // A number in a number column is a decision; a number-shaped string is not.
+  const numeric = selectPendingReviewFields({
+    candidate: autoIntakeCandidate(),
+    extractedFields: { graduationYear: low(2015), yearsExperience: low("five" as unknown as number) },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(numeric.map((field) => field.key), ["graduationYear"], "a string in a number field never reaches the UI");
+  assert.equal(numeric[0]?.value, 2015, "the number is carried through unchanged, not stringified");
+  assert.equal(numeric[0]?.type, "number", "the type is carried through so the board renders a number control");
+
+  // --- A repeating block is never a pending decision ---------------------------------------------
+  // Gate 1 excludes non-column fields, and since 2026-08-14 that is a CONCLUSION rather than a
+  // deferral: cv-auto-apply.ts now writes a block itself whenever the candidate holds none, so a
+  // block only ever reaches this function when the candidate ALREADY has entries. That is settled,
+  // not pending — replacing an existing work history is a profile edit, not a gap to fill, and
+  // queueing it would invite a reviewer to overwrite one by accident.
+  const withBlocks = selectPendingReviewFields({
+    candidate: autoIntakeCandidate(),
+    extractedFields: {
+      address: low("New Cairo"),
+      skills: high([{ name: "Selling skills" }]),
+      workHistory: high([{ employer: "Sanofi", jobTitle: "Medical Rep" }]),
+    },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(
+    withBlocks.map((field) => field.key),
+    ["address"],
+    "an array field never becomes a pending row, however confident the proposal",
+  );
 
   // --- Unknown position / missing extraction -----------------------------------------------------
   assert.deepEqual(
@@ -194,6 +229,49 @@ export function runRecruitmentCvReviewQueueTests() {
     positionKey: "medical_rep",
   });
   assert.equal(mistyped.governorate?.value, "Cairo", "a mistyped stored value falls back to the proposal");
+
+  // --- buildReviewBoardFields: a stored repeating block also survives the save --------------------
+  // Case (b) above, applied to position_specific_fields. The board's save writes every block it was
+  // handed, so prefilling a block from a NEW extraction would replace a work history a human had
+  // corrected with the model's fresh guess at it — and unlike a column, nothing else on the screen
+  // would show that it had changed.
+  const boardBlocks = buildReviewBoardFields({
+    candidate: autoIntakeCandidate({
+      positionSpecificFields: {
+        skills: [{ name: "Corrected skill" }],
+        workHistory: [{ employer: "Corrected by a human", jobTitle: "Medical Rep" }],
+      },
+    }),
+    extractedFields: {
+      languages: high([{ language: "English", level: "Fluent" }]),
+      workHistory: high([{ employer: "The model's guess" }]),
+    },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(
+    boardBlocks.workHistory?.value,
+    [{ employer: "Corrected by a human", jobTitle: "Medical Rep" }],
+    "the candidate's stored block beats the extraction's",
+  );
+  assert.equal(boardBlocks.workHistory?.confidence, "high", "a stored block is not an AI guess to check");
+  assert.deepEqual(
+    boardBlocks.skills?.value,
+    [{ name: "Corrected skill" }],
+    "a stored block the AI never proposed is still on the board, so the save writes it back",
+  );
+  assert.deepEqual(
+    boardBlocks.languages?.value,
+    [{ language: "English", level: "Fluent" }],
+    "a block the candidate does not hold keeps the proposal",
+  );
+
+  // A stored block holding no usable entries is not a value to defend — the proposal stands.
+  const junkBlock = buildReviewBoardFields({
+    candidate: autoIntakeCandidate({ positionSpecificFields: { workHistory: ["not-an-entry"] } }),
+    extractedFields: { workHistory: high([{ employer: "Sanofi" }]) },
+    positionKey: "medical_rep",
+  });
+  assert.deepEqual(junkBlock.workHistory?.value, [{ employer: "Sanofi" }], "a malformed stored block falls back to the proposal");
 
   // An unregistered position still yields the identity override rather than throwing.
   const unknownPosition = buildReviewBoardFields({

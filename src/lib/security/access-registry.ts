@@ -565,6 +565,11 @@ export const accessRegistry = [
   // Config editor stays admin-only (probation:update).
   sessionApi({ methods: allMethods, pattern: "/api/probation/config", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/probation/**", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
+  // Which CV fields the AI is asked to extract at all. Read is `recruitment:read`; the write is
+  // deliberately declared here as `recruitment:read` only because the registry records ONE
+  // permission per pattern — the route itself asserts `recruitment:update` on PATCH. Turning a
+  // field off means no CV is ever read for it again, and the gap is invisible after the fact.
+  sessionApi({ methods: ["GET", "PATCH"], pattern: "/api/recruitment/cv-field-settings", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/requisitions/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/intake/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/applications/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),

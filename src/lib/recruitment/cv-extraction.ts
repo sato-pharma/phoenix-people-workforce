@@ -38,7 +38,14 @@ import {
   type ExtractedField,
   type StoredCvExtraction,
 } from "@/lib/recruitment/cv-extraction-fields";
-import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
+import {
+  defaultCvPositionKey,
+  getCvPositionSchema,
+  type CvFieldDefinition,
+  type CvFieldType,
+  type CvPositionSchema,
+} from "@/lib/recruitment/cv-field-schemas";
+import { resolveEffectiveCvSchema } from "@/lib/recruitment/cv-field-settings";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { chooseCvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
@@ -59,6 +66,7 @@ export class CvExtractionError extends Error {
 // them) and re-exported here so every existing importer keeps its import path.
 export type {
   ExtractedCandidateFields,
+  ExtractedCvValue,
   ExtractedField,
   ExtractedFieldConfidence,
   StoredCvExtraction,
@@ -87,6 +95,13 @@ export type CvFieldExtraction = {
 // pages; this comfortably covers even a verbose one.
 const MAX_CV_TEXT_CHARS = 20_000;
 
+// Raised from 2,000 on 2026-08-14 with the move to the universal schema. 2,000 was sized for 12
+// scalar fields; the schema now carries ~30 scalars PLUS repeating blocks, and a CV listing five
+// separate roles with their responsibilities will not fit in 2,000 output tokens. A truncated
+// structured-output response fails to parse and the applicant is dropped, so the cap has to clear
+// the worst realistic CV rather than the typical one.
+const MAX_CV_EXTRACTION_OUTPUT_TOKENS = 8_000;
+
 // ---------------------------------------------------------------------------
 // Structured-output schema, built dynamically from a CvPositionSchema (same
 // "text: json_schema, strict: true" shape as src/lib/email/ai-assist.ts's
@@ -94,19 +109,53 @@ const MAX_CV_TEXT_CHARS = 20_000;
 // instead of being hand-written per field).
 // ---------------------------------------------------------------------------
 
-function fieldSchemaProperty(field: CvFieldDefinition) {
+// A scalar field's JSON type. "date" and "number" are carried as strings/numbers respectively;
+// dates stay strings because the prompt pins the YYYY-MM-DD format and a JSON-schema "format"
+// keyword is advisory anyway — validating the shape here would reject a CV that wrote "2019" and
+// lose the year entirely, which is worse than storing it loosely and flagging low confidence.
+function scalarValueType(type: Exclude<CvFieldType, "array">) {
+  if (type === "boolean") return ["boolean", "null"] as const;
+  if (type === "number") return ["number", "null"] as const;
+  return ["string", "null"] as const;
+}
+
+function scalarFieldSchemaProperty(field: { aiDescription: string; type: Exclude<CvFieldType, "array"> }) {
   return {
     additionalProperties: false,
     properties: {
       confidence: { enum: ["high", "low"], type: "string" },
-      value: {
-        description: field.aiDescription,
-        type: field.type === "boolean" ? (["boolean", "null"] as const) : (["string", "null"] as const),
-      },
+      value: { description: field.aiDescription, type: scalarValueType(field.type) },
     },
     required: ["value", "confidence"],
     type: "object",
   } as const;
+}
+
+// A repeating block (work history, education history, certifications, skills, languages). Unlike a
+// scalar it carries no per-field confidence — an entry either came off the CV or it did not, and a
+// half-trusted employer row is not useful. The array itself is required and may be empty, never
+// null: "this CV lists no certifications" and "the model forgot to answer" must be distinguishable.
+function arrayFieldSchemaProperty(field: CvFieldDefinition) {
+  const itemFields = field.itemFields ?? [];
+  const properties: Record<string, { description: string; type: readonly string[] }> = {};
+  for (const item of itemFields) {
+    properties[item.key] = { description: item.aiDescription, type: scalarValueType(item.type) };
+  }
+  return {
+    description: field.aiDescription,
+    items: {
+      additionalProperties: false,
+      properties,
+      required: itemFields.map((item) => item.key),
+      type: "object" as const,
+    },
+    type: "array" as const,
+  };
+}
+
+function fieldSchemaProperty(field: CvFieldDefinition) {
+  if (field.type === "array") return arrayFieldSchemaProperty(field);
+  return scalarFieldSchemaProperty({ aiDescription: field.aiDescription, type: field.type });
 }
 
 // The is_cv gate rides on the SAME structured-output call as the field extraction, so inbound
@@ -115,6 +164,14 @@ function fieldSchemaProperty(field: CvFieldDefinition) {
 // extracted candidate field, and must never appear in the applied-fields audit.
 type ExtractionSchemaProperty = ReturnType<typeof fieldSchemaProperty> | { type: "boolean" };
 
+// OpenAI requires the structured-output schema name to match ^[a-zA-Z0-9_-]+$. positionKey is
+// currently always a safe slug, but it is plain `text` in the database with no CHECK constraint,
+// so a stray value would otherwise fail the API call rather than the write that produced it.
+function slugForSchemaName(value: string): string {
+  const slug = value.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug.length > 0 ? slug : "cv";
+}
+
 export function buildExtractionTextFormat(schema: CvPositionSchema) {
   const properties: Record<string, ExtractionSchemaProperty> = { is_cv: { type: "boolean" as const } };
   for (const field of schema.fields) {
@@ -122,7 +179,7 @@ export function buildExtractionTextFormat(schema: CvPositionSchema) {
   }
   return {
     format: {
-      name: `phoenix_${schema.positionKey}_cv_extraction`,
+      name: `phoenix_${slugForSchemaName(schema.positionKey)}_cv_extraction`,
       schema: {
         additionalProperties: false,
         properties,
@@ -256,6 +313,60 @@ export function readBoolField(parsed: Record<string, unknown>, key: string): Ext
   };
 }
 
+// Accepts a number or a numeric string — the schema asks for a number, but a model that writes
+// "18" for years of experience should not cost us the value. A non-finite result reads as null
+// rather than NaN, which would otherwise reach the database as a failed insert.
+export function readNumberField(parsed: Record<string, unknown>, key: string): ExtractedField<number | null> {
+  const raw = parsed[key];
+  const obj = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const candidate = typeof obj.value === "number" ? obj.value : typeof obj.value === "string" ? Number(obj.value.trim()) : Number.NaN;
+  return {
+    confidence: obj.confidence === "high" ? "high" : "low",
+    value: Number.isFinite(candidate) ? candidate : null,
+  };
+}
+
+// A repeating block. Carries no per-entry confidence (see arrayFieldSchemaProperty) so the wrapper
+// is stamped "high" when the model answered with an array at all and "low" when it did not — the
+// latter is the shape a truncated or garbled reply takes, and it must stay distinguishable from a
+// CV that genuinely lists nothing. Entries are filtered to objects with at least one non-empty
+// value so a row of all-nulls never reaches the review board as a phantom job.
+export function readArrayField(
+  parsed: Record<string, unknown>,
+  key: string,
+): ExtractedField<Array<Record<string, unknown>> | null> {
+  const raw = parsed[key];
+  if (!Array.isArray(raw)) return { confidence: "low", value: null };
+
+  const entries: Array<Record<string, unknown>> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    const hasValue = Object.values(entry).some(
+      (value) => value !== null && value !== undefined && String(value).trim().length > 0,
+    );
+    if (hasValue) entries.push(entry);
+  }
+  return { confidence: "high", value: entries };
+}
+
+// Dispatches one schema field to the reader matching its declared type. Keeping this beside the
+// readers means a new CvFieldType is a compile error here rather than a value silently read as a
+// string somewhere downstream.
+export function readSchemaField(parsed: Record<string, unknown>, field: { key: string; type: CvFieldType }) {
+  switch (field.type) {
+    case "array":
+      return readArrayField(parsed, field.key);
+    case "boolean":
+      return readBoolField(parsed, field.key);
+    case "number":
+      return readNumberField(parsed, field.key);
+    // "date" is carried as a YYYY-MM-DD string; see scalarValueType.
+    default:
+      return readStringField(parsed, field.key);
+  }
+}
+
 // Pure — reads the identity a CV states about ITSELF (the three shared fields every position
 // schema declares) so a candidate can be created from the document rather than from whoever
 // transmitted it. Used by bulk forward-imports, where the sending number belongs to the person
@@ -332,10 +443,14 @@ export async function extractCvFieldsFromBytes(input: {
   fileName: string;
   positionKey?: string;
 }): Promise<CvFieldExtraction> {
-  const schema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
-  if (!schema) {
+  const declaredSchema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
+  if (!declaredSchema) {
     throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${input.positionKey}".`);
   }
+  // Fields switched off on the field-settings page are dropped from the request schema itself, so
+  // a disabled field costs no output tokens rather than being extracted and then hidden. A
+  // settings-table read failure returns the full schema — see resolveEffectiveCvSchema.
+  const schema = await resolveEffectiveCvSchema(declaredSchema);
   if (!hasOpenAiApiKey()) {
     throw new CvExtractionError(
       "ai_not_configured",
@@ -376,7 +491,7 @@ export async function extractCvFieldsFromBytes(input: {
     const response = await createOpenAiResponseText({
       input: aiInput,
       instructions: CV_EXTRACTION_CLASSIFICATION_PREAMBLE + schema.instructions,
-      maxOutputTokens: 2_000,
+      maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
       model: OPENAI_COPILOT_DEFAULT_MODEL,
       purpose: "recruitment-cv-extraction",
       reasoning: { effort: "medium" },
@@ -398,7 +513,7 @@ export async function extractCvFieldsFromBytes(input: {
   const parsed = parseAiJson(outputText);
   const fields: ExtractedCandidateFields = {};
   for (const field of schema.fields) {
-    fields[field.key] = field.type === "boolean" ? readBoolField(parsed, field.key) : readStringField(parsed, field.key);
+    fields[field.key] = readSchemaField(parsed, field);
   }
   // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
   // treated as "yes, it's a CV" so an AI quirk never drops a real applicant.

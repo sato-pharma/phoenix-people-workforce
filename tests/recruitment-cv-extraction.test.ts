@@ -7,10 +7,29 @@ import {
   buildPdfFileInput,
   buildVisionInput,
   parseAiJson,
+  readArrayField,
   readBoolField,
+  readNumberField,
+  readSchemaField,
   readStringField,
 } from "../src/lib/recruitment/cv-extraction.ts";
-import { cvPositionSchemas, getCvPositionSchema, listCvPositionSchemas } from "../src/lib/recruitment/cv-field-schemas.ts";
+import {
+  CV_FIELD_SECTIONS,
+  cvPositionSchemas,
+  defaultCvPositionKey,
+  getCvFieldDefinition,
+  getCvPositionSchema,
+  LEGACY_CV_POSITION_KEYS,
+  listCvFieldKeys,
+  listCvPositionSchemas,
+  universalCvFields,
+} from "../src/lib/recruitment/cv-field-schemas.ts";
+import {
+  applyCvFieldSettings,
+  isUndisableableCvField,
+  UNDISABLEABLE_CV_FIELD_KEYS,
+} from "../src/lib/recruitment/cv-field-settings.ts";
+import { cvFieldStorageDrift } from "../src/lib/recruitment/cv-field-storage.ts";
 import { detectCvFileKind } from "../src/lib/recruitment/cv-file-kind.ts";
 import {
   chooseCvExtractionRoute,
@@ -189,72 +208,181 @@ export function runRecruitmentCvExtractionTests() {
     value: null,
   }, "a string 'true' is not coerced to boolean — only a real boolean is trusted");
 
-  // --- Medical Rep field set (schema registry; see cv-field-schemas.ts) -----------
+  // --- readNumberField / readArrayField / readSchemaField --------------------------------
+  //
+  // These are the parse paths the universal schema added. A bug here does not throw — it drops the
+  // applicant's data quietly, which is the failure mode this whole change exists to end.
+  assert.deepEqual(readNumberField({ n: { value: 2019, confidence: "high" } }, "n"), { confidence: "high", value: 2019 });
   assert.deepEqual(
-    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
+    readNumberField({ n: { value: " 18 ", confidence: "high" } }, "n"),
+    { confidence: "high", value: 18 },
+    "a model that writes a number as a string should not cost us the value",
+  );
+  assert.deepEqual(
+    readNumberField({ n: { value: "eighteen", confidence: "high" } }, "n"),
+    { confidence: "high", value: null },
+    "an unparseable number reads as null, never NaN — NaN would fail the insert",
+  );
+  assert.deepEqual(readNumberField({}, "missing"), { confidence: "low", value: null });
+
+  assert.deepEqual(
+    readArrayField({ workHistory: [{ employer: "Sato Pharma", jobTitle: "Medical Rep" }] }, "workHistory"),
+    { confidence: "high", value: [{ employer: "Sato Pharma", jobTitle: "Medical Rep" }] },
+  );
+  assert.deepEqual(
+    readArrayField({ workHistory: [] }, "workHistory"),
+    { confidence: "high", value: [] },
+    "an empty array is a real answer — the CV lists no employers — and must not collapse to null",
+  );
+  assert.deepEqual(
+    readArrayField({ workHistory: "none" }, "workHistory"),
+    { confidence: "low", value: null },
+    "a non-array reply is the shape of a truncated/garbled response and must stay distinguishable from an empty CV section",
+  );
+  assert.deepEqual(
+    readArrayField({ workHistory: [{ employer: null, jobTitle: "  " }, { employer: "Sato Pharma" }] }, "workHistory"),
+    { confidence: "high", value: [{ employer: "Sato Pharma" }] },
+    "an all-blank entry is a phantom job and never reaches the review board",
+  );
+
+  // The dispatcher is what guarantees a field is read by the reader its declared type calls for.
+  for (const field of universalCvFields) {
+    const payload: Record<string, unknown> =
+      field.type === "array" ? { [field.key]: [] } : { [field.key]: { value: null, confidence: "low" } };
+    const read = readSchemaField(payload, field);
+    assert.ok(read && typeof read === "object" && "confidence" in read, `${field.key} did not parse into a field shape`);
+    if (field.type === "array") {
+      assert.deepEqual(read.value, [], `${field.key} is a block and must parse to an array, not null`);
+    } else {
+      assert.equal(read.value, null, `${field.key} should read a null proposal as null`);
+    }
+  }
+
+  // --- The universal field set (schema registry; see cv-field-schemas.ts) ----------------
+  //
+  // This block used to pin two hardcoded templates: an exact 12-key Medical Rep list, a District
+  // Manager list asserted identical to it, and listCvPositionSchemas() returning exactly
+  // ["district_manager", "medical_rep"]. That design is gone. It could only read a CV once someone
+  // had already declared which of two roles the applicant held, so a pharmacist, an accountant or
+  // a national sales manager was read as a medical rep and 34% of the extracted slots came back
+  // empty. There is now ONE schema, and the job title is an EXTRACTED FIELD (currentJobTitle)
+  // rather than a precondition — adding support for a new role costs no code change at all.
+  assert.equal(defaultCvPositionKey, "universal", "intake must default to the universal schema, never a role template");
+  assert.deepEqual(
+    listCvFieldKeys().sort(),
     [
       "address",
+      "certifications",
+      "currentEmployer",
+      "currentJobTitle",
+      "currentRoleResponsibilities",
+      "dateOfBirth",
+      "degree",
+      "educationHistory",
       "email",
+      "expectedSalary",
       "faculty",
       "fullName",
+      "gender",
       "governorate",
+      "grade",
+      "graduationYear",
       "hasMedicalRepExperience",
       "hasPriorWorkExperience",
+      "languages",
+      "linkedinUrl",
+      "maritalStatus",
       "medicalRepEmployer",
       "medicalRepExperienceFrom",
       "medicalRepExperienceTo",
+      "militaryStatus",
+      "nationalId",
+      "nationality",
+      "noticePeriod",
       "phone",
+      "placeOfBirth",
+      "professionalSummary",
+      "skills",
       "university",
+      "whatsapp",
+      "workHistory",
+      "yearsExperience",
     ].sort(),
+    "the owner's instruction was CAPTURE EVERYTHING — a field silently dropped from this list is a field no CV is ever read for again",
   );
-  assert.equal(getCvPositionSchema("medical_rep")?.label, "Medical Rep");
-  assert.equal(getCvPositionSchema("unknown_position"), null);
-  for (const field of cvPositionSchemas.medical_rep.fields) {
-    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
-  }
-
-  // --- District Manager field set — same fields as Medical Rep by design (District
-  //     Managers here are typically promoted from Medical Rep), reusing the same dedicated
-  //     columns rather than jsonb since those columns already exist ------------------------
-  assert.equal(getCvPositionSchema("district_manager")?.label, "District Manager");
-  assert.deepEqual(
-    cvPositionSchemas.district_manager.fields.map((field) => field.key).sort(),
-    cvPositionSchemas.medical_rep.fields.map((field) => field.key).sort(),
-    "District Manager's field set must be identical to Medical Rep's",
-  );
+  assert.equal(universalCvFields.length, 36);
   assert.equal(
-    cvPositionSchemas.district_manager.fields,
-    cvPositionSchemas.medical_rep.fields,
-    "District Manager reuses the exact same field array (not a duplicated copy) to guarantee zero drift",
+    new Set(universalCvFields.map((field) => field.key)).size,
+    universalCvFields.length,
+    "duplicate field keys would collide in extracted_fields and in the AI response schema",
   );
-  for (const field of cvPositionSchemas.district_manager.fields) {
-    assert.equal(field.storage, "column", `${field.key} should use dedicated columns, not the generic jsonb field`);
+
+  // Every field belongs to a declared section, or the review board and the settings page would
+  // render it nowhere and it would be invisible rather than merely off.
+  const sectionKeys = new Set(CV_FIELD_SECTIONS.map((section) => section.key));
+  for (const field of universalCvFields) {
+    assert.ok(sectionKeys.has(field.section), `${field.key} has no renderable section`);
+    assert.equal(getCvFieldDefinition(field.key)?.key, field.key);
   }
-  assert.notEqual(
-    cvPositionSchemas.district_manager.instructions,
-    cvPositionSchemas.medical_rep.instructions,
-    "instructions should be reworded for District Manager hiring context, not byte-identical",
-  );
-  assert.match(cvPositionSchemas.district_manager.instructions, /District Manager/);
+  assert.equal(getCvFieldDefinition("no_such_field"), null);
 
-  // --- listCvPositionSchemas / getCvPositionSchema now surface both positions ------------
+  // Storage and type are not independent: a repeating block is variable-length and cannot be a
+  // column, and a scalar must never land in the jsonb bag where it stops being queryable.
+  for (const field of universalCvFields) {
+    if (field.type === "array") {
+      assert.equal(field.storage, "jsonb", `${field.key} is a repeating block and cannot be a column`);
+      assert.ok((field.itemFields?.length ?? 0) > 0, `${field.key} is an array with no declared entry shape`);
+      for (const item of field.itemFields ?? []) {
+        assert.notEqual(item.type, "array", `${field.key}.${item.key} nests a block inside a block — not supported`);
+      }
+    } else {
+      assert.equal(field.storage, "column", `${field.key} is scalar and must have its own queryable column`);
+      assert.equal(field.itemFields, undefined, `${field.key} is scalar and must not declare itemFields`);
+    }
+  }
+
+  // The schema is the source of truth for the PATCH route's allow-list (cv-field-storage.ts). A
+  // field with no column mapping would be rendered, edited, submitted — and silently dropped on
+  // save, with no error anywhere. That is precisely the trap the hand-written whitelist created.
   assert.deepEqual(
-    listCvPositionSchemas()
-      .map((schema) => schema.positionKey)
-      .sort(),
-    ["district_manager", "medical_rep"],
+    cvFieldStorageDrift(),
+    { missingColumn: [], orphanColumn: [] },
+    "every scalar field needs a column mapping and every mapping needs a field",
   );
 
-  // --- Dynamically-built OpenAI JSON schema (buildExtractionTextFormat) must match the
-  //     previously-hardcoded medical_rep schema exactly — schema-driven refactor must not
-  //     silently change what's asked of the AI model ---------------------------------------
-  const textFormat = buildExtractionTextFormat(cvPositionSchemas.medical_rep);
-  assert.equal(textFormat.format.name, "phoenix_medical_rep_cv_extraction");
+  // --- The two legacy keys survive as ALIASES, and that is load-bearing -----------------
+  //
+  // 170 historical ats_candidate_cv_extractions rows are stamped position_key='medical_rep'. If
+  // that key stopped resolving, every one of their review-queue entries would break.
+  assert.deepEqual([...LEGACY_CV_POSITION_KEYS].sort(), ["district_manager", "medical_rep"]);
+  for (const legacyKey of LEGACY_CV_POSITION_KEYS) {
+    const schema = getCvPositionSchema(legacyKey);
+    assert.ok(schema, `legacy position key ${legacyKey} must still resolve — stored extraction rows depend on it`);
+    assert.equal(
+      schema.fields,
+      cvPositionSchemas.universal.fields,
+      `${legacyKey} must ALIAS the universal field array by reference, not carry a copy that can drift`,
+    );
+  }
+  assert.equal(getCvPositionSchema("unknown_position"), null);
+
+  // Only the universal schema is OFFERED. The legacy keys resolve but are never presented as a
+  // choice, so no one can re-select a role template that no longer exists.
+  assert.deepEqual(listCvPositionSchemas().map((schema) => schema.positionKey), ["universal"]);
+
+  // The instructions must forbid the two mistakes that cost the most: assuming the applicant is a
+  // medical rep, and inventing protected attributes the CV never stated.
+  assert.match(cvPositionSchemas.universal.instructions, /ANY job title/i);
+  assert.match(cvPositionSchemas.universal.instructions, /Do NOT infer nationality, gender, or religion/i);
+
+  // --- Dynamically-built OpenAI JSON schema (buildExtractionTextFormat) -------------------
+  const textFormat = buildExtractionTextFormat(cvPositionSchemas.universal);
+  assert.equal(textFormat.format.name, "phoenix_universal_cv_extraction");
   assert.equal(textFormat.format.strict, true);
   assert.equal(textFormat.format.type, "json_schema");
   const jsonSchema = textFormat.format.schema as unknown as {
     additionalProperties: boolean;
-    properties: Record<string, { properties: { confidence: { enum: string[] }; value: { description: string; type: string[] } }; required: string[] }>;
+    properties: Record<string, Record<string, unknown>>;
     required: string[];
     type: string;
   };
@@ -262,28 +390,82 @@ export function runRecruitmentCvExtractionTests() {
   assert.equal(jsonSchema.additionalProperties, false);
   assert.deepEqual(
     [...jsonSchema.required].sort(),
-    ["is_cv", ...cvPositionSchemas.medical_rep.fields.map((field) => field.key)].sort(),
+    ["is_cv", ...cvPositionSchemas.universal.fields.map((field) => field.key)].sort(),
     "every field plus the merged is_cv gate must be required in the AI response — no optional fields",
   );
   // is_cv rides on the same call (S3: classify + extract in one round-trip) as a plain boolean,
   // NOT the {value,confidence} field shape — it's a screening flag, never an extracted field.
   assert.deepEqual(
-    (jsonSchema.properties as unknown as Record<string, { type: string }>).is_cv,
+    jsonSchema.properties.is_cv,
     { type: "boolean" },
     "is_cv must be a plain boolean, not a {value,confidence} field",
   );
-  for (const field of cvPositionSchemas.medical_rep.fields) {
+
+  for (const field of cvPositionSchemas.universal.fields) {
     const property = jsonSchema.properties[field.key];
     assert.ok(property, `missing JSON schema property for ${field.key}`);
-    assert.deepEqual(property.required, ["value", "confidence"]);
-    assert.deepEqual(property.properties.confidence.enum, ["high", "low"]);
-    assert.equal(property.properties.value.description, field.aiDescription);
+
+    if (field.type === "array") {
+      // A block carries no per-entry confidence — an employer row either came off the CV or it did
+      // not. The array is required and may be empty but never null, so "the CV lists none" stays
+      // distinguishable from "the model did not answer".
+      const block = property as unknown as {
+        items: { additionalProperties: boolean; properties: Record<string, { description: string; type: string[] }>; required: string[] };
+        type: string;
+      };
+      assert.equal(block.type, "array", `${field.key} must be an array in the AI response schema`);
+      assert.equal(block.items.additionalProperties, false);
+      assert.deepEqual(
+        [...block.items.required].sort(),
+        (field.itemFields ?? []).map((item) => item.key).sort(),
+        `${field.key} entry shape drifted from its itemFields`,
+      );
+      for (const item of field.itemFields ?? []) {
+        const sub = block.items.properties[item.key];
+        assert.ok(sub, `missing ${field.key}.${item.key} in the AI response schema`);
+        assert.equal(sub.description, item.aiDescription);
+        assert.deepEqual(
+          sub.type,
+          item.type === "boolean" ? ["boolean", "null"] : item.type === "number" ? ["number", "null"] : ["string", "null"],
+          `${field.key}.${item.key} (${item.type}) has the wrong AI response value type`,
+        );
+      }
+      continue;
+    }
+
+    const scalar = property as unknown as {
+      properties: { confidence: { enum: string[] }; value: { description: string; type: string[] } };
+      required: string[];
+    };
+    assert.deepEqual(scalar.required, ["value", "confidence"]);
+    assert.deepEqual(scalar.properties.confidence.enum, ["high", "low"]);
+    assert.equal(scalar.properties.value.description, field.aiDescription);
     assert.deepEqual(
-      property.properties.value.type,
-      field.type === "boolean" ? ["boolean", "null"] : ["string", "null"],
+      scalar.properties.value.type,
+      field.type === "boolean" ? ["boolean", "null"] : field.type === "number" ? ["number", "null"] : ["string", "null"],
       `${field.key} (${field.type}) has the wrong AI response value type`,
     );
   }
+
+  // A stray position_key cannot fail the API call. position_key is plain `text` with no CHECK
+  // constraint, and OpenAI requires the schema name to match ^[a-zA-Z0-9_-]+$ — so the name is
+  // slugged rather than interpolated raw.
+  const oddName = buildExtractionTextFormat({ ...cvPositionSchemas.universal, positionKey: "sales rep (2026)!" }).format.name;
+  assert.match(oddName, /^[a-zA-Z0-9_-]+$/, "the structured-output schema name must always be API-legal");
+  assert.equal(oddName, "phoenix_sales_rep_2026_cv_extraction");
+
+  // The output-token cap has to clear the WORST realistic CV, not the typical one. 36 fields plus
+  // an unbounded work history no longer fit in the old 2,000-token budget, and a truncated
+  // structured-output response does not degrade — it fails to parse, and the applicant is dropped.
+  // Re-read rather than reuse the `extractionSource` from the scanned-PDF block ~300 lines above:
+  // same file, but a reader here should not have to scroll to find out what they are matching on.
+  const capSource = read("src/lib/recruitment/cv-extraction.ts");
+  const capMatch = capSource.match(/MAX_CV_EXTRACTION_OUTPUT_TOKENS = ([\d_]+)/);
+  assert.ok(capMatch, "MAX_CV_EXTRACTION_OUTPUT_TOKENS must exist — an uncapped or tiny cap silently truncates CVs");
+  assert.ok(
+    Number(capMatch[1].replace(/_/g, "")) >= 8000,
+    "the output cap must stay large enough for a long work history; it was raised from 2,000 for exactly this reason",
+  );
 
   // --- Migration (Phase 1 re-platform onto ats_ tables folded the original
   //     recruitment_candidate_cv_extraction + recruitment_position_schema_framework
@@ -312,6 +494,88 @@ export function runRecruitmentCvExtractionTests() {
   assert.match(
     migration,
     /alter table public\.ats_candidate_cv_extractions\s+add column if not exists position_key text not null default 'medical_rep'/,
+  );
+
+  // --- Migration for the universal schema (2026-08-14) ------------------------------------
+  //
+  // Additive only: every scalar the universal schema can read needs a real column, or the field is
+  // extracted, paid for, and then dropped on save. The check is driven off CV_FIELD_COLUMNS rather
+  // than a second hand-written list, so adding a field cannot pass by forgetting this test.
+  const universalMigration = read("supabase/migrations/20260814150000_cv_extraction_any_job_title.sql");
+  for (const column of [
+    "whatsapp",
+    "linkedin_url",
+    "nationality",
+    "date_of_birth",
+    "place_of_birth",
+    "gender",
+    "marital_status",
+    "military_status",
+    "current_job_title",
+    "professional_summary",
+    "current_role_responsibilities",
+    "degree",
+    "graduation_year",
+    "grade",
+  ]) {
+    assert.match(universalMigration, new RegExp(`add column if not exists ${column}\\b`), `missing column ${column}`);
+  }
+  assert.match(universalMigration, /create table if not exists public\.ats_cv_field_settings/);
+  assert.match(universalMigration, /alter table public\.ats_cv_field_settings enable row level security/);
+  assert.match(universalMigration, /grant select, insert, update, delete on public\.ats_cv_field_settings to service_role/);
+  // PostgREST serves from a cached schema, so without this the first write to a new column fails
+  // with "column not found in the schema cache" while the migration reads as applied.
+  assert.match(universalMigration, /notify pgrst, 'reload schema'/);
+  // Additive ONLY — this runs against a production table holding real candidates.
+  assert.doesNotMatch(universalMigration, /drop column|drop table|truncate|alter column .* type /i);
+
+  // --- Per-field include/exclude switch (cv-field-settings.ts) ----------------------------
+  //
+  // The owner's instruction was "capture everything, then make an option to exclude or include
+  // this field". ENABLED IS THE DEFAULT and the table stores only deviations, so an absent row
+  // means on — a fresh database needs no seeding and a newly added field is live immediately.
+  assert.deepEqual(
+    applyCvFieldSettings(universalCvFields, new Map()).map((field) => field.key),
+    universalCvFields.map((field) => field.key),
+    "no settings rows at all must mean CAPTURE EVERYTHING, not capture nothing",
+  );
+  assert.equal(
+    applyCvFieldSettings(universalCvFields, new Map([["expectedSalary", false]])).some(
+      (field) => field.key === "expectedSalary",
+    ),
+    false,
+    "a disabled field must be dropped from the schema sent to the model, not merely hidden in the UI",
+  );
+  assert.equal(
+    applyCvFieldSettings(universalCvFields, new Map([["expectedSalary", false]])).length,
+    universalCvFields.length - 1,
+    "disabling one field must not disturb any other",
+  );
+  assert.equal(
+    applyCvFieldSettings(universalCvFields, new Map([["expectedSalary", true]])).length,
+    universalCvFields.length,
+    "an explicit enabled=true row behaves the same as no row",
+  );
+
+  // The identity triple is undisableable. Candidate matching resolves national ID, else email OR
+  // phone (candidate-matching.ts), and the dedupe partial-unique indexes assume those are
+  // populated — turning fullName off would make every inbound CV a brand-new candidate.
+  assert.deepEqual([...UNDISABLEABLE_CV_FIELD_KEYS].sort(), ["email", "fullName", "phone"]);
+  for (const key of UNDISABLEABLE_CV_FIELD_KEYS) {
+    assert.equal(isUndisableableCvField(key), true);
+    assert.equal(
+      applyCvFieldSettings(universalCvFields, new Map([[key, false]])).some((field) => field.key === key),
+      true,
+      `${key} must survive even when the settings table says it is off`,
+    );
+  }
+  assert.equal(isUndisableableCvField("expectedSalary"), false);
+
+  // A stale row — a field disabled and later removed from the schema — must be ignored, so a
+  // schema edit never has to be paired with a data cleanup.
+  assert.equal(
+    applyCvFieldSettings(universalCvFields, new Map([["a_field_that_no_longer_exists", false]])).length,
+    universalCvFields.length,
   );
 
   // --- Permission model: `hiring_interviews` is narrow and NOT hard-boundary-capped,

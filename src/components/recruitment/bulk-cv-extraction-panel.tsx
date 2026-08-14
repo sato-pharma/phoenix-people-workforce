@@ -128,18 +128,24 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
-          disabled={running}
-          onChange={(event) => setPositionKey(event.target.value)}
-          value={positionKey}
-        >
-          {positionOptions.map((option) => (
-            <option key={option.positionKey} value={option.positionKey}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {/* Rendered only if a second schema ever exists — the schema is universal now and the job
+            title is an extracted field, so there is nothing left to pick before reading the CV.
+            That matters most here: a bulk drop is a mixed pile of roles, and this control used to
+            force one template onto all of them. */}
+        {positionOptions.length > 1 ? (
+          <select
+            className="rounded-md border border-gray-200 px-2 py-1.5 text-sm"
+            disabled={running}
+            onChange={(event) => setPositionKey(event.target.value)}
+            value={positionKey}
+          >
+            {positionOptions.map((option) => (
+              <option key={option.positionKey} value={option.positionKey}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input ref={fileRef} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" className="text-sm" multiple type="file" />
         <Button disabled={running} onClick={() => void startBatch()} variant="secondary">
           {running ? "Processing batch…" : "Create from CVs (bulk)"}

@@ -58,11 +58,34 @@ function normalizeForCompare(value: unknown): unknown {
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : null;
   }
+  // A repeating block. An empty one is "the CV listed none", which is nothing to correct — same
+  // rule as a blank string.
+  if (Array.isArray(value)) return value.length > 0 ? value : null;
   return value;
 }
 
 function valuesEqual(a: unknown, b: unknown): boolean {
-  return normalizeForCompare(a) === normalizeForCompare(b);
+  const left = normalizeForCompare(a);
+  const right = normalizeForCompare(b);
+  // Repeating blocks need a structural compare. `===` on two arrays is identity, so an untouched
+  // work history the reviewer saved straight back would score as a correction on EVERY review —
+  // silently inflating the AI's measured correction rate for the five history fields, which is the
+  // exact class of over-count this module was already repaired for once.
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    return stableJson(left) === stableJson(right);
+  }
+  return left === right;
+}
+
+// Key order in jsonb is not preserved on round-trip, so a plain JSON.stringify would report a
+// difference where none exists. Sorting the keys makes the comparison about content only.
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, val: unknown) => {
+    if (!val || typeof val !== "object" || Array.isArray(val)) return val;
+    const record = val as Record<string, unknown>;
+    return Object.fromEntries(Object.keys(record).sort().map((key) => [key, record[key]]));
+  });
 }
 
 // Did the AI actually propose something for this field? Same definition of "a finding" as

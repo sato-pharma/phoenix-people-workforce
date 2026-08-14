@@ -178,9 +178,24 @@ export type Candidate = {
   nationalId: string | null;
   email: string | null;
   phone: string | null;
+  whatsapp: string | null;
+  linkedinUrl: string | null;
+  nationality: string | null;
+  // Date columns surface as "YYYY-MM-DD" strings through the REST client, exactly like the
+  // medicalRepExperience* pair below — they are never Date objects at this layer.
+  dateOfBirth: string | null;
+  placeOfBirth: string | null;
+  gender: string | null;
+  maritalStatus: string | null;
+  militaryStatus: string | null;
   address: string | null;
   governorate: string | null;
+  // The candidate's OWN current/most recent job title as written on their CV — never the vacancy
+  // they applied to. This is the field that makes CV extraction work for any job title.
+  currentJobTitle: string | null;
+  professionalSummary: string | null;
   currentEmployer: string | null;
+  currentRoleResponsibilities: string | null;
   yearsExperience: number | null;
   expectedSalary: number | null;
   noticePeriod: string | null;
@@ -190,13 +205,18 @@ export type Candidate = {
   notes: string | null;
   faculty: string | null;
   university: string | null;
+  degree: string | null;
+  graduationYear: number | null;
+  grade: string | null;
   hasPriorWorkExperience: boolean | null;
   hasMedicalRepExperience: boolean | null;
   medicalRepEmployer: string | null;
   medicalRepExperienceFrom: string | null;
   medicalRepExperienceTo: string | null;
-  // Generic storage for any CV-extraction position other than Medical Rep — see
-  // src/lib/recruitment/cv-field-schemas.ts. Keyed by that position's field keys.
+  // The repeating CV blocks — workHistory, educationHistory, certifications, skills, languages —
+  // keyed by the `storage: "jsonb"` field keys in src/lib/recruitment/cv-field-schemas.ts. They
+  // live here rather than in columns because they are variable-length arrays; every scalar
+  // extraction field has its own column above.
   positionSpecificFields: Record<string, unknown>;
   createdBy: string | null;
   createdAt: string;
@@ -304,9 +324,20 @@ export type CreateCandidateInput = {
   nationalId?: string | null;
   email?: string | null;
   phone?: string | null;
+  whatsapp?: string | null;
+  linkedinUrl?: string | null;
+  nationality?: string | null;
+  dateOfBirth?: string | null;
+  placeOfBirth?: string | null;
+  gender?: string | null;
+  maritalStatus?: string | null;
+  militaryStatus?: string | null;
   address?: string | null;
   governorate?: string | null;
+  currentJobTitle?: string | null;
+  professionalSummary?: string | null;
   currentEmployer?: string | null;
+  currentRoleResponsibilities?: string | null;
   yearsExperience?: number | null;
   expectedSalary?: number | null;
   noticePeriod?: string | null;
@@ -316,6 +347,9 @@ export type CreateCandidateInput = {
   notes?: string | null;
   faculty?: string | null;
   university?: string | null;
+  degree?: string | null;
+  graduationYear?: number | null;
+  grade?: string | null;
   hasPriorWorkExperience?: boolean | null;
   hasMedicalRepExperience?: boolean | null;
   medicalRepEmployer?: string | null;

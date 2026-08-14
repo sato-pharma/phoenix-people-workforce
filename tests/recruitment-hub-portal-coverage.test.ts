@@ -22,7 +22,7 @@ const TALENT_ACQUISITION = "Talent Acquisition" satisfies PhoenixRole;
 /**
  * Every tool on the Recruitment & Hiring hub must have a portal route Talent Acquisition can reach.
  *
- * The hub (app/(admin)/admin/recruitment-hiring/page.tsx) lists six tools and gates each one to
+ * The hub (app/(admin)/admin/recruitment-hiring/page.tsx) lists seven tools and gates each one to
  * hrAuthorityNavigationRoles = Super Admin + Talent Acquisition. That gate is not what decides
  * reachability. Talent Acquisition sits in portalNavigationRoles, so resolveNavigationMode puts
  * them in the portal shell, and app/(admin)/layout.tsx redirects portal-mode users out of the
@@ -35,9 +35,12 @@ const TALENT_ACQUISITION = "Talent Acquisition" satisfies PhoenixRole;
  * check compared the lists. Intake Health was the expensive half — it carries the retry action for
  * dead-lettered inbound CVs, i.e. real applicants who were silently never entered.
  *
- * So the invariant is a MAP, deliberately explicit and total: adding a seventh hub tool fails here
- * until someone decides what Talent Acquisition's route to it is. Each twin is then checked three
- * ways, because any one of them alone is passable while the tool stays unreachable:
+ * So the invariant is a MAP, deliberately explicit and total: adding a hub tool fails here until
+ * someone decides what Talent Acquisition's route to it is. That is exactly what happened to CV
+ * Field Settings, the seventh tool (owner's ruling 2026-08-14) — it arrived Super-Admin-only, and
+ * widening it to Talent Acquisition meant landing the mirror in the same change rather than
+ * discovering months later that the card never opened. Each twin is then checked three ways,
+ * because any one of them alone is passable while the tool stays unreachable:
  *   1. the portal page file exists (no dead link),
  *   2. it is in the rendered portal sidebar (employee-portal-layout.tsx — the catalog in
  *      system-navigation.ts renders nothing on its own),
@@ -50,6 +53,7 @@ const PORTAL_TWIN_BY_HUB_HREF: Readonly<Record<string, string>> = {
   "/recruitment/cv-review-queue": "/employee-portals/cv-review-queue",
   "/recruitment/cv-extraction-analytics": "/employee-portals/cv-extraction-analytics",
   "/recruitment/intake-health": "/employee-portals/intake-health",
+  "/recruitment/cv-field-settings": "/employee-portals/cv-field-settings",
 };
 
 function lookupForRole(role: PhoenixRole): PermissionLookup {
@@ -94,7 +98,7 @@ export function runRecruitmentHubPortalCoverageTests() {
   const hubItems = recruitmentHiringPageItems.filter((item) =>
     (item.roles ?? []).some((role) => role === TALENT_ACQUISITION),
   );
-  assert.ok(hubItems.length >= 6, "the hub should still gate its tools to Talent Acquisition");
+  assert.ok(hubItems.length >= 7, "the hub should still gate its tools to Talent Acquisition");
 
   for (const item of hubItems) {
     const twin = PORTAL_TWIN_BY_HUB_HREF[item.href];
@@ -140,5 +144,13 @@ export function runRecruitmentHubPortalCoverageTests() {
   assert.ok(
     portalHrefs.has("/employee-portals/intake-health"),
     "Inbound Intake Health must be reachable by Talent Acquisition — it holds the retry for dead-lettered CVs",
+  );
+  // The one the owner ruled on (2026-08-14). Named for the same reason: this tool decides what the
+  // extractor asks for on every future CV, and a field switched off leaves a gap nothing marks
+  // afterwards — so "Talent Acquisition can open it" is a decision worth a failing assertion, not a
+  // loop iteration that happens to pass.
+  assert.ok(
+    portalHrefs.has("/employee-portals/cv-field-settings"),
+    "CV Field Settings must be reachable by Talent Acquisition — she decides which fields the CV reader asks for",
   );
 }
