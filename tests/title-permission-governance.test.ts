@@ -18,17 +18,28 @@ import { resolveEmployeeAccessRole } from "../src/lib/employees/access-role.ts";
  * by the words in a job title. These tests lock that separation in place.
  */
 export function runTitlePermissionGovernanceTests() {
-  // --- Rule 1: no company job title is ever a permission source. -------------
+  // --- Rule 1: a company job title is not a GENERAL permission source. -------
+  // Owner-approved exception (2026-08-14): the field force auto-provisions its
+  // starting role from a closed two-title allowlist, so a new District Manager or
+  // Medical Rep is not stranded on the Employee role for months waiting on a
+  // manual elevation step. Every OTHER company title still provisions as Employee,
+  // and the general role parser (normalizeRole — Rule 2 below) still maps NONE of
+  // these titles; only the explicit provisioning allowlist in access-role.ts does.
+  const APPROVED_FIELD_FORCE_PROVISIONING: Record<string, string> = {
+    "District Sales Manager": "District Manager",
+    "Medical Representative": "Medical Rep",
+  };
   for (const title of phoenixCompanyJobTitles) {
+    const expected = APPROVED_FIELD_FORCE_PROVISIONING[title] ?? "Employee";
     assert.equal(
       resolveEmployeeAccessRole({ jobTitle: title }),
-      "Employee",
-      `Job title "${title}" must not grant a role; roles are assigned explicitly.`,
+      expected,
+      `Job title "${title}" must provision as "${expected}".`,
     );
     assert.equal(
       resolveEmployeeAccessRole({ positionTitle: title }),
-      "Employee",
-      `Position title "${title}" must not grant a role; roles are assigned explicitly.`,
+      expected,
+      `Position title "${title}" must provision as "${expected}".`,
     );
   }
 
@@ -111,9 +122,15 @@ export function runTitlePermissionGovernanceTests() {
   assert.equal(resolveEmployeeAccessRole({ jobTitle: "Product Manager" }), "Employee");
   assert.equal(resolveEmployeeAccessRole({ positionTitle: "Group Product Manager" }), "Employee");
 
-  // --- District Sales Manager title does not grant District Manager access. --
-  assert.equal(resolveEmployeeAccessRole({ jobTitle: "District Sales Manager" }), "Employee");
-  assert.equal(resolveEmployeeAccessRole({ positionTitle: "District Sales Manager" }), "Employee");
+  // --- Field-force provisioning exception (owner-approved 2026-08-14). The two
+  // allowlisted titles PROVISION to their real starting role, but the general role
+  // PARSER (normalizeRole) still maps neither — a title can seed a starting role
+  // only through the explicit provisioning allowlist, never through role parsing. -
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "District Sales Manager" }), "District Manager");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "District Sales Manager" }), "District Manager");
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "DSM" }), "District Manager");
+  assert.equal(resolveEmployeeAccessRole({ jobTitle: "Medical Representative" }), "Medical Rep");
+  assert.equal(resolveEmployeeAccessRole({ positionTitle: "Medical Representative" }), "Medical Rep");
   assert.equal(normalizeRole("District Sales Manager"), "Employee");
   assert.equal(normalizeRole("DSM"), "Employee");
   assert.equal(normalizeRole("Medical Representative"), "Employee");
