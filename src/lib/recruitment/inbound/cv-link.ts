@@ -73,7 +73,8 @@ export async function fetchCvFromUrl(
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length === 0 || bytes.length > maxBytes) return null;
     // Content-type is often generic on share hosts, so accept when the type looks like a CV OR is
-    // an unhelpful octet-stream (the downstream file-kind + looksLikeCv checks are the real gate).
+    // an unhelpful octet-stream (the downstream file-kind check + extractCvFieldsFromBytes' is_cv
+    // gate are the real gate).
     if (!SUPPORTED_LINK_CONTENT_TYPES.test(contentType) && !/octet-stream/i.test(contentType)) return null;
 
     const fileName = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() ?? "cv") || "cv";
