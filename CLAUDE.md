@@ -85,15 +85,19 @@ the owner the exact change you intend to make and why it is necessary, and conti
 owner approves that specific change in the conversation.
 
 **This lock is now behavioral ONLY — no prompt backs it any more.** On 2026-08-14 the owner
-instructed that `permissions.ask` and `permissions.deny` in `.claude/settings.json` both be emptied,
-so the three file paths above no longer have an entry there and **no dialog will fire on any of
-them.** (`office-allocation.ts` was never in that list — it has the CI lock instead, which is
-untouched and still turns a PR red.) `permissions.defaultMode` is **`auto`** in user-level settings,
+instructed that `permissions.ask` be emptied in `.claude/settings.json` (the `deny` list was cleared
+that day too, then its one block on the untrusted `mcp__b345e47e-…` connector restored per
+AGENTS.md §8 — a silent hard block, not a prompt), so the three file paths above no longer have an
+entry there and **no dialog will fire on any of them.** (`office-allocation.ts` was never in that
+list — it has the CI lock instead, which is untouched and still turns a PR red.) `permissions.defaultMode` is **`auto`** in user-level settings,
 read live 2026-08-14, and auto mode auto-approves a great deal on its own. So nothing except the
 agent's own compliance now stands between a request and an edit to a protected file. **Never read
 the absence of a prompt as approval** — that was already the rule while the entries existed, and it
 is the entire story now that they are gone. Ask the owner in plain words and wait for a plain answer.
-The pre-2026-08-14 file is recoverable with `git checkout .claude/settings.json`.
+The pre-2026-08-14 file is recoverable from the commit *before* the lists were emptied:
+`git checkout 6fd35986^ -- .claude/settings.json` (`6fd35986` is the `chore(claude)` commit, #2117,
+that emptied both lists). Plain `git checkout .claude/settings.json` will NOT work once that commit
+is checked out — it only restores that commit's already-empty version.
 
 **Do not reintroduce a passphrase here.** A shared one was removed 2026-07-31 (it sat in a committed
 file, so it authenticated nobody); approval belongs in the conversation, not in version control.

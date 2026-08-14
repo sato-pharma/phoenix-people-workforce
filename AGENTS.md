@@ -47,9 +47,12 @@ These exist because 1.4 fixes per feature is what happens without them.
    in user-level `~/.claude/settings.json` — read live 2026-08-12. It was `bypassPermissions` from
    2026-08-01 (set after the risk was disclosed twice), which gated nothing at all; the owner
    reverted it, confirmed 2026-08-09. That once meant the repo's `permissions.ask`/`deny` lists were
-   no longer outranked — but on **2026-08-14 the owner had both lists emptied**, so there are now no
-   `ask` or `deny` rules left in `.claude/settings.json` and **no dialog fires from them at all.**
-   What auto mode still does **not** do is gate the work that matters: its classifier silently
+   no longer outranked — but on **2026-08-14 the owner had the `ask` list emptied**, so there are now
+   no `ask` rules left in `.claude/settings.json` and **no dialog fires from a prompt rule at all.**
+   (The `deny` list was emptied that day too, then the single block on the untrusted
+   `mcp__b345e47e-…` Supabase connector was restored per §8 — a `deny` is a silent hard block, not a
+   prompt, so it changes nothing about dialogs.) What auto mode still does **not** do is gate the work
+   that matters: its classifier silently
    auto-approves a large share of routine calls, and no mode has ever prompted on a judgement call.
    **Every approval rule in section 6 is therefore behavioral: ask in plain words and wait for a
    plain answer** — that is now the only gate there is. Never offer a prompt that did not appear as

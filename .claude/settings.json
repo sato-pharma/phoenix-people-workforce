@@ -133,6 +133,8 @@
       "PowerShell(Select-String *.env*)"
     ],
     "ask": [],
-    "deny": []
+    "deny": [
+      "mcp__b345e47e-3198-4b48-97cc-07b47bbb3087__*"
+    ]
   }
 }
