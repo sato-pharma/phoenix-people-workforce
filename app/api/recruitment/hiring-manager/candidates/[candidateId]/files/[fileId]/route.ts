@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { recruitmentFileResponse } from "@/lib/recruitment/file-response";
 import { downloadHiringManagerCandidateFile } from "@/lib/recruitment/hiring-manager-view";
 import { recruitmentApiError, requireRecruitmentAccess } from "@/app/api/recruitment/_lib/http";
 
@@ -22,16 +23,9 @@ export async function GET(
     if (download.kind === "external") {
       return NextResponse.redirect(download.url);
     }
-    // See app/api/recruitment/files/[id]/download/route.ts's sibling comment — CvPreviewModal
-    // is shared by both routes and needs this to render a PDF inline instead of forcing a
-    // browser download.
-    const inline = new URL(request.url).searchParams.get("disposition") === "inline";
-    return new NextResponse(download.bytes as unknown as BodyInit, {
-      headers: {
-        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${download.fileName.replace(/"/g, "")}"`,
-        "Content-Type": download.mimeType,
-      },
-    });
+    // CvPreviewModal is shared by both file routes, so both must offer the same delivery modes —
+    // see file-response.ts.
+    return recruitmentFileResponse(request, download);
   } catch (error) {
     return recruitmentApiError(error, "File download failed.");
   }

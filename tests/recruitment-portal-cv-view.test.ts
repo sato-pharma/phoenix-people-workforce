@@ -100,4 +100,76 @@ export async function runRecruitmentPortalCvViewTests(): Promise<void> {
     /\{failureNotice\}/,
     "the failure notice must be rendered in the document body, not merely defined",
   );
+
+  // ── The renderer must never request something that LOOKS like a downloadable file ───────────
+  // A download-manager extension (IDM and relatives) cancels the page's own request whenever the
+  // response carries a document content-type plus a filename, so it can grab the file itself.
+  // That is what produced the bare "Failed to fetch" in production on 2026-08-14 while the same
+  // URL downloaded fine THROUGH the extension. The renderer therefore asks for base64 text.
+  assert.match(
+    modalSource,
+    /const bytesUrl = `\$\{downloadUrl\}\$\{separator\}format=base64`/,
+    "the modal must build a base64 bytes URL for in-page rendering",
+  );
+  assert.match(
+    modalSource,
+    /await fetch\(bytesUrl\)/,
+    "the renderer must fetch the base64 URL",
+  );
+  assert.doesNotMatch(
+    modalSource,
+    /await fetch\(inlineUrl\)/,
+    "the renderer must NOT fetch the inline URL — that response is a real PDF, which a " +
+      "download-manager extension cancels, surfacing as \"Failed to fetch\" with nothing rendered",
+  );
+  // The <img> path must not re-request the file either, or the same extension eats photographed
+  // CVs (the WhatsApp intake path) instead of showing them.
+  assert.doesNotMatch(
+    modalSource,
+    /<img[^>]*src=\{inlineUrl\}/,
+    "images must render from the already-fetched bytes (a blob URL), not a second request",
+  );
+
+  // ── Both file routes must offer that mode, with nothing for an extension to match on ────────
+  const responseSource = readFileSync(
+    new URL("../src/lib/recruitment/file-response.ts", import.meta.url),
+    "utf8",
+  );
+  // Comments are stripped for the same reason as above: this branch is deliberately commented
+  // and its comment NAMES the headers it must not send, so raw source would match the
+  // explanation rather than the code.
+  const responseCode = responseSource.replace(/^[ \t]*\/\/.*$/gm, "");
+  const base64Branch = responseCode.slice(responseCode.indexOf("format\") === \"base64\""));
+  const base64Body = base64Branch.slice(0, base64Branch.indexOf("const inline"));
+  assert.match(
+    base64Body,
+    /"Content-Type": "text\/plain; charset=utf-8"/,
+    "the base64 mode must not advertise the file's real mime type — that is half of what a " +
+      "download manager matches on",
+  );
+  assert.doesNotMatch(
+    base64Body,
+    /Content-Disposition/,
+    "the base64 mode must send NO Content-Disposition — a filename is the other half of what a " +
+      "download manager matches on",
+  );
+  assert.match(
+    base64Body,
+    /"X-Content-Type-Options": "nosniff"/,
+    "nosniff must stop the browser re-deriving the real type from the bytes, which would hand " +
+      "the extension its trigger straight back",
+  );
+
+  for (const route of [
+    "../app/api/recruitment/files/[id]/download/route.ts",
+    "../app/api/recruitment/hiring-manager/candidates/[candidateId]/files/[fileId]/route.ts",
+  ]) {
+    const routeSource = readFileSync(new URL(route, import.meta.url), "utf8");
+    assert.match(
+      routeSource,
+      /return recruitmentFileResponse\(request, download\)/,
+      `${route} must serve bytes through the shared response builder, so both routes offer the ` +
+        "base64 mode the renderer depends on",
+    );
+  }
 }
