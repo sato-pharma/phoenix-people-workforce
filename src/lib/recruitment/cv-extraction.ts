@@ -1,9 +1,11 @@
 // Recruitment / ATS — AI CV field extraction (schema-driven, per position).
 //
 // Reads an already-uploaded CV. Text-based PDF/DOCX get their raw text extracted locally
-// first; scanned/photographed CVs (image kind) skip local extraction entirely and are read
-// directly by OpenAI's vision-capable model instead (no separate OCR library/vendor — reuses
-// the same OPENAI_API_KEY and model already configured for text extraction). Either way, the
+// first; scanned/photographed CVs are read directly by OpenAI's vision-capable model instead (no
+// separate OCR library/vendor — reuses the same OPENAI_API_KEY and model already configured for
+// text extraction). A scan is recognised two ways: by file type when it arrives as .jpg/.png, and
+// by an implausibly thin text layer when the same photograph arrives wrapped in a PDF — the second
+// of those is cv-text-layer.ts, added after a real applicant was dropped for it. Either way, the
 // same schema-driven structured-output call proposes that position's candidate fields
 // (src/lib/recruitment/cv-field-schemas.ts) with a per-field confidence rating, following the
 // same structured-output pattern as src/lib/email/ai-assist.ts. This module never writes to
@@ -38,6 +40,7 @@ import {
 } from "@/lib/recruitment/cv-extraction-fields";
 import { defaultCvPositionKey, getCvPositionSchema, type CvFieldDefinition, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
+import { chooseCvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
@@ -187,6 +190,34 @@ export function buildVisionInput(bytes: Buffer, mimeType: string) {
 }
 
 // ---------------------------------------------------------------------------
+// The same treatment for a scan that arrived wrapped in a PDF (cv-text-layer.ts explains how one
+// is recognised). `input_file` hands the PDF to the model whole and lets IT render the pages —
+// deliberately not pdfjs-dist + a canvas, because the native @napi-rs/canvas addon is dropped by
+// Next's production file-tracing (see pdf-dommatrix-polyfill.ts, which exists to work around
+// exactly that), so a rasterizing fallback would work locally and fail in production.
+// "high" detail for the same reason as the image path above: small print on a scanned CV.
+// ---------------------------------------------------------------------------
+
+export function buildPdfFileInput(bytes: Buffer, fileName: string) {
+  return [
+    {
+      content: [
+        { text: "Extract the candidate fields from this scanned CV.", type: "input_text" as const },
+        {
+          detail: "high" as const,
+          // A filename is required alongside inline file_data, and the model uses the extension to
+          // pick its reader — so never pass the empty string a mime-only attachment can carry.
+          filename: fileName?.trim() || "cv.pdf",
+          file_data: `data:application/pdf;base64,${bytes.toString("base64")}`,
+          type: "input_file" as const,
+        },
+      ],
+      role: "user" as const,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // AI response parsing (mirrors ai-assist.ts's parseAiJson — never trust the
 // model's text blindly, even under "strict" schema mode).
 // ---------------------------------------------------------------------------
@@ -313,19 +344,30 @@ export async function extractCvFieldsFromBytes(input: {
   }
 
   const fileKind = detectCvFileKind(input.mimeType, input.fileName);
-  let aiInput: string | ReturnType<typeof buildVisionInput>;
-  if (fileKind === "image") {
-    aiInput = buildVisionInput(input.bytes, input.mimeType);
-  } else {
-    const rawText = await extractRawTextFromFile(input.bytes, input.mimeType, input.fileName);
-    const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
-    if (!cleanedText) {
-      throw new CvExtractionError(
-        "unsupported_file",
-        "No readable text was found in this CV file.",
-      );
-    }
-    aiInput = `CV text:\n\n${cleanedText}`;
+  // An unsupported kind still throws from inside extractRawTextFromFile, exactly as before — the
+  // routing decision below only ever sees a kind we can actually open.
+  const rawText = fileKind === "image" ? "" : await extractRawTextFromFile(input.bytes, input.mimeType, input.fileName);
+  const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
+
+  let aiInput: string | ReturnType<typeof buildVisionInput> | ReturnType<typeof buildPdfFileInput>;
+  switch (chooseCvExtractionRoute({ byteLength: input.bytes.length, extractedText: cleanedText, fileKind })) {
+    case "vision_image":
+      aiInput = buildVisionInput(input.bytes, input.mimeType);
+      break;
+    // A PDF whose text layer is too thin to be a CV: send the file itself rather than asking the
+    // model to judge a page marker. Without this the call reliably answers is_cv:false and the
+    // applicant is discarded — see cv-text-layer.ts.
+    case "vision_pdf":
+      aiInput = buildPdfFileInput(input.bytes, input.fileName);
+      break;
+    default:
+      if (!cleanedText) {
+        throw new CvExtractionError(
+          "unsupported_file",
+          "No readable text was found in this CV file.",
+        );
+      }
+      aiInput = `CV text:\n\n${cleanedText}`;
   }
 
   let outputText: string;

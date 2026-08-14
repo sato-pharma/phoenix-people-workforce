@@ -4,6 +4,7 @@ import path from "node:path";
 
 import {
   buildExtractionTextFormat,
+  buildPdfFileInput,
   buildVisionInput,
   parseAiJson,
   readBoolField,
@@ -11,6 +12,12 @@ import {
 } from "../src/lib/recruitment/cv-extraction.ts";
 import { cvPositionSchemas, getCvPositionSchema, listCvPositionSchemas } from "../src/lib/recruitment/cv-field-schemas.ts";
 import { detectCvFileKind } from "../src/lib/recruitment/cv-file-kind.ts";
+import {
+  chooseCvExtractionRoute,
+  countReadableCharacters,
+  MAX_PDF_VISION_BYTES,
+  MIN_PDF_TEXT_LAYER_CHARS,
+} from "../src/lib/recruitment/cv-text-layer.ts";
 import { permissionMatrix } from "../src/lib/auth/permissions.ts";
 import { findAccessRegistryEntry } from "../src/lib/security/access-registry.ts";
 
@@ -45,6 +52,104 @@ export function runRecruitmentCvExtractionTests() {
     visionInput[0].content[1].image_url,
     `data:image/png;base64,${Buffer.from("fake-image-bytes").toString("base64")}`,
     "the image is embedded as a base64 data URL carrying its real mime type",
+  );
+
+  // --- A scan that arrived wrapped in a PDF (cv-text-layer.ts) --------------------------------
+  // The headline case is the real one. careers inbox, 2026-08-11, `Osama Mohamed-1.pdf`,
+  // 493,190 bytes, subject "Osama mohammed cv District manager upper Egypt". pdf-parse recovered
+  // its ENTIRE text layer as the page marker below — sixteen characters — so the merged
+  // classify+extract call answered is_cv:false and a District Manager applicant was discarded with
+  // no dead letter and no retry. That input must now reach the model as a file.
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 493_190, extractedText: "-- 1 of 1 --", fileKind: "pdf" }),
+    "vision_pdf",
+    "a PDF whose whole text layer is a page marker is a SCAN — routing it as text discards a real applicant",
+  );
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 400_000, extractedText: "", fileKind: "pdf" }),
+    "vision_pdf",
+    "an empty text layer used to throw and fail open into a candidate with no fields ever read",
+  );
+
+  // A PDF that really is text keeps the cheap path — in both scripts. Most CVs arriving here are
+  // Arabic, and a \w-based character count would score every one of them as zero and send the
+  // whole inbox down the expensive route.
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 90_000, extractedText: "Experience ".repeat(30), fileKind: "pdf" }),
+    "text",
+  );
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 90_000, extractedText: "محمد أحمد مندوب طبي ".repeat(20), fileKind: "pdf" }),
+    "text",
+    "an Arabic text CV must count as readable text, not as a scan",
+  );
+
+  // Threshold boundary — "fewer than" the minimum, not "at most".
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 1, extractedText: "a".repeat(MIN_PDF_TEXT_LAYER_CHARS), fileKind: "pdf" }),
+    "text",
+  );
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 1, extractedText: "a".repeat(MIN_PDF_TEXT_LAYER_CHARS - 1), fileKind: "pdf" }),
+    "vision_pdf",
+  );
+
+  // The other kinds are deliberately untouched: an image was already going to vision, a DOCX has
+  // no file-render path to fall back to, and a PDF too big to base64 into a request stays on the
+  // text path so it fails open rather than failing the call.
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 10, extractedText: "", fileKind: "image" }),
+    "vision_image",
+  );
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: 10, extractedText: "-- 1 of 1 --", fileKind: "docx" }),
+    "text",
+  );
+  assert.equal(
+    chooseCvExtractionRoute({ byteLength: MAX_PDF_VISION_BYTES + 1, extractedText: "", fileKind: "pdf" }),
+    "text",
+    "a PDF past the request budget must not be base64'd into a call the model would reject",
+  );
+
+  assert.equal(countReadableCharacters("-- 1 of 1 --"), 4, "punctuation and spacing are not readable content");
+  assert.equal(countReadableCharacters("\n\f  \t "), 0);
+  assert.equal(countReadableCharacters("مندوب"), 5, "Arabic letters count");
+
+  // --- buildPdfFileInput (scan-in-a-PDF -> OpenAI content-parts input) ------------------------
+  const pdfBytes = Buffer.from("fake-pdf-bytes");
+  const pdfInput = buildPdfFileInput(pdfBytes, "Osama Mohamed-1.pdf");
+  assert.equal(pdfInput.length, 1);
+  assert.equal(pdfInput[0].role, "user");
+  assert.equal(pdfInput[0].content.length, 2);
+  assert.equal(pdfInput[0].content[0].type, "input_text");
+  assert.equal(pdfInput[0].content[1].type, "input_file");
+  assert.equal(pdfInput[0].content[1].detail, "high");
+  assert.equal(pdfInput[0].content[1].filename, "Osama Mohamed-1.pdf");
+  assert.equal(
+    pdfInput[0].content[1].file_data,
+    `data:application/pdf;base64,${pdfBytes.toString("base64")}`,
+    "the PDF is embedded whole as a base64 data URL — the model renders the pages itself",
+  );
+  assert.equal(
+    buildPdfFileInput(pdfBytes, "   ")[0].content[1].filename,
+    "cv.pdf",
+    "a blank filename must not reach the API — inline file_data requires a real one",
+  );
+
+  // The decision above is only worth anything if extraction actually asks it. Nothing in the type
+  // system connects the two: extractCvFieldsFromBytes would still compile with its original
+  // `fileKind === "image"` check, and every assertion above this line would stay green while the
+  // applicant was dropped exactly as before. So pin the wiring at the source.
+  const extractionSource = read("src/lib/recruitment/cv-extraction.ts");
+  assert.match(
+    extractionSource,
+    /chooseCvExtractionRoute\(\{[^}]*fileKind[^}]*\}\)/,
+    "extractCvFieldsFromBytes must route through chooseCvExtractionRoute rather than deciding inline",
+  );
+  assert.match(
+    extractionSource,
+    /case "vision_pdf":\s*aiInput = buildPdfFileInput\(/,
+    "the vision_pdf route must actually send the PDF as a file — a route nothing acts on is not a fix",
   );
 
   // --- parseAiJson ---------------------------------------------------------
