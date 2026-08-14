@@ -43,16 +43,83 @@ export function runReadyPayrollTemplateFormulaTests() {
     "Ready payroll must identify terminal employees for final-month payroll inclusion.",
   );
 
-  assert.match(
+  // Resignation Rule 1 is DATE-dependent, so the allowances must never be decided by
+  // isTerminalPayroll alone. That unconditional zeroing was the bug: a leaver after the
+  // 25th is owed ECOL and Fuel IN FULL, and this assertion used to demand the opposite.
+  assert.doesNotMatch(
     templateRouteSource,
     /extraCostOfLiving = payrollEmployee\.isTerminalPayroll \? 0/,
-    "Ready payroll resignation rows must not include extra cost of living.",
+    "extra cost of living must not be zeroed for every leaver — after the 25th it is paid in full",
   );
-
-  assert.match(
+  assert.doesNotMatch(
     templateRouteSource,
     /fuelAllowance = payrollEmployee\.isTerminalPayroll \? 0/,
-    "Ready payroll resignation rows must not include fuel allowance.",
+    "fuel allowance must not be zeroed for every leaver — after the 25th it is paid in full",
+  );
+  assert.equal(
+    (templateRouteSource.match(/resolveReadyLifecycleSettlement\(\{/g) ?? []).length,
+    2,
+    "BOTH sheet builders (upload and Ready) must derive Base, ECOL and Fuel from the one settlement, or the two sheets state different rules",
+  );
+  assert.match(
+    templateRouteSource,
+    /const extraCostOfLiving = settlement\.extraCostOfLiving;/,
+    "ECOL must come from the settlement that applied Resignation Rule 1",
+  );
+  assert.match(
+    templateRouteSource,
+    /const fuelAllowance = settlement\.fuelAllowance;/,
+    "Fuel must come from the same settlement, so the two allowances can never disagree about the branch",
+  );
+  assert.match(
+    readyProrationSource,
+    /export function resolveReadyLifecycleSettlement/,
+    "the >25th resignation rule must live in the pure module, where it can be asserted without ExcelJS or Supabase",
+  );
+
+  // Finding #1 (risk-review; owner ruling 2026-08-14): Rule 1's >25th full-pay waiver is for
+  // GENUINE resignations only. Both settlement calls must pass the resignation flag, and the
+  // terminal mapping must derive it from the "resigned" status — terminated (dismissed) and
+  // inactive (deactivated) leavers must NOT earn the waiver.
+  assert.equal(
+    (templateRouteSource.match(/isResignation: payrollEmployee\.isResignation/g) ?? []).length,
+    2,
+    "BOTH sheet builders must pass the resignation flag into the settlement, or a dismissal silently earns the >25th full-pay rule",
+  );
+  assert.match(
+    templateRouteSource,
+    /isResignation:\s*normalizePayrollStatus\(employee\.employmentStatus\) === resignationPayrollStatus/,
+    "only a 'resigned' terminal employee is a genuine resignation — terminated/inactive must not be",
+  );
+  assert.match(
+    templateRouteSource,
+    /const resignationPayrollStatus = "resigned"/,
+    "the resignation status token must be pinned so the gate cannot silently widen back to all leavers",
+  );
+
+  // Finding #2 (risk-review): the Ready sheet's Net Salary must be derived from the SETTLEMENT
+  // allowances (0 for a leaver who keeps none), matching the col-13 formula base+ECOL+Fuel.
+  // fixedSalary.netSalary carries the full standard allowances, so caching it inflated a leaver's
+  // Month Salary by the very ECOL/Fuel the same row shows as zero — and tripped the net-salary
+  // mismatch guard on a raw re-upload.
+  assert.equal(
+    (templateRouteSource.match(/const netSalary = money\(baseSalary \+ extraCostOfLiving \+ fuelAllowance\)/g) ?? []).length,
+    2,
+    "BOTH sheet builders must derive Net Salary from the settlement allowances, so the stored figure equals its own base+ECOL+Fuel formula",
+  );
+  assert.doesNotMatch(
+    templateRouteSource,
+    /const netSalary = money\(fixedSalary\.netSalary\)/,
+    "Net Salary must NOT be the full-allowance fixedSalary.netSalary — that inflates a leaver's Month Salary by the ECOL/Fuel the same row zeroes",
+  );
+
+  // The workbook's Other Deductions formula must reuse the settlement's effective end day, not
+  // recompute a >25th waiver blind to the resignation flag — recomputing would re-waive a
+  // dismissal to month end on Excel recalc and re-introduce the overpayment finding #1 fixes.
+  assert.match(
+    templateRouteSource,
+    /const endDay = row\.effectiveEndDay;/,
+    "the Other Deductions formula must use the row's settled effective end day, so a dismissal is charged to its real last working day",
   );
 
   assert.match(
@@ -116,8 +183,28 @@ export function runReadyPayrollTemplateFormulaTests() {
 
   assert.match(
     templateRouteSource,
-    /IF\(\$\{paymentMode\}="One Part",MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),MIN\(MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),ROUND\(\$\{baseSalary\}\*0\.7,2\),MAX\(0,\$\{baseSalary\}-\$\{otherDeductions\}\)\)\)/,
+    /IF\(\$\{paymentMode\}="One Part",MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),MIN\(MAX\(0,\$\{monthSalary\}-MIN\(MAX\(0,\$\{monthSalary\}\),MAX\(0,\$\{expenses\}\+\$\{incentive\}\)\)\),ROUND\(\$\{baseSalary\}\*\$\{BASIC_SALARY_RATE\},2\),MAX\(0,\$\{baseSalary\}-\$\{otherDeductions\}\)\)\)/,
     "Ready payroll First Part must exclude expenses and incentive before applying One Part or Two Parts caps.",
+  );
+
+  // The basic-salary rate is owner-locked in src/lib/payroll/policy.ts. This file may READ it,
+  // never restate it: a second copy of 0.7 is a second source of truth for a number the owner
+  // keeps under lock, and the Excel formula, the TS split and the sheet's own prose had all
+  // drifted into carrying their own. The emitted workbook text is unchanged (0.7 either way).
+  assert.doesNotMatch(
+    templateRouteSource,
+    /\*\s*0\.7\b/,
+    "the payroll template must not multiply by a hardcoded 0.7 — import BASIC_SALARY_RATE from the locked policy module",
+  );
+  assert.doesNotMatch(
+    templateRouteSource,
+    /Base Salary x 70%|B5\*70%|Day 1: 70% of base/,
+    "the sheet's own prose must not state a rate it did not compute with — derive the label from BASIC_SALARY_RATE",
+  );
+  assert.match(
+    templateRouteSource,
+    /BASIC_SALARY_RATE,?\s*$|BASIC_SALARY_RATE\b/m,
+    "the template must import the locked BASIC_SALARY_RATE rather than restating it",
   );
 
   assert.match(
