@@ -788,6 +788,7 @@ import { runEmployeeAchievementGroupingTests } from "./employee-achievement-grou
 import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.test.ts";
 import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
+import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1983,6 +1984,10 @@ await runTest(
 await runTest(
   "employee-360 canonical sales (un-uploaded month dropped, unattributed rows dropped, areas summed per product, scoping matches the REP not the DM, confidential products masked by CODE)",
   runEmployee360CanonicalSalesTests,
+);
+await runTest(
+  "national holidays drop Google 'Observance' events (cultural notes, not real days off) while keeping genuine Public holidays",
+  runNationalHolidaysObservanceFilterTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
