@@ -46,13 +46,16 @@ These exist because 1.4 fixes per feature is what happens without them.
 5. **The absence of a permission prompt is not approval.** `permissions.defaultMode` is **`auto`**
    in user-level `~/.claude/settings.json` — read live 2026-08-12. It was `bypassPermissions` from
    2026-08-01 (set after the risk was disclosed twice), which gated nothing at all; the owner
-   reverted it, confirmed 2026-08-09. So the repo's `permissions.ask`/`deny` lists are no longer
-   outranked and real dialogs do fire again. What auto mode still does **not** do is gate the work
-   that matters: its classifier silently auto-approves a large share of routine calls, and no mode
-   has ever prompted on a judgement call. **Every approval rule in section 6 is therefore
-   behavioral: ask in plain words and wait for a plain answer.** Never offer a prompt that did not
-   appear as evidence you were allowed, and read the settings file before asserting which mode is
-   on — this paragraph named the wrong mode from the revert until 2026-08-12.
+   reverted it, confirmed 2026-08-09. That once meant the repo's `permissions.ask`/`deny` lists were
+   no longer outranked — but on **2026-08-14 the owner had both lists emptied**, so there are now no
+   `ask` or `deny` rules left in `.claude/settings.json` and **no dialog fires from them at all.**
+   What auto mode still does **not** do is gate the work that matters: its classifier silently
+   auto-approves a large share of routine calls, and no mode has ever prompted on a judgement call.
+   **Every approval rule in section 6 is therefore behavioral: ask in plain words and wait for a
+   plain answer** — that is now the only gate there is. Never offer a prompt that did not appear as
+   evidence you were allowed, and read the settings file before asserting what is enforced — this
+   paragraph named the wrong mode from the revert until 2026-08-12, and overstated the `ask`/`deny`
+   lists until 2026-08-14.
 
 ## 2. Hard-Learned Rules (each cost a real incident — do not relearn them)
 
