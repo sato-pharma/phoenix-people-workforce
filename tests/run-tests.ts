@@ -723,6 +723,7 @@ import { runSeatTransferServiceTests } from "./seat-transfer-service.test.ts";
 import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
+import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1706,6 +1707,13 @@ await runTest(
   "closing channel sheets drop nothing (no-client-code bucket, unnamed direct is not a pharmacy, "
   + "grids carry the Matrix's store split, self-check covers every month)",
   runClosingChannelNothingDroppedTests,
+);
+
+await runTest(
+  "closing channel rollup equivalence (reads the precomputed rollup not a live scan; two-bucket "
+  + "arithmetic; presence on row count; classifier order; exclude-set guard; per-batch refresh wired "
+  + "everywhere after the trio)",
+  runClosingChannelRollupEquivalenceTests,
 );
 
 await runTest(

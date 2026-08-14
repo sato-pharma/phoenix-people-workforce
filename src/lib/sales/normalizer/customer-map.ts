@@ -707,6 +707,16 @@ export async function applyHistoricalReconciliation(input: {
         500,
       );
     }
+    // The Monthly-Closing channel totals rollup rides the same trio — it reads the fact + directory
+    // rollups just refreshed above, so it must run AFTER them, never inside the Promise.all.
+    const channel = await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
+    if (channel.error) {
+      throw new SalesWorkflowError(
+        "reconcile_rollup_refresh_failed",
+        `${updatedRows} historical row(s) were corrected, but channel rollup refresh failed for batch ${batchId}: ${channel.error.message}. Re-run the reconcile to retry the refresh.`,
+        500,
+      );
+    }
     refreshedBatches += 1;
   }
 
