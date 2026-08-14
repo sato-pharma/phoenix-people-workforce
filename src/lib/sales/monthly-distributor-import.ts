@@ -4194,41 +4194,53 @@ export type MonthlyClosingParts = {
    * number through every MonthlyClosingCell: subtotals and grand totals then come out of the same
    * code path as the headline figures and cannot drift from them.
    *
-   * NULL means "could not be determined", never "zero" — see loadOfficeClosingCells.
+   * Folded from the SAME `phx_closing_distributor_product` rows that produce the headline matrix
+   * (Office is just the Office-distributor subset), so whenever the closing renders the slice is
+   * known: that read is load-bearing and a failure fails the whole closing rather than blanking this
+   * one column. The `| null` is retained for API compatibility — no current path returns it, and a
+   * genuinely Office-free month is a true zero grid, never null.
    */
   office: MonthlyClosingMatrix | null;
 };
 
 /**
- * The Office-only area × product cells for one line and month.
+ * Fold a `phx_closing_distributor_product` result up to the headline matrix's own grain —
+ * area × product, summed over distributor and region.
  *
- * Reads `phx_closing_distributor_product`, whose WHERE clause is `phx_monthly_closing_matrix`'s
- * term for term (same period, same line, same `not is_direct`, same LA003/LA004/SS001 exclusion) —
- * it only adds `distributor_code` to the GROUP BY. Verified against production on 2026-08-11:
- * summing it across distributors reproduces the matrix to 0 units and 0 EGP on CNS July.
+ * This reproduces `phx_monthly_closing_matrix` exactly: the two RPCs select identical rows under
+ * identical filters (same period, same line, same `not is_direct`, same LA003/LA004/SS001
+ * exclusion) and differ ONLY in GROUP BY grain, so the coarser matrix is the Σ of the finer over
+ * (distributor, region). Verified piastre-identical across every validated (line, period) slice on
+ * production — 28/28 slices, 0 rows different in either direction (2026-08-15), and earlier to
+ * 0 units / 0 EGP on CNS July 2026 (2026-08-11). Deriving it here means the closing scans
+ * source_of_sales_fact_rollup ONCE instead of twice: the matrix RPC used to run a second, identical
+ * scan for numbers we already have at a finer grain.
  *
- * Returns NULL, never [], when the RPC cannot be read. An unapplied migration surfaces as PGRST202
- * and an empty result set, which would render every "of which Office" as a confident 0 — the exact
- * misleading zero the owner's rule forbids. Null makes the UI say it does not know.
+ * Grouping is by the RAW area_code/product_code strings, exactly as the matrix RPC groups by
+ * `f.area_code, f.product_code` and exactly as the previous aggregate mapping stringified them
+ * (`String(row.area_code ?? "")`), so no (area, product) key can split or merge differently — the
+ * space-joined key mirrors the sibling `officeCellsFromDistributorRows`, and area/product codes are
+ * short space-free codes (GZ6, LA003), so the tuple can never alias.
+ *
+ * Exported so a database-free test can cover the fold.
  */
-async function loadOfficeClosingCells(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  line: string,
-  period: string,
-): Promise<MonthlyClosingAggregateCell[] | null> {
-  let rows: Record<string, unknown>[];
-  try {
-    rows = await rpcAll(
-      supabase,
-      "phx_closing_distributor_product",
-      { p_line: line, p_period: period },
-      ["distributor_code", "area_code", "product_code"],
-    );
-  } catch {
-    return null;
+export function matrixCellsFromDistributorRows(rows: Record<string, unknown>[]): MonthlyClosingAggregateCell[] {
+  const byCell = new Map<string, MonthlyClosingAggregateCell>();
+  for (const row of rows) {
+    const areaCode = String(row.area_code ?? "");
+    const productCode = String(row.product_code ?? "");
+    const key = `${areaCode} ${productCode}`;
+    const units = Number(row.units ?? 0);
+    const value = Number(row.value ?? 0);
+    const existing = byCell.get(key);
+    if (existing) {
+      existing.salesUnits += units;
+      existing.salesValue += value;
+    } else {
+      byCell.set(key, { areaCode, productCode, salesUnits: units, salesValue: value });
+    }
   }
-
-  return officeCellsFromDistributorRows(rows);
+  return [...byCell.values()];
 }
 
 /**
@@ -4320,16 +4332,19 @@ export async function loadMonthlyClosingParts(input?: {
   // none, and every target cell renders "—".
   const targetLineCode = resolveTargetLineCode(selectedLine);
   const [
-    areas, products, aggregateData, directData, officeData, targetRows,
+    areas, products, distributorData, directData, targetRows,
     operationalRegions, directSubmitters, regionBySubmitter,
   ] = await Promise.all([
     listActiveSalesAreas(),
     listLineProductsForClosing(selectedLine),
-    rpcAll(supabase, "phx_monthly_closing_matrix", { p_line: selectedLine, p_period: selectedPeriod }, ["area_code", "product_code"]),
+    // One scan of source_of_sales_fact_rollup now serves BOTH the headline matrix and its Office
+    // slice. phx_closing_distributor_product is phx_monthly_closing_matrix at a finer grain (it adds
+    // distributor_code + region_code to the GROUP BY), so the matrix is the Σ of it over those two
+    // columns — proven piastre-identical on prod. We fold it below instead of also issuing the matrix
+    // RPC's second, identical scan. This read is load-bearing: a failure fails the whole closing (as
+    // the matrix RPC did), which is correct — these are the sheet's headline numbers.
+    rpcAll(supabase, "phx_closing_distributor_product", { p_line: selectedLine, p_period: selectedPeriod }, ["distributor_code", "region_code", "area_code", "product_code"]),
     rpcAll(supabase, "phx_monthly_closing_direct", { p_line: selectedLine, p_period: selectedPeriod }, ["region_code", "product_code"]),
-    // The Office slice of the same grid. Already fail-soft (returns null, not []) — an Office
-    // outage must not take the closing down, exactly as the targets read below must not.
-    loadOfficeClosingCells(supabase, selectedLine, selectedPeriod),
     // A targets outage must not take the whole closing down with it — the sales numbers are the
     // headline and stand on their own. On failure the target columns degrade to "—".
     targetLineCode ? loadMonthlyTargets(selectedPeriod).catch(() => []) : Promise.resolve([]),
@@ -4357,12 +4372,13 @@ export async function loadMonthlyClosingParts(input?: {
       targetValue: row.targetValue,
     }));
 
-  const cells: MonthlyClosingAggregateCell[] = (aggregateData as Record<string, unknown>[]).map((row) => ({
-    areaCode: String(row.area_code ?? ""),
-    productCode: String(row.product_code ?? ""),
-    salesUnits: Number(row.sales_units ?? 0),
-    salesValue: Number(row.sales_value ?? 0),
-  }));
+  // The single distributor read feeds both grids: the FULL fold is the headline matrix, the
+  // Office-distributor subset is the "of which Office" slice. officeData is now always an array
+  // (never the old fail-soft null), because Office is a subset of the rows the load-bearing headline
+  // already required — if the closing renders at all, its Office slice is known.
+  const distributorRows = distributorData as Record<string, unknown>[];
+  const cells: MonthlyClosingAggregateCell[] = matrixCellsFromDistributorRows(distributorRows);
+  const officeData: MonthlyClosingAggregateCell[] = officeCellsFromDistributorRows(distributorRows);
 
   const directCells: MonthlyClosingDirectCell[] = (directData as Record<string, unknown>[]).map((row) => ({
     productCode: String(row.product_code ?? ""),
@@ -4411,21 +4427,19 @@ export async function loadMonthlyClosingParts(input?: {
   // The city store split is not applied either, and must not be: it moves WHOLESALER customers
   // between the areas of a city, and Office rows carry no customer at all. An area's total moves
   // with the split; its Office component does not.
-  const officeMerged = officeData ? applyClosingAreaMerges(targetLineCode, areas, officeData, []) : null;
-  const officeMatrix = officeMerged
-    ? markMergedAreaRowsStatic(
-      buildMonthlyClosingMatrix({
-        areas: applyOperationalRegions(officeMerged.areas, operationalRegions),
-        availableLines,
-        availablePeriods,
-        cells: officeMerged.cells,
-        line: selectedLine,
-        period: selectedPeriod,
-        products,
-      }),
-      targetLineCode,
-    )
-    : null;
+  const officeMerged = applyClosingAreaMerges(targetLineCode, areas, officeData, []);
+  const officeMatrix = markMergedAreaRowsStatic(
+    buildMonthlyClosingMatrix({
+      areas: applyOperationalRegions(officeMerged.areas, operationalRegions),
+      availableLines,
+      availablePeriods,
+      cells: officeMerged.cells,
+      line: selectedLine,
+      period: selectedPeriod,
+      products,
+    }),
+    targetLineCode,
+  );
 
   return {
     combined: injectDirectIntoMatrix(matrix, allocatedDirect),
