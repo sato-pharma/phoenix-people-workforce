@@ -4,6 +4,7 @@ import {
   EmployeePortalPageShell,
 } from "@/components/employee-portal/enterprise-shell";
 import { TerritoryMapWorkspace } from "@/components/territory-management/territory-map-workspace";
+import { systemDeployment } from "@/config/system-settings";
 import { resolveLandingPathForRole } from "@/lib/auth/landing";
 import { assertPermission } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -52,8 +53,13 @@ export default async function TerritoryManagementPortalPage() {
       <TerritoryMapWorkspace
         browserKey={getBrowserKey() ?? null}
         canEditPins={false}
+        // No portal role reaches this module as Super Admin, so the affordance never applies here.
+        // The server refuses it regardless; this keeps the portal free of a button that would only
+        // ever answer "forbidden".
+        canPublishPreview={false}
         filters={filters}
         initialError={initialError}
+        productionUrl={systemDeployment.productionUrl}
       />
     </EmployeePortalPageShell>
   );
