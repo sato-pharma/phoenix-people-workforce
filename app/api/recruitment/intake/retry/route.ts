@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 // worker re-processes it on the next tick. Requires the recruitment update grant.
 export async function POST(request: Request) {
   try {
-    assertSameOriginMutation(request);
+    const csrf = assertSameOriginMutation(request);
+    if (csrf) return csrf;
     await requireRecruitmentAccess(request, "recruitment", "update");
     const id = str((await readJsonObject(request)).id);
     if (!id) {
