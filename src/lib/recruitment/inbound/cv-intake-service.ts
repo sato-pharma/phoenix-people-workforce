@@ -28,7 +28,8 @@
 
 import { systemAccessContext } from "@/lib/auth/permissions";
 import { logError } from "@/lib/observability/log";
-import { createCandidate, updateCandidate } from "@/lib/recruitment/candidates";
+import type { CandidateMatchReason } from "@/lib/recruitment/candidate-matching";
+import { createCandidate, getCandidate, updateCandidate, type CandidateUpsertResult } from "@/lib/recruitment/candidates";
 import { selectAutoApplyFields } from "@/lib/recruitment/cv-auto-apply";
 import {
   candidateIdentityFromCvFields,
@@ -124,14 +125,37 @@ export function isStaleProcessingClaim(
   return Number.isFinite(stamp) && nowMs - stamp > STALE_PROCESSING_CLAIM_MS;
 }
 
-// Returns the claimed event's id, or null if (channel, provider_message_id) is already claimed —
+// What a successful claim hands back: the event row to finalize, plus whatever a PRIOR attempt on
+// this same event already recorded. On a fresh claim claimedCandidateId is null and
+// claimedMatchReason is undefined; on a re-claim they carry the candidate an earlier attempt
+// created or matched, so ingestInboundCv can reuse it instead of re-deriving it through the fuzzy
+// dedup in createCandidate — which is exactly what would otherwise spawn a second candidate on a
+// retry of an event that already got past createCandidate before failing.
+export type IntakeEventClaim = {
+  eventId: string;
+  claimedCandidateId: string | null;
+  claimedMatchReason: CandidateUpsertResult["matchReason"];
+};
+
+// The accepted match_reason values, kept type-linked to CandidateMatchReason so this set can never
+// drift out of step with the domain union.
+const MATCH_REASONS = new Set<CandidateMatchReason>(["national_id", "email", "phone"]);
+
+// match_reason is a free-text column; narrow it back to the union before it re-enters the domain.
+function asMatchReason(value: unknown): CandidateUpsertResult["matchReason"] {
+  return typeof value === "string" && MATCH_REASONS.has(value as CandidateMatchReason)
+    ? (value as CandidateMatchReason)
+    : undefined;
+}
+
+// Returns the claimed event, or null if (channel, provider_message_id) is already claimed —
 // i.e. this exact message is already being/been processed by another run.
 //
 // The one case that DOES re-claim: a row abandoned in 'processing'. The unique index alone would
 // treat a crashed or timed-out attempt as "already handled" forever, so Meta's redelivery would
 // return ignored_duplicate and the CV would vanish without ever becoming a candidate. That is a
 // real risk during a bulk import, where a burst of AI extractions can outrun the request budget.
-async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | null> {
+async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<IntakeEventClaim | null> {
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_cv_intake_events")
@@ -148,7 +172,12 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | n
     })
     .select("id")
     .maybeSingle();
-  if (!error) return data ? String((data as { id: unknown }).id) : null;
+  // A fresh insert: brand-new 'processing' row, so no prior attempt and nothing to thread through.
+  if (!error) {
+    return data
+      ? { claimedCandidateId: null, claimedMatchReason: undefined, eventId: String((data as { id: unknown }).id) }
+      : null;
+  }
   if ((error as { code?: string }).code !== "23505") throw error;
 
   const { data: existing, error: existingError } = await supabase
@@ -176,10 +205,17 @@ async function claimIntakeEvent(input: InboundCvIntakeInput): Promise<string | n
     .update({ error_message: null, outcome: "processing", updated_at: new Date().toISOString() })
     .eq("id", row.id)
     .not("outcome", "in", "(candidate_created,candidate_matched)")
-    .select("id")
+    .select("id,candidate_id,match_reason")
     .maybeSingle();
   if (reclaimError || !reclaimed) return null;
-  return String((reclaimed as { id: unknown }).id);
+  // The takeover leaves candidate_id/match_reason untouched, so they still hold whatever the prior
+  // attempt recorded before it died — thread them back so ingestInboundCv can reuse that candidate.
+  const claimedRow = reclaimed as { id: unknown; candidate_id?: string | null; match_reason?: string | null };
+  return {
+    claimedCandidateId: claimedRow.candidate_id ?? null,
+    claimedMatchReason: asMatchReason(claimedRow.match_reason),
+    eventId: String(claimedRow.id),
+  };
 }
 
 async function finalizeIntakeEvent(
@@ -215,8 +251,9 @@ function unappliedFieldCount(extraction: CvFieldExtraction, candidate: Candidate
 }
 
 export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<InboundCvIntakeResult> {
-  const eventId = await claimIntakeEvent(input);
-  if (!eventId) return { outcome: "ignored_duplicate" };
+  const claim = await claimIntakeEvent(input);
+  if (!claim) return { outcome: "ignored_duplicate" };
+  const { claimedCandidateId, claimedMatchReason, eventId } = claim;
 
   try {
     if (!input.attachment) {
@@ -274,16 +311,25 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
         ? candidateIdentityFromCvFields(extraction, input.candidate.fullName)
         : { email: input.candidate.email ?? null, fullName: input.candidate.fullName, phone: input.candidate.phone ?? null };
 
-    const { candidate, created, matchReason } = await createCandidate(
-      {
-        email: identity.email,
-        fullName: identity.fullName,
-        notes: input.candidate.notes ?? null,
-        phone: identity.phone,
-        source: input.channel,
-      },
-      systemAccessContext,
-    );
+    // On a re-claim, a prior attempt may already have created or matched a candidate for this exact
+    // event (e.g. it got past createCandidate but died at the upload below). Reuse that candidate
+    // rather than running createCandidate's fuzzy dedup a second time — re-deriving it is what would
+    // otherwise spawn a duplicate candidate on retry. A prior match_reason means that attempt
+    // MATCHED an existing candidate (created = false); its absence means it CREATED one
+    // (created = true). If the prior candidate has since been deleted, fall back to normal resolution.
+    const priorCandidate = claimedCandidateId ? await getCandidate(claimedCandidateId) : null;
+    const { candidate, created, matchReason } = priorCandidate
+      ? { candidate: priorCandidate, created: !claimedMatchReason, matchReason: claimedMatchReason }
+      : await createCandidate(
+          {
+            email: identity.email,
+            fullName: identity.fullName,
+            notes: input.candidate.notes ?? null,
+            phone: identity.phone,
+            source: input.channel,
+          },
+          systemAccessContext,
+        );
 
     let fileId: string;
     try {
