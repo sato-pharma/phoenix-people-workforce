@@ -94,15 +94,33 @@ export type LogAppErrorInput = {
   // `stack` under a separator so no schema change is needed. Must stay in sync with
   // COMPONENT_STACK_SEPARATOR in message-decode.ts (extractTopComponent reads it).
   componentStack?: string | null;
+  // Browser state at throw time (readyState, visibility, connection, sequence) from
+  // report-client-error.ts. PREPENDED to `stack` under its own separator — see
+  // combineStack for why it leads rather than trails.
+  clientContext?: string | null;
 };
 
 /** Kept identical to the separator in message-decode.ts's extractTopComponent. */
 const COMPONENT_STACK_SEPARATOR = "— Component stack —";
+const CLIENT_CONTEXT_SEPARATOR = "— Client context —";
 
-function combineStack(stack: string | null | undefined, componentStack: string | null | undefined): string | null {
-  if (!componentStack) return stack ?? null;
+/**
+ * The client context leads deliberately. `stack` is truncated to MAX_TEXT_LENGTH from the
+ * END, and a React component stack alone can run past that, so appending the context would
+ * silently drop exactly the diagnostic the row was captured for. Leading also keeps
+ * extractTopComponent correct, since it seeks COMPONENT_STACK_SEPARATOR by index rather
+ * than assuming an offset.
+ */
+function combineStack(
+  stack: string | null | undefined,
+  componentStack: string | null | undefined,
+  clientContext?: string | null,
+): string | null {
   const base = stack ? `${stack}\n\n` : "";
-  return `${base}${COMPONENT_STACK_SEPARATOR}\n${componentStack}`;
+  const withComponent = componentStack ? `${base}${COMPONENT_STACK_SEPARATOR}\n${componentStack}` : (stack ?? null);
+  if (!clientContext) return withComponent;
+  const contextBlock = `${CLIENT_CONTEXT_SEPARATOR}\n${clientContext}`;
+  return withComponent ? `${contextBlock}\n\n${withComponent}` : contextBlock;
 }
 
 /**
@@ -139,7 +157,7 @@ export async function logAppError(input: LogAppErrorInput): Promise<void> {
       route: input.route ?? null,
       route_type: input.routeType ?? null,
       source: input.source,
-      stack: truncate(combineStack(input.stack, input.componentStack), MAX_TEXT_LENGTH),
+      stack: truncate(combineStack(input.stack, input.componentStack, input.clientContext), MAX_TEXT_LENGTH),
       user_agent: truncate(input.userAgent, MAX_USER_AGENT_LENGTH),
     });
 
