@@ -430,6 +430,7 @@ import { runVacationModuleTests } from "./vacation-module.test.ts";
 import { runVacationCairoTodayTests } from "./vacation-cairo-today.test.ts";
 import { runVacationPaidApprovalAtomicTests } from "./vacation-paid-approval-atomic.test.ts";
 import { runVacationOverlapWarningsTests } from "./vacation-overlap-warnings.test.ts";
+import { runVacationReportFilterEquivalenceTests } from "./vacation-report-filter-equivalence.test.ts";
 import { runCsrfRouteCoverageTests } from "./csrf-route-coverage.test.ts";
 import { runContractRenewalHardeningTests } from "./contract-renewal-hardening.test.ts";
 import { runContractNonRenewalTerminalTests } from "./contract-non-renewal-terminal.test.ts";
@@ -1291,6 +1292,12 @@ await runTest("vacation module", runVacationModuleTests);
 await runTest("vacation Cairo-today (balance-reference dates + Fri/Sat SLA weekday math)", runVacationCairoTodayTests);
 await runTest("vacation paid approval atomic", runVacationPaidApprovalAtomicTests);
 await runTest("vacation overlap warnings", runVacationOverlapWarningsTests);
+await runTest(
+  "vacation report filter equivalence (in-memory mirror of phx_vacation_report_rows: ILIKE case-insensitive/"
+  + "anchored/wildcards, case-sensitive equality, concat_ws search incl id, date range, NULL-never-matches; "
+  + "base-rows cache tag busted in the leave block; scope mirrors employee_hr_id = any(visible set))",
+  runVacationReportFilterEquivalenceTests,
+);
 await runTest("csrf route coverage", runCsrfRouteCoverageTests);
 await runTest("contract renewal hardening", runContractRenewalHardeningTests);
 await runTest("contract non-renewal terminal lifecycle", runContractNonRenewalTerminalTests);

@@ -48,6 +48,18 @@ export const SALES_DASHBOARD_CACHE_TAGS = [
  */
 export const FINANCE_DASHBOARD_CACHE_TAG = "finance-dashboard";
 
+/**
+ * The cache tag for the ONE unscoped, unfiltered read of every v2_vacation_requests row shared by
+ * all vacation-report surfaces (src/lib/vacation/service.ts, loadAllVacationRequestRowsCached — the
+ * cross-request cache that replaced the ~779/hour phx_vacation_report_rows RPC). Declared HERE as a
+ * bare string for the same client-bundle reason as FINANCE_DASHBOARD_CACHE_TAG above: the vacation
+ * service is server-only and importing a tag *from* it into any client-reachable module would drag
+ * the whole chain into the browser build. Busted in the `leave` block below, so every one of the
+ * vacation write paths that already calls invalidateExecutiveDashboardCache(reason, ['leave'])
+ * refreshes this base read on the next request — the 60s TTL is only a self-healing backstop.
+ */
+export const VACATION_REPORT_ROWS_CACHE_TAG = "vacation-report-rows";
+
 /** Modules whose changes move a figure on the Finance Command Center. */
 const FINANCE_DASHBOARD_MODULES: ExecutiveDashboardModule[] = ["payroll", "expenses", "leave"];
 
@@ -71,6 +83,10 @@ export function invalidateExecutiveDashboardCache(
     // route busted this tag, so every other mutation path went stale silently.
     if (uniqueModules.includes("leave")) {
       revalidateTag(COMPANY_VACATION_REPORT_CACHE_TAG, "max");
+      // Also bust the cross-request base read that every vacation-report surface shares. Every
+      // vacation write already routes through here with ['leave'], so this one line gives complete
+      // write-path coverage for the cached loadAllVacationRequestRowsCached rows.
+      revalidateTag(VACATION_REPORT_ROWS_CACHE_TAG, "max");
     }
     // The Finance Command Center's numbers come from committed payroll, decided expenses and
     // leave steps. Without this its 300s TTL is the only thing between a confirmed payroll run
