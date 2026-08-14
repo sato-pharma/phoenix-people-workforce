@@ -11,7 +11,8 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    assertSameOriginMutation(request);
+    const csrfError = assertSameOriginMutation(request);
+    if (csrfError) return csrfError;
     const access = await resolveAccessContext(request);
     if (!access.loginId && !access.hrId) {
       return NextResponse.json({ message: "Not authenticated" }, { status: 401 });
