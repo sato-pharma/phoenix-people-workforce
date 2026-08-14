@@ -725,6 +725,7 @@ import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
+import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
 
@@ -1716,6 +1717,13 @@ await runTest(
   + "arithmetic; presence on row count; classifier order; exclude-set guard; per-batch refresh wired "
   + "everywhere after the trio)",
   runClosingChannelRollupEquivalenceTests,
+);
+
+await runTest(
+  "closing channel breakdown reuses the channel rollup (name+fold precomputed, classifier no longer "
+  + "folds per row; money stays live; population stays an INDEPENDENT source-tables re-read, not "
+  + "sum(tagged); CASE order and emitted array preserved)",
+  runClosingChannelBreakdownRollupEquivalenceTests,
 );
 
 await runTest(
