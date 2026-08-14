@@ -3,6 +3,13 @@ S1 Business Review (Pedia) — dataset ingestion / accuracy gate.  READ-ONLY mod
 Reads owner-provided S1 files from ~/Downloads and emits data/pedia-s1.json.
 Re-run when the owner uploads new files. No Phoenix DB, no migration.
 
+AS OF THE RULE #1 MIGRATION (2026-08): sales, target and achievement figures in the emitted
+JSON are NO LONGER READ by the app. src/lib/business-review-s1/canonical.ts builds those
+live from SoS Monthly Closing (au.f_monthly_achievement) instead, so the review can no
+longer disagree with the rest of Phoenix about what was sold. This script's continuing job
+is the fields canonical has no equivalent for: marketing spend, outstation spend, CRM
+visits/double-visits and unique-doctor counts. See canonical.ts's header for the full split.
+
 Owner rulings baked in:
   - Include products (count for achievement): Ivyronc, Guamusin, Lacto Advanced 1/2.
   - 20,000-unit Ivyronc Feb order = exception @14 (=280,000): excl rep/DM, incl line/NSM.
@@ -17,7 +24,10 @@ sys.stdout.reconfigure(encoding='utf-8')
 import pandas as pd
 
 DL = r"C:\Users\satoh\Downloads"
-OUT_DIR = r"F:\Phoenix Workforce\_wt-s1-review\src\lib\business-review-s1\data"
+# Always this repo's own data/ dir, wherever this checkout or worktree happens to live.
+# Used to hardcode a sibling worktree path (_wt-s1-review) that only existed on the
+# owner's machine, so nobody else could reproduce the output.
+OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 os.makedirs(OUT_DIR, exist_ok=True)
 MO = ['Jan','Feb','Mar','Apr','May','Jun']
 INCLUDE = ['Guamusin','Ivyronc','Lacto Advanced 1','Lacto Advanced 2']

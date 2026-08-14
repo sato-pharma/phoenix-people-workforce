@@ -485,6 +485,9 @@ export function RankingPanel({
         <div className="bg-white">
           {ranked.map((row, i) => {
             const pct = Math.max(0, Math.round(row.achievementPercent));
+            // No target means the percent has no meaning — showing 0% would tell someone who
+            // sold well that they achieved nothing. Targets start 2026-07, so this is ordinary.
+            const hasTarget = row.totalTarget > 0;
             return (
               <div
                 key={row.hrId || `${row.name}-${i}`}
@@ -508,10 +511,18 @@ export function RankingPanel({
                   </div>
                 </div>
                 <div className="w-16 shrink-0">
-                  <p className={`text-right text-sm font-black tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
-                  <div className="mt-1 h-1 w-full bg-slate-100">
-                    <div className={`h-full ${pctBarClass(pct)}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
-                  </div>
+                  {hasTarget ? (
+                    <>
+                      <p className={`text-right text-sm font-black tabular-nums ${pctTextClass(pct)}`}>{pct}%</p>
+                      <div className="mt-1 h-1 w-full bg-slate-100">
+                        <div className={`h-full ${pctBarClass(pct)}`} style={{ width: `${Math.min(100, Math.max(3, pct))}%` }} />
+                      </div>
+                    </>
+                  ) : (
+                    <p className="whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      No target
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -875,13 +886,20 @@ function MedicalRepCommandCenter({ snapshot }: { snapshot: PortalHomeSnapshot })
               {monthlySalesTrend && monthlySalesTrend.length > 0 ? (
                 <div className="mt-3 flex items-end gap-1.5" style={{ height: 64 }}>
                   {[...monthlySalesTrend].reverse().map((m) => {
+                    // Months before targets existed (au.monthly_targets starts 2026-07) carry
+                    // real sales with no target. A 0% bar would read as a collapse in
+                    // performance; a dash says plainly that there is nothing to divide by.
+                    const hasTarget = m.targetValue > 0;
                     const barH = Math.max(5, Math.min(100, m.achievementPercent));
                     const bColor = m.achievementPercent >= 100 ? "bg-emerald-500" : m.achievementPercent >= 90 ? "bg-amber-400" : "bg-orange-400";
                     const mo = new Date(m.year, m.month - 1).toLocaleString("en-US", { month: "short" });
                     return (
                       <div key={`${m.year}-${m.month}`} className="flex flex-1 flex-col items-center justify-end gap-0.5">
-                        <p className="text-[9px] font-bold tabular-nums text-slate-500">{m.achievementPercent}%</p>
-                        <div className={`w-full ${bColor}`} style={{ height: `${barH}%`, minHeight: 4 }} />
+                        <p className="text-[9px] font-bold tabular-nums text-slate-500">{hasTarget ? `${m.achievementPercent}%` : "—"}</p>
+                        <div
+                          className={`w-full ${hasTarget ? bColor : "bg-slate-200"}`}
+                          style={{ height: hasTarget ? `${barH}%` : "5%", minHeight: 4 }}
+                        />
                         <p className="text-[9px] font-semibold text-slate-400">{mo}</p>
                       </div>
                     );

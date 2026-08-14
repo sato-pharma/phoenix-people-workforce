@@ -505,6 +505,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
       }[selectedView as "sales-issues" | "non-assignable-sales" | "vacant-territory-sales" | "line-level-sales" | "other-sales-exceptions"];
       return {
         columns: [
+          { key: "period", label: "Month" },
           { key: "employee_hr_id", label: "Employee HR_ID" },
           { key: "manager_hr_id", label: "Manager HR_ID" },
           { key: "line", label: "Line" },
@@ -515,6 +516,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           { key: "reason", label: "Reason" },
         ],
         rows: arr.map((issue) => ({
+          period: issue.period ?? "-",
           employee_hr_id: issue.employee_hr_id ?? "-",
           manager_hr_id: issue.manager_hr_id ?? "-",
           line: issue.line ?? "-",
@@ -699,7 +701,7 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
           <table className="w-full border-collapse text-left">
             <thead>
               <tr className={tableHeadClass}>
-                {["Row", "Owner", "Line / Territory", "Product", "Sales", "Status"].map((heading) => (
+                {["Month", "Owner", "Line / Territory", "Product", "Sales", "Status"].map((heading) => (
                   <th className="px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400" key={heading}>
                     {heading}
                   </th>
@@ -717,10 +719,12 @@ export function DataHealthDashboard({ salaryFlags: initialSalaryFlags, stats }: 
                 visibleIssues.map((issue, index) => (
                   <tr
                     className={tableRowClass}
-                    key={issue.record_id ?? `${issue.batch_id ?? "row"}-${issue.row_number ?? "missing"}-${index}`}
+                    key={issue.record_id ?? `${issue.period ?? "row"}-${issue.row_number ?? "missing"}-${index}`}
                   >
+                    {/* The canonical closing has no upload batch to cite, so the month is the
+                        locator: it is what the owner needs to find the row in the closing. */}
                     <td className="px-6 py-4 font-mono text-xs font-bold text-slate-500">
-                      {issue.batch_id ? `${issue.batch_id.slice(0, 8)}...` : "-"} / {issue.row_number ?? "-"}
+                      {issue.period ?? "-"}
                     </td>
                     <td className="px-6 py-4 text-xs font-semibold text-slate-500">
                       <div>

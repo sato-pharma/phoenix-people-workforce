@@ -5,8 +5,9 @@
 //   1. "Am I hitting target?" — it showed a bare achievement %, no target, no gap, no line split.
 //   2. "Is my sales distribution matching the market?" — the IMS ratios were nowhere.
 //
-// Targets reuse getSalesDashboard rather than re-querying sales_records, so this partition and the
-// Sales-achievement tile are computed from one engine and cannot drift apart.
+// Targets reuse getSalesDashboard rather than querying sales itself, so this partition and the
+// Sales-achievement tile are computed from one engine and cannot drift apart. That engine is now
+// SoS Monthly Closing (src/lib/sales/dashboard-canonical.ts), not the legacy closing-sheet table.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { AccessContext } from "@/lib/auth/permissions";
@@ -65,8 +66,13 @@ function rate(actual: number, target: number): number | null {
 /**
  * Per-line target vs actual, restricted to the caller's visible lines.
  *
- * `visibleLines` is matched case-insensitively because the two sales datasets disagree on casing —
- * sales_records stores "cns" lowercase while Source of Sales stores "CNS".
+ * `visibleLines` is matched case-insensitively because line names are cased differently in
+ * different corners of the system ("cns" vs "CNS").
+ *
+ * The rate divides COVERED sales — the part of the line sitting on a (line, area, product) key
+ * that carries a target — not the line's whole actual. Most line-area pairs still have no
+ * target at all, so dividing everything by the few targets that exist reports an achievement
+ * the line did not earn. `actual` stays the full number, because that one is a fact.
  */
 export async function getSfeTargetPerformance(
   access: AccessContext,
@@ -74,26 +80,35 @@ export async function getSfeTargetPerformance(
 ): Promise<SfeTargetPerformance> {
   const allowed = new Set(visibleLines.map((line) => line.trim().toLowerCase()));
   const dashboard = await getSalesDashboard({}, access);
-  const rows = (dashboard.linePerformance ?? []) as Array<{ line?: string | null; sales?: number; target?: number }>;
+  const rows = (dashboard.linePerformance ?? []) as Array<{
+    line?: string | null;
+    sales?: number;
+    coveredSales?: number;
+    target?: number;
+  }>;
 
-  const lines: SfeLineTarget[] = rows
+  const lines: Array<SfeLineTarget & { covered: number }> = rows
     .filter((row) => allowed.has(String(row.line ?? "").trim().toLowerCase()))
     .map((row) => {
       const actual = Number(row.sales ?? 0);
+      // Falling back to `actual` keeps the previous meaning; falling back to 0 would report a
+      // producing line as 0% achievement.
+      const covered = row.coveredSales == null ? actual : Number(row.coveredSales);
       const target = Number(row.target ?? 0);
-      return { line: String(row.line ?? "").trim(), target, actual, achievementRate: rate(actual, target) };
+      return { line: String(row.line ?? "").trim(), target, actual, covered, achievementRate: rate(covered, target) };
     })
     .sort((a, b) => b.target - a.target);
 
   const totalTarget = lines.reduce((sum, line) => sum + line.target, 0);
   const totalActual = lines.reduce((sum, line) => sum + line.actual, 0);
+  const totalCovered = lines.reduce((sum, line) => sum + line.covered, 0);
 
   return {
-    lines,
+    lines: lines.map(({ covered: _covered, ...line }) => line),
     totalTarget,
     totalActual,
     gap: totalTarget - totalActual,
-    achievementRate: rate(totalActual, totalTarget),
+    achievementRate: rate(totalCovered, totalTarget),
   };
 }
 

@@ -269,8 +269,10 @@ export function SalesQueue({ initialData, initialError }: Props) {
   }, []);
 
   // Sales Queue uploads are retired at the UI level (2026-07-29): Monthly Closing now reads Source of
-  // Sales, so keep the primary upload button disabled and treat this page as a view-only history. The
-  // upload endpoint itself is deliberately left intact — it still backs the Reconciliation dashboard.
+  // Sales, so keep the primary upload button disabled and treat this page as a view-only history.
+  // The endpoint behind it used to be left intact because Reconciliation still read these sheets —
+  // it no longer does, so the server now refuses the write too (LEGACY_SALES_IMPORT_FROZEN in
+  // src/lib/sales/service.ts). A disabled button is UX; the server guard is the actual boundary.
   const canUpload = false;
   const isUploadFailure = uploadResult?.success === false;
   const failureReasons = useMemo(() => uploadResult?.details?.topFailureReasons ?? [], [uploadResult]);

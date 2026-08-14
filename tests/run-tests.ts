@@ -780,6 +780,10 @@ import { runPortalHomePlanCountCanonicalTests } from "./portal-home-plan-count-c
 import { runTelegramOnboardingCampaignCapTests } from "./telegram-onboarding-campaign-cap.test.ts";
 import { runPublicSalesExposureGuardsTests } from "./public-sales-exposure-guards.test.ts";
 import { runSosTeamPerformanceTests } from "./sos-team-performance.test.ts";
+import { runEmployeeAchievementGroupingTests } from "./employee-achievement-grouping.test.ts";
+import { runPortalCanonicalSalesRowsTests } from "./portal-canonical-sales-rows.test.ts";
+import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.ts";
+import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1528,7 +1532,7 @@ await runTest(
   runJuly2026DirectValueIsStoredTests,
 );
 
-await runTest("incentive semester window (a declared H1/H2 window, never the last 6 rows that happen to exist; an incomplete window is named, not silently averaged)", runIncentiveSemesterWindowTests);
+await runTest("incentive semester window (the CALENDAR semester, the same one for every rep; H1 stays closed rather than restated; a rep with no data still gets a named provisional window)", runIncentiveSemesterWindowTests);
 
 await runTest("reconciliation harness (a breach names both figures and their sources; a known-open defect never pages nightly; one bad check cannot blind the rest)", runReconciliationHarnessTests);
 await runTest("outstation submit email envelope (employee To, managers Cc, Super Admins Bcc; a CEO skip-level is dropped but a CEO direct manager is kept; one mailbox never lands in two headers)", runOutstationSubmitEmailRoutingTests);
@@ -1940,6 +1944,25 @@ await runTest(
 await runTest(
   "sos team performance active periods (a stray Direct Order booked before a month's distributor upload lands must not activate that month's full target in the default cumulative keycard view)",
   runSosTeamPerformanceTests,
+);
+
+await runTest(
+  "employee achievement grouping (HR-id casing absorbed, missing target stays null never 0, unuploaded months excluded from a summed window, achievement re-derived from sums)",
+  runEmployeeAchievementGroupingTests,
+);
+
+await runTest(
+  "portal canonical sales rows (merged areas sum instead of one winning a MAX dedupe, un-uploaded month excluded, vacant-seat row never credited, manager reach preserved)",
+  runPortalCanonicalSalesRowsTests,
+);
+
+await runTest(
+  "canonical admin dashboard rows (vacant-area sales stay in the company total, HR ids upper-cased, achievement divides covered sales only, un-uploaded month excluded)",
+  runCanonicalDashboardRowsTests,
+);
+await runTest(
+  "employee-360 canonical sales (un-uploaded month dropped, unattributed rows dropped, areas summed per product, scoping matches the REP not the DM, confidential products masked by CODE)",
+  runEmployee360CanonicalSalesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

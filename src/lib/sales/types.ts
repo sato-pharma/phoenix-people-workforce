@@ -81,6 +81,13 @@ export type SalesBatchIssue = Record<string, any>;
 export type SalesBatchReconciliation = Record<string, any>;
 export type SalesTrendPoint = {
   achievementRate: number;
+  /**
+   * The part of `sales` sitting on a key that carries a target — the only part an achievement may
+   * divide. Optional because not every engine that builds a trend distinguishes it; a consumer must
+   * fall back to `sales` (the whole month treated as covered) and NEVER to 0, or an absent field
+   * quietly becomes a 0% achievement on someone's payout.
+   */
+  coveredSales?: number;
   linkedEmployees: number;
   period: string;
   sales: number;

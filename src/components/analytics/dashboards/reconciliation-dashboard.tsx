@@ -144,9 +144,14 @@ async function ReconciliationContent({
         <p className="font-semibold">Cross-source comparison notes</p>
         <ul className="list-disc list-inside space-y-0.5 ml-1">
           <li>SoS = distributor invoice aggregates (geography-centric, no employee attribution)</li>
-          <li>Closing = employee-attributed approved closing batches (sales records)</li>
-          <li>Weekly = distributor weekly sell-out files (branch-level, no employee attribution)</li>
-          <li>Gaps between pipelines are expected — they measure different things at different grains</li>
+          <li>Closing = Source of Sales Monthly Closing, attributed down to areas and seats, with targets</li>
+          <li>Weekly = distributor weekly sell-out files (branch-level, cumulative, stock-inclusive)</li>
+          <li>
+            SoS and Closing are the same measurement at line level and will match exactly —
+            attribution moves value down a line, never between lines. They separate only at area
+            and rep level, which this report does not yet show.
+          </li>
+          <li>Weekly is a different universe and runs several times larger — do not read it as a variance</li>
           <li>Blank cells mean no data for that pipeline in the given period × line combination</li>
         </ul>
       </div>
@@ -165,7 +170,6 @@ async function ReconciliationContent({
               { key: "targetValue",           label: "Target",          align: "right", sortable: true, formatKind: "number" },
               { key: "weeklyValue",           label: "Weekly Value",    align: "right", sortable: true, formatKind: "number" },
               { key: "closingAchievementPct", label: "Closing Achiev%", align: "right", sortable: true, formatKind: "percent" },
-              { key: "closingVsSosGapPct",    label: "Close vs SoS %",  align: "right", sortable: true, formatKind: "percent" },
             ]}
             rows={rows}
             exportTitle="Cross-Source Reconciliation"

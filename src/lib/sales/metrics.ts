@@ -411,7 +411,12 @@ function periodForRecord(record: SalesMetricRecord) {
 }
 
 export function buildPortalSalesDashboardMetrics(records: SalesMetricRecord[]): SalesDashboardData {
-  const trendByPeriod = new Map<string, { sales: number; target: number; linkedEmployees: number }>();
+  // `coveredSales` is the part of a month's sales that sits on a key carrying a target — the only
+  // part an achievement may divide. It is tracked alongside `sales` rather than replacing it
+  // because both are true and they answer different questions: a rep sold `sales`, and is measured
+  // on `coveredSales / target`. Dividing total sales by a partial target reads as over-achievement
+  // that the rep never earned, which matters most where it turns into money (the incentive tab).
+  const trendByPeriod = new Map<string, { coveredSales: number; sales: number; target: number; linkedEmployees: number }>();
   const productPerformanceMap = new Map<string, { family: string; sales: number; salesUnits: number; target: number }>();
   const familyMatrixMap = new Map<string, { sales: number; salesRows: SalesMetricRecord[]; target: number; units: number }>();
   const territoryMap = new Map<string, { sales: number; target: number }>();
@@ -463,12 +468,16 @@ export function buildPortalSalesDashboardMetrics(records: SalesMetricRecord[]): 
     const salesValue = valueAsNumber(record.salesValue);
 
     if (period) {
-      const current = trendByPeriod.get(period) ?? { sales: 0, target: 0, linkedEmployees: 0 };
+      const current = trendByPeriod.get(period) ?? { coveredSales: 0, sales: 0, target: 0, linkedEmployees: 0 };
       const targetKey = `trend::${employeeHrId}::${territory}::${period}::${product}`;
-      const targetValue = seenTrendTargets.has(targetKey) ? 0 : (maxTargetsByPeriodProduct.get(targetKey) ?? 0);
+      // The key's target, before the seen-gate: EVERY row on a targeted key is covered sales, while
+      // only the FIRST contributes the target itself (the rest are the source's row echo).
+      const keyTarget = maxTargetsByPeriodProduct.get(targetKey) ?? 0;
+      const targetValue = seenTrendTargets.has(targetKey) ? 0 : keyTarget;
       seenTrendTargets.add(targetKey);
 
       trendByPeriod.set(period, {
+        coveredSales: current.coveredSales + (keyTarget > 0 ? salesValue : 0),
         linkedEmployees: current.linkedEmployees + 1,
         sales: current.sales + salesValue,
         target: current.target + targetValue,

@@ -201,24 +201,18 @@ async function readAllRows<T = Record<string, unknown>>(
 // Data health queries (uses Supabase JS client — safe)
 // ---------------------------------------------------------------------------
 
-async function fetchSalesHealthCounts(): Promise<{
+// Linkage against SoS Monthly Closing. This used to run two `count(*)` queries over
+// `sales_records` filtered on `link_status` — a health score for a table nothing reads, sitting
+// next to a "Fix" link that opens /admin/data-health, which reports on the canonical rows. The
+// card and its own drill-down would have disagreed.
+async function fetchSalesHealthCounts(accessContext: AccessContext): Promise<{
   error: string | null;
   linkedRows: number;
   totalRows: number;
 }> {
-  const supabase = getSupabaseAdmin();
   try {
-    const [totalResult, linkedResult] = await Promise.all([
-      supabase.from("sales_records").select("*", { count: "exact", head: true }).lt("year", 2090),
-      supabase.from("sales_records").select("*", { count: "exact", head: true }).lt("year", 2090).eq("link_status", "linked"),
-    ]);
-    if (totalResult.error) throw totalResult.error;
-    if (linkedResult.error) throw linkedResult.error;
-    return {
-      error: null,
-      linkedRows: linkedResult.count ?? 0,
-      totalRows: totalResult.count ?? 0,
-    };
+    const sales = await getSalesPlatformMetrics(accessContext);
+    return { error: null, linkedRows: sales.linkedRecords, totalRows: sales.totalRecords };
   } catch {
     return { error: "Sales linkage data unavailable.", linkedRows: 0, totalRows: 0 };
   }
@@ -295,10 +289,10 @@ function buildDataHealthFromStats(
   };
 }
 
-// Lightweight health summary for the Command Center, derived from the cheap
-// count-based platform metrics + sales linkage counts it already fetches — so the
-// page never pays for the full governance audit (which scans the entire
-// sales_records table). The exact audit lives on /admin/data-health.
+// Lightweight health summary for the Command Center, derived from the cheap platform metrics +
+// sales linkage counts it already fetches — so the page never pays for the full governance audit,
+// which classifies every canonical closing row one by one. That audit lives on
+// /admin/data-health.
 function buildDataHealthFromMetrics(
   platformMetrics: Awaited<ReturnType<typeof getPlatformMetrics>>,
   salesCounts: { linkedRows: number; totalRows: number },
@@ -700,7 +694,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     const [executiveSignalsResult, platformMetrics, salesHealth, eligibleResult, operations, attendanceAgent] = await Promise.all([
       executiveSignalsPromise,
       getPlatformMetrics(accessContext),
-      showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
+      showSalesModules ? fetchSalesHealthCounts(accessContext) : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules ? fetchPayrollEligibleCount() : Promise.resolve({ count: 0, error: null }),
       getOperationalRecentActivity(accessContext, { limit: 5 }),
       attendanceAgentPromise,
@@ -712,9 +706,9 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
     if (salesHealth.error) dataUnavailable.push(salesHealth.error);
     if (eligibleResult.error) dataUnavailable.push(eligibleResult.error);
 
-    // Derived from the cheap count-based metrics already loaded above — NOT the full
-    // governance audit (which scans the entire sales_records table and was the cause
-    // of the ~10s Command Center load). The exact audit lives on /admin/data-health.
+    // Derived from the cheap metrics already loaded above — NOT the full governance audit, which
+    // classifies every canonical row one by one and was the cause of the ~10s Command Center
+    // load. The exact audit lives on /admin/data-health.
     const health = buildDataHealthFromMetrics(platformMetrics, salesHealth);
 
     const overview = {
@@ -826,7 +820,7 @@ export async function getAdminCommandCenterData(accessContext: AccessContext): P
         ? fetchExpenseSummary(accessContext)
         : Promise.resolve({ approvedAmount: 0, error: null, reportCount: 0, totalAmount: 0, totalRows: 0 }),
       fetchRiskSummary(accessContext),
-      showSalesModules ? fetchSalesHealthCounts() : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
+      showSalesModules ? fetchSalesHealthCounts(accessContext) : Promise.resolve({ error: null, linkedRows: 0, totalRows: 0 }),
       showFinancialModules
         ? fetchPayrollEligibleCount()
         : Promise.resolve({ count: 0, error: null }),

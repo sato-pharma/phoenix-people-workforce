@@ -1,10 +1,18 @@
-// S1 Business Review (Pedia) — dataset types. Mirrors data/pedia-s1.json
-// (produced by ingest/build_dataset.py). Read-only module: no DB, no writes.
+// S1 Business Review — dataset types.
+//
+// Sales, targets and achievement are built LIVE from the canonical engine by canonical.ts
+// (loadS1CanonicalBundle). The marketing, outstation, CRM-visit and unique-doctor fields
+// are carried forward from the committed workbook JSON, which the canonical engine holds
+// no equivalent for — canonical.ts's header documents the split and why it is drawn there.
 
 export type Slice = { sales: number; target: number; ach: number | null };
 
 export type AreaSummary = {
   area: string;
+  /** Canonical area code. Null only for the "no area on the source row" bucket. */
+  areaCode: string | null;
+  /** The live DM seat this area was attributed to — the key portal scoping filters on. */
+  dmSeatId: string | null;
   dm: string;
   /** Sales region this area sits in (Alex-BHR, Cairo, Delta (1)/(2), Giza, UE…).
    * Drives Regional-Manager scoping in the employee portal. */
@@ -21,9 +29,15 @@ export type AreaSummary = {
 
 export type DmSummary = {
   dm: string;
+  /** The live DM seat. Null only for the "no district manager" catch-all bucket. */
+  dmSeatId: string | null;
   /** Sales region this DM seat owns — the unit a Regional Manager is scoped to. */
   region: string;
   vacant: boolean;
+  /** False when this seat has no 1:1 workbook district, so every carried-forward figure
+   *  below (marketing, outstation, visits, customers) is a zero meaning "not known" —
+   *  never a zero meaning "spent nothing". */
+  overlayAvailable: boolean;
   areas: string[];
   activeAreas: string[];
   includeOnly: Slice;
@@ -172,9 +186,10 @@ export type CompanyDmRow = {
   visitsAvailable: boolean;
 };
 
-/** Cross-line rollup (data/company-s1.json). Achievement is sum(sales)/sum(target),
- * never an average of line percentages; `customersTotal` is a true union of doctor ids
- * across lines, not the sum of the per-line counts. */
+/** Cross-line rollup, built live by canonical.ts's buildCompany() (formerly data/company-s1.json,
+ * before the Rule #1 migration). Achievement is sum(sales)/sum(target), never an average of line
+ * percentages; `customersTotal` is a true union of doctor ids across lines, not the sum of the
+ * per-line counts. */
 export type S1Company = {
   meta: {
     period: string;

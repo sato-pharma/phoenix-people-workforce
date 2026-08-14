@@ -138,6 +138,10 @@ export function runWorkforceLifecycleSeatTests() {
   assert.match(dataHealthSource, /getWorkforceMetrics/);
 
   const portalSource = readFileSync("src/lib/employee-portal/service.ts", "utf8");
-  assert.match(portalSource, /fetchPortalSalesSeatContinuityRecords/);
+  // `select…`, not `fetch…`: since the portal moved onto SoS Monthly Closing it no longer issues a
+  // second query for the inherited months — it filters rows already loaded for the window. The
+  // predicate below is the invariant that matters and is unchanged; the prefix records that this
+  // pass costs no extra round trip, so do not "restore" the fetch spelling.
+  assert.match(portalSource, /selectPortalSalesSeatContinuityRecords/);
   assert.match(portalSource, /salesRecordMatchesSeatContinuity/);
 }

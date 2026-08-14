@@ -24,6 +24,65 @@ import type { DoubleVisitPortalFocus } from "@/lib/double-visit-analytics/types"
 import { getNsmCrmCompliance, nsmCrmComplianceUnavailable, type NsmCrmComplianceData } from "@/lib/employee-portal/nsm-crm-compliance";
 import { getLatestLineEarlyBirds, type EarlyBirdsWinnerRecord } from "@/lib/early-birds/service";
 import { logPortalFailure } from "@/lib/observability/portal-logging";
+import { currentCairoDateParts } from "@/lib/i18n/format";
+import {
+  SALES_HISTORY_FLOOR,
+  loadEmployeeMonthlyAchievement,
+  uploadedPointsOnly,
+  type MonthlyAchievementPoint,
+} from "@/lib/sales/employee-achievement";
+
+/**
+ * The MR landing figures, from SoS Monthly Closing — the same engine as Monthly Closing and
+ * /sales-vs-target, so the number a rep sees on their home page equals the number their DM,
+ * the closing view and the incentive tab see for the same month (Rule #1).
+ *
+ * Both figures use UPLOADED months only. On 2026-08-10 August held a single 1,309.50 EGP
+ * direct order against a 17,508,935 EGP target; keyed on "does this month have any actual",
+ * the hero would have greeted that rep with 0.0%. An un-uploaded current month returns null,
+ * which the widget already renders as "Data not yet available" — the same thing the legacy
+ * query produced when sales_records had no rows yet.
+ */
+async function loadMrCanonicalSales(hrId: string): Promise<{
+  current: { achievementPercent: number; salesValue: number; targetValue: number } | null;
+  trend: Array<{ year: number; month: number; achievementPercent: number; salesValue: number; targetValue: number }> | null;
+}> {
+  const { year, month } = currentCairoDateParts();
+  const currentPeriod = `${year}-${String(month).padStart(2, "0")}`;
+  const window = await loadEmployeeMonthlyAchievement([hrId], SALES_HISTORY_FLOOR, currentPeriod);
+  const points = uploadedPointsOnly(window.byHrId.get(hrId) ?? []);
+  if (points.length === 0) return { current: null, trend: null };
+
+  const percentOf = (point: MonthlyAchievementPoint) =>
+    point.achievementValue != null ? point.achievementValue * 100 : 0;
+
+  const currentPoint = points.find((point) => point.period === currentPeriod) ?? null;
+  return {
+    current: currentPoint
+      ? {
+          achievementPercent: percentOf(currentPoint),
+          salesValue: currentPoint.actualValue,
+          targetValue: currentPoint.targetValue,
+        }
+      : null,
+    // Newest first, and never capped by a row limit — the engine returns one row per month,
+    // so a high-volume rep cannot lose a month to pagination the way the old 200-row cap allowed.
+    trend: points
+      .slice()
+      .sort((left, right) => right.period.localeCompare(left.period))
+      .slice(0, 4)
+      .map((point) => {
+        const [yearPart, monthPart] = point.period.split("-");
+        return {
+          year: Number(yearPart),
+          month: Number(monthPart),
+          achievementPercent: Math.round(percentOf(point)),
+          salesValue: point.actualValue,
+          targetValue: point.targetValue,
+        };
+      }),
+  };
+}
 
 // Roles that get the double-visit "focus" landing widgets (trend, scope coverage, probation
 // watch) and the Double Visit Report page. Kept as its own gate (rather than folded into
@@ -466,15 +525,9 @@ export async function getMrHomeStats(
   const hrId = normalizeHrId(access.hrId) ?? "";
   const today = new Date().toISOString().slice(0, 10);
   const supabase = getSupabaseAdmin();
-  const now = new Date();
 
   const mrSalesPromise = hrId
-    ? supabase
-        .from("v_employee_portal_sales")
-        .select("sales_value, target_value")
-        .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
-        .eq("year", now.getFullYear())
-        .eq("month", now.getMonth() + 1)
+    ? loadMrCanonicalSales(hrId).catch(() => null)
     : Promise.resolve(null);
 
   const [vacationResult, excuseResult, batchResult] = await Promise.allSettled([
@@ -524,17 +577,7 @@ export async function getMrHomeStats(
 
   let mrSalesAchievement: MrHomeStats["mrSalesAchievement"] = null;
   try {
-    const mrResult = await mrSalesPromise;
-    if (mrResult && "data" in mrResult && Array.isArray(mrResult.data) && mrResult.data.length > 0) {
-      const rows = mrResult.data as Array<{ sales_value?: number | null; target_value?: number | null }>;
-      const totalSales = rows.reduce((s, r) => s + Number(r.sales_value ?? 0), 0);
-      const totalTarget = rows.reduce((s, r) => s + Number(r.target_value ?? 0), 0);
-      mrSalesAchievement = {
-        achievementPercent: totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0,
-        salesValue: totalSales,
-        targetValue: totalTarget,
-      };
-    }
+    mrSalesAchievement = (await mrSalesPromise)?.current ?? null;
   } catch {
     // null on failure
   }
@@ -570,35 +613,12 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   const currentMonth = now.getMonth() + 1;
   const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const mrSalesPromise =
-    isMr && hrId
-      ? wrapPromise(
-          supabase
-            .from("v_employee_portal_sales")
-            .select("sales_value, target_value")
-            .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
-            .eq("year", currentYear)
-            .eq("month", currentMonth),
-        )
-      : Promise.resolve(null);
+  // One canonical load serves BOTH the hero and the 4-month trend — they are the same window.
+  const mrSalesPromise = isMr && hrId ? loadMrCanonicalSales(hrId) : Promise.resolve(null);
   const roleExtrasPromise = getRoleSpecificExtras(access, role, hrId);
   const dvFocusPromise: Promise<DoubleVisitPortalFocus | null> = DV_FOCUS_ROLES.has(role)
     ? getDoubleVisitPortalFocus(access).catch(() => null)
     : Promise.resolve(null);
-
-  // Last 4 months of per-row sales data; aggregated client-side into trend buckets.
-  const trendPromise =
-    isMr && hrId
-      ? wrapPromise(
-          supabase
-            .from("v_employee_portal_sales")
-            .select("year, month, sales_value, target_value")
-            .or(`hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())},employee_hr_id.eq.${(canonicalHrIdForDisplay(hrId) ?? hrId.toUpperCase())}`)
-            .order("year", { ascending: false })
-            .order("month", { ascending: false })
-            .limit(200),
-        )
-      : Promise.resolve(null);
 
   // Double-visit rows for this MR — most recent first so [0] is the latest visit. Reads via the
   // CRM read layer (the shared double_crm_id + visit_type predicate): Regular/Campaign visits
@@ -707,58 +727,17 @@ export async function getPortalHomeSnapshot(access: AccessContext): Promise<Port
   }
 
   // Await all MR + manager promises together (they've been in-flight since the start).
-  const [mrSalesResult, trendResult, dvResult, expenseResult, managerPlanResult] = await Promise.allSettled([
+  const [mrSalesResult, dvResult, expenseResult, managerPlanResult] = await Promise.allSettled([
     mrSalesPromise,
-    trendPromise,
     dvPromise,
     expensePromise,
     managerPlanCountPromise,
   ]);
 
-  // Current-month achievement.
-  let mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = null;
-  try {
-    const mrData = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
-    if (mrData && "data" in mrData && Array.isArray(mrData.data) && mrData.data.length > 0) {
-      const rows = mrData.data as Array<{ sales_value?: number | null; target_value?: number | null }>;
-      const totalSales = rows.reduce((s, r) => s + Number(r.sales_value ?? 0), 0);
-      const totalTarget = rows.reduce((s, r) => s + Number(r.target_value ?? 0), 0);
-      mrSalesAchievement = {
-        achievementPercent: totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0,
-        salesValue: totalSales,
-        targetValue: totalTarget,
-      };
-    }
-  } catch {
-    // null on failure
-  }
-
-  // Last 4 distinct (year, month) buckets — newest first.
-  let monthlySalesTrend: PortalHomeSnapshot["monthlySalesTrend"] = null;
-  try {
-    const trendData = trendResult.status === "fulfilled" ? trendResult.value : null;
-    if (trendData && "data" in trendData && Array.isArray(trendData.data)) {
-      type TrendRow = { year: number; month: number; sales_value?: number | null; target_value?: number | null };
-      const rows = trendData.data as TrendRow[];
-      const buckets = new Map<string, { year: number; month: number; salesValue: number; targetValue: number }>();
-      for (const row of rows) {
-        const key = `${row.year}-${row.month}`;
-        const b = buckets.get(key) ?? { year: row.year, month: row.month, salesValue: 0, targetValue: 0 };
-        b.salesValue += Number(row.sales_value ?? 0);
-        b.targetValue += Number(row.target_value ?? 0);
-        buckets.set(key, b);
-      }
-      monthlySalesTrend = Array.from(buckets.values())
-        .sort((a, b) => b.year - a.year || b.month - a.month)
-        .slice(0, 4)
-        .map((m) => ({
-          ...m,
-          achievementPercent: m.targetValue > 0 ? Math.round((m.salesValue / m.targetValue) * 100) : 0,
-        }));
-    }
-  } catch {
-    // null on failure
-  }
+  // Current-month achievement and the last 4 uploaded months — one canonical load, both shapes.
+  const mrCanonical = mrSalesResult.status === "fulfilled" ? mrSalesResult.value : null;
+  const mrSalesAchievement: PortalHomeSnapshot["mrSalesAchievement"] = mrCanonical?.current ?? null;
+  const monthlySalesTrend: PortalHomeSnapshot["monthlySalesTrend"] = mrCanonical?.trend ?? null;
 
   // Double-visit pulse for this MR.
   let doubleVisitPulse: PortalHomeSnapshot["doubleVisitPulse"] = null;

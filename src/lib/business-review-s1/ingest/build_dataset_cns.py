@@ -41,7 +41,10 @@ import pandas as pd
 
 DL = r"C:\Users\satoh\Downloads"
 DL2 = r"C:\Users\satoh\Downloads\New folder (2)"
-OUT_DIR = r"F:\Phoenix Workforce\_wt-s1-review\src\lib\business-review-s1\data"
+# Always this repo's own data/ dir, wherever this checkout or worktree happens to live.
+# Used to hardcode a sibling worktree path (_wt-s1-review) that only existed on the
+# owner's machine, so nobody else could reproduce the output.
+OUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 os.makedirs(OUT_DIR, exist_ok=True)
 MO = ['Jan','Feb','Mar','Apr','May','Jun']
 INCLUDE = ['Conviban 100 mg','Conviban 25 mg','Conviban 25mg/ml Syp','Conviban 50 mg',

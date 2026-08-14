@@ -54,14 +54,9 @@ type Props = {
   /** Cross-line comparison. Company breadth only. */
   lineRows: CompanyLineRow[];
   thresholds: { repFailBelow: number; dsmFailBelow: number };
-  /**
-   * Territory-resolution caveat. `partial` means this viewer's own district could not be
-   * reconciled 1:1 with the workbook, so the list below is the confirmed subset and their total
-   * may be understated — the one case worth interrupting them for, because a scope that resolved
-   * too narrowly looks identical on screen to real underperformance. It carries no area names, so
-   * a District Manager still sees only their own team. No seat hits it today.
-   */
-  caveat: { kind: "none" } | { kind: "partial"; seats: string[] };
+  /** Rebuilt from canonical SoS — see canonical.ts's S1_RESTATEMENT_NOTICE. Shown on every
+   *  scope breadth; H1 incentives were paid against the retired sales engine and are closed. */
+  restatementNotice: string;
   mapGeneratedAt: string;
   /** Fallback when a DM row carries no own flag (single-line scopes). */
   visitsAvailable: boolean;
@@ -158,7 +153,7 @@ function Fields({ items }: { items: { label: string; value: string }[] }) {
 
 export function S1PortalReview({
   areas,
-  caveat,
+  restatementNotice,
   dms,
   headline,
   keyProducts,
@@ -242,19 +237,10 @@ export function S1PortalReview({
         </label>
       </div>
 
-      {caveat.kind === "partial" && caveat.seats.length > 0 ? (
-        <div className="rounded border border-amber-200 bg-amber-50 p-4">
-          <p className="flex items-center gap-2 text-sm font-black text-amber-900">
-            <AlertTriangle aria-hidden className="h-4 w-4 shrink-0" />
-            Your district could not be resolved exactly
-          </p>
-          <p className="mt-1.5 text-xs font-semibold leading-5 text-amber-800">
-            The S1 workbook attributes areas under more than one district-manager label for your seat, so this page shows only
-            the areas confirmed as yours — your total may be understated. Have SFE reconcile the seat before treating any
-            number here as final.
-          </p>
-        </div>
-      ) : null}
+      <div className="flex items-start gap-2.5 rounded border border-amber-200 bg-amber-50 p-4">
+        <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <p className="text-xs font-semibold leading-5 text-amber-900">{restatementNotice}</p>
+      </div>
 
       {/* ---------- KPIs, summed from the granted rows only ----------
           No icons: the owner's portal design rule is monochrome, functional cards — a thin

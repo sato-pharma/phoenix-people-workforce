@@ -1,8 +1,8 @@
 // S1 Business Review — employee-portal scope resolution.
 //
-// Answers one question: for this signed-in viewer, WHICH areas of the S1 review may they
-// see? Everything here is read-only and resolves against data/access-map.json, which is
-// generated from the live seat map by ingest/build_access_map_from_db.mjs.
+// Answers one question: for this signed-in viewer, WHICH part of the S1 review may they see?
+// Everything here is read-only and resolves against data/access-map.json, which is generated
+// from the live seat map by ingest/build_access_map_from_db.mjs.
 //
 // Design constraints, each of them learned from a real defect in this repo:
 //
@@ -21,35 +21,26 @@
 //    the session is the truth. On disagreement we deny, because the safe direction when
 //    two sources conflict about a permission is "no".
 //
-// Two sources, two different jobs — this is the part that is easy to get wrong:
+// WHAT CHANGED WHEN THE REVIEW MOVED ONTO CANONICAL SoS
 //
-//  - The ORG TREE answers *identity*: which DM seat is this signed-in HR_ID sitting in? Only
-//    the seat map can answer that, and nothing else may.
-//  - The S1 WORKBOOK answers *attribution*: which areas did that district actually carry during
-//    Jan–Jun? It is the authority here, because S1 is history and the workbook is what the
-//    business signed off on.
+// Territory used to be resolved in two hops — seat map → workbook DM label → the workbook's
+// own area list — because the committed workbook was the only thing that knew which areas a
+// district carried during Jan–Jun. That hop needed a 1:1 seat↔label relation in both
+// directions and fell back to a "confirmed subset" when it could not get one (Pedia's
+// Giza/Cairo pair), and it once understated CNS DM Saad Salama's territory by two areas.
 //
-// Resolving areas from the seat map alone understated real territory: for CNS DM Saad Salama the
-// workbook attributes 6 areas, but only 4 of them had been mapped to his seat, so his own review
-// showed 4 areas and a total short by two areas' sales. So the seat map resolves the seat, and
-// then the workbook's own DM column decides the area list. Where the two cannot be reconciled
-// 1:1 the resolution falls back to the confirmed subset and says so, rather than guessing.
+// The canonical engine attributes every sales row to a DM SEAT directly, using seat
+// occupancy as of each period end. So the second hop is gone: the access map resolves the
+// viewer's seat, and the canonical dataset already says which areas that seat carried. No
+// label matching, no reconciliation, no partial subsets.
+//
+// Two different timeframes still meet here and are deliberately not merged: the S1 numbers
+// are Jan–Jun history, while access is decided by who sits where today.
 
 import accessMapRaw from "./data/access-map.json";
-import { getS1Dataset, type S1Line } from "./service";
-import type { AreaSummary, DmSummary } from "./types";
+import type { S1Line } from "./canonical";
+import type { AreaSummary, DmSummary, S1Dataset } from "./types";
 
-type AreaEntry = {
-  seatId: string;
-  areaCode: string | null;
-  repHrId: string | null;
-  repName: string | null;
-  seatVacantToday: boolean | null;
-  dmSeatId: string | null;
-  dmHrId: string | null;
-  s1Dm: string;
-  s1Region: string;
-};
 type ViewerEntry = {
   hrId: string;
   name: string;
@@ -69,7 +60,6 @@ type AccessMap = {
     lineCode: string;
     dmSeats: { seatId: string; regionCode: string | null; hrId: string | null; name: string | null; isVacant: boolean }[];
     rsmSeats: { seatId: string; hrId: string | null; name: string | null; dmSeatIds: string[] }[];
-    areas: Record<string, AreaEntry>;
     unmappedAreas: string[];
   }>;
   viewers: Record<string, ViewerEntry>;
@@ -86,17 +76,10 @@ export type S1PortalScope =
   | { kind: "company"; viewerName: string; label: string }
   | { kind: "line"; line: S1Line; viewerName: string; label: string }
   | {
-      kind: "areas";
+      kind: "seats";
       line: S1Line;
-      /** Exact S1 area names this viewer may see. Already the post-scope set. */
-      areaNames: string[];
+      /** Exact DM seats this viewer may see. Already the post-scope set. */
       dmSeatIds: string[];
-      /** Seats whose S1 attribution could not be reconciled 1:1 with a single workbook DM, so
-       *  their area list is the confirmed subset and may be short. Empty for every seat today
-       *  except Pedia's Giza/Cairo pair. Drives the one warning the viewer sees; when it is
-       *  empty the territory is exactly what the workbook says the district carried, so there is
-       *  nothing to warn about. */
-      partialSeats: string[];
       viewerName: string;
       label: string;
     }
@@ -134,11 +117,10 @@ export function resolveS1PortalScope(input: { hrId: string | null; sessionRole: 
     return { kind: "line", line: viewer.line, viewerName: viewer.name, label: `${viewer.role} · ${accessMap.lines[viewer.line]?.label ?? viewer.line} line` };
   }
 
-  // ---- area-level scopes (DSM = own seat, RM = the DM seats under their RSM node) ----
+  // ---- seat-level scopes (DSM = own seat, RM = the DM seats under their RSM node) ----
   const line = viewer.line;
   if (!line) return { kind: "none", reason: "No line is recorded against your seat." };
-  const lineMap = accessMap.lines[line];
-  if (!lineMap) return { kind: "none", reason: "Your line has no S1 dataset." };
+  if (!accessMap.lines[line]) return { kind: "none", reason: "Your line has no S1 dataset." };
 
   const seatIds =
     viewer.scope === "ownDm"
@@ -148,85 +130,26 @@ export function resolveS1PortalScope(input: { hrId: string | null; sessionRole: 
     return { kind: "none", reason: "No DM seat is attached to your account in the live org tree, so no territory can be resolved." };
   }
 
-  const { areaNames, partialSeats } = resolveSeatAreas(line, seatIds);
-
-  if (!areaNames.length) {
-    return {
-      kind: "none",
-      reason:
-        `No S1 area could be linked to your DM seat${seatIds.length > 1 ? "s" : ""} (${seatIds.join(", ")}). ` +
-        `${lineMap.unmappedAreas.length} area(s) on your line are still awaiting a confirmed mapping, so this may be a mapping gap rather than an empty territory.`,
-    };
-  }
-
-  const seatLabel =
+  const label =
     viewer.scope === "ownDm"
       ? `${viewer.role} · own district`
       : `${viewer.role} · ${seatIds.length} districts`;
-  return { kind: "areas", line, areaNames, dmSeatIds: seatIds, partialSeats, viewerName: viewer.name, label: seatLabel };
+  return { kind: "seats", line, dmSeatIds: seatIds, viewerName: viewer.name, label };
 }
 
 /**
- * The S1 areas belonging to a set of DM seats.
+ * Areas + DM rows filtered to a seat-level scope.
  *
- * The seat map tells us which workbook DM label sits on each seat; the workbook then decides the
- * area list, because it is the authority on who carried what during S1. Resolving from the seat
- * map's own area rows alone left real territory out — see the header note on Saad Salama.
- *
- * Fail-closed condition: the seat↔workbook-DM relation must be 1:1 in BOTH directions. If a seat
- * carries two DM labels, or one DM label spans two seats, we cannot tell whose areas are whose,
- * so that seat keeps only its confirmed rows and is reported back as partial. Today that is
- * exactly Pedia's Giza/Cairo pair, where the workbook attributes areas to both "Taha Mohamed"
- * and a "Cairo (vacant)" placeholder across the two seats. Guessing there would hand one manager
- * the other's district.
+ * Filtering happens here, before any ranking or truncation (PR #1487). The seat id is the
+ * canonical engine's own attribution key, so this is an exact match rather than a name
+ * reconciliation — an area either was attributed to that seat during S1 or it was not.
  */
-function resolveSeatAreas(line: S1Line, seatIds: readonly string[]): { areaNames: string[]; partialSeats: string[] } {
-  const lineMap = accessMap.lines[line];
-  const wanted = new Set(seatIds);
-
-  // Whole-line relation, not just this viewer's seats: a DM label shared with a seat outside the
-  // viewer's scope is just as ambiguous as one shared inside it.
-  const dmsBySeat = new Map<string, Set<string>>();
-  const seatsByDm = new Map<string, Set<string>>();
-  const confirmedBySeat = new Map<string, string[]>();
-  for (const [areaName, entry] of Object.entries(lineMap.areas)) {
-    const seat = entry.dmSeatId;
-    if (!seat) continue;
-    if (!dmsBySeat.has(seat)) dmsBySeat.set(seat, new Set());
-    dmsBySeat.get(seat)!.add(entry.s1Dm);
-    if (!seatsByDm.has(entry.s1Dm)) seatsByDm.set(entry.s1Dm, new Set());
-    seatsByDm.get(entry.s1Dm)!.add(seat);
-    if (!confirmedBySeat.has(seat)) confirmedBySeat.set(seat, []);
-    confirmedBySeat.get(seat)!.push(areaName);
-  }
-
-  const areas = getS1Dataset(line).areas;
-  const names = new Set<string>();
-  const partialSeats: string[] = [];
-  for (const seat of wanted) {
-    const dms = dmsBySeat.get(seat);
-    if (!dms?.size) continue;
-    const oneToOne = dms.size === 1 && seatsByDm.get([...dms][0])?.size === 1;
-    if (oneToOne) {
-      const dm = [...dms][0];
-      for (const area of areas) if (area.dm === dm) names.add(area.area);
-    } else {
-      partialSeats.push(seat);
-      for (const areaName of confirmedBySeat.get(seat) ?? []) names.add(areaName);
-    }
-  }
-  return { areaNames: [...names].sort((a, b) => a.localeCompare(b)), partialSeats: partialSeats.sort() };
-}
-
-/** Areas + DM rows filtered to an area-level scope. Filtering happens here, before any
- *  ranking or truncation downstream, per PR #1487. */
-export function applyAreaScope(line: S1Line, areaNames: readonly string[]): { areas: AreaSummary[]; dms: DmSummary[] } {
-  const ds = getS1Dataset(line);
-  const keep = new Set(areaNames);
-  const areas = ds.areas.filter((a) => keep.has(a.area));
-  const dmNames = new Set(areas.map((a) => a.dm));
-  const dms = ds.dms.filter((d) => dmNames.has(d.dm));
-  return { areas, dms };
+export function applySeatScope(ds: S1Dataset, dmSeatIds: readonly string[]): { areas: AreaSummary[]; dms: DmSummary[] } {
+  const keep = new Set(dmSeatIds);
+  return {
+    areas: ds.areas.filter((a) => a.dmSeatId && keep.has(a.dmSeatId)),
+    dms: ds.dms.filter((d) => d.dmSeatId && keep.has(d.dmSeatId)),
+  };
 }
 
 export function s1AccessMapGeneratedAt(): string {
