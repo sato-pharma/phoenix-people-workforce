@@ -116,6 +116,15 @@ export const accessRegistry = [
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/direct-orders/:token/feed", reason: "CSV feed for a Google Sheet IMPORTDATA formula, which cannot authenticate; guarded by a 32-byte token with mandatory expiry, revoke and creator-frozen scope." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/share/direct-orders/:token/live", reason: "Read-only live report for a recipient with no Phoenix account; additionally requires a passcode carried in the POST body, never the query string." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/direct-orders/:token/file", reason: "Streams the pharmacy-validation storefront photo so the live sheet's evidence cell is clickable. Same token as the feed, but a SEPARATE allow_files grant, and the storage path is resolved server-side from a request id — the caller never names an object." }),
+  // Territory Management preview links (owner request, 2026-08-14). Unauthenticated AND
+  // passcode-free — the owner asked for plain open access, so unlike the Direct Orders live link
+  // above there is no second factor at all. The 32-byte token is the entire credential, and
+  // assertTerritoryPreviewToken checks revocation and expiry before any read; every request is then
+  // intersected against the link's frozen area_codes, so a forged area code reaches nothing. The
+  // response is projected to brick pins only — the residence recommendation, the mis-assignment
+  // findings and the route/span/gap figures never enter the payload, and neither does the line.
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/territory/:token/filters", reason: "Regions and areas a passwordless preview link may show; no passcode by owner instruction, so containment is the 32-byte token plus a mandatory 14-day expiry, one-click revoke and a creator-frozen area list." }),
+  tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/territory/:token/map", reason: "Brick pins for one area of a passwordless preview link; the requested area code is intersected against the link's frozen area list before any row is read, and the internal territory analysis is projected out of the response." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/marketing-requests/:token/feed", reason: "CSV bundle for the live Marketing Request Google Sheet's Apps Script, which runs on a timer and cannot authenticate; guarded by a 32-byte token with mandatory expiry, revoke and creator-frozen scope." }),
   tokenApi({ authMode: "public-token", methods: ["GET"], pattern: "/api/share/marketing-requests/:token/file", reason: "Streams one evidence photo, invoice or money-transfer proof so the sheet's cells are clickable. Same token, but a SEPARATE allow_files grant, and the storage path is resolved server-side from a request code — the caller never names an object." }),
   tokenApi({ authMode: "public-token", methods: ["POST"], pattern: "/api/auth/change-password", reason: "Auth-layer self-service endpoint: validates the active Phoenix session cookie directly via resolveSessionState before allowing password change." }),
@@ -643,6 +652,11 @@ export const accessRegistry = [
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/map", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "access-read", required: true }, methods: readOnly, pattern: "/api/territory-management/search", permission: { resource: "sales", action: "read" } }),
   sessionApi({ audit: { classification: "mutation", required: true }, methods: ["POST"], pattern: "/api/territory-management/pin", permission: { resource: "sales", action: "import" }, csrfExemptReason: "Authenticated Super-Admin-only JSON write: stores one hand-placed brick coordinate after a server-side role check and an Egypt bounding-box validation." }),
+  // Mints and revokes the passwordless preview links below. Gated on EXPORT, never on read:
+  // publishing territory past the login wall is the strongest export there is, so a reader who may
+  // not download the map must not be able to hand out a public link to it instead. The domain adds
+  // a Super Admin check on top — this module's own bar for a privileged act.
+  sessionApi({ audit: { classification: "export", required: true }, methods: ["GET", "POST"], pattern: "/api/territory-management/preview-links", permission: { resource: "sales", action: "export" }, csrfExemptReason: "Authenticated same-origin JSON write guarded by assertSameOriginMutation before the session is resolved." }),
   // Source of Sales — mapping templates + AI-assisted onboarding surfaced inside /sales/import.
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-import/product-mapping/template", permission: { resource: "sales", action: "import" } }),
   sessionApi({ audit: { classification: "export", required: true }, methods: ["GET"], pattern: "/api/sales/monthly-import/territory-mapping/template", permission: { resource: "sales", action: "import" } }),

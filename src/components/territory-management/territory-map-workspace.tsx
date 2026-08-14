@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Card } from "@/components/ui/card";
+import { TerritoryPreviewLinksPanel } from "@/components/territory-management/preview-links-panel";
 import {
   importGoogleLibrary,
   loadGoogleMaps,
@@ -32,8 +33,12 @@ type Props = {
   browserKey: string | null;
   /** Pin editing is Super-Admin only — the server enforces it too, this just hides the affordance. */
   canEditPins: boolean;
+  /** Publishing a passwordless preview link is Super-Admin only. Enforced server-side as well. */
+  canPublishPreview: boolean;
   filters: TerritoryFilters;
   initialError: string | null;
+  /** Configured public origin, used to build a shareable link the recipient can actually open. */
+  productionUrl: string;
 };
 
 type MapsNamespace = GoogleMapsApi & {
@@ -43,7 +48,14 @@ type MapsNamespace = GoogleMapsApi & {
   Polyline: new (options: Record<string, unknown>) => GooglePolylineHandle;
 };
 
-export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initialError }: Props) {
+export function TerritoryMapWorkspace({
+  browserKey,
+  canEditPins,
+  canPublishPreview,
+  filters,
+  initialError,
+  productionUrl,
+}: Props) {
   // ── in-map search + pin editing ───────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
   const [searchHits, setSearchHits] = useState<BrickSearchHit[]>([]);
@@ -394,6 +406,10 @@ export function TerritoryMapWorkspace({ browserKey, canEditPins, filters, initia
           path that covers the area — so you can see whether allocation is tight or scattered.
         </p>
       </header>
+
+      {/* Own row rather than tucked into the header: collapsed it is one button, but open it is a
+          full Card, and squeezing that into a header flex would shrink it to a column. */}
+      {canPublishPreview ? <TerritoryPreviewLinksPanel productionUrl={productionUrl} /> : null}
 
       {error ? (
         <Card className="border-destructive/40 bg-destructive/5 p-3 text-sm">{error}</Card>

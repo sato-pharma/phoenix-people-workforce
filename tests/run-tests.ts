@@ -731,6 +731,7 @@ import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-chan
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
 import { runTerritoryScopeLineAwareTests } from "./territory-scope-line-aware.test.ts";
+import { runTerritoryPreviewLinkControlsTests } from "./territory-preview-link-controls.test.ts";
 
 import { runMonthlyClosingExportStoreSplitFilteredTests } from "./monthly-closing-export-store-split-filtered.test.ts";
 
@@ -1715,6 +1716,11 @@ await runTest(
 await runTest(
   "territory scope UE-split bridge (coarse UE matches UE-1/UE-2; no widening for unsplit or already-split codes)",
   runTerritoryScopeLineAwareTests,
+);
+
+await runTest(
+  "territory preview links (passwordless: export+Super Admin to mint, mandatory 14-day expiry, frozen area list, analysis and line projected out)",
+  runTerritoryPreviewLinkControlsTests,
 );
 
 await runTest(

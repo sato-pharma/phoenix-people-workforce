@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { TerritoryMapWorkspace } from "@/components/territory-management/territory-map-workspace";
+import { systemDeployment } from "@/config/system-settings";
 import { assertPermission, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAuthenticatedPageAccess } from "@/lib/auth/page-access";
 import { getBrowserKey } from "@/lib/google-maps/server";
@@ -41,9 +42,17 @@ export default async function TerritoryManagementPage() {
   return (
     <TerritoryMapWorkspace
       browserKey={getBrowserKey() ?? null}
+      // Both privileged acts in this module carry the same bar. Publishing a passwordless public
+      // link is at least as privileged as moving a pin, and the server enforces it again — this
+      // only decides whether the affordance is drawn.
       canEditPins={access.role === "Super Admin"}
+      canPublishPreview={access.role === "Super Admin"}
       filters={filters}
       initialError={initialError}
+      // The CONFIGURED public URL, never the request's own origin. Behind Railway's proxy that
+      // origin is the container's internal bind address, which is how a shared link once rendered
+      // as https://0.0.0.0:8080/… and opened nothing.
+      productionUrl={systemDeployment.productionUrl}
     />
   );
 }

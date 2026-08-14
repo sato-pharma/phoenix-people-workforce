@@ -55,6 +55,7 @@ export type AuditEntityType =
   | "source_of_sales_distributor"
   | "source_of_sales_product"
   | "source_of_sales_region"
+  | "territory_preview_link"
   | "territory_sync"
   | "system_cleanup"
   | "user"
