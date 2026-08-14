@@ -20,6 +20,8 @@ const MIGRATION = "../supabase/migrations/20260804183000_direct_order_customer_d
 const SPACE_FOLD_MIGRATION = "../supabase/migrations/20260807120000_direct_order_search_arabic_space_fold.sql";
 const TRIGRAM_REINDEX_MIGRATION =
   "../supabase/migrations/20260807120100_direct_order_search_arabic_trigram_reindex.sql";
+const CODE_TRIGRAM_MIGRATION =
+  "../supabase/migrations/20260814200000_search_direct_order_customers_code_trgm.sql";
 
 export function runDirectOrdersArabicSearchTests() {
   const sql = readFileSync(new URL(MIGRATION, import.meta.url), "utf8");
@@ -194,6 +196,35 @@ export function runDirectOrdersArabicSearchTests() {
       trigramReindexSql,
       /reindex index public\.source_of_sales_customer_map_name_trgm_idx\s*;/,
       "the trigram expression index must also be rebuilt — stale normalized keys can return results using the old spacing rules",
+    );
+  }
+
+  // ── customer_code needs its OWN trigram index, or the OR defeats the name index (2026-08-14) ──
+  // The search OR-combines three predicates: customer_code ILIKE 'q%', customer_code ILIKE '%q%',
+  // and phx_normalize_arabic(customer_name) ILIKE '%q%'. Postgres can only build a BitmapOr when
+  // EVERY disjunct is independently indexable. customer_code had only a btree text_pattern_ops
+  // index, which cannot serve a case-insensitive ILIKE, so the planner scanned a covering index and
+  // applied the whole OR as a per-row filter over ~52k active rows — recomputing phx_normalize_arabic
+  // on every one. Measured 1.4–1.8 s per search on production. The GIN trigram index on customer_code
+  // makes all three disjuncts indexable (proven on staging: 'محمد' 1763 ms → 301 ms, a code '100'
+  // → 13 ms, results md5-identical). Deleting it or changing its operator class silently reverts the
+  // search to a sequential scan on every keystroke — the same failure the name index guards against.
+  {
+    const codeTrgmSql = readFileSync(new URL(CODE_TRIGRAM_MIGRATION, import.meta.url), "utf8");
+    assert.match(
+      codeTrgmSql,
+      /create index if not exists source_of_sales_customer_map_code_trgm_idx/,
+      "the customer_code trigram index must exist — without it the OR cannot use a BitmapOr and the search seq-scans",
+    );
+    assert.match(
+      codeTrgmSql,
+      /using gin \(customer_code gin_trgm_ops\)/,
+      "it must be a GIN trigram index on the raw customer_code — a btree/text_pattern_ops index cannot serve a case-insensitive ILIKE",
+    );
+    assert.match(
+      codeTrgmSql,
+      /where active/,
+      "it must share the WHERE active partial predicate the search filters on, matching its sibling name_trgm index",
     );
   }
 }
