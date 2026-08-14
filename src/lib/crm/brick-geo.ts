@@ -23,6 +23,8 @@
  * simply render "—" instead of breaking the page.
  */
 
+import { unstable_cache } from "next/cache";
+
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/paginated";
 
@@ -87,19 +89,22 @@ function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): nu
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
 }
 
-/** Cached centroid index — the underlying tables change only when geography is re-imported, and a
- * page render can resolve hundreds of rows, so re-reading per request would be pure waste. */
-let cache: { at: number; centroids: BrickCentroid[] } | null = null;
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
 /**
- * Every brick that has a geocoded centre, joined to its area/region. Degrades to an empty list on
- * any error (the caller then renders "—"): this is a display overlay, never load-bearing.
+ * The raw read+join, with NO error handling on purpose: any failure throws, and `unstable_cache`
+ * only ever caches a resolved value, so a transient DB error is never written into the cache. The
+ * public wrapper below turns that throw into an empty list (and retries next request).
+ *
+ * Shared across requests through the Next.js Data Cache instead of a module-level variable. In the
+ * App Router each route segment gets its OWN module instance, so the previous `let cache` was cold
+ * on most of the pages that call this (CRM check-ins, outstation claim validation) and the read ran
+ * far more often than its 5-minute TTL should have permitted. `revalidate: 300` keeps that exact
+ * 5-minute staleness window; the `sos-reference` tag lets any validated SoS import bust it
+ * immediately — `invalidateSalesDashboardCache` already fires that tag on every import/refresh path,
+ * and dashboard/invalidation.ts already documents brick centroids as a `sos-reference` consumer.
  */
-export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
-  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.centroids;
-  const supabase = getSupabaseAdmin();
-  try {
+const loadBrickCentroidsCached = unstable_cache(
+  async (): Promise<BrickCentroid[]> => {
+    const supabase = getSupabaseAdmin();
     // Both of these tables exceed PostgREST's 1,000-row cap, so an unpaginated read silently
     // truncated them: production has 1,142 brick_centroid rows (446 of which are orphans whose
     // brick no longer exists, and which therefore consumed the row budget for nothing) against
@@ -169,8 +174,21 @@ export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
         regionName: regionCode ? regionName.get(regionCode) ?? null : null,
       });
     }
-    cache = { at: Date.now(), centroids };
     return centroids;
+  },
+  ["crm-brick-centroids"],
+  { revalidate: 300, tags: ["sos-reference"] },
+);
+
+/**
+ * Every brick that has a geocoded centre, joined to its area/region. Degrades to an empty list on
+ * any error (the caller then renders "—"): this is a display overlay, never load-bearing. The catch
+ * lives OUTSIDE the cache deliberately — a transient DB error returns [] for this one call without
+ * poisoning the cache, so the next request retries, exactly as the old module-cache did.
+ */
+export async function loadBrickCentroids(): Promise<BrickCentroid[]> {
+  try {
+    return await loadBrickCentroidsCached();
   } catch {
     return [];
   }
