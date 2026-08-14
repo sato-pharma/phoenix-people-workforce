@@ -4,6 +4,8 @@
 // endpoint (self-hosted, free-forever). Must never throw — a failed report should
 // never surface as a second, user-visible error on top of the one being reported.
 
+import { describeThrown } from "@/lib/error-monitor/describe-thrown";
+
 export type ReportClientErrorInput = {
   error: unknown;
   route?: string | null;
@@ -92,7 +94,12 @@ function collectClientContext(): string | null {
 
 export function reportClientError({ error, route, digest, componentStack }: ReportClientErrorInput): void {
   try {
-    const message = error instanceof Error ? error.message : String(error);
+    // NOT `String(error)`. The browser throws plenty that is not an Error — a rejected fetch
+    // body, a Supabase PostgrestError read client-side, any `throw { code, message }` — and all
+    // of it stringifies to the constant "[object Object]", which is what made 19 production rows
+    // permanently undiagnosable. #2129 fixed the two server writers (instrumentation.ts and the
+    // outstation expenses route) and left this one, the third: the browser's own reporter.
+    const message = describeThrown(error);
     const stack = error instanceof Error ? (error.stack ?? null) : null;
     const resolvedRoute = route ?? (typeof window !== "undefined" ? window.location.pathname : null);
 
