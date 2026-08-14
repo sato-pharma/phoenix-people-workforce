@@ -791,6 +791,7 @@ import { runCanonicalDashboardRowsTests } from "./canonical-dashboard-rows.test.
 import { runEmployee360CanonicalSalesTests } from "./employee-360-canonical-sales.test.ts";
 import { runNationalHolidaysObservanceFilterTests } from "./national-holidays-observance-filter.test.ts";
 import { runDescribeThrownTests } from "./describe-thrown.test.ts";
+import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -1999,6 +2000,10 @@ await runTest(
 await runTest(
   "thrown-error serialization (PostgrestError keeps message/code/hint, never '[object Object]'; instrumentation.ts routes through it)",
   runDescribeThrownTests,
+);
+await runTest(
+  "manager cascade skips frozen tables (no sales_records PATCH — service_role lost UPDATE and it is the only record of what H1 was paid on; sales_targets still cascades)",
+  runManagerCascadeFrozenTablesTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

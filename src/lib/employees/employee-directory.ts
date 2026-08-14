@@ -2120,14 +2120,18 @@ async function reassignLiveManagerOwnership(input: {
     manager_hr_id: newManagerHrId,
   };
 
-  await patchOptionalTable(
-    `sales_records?manager_hr_id=eq.${previous}&year=gt.${year}`,
-    salesPayload,
-  );
-  await patchOptionalTable(
-    `sales_records?manager_hr_id=eq.${previous}&year=eq.${year}&month=gte.${month}`,
-    salesPayload,
-  );
+  // `sales_records` is deliberately NOT cascaded here, for two independent reasons.
+  //
+  // It is FROZEN. The Rule #1 migration revoked service_role's INSERT/UPDATE on it, so a PATCH
+  // returns `permission denied for table sales_records` (42501). patchOptionalTable only swallows
+  // missing-relation / schema-cache messages, so that error THREW — and it threw before the
+  // sales_targets calls below could run, leaving those rows on the OLD manager. A half-applied
+  // cascade plus a failed manager change, from a table nothing reads for sales any more.
+  //
+  // It is also HISTORY. Those rows are the only record of what H1 was actually paid on. Rewriting
+  // manager_hr_id across them would restate settled payouts to match today's org chart. Sales
+  // attribution now comes from SoS Monthly Closing, which resolves the manager from the seat model
+  // per period, so there is nothing here left to keep in sync.
   await patchOptionalTable(
     `sales_targets?manager_hr_id=eq.${previous}&year=gt.${year}`,
     salesPayload,
