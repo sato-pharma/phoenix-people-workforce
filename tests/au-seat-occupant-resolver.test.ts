@@ -95,11 +95,28 @@ export function runAuSeatOccupantResolverTests() {
   assert.ok(files.length > 100, `expected the full migration history in ${dir}, saw ${files.length} files`);
 
   // ── 1. Every current definition that reads a versioned table must filter it ──
+  //
+  // Exemption: a function that reads a versioned table as a WHOLE-TABLE FINGERPRINT — hashing
+  // every row (o.*::text) to detect ANY change, not to resolve an occupant — must NOT be forced to
+  // filter on effective_to. For those the filter would be actively WRONG: narrowing the row set
+  // would let a change to a closed/superseded span slip past the hash, which is the exact staleness
+  // such a function exists to prevent. They are the INVERSE of the newest-row-wins bug this guard
+  // defends against, and section 2 below (the `order by occupancy_id desc` ban, which scans EVERY
+  // file) still covers them — so exempting them here does not open the resolver hole.
+  const WHOLE_TABLE_FINGERPRINT_ALLOWLIST = new Set<string>([
+    // Freshness stamp for the Sales-vs-Target achievement-range cache: md5 over the full
+    // occupancy_history + monthly_targets + attribution config fingerprint + Cairo date, folded
+    // into the unstable_cache key so any seat/target/config change misses the cache. It hashes ALL
+    // rows on purpose — an effective_to filter here would reintroduce the very staleness
+    // (mis-attributed, money-adjacent achievement) the token exists to prevent.
+    "public.phx_sales_vs_target_cache_token",
+  ]);
   const unguarded: string[] = [];
   for (const [name, { file, body }] of latest) {
     const readsOccupancy = body.includes("au.occupancy_history");
     const readsLineAreaMap = /\bau\.line_area_map\b/.test(body);
     if (!readsOccupancy && !readsLineAreaMap) continue;
+    if (WHOLE_TABLE_FINGERPRINT_ALLOWLIST.has(name)) continue;
     if (!body.includes("effective_to")) unguarded.push(`${name} (${file})`);
   }
   assert.deepEqual(

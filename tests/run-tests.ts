@@ -296,6 +296,7 @@ import { runOfficeGoldenRuleLockTests } from "./office-golden-rule-lock.test.ts"
 import { runClosingOfficeDifferentiationTests } from "./closing-office-differentiation.test.ts";
 import { runClosingMatrixFoldTests } from "./closing-matrix-fold.test.ts";
 import { runMasterWorkbookKeysetTests } from "./master-workbook-keyset.test.ts";
+import { runSalesVsTargetCacheTests } from "./sales-vs-target-cache.test.ts";
 import { runMonthlySalesRunTests } from "./monthly-sales-run.test.ts";
 import { runSosHeaderDetectionTests } from "./sos-header-detection.test.ts";
 import { runSalesStrictConformanceTests } from "./sales-strict-conformance.test.ts";
@@ -1133,6 +1134,7 @@ await runTest("office golden rule LOCK (owner, 2026-08-11)", runOfficeGoldenRule
 await runTest('closing "of which Office" (Office units told apart from distributor sell-out)', runClosingOfficeDifferentiationTests);
 await runTest("closing matrix fold (matrix derived from distributor_product, matrix RPC dropped)", runClosingMatrixFoldTests);
 await runTest("master workbook keyset (single keyset pass, raw_row folded, no OFFSET rescan)", runMasterWorkbookKeysetTests);
+await runTest("sales vs target cache (freshness token folded into the achievement-range cache key)", runSalesVsTargetCacheTests);
 await runTest("monthly sales run", runMonthlySalesRunTests);
 await runTest("sos resolveBrick precedence (area must not beat customer brick)", runSosResolveBrickPrecedenceTests);
 await runTest("sos brick coverage (real metric, recorded on the commit path)", runSosBrickCoverageTests);
