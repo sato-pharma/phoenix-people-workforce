@@ -225,15 +225,71 @@ export function seatOccupancyKey(
   return `${level}|${line}|${area}|${manager}`;
 }
 
+// The PHYSICAL seat identity: level + line + specific area, WITHOUT the manager.
+// The org model is one seat per area per line — the manager (an NSM/RSM one level
+// up) is not what makes an area seat distinct. seatOccupancyKey deliberately
+// includes the manager, which is correct for the common case but breaks when the
+// manager one level up changes: the occupant's manager shifts (e.g. B-157 -> the
+// new NSM AI-0008) while a stale FILLED vacancy record keeps the OLD manager, so
+// the two manager-aware keys never match and the filled area wrongly renders as a
+// phantom vacant box. This manager-agnostic key lets suppression recognize that
+// the physical area is occupied regardless of which manager either record names.
+// Area is the SPECIFIC name only (never region) for the same reason as
+// seatOccupancyKey — a broad region spans many area seats.
+export function seatIdentityKey(
+  row: Pick<OrganogramReportRow, "jobTitle" | "positionTitle" | "areaName" | "lineName">,
+): string | null {
+  const level = classifyOrganogramStructureLevel(row);
+  if (!level) return null;
+
+  const area = normalizeText(row.areaName);
+  const line = normalizeText(row.lineName);
+
+  if (!area || !line) return null;
+
+  return `${level}|${line}|${area}`;
+}
+
 export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
   // Seats occupied by an active employee. Occupancy — not the status field —
   // decides filled-vs-vacant, so the fixed area structure never loses a seat to
   // an employee's lifecycle: hire fills the seat, resignation empties it.
   const occupiedSeatKeys = new Set<string>();
+  // The same occupancy keyed manager-agnostically (level|line|area), but ONLY for
+  // MANAGER-level seats (DSM/RSM/NSM). There is exactly one such seat per area per
+  // line, so a stale FILLED vacancy that still points at a PREVIOUS manager (e.g.
+  // after the NSM one level up changed) is recognized as filled and hidden instead
+  // of rendering as a phantom "Open Seat" next to the real hire. Rep areas are NOT
+  // collapsed this way: a broad rep area (e.g. "Cairo") can legitimately repeat
+  // under two different DSMs, so a filled rep area must never hide another DSM's
+  // same-named rep seat — rep occupancy stays manager-aware via occupiedSeatKeys.
+  const occupiedManagerSeatIdentityKeys = new Set<string>();
   for (const row of rows) {
     if (row.type !== "employee") continue;
     const key = seatOccupancyKey(row);
     if (key) occupiedSeatKeys.add(key);
+    const level = classifyOrganogramStructureLevel(row);
+    if (level === "dsm" || level === "rsm" || level === "nsm") {
+      const identity = seatIdentityKey(row);
+      if (identity) occupiedManagerSeatIdentityKeys.add(identity);
+    }
+  }
+
+  // Physical seats that already have a vacancy record carrying a REAL manager id.
+  // A second record for the same physical seat that has only a free-text
+  // placeholder manager (no manager_hr_id, e.g. a stale "Vacant Cairo District
+  // Manager" stub left over after the area's real DSM was hired) is debris — the
+  // real-manager record is the canonical box, so the placeholder is dropped to
+  // stop one area rendering twice. Two DISTINCT real managers for one area are
+  // left untouched (a genuine, if rare, split): only the id-less placeholder loses.
+  const seatIdentityHasRealManagerVacancy = new Set<string>();
+  for (const row of rows) {
+    if (row.type !== "vacancy") continue;
+    if (!classifyOrganogramStructureLevel(row)) continue;
+    if (isRemovedVacancyStatus(row.status)) continue;
+    if (!normalizeCode(row.managerHrId)) continue;
+    const identity = seatIdentityKey(row);
+    if (identity) seatIdentityHasRealManagerVacancy.add(identity);
   }
 
   // One vacant box per fixed seat: collapse duplicate vacancy records (several
@@ -258,6 +314,29 @@ export function suppressFilledVacancyRows(rows: OrganogramReportRow[]) {
       isManagerLevelSeat &&
       !normalizeCode(row.managerHrId) &&
       !normalizeCode(row.managerReplacementForHrId)
+    ) {
+      return false;
+    }
+
+    const identityKey = seatIdentityKey(row);
+
+    // A MANAGER-level physical seat (one DSM/RSM/NSM per area per line) that is
+    // occupied by an active employee → this vacancy is stale, even if it names a
+    // different (older) manager than the occupant now reports to. Hide it. (Fixes
+    // phantom vacant DSM seats after an NSM change.) Rep seats are excluded here on
+    // purpose: two reps can share a broad area name under different DSMs, so a rep
+    // vacancy is only suppressed when its manager also matches (the seatKey path).
+    if (isManagerLevelSeat && identityKey && occupiedManagerSeatIdentityKeys.has(identityKey)) {
+      return false;
+    }
+
+    // A manager-less placeholder for a seat that also has a real-manager record →
+    // drop the placeholder so the area doesn't render twice. (Fixes a same-area
+    // duplicate rep seat: one real record + one leftover "Vacant … Manager" stub.)
+    if (
+      identityKey &&
+      !normalizeCode(row.managerHrId) &&
+      seatIdentityHasRealManagerVacancy.has(identityKey)
     ) {
       return false;
     }
