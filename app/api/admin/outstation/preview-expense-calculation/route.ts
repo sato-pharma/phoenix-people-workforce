@@ -16,6 +16,12 @@ function optionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function optionalString(value: unknown) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
 export async function POST(request: Request) {
   try {
     const csrfError = assertSameOriginMutation(request);
@@ -26,6 +32,10 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as {
       claimedTotalAmount?: number;
+      destinationArea?: string | null;
+      destinationCity?: string | null;
+      destinationCountry?: string | null;
+      destinationLabel?: string | null;
       distanceKm?: number;
       employeeHrId?: string;
       meetingAmount?: number;
@@ -67,6 +77,10 @@ export async function POST(request: Request) {
     const preview = await previewManagerExpenseCalculation(access, {
       claimedTotalAmount:
         body.claimedTotalAmount != null ? Number(body.claimedTotalAmount) : 0,
+      destinationArea: optionalString(body.destinationArea),
+      destinationCity: optionalString(body.destinationCity),
+      destinationCountry: optionalString(body.destinationCountry),
+      destinationLabel: optionalString(body.destinationLabel),
       distanceKm,
       employeeHrId,
       meetingAmount: optionalNumber(body.meetingAmount) ?? 0,

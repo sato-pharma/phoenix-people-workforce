@@ -51,6 +51,10 @@ import {
   type AllowanceClaimingRequest,
 } from "@/lib/outstation/allowance-day-guard";
 import {
+  applyCairoNoAllowance,
+  cairoTripEarnsNoAllowance,
+} from "@/lib/outstation/cairo-allowance-rule";
+import {
   cairoDateOnly,
   isWithinDepartureWindow,
   reviewDepartureEvidence,
@@ -131,6 +135,8 @@ type ValidationContext = {
 };
 
 type ValidatedLocationBundle = {
+  /** Canonical governorate of the captured (destination) point, or null when unresolved. */
+  destinationGovernorate: string | null;
   employee: EmployeeDirectoryRow | null;
   identity: {
     employeeArea: string | null;
@@ -141,6 +147,8 @@ type ValidatedLocationBundle = {
   };
   policy: OutstationPolicyRule;
   residence: EmployeeResidenceLocation | null;
+  /** Canonical governorate of the employee's residence, or null when unresolved. */
+  residenceGovernorate: string | null;
   result: OutstationCaptureResult;
 };
 
@@ -455,9 +463,11 @@ async function resolveClaimedAllowanceDays(input: {
  * line is a bug.
  */
 async function calculateGuardedAllowanceBreakdown(input: {
+  destinationGovernorate?: string | null;
   employeeHrId: string;
   excludeRequestId?: number;
   policy: OutstationPolicyRule;
+  residenceGovernorate?: string | null;
   tripEndDate: string;
   tripStartDate: string;
 }) {
@@ -467,32 +477,54 @@ async function calculateGuardedAllowanceBreakdown(input: {
     employeeHrId: input.employeeHrId,
     excludeRequestId: input.excludeRequestId,
   });
-  if (claimedDays.size === 0) return raw;
 
-  const rowDates = allowanceRowDates(input.tripStartDate, raw.breakdown.rows.length);
-  let removedAmount = 0;
-  const guardedRows = raw.breakdown.rows.map((row, index) => {
-    const day = rowDates[index];
-    const claimingRequestId = claimedDays.get(day);
-    if (claimingRequestId == null) return row;
+  // Duplicate-day guard: zero any calendar day another live request already claims for this
+  // employee, so one day is never paid twice.
+  let guarded = raw;
+  if (claimedDays.size > 0) {
+    const rowDates = allowanceRowDates(input.tripStartDate, raw.breakdown.rows.length);
+    let removedAmount = 0;
+    const guardedRows = raw.breakdown.rows.map((row, index) => {
+      const day = rowDates[index];
+      const claimingRequestId = claimedDays.get(day);
+      if (claimingRequestId == null) return row;
 
-    removedAmount += row.amount;
-    return {
-      ...row,
-      amount: 0,
-      skipReason: `Allowance for ${day} was already granted on request #${claimingRequestId} — not paid twice.`,
-      skipped: true,
-    };
-  });
+      removedAmount += row.amount;
+      return {
+        ...row,
+        amount: 0,
+        skipReason: `Allowance for ${day} was already granted on request #${claimingRequestId} — not paid twice.`,
+        skipped: true,
+      };
+    });
 
-  if (removedAmount === 0) return raw;
+    if (removedAmount > 0) {
+      guarded = {
+        allowanceAmount: roundMoney(raw.allowanceAmount - removedAmount),
+        breakdown: { ...raw.breakdown, rows: guardedRows } satisfies OutstationAllowanceBreakdown,
+        overnightDays: raw.overnightDays,
+        sameDayTrip: raw.sameDayTrip,
+      };
+    }
+  }
 
-  return {
-    allowanceAmount: roundMoney(raw.allowanceAmount - removedAmount),
-    breakdown: { ...raw.breakdown, rows: guardedRows } satisfies OutstationAllowanceBreakdown,
-    overnightDays: raw.overnightDays,
-    sameDayTrip: raw.sameDayTrip,
-  };
+  // Cairo rule (owner, 2026-08-15): a regional employee's trip to the Cairo governorate earns no
+  // per-diem allowance. Transport / tickets / meeting still pay — only the allowance rows are
+  // zeroed, each tagged with why (visible-not-silent, the same discipline as the guard above).
+  // A caller that leaves either governorate undefined (or unresolved) keeps today's behaviour.
+  if (cairoTripEarnsNoAllowance(input.residenceGovernorate, input.destinationGovernorate)) {
+    const cairo = applyCairoNoAllowance(guarded.breakdown);
+    if (cairo.removedAmount > 0) {
+      return {
+        allowanceAmount: cairo.allowanceAmount,
+        breakdown: cairo.breakdown,
+        overnightDays: guarded.overnightDays,
+        sameDayTrip: guarded.sameDayTrip,
+      };
+    }
+  }
+
+  return guarded;
 }
 
 function positiveMoney(value: unknown) {
@@ -1111,10 +1143,12 @@ async function validateCapturedLocation(
   };
 
   return {
+    destinationGovernorate,
     employee: identity.employee,
     identity,
     policy,
     residence,
+    residenceGovernorate,
     result,
   };
 }
@@ -1146,7 +1180,7 @@ export async function calculateOutstationExpense(
     hasTicketAttachments: input.hasTicketAttachments,
     offlineCaptured: input.offlineCaptured,
   });
-  const { identity, policy, result } = validated;
+  const { destinationGovernorate, identity, policy, residenceGovernorate, result } = validated;
 
   if (!input.tripStartDate || !input.tripEndDate) {
     throw new Error("Trip start and end dates are required.");
@@ -1159,8 +1193,10 @@ export async function calculateOutstationExpense(
   }
 
   const allowance = await calculateGuardedAllowanceBreakdown({
+    destinationGovernorate,
     employeeHrId: identity.employeeHrId,
     policy,
+    residenceGovernorate,
     tripEndDate,
     tripStartDate,
   });
@@ -2934,6 +2970,12 @@ export async function previewManagerExpenseCalculation(
   access: AccessContext,
   input: {
     claimedTotalAmount?: number;
+    // The selected destination, so the preview can apply the Cairo no-allowance rule and never
+    // show an allowance the save will then zero. Optional: absent until a destination is picked.
+    destinationArea?: string | null;
+    destinationCity?: string | null;
+    destinationCountry?: string | null;
+    destinationLabel?: string | null;
     distanceKm: number;
     employeeHrId: string;
     meetingAmount?: number;
@@ -2955,9 +2997,23 @@ export async function previewManagerExpenseCalculation(
   }
 
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
+  const residence = await getResidenceLocationForEmployee(employee.hrId);
+  const residenceGovernorate = resolveFirstGovernorate(
+    residence?.residenceCity,
+    residence?.residenceArea,
+    residence?.residenceAddress,
+  );
+  const destinationGovernorate = resolveFirstGovernorate(
+    input.destinationCity,
+    input.destinationArea,
+    input.destinationLabel,
+    input.destinationCountry,
+  );
   const allowance = await calculateGuardedAllowanceBreakdown({
+    destinationGovernorate,
     employeeHrId: employee.hrId,
     policy,
+    residenceGovernorate,
     tripEndDate: input.tripEndDate,
     tripStartDate: input.tripStartDate,
   });
@@ -3032,9 +3088,22 @@ export async function createManagerExpenseAsAdmin(
 
   const residence = await getResidenceLocationForEmployee(employee.hrId);
   const policy = await getActivePolicyForRole(resolveJobFunctionRole(employee.jobTitle ?? ""));
+  const residenceGovernorate = resolveFirstGovernorate(
+    residence?.residenceCity,
+    residence?.residenceArea,
+    residence?.residenceAddress,
+  );
+  const destinationGovernorate = resolveFirstGovernorate(
+    input.destination.city,
+    input.destination.area,
+    input.destination.label,
+    input.destination.country,
+  );
   const allowance = await calculateGuardedAllowanceBreakdown({
+    destinationGovernorate,
     employeeHrId: employee.hrId,
     policy,
+    residenceGovernorate,
     tripEndDate: input.tripEndDate,
     tripStartDate: input.tripStartDate,
   });
@@ -3248,10 +3317,28 @@ export async function updateManagerExpenseAsAdmin(
     ? (input.routePolyline ?? null)
     : existing.routePolyline;
 
+  // Cairo rule inputs: resolve the residence governorate (from the employee's location record,
+  // falling back to whatever the stored request captured) and the destination governorate (from
+  // the edited destination when one was supplied, else the request's existing destination).
+  const residenceForGovernorate = await getResidenceLocationForEmployee(employeeHrId);
+  const residenceGovernorate = resolveFirstGovernorate(
+    residenceForGovernorate?.residenceCity ?? existing.residenceCity,
+    residenceForGovernorate?.residenceArea ?? existing.residenceArea,
+    residenceForGovernorate?.residenceAddress ?? existing.residenceAddress,
+  );
+  const destinationGovernorate = resolveFirstGovernorate(
+    destination?.city ?? existing.toCity,
+    destination?.area ?? existing.toArea,
+    destination?.label ?? existing.toLabel,
+    destination?.country ?? existing.toCountry,
+  );
+
   const allowance = await calculateGuardedAllowanceBreakdown({
+    destinationGovernorate,
     employeeHrId,
     excludeRequestId: requestId,
     policy,
+    residenceGovernorate,
     tripEndDate,
     tripStartDate,
   });
