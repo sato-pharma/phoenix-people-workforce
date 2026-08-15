@@ -7,7 +7,11 @@ import { weeklyContractByCode } from "../src/lib/sales/weekly/column-contract.ts
 import type { WeeklyBranchRegionIndex } from "../src/lib/sales/weekly/branch-region-map.ts";
 import { normalizeCode, normalizeKey } from "../src/lib/sales/weekly/mapping-normalize.ts";
 import { parseWeeklyWorkbookBuffer } from "../src/lib/sales/weekly/parser.ts";
-import type { WeeklyProductAliasIndex } from "../src/lib/sales/weekly/product-aliases.ts";
+import {
+  accumulateBatchHeaderDelta,
+  type WeeklyBatchHeaderDelta,
+  type WeeklyProductAliasIndex,
+} from "../src/lib/sales/weekly/product-aliases.ts";
 
 // ── synthetic master ─────────────────────────────────────────────────────────────────────────
 // KNOWN factory_price + line so we can prove value = netQty * factory_price (NOT the sheet value).
@@ -1195,6 +1199,46 @@ export async function runWeeklySalesImportTests() {
       assert.equal(unknownProduct.result.status, "blocked", "Direct blocks on a Product ID not in the master product table");
       assert.ok(unknownProduct.result.issues.some((i) => i.field === "productCode" && i.severity === "failure"), "Direct product failure recorded");
     }
+  }
+
+  // ════════════ healing a row must move its batch header ════════════
+  // Regression (2026-08-15): healUnresolvedWeeklyRows rewrote stored rows and never touched the
+  // batch header they were summarised into, so four June Overseas batches understated sales by up
+  // to 4,738.50 and still claimed 261 warning rows that healing had already cleared. The header is
+  // load-bearing — computeThisWeekOnly de-cumulates each later week against the PRIOR batch's
+  // total_sales_value — so a stale header silently distorts every following week of the cycle.
+  {
+    const deltas = new Map<string, WeeklyBatchHeaderDelta>();
+
+    // The real case: an unresolved row carried 0 value, heals to 130 × 36.45 and clears its warning.
+    accumulateBatchHeaderDelta(deltas, "batch-a", 0, 4738.5, "valid");
+    assert.deepEqual(
+      deltas.get("batch-a"),
+      { salesValue: 4738.5, warningRows: -1, failedRows: 0 },
+      "a healed row carries its full new value onto the header and clears one warning",
+    );
+
+    // A second row in the same batch accumulates; a row that heals into `failed` still leaves
+    // `warning` (it was selected on it) and additionally counts as failed.
+    accumulateBatchHeaderDelta(deltas, "batch-a", 100, 250, "failed");
+    assert.deepEqual(
+      deltas.get("batch-a"),
+      { salesValue: 4888.5, warningRows: -2, failedRows: 1 },
+      "deltas accumulate per batch and a heal into failed leaves warning too",
+    );
+
+    // Still-warning rows keep their warning; batches stay independent; a value drop is negative.
+    accumulateBatchHeaderDelta(deltas, "batch-b", 500, 200, "warning");
+    assert.deepEqual(
+      deltas.get("batch-b"),
+      { salesValue: -300, warningRows: 0, failedRows: 0 },
+      "a row that heals but stays in warning moves value only",
+    );
+    assert.equal(deltas.size, 2, "each batch keeps its own delta");
+
+    // A row with no batch is dropped rather than creating a phantom header key.
+    accumulateBatchHeaderDelta(deltas, "", 0, 99, "valid");
+    assert.equal(deltas.size, 2, "a row with no batch_id never invents a header entry");
   }
 
   // ════════════ unknown distributor ════════════
