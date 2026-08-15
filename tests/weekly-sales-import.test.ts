@@ -962,6 +962,52 @@ export async function runWeeklySalesImportTests() {
       assert.equal(excluded.result.totals.salesValue, 0, "excluded branch cells dropped from totals");
       assert.equal(excluded.result.rowCount, 0, "excluded branch produces no fact rows");
     }
+
+    // IGNORE alias ("we don't sell this") → kept out of the numbers, listed, and NEVER blocking.
+    // The IGNORE sentinel master carries no price and no line on purpose, so validating it like a
+    // real product blocked the whole upload on missing data that is missing deliberately.
+    const ignored = await parseWeeklyWorkbookBuffer({
+      buffer: await issWorkbook(),
+      distributorCode: "IS-S",
+      distributorName: "Ibn Sina Sato",
+      fileName: "ISS.xlsx",
+      references: references(),
+      aliasIndex: aliasIndex("IS-S", { "ISS-SAG": "IGNORE" }),
+      branchMapIndex: branch,
+    });
+    assert.equal(ignored.ok, true);
+    if (ignored.ok) {
+      assert.equal(ignored.result.status, "validated", "an IGNORE-mapped item does not block the batch");
+      assert.equal(
+        ignored.result.issues.filter((i) => i.severity === "failure").length,
+        0,
+        "IGNORE raises no failure — not a missing price, not a missing line",
+      );
+      assert.equal(ignored.result.rowCount, 0, "IGNORE produces no fact rows");
+      assert.equal(ignored.result.totals.netQty, 0, "IGNORE units never reach the totals");
+      assert.equal(ignored.result.excludedItems.length, 1, "the excluded item is listed, not silently dropped");
+      const item = ignored.result.excludedItems[0];
+      assert.equal(item.itemCode, "ISS-SAG", "excluded item keeps its raw distributor code");
+      assert.equal(item.rows, 2, "both source rows of the item are counted");
+      assert.equal(item.netQty, 7, "excluded net units counted = 10 sold − 3 returned");
+      assert.equal(item.stockQty, 30, "excluded stock units counted");
+    }
+
+    // An IGNORE item's branch is irrelevant — it must not block on an unmapped region either.
+    const ignoredUnmappedBranch = await parseWeeklyWorkbookBuffer({
+      buffer: await issWorkbook(),
+      distributorCode: "IS-S",
+      distributorName: "Ibn Sina Sato",
+      fileName: "ISS.xlsx",
+      references: references(),
+      aliasIndex: aliasIndex("IS-S", { "ISS-SAG": "IGNORE" }),
+      branchMapIndex: branchIndex({}), // no branch mapped at all
+    });
+    assert.equal(ignoredUnmappedBranch.ok, true);
+    if (ignoredUnmappedBranch.ok) {
+      assert.equal(ignoredUnmappedBranch.result.status, "validated", "IGNORE short-circuits the region check too");
+      assert.equal(ignoredUnmappedBranch.result.excludedItems.length, 1, "still counted and listed");
+    }
   }
 
   // ════════════ SF (Sofico) — per-customer invoice detail, twice-monthly ════════════

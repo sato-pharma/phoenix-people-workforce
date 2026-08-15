@@ -90,6 +90,21 @@ export type WeeklyThisWeekOnly = {
   stockQty: number;
 };
 
+/**
+ * One raw distributor item whose alias points at the `IGNORE` master product — deliberately kept out
+ * of the numbers ("we don't sell this"). Counted and shown, never silently dropped (owner's rule).
+ */
+export type WeeklyExcludedItem = {
+  itemCode: string;
+  itemName: string;
+  /** distinct source sheet rows dropped */
+  rows: number;
+  /** net units (sales − returns) that did NOT enter the totals */
+  netQty: number;
+  /** stock units that did NOT enter the totals */
+  stockQty: number;
+};
+
 export type WeeklySalesValidationResult = {
   advisories?: string[];
   batchId?: string;
@@ -122,6 +137,8 @@ export type WeeklySalesValidationResult = {
   byProduct: WeeklyProductSummary[];
   byBranch: WeeklyBranchSummary[];
   issues: WeeklyValidationIssue[];
+  /** items excluded on purpose via an IGNORE alias — informational, never blocking */
+  excludedItems: WeeklyExcludedItem[];
 };
 
 // ── Pre-upload verification (AI column check) ─────────────────────────────────────────────────────
