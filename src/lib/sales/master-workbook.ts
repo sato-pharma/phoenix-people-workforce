@@ -105,25 +105,60 @@ async function selectAll(
   return batches.flat();
 }
 
-// Module-level cache for alias maps — these are structurally stable (same column headers appear in
-// every batch for the same distributor) so rebuilding on every workbook download wastes ~600ms.
-let _aliasCache: { ts: number; product: Map<string, Set<string>>; territory: Map<string, Set<string>> } | null = null;
-const _ALIAS_CACHE_TTL = 5 * 60 * 1000;
+// Keyset reader for the ONE big table — source_of_sales_import_rows (~450MB / ~300k rows). Walks the
+// integer primary key by cursor (WHERE id > cursor ORDER BY id LIMIT 1000) so every page is a bounded
+// index range and the whole read is O(n). The previous `.range()`/OFFSET pager re-walked every
+// preceding row on each of ~300 pages, i.e. O(n^2): measured on production, a page at offset 300k took
+// 649ms (walking 301,000 rows to return 1,000) versus 4ms for the equivalent keyset page. The
+// batch_id IN-list is chunked at 100 — PostgREST folds it into the request URL and a few hundred UUIDs
+// would blow undici's ~16KB header cap (same guard as selectAll). Chunks run concurrently; within a
+// chunk keyset is inherently sequential. Row order is IDENTICAL to the old
+// selectAll(import_rows, ..., "id"): chunks of 100 batch ids, each ascending by id, concatenated in
+// chunk order — so the Raw_Sales / Normalized_Sales / Exceptions sheet order is byte-for-byte
+// unchanged. `columns` MUST include `id`: the cursor advances on the last row's id.
+export async function keysetSelectImportRows(
+  supabase: SupabaseAdmin,
+  columns: string,
+  validatedBatchIds: string[],
+  pageSize = 1000, // injectable only so a database-free test can force multi-page walks; prod uses 1000
+): Promise<Row[]> {
+  if (validatedBatchIds.length === 0) return [];
+  const idChunks: string[][] = [];
+  for (let i = 0; i < validatedBatchIds.length; i += 100) idChunks.push(validatedBatchIds.slice(i, i + 100));
+  const groups = await Promise.all(idChunks.map(async (ids) => {
+    const out: Row[][] = [];
+    let cursor = 0; // id is a positive-integer identity PK; every real id > 0
+    for (;;) {
+      const { data, error } = await supabase
+        .from("source_of_sales_import_rows")
+        .select(columns)
+        .in("batch_id", ids)
+        .gt("id", cursor)
+        .order("id", { ascending: true })
+        .limit(pageSize);
+      // A failed page must fail the export loudly, never silently short it (as the old pager guarded).
+      if (error) throw error;
+      const page = (data ?? []) as unknown as Row[];
+      out.push(page);
+      if (page.length < pageSize) break;
+      cursor = Number(page[page.length - 1].id);
+    }
+    return out.flat();
+  }));
+  return groups.flat();
+}
 
 // Infer WHICH distributor each alias came from by matching the alias text against the original raw
 // columns preserved in import_rows.raw_row (e.g. PS "Mat. Code"/"Sal. Dist. Desc.", IS "Item Code"/
-// "Territory Name"). Read-only; pages with bounded memory via the shared selectAll() pager.
-//
-// Scoped to VALIDATED batches only (same set the rest of the workbook reads) — this used to scan
-// every row ever imported, including drafts/rejected batches, which on a 300MB+ table pushed the
-// export past its time budget and 500'd (see /sales/database-mapping export incident 2026-07-27).
-async function buildAliasDistributorMaps(
-  supabase: SupabaseAdmin,
-  validatedBatchIds: string[],
-): Promise<{ product: Map<string, Set<string>>; territory: Map<string, Set<string>> }> {
-  if (_aliasCache && Date.now() - _aliasCache.ts < _ALIAS_CACHE_TTL) {
-    return { product: _aliasCache.product, territory: _aliasCache.territory };
-  }
+// "Territory Name"). Built in-process from the SAME rows the detail sheets read — raw_row now rides
+// the single keyset import_rows pass, so this no longer issues a second full-table scan of its own.
+// (The old separate read + its 5-minute module cache are gone; that cache lived in a module-level
+// `let`, which in the App Router is per-route-segment and so was cold on most downloads anyway.)
+// Fed the UNFILTERED validated rows, exactly as before — restricted-product filtering must never
+// narrow which distributors an alias is attributed to. Set membership is order-independent.
+export function buildAliasDistributorMapsFromRows(
+  rows: Row[],
+): { product: Map<string, Set<string>>; territory: Map<string, Set<string>> } {
   const product = new Map<string, Set<string>>();
   const territory = new Map<string, Set<string>>();
   const profileByCode = new Map(RAW_DISTRIBUTOR_PROFILES.map((p) => [p.distributorCode.toUpperCase(), p]));
@@ -134,19 +169,6 @@ async function buildAliasDistributorMaps(
     if (!set) { set = new Set<string>(); m.set(key, set); }
     set.add(dist);
   };
-
-  if (validatedBatchIds.length === 0) {
-    _aliasCache = { ts: Date.now(), product, territory };
-    return { product, territory };
-  }
-
-  const rows = await selectAll(
-    supabase,
-    "source_of_sales_import_rows",
-    "distributor_code,raw_row",
-    "id",
-    { column: "batch_id", values: validatedBatchIds },
-  );
   for (const r of rows) {
     const rr = r.raw_row;
     if (!rr || typeof rr !== "object") continue;
@@ -157,7 +179,6 @@ async function buildAliasDistributorMaps(
     for (const col of profile.productColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(product, v, profile.distributorName); }
     for (const col of profile.territoryColumns ?? []) { const v = lc[col.toLowerCase()]; if (v) add(territory, v, profile.distributorName); }
   }
-  _aliasCache = { ts: Date.now(), product, territory };
   return { product, territory };
 }
 
@@ -237,7 +258,7 @@ export async function buildMasterWorkbookBuffer(
 
   const [
     regions, areas, blocks, bricks, productsAll,
-    productAliasesAll, territoryAliases, customerMap, importRowsAll, batches, aliasDist,
+    productAliasesAll, territoryAliases, customerMap, importRowsAll, batches,
   ] = await Promise.all([
     listMasterRows("regions"),
     listMasterRows("areas"),
@@ -247,16 +268,22 @@ export async function buildMasterWorkbookBuffer(
     selectAll(supabase, "source_of_sales_product_aliases", "alias,product_code,source_labels,active", "alias"),
     selectAll(supabase, "source_of_sales_territory_aliases", "alias,target_type,target_code,notes,active", "alias"),
     listCustomerMap(),
-    selectAll(
+    // ONE pass over the 450MB import_rows table now feeds every detail sheet AND the alias→distributor
+    // inference: raw_row is fetched alongside the detail columns and folded into the alias maps below,
+    // instead of a second full-table scan. Keyset-paginated on the integer PK — see keysetSelectImportRows
+    // for the O(n) vs O(n^2) rationale (a prod page at offset 300k measured 649ms vs 4ms keyset).
+    keysetSelectImportRows(
       supabase,
-      "source_of_sales_import_rows",
-      "id,batch_id,distributor_code,invoice_period,region_code,region_name,area_code,area_name,block_code,brick_id,product_code,product_name,official_line,qty,bonus_qty,value,client_code,client_name,client_address,is_direct,validation_state,validation_issues",
-      "id",
-      validatedBatchIds.length > 0 ? { column: "batch_id", values: validatedBatchIds } : undefined,
+      "id,batch_id,distributor_code,invoice_period,region_code,region_name,area_code,area_name,block_code,brick_id,product_code,product_name,official_line,qty,bonus_qty,value,client_code,client_name,client_address,is_direct,validation_state,validation_issues,raw_row",
+      validatedBatchIds,
     ),
     selectAll(supabase, "source_of_sales_import_batches", "id,file_name,distributor_name,period", "id"),
-    buildAliasDistributorMaps(supabase, validatedBatchIds),
   ]);
+
+  // Alias→distributor provenance rides the single import_rows read above (raw_row is included), so the
+  // old second full-table scan is gone. Built from the UNFILTERED rows — restricted-product filtering
+  // below must not narrow which distributors an alias is attributed to, exactly as before.
+  const aliasDist = buildAliasDistributorMapsFromRows(importRowsAll);
 
   // Confidential products (LA003 / LA004) are included only for CEO / Super Admin. Filtering the
   // catalogue, aliases and raw import rows here keeps every downstream sheet (Raw_Sales,
