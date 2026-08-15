@@ -22,7 +22,13 @@ import type { SystemNotificationChannel } from "@/lib/notifications/system";
 // so it stays trivially unit-testable, matching the guards above.
 
 const RECRUITMENT_MODULE = "recruitment";
-const CV_RECEIVED_EVENT_TYPE = "recruitment_inbound_cv";
+
+// Both forms of "a CV came in". The per-CV event now fires only for a CV whose file could not be
+// attached; the routine arrivals are summarised once a Cairo day by the digest (see
+// src/lib/recruitment/inbound/daily-cv-digest.ts). The owner's rule is about the NOTICE, not about
+// how many CVs it covers, so the digest is inside it — and it had to be added here explicitly,
+// because the `recruitment.*` policy row it would otherwise fall through to carries email.
+const CV_RECEIVED_EVENT_TYPES = new Set(["recruitment_inbound_cv", "recruitment_daily_cv_digest"]);
 
 export function isRecruitmentCvReceivedEvent(
   module: string | null | undefined,
@@ -31,7 +37,7 @@ export function isRecruitmentCvReceivedEvent(
   const normalizedModule = String(module ?? "").trim().toLowerCase();
   const normalizedEvent = String(eventType ?? "").trim().toLowerCase();
   if (normalizedModule !== RECRUITMENT_MODULE) return false;
-  return normalizedEvent === CV_RECEIVED_EVENT_TYPE;
+  return CV_RECEIVED_EVENT_TYPES.has(normalizedEvent);
 }
 
 export function enforceRecruitmentCvEmailBlock(

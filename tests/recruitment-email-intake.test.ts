@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 
+import { scoreCvExtraction } from "../src/lib/recruitment/cv-extraction-quality.ts";
 import { parseRecruitmentEmailInboxesConfig } from "../src/lib/recruitment/inbound/email-mailboxes-config.ts";
+import {
+  heldBackReason,
+  parseInboxCvGate,
+  resolveInboxCvGate,
+  strictGateHoldsBack,
+} from "../src/lib/recruitment/inbound/inbox-cv-gate.ts";
 import {
   isEmailImportSender,
   parseEmailImportSenders,
@@ -57,6 +64,7 @@ export function runRecruitmentEmailIntakeTests() {
   const parsed = parseRecruitmentEmailInboxesConfig(valid);
   assert.equal(parsed.length, 2, "invalid entries are dropped individually, not the whole array");
   assert.deepEqual(parsed[0], {
+    cvGate: "permissive",
     host: "imap.example.com",
     label: "careers",
     password: "p1",
@@ -66,6 +74,64 @@ export function runRecruitmentEmailIntakeTests() {
   });
   assert.equal(parsed[1].port, 993, "port defaults to 993 when omitted");
   assert.equal(parsed[1].secure, true, "secure defaults to true when omitted");
+
+  // The gate each mailbox runs under is derived from its label with no config change required —
+  // which is the only reason it takes effect at all, since the live env var names no gate.
+  assert.equal(parsed[0].cvGate, "permissive", "careers@ is the published applications address");
+  assert.equal(parsed[1].cvGate, "strict", "hr@ is a general mailbox and gets the stricter check");
+
+  const overridden = parseRecruitmentEmailInboxesConfig(
+    JSON.stringify([
+      { label: "hr", host: "imap.example.com", user: "hr@satopharma.com", password: "p", cvGate: "permissive" },
+      { label: "careers", host: "imap.example.com", user: "c@satopharma.com", password: "p", cvGate: "strict" },
+      { label: "jobs", host: "imap.example.com", user: "j@satopharma.com", password: "p", cvGate: "nonsense" },
+    ]),
+  );
+  assert.equal(overridden[0].cvGate, "permissive", "an explicit cvGate overrides the label default");
+  assert.equal(overridden[1].cvGate, "strict", "the override works in both directions");
+  assert.equal(overridden[2].cvGate, "strict", "an unusable cvGate value falls back to the label default");
+
+  // --- the per-inbox CV gate -------------------------------------------------------------------
+  //
+  // Measured over every candidate the two live inboxes have ever produced (production,
+  // 2026-08-15): on careers@ all 6 thin reads are real applicants whose CV failed to read; on hr@
+  // all 20 are not CVs at all — an insurance circular, the same internal attendance certificate
+  // seven times, a maternity-leave request, our own job offers, and a training vendor's pitch.
+  assert.equal(resolveInboxCvGate("careers"), "permissive");
+  assert.equal(resolveInboxCvGate("CAREERS"), "permissive", "the label match is case-insensitive");
+  assert.equal(resolveInboxCvGate("hr"), "strict");
+  assert.equal(resolveInboxCvGate(null), "permissive", "WhatsApp has no mailbox and is an application channel");
+  assert.equal(resolveInboxCvGate("info"), "strict", "a mailbox added later is strict by default, not permissive");
+  assert.equal(resolveInboxCvGate("hr", "permissive"), "permissive", "an explicit setting always wins");
+  assert.equal(parseInboxCvGate("strict"), "strict");
+  assert.equal(parseInboxCvGate("Strict"), null, "only the exact values count — no silent coercion");
+  assert.equal(parseInboxCvGate(true), null);
+
+  const field = (value: string) => ({ confidence: "high" as const, value });
+  const realCvScore = scoreCvExtraction({
+    degree: field("Pharmacy"),
+    fullName: field("Mona Adel"),
+    phone: field("+201000000000"),
+    university: field("Cairo University"),
+  });
+  // The shape of the insurance circular and the attendance certificate: something that reads as a
+  // name on the letterhead, and nothing else a CV would carry.
+  const notACvScore = scoreCvExtraction({ fullName: field("Muhammed Ahmed Tammam") });
+  const namelessScore = scoreCvExtraction({ professionalSummary: field("Benefits summary 2025/2026") });
+
+  assert.equal(strictGateHoldsBack("strict", notACvScore), true, "hr@ holds back a file that does not read like a CV");
+  assert.equal(strictGateHoldsBack("strict", namelessScore), true, "no name at all is held back too");
+  assert.equal(strictGateHoldsBack("strict", realCvScore), false, "a real CV still gets through on hr@");
+  assert.equal(
+    strictGateHoldsBack("permissive", notACvScore),
+    false,
+    "careers@ keeps today's behaviour — a thin read there means WE failed to read a real CV",
+  );
+
+  const reason = heldBackReason("hr", notACvScore, (key) => (key === "workHistory" ? "Work history" : key));
+  assert.match(reason, /hr inbox/, "the reason names the inbox that held it back");
+  assert.match(reason, /1 of 9 core details/, "the reason says how much of a CV was actually found");
+  assert.match(reason, /work history/, "missing fields are named by their human label, never the raw key");
 
   // --- parseInboundEmailMessage ---------------------------------------------------------------
   const withNameAndCv = fakeMail({

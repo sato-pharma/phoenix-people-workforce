@@ -6,10 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CvPreviewModal } from "@/components/recruitment/cv-preview-modal";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
+import {
+  CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  candidateStatusLabel,
+  hiringManagerDecisionLabels,
+  isUnreviewedCandidateStatus,
+  type HiringManagerDecision,
+} from "@/lib/recruitment/candidate-status";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
-import type { Interview } from "@/lib/recruitment/types";
+import type { Candidate, Interview } from "@/lib/recruitment/types";
 
-type Props = { initialApplications: ApplicationWithContext[] };
+type Props = {
+  initialApplications: ApplicationWithContext[];
+  /**
+   * The CVs a recruiter pushed STRAIGHT to this manager — no requisition, no application, no seat on
+   * the org chart. This is the flow the module is actually used for; the applications above are the
+   * long way round, taken 7 times in the module's history against 226 candidates.
+   */
+  initialSentToMe: Candidate[];
+};
 
 type CandidateFileSummary = { id: string; fileName: string; kind: string; mimeType: string | null };
 
@@ -60,6 +75,94 @@ function formatDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat("en-US", { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
+// Every moment shown to a person is Cairo local time, never a raw UTC string. Written here rather
+// than imported, matching the copies in recruitment-workspace.tsx and intake-health-view.tsx — the
+// three differ in separator and empty-value, and this one matches the workspace, which is the screen
+// a recruiter is looking at when they talk to the manager about the same candidate.
+function cairoDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "—";
+  const date = value.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  });
+  const time = value.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Cairo" });
+  return `${date} · ${time}`;
+}
+
+/**
+ * View CV / Download, for any candidate the caller is allowed to see.
+ *
+ * Shared by both cards below because the rule it encodes is not obvious and must not be re-derived:
+ * "View CV" has to actually VIEW the CV. The bare file route serves Content-Disposition: attachment
+ * unless asked for "inline", so a plain link saves the file and shows the manager nothing — and a
+ * download manager will intercept it besides. The preview modal renders the real document, so it IS
+ * the view action here; saving a copy sits beside it rather than being the only behaviour.
+ */
+function CandidateCvActions({ candidateId }: { candidateId: string }) {
+  const [files, setFiles] = useState<CandidateFileSummary[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const data = await getJson(`/api/recruitment/hiring-manager/candidates/${candidateId}/files`);
+        if (!active) return;
+        setFiles(Array.isArray(data.files) ? (data.files as CandidateFileSummary[]) : []);
+      } catch {
+        /* leave empty — the card still shows the candidate's own details */
+      } finally {
+        if (active) setLoaded(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [candidateId]);
+
+  const cvFile = files.find((file) => file.kind === "cv");
+  // "unsupported" means the preview modal cannot render this file type, so saving it is the only way
+  // to read it — that is the one case where the CV button may still be a download.
+  const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
+  const href = cvFile ? `/api/recruitment/hiring-manager/candidates/${candidateId}/files/${cvFile.id}` : "";
+
+  if (!loaded) return null;
+  if (!cvFile) return <p className="text-xs text-slate-400">No CV file on record.</p>;
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {cvKind !== "unsupported" ? (
+          <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
+            View CV — {cvFile.fileName}
+          </Button>
+        ) : null}
+        <a
+          className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+          href={href}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {cvKind === "unsupported" ? `Download — ${cvFile.fileName}` : "Download"}
+        </a>
+      </div>
+      {previewOpen ? (
+        <CvPreviewModal
+          downloadUrl={href}
+          fileName={cvFile.fileName}
+          mimeType={cvFile.mimeType}
+          onClose={() => setPreviewOpen(false)}
+        />
+      ) : null}
+    </>
+  );
+}
+
 const hiringManagerCriteria = [
   { key: "territory_knowledge", label: "Territory knowledge" },
   { key: "sales_skills", label: "Sales skills" },
@@ -80,12 +183,9 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 function CandidateCard({ application, onChanged }: { application: ApplicationWithContext; onChanged: () => void }) {
   const candidate = application.candidate!;
   const requisition = application.requisition!;
-  const [files, setFiles] = useState<CandidateFileSummary[]>([]);
   const [interviews, setInterviews] = useState<Interview[]>([]);
-  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
 
   const [scheduledAt, setScheduledAt] = useState("");
   const [location, setLocation] = useState("");
@@ -97,28 +197,18 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
     let active = true;
     void (async () => {
       try {
-        const [filesData, interviewsData] = await Promise.all([
-          getJson(`/api/recruitment/hiring-manager/candidates/${candidate.id}/files`),
-          getJson(`/api/recruitment/hiring-manager/applications/${application.id}/interviews`),
-        ]);
+        const interviewsData = await getJson(`/api/recruitment/hiring-manager/applications/${application.id}/interviews`);
         if (!active) return;
-        setFiles(Array.isArray(filesData.files) ? (filesData.files as CandidateFileSummary[]) : []);
         setInterviews(Array.isArray(interviewsData.interviews) ? (interviewsData.interviews as Interview[]) : []);
       } catch {
         /* leave empty — the card still shows the candidate's own details */
-      } finally {
-        if (active) setLoaded(true);
       }
     })();
     return () => {
       active = false;
     };
-  }, [candidate.id, application.id]);
+  }, [application.id]);
 
-  const cvFile = files.find((file) => file.kind === "cv");
-  // "unsupported" means the preview modal cannot render this file type, so saving it is the
-  // only way to read it — that is the one case where the CV button may still be a download.
-  const cvKind = cvFile ? detectCvFileKind(cvFile.mimeType ?? "", cvFile.fileName) : "unsupported";
   const hmInterview = interviews.find((interview) => interview.interviewType === "hiring_manager") ?? null;
   const badge = stageBadge(application.stage);
   const canAct = application.stage === "hiring_manager_interview";
@@ -215,40 +305,7 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
         {candidate.hasMedicalRepExperience ? <Field label="Medical Rep tenure" value={tenureLine} /> : null}
       </div>
 
-      {loaded && cvFile ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {/* "View CV" must actually VIEW the CV. It used to be a bare link at the file route,
-              which serves Content-Disposition: attachment unless asked for "inline" — so the
-              browser saved the CV to disk and never showed it, and the portal had no way to
-              read a CV at all. The preview modal renders the real document (PDF pages painted
-              onto canvas, images, .docx page layout), so it IS the view action here; saving a
-              copy stays available next to it rather than being the only behaviour. */}
-          {cvKind !== "unsupported" ? (
-            <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
-              View CV — {cvFile.fileName}
-            </Button>
-          ) : null}
-          <a
-            className="inline-flex w-fit items-center rounded-md border border-gray-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-            href={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
-            rel="noreferrer"
-            target="_blank"
-          >
-            {cvKind === "unsupported" ? `Download — ${cvFile.fileName}` : "Download"}
-          </a>
-        </div>
-      ) : loaded ? (
-        <p className="text-xs text-slate-400">No CV file on record.</p>
-      ) : null}
-
-      {previewOpen && cvFile ? (
-        <CvPreviewModal
-          downloadUrl={`/api/recruitment/hiring-manager/candidates/${candidate.id}/files/${cvFile.id}`}
-          fileName={cvFile.fileName}
-          mimeType={cvFile.mimeType}
-          onClose={() => setPreviewOpen(false)}
-        />
-      ) : null}
+      <CandidateCvActions candidateId={candidate.id} />
 
       {error ? <p className="text-xs text-rose-600">{error}</p> : null}
 
@@ -326,7 +383,115 @@ function CandidateCard({ application, onChanged }: { application: ApplicationWit
   );
 }
 
-export function RecruitmentCandidatesPortal({ initialApplications }: Props) {
+/**
+ * A CV a recruiter sent straight to this manager, and the two answers they can give back.
+ *
+ * The whole module exists to get to this card: a CV arrives, the AI reads it, a recruiter sends the
+ * person to the District Manager who would actually work with them. Everything the manager needs to
+ * answer is on the card — the extracted details, the CV itself, and the two buttons — because the
+ * alternative is the state this replaced, where the alert arrived and pointed at a page the manager
+ * was not allowed to open.
+ */
+function SentCandidateCard({ candidate: initial }: { candidate: Candidate }) {
+  const [candidate, setCandidate] = useState(initial);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const notified = candidate.managerNotified;
+  // Only an untouched candidate still needs an answer. Once the manager (or Talent Acquisition) has
+  // moved them, the card shows what was decided instead of offering the buttons again — a second
+  // "Not interested" on somebody already rejected writes a new event and tells nobody anything.
+  const awaitingAnswer = isUnreviewedCandidateStatus(candidate.status) || candidate.status === "sent_to_manager";
+
+  const answer = async (decision: HiringManagerDecision) => {
+    if (decision === "not_interested" && !note.trim()) {
+      setError("Add a short reason so Talent Acquisition knows why.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await sendJson(`/api/recruitment/hiring-manager/candidates/${candidate.id}/decision`, "PATCH", {
+        decision,
+        note: note.trim() || undefined,
+      });
+      if (data.candidate) setCandidate(data.candidate as Candidate);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to record your answer.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="space-y-4 rounded-lg border border-gray-200 bg-white p-4 shadow-[0_1px_3px_rgba(15,23,42,0.08)] sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-base font-semibold text-slate-900">{candidate.fullName}</p>
+          <p className="text-xs text-slate-500">
+            {candidate.appliedForJobTitle?.trim()
+              ? `Applying for ${candidate.appliedForJobTitle}`
+              : "No role stated on the application"}
+          </p>
+        </div>
+        <span className="inline-block rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+          {candidateStatusLabel(candidate.status)}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Phone" value={candidate.phone} />
+        <Field label="Email" value={candidate.email} />
+        <Field label="Governorate" value={candidate.governorate} />
+        <Field label="Current job title" value={candidate.currentJobTitle} />
+        <Field label="Current employer" value={candidate.currentEmployer} />
+        <Field
+          label="Years of experience"
+          value={candidate.yearsExperience === null ? null : String(candidate.yearsExperience)}
+        />
+        <Field label="Medical Rep experience" value={formatYesNo(candidate.hasMedicalRepExperience)} />
+        <Field label="CV received" value={cairoDateTime(candidate.createdAt)} />
+        <Field label="Sent to you" value={notified ? cairoDateTime(notified.sentAt) : null} />
+      </div>
+
+      <CandidateCvActions candidateId={candidate.id} />
+
+      {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+
+      {awaitingAnswer ? (
+        <div className="space-y-2 border-t border-slate-100 pt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Your answer</p>
+          <textarea
+            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+            maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="A short note for Talent Acquisition (required if you are not interested)"
+            rows={2}
+            value={note}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={busy} onClick={() => void answer("interview")} size="sm">
+              {hiringManagerDecisionLabels.interview}
+            </Button>
+            <Button disabled={busy} onClick={() => void answer("not_interested")} size="sm" variant="destructive">
+              {hiringManagerDecisionLabels.not_interested}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="border-t border-slate-100 pt-3">
+          <p className="text-xs text-slate-500">
+            You answered: {candidateStatusLabel(candidate.status)}
+            {candidate.statusNote?.trim() ? ` — ${candidate.statusNote}` : ""}
+          </p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export function RecruitmentCandidatesPortal({ initialApplications, initialSentToMe: sentToMe }: Props) {
   const [applications, setApplications] = useState(initialApplications);
 
   const reload = async () => {
@@ -339,22 +504,47 @@ export function RecruitmentCandidatesPortal({ initialApplications }: Props) {
     }
   };
 
-  if (applications.length === 0) {
+  if (applications.length === 0 && sentToMe.length === 0) {
     return (
       <Card className="rounded-lg border border-gray-200 bg-white p-10 text-center shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
         <p className="text-base font-semibold text-slate-700">No candidates yet</p>
         <p className="mt-1 text-sm text-slate-400">
-          Candidates assigned to your open positions by Talent Acquisition will appear here.
+          CVs that Talent Acquisition sends you, and candidates assigned to your open positions, will appear here.
         </p>
       </Card>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {applications.map((application) => (
-        <CandidateCard application={application} key={application.id} onChanged={reload} />
-      ))}
+    <div className="space-y-6">
+      {/* Sent-to-you first, deliberately: this is the list the notification links to, and it is the
+          one that needs an answer. The requisition-based applications below are the longer route
+          and are already sitting in a workflow. */}
+      {sentToMe.length > 0 ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900">Sent to you</h2>
+            <p className="text-xs text-slate-500">CVs Talent Acquisition asked you to look at.</p>
+          </div>
+          {sentToMe.map((candidate) => (
+            <SentCandidateCard candidate={candidate} key={candidate.id} />
+          ))}
+        </section>
+      ) : null}
+
+      {applications.length > 0 ? (
+        <section className="space-y-4">
+          {sentToMe.length > 0 ? (
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Your open positions</h2>
+              <p className="text-xs text-slate-500">Candidates assigned to a position you are the hiring manager for.</p>
+            </div>
+          ) : null}
+          {applications.map((application) => (
+            <CandidateCard application={application} key={application.id} onChanged={reload} />
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }

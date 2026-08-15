@@ -22,25 +22,24 @@ const TALENT_ACQUISITION = "Talent Acquisition" satisfies PhoenixRole;
 /**
  * Every tool on the Recruitment & Hiring hub must have a portal route Talent Acquisition can reach.
  *
- * The hub (app/(admin)/admin/recruitment-hiring/page.tsx) lists seven tools and gates each one to
+ * The hub (app/(admin)/admin/recruitment-hiring/page.tsx) gates every tool to
  * hrAuthorityNavigationRoles = Super Admin + Talent Acquisition. That gate is not what decides
  * reachability. Talent Acquisition sits in portalNavigationRoles, so resolveNavigationMode puts
  * them in the portal shell, and app/(admin)/layout.tsx redirects portal-mode users out of the
- * ENTIRE (admin) route group before any page in it renders. The hub and all six admin copies are
+ * ENTIRE (admin) route group before any page in it renders. The hub and every admin copy are
  * therefore Super-Admin-only in practice, however their `roles` read — and nothing failed, because
  * the config that names Talent Acquisition is true config and the redirect is somewhere else.
  *
  * That is how CV Extraction Accuracy and Inbound Intake Health shipped unreachable by the only role
- * that works them: the four older tools happened to have portal mirrors, these two did not, and no
- * check compared the lists. Intake Health was the expensive half — it carries the retry action for
- * dead-lettered inbound CVs, i.e. real applicants who were silently never entered.
+ * that works them: the older tools happened to have portal mirrors, those two did not, and no check
+ * compared the lists. Intake Health was the expensive half — it carries the retry action for
+ * dead-lettered inbound CVs, i.e. real applicants who were silently never entered. (CV Extraction
+ * Accuracy was removed on 2026-08-15; Intake Health is the survivor and the one that mattered.)
  *
  * So the invariant is a MAP, deliberately explicit and total: adding a hub tool fails here until
- * someone decides what Talent Acquisition's route to it is. That is exactly what happened to CV
- * Field Settings, the seventh tool (owner's ruling 2026-08-14) — it arrived Super-Admin-only, and
- * widening it to Talent Acquisition meant landing the mirror in the same change rather than
- * discovering months later that the card never opened. Each twin is then checked three ways,
- * because any one of them alone is passable while the tool stays unreachable:
+ * someone decides what Talent Acquisition's route to it is, and removing one fails here until the
+ * twin goes too. Each twin is then checked three ways, because any one of them alone is passable
+ * while the tool stays unreachable:
  *   1. the portal page file exists (no dead link),
  *   2. it is in the rendered portal sidebar (employee-portal-layout.tsx — the catalog in
  *      system-navigation.ts renders nothing on its own),
@@ -50,10 +49,7 @@ const PORTAL_TWIN_BY_HUB_HREF: Readonly<Record<string, string>> = {
   "/recruitment": "/employee-portals/recruitment",
   "/cv-database": "/employee-portals/cv-database",
   "/hiring-documents": "/employee-portals/hiring-documents",
-  "/recruitment/cv-review-queue": "/employee-portals/cv-review-queue",
-  "/recruitment/cv-extraction-analytics": "/employee-portals/cv-extraction-analytics",
   "/recruitment/intake-health": "/employee-portals/intake-health",
-  "/recruitment/cv-field-settings": "/employee-portals/cv-field-settings",
 };
 
 function lookupForRole(role: PhoenixRole): PermissionLookup {
@@ -98,7 +94,11 @@ export function runRecruitmentHubPortalCoverageTests() {
   const hubItems = recruitmentHiringPageItems.filter((item) =>
     (item.roles ?? []).some((role) => role === TALENT_ACQUISITION),
   );
-  assert.ok(hubItems.length >= 7, "the hub should still gate its tools to Talent Acquisition");
+  assert.equal(
+    hubItems.length,
+    4,
+    "the hub carries exactly four Talent-Acquisition tools since the 2026-08-15 cull (Recruitment, CV Database, Hiring Documents, Inbound Intake Health) — if that count moves, decide the portal twin in the same change",
+  );
 
   for (const item of hubItems) {
     const twin = PORTAL_TWIN_BY_HUB_HREF[item.href];
@@ -135,22 +135,29 @@ export function runRecruitmentHubPortalCoverageTests() {
     );
   }
 
-  // ── The two that were missing ───────────────────────────────────────────────────────────────
+  // ── The one that was missing, and is now the only alarm on the front door ───────────────────
   // Named explicitly so the regression reads as itself in the output, not as a loop iteration.
-  assert.ok(
-    portalHrefs.has("/employee-portals/cv-extraction-analytics"),
-    "CV Extraction Accuracy must be reachable by Talent Acquisition — it measures their own correction rate",
-  );
   assert.ok(
     portalHrefs.has("/employee-portals/intake-health"),
     "Inbound Intake Health must be reachable by Talent Acquisition — it holds the retry for dead-lettered CVs",
   );
-  // The one the owner ruled on (2026-08-14). Named for the same reason: this tool decides what the
-  // extractor asks for on every future CV, and a field switched off leaves a gap nothing marks
-  // afterwards — so "Talent Acquisition can open it" is a decision worth a failing assertion, not a
-  // loop iteration that happens to pass.
-  assert.ok(
-    portalHrefs.has("/employee-portals/cv-field-settings"),
-    "CV Field Settings must be reachable by Talent Acquisition — she decides which fields the CV reader asks for",
-  );
+
+  // ── The removed tools must stay removed, on BOTH surfaces ───────────────────────────────────
+  // The owner's ruling, 2026-08-15. Each of these had an admin page and a portal twin, and each
+  // twin was wired into three separate places; a partial revert would leave a card or a sidebar row
+  // pointing at a page that no longer exists.
+  for (const gone of ["cv-review-queue", "cv-extraction-analytics", "cv-field-settings"]) {
+    assert.ok(
+      !portalHrefs.has(`/employee-portals/${gone}`),
+      `/employee-portals/${gone} was removed on the owner's ruling — it must not reappear in the portal navigation`,
+    );
+    assert.ok(
+      !existsSync(`app/employee-portals/${gone}/page.tsx`),
+      `app/employee-portals/${gone}/page.tsx was removed on the owner's ruling — a restored page has no navigation entry to reach it`,
+    );
+    assert.ok(
+      !layoutSource.includes(`/employee-portals/${gone}`),
+      `${gone} is still listed in the rendered portal sidebar, so Talent Acquisition gets a row that opens nothing`,
+    );
+  }
 }

@@ -9,6 +9,7 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -42,19 +43,26 @@ async function AdminRecruitmentCandidatesContent() {
   // Already scoped: listApplications() filters to only the requisitions this caller is
   // the hiring manager (or recruitment owner) for — see canSeeApplication in
   // src/lib/recruitment/access.ts. A candidate outside the CEO's own round never appears.
-  const applications = await listApplications(access);
+  //
+  // The second list is the direct push, scoped by the caller's own HR_ID. It is loaded here as well
+  // as on the portal twin because the CEO's job title matches the manager list a recruiter picks
+  // from, so a CV can be sent straight to them — and this admin page is where the CEO would look.
+  const [applications, sentToMe] = await Promise.all([
+    listApplications(access),
+    listCandidatesSentToManager(access.hrId),
+  ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
   return (
     <PageContainer>
       <div className="mx-auto max-w-5xl space-y-6">
         <AdminPageHero
-          description="Candidates in your final hiring round — review their details and record your interview outcome."
+          description="CVs sent to you, and candidates in your final hiring round — read the CV, answer, and record your interview outcome."
           eyebrow="Hiring"
           icon={<Users className="h-5 w-5" />}
           title="My Candidates"
         />
-        <RecruitmentCandidatesPortal initialApplications={myCandidates} />
+        <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />
       </div>
     </PageContainer>
   );

@@ -131,3 +131,57 @@ export async function getInboundIntakeAnalytics(windowDays = 30, now: Date = new
   const [rows, deadLettered] = await Promise.all([fetchIntakeEvents(sinceIso), countDeadLettered(sinceIso).catch(() => 0)]);
   return summarizeInboundIntake(rows, deadLettered, windowDays);
 }
+
+// One attachment that arrived and did NOT become a candidate, with the reason it was turned away.
+export type HeldBackIntakeRow = {
+  id: string;
+  channel: string;
+  mailboxLabel: string | null;
+  subject: string | null;
+  sender: string | null;
+  reason: string | null;
+  createdAt: string | null;
+};
+
+// Deliberately small. This is a "what did we turn away, and was any of it a real applicant" list to
+// glance down, not a log to page through — anything longer is a SQL question.
+const HELD_BACK_LIMIT = 25;
+
+/**
+ * The attachments that arrived but were not turned into a candidate, newest first.
+ *
+ * Without this the stricter per-inbox gate (inbox-cv-gate.ts) would be a silent filter, and a
+ * silent filter is exactly how a real applicant disappears without anyone noticing. Everything it
+ * holds back is written to the intake event with its reason, and this is where that reason is read.
+ *
+ * Only rows carrying a reason: an `ignored_unsupported_attachment` with no message predates the
+ * reason being recorded, and showing it as a blank line explains nothing.
+ */
+export async function listHeldBackIntakeAttachments(
+  windowDays = 30,
+  now: Date = new Date(),
+): Promise<HeldBackIntakeRow[]> {
+  const sinceIso = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_cv_intake_events")
+    .select("id,channel,mailbox_label,subject,sender_identifier,error_message,created_at")
+    .eq("outcome", "ignored_unsupported_attachment")
+    .not("error_message", "is", null)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(HELD_BACK_LIMIT);
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []).map((row) => {
+    const r = row as Record<string, unknown>;
+    return {
+      channel: String(r.channel ?? ""),
+      createdAt: typeof r.created_at === "string" ? r.created_at : null,
+      id: String(r.id ?? ""),
+      mailboxLabel: typeof r.mailbox_label === "string" ? r.mailbox_label : null,
+      reason: typeof r.error_message === "string" ? r.error_message : null,
+      sender: typeof r.sender_identifier === "string" ? r.sender_identifier : null,
+      subject: typeof r.subject === "string" ? r.subject : null,
+    };
+  });
+}

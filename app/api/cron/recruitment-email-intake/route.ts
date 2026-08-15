@@ -8,8 +8,13 @@ import {
   summarizePollFailures,
   type MailboxPollSummary,
 } from "@/lib/recruitment/inbound/email-poller";
+import { buildTodaysCvDigest, isDailyCvDigestTime } from "@/lib/recruitment/inbound/daily-cv-digest";
 import { getInboundIntakeAnalytics, shouldAlertIntakeSpike } from "@/lib/recruitment/inbound/intake-analytics";
-import { notifyInboundIntakeSpike, notifyWhatsAppIntakeUnhealthy } from "@/lib/recruitment/inbound/recruitment-notify";
+import {
+  notifyDailyCvDigest,
+  notifyInboundIntakeSpike,
+  notifyWhatsAppIntakeUnhealthy,
+} from "@/lib/recruitment/inbound/recruitment-notify";
 import { checkWhatsAppIntakeHealth, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 import { bearerSecretMatches } from "@/lib/security/constant-time";
@@ -30,6 +35,34 @@ async function reportInboundIntakeSpike(): Promise<void> {
   }
 }
 
+/**
+ * Best-effort daily summary of the day's CVs, in place of one alert per CV. Piggybacks here for the
+ * same reason the WhatsApp health check does: cron-job.org is the live production scheduler and it
+ * is owner-managed, so a new route would need a new entry created by hand before it ever fired,
+ * whereas this job already runs every 10 minutes for the same channel.
+ *
+ * Gated to the one Cairo hour the digest sends in, so 138 of the day's 144 ticks skip it without a
+ * single database round trip. The six ticks inside that hour all build the digest; only the first
+ * one delivers, because the notification layer claims a Cairo-dated idempotency key atomically
+ * (notifyDailyCvDigest documents exactly how). Never fatal — a summary that fails to send must not
+ * turn the mailbox poll red.
+ */
+async function reportDailyCvDigest(): Promise<void> {
+  if (!isDailyCvDigestTime()) return;
+  const digest = await buildTodaysCvDigest();
+  if (digest.total === 0) return;
+  logInfo("Recruitment daily CV digest", {
+    labels: {
+      awaitingReview: digest.awaitingReview,
+      dayKey: digest.dayKey,
+      event: "recruitment_daily_cv_digest",
+      job: "recruitment-email-intake",
+      total: digest.total,
+    },
+  });
+  await notifyDailyCvDigest(digest);
+}
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -44,6 +77,9 @@ export const maxDuration = 120;
 // for the sibling inbound channel gives that blind spot 10-minute detection with no new
 // infrastructure. It is reported separately from the mailbox result (see below), so a WhatsApp
 // problem never disguises itself as an email-intake failure.
+//
+// Since 2026-08-15 it also carries the daily CV digest, for the same "no new infrastructure"
+// reason — see reportDailyCvDigest below.
 function isAuthorized(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return !isProductionRuntime();
@@ -117,6 +153,13 @@ export async function GET(request: Request) {
     logError("Inbound intake spike check failed to run", {
       error,
       labels: { event: "inbound_spike_check_failed", job: "recruitment-email-intake" },
+    });
+  });
+
+  await reportDailyCvDigest().catch((error) => {
+    logError("Daily CV digest failed to run", {
+      error,
+      labels: { event: "recruitment_daily_cv_digest_failed", job: "recruitment-email-intake" },
     });
   });
 

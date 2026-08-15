@@ -24,15 +24,32 @@ export type AutoApplyExtractedFields = Record<
   { value: string | boolean | number | Array<Record<string, unknown>> | null; confidence: "high" | "low" }
 >;
 
-// The identity triple is createCandidate's alone. It resolves identity BEFORE the candidate row
-// exists (choosing between the CV's identity and the sender's, per identitySource) and derives the
-// national_id_norm/email_norm/phone_norm dedupe keys from the result. Re-applying it here would at
-// best be redundant, and at worst would rewrite the identity of an EXISTING candidate that intake
-// matched rather than created — silently repointing someone else's record.
-// Exported because cv-review-queue.ts must apply the SAME exclusion. Two copies of this set
-// could drift, and a queue that offered identity fields for an unattended-created candidate
-// would reintroduce exactly the repointing hazard described above.
-export const CV_IDENTITY_FIELD_KEYS: ReadonlySet<string> = new Set(["fullName", "email", "phone"]);
+// The identity triple — fullName, email, phone — is createCandidate's alone. It resolves identity
+// BEFORE the candidate row exists (choosing between the CV's identity and the sender's, per
+// identitySource) and derives the national_id_norm/email_norm/phone_norm dedupe keys from the
+// result. Re-applying it here would at best be redundant, and at worst would rewrite the identity
+// of an EXISTING candidate that intake matched rather than created — silently repointing someone
+// else's record.
+//
+// Of that triple, only the two DEDUPE-DECIDING keys are permanently off-limits to an unattended
+// write. fullName and email are what createCandidate matched on; rewriting either really can
+// repoint one person's record at another.
+//
+// `phone` is different, and blanket-excluding it cost more than it protected. Email intake takes
+// identity from the SENDER, and a sender's address carries no phone number — so an emailed CV
+// creates a candidate with phone NULL, the AI reads the real mobile off the CV, and that number
+// then sits unread in ats_candidate_cv_extractions and never reaches the column anyone dials.
+// Measured in production 2026-08-15: the AI had read a phone for 162 of the 172 extracted
+// candidates, and 134 of them still showed a blank phone (113 of those at high confidence) — a pool
+// of people nobody could ring.
+//
+// Phone is therefore allowed, under one EXTRA gate on top of the four below: only when this intake
+// CREATED the candidate. On a MATCH the original hazard is real (the matched record's identity was
+// resolved by a different CV entirely), so a matched candidate still waits for a human. That gate
+// costs nothing measurable — all 113 high-confidence production cases came from candidate_created,
+// none from candidate_matched.
+const AUTO_APPLY_NEVER_KEYS: ReadonlySet<string> = new Set(["fullName", "email"]);
+const AUTO_APPLY_ON_CREATE_ONLY_KEYS: ReadonlySet<string> = new Set(["phone"]);
 
 /**
  * A candidate column counts as free to fill only when it currently holds nothing.
@@ -58,7 +75,8 @@ export function isBlankCandidateValue(value: unknown): boolean {
  *      a repeating block merges into position_specific_fields, a different write shape with
  *      different merge semantics, handled by its own branch below. Anything that is neither is
  *      still declined.
- *   3. not an identity field — see IDENTITY_KEYS above.
+ *   3. not a dedupe-deciding identity field (fullName/email), and — for phone — only when this
+ *      intake created the candidate. See AUTO_APPLY_NEVER_KEYS / AUTO_APPLY_ON_CREATE_ONLY_KEYS.
  *   4. the column is currently blank — this only ever FILLS gaps, never overwrites. So a value a
  *      human typed, or one an earlier extraction already applied, always wins over a later
  *      proposal. That is what makes the feature safe to run on every inbound CV. For blocks the
@@ -77,6 +95,12 @@ export function selectAutoApplyFields(input: {
   extractedFields: AutoApplyExtractedFields | null | undefined;
   positionKey: string;
   candidate: Pick<Candidate, keyof Candidate & string> | Record<string, unknown>;
+  /**
+   * True when the calling intake CREATED this candidate rather than matching an existing one.
+   * Gates AUTO_APPLY_ON_CREATE_ONLY_KEYS (phone). Defaults to false, so any caller that cannot
+   * prove the candidate is new keeps the old, stricter behaviour.
+   */
+  candidateWasCreatedByThisIntake?: boolean;
 }): UpdateCandidateInput {
   const schema = getCvPositionSchema(input.positionKey);
   if (!schema || !input.extractedFields) return {};
@@ -87,7 +111,8 @@ export function selectAutoApplyFields(input: {
     ((input.candidate as Record<string, unknown>).positionSpecificFields as Record<string, unknown> | undefined) ?? {};
 
   for (const definition of schema.fields) {
-    if (CV_IDENTITY_FIELD_KEYS.has(definition.key)) continue;
+    if (AUTO_APPLY_NEVER_KEYS.has(definition.key)) continue;
+    if (AUTO_APPLY_ON_CREATE_ONLY_KEYS.has(definition.key) && !input.candidateWasCreatedByThisIntake) continue;
 
     const proposal = input.extractedFields[definition.key];
     if (!proposal) continue;
@@ -98,8 +123,8 @@ export function selectAutoApplyFields(input: {
     // so the confidence gate does not apply. The blank gate still does, at block granularity: a
     // block is written only when the candidate has nothing under that key yet, so a human who has
     // edited the work history is never overwritten by a re-extraction. Without this, blocks would
-    // reach `extracted_fields` and stop there: the review queue skips non-column fields, so
-    // nothing would ever move them onto the candidate.
+    // reach `extracted_fields` and stop there — this function is the only path that moves a
+    // non-column field onto the candidate.
     if (definition.type === "array") {
       const value = proposal.value;
       if (!Array.isArray(value) || value.length === 0) continue;

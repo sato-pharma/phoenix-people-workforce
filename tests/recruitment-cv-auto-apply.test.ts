@@ -70,8 +70,9 @@ export function runRecruitmentCvAutoApplyTests() {
   );
 
   // --- Gate 3: identity is createCandidate's alone -----------------------------------------------
-  // Re-applying identity could rewrite an EXISTING candidate that intake MATCHED rather than
-  // created, silently repointing someone else's record and its dedupe norms.
+  // Re-applying name or email could rewrite an EXISTING candidate that intake MATCHED rather than
+  // created, silently repointing someone else's record and its dedupe norms. No flag ever unlocks
+  // those two.
   assert.deepEqual(
     selectAutoApplyFields({
       candidate: freshCandidate({ email: null, phone: null }),
@@ -83,7 +84,81 @@ export function runRecruitmentCvAutoApplyTests() {
       positionKey: "medical_rep",
     }),
     {},
-    "identity fields are never auto-applied, even when the column is empty",
+    "on a MATCHED candidate no identity field is auto-applied, even when the column is empty",
+  );
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ email: null, phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: {
+        email: high("someone.else@example.com"),
+        fullName: high("Someone Else"),
+      },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "fullName and email stay locked even when this intake created the candidate",
+  );
+
+  // --- Phone: the one identity field a CREATED candidate may have filled -------------------------
+  // Email intake takes identity from the SENDER, and a sender's address carries no phone — so an
+  // emailed CV creates a candidate with phone NULL while the AI reads the real mobile off the CV.
+  // Measured in production 2026-08-15: 134 of 172 extracted candidates showed a blank phone the AI
+  // had in fact read (113 at high confidence). Nobody could ring any of them.
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { phone: high("01000000000") },
+      positionKey: "medical_rep",
+    }),
+    { phone: "01000000000" },
+    "a high-confidence phone fills the blank phone of a candidate THIS intake created",
+  );
+
+  // The created-only gate is the whole safety story: on a match, the record's identity was resolved
+  // by a DIFFERENT CV, so writing this CV's phone could repoint someone else's row (and its
+  // phone_norm, which carries a partial UNIQUE index).
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      extractedFields: { phone: high("01000000000") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "a MATCHED candidate's blank phone still waits for a human",
+  );
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: false,
+      extractedFields: { phone: high("01000000000") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "the flag defaults closed — an explicit false behaves exactly like an absent one",
+  );
+
+  // The other three gates still apply on top of the created-only one.
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { phone: low("01000000000") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "a low-confidence phone waits for a human even on a created candidate",
+  );
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: "01016585527" }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { phone: high("01000000000") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "a phone already on the record is never overwritten — this only ever fills a gap",
   );
 
   // --- Gate 4: fill gaps, never overwrite --------------------------------------------------------
@@ -176,10 +251,9 @@ export function runRecruitmentCvAutoApplyTests() {
   );
 
   // --- Repeating blocks: the jsonb branch of gate 2 ----------------------------------------------
-  // Blocks reach a candidate ONLY through here. cv-review-queue.ts skips non-column fields (its
-  // gate 1), so a work history this function declines has no route to a human at all — it would sit
-  // in extracted_fields forever, which is the exact "paid for and invisible" failure this module
-  // exists to end.
+  // Blocks reach a candidate ONLY through here — this function is the sole writer of a non-column
+  // field. A work history it declines sits in extracted_fields forever, which is the exact "paid
+  // for and invisible" failure this module exists to end.
   assert.deepEqual(
     selectAutoApplyFields({
       candidate: freshCandidate(),

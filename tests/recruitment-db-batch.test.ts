@@ -67,14 +67,14 @@ export async function runRecruitmentDbBatchTests() {
   );
   assert.equal(calls, 2, "it must stop at the failing batch rather than keep issuing requests");
 
-  // --- The four unbounded call sites stay batched ------------------------------------------------
+  // --- The unbounded call sites stay batched -----------------------------------------------------
   // The defect here is invisible to the type system and to lint: `.in("id", someArray)` is valid
   // TypeScript that works perfectly until the list outgrows the request URL in production. So the
   // guard has to read the source.
   //
   // Deliberately NOT "every id filter in recruitment must be batched" — several are bounded by
   // construction (one candidate's own applications, a single id) and batching those would add round
-  // trips across the Atlantic for nothing. This pins the four whose length is driven by how much
+  // trips across the Atlantic for nothing. This pins the ones whose length is driven by how much
   // data exists, which is the set that can silently outgrow the limit.
   // Each site is pinned individually — by its own table and filter column — so breaking any ONE of
   // them fires its own assertion rather than hiding behind a sibling that is still batched.
@@ -93,10 +93,10 @@ export async function runRecruitmentDbBatchTests() {
       column: "candidate_id",
     },
     {
-      file: "src/lib/recruitment/cv-review-queue.ts",
-      site: "candidates behind up to MAX_EXTRACTION_ROWS extractions",
-      table: "ats_candidates",
-      column: "id",
+      file: "src/lib/recruitment/applications.ts",
+      site: "manager_notified audit rows behind a company-wide application list",
+      table: "ats_application_events",
+      column: "application_id",
     },
     {
       file: "src/lib/recruitment/selection.ts",

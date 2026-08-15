@@ -131,8 +131,20 @@ export type CvScreeningOutcome = (typeof cvScreeningOutcomes)[number];
 export const phoneScreeningOutcomes = ["passed", "failed", "no_response", "call_back"] as const;
 export type PhoneScreeningOutcome = (typeof phoneScreeningOutcomes)[number];
 
-// Rule 4 — candidate-level status (free text; defaults to "Candidate Created").
-export const DEFAULT_CANDIDATE_STATUS = "Candidate Created";
+// Rule 4 — candidate-level status. No longer free text: the vocabulary, the labels and the
+// legacy-value mapping all live in candidate-status.ts, and are re-exported here so the many
+// existing importers of this module keep resolving it from one place.
+export {
+  CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  candidateStatuses,
+  candidateStatusLabel,
+  candidateStatusLabels,
+  DEFAULT_CANDIDATE_STATUS,
+  isCandidateStatus,
+  isUnreviewedCandidateStatus,
+  normalizeCandidateStatus,
+  type CandidateStatus,
+} from "@/lib/recruitment/candidate-status";
 
 export function isTerminalApplicationStage(stage: string): boolean {
   return (terminalApplicationStages as readonly string[]).includes(stage);
@@ -175,6 +187,12 @@ export type Candidate = {
   id: string;
   fullName: string;
   status: string;
+  // Why the status is what it is, and who last set it. The fixed vocabulary makes the column
+  // countable and filterable; the note keeps the one thing a list of five codes can never hold —
+  // "not an Egyptian national", "asked for double the band", "call back after Ramadan".
+  statusNote: string | null;
+  statusChangedAt: string | null;
+  statusChangedByHrId: string | null;
   nationalId: string | null;
   email: string | null;
   phone: string | null;
@@ -193,6 +211,12 @@ export type Candidate = {
   // The candidate's OWN current/most recent job title as written on their CV — never the vacancy
   // they applied to. This is the field that makes CV extraction work for any job title.
   currentJobTitle: string | null;
+  // The job they are asking us FOR, and the words that prove it. Read from the covering message
+  // (email subject/body, WhatsApp text) far more often than from the CV, which is why the two are
+  // separate fields: the title is what gets filtered on, the evidence is what lets a recruiter
+  // overrule it without opening the mail.
+  appliedForJobTitle: string | null;
+  appliedForEvidence: string | null;
   professionalSummary: string | null;
   currentEmployer: string | null;
   currentRoleResponsibilities: string | null;
@@ -218,6 +242,15 @@ export type Candidate = {
   // live here rather than in columns because they are variable-length arrays; every scalar
   // extraction field has its own column above.
   positionSpecificFields: Record<string, unknown>;
+  /**
+   * The last time this candidate was pushed straight to a manager, with NO requisition in between.
+   * Null means nobody has been told — which, before 2026-08-15, was true of 214 of the 221 people
+   * in the pool, because a push required inventing a position first.
+   *
+   * The manager's name is the one stored AT THE TIME of the send rather than joined on render, so
+   * the history keeps saying what the recruiter actually saw even after a rename or a leaver.
+   */
+  managerNotified: { hrId: string; name: string; sentAt: string } | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
@@ -266,6 +299,19 @@ export type ApplicationEvent = {
   actorHrId: string | null;
   reason: string | null;
   details: Record<string, unknown>;
+  createdAt: string;
+};
+
+// One line of a candidate's decision history. Append-only: the note on the candidate row is
+// overwritten by the next decision, so without this table "why did we reject them in July" is a
+// question the module could not answer once anything else happened to the record.
+export type CandidateStatusEvent = {
+  id: string;
+  candidateId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  note: string | null;
+  actorHrId: string | null;
   createdAt: string;
 };
 
@@ -335,6 +381,8 @@ export type CreateCandidateInput = {
   address?: string | null;
   governorate?: string | null;
   currentJobTitle?: string | null;
+  appliedForJobTitle?: string | null;
+  appliedForEvidence?: string | null;
   professionalSummary?: string | null;
   currentEmployer?: string | null;
   currentRoleResponsibilities?: string | null;

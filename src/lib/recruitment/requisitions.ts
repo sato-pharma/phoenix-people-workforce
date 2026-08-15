@@ -141,6 +141,28 @@ export async function createRequisition(
     }
   }
 
+  // A requisition with no vacancy behind it has no seat to inherit anything from, and two of those
+  // inherited values are load-bearing:
+  //
+  //   • job_title is the only name the requisition is ever read by. Without a vacancy it falls back
+  //     to "" (see the payload below), which puts a nameless row on everyone's screen.
+  //   • hiring_manager_hr_id is what makes the requisition VISIBLE. canSeeRequisition
+  //     (src/lib/recruitment/access.ts) scopes on hiringManagerHrId and recruitmentOwnerHrId and
+  //     never on line or area — so a seatless requisition with no manager is invisible to everyone
+  //     except the roles that see all of recruitment, and to the recruiter who happens to own it.
+  //     The person expected to hire for it would never see the thing.
+  //
+  // Enforced here and not only in the form because the form is not the boundary: the POST route
+  // takes both fields from the request body.
+  if (!vacancy) {
+    if (!textOrNull(input.jobTitle)) {
+      throw new Error("Type the job title, or choose an open vacancy.");
+    }
+    if (!textOrNull(input.hiringManagerHrId)) {
+      throw new Error("Choose the hiring manager — with no vacancy behind it, nobody else can see this requisition.");
+    }
+  }
+
   const headcountType = normalizeHeadcountType(
     input.headcountType,
     vacancy?.replacementForHrId ? "replacement" : "expansion",

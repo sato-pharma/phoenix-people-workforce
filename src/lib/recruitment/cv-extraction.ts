@@ -45,9 +45,9 @@ import {
   type CvFieldType,
   type CvPositionSchema,
 } from "@/lib/recruitment/cv-field-schemas";
-import { resolveEffectiveCvSchema } from "@/lib/recruitment/cv-field-settings";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
-import { chooseCvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
+import { isThinCvRead, mergeCvExtractions, scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
+import { chooseCvExtractionRoute, MAX_PDF_VISION_BYTES, type CvExtractionRoute } from "@/lib/recruitment/cv-text-layer";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { getFileForDownload, listCandidateFiles } from "@/lib/recruitment/files";
 import type { RecruitmentFile } from "@/lib/recruitment/types";
@@ -211,7 +211,15 @@ export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fi
   if (kind === "pdf") {
     const parser = new PDFParse({ data: bytes });
     try {
-      const result = await parser.getText();
+      // parseHyperlinks is the whole reason linkedinUrl came back 0 out of 28 on the universal
+      // schema in production. pdf-parse defaults it to FALSE, and getText() was called with no
+      // arguments at all — so a PDF's /Annots link dictionaries were dropped on the floor. On a
+      // modern CV the LinkedIn address is almost never typed out as text: it is an icon, or the
+      // word "LinkedIn", carrying the URL as an annotation. The text layer holds the icon; the URL
+      // lives only in the annotation. With this on, pdf-parse rewrites the anchor inline as
+      // [LinkedIn](https://www.linkedin.com/in/...) and the model can finally see it — same for a
+      // mailto: behind a mail icon, and for a portfolio or GitHub link.
+      const result = await parser.getText({ parseHyperlinks: true });
       return result.text ?? "";
     } finally {
       await parser.destroy();
@@ -234,12 +242,16 @@ export async function extractRawTextFromFile(bytes: Buffer, mimeType: string, fi
 // artifacts that would cost accuracy on small print.
 // ---------------------------------------------------------------------------
 
-export function buildVisionInput(bytes: Buffer, mimeType: string) {
+export function buildVisionInput(bytes: Buffer, mimeType: string, coverMessage?: string | null) {
   return [
     {
       content: [
         { text: "Extract the candidate fields from this CV image.", type: "input_text" as const },
         { detail: "high" as const, image_url: `data:${mimeType};base64,${bytes.toString("base64")}`, type: "input_image" as const },
+        // After the document, never before it: the CV is the subject and the covering note is
+        // context about it. A photographed CV needs the covering message just as much as a text
+        // one — arguably more, since a phone snapshot rarely includes a career objective.
+        ...(coverMessage ? [{ text: coverMessage, type: "input_text" as const }] : []),
       ],
       role: "user" as const,
     },
@@ -255,11 +267,12 @@ export function buildVisionInput(bytes: Buffer, mimeType: string) {
 // "high" detail for the same reason as the image path above: small print on a scanned CV.
 // ---------------------------------------------------------------------------
 
-export function buildPdfFileInput(bytes: Buffer, fileName: string) {
+export function buildPdfFileInput(bytes: Buffer, fileName: string, coverMessage?: string | null) {
   return [
     {
       content: [
         { text: "Extract the candidate fields from this scanned CV.", type: "input_text" as const },
+        ...(coverMessage ? [{ text: coverMessage, type: "input_text" as const }] : []),
         {
           detail: "high" as const,
           // A filename is required alongside inline file_data, and the model uses the extension to
@@ -442,15 +455,24 @@ export async function extractCvFieldsFromBytes(input: {
   mimeType: string;
   fileName: string;
   positionKey?: string;
+  // What the sender WROTE when they submitted this CV — email subject and body, or WhatsApp
+  // messages — already formatted by formatCoveringMessage. Optional: a CV uploaded by a recruiter
+  // has no covering message and simply omits it.
+  //
+  // This is the only way the extraction can answer "what job is this person applying FOR", because
+  // a CV states what someone has done, not what they want. See appliedForJobTitle in
+  // cv-field-schemas.ts, and rules 5a/5b there for the two limits on how it may be used.
+  coverMessage?: string | null;
 }): Promise<CvFieldExtraction> {
   const declaredSchema = getCvPositionSchema(input.positionKey ?? defaultCvPositionKey);
   if (!declaredSchema) {
     throw new CvExtractionError("ai_failed", `Unknown CV extraction position "${input.positionKey}".`);
   }
-  // Fields switched off on the field-settings page are dropped from the request schema itself, so
-  // a disabled field costs no output tokens rather than being extracted and then hidden. A
-  // settings-table read failure returns the full schema — see resolveEffectiveCvSchema.
-  const schema = await resolveEffectiveCvSchema(declaredSchema);
+  // The declared schema IS the schema. There used to be a per-field include/exclude switch read
+  // from ats_cv_field_settings on every extraction; the page that set it was removed 2026-08-15
+  // with zero rows ever written, so the read could only ever return "everything on" while costing
+  // a round trip to Frankfurt per CV. The owner's rule was always "capture everything" anyway.
+  const schema = declaredSchema;
   if (!hasOpenAiApiKey()) {
     throw new CvExtractionError(
       "ai_not_configured",
@@ -464,60 +486,109 @@ export async function extractCvFieldsFromBytes(input: {
   const rawText = fileKind === "image" ? "" : await extractRawTextFromFile(input.bytes, input.mimeType, input.fileName);
   const cleanedText = rawText.trim().slice(0, MAX_CV_TEXT_CHARS);
 
-  let aiInput: string | ReturnType<typeof buildVisionInput> | ReturnType<typeof buildPdfFileInput>;
-  switch (chooseCvExtractionRoute({ byteLength: input.bytes.length, extractedText: cleanedText, fileKind })) {
-    case "vision_image":
-      aiInput = buildVisionInput(input.bytes, input.mimeType);
-      break;
+  const route = chooseCvExtractionRoute({ byteLength: input.bytes.length, extractedText: cleanedText, fileKind });
+  if (route === "text" && !cleanedText) {
+    throw new CvExtractionError("unsupported_file", "No readable text was found in this CV file.");
+  }
+
+  const buildInput = (
+    forRoute: CvExtractionRoute,
+  ): string | ReturnType<typeof buildVisionInput> | ReturnType<typeof buildPdfFileInput> => {
+    if (forRoute === "vision_image") return buildVisionInput(input.bytes, input.mimeType, input.coverMessage);
     // A PDF whose text layer is too thin to be a CV: send the file itself rather than asking the
     // model to judge a page marker. Without this the call reliably answers is_cv:false and the
     // applicant is discarded — see cv-text-layer.ts.
-    case "vision_pdf":
-      aiInput = buildPdfFileInput(input.bytes, input.fileName);
-      break;
-    default:
-      if (!cleanedText) {
-        throw new CvExtractionError(
-          "unsupported_file",
-          "No readable text was found in this CV file.",
-        );
-      }
-      aiInput = `CV text:\n\n${cleanedText}`;
-  }
+    if (forRoute === "vision_pdf") return buildPdfFileInput(input.bytes, input.fileName, input.coverMessage);
+    // The covering message goes AFTER the CV and under its own heading. Order matters: the CV is
+    // what is being extracted, the covering note is context about it, and putting the note first
+    // invites the model to describe the sender rather than the document.
+    return input.coverMessage ? `CV text:\n\n${cleanedText}\n\n${input.coverMessage}` : `CV text:\n\n${cleanedText}`;
+  };
 
-  let outputText: string;
-  let model: string;
-  try {
-    const response = await createOpenAiResponseText({
-      input: aiInput,
-      instructions: CV_EXTRACTION_CLASSIFICATION_PREAMBLE + schema.instructions,
-      maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
-      model: OPENAI_COPILOT_DEFAULT_MODEL,
-      purpose: "recruitment-cv-extraction",
-      reasoning: { effort: "medium" },
-      text: buildExtractionTextFormat(schema),
-      timeoutMs: OPENAI_ROUTE_BUDGET_MS,
-    });
-    outputText = response.outputText;
-    model = response.model;
-  } catch (error) {
-    if (error instanceof PhoenixOpenAiError) {
-      throw cvExtractionErrorFromOpenAi(error);
+  const runPass = async (forRoute: CvExtractionRoute): Promise<CvFieldExtraction> => {
+    let outputText: string;
+    let model: string;
+    try {
+      const response = await createOpenAiResponseText({
+        input: buildInput(forRoute),
+        instructions: CV_EXTRACTION_CLASSIFICATION_PREAMBLE + schema.instructions,
+        maxOutputTokens: MAX_CV_EXTRACTION_OUTPUT_TOKENS,
+        model: OPENAI_COPILOT_DEFAULT_MODEL,
+        purpose: "recruitment-cv-extraction",
+        // Raised from "medium" 2026-08-15. This is the single most accuracy-sensitive call in the
+        // module — it runs a few hundred times a month, once per applicant, and every field the
+        // module will ever hold comes out of it. Reading a two-column CV, pairing employers to
+        // date ranges and telling a current title from an applied-for one is reasoning work, and
+        // it was being done at the middle setting to save tokens on the cheapest thing here.
+        reasoning: { effort: "high" },
+        text: buildExtractionTextFormat(schema),
+        timeoutMs: OPENAI_ROUTE_BUDGET_MS,
+      });
+      outputText = response.outputText;
+      model = response.model;
+    } catch (error) {
+      if (error instanceof PhoenixOpenAiError) throw cvExtractionErrorFromOpenAi(error);
+      throw new CvExtractionError(
+        "ai_failed",
+        `Could not reach the extraction service: ${error instanceof Error ? error.message : "network error"}`,
+      );
     }
-    throw new CvExtractionError(
-      "ai_failed",
-      `Could not reach the extraction service: ${error instanceof Error ? error.message : "network error"}`,
-    );
+
+    const parsed = parseAiJson(outputText);
+    const fields: ExtractedCandidateFields = {};
+    for (const field of schema.fields) {
+      fields[field.key] = readSchemaField(parsed, field);
+    }
+    // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
+    // treated as "yes, it's a CV" so an AI quirk never drops a real applicant.
+    return { fields, isCv: parsed.is_cv !== false, model, positionKey: schema.positionKey };
+  };
+
+  // A PDF read from its text layer always has a second, INDEPENDENT way to be read: hand the file
+  // to the model and let it render the pages. That is the only escalation available — a .docx has
+  // no image form, and a route that already IS vision has nothing better to fall back to.
+  const escalation: CvExtractionRoute | null =
+    route === "text" && fileKind === "pdf" && input.bytes.length <= MAX_PDF_VISION_BYTES ? "vision_pdf" : null;
+
+  let primary: CvFieldExtraction;
+  try {
+    primary = await runPass(route);
+  } catch (error) {
+    // The first pass DIED. Before this, that ended the CV: cv-intake-service.ts catches and fails
+    // open, so the applicant was created with a name and nothing else and nothing ever went back
+    // for them — 49 of 226 production candidates are in exactly that state. A PDF gets one more
+    // attempt down a genuinely different path before we accept losing it.
+    if (!escalation) throw error;
+    return await runPass(escalation);
   }
 
-  const parsed = parseAiJson(outputText);
-  const fields: ExtractedCandidateFields = {};
-  for (const field of schema.fields) {
-    fields[field.key] = readSchemaField(parsed, field);
+  if (!escalation) return primary;
+
+  // A credible read stops here — the escalation costs a second call and must not fire on the
+  // common path. It fires on the two shapes a FAILED text-layer read takes: a near-empty result,
+  // and a confident "this isn't a CV" reached from scrambled text. The second is the incident that
+  // put cv-text-layer.ts in this codebase; that guard catches a text layer thin enough to measure,
+  // and this one catches the layer that is long enough to pass it but still unreadable.
+  const score = scoreCvExtraction(primary.fields);
+  if (!isThinCvRead(score) && primary.isCv) return primary;
+
+  let retry: CvFieldExtraction;
+  try {
+    retry = await runPass(escalation);
+  } catch {
+    return primary; // the escalation is a bonus attempt; its failure must never cost the first read
   }
-  // Fail OPEN: only an explicit is_cv:false suppresses a candidate; a missing/garbled value is
-  // treated as "yes, it's a CV" so an AI quirk never drops a real applicant.
-  return { fields, isCv: parsed.is_cv !== false, model, positionKey: schema.positionKey };
+
+  // Best-of, field by field — the retry reads layout better but must never delete what the text
+  // layer already got right (see mergeCvExtractions). is_cv follows whichever pass actually read
+  // the document: a retry that came back with a real CV overrules a text-layer "not a CV".
+  const retryScore = scoreCvExtraction(retry.fields);
+  return {
+    fields: mergeCvExtractions(primary.fields, retry.fields),
+    isCv: isThinCvRead(retryScore) ? primary.isCv : retry.isCv,
+    model: retry.model,
+    positionKey: schema.positionKey,
+  };
 }
 
 // ---------------------------------------------------------------------------

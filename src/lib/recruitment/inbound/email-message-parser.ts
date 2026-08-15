@@ -3,6 +3,7 @@
 
 import type { ParsedMail } from "mailparser";
 
+import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-context";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { extractAllowlistedCvUrl } from "@/lib/recruitment/inbound/cv-link";
 import { nameFromAttachmentFilename, parseImportSenderList } from "@/lib/recruitment/inbound/cv-import-shared";
@@ -66,6 +67,10 @@ type EmailIdentity = {
   isImport: boolean;
   providerMessageIdBase: string;
   subject: string | null;
+  // Subject + body formatted for the extraction model, so it can read which job was applied for.
+  // Separate from `notes`: notes is the 500-character excerpt STORED on the candidate for a human
+  // to read, this is the (longer) text SENT to the model and never persisted as-is.
+  coverMessage: string | null;
 };
 
 function emailIdentity(
@@ -75,13 +80,15 @@ function emailIdentity(
 ): EmailIdentity {
   const fromEntry = Array.isArray(mail.from?.value) ? mail.from.value[0] : undefined;
   const email = fromEntry?.address?.trim().toLowerCase() || null;
+  const subject = mail.subject?.trim() || null;
   return {
+    coverMessage: formatCoveringMessage({ body: mail.text ?? null, subject }),
     displayName: fromEntry?.name?.trim() || null,
     email,
     isImport: isEmailImportSender(email, options?.importSenders),
     notes: (mail.text ?? "").trim().slice(0, 500) || null,
     providerMessageIdBase: mail.messageId?.trim() || `email:${context.mailboxLabel}:uid:${context.uid}`,
-    subject: mail.subject?.trim() || null,
+    subject,
   };
 }
 
@@ -113,6 +120,10 @@ function buildEmailIntakeInput(
         notes: null,
         phone: null,
       },
+      // A forwarder's covering words still routinely name the role ("CV for the Upper Egypt DSM
+      // vacancy"), so they are worth reading — and rule 5c tells the model that a forward is not
+      // automatically an application, so a bare "FYI" leaves the field null rather than guessing.
+      coverMessage: id.coverMessage,
       identitySource: "cv",
       mailboxLabel: context.mailboxLabel,
       providerMessageId,
@@ -128,6 +139,7 @@ function buildEmailIntakeInput(
   return {
     attachment,
     candidate: { email: id.email, fullName, notes: id.notes, phone: null },
+    coverMessage: id.coverMessage,
     identitySource: "sender",
     mailboxLabel: context.mailboxLabel,
     providerMessageId,

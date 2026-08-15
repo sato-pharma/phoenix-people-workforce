@@ -38,6 +38,8 @@ export const CV_FIELD_COLUMNS: Readonly<Record<string, string>> = {
   governorate: "governorate",
   // Professional
   currentJobTitle: "current_job_title",
+  appliedForJobTitle: "applied_for_job_title",
+  appliedForEvidence: "applied_for_evidence",
   professionalSummary: "professional_summary",
   currentEmployer: "current_employer",
   currentRoleResponsibilities: "current_role_responsibilities",
@@ -62,10 +64,11 @@ export function cvFieldColumn(key: string): string | null {
   return CV_FIELD_COLUMNS[key] ?? null;
 }
 
-// Fields the AI can propose that are NOT part of the identity triple. The identity fields stay
-// excluded from auto-apply and from the review queue (see CV_IDENTITY_FIELD_KEYS in
-// cv-auto-apply.ts) because createCandidate owns identity resolution before the row exists —
-// re-applying them later risks repointing an already-matched candidate onto another person.
+// Fields the AI can propose that are NOT part of the identity triple. fullName and email stay
+// excluded from auto-apply (see AUTO_APPLY_NEVER_KEYS in cv-auto-apply.ts) because createCandidate
+// owns identity resolution before the row exists — re-applying them later risks repointing an
+// already-matched candidate onto another person. Phone is allowed, but only on a candidate this
+// same intake created.
 export function listWritableCvFields(): CvFieldDefinition[] {
   return universalCvFields.filter((field) => field.storage === "column" && cvFieldColumn(field.key) !== null);
 }

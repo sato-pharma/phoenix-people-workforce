@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { InboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
+import type { HeldBackIntakeRow, InboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
 import type { DeadLetteredInboundRow } from "@/lib/recruitment/inbound/intake-queue";
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
@@ -25,12 +25,41 @@ function outcomeLabel(outcome: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function inboxLabel(channel: string, mailboxLabel: string | null): string {
+  if (channel === "whatsapp") return "WhatsApp";
+  return mailboxLabel ? `${mailboxLabel} inbox` : "Email";
+}
+
+// Every moment this module shows a person is Cairo local time, never a raw UTC string. Written
+// here, matching recruitment-workspace.tsx, rather than imported across a domain boundary — the
+// same convention request-report-columns.ts states for its own copy.
+function cairoDateTime(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "";
+  const date = value.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  });
+  const time = value.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  });
+  return `${date}, ${time}`;
+}
+
 export function IntakeHealthView({
   analytics,
   deadLetters: initialDeadLetters,
+  heldBack,
 }: {
   analytics: InboundIntakeAnalytics;
   deadLetters: DeadLetteredInboundRow[];
+  heldBack: HeldBackIntakeRow[];
 }) {
   const [deadLetters, setDeadLetters] = useState(initialDeadLetters);
   const [retrying, setRetrying] = useState<Record<string, boolean>>({});
@@ -112,6 +141,38 @@ export function IntakeHealthView({
             </ul>
           )}
         </div>
+      </div>
+
+      {/* Every attachment the gate turned away, with the reason — because a filter nobody can see
+          is how a real applicant disappears without anyone finding out. The stricter check on the
+          general HR mailbox (src/lib/recruitment/inbound/inbox-cv-gate.ts) writes its reason onto
+          the intake event, and this is the screen that reads it back. */}
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="mb-1 text-sm font-semibold text-slate-900">Held back</h2>
+        <p className="mb-3 text-xs text-slate-500">
+          Files that arrived but were not turned into a candidate, newest first. The general HR
+          mailbox holds back anything that does not read like a CV; the careers address and WhatsApp
+          do not. Nothing is deleted — the message is still in the mailbox.
+        </p>
+        {heldBack.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Nothing held back in the last {analytics.windowDays} days.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {heldBack.map((row) => (
+              <li className="py-3" key={row.id}>
+                <div className="text-sm font-medium text-slate-800">{row.subject || "No subject"}</div>
+                <div className="mt-0.5 text-xs text-slate-500">
+                  {[inboxLabel(row.channel, row.mailboxLabel), row.sender, cairoDateTime(row.createdAt)]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+                {row.reason ? <div className="mt-0.5 text-xs text-slate-500">{row.reason}</div> : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">

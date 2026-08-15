@@ -10,6 +10,12 @@ import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { recruitmentManageRoles } from "@/lib/recruitment/access";
 import { createSystemNotificationForRecipients } from "@/lib/notifications/system";
 import type { InboundCvChannel } from "@/lib/recruitment/inbound/cv-intake-service";
+import {
+  dailyCvDigestMessage,
+  dailyCvDigestTitle,
+  shouldAlertImmediatelyForInboundCv,
+  type DailyCvDigest,
+} from "@/lib/recruitment/inbound/daily-cv-digest";
 import { cairoDateKey, type WhatsAppIntakeHealth } from "@/lib/recruitment/inbound/whatsapp-health";
 
 async function hrIdsForRoles(roles: readonly PhoenixRole[]): Promise<string[]> {
@@ -39,6 +45,11 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
   // that is already done.
   fieldsAwaitingReview?: number;
 }): Promise<void> {
+  // The routine arrival is reported once a day by notifyDailyCvDigest instead of once per CV.
+  // Checked BEFORE the recipient lookup so the ordinary path costs no database round trip at all —
+  // this runs on every single inbound CV.
+  if (!shouldAlertImmediatelyForInboundCv(input)) return;
+
   const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
   if (recipientHrIds.length === 0) return;
 
@@ -47,13 +58,10 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
     ? ` (matched by ${input.matchReason === "national_id" ? "National ID" : input.matchReason})`
     : "";
   const awaiting = input.fieldsAwaitingReview ?? 0;
-  const fieldsLabel =
-    input.fileAttached && awaiting > 0
-      ? ` ${awaiting} ${awaiting === 1 ? "field needs" : "fields need"} your review — the rest were filled in automatically.`
-      : "";
-  const message = input.fileAttached
-    ? `${input.fullName} sent a CV via ${channelLabel}${matchLabel}.${fieldsLabel}`
-    : `${input.fullName} reached out via ${channelLabel}${matchLabel}, but their CV file could not be attached — check the candidate record.`;
+  // Only the no-file case reaches this line, so the message says exactly that instead of branching
+  // on fileAttached — a ternary whose other half can never run reads like a live path and is how a
+  // later change quietly resurrects the per-CV flood.
+  const message = `${input.fullName} reached out via ${channelLabel}${matchLabel}, but their CV file could not be attached — check the candidate record.`;
 
   await createSystemNotificationForRecipients(
     {
@@ -72,7 +80,54 @@ export async function notifyTalentAcquisitionOfInboundCv(input: {
       },
       module: "recruitment",
       priority: "normal",
-      title: input.created ? "New candidate from inbound CV" : "New CV for existing candidate",
+      title: "Inbound CV arrived with no file",
+    },
+    recipientHrIds,
+  );
+}
+
+/**
+ * ONE notification a day naming how many CVs arrived, what they applied for and which channel
+ * brought them — the replacement for the 628 per-CV deliveries measured over 30 days.
+ *
+ * Throttled by the SAME mechanism as the alerts above, and it is worth being precise about how that
+ * works because the caller fires this six times inside the digest hour: the Cairo-dated
+ * idempotencyKey is suffixed per recipient by createSystemNotificationForRecipients, and each
+ * per-recipient delivery row is claimed by an atomic INSERT against a unique constraint. The first
+ * tick of the hour claims and sends; the other five lose the claim and send nothing. There is no
+ * "have I already sent today" read anywhere, and therefore no window in which two ticks both decide
+ * they are first.
+ *
+ * A day with no arrivals sends nothing at all. Silence already means "nothing came in", and a daily
+ * "0 CVs" push is precisely the kind of message that teaches people to ignore the channel.
+ *
+ * Channels are in-app + Telegram + push and NEVER email — the owner's rule for the "new CV received"
+ * notice, live in production since 2026-08-15. That is enforced twice over, here and in
+ * recruitment-cv-channel-guard.ts, which knows this eventType.
+ */
+export async function notifyDailyCvDigest(digest: DailyCvDigest): Promise<void> {
+  if (digest.total === 0) return;
+
+  const recipientHrIds = await hrIdsForRoles(recruitmentManageRoles);
+  if (recipientHrIds.length === 0) return;
+
+  await createSystemNotificationForRecipients(
+    {
+      // The pool itself, not a candidate — the digest is about a day, and the day's arrivals are
+      // what the Candidates tab opens on, sorted newest first.
+      actionUrl: "/recruitment",
+      channels: ["in_app", "telegram", "push"],
+      eventType: "recruitment_daily_cv_digest",
+      message: dailyCvDigestMessage(digest),
+      metadata: {
+        awaitingReview: digest.awaitingReview,
+        dayKey: digest.dayKey,
+        idempotencyKey: `recruitment-daily-cv-digest:${digest.dayKey}`,
+        total: digest.total,
+      },
+      module: "recruitment",
+      priority: "normal",
+      title: dailyCvDigestTitle(digest),
     },
     recipientHrIds,
   );

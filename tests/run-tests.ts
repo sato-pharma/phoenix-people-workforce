@@ -119,10 +119,12 @@ import { runRecruitmentDriveStorageTests } from "./recruitment-drive-storage.tes
 import { runRecruitmentVacancyCloseInvariantTests } from "./recruitment-vacancy-close-invariant.test.ts";
 import { runRecruitmentInterviewNotificationsTests } from "./recruitment-interview-notifications.test.ts";
 import { runRecruitmentNsmRmCeoScopingTests } from "./recruitment-nsm-rm-ceo-scoping.test.ts";
-import { runRecruitmentCvExtractionAnalyticsTests } from "./recruitment-cv-extraction-analytics.test.ts";
 import { runRecruitmentCvExtractionFieldsTests } from "./recruitment-cv-extraction-fields.test.ts";
+import { runRecruitmentCvExtractionQualityTests } from "./recruitment-cv-extraction-quality.test.ts";
 import { runRecruitmentCvAutoApplyTests } from "./recruitment-cv-auto-apply.test.ts";
-import { runRecruitmentCvReviewQueueTests } from "./recruitment-cv-review-queue.test.ts";
+import { runRecruitmentHiringManagerPushTests } from "./recruitment-hiring-manager-push.test.ts";
+import { runRecruitmentSimplifyTests } from "./recruitment-simplify.test.ts";
+import { runRecruitmentManagerInboxTests } from "./recruitment-manager-inbox.test.ts";
 import { runRecruitmentHubPortalCoverageTests } from "./recruitment-hub-portal-coverage.test.ts";
 import { runRecruitmentPortalCvViewTests } from "./recruitment-portal-cv-view.test.ts";
 import { runRecruitmentInboundCvIntakeTests } from "./recruitment-inbound-cv-intake.test.ts";
@@ -967,10 +969,24 @@ await runTest("recruitment drive storage", runRecruitmentDriveStorageTests);
 await runTest("recruitment vacancy close invariant", runRecruitmentVacancyCloseInvariantTests);
 await runTest("recruitment interview notifications", runRecruitmentInterviewNotificationsTests);
 await runTest("recruitment NSM/RM/CEO scoping (interview type by role, hierarchy/line scope wiring)", runRecruitmentNsmRmCeoScopingTests);
-await runTest("recruitment cv extraction analytics", runRecruitmentCvExtractionAnalyticsTests);
 await runTest("recruitment cv extraction fields", runRecruitmentCvExtractionFieldsTests);
-await runTest("recruitment cv auto-apply (high-confidence gap-fill rules)", runRecruitmentCvAutoApplyTests);
-await runTest("recruitment cv review queue (pending-proposal selection)", runRecruitmentCvReviewQueueTests);
+await runTest(
+  "recruitment cv extraction quality (thin-read scoring, best-of merge, hyperlink capture, high effort, escalation ladder, recorded intake failure)",
+  runRecruitmentCvExtractionQualityTests,
+);
+await runTest("recruitment cv auto-apply (high-confidence gap-fill rules; a CREATED candidate's blank phone is filled, a MATCHED one's never is)", runRecruitmentCvAutoApplyTests);
+await runTest(
+  "recruitment push to the hiring manager (a deliberate button, a failure that reaches the caller, and a recorded send the pipeline reads back)",
+  runRecruitmentHiringManagerPushTests,
+);
+await runTest(
+  "recruitment simplify (a requisition with no seat behind it, a fixed status with a note, the 405 that killed every status write, and a pool that counts CVs)",
+  runRecruitmentSimplifyTests,
+);
+await runTest(
+  "recruitment manager inbox (a manager sees and answers what was pushed to them, the nationality flag, the pharma-experience filter, and one daily CV digest instead of 628 alerts)",
+  runRecruitmentManagerInboxTests,
+);
 await runTest("recruitment hub -> portal coverage (Talent Acquisition can reach every hub tool)", runRecruitmentHubPortalCoverageTests);
 await runTest("recruitment portal \"View CV\" opens the viewer instead of downloading", runRecruitmentPortalCvViewTests);
 await runTest("recruitment inbound cv intake", runRecruitmentInboundCvIntakeTests);
