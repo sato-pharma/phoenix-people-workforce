@@ -7,6 +7,7 @@ import { SourceOfSalesProductsTab } from "@/components/sales/source-of-sales-pro
 import type {
   WeeklyBatch,
   WeeklyDistributorOption,
+  WeeklyExcludedItem,
   WeeklySalesValidationResult,
   WeeklyVerifyColumnStatus,
   WeeklyVerifyResult,
@@ -1132,6 +1133,46 @@ function UnresolvedItemsPanel({ result }: { result: WeeklySalesValidationResult 
   );
 }
 
+function ExcludedItemsPanel({ items }: { items: WeeklyExcludedItem[] }) {
+  const rows = items.reduce((sum, item) => sum + item.rows, 0);
+  const netQty = items.reduce((sum, item) => sum + item.netQty, 0);
+
+  return (
+    <div className="border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-3">
+      <h3 className="text-xs font-black uppercase tracking-wide text-[#475569]">
+        Excluded on purpose ({items.length}) — {num(rows)} rows, {num(netQty)} net units kept out of the numbers
+      </h3>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-left text-[11px] font-bold uppercase text-[#94A3B8]">
+            <tr>
+              <th className="py-1 pr-4 whitespace-nowrap">Item code</th>
+              <th className="py-1 pr-4 whitespace-nowrap">Item name</th>
+              <th className="py-1 pr-4 text-right whitespace-nowrap">Rows</th>
+              <th className="py-1 pr-4 text-right whitespace-nowrap">Net units</th>
+              <th className="py-1 text-right whitespace-nowrap">Stock units</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr className="border-t border-[#E2E8F0]" key={`${item.itemCode}|${item.itemName}`}>
+                <td className="py-1 pr-4 font-semibold text-[#0F172A] whitespace-nowrap">{item.itemCode || "—"}</td>
+                <td className="py-1 pr-4 text-[#334155] whitespace-nowrap">{item.itemName || "—"}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(item.rows)}</td>
+                <td className="py-1 pr-4 text-right tabular-nums text-[#334155]">{num(item.netQty)}</td>
+                <td className="py-1 text-right tabular-nums text-[#334155]">{num(item.stockQty)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs font-medium text-[#94A3B8]">
+        These items are mapped to IGNORE in Weekly Mapping — not Phoenix products. Re-point the mapping to a real product if any of them belongs to a line.
+      </p>
+    </div>
+  );
+}
+
 function ValidationResultPanel({
   result,
   selectedWeek,
@@ -1224,6 +1265,11 @@ function ValidationResultPanel({
           a direct link to the screen that actually fixes it (Weekly Mapping for aliases/branches,
           Source of Sales for master product data), instead of making the operator hunt for it. */}
       {hasFailures && <UnresolvedItemsPanel result={result} />}
+
+      {/* Excluded on purpose — items whose mapping is "IGNORE" (not a Phoenix product). They never
+          reach the numbers, so every one is listed with its units: counted and shown, never a
+          silent drop. */}
+      {result.excludedItems.length > 0 && <ExcludedItemsPanel items={result.excludedItems} />}
 
       {isPS && (
         <p className="border-b border-[#E2E8F0] bg-[#FFF7ED] px-4 py-2 text-xs font-semibold text-[#9A3412]">

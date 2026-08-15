@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 
 import type { SalesReferenceData } from "@/lib/sales/monthly-distributor-import";
+import { IGNORE_PRODUCT_CODE } from "@/lib/sales/normalizer/types";
 import {
   weeklyContractByCode,
   type WeeklyContractSheet,
@@ -12,6 +13,7 @@ import { canonicalWeeklyDistributorCode, weeklyDistributorByCode } from "@/lib/s
 import { normalizeCode, normalizeKey, normalizeSoft } from "@/lib/sales/weekly/mapping-normalize";
 import type { WeeklyProductAliasIndex } from "@/lib/sales/weekly/product-aliases";
 import type {
+  WeeklyExcludedItem,
   WeeklyParsedRow,
   WeeklySalesValidationResult,
   WeeklyTotals,
@@ -993,6 +995,8 @@ type ResolvedProduct = {
   productName: string;
   officialLine: string;
   factoryPrice: number;
+  /** alias points at the IGNORE sentinel → keep the item out of the numbers, on purpose */
+  excluded: boolean;
   /** no alias, or alias found but master data is invalid → hard block */
   failure: { field: string; message: string } | null;
 };
@@ -1007,6 +1011,7 @@ function resolveProduct(
   // is a hard failure (typo'd master code), not a soft "no alias yet" warning.
   if (obs.directProductLookup) {
     const masterCode = normalizeCode(obs.rawItemCode);
+    if (masterCode === IGNORE_PRODUCT_CODE) return excludedProduct(obs);
     const master = masterCode ? indexes.productByCode.get(masterCode) : undefined;
     if (!master) {
       return {
@@ -1014,6 +1019,7 @@ function resolveProduct(
         productName: obs.rawItemName || obs.rawItemCode || "",
         officialLine: "",
         factoryPrice: 0,
+        excluded: false,
         failure: {
           field: "productCode",
           message: `Product ID "${obs.rawItemCode || "(blank)"}" is not in the Source of Sales master product table.`,
@@ -1034,6 +1040,7 @@ function resolveProduct(
       productName: (master.productName || master.productCode).trim(),
       officialLine: line,
       factoryPrice: Number(master.factoryPrice) || 0,
+      excluded: false,
       failure,
     };
   }
@@ -1043,12 +1050,19 @@ function resolveProduct(
   let masterCode = (codeKey && aliasBucket?.byCode.get(codeKey)) || (nameKey && aliasBucket?.byName.get(nameKey)) || "";
   masterCode = normalizeCode(masterCode);
 
+  // "We don't sell this" — the alias deliberately points at the IGNORE sentinel. The sentinel master
+  // carries no price and no line by design, so validating it like a real product would block the
+  // whole upload on data that is missing on purpose. Drop the observation from the numbers instead,
+  // and let the caller count and show it (never a silent drop).
+  if (masterCode === IGNORE_PRODUCT_CODE) return excludedProduct(obs);
+
   if (!masterCode) {
     return {
       productCode: obs.rawItemCode || obs.rawItemName || "",
       productName: obs.rawItemName || obs.rawItemCode || "",
       officialLine: "",
       factoryPrice: 0,
+      excluded: false,
       failure: {
         field: "productCode",
         message: `No product alias maps "${obs.rawItemCode || obs.rawItemName || "(blank)"}" to a Source of Sales master product. Map it below, then re-validate.`,
@@ -1063,6 +1077,7 @@ function resolveProduct(
       productName: masterCode,
       officialLine: "",
       factoryPrice: 0,
+      excluded: false,
       failure: {
         field: "productCode",
         message: `Alias resolves to product "${masterCode}", which is not in the Source of Sales master.`,
@@ -1091,7 +1106,19 @@ function resolveProduct(
     productName: (master.productName || master.productCode).trim(),
     officialLine: line,
     factoryPrice: safePrice,
+    excluded: false,
     failure,
+  };
+}
+
+function excludedProduct(obs: WeeklyObservation): ResolvedProduct {
+  return {
+    productCode: IGNORE_PRODUCT_CODE,
+    productName: obs.rawItemName || obs.rawItemCode || IGNORE_PRODUCT_CODE,
+    officialLine: "",
+    factoryPrice: 0,
+    excluded: true,
+    failure: null,
   };
 }
 
@@ -1368,6 +1395,7 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
   // ── resolve + aggregate over the UNION of (product, branch) keys across all sides ─────────────
   const aggregates = new Map<AggKey, Agg>();
+  const excluded = new Map<string, { itemCode: string; itemName: string; rows: Set<number>; netQty: number; stockQty: number }>();
 
   for (const obs of adapted.observations) {
     const product = resolveProduct(obs, aliasBucket, indexes);
@@ -1375,6 +1403,21 @@ export async function parseWeeklyWorkbookBuffer(input: {
 
     // Excluded branch → drop the cell from totals entirely (not a failure, no fact row).
     if (region.excluded) continue;
+
+    // IGNORE-mapped item → same, but tallied per raw item so the operator sees exactly what was
+    // left out and how much of it (owner's rule: count and flag, never silently drop).
+    if (product.excluded) {
+      const itemCode = obs.rawItemCode || "";
+      const itemName = obs.rawItemName || "";
+      const key = `${normalizeCode(itemCode)}|${normalizeKey(itemName)}`;
+      const entry = excluded.get(key) ?? { itemCode, itemName, rows: new Set<number>(), netQty: 0, stockQty: 0 };
+      entry.rows.add(obs.sourceRowNumber);
+      if (obs.side === "sales") entry.netQty += obs.authoritativeNet ?? obs.qty;
+      else if (obs.side === "return") entry.netQty -= obs.qty;
+      else entry.stockQty += obs.qty;
+      excluded.set(key, entry);
+      continue;
+    }
 
     const key = aggKeyOf(product.productCode, obs);
     let agg = aggregates.get(key);
@@ -1546,6 +1589,15 @@ export async function parseWeeklyWorkbookBuffer(input: {
     sheetName: adapted.sheetName,
     weekStart,
     blockingReasons,
+    excludedItems: [...excluded.values()]
+      .map((entry) => ({
+        itemCode: entry.itemCode,
+        itemName: entry.itemName,
+        rows: entry.rows.size,
+        netQty: Number(entry.netQty.toFixed(2)),
+        stockQty: Number(entry.stockQty.toFixed(2)),
+      }))
+      .sort((left, right) => right.netQty - left.netQty),
   });
   return { ok: true, rows, result };
 }
@@ -1579,6 +1631,7 @@ export function summarizeWeekly(input: {
   sheetName: string;
   weekStart: string | null;
   blockingReasons: string[];
+  excludedItems?: WeeklyExcludedItem[];
 }): WeeklySalesValidationResult {
   const { rows } = input;
   const totals = emptyTotals();
@@ -1660,5 +1713,6 @@ export function summarizeWeekly(input: {
       .map(([branchCode, entry]) => ({ branchCode, branchName: entry.branchName, regionCode: entry.regionCode, regionName: entry.regionName, ...round(entry.totals) }))
       .sort((left, right) => right.salesValue - left.salesValue),
     issues: issues.slice(0, 500),
+    excludedItems: input.excludedItems ?? [],
   };
 }
