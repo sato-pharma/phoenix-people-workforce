@@ -129,6 +129,27 @@ export function isPortalOrganogramRole(access: AccessContext) {
   return access.role === "National Sales Manager";
 }
 
+// Who may see the SENSITIVE (Personal + Compensation) sections when they press a
+// person on the organogram. Deliberately a NARROW allowlist — admins / HR / finance
+// only — because the chart's viewer set is wider than that: the line-scoped roles
+// (NSM / Regional Manager / Product Manager / GPM) and the company-wide-but-not-HR
+// roles (Marketing Manager, Training Manager, SFE Manager) can all open the chart but
+// must get only the safe org + contact profile, never salaries or national IDs. This
+// keeps the owner's "no pay anywhere near an overview" rule intact while still giving
+// the people who already see the full employee master (Employee Management) their
+// "all his data" popup. Named by ROLE, never by `scope === "company"`, for the same
+// reason canAccessHeadOffice is: a scope shortcut would silently admit every future
+// company-scope role. Salary within this set is still subject to isSalaryRedactedForViewer.
+export function canViewOrganogramSensitiveFields(access: AccessContext) {
+  return (
+    access.scope === "system" ||
+    access.role === "Super Admin" ||
+    access.role === "CEO" ||
+    access.role === "Finance Manager" ||
+    access.role === "Talent Acquisition"
+  );
+}
+
 export function isLineScopedOrganogramRole(access: AccessContext) {
   // Marketing Manager is intentionally NOT here: it has company-wide oversight via
   // canAccessCompanyOrganogram, so a line-scoped entry was dead code that misrepresented

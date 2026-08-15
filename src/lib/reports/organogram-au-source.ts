@@ -71,15 +71,32 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
   if (error) throw new Error(`organogram seat source failed: ${error.message}`);
   const tree = (treeData ?? []) as AuTreeRow[];
 
-  // Resolve occupant display names from the employee master (best-effort).
-  const { data: empData } = await supabase.from("employees").select("hr_id, full_name");
+  // Resolve occupant display names and hire dates from the employee master
+  // (best-effort). The seat model itself carries no tenure, so hire date is
+  // joined here so every person node can show when they joined.
+  const { data: empData } = await supabase
+    .from("employees")
+    .select("hr_id, full_name, hire_date");
   const nameByHr = new Map<string, string>();
-  for (const e of (empData ?? []) as Array<{ hr_id: string | null; full_name: string | null }>) {
-    if (e.hr_id) nameByHr.set(e.hr_id.trim().toLowerCase(), e.full_name ?? e.hr_id);
+  const hireDateByHr = new Map<string, string>();
+  for (const e of (empData ?? []) as Array<{
+    hr_id: string | null;
+    full_name: string | null;
+    hire_date: string | null;
+  }>) {
+    if (!e.hr_id) continue;
+    const key = e.hr_id.trim().toLowerCase();
+    nameByHr.set(key, e.full_name ?? e.hr_id);
+    if (e.hire_date) hireDateByHr.set(key, e.hire_date);
   }
   const displayNameFor = (hrId: string | null): string => {
     if (!hrId) return "Vacant";
     return nameByHr.get(hrId.trim().toLowerCase()) ?? hrId;
+  };
+  // Null for vacant seats and HR_IDs with no recorded hire date.
+  const hireDateFor = (hrId: string | null): string | null => {
+    if (!hrId) return null;
+    return hireDateByHr.get(hrId.trim().toLowerCase()) ?? null;
   };
 
   const nodeKeyBySeat = new Map<string, string>();
@@ -126,7 +143,7 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
       departmentName: null,
       displayName: displayNameFor(s.occupant_hr_id),
       fullName: displayNameFor(s.occupant_hr_id),
-      hireDate: null,
+      hireDate: hireDateFor(s.occupant_hr_id),
       hrId: nodeKey,
       jobTitle: TITLE_BY_TIER[s.seat_tier],
       lineId: s.line_id,
