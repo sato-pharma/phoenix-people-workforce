@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { OrganogramNodeDetailModal } from "@/components/organogram/organogram-node-detail-modal";
 import { ExportXlsxButton } from "@/components/ui/export-xlsx-button";
 import { formatDateOnly } from "@/lib/date-only";
 import type { ExportColumn, ExportRow } from "@/lib/export/table-workbook";
@@ -45,13 +46,21 @@ import {
   type TopManagerLane,
   buildMemberTree,
   buildOrganogramLanes,
-  emptyText,
   isMedicalRep,
   rowKey,
 } from "@/lib/reports/organogram-view-model";
 import { cn, formatEmployeeDisplayName } from "@/lib/utils";
 
 export type OrgChartTheme = "admin" | "portal";
+
+/**
+ * Every pressable node fires this to open the employee-master detail popup. Threaded
+ * from OrgChartTree down through the spine, manager lanes, and member trees so one
+ * click target (the person's identity block) opens the same modal everywhere. Kept
+ * optional so a node with no backing row (e.g. the "Line" spine box, or a fallback
+ * group named only by string) simply renders un-pressable.
+ */
+type OnSelectNode = (row: OrganogramRow) => void;
 
 export type OrgChartKpiLabels = {
   medicalRep: string;
@@ -97,6 +106,20 @@ function initials(name: string | null | undefined) {
 
 function formatHireDate(value: string | null | undefined) {
   return formatDateOnly(value, "en", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+/**
+ * One-line "Joined <date> · <area>" summary shown under a manager/executive name.
+ * Area falls back to region; the whole line is omitted when neither a hire date nor a
+ * place is known, so a sparsely-populated row never shows an empty chip. (The member
+ * cards render the same facts as chips instead — see PersonNode.)
+ */
+function personFactsLine(row: OrganogramRow | null | undefined): string {
+  if (!row) return "";
+  const place = row.areaName ?? row.regionName ?? null;
+  return [row.hireDate ? `Joined ${formatHireDate(row.hireDate)}` : null, place]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function countDescendants(node: MemberNode): number {
@@ -165,33 +188,25 @@ function PersonNode({
   row,
   collapsed,
   onToggle,
+  onSelect,
   hiddenCount,
 }: {
   row: OrganogramRow;
   collapsed?: boolean;
   onToggle?: () => void;
+  onSelect?: OnSelectNode;
   hiddenCount?: number;
 }) {
   const isVacancy = row.type === "vacancy";
   const showRepFields = isVacancy || isMedicalRep(row);
   const title = row.positionTitle ?? row.jobTitle;
+  const place = row.areaName ?? row.regionName ?? null;
 
-  return (
-    <div
-      className={cn(
-        "group relative flex items-start gap-2.5 overflow-hidden rounded-xl border px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-150 hover:-translate-y-px hover:shadow-md",
-        isVacancy
-          ? "border-orange-300 bg-orange-50/70 [border-style:dashed]"
-          : "border-slate-200 bg-white hover:border-slate-300",
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-y-0 left-0 w-1",
-          isVacancy ? "bg-orange-400" : "bg-slate-300",
-        )}
-      />
+  // Avatar + text block — the single press target. Wrapped in a button when a
+  // selection handler is supplied so it opens the employee-master popup; the
+  // collapse chevron stays a separate sibling button (never nested).
+  const identity = (
+    <>
       <Avatar name={row.displayName} vacancy={isVacancy} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
@@ -210,7 +225,10 @@ function PersonNode({
             <span className="break-words font-medium text-slate-600">{title}</span>
           ) : null}
         </div>
-        {showRepFields ? (
+        {/* Change #1 — hire date + area on EVERY person, not just reps. Each chip
+            is shown only when its value exists, so managers/office staff without
+            an area never render an empty pill. */}
+        {row.hireDate || place ? (
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
             {row.hireDate ? (
               <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium">
@@ -218,13 +236,46 @@ function PersonNode({
                 {formatHireDate(row.hireDate)}
               </span>
             ) : null}
-            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium">
-              <MapPin className="h-2.5 w-2.5 text-orange-400" />
-              {emptyText(row.areaName)}
-            </span>
+            {place ? (
+              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 font-medium">
+                <MapPin className="h-2.5 w-2.5 text-orange-400" />
+                {place}
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
+    </>
+  );
+
+  return (
+    <div
+      className={cn(
+        "group relative flex items-start gap-2.5 overflow-hidden rounded-xl border px-3 py-2.5 shadow-[0_2px_10px_rgba(15,23,42,0.05)] transition-all duration-150 hover:-translate-y-px hover:shadow-md",
+        isVacancy
+          ? "border-orange-300 bg-orange-50/70 [border-style:dashed]"
+          : "border-slate-200 bg-white hover:border-slate-300",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 left-0 w-1",
+          isVacancy ? "bg-orange-400" : "bg-slate-300",
+        )}
+      />
+      {onSelect ? (
+        <button
+          aria-label={`View details for ${isVacancy ? "this open vacancy" : formatEmployeeDisplayName(row.displayName)}`}
+          className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/50"
+          onClick={() => onSelect(row)}
+          type="button"
+        >
+          {identity}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">{identity}</div>
+      )}
       {onToggle ? (
         <button
           aria-expanded={!collapsed}
@@ -255,11 +306,13 @@ function MemberBranch({
   node,
   collapsedKeys,
   onToggle,
+  onSelect,
   level = 1,
 }: {
   node: MemberNode;
   collapsedKeys: Set<string>;
   onToggle: (key: string) => void;
+  onSelect?: OnSelectNode;
   level?: number;
 }) {
   const hasChildren = node.children.length > 0;
@@ -276,6 +329,7 @@ function MemberBranch({
       <PersonNode
         collapsed={isCollapsed}
         hiddenCount={hasChildren ? countDescendants(node) : undefined}
+        onSelect={onSelect}
         onToggle={hasChildren ? () => onToggle(node.key) : undefined}
         row={node.row}
       />
@@ -290,6 +344,7 @@ function MemberBranch({
               key={child.key}
               level={level + 1}
               node={child}
+              onSelect={onSelect}
               onToggle={onToggle}
             />
           ))}
@@ -308,11 +363,13 @@ function ManagerLane({
   laneKey,
   collapsedKeys,
   onToggle,
+  onSelect,
 }: {
   group: ManagerLane;
   laneKey: string;
   collapsedKeys: Set<string>;
   onToggle: (key: string) => void;
+  onSelect?: OnSelectNode;
 }) {
   const isVacantManagerSeat = group.dsm?.type === "vacancy";
   const laneCollapsed = collapsedKeys.has(laneKey);
@@ -324,6 +381,12 @@ function ManagerLane({
         .filter(Boolean)
         .join(" / ")
     : null;
+  // Change #1 — a filled DSM header shows Joined + area under the name (the vacant
+  // seat already shows its scope via managerScope above). Change #2 — the header is
+  // pressable when it is backed by a real DSM row, opening that person's popup.
+  const dsmRow = group.dsm ?? null;
+  const dsmFacts = isVacantManagerSeat ? "" : personFactsLine(dsmRow);
+  const canOpenManager = Boolean(onSelect && dsmRow);
   const memberTree = React.useMemo(() => buildMemberTree(group.members), [group.members]);
 
   return (
@@ -337,40 +400,63 @@ function ManagerLane({
             : "bg-gradient-to-br from-slate-800 to-slate-950 text-white",
         )}
       >
-        <span
-          aria-hidden
-          className={cn(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-black",
-            isVacantManagerSeat
-              ? "border border-dashed border-orange-400 bg-white text-orange-500"
-              : "bg-white/10 text-white ring-1 ring-white/20",
-          )}
-        >
-          {isVacantManagerSeat ? <Building2 className="h-4 w-4" /> : initials(group.name)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p
-            className={cn(
-              "text-[9px] font-black uppercase tracking-[0.14em]",
-              isVacantManagerSeat ? "text-orange-600" : "text-orange-300",
-            )}
-          >
-            {group.title}
-          </p>
-          <p className="mt-0.5 break-words text-[13px] font-bold leading-snug">
-            {isVacantManagerSeat ? "Open Seat" : formatEmployeeDisplayName(group.name)}
-          </p>
-          {managerScope ? (
-            <p
-              className={cn(
-                "mt-0.5 break-words text-[10px] font-semibold",
-                isVacantManagerSeat ? "text-orange-600" : "text-orange-200",
-              )}
+        {(() => {
+          const headerInner = (
+            <>
+              <span
+                aria-hidden
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[11px] font-black",
+                  isVacantManagerSeat
+                    ? "border border-dashed border-orange-400 bg-white text-orange-500"
+                    : "bg-white/10 text-white ring-1 ring-white/20",
+                )}
+              >
+                {isVacantManagerSeat ? <Building2 className="h-4 w-4" /> : initials(group.name)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p
+                  className={cn(
+                    "text-[9px] font-black uppercase tracking-[0.14em]",
+                    isVacantManagerSeat ? "text-orange-600" : "text-orange-300",
+                  )}
+                >
+                  {group.title}
+                </p>
+                <p className="mt-0.5 break-words text-[13px] font-bold leading-snug">
+                  {isVacantManagerSeat ? "Open Seat" : formatEmployeeDisplayName(group.name)}
+                </p>
+                {managerScope ? (
+                  <p
+                    className={cn(
+                      "mt-0.5 break-words text-[10px] font-semibold",
+                      isVacantManagerSeat ? "text-orange-600" : "text-orange-200",
+                    )}
+                  >
+                    {managerScope}
+                  </p>
+                ) : null}
+                {dsmFacts ? (
+                  <p className="mt-0.5 break-words text-[10px] font-semibold text-orange-200">
+                    {dsmFacts}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          );
+          return canOpenManager && dsmRow ? (
+            <button
+              aria-label={`View details for ${formatEmployeeDisplayName(group.name)}`}
+              className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60"
+              onClick={() => onSelect?.(dsmRow)}
+              type="button"
             >
-              {managerScope}
-            </p>
-          ) : null}
-        </div>
+              {headerInner}
+            </button>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-start gap-2.5">{headerInner}</div>
+          );
+        })()}
         <div className="flex shrink-0 items-center gap-1.5">
           <span
             className={cn(
@@ -433,6 +519,7 @@ function ManagerLane({
                   collapsedKeys={collapsedKeys}
                   key={node.key}
                   node={node}
+                  onSelect={onSelect}
                   onToggle={onToggle}
                 />
               ))}
@@ -453,23 +540,30 @@ function SpineNode({
   label,
   name,
   tone,
+  row,
+  onSelect,
 }: {
   icon: React.ReactNode;
   label: string;
   name: string;
   tone: "dark" | "line" | "leader";
+  row?: OrganogramRow | null;
+  onSelect?: OnSelectNode;
 }) {
-  return (
-    <div
-      className={cn(
-        "relative w-full max-w-md border px-4 py-3 text-center transition-shadow duration-300",
-        tone === "dark"
-          ? "border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]"
-          : tone === "leader"
-            ? "border-orange-300 bg-gradient-to-r from-orange-50 via-orange-50/70 to-orange-50 shadow-[0_10px_26px_rgba(249,115,22,0.14)]"
-            : "border-slate-200 bg-white shadow-sm",
-      )}
-    >
+  const facts = personFactsLine(row);
+  const canOpen = Boolean(onSelect && row);
+
+  const cardClass = cn(
+    "relative w-full max-w-md border px-4 py-3 text-center transition-shadow duration-300",
+    tone === "dark"
+      ? "border-slate-900 bg-gradient-to-br from-slate-800 to-slate-950 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]"
+      : tone === "leader"
+        ? "border-orange-300 bg-gradient-to-r from-orange-50 via-orange-50/70 to-orange-50 shadow-[0_10px_26px_rgba(249,115,22,0.14)]"
+        : "border-slate-200 bg-white shadow-sm",
+  );
+
+  const body = (
+    <>
       <div
         className={cn(
           "mb-1 flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-[0.16em]",
@@ -487,8 +581,35 @@ function SpineNode({
       >
         {name}
       </p>
-    </div>
+      {facts ? (
+        <p
+          className={cn(
+            "mt-1 break-words text-[10px] font-semibold",
+            tone === "dark" ? "text-orange-200" : "text-orange-600",
+          )}
+        >
+          {facts}
+        </p>
+      ) : null}
+    </>
   );
+
+  // The CEO and NSM boxes are backed by a real row → pressable; the "Line" box is
+  // just the line name → rendered as a plain div.
+  if (canOpen && row && onSelect) {
+    return (
+      <button
+        aria-label={`View details for ${name}`}
+        className={cn(cardClass, "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60")}
+        onClick={() => onSelect(row)}
+        type="button"
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return <div className={cardClass}>{body}</div>;
 }
 
 function Trunk() {
@@ -715,6 +836,12 @@ export function OrgChartTree({
   theme = "admin",
   kpiLabels = DEFAULT_ORG_KPI_LABELS,
 }: OrgChartTreeProps) {
+  // Change #2 — the pressed node's row; non-null opens the employee-master popup.
+  const [selectedRow, setSelectedRow] = React.useState<OrganogramRow | null>(null);
+  const handleSelectNode = React.useCallback((row: OrganogramRow) => {
+    setSelectedRow(row);
+  }, []);
+
   const [collapsedKeys, setCollapsedKeys] = React.useState<Set<string>>(new Set());
   const collapsedKeysRef = React.useRef(collapsedKeys);
   React.useEffect(() => {
@@ -866,11 +993,13 @@ export function OrgChartTree({
     { key: "line", label: "Line", width: 18 },
     { key: "area", label: "Area", width: 18 },
     { key: "region", label: "Region", width: 18 },
+    { key: "hireDate", label: "Hire Date", width: 14 },
     { key: "manager", label: "Reports To", width: 24 },
     { key: "managerHrId", label: "Manager HR ID", width: 14 },
   ];
   const exportRows: ExportRow[] = rows.map((row) => ({
     area: row.areaName ?? "",
+    hireDate: row.hireDate ? formatHireDate(row.hireDate) : "",
     hrId: row.hrId,
     line: row.lineName ?? "",
     manager: row.managerName ?? "",
@@ -1030,6 +1159,8 @@ export function OrgChartTree({
                 ? formatEmployeeDisplayName(chiefExecutive.displayName)
                 : "Executive Leadership"
             }
+            onSelect={handleSelectNode}
+            row={chiefExecutive}
             tone="dark"
           />
           <Trunk />
@@ -1048,6 +1179,8 @@ export function OrgChartTree({
                 : "National Sales Manager"
             }
             name={laneLeaderName}
+            onSelect={handleSelectNode}
+            row={lineLeader}
             tone="leader"
           />
           <Trunk />
@@ -1084,6 +1217,7 @@ export function OrgChartTree({
                           collapsedKeys={collapsedKeys}
                           group={group}
                           laneKey={laneKey}
+                          onSelect={handleSelectNode}
                           onToggle={toggle}
                         />
                       </div>
@@ -1097,6 +1231,8 @@ export function OrgChartTree({
             {rsmGroups.map((group, index) => {
               const childLanes = group.childLanes ?? [];
               const laneKey = tierLaneKey("t2", group, index);
+              const rsmRow = group.rsm ?? null;
+              const rsmFacts = personFactsLine(rsmRow);
               const groupVacancies = childLanes.reduce(
                 (total, lane) =>
                   total +
@@ -1113,22 +1249,43 @@ export function OrgChartTree({
                   />
                   <div className="overflow-hidden rounded-xl border border-orange-200 bg-white shadow-[0_2px_12px_rgba(15,23,42,0.06)]">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-orange-200 bg-gradient-to-r from-orange-100/60 via-orange-50 to-orange-100/60 px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          aria-hidden
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-[11px] font-black text-white"
-                        >
-                          {initials(group.name)}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-700">
-                            {group.title}
-                          </p>
-                          <p className="mt-0.5 break-words text-[13px] font-bold text-slate-900">
-                            {formatEmployeeDisplayName(group.name)}
-                          </p>
-                        </div>
-                      </div>
+                      {(() => {
+                        const rsmInner = (
+                          <>
+                            <span
+                              aria-hidden
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-[11px] font-black text-white"
+                            >
+                              {initials(group.name)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-black uppercase tracking-[0.14em] text-orange-700">
+                                {group.title}
+                              </p>
+                              <p className="mt-0.5 break-words text-[13px] font-bold text-slate-900">
+                                {formatEmployeeDisplayName(group.name)}
+                              </p>
+                              {rsmFacts ? (
+                                <p className="mt-0.5 break-words text-[10px] font-semibold text-orange-700">
+                                  {rsmFacts}
+                                </p>
+                              ) : null}
+                            </div>
+                          </>
+                        );
+                        return rsmRow ? (
+                          <button
+                            aria-label={`View details for ${formatEmployeeDisplayName(group.name)}`}
+                            className="flex items-center gap-2.5 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange-400/60"
+                            onClick={() => handleSelectNode(rsmRow)}
+                            type="button"
+                          >
+                            {rsmInner}
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2.5">{rsmInner}</div>
+                        );
+                      })()}
                       <div className="flex items-center gap-1.5 text-[10px]">
                         <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-1 font-bold text-slate-600 ring-1 ring-orange-200">
                           <Layers className="h-3 w-3 text-orange-500" />
@@ -1155,6 +1312,7 @@ export function OrgChartTree({
                                 collapsedKeys={collapsedKeys}
                                 group={lane}
                                 laneKey={childKey}
+                                onSelect={handleSelectNode}
                                 onToggle={toggle}
                               />
                             </div>
@@ -1193,6 +1351,7 @@ export function OrgChartTree({
                           collapsedKeys={collapsedKeys}
                           group={group}
                           laneKey={laneKey}
+                          onSelect={handleSelectNode}
                           onToggle={toggle}
                         />
                       </div>
@@ -1209,6 +1368,13 @@ export function OrgChartTree({
         )}
         </div>
       </div>
+
+      {/* Change #2 — pressing any node opens the full employee-master record. The
+          modal fetches the role-gated detail itself; a vacancy renders from the row
+          alone. Rendered here (portaled to <body>) so it overlays the whole chart. */}
+      {selectedRow ? (
+        <OrganogramNodeDetailModal onClose={() => setSelectedRow(null)} row={selectedRow} />
+      ) : null}
     </div>
   );
 }
