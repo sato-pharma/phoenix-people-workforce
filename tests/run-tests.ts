@@ -803,6 +803,7 @@ import { runDescribeThrownTests } from "./describe-thrown.test.ts";
 import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tables.test.ts";
 import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
 import { runReassignOwnershipFrozenWriteTests } from "./reassign-ownership-frozen-write.test.ts";
+import { runAccessProfileSyncTests } from "./access-profile-sync.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2048,6 +2049,10 @@ await runTest(
 await runTest(
   "phx_reassign_replacement_ownership never writes frozen sales_records (SECURITY DEFINER runs as owner, so the Rule #1 revoke does not stop it) while every other reassignment survives",
   runReassignOwnershipFrozenWriteTests,
+);
+await runTest(
+  "user_access_profiles always syncs with an account's role, and a missing auth_user_id now logs instead of silently skipping the profile write",
+  runAccessProfileSyncTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

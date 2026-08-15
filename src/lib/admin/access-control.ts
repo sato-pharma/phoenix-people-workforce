@@ -730,6 +730,23 @@ async function upsertAccessUserCore(input: AccessUserMutation, actor?: AccessAct
         throw profileError;
       }
       profileWritten = true;
+    } else {
+      // authUserId is falsy here only when the account has no GoTrue identity at all — the
+      // happy-path create/update branches above always mint or refresh one via
+      // provisionSupabaseAuthIdentity (which returns a real id or throws), so this should be
+      // unreachable in normal operation. It fires when app_auth_users already carries a NULL
+      // auth_user_id AND neither branch above ran (metadataChanged is false and existing already
+      // has no auth_user_id would normally trigger the else-if — this is the belt-and-braces
+      // catch for any path that still reaches here without one). Previously this was a silent
+      // no-op: app_auth_users was written, user_access_profiles was not, and nothing recorded the
+      // gap — that produced CN-0006 and PD-0007 (active/inactive accounts with app_auth_users rows
+      // and no profile). Log it so the drift is diagnosable instead of invisible; the backfill
+      // script (scripts/backfill-missing-access-profiles.ts) finds and fixes accounts already in
+      // this state.
+      logError("Access control profile write skipped: no auth_user_id", {
+        labels: { event: "access_control_profile_write_skipped_no_auth_user_id" },
+        context: { loginId },
+      });
     }
 
     const roleChanged = Boolean(existingRole && existingRole !== role);
