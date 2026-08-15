@@ -33,6 +33,9 @@
 // database.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
+
 import { getSupabaseAdmin, rpcAll } from "@/lib/supabase/server";
 import { currentCairoDateParts } from "@/lib/i18n/format";
 import { resolveTargetLineCode, type AchievementRow } from "@/lib/sales/monthly-targets";
@@ -183,8 +186,44 @@ export async function loadVsTargetRange(from: string, to: string): Promise<Achie
  * One round trip for the whole range. Do NOT loop a per-period RPC over this instead —
  * every call crosses the Atlantic to eu-central-1.
  */
-export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {
-  if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return [];
+const ACHIEVEMENT_RANGE_CACHE_PREFIX = "sales-vs-target-achievement-range";
+// Token-keyed: the freshness stamp changes the cache key on any input change, so this TTL is
+// NOT a staleness window — it only evicts superseded epochs. Correctness comes from the token.
+const ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS = 3600;
+
+/**
+ * The unstable_cache key parts for one achievement range. Exported ONLY so a test can pin that
+ * the freshness token participates in the key: drop the token and two reads taken either side of
+ * a seat/target/actuals change would collide on the same entry and the cache could hand back a
+ * stale rep/DM attribution. The array order IS the cache key — do not reorder casually.
+ */
+export function achievementRangeCacheKeyParts(from: string, to: string, token: string): string[] {
+  return [ACHIEVEMENT_RANGE_CACHE_PREFIX, from, to, token];
+}
+
+/**
+ * A one-round-trip freshness stamp over every input to the achievement range: the attribution
+ * config fingerprint (which already hashes line_area_map in full, seat ids included), seat
+ * occupancy history, monthly targets, attribution-rollup refresh state, and today's Cairo date
+ * (for au.f_seat_occupant_asof's "today's wiring wins" boundary). Wrapped in React `cache` so
+ * that when several surfaces load ranges within one request they share a single stamp fetch.
+ *
+ * Returns null on ANY failure. A null stamp makes loadAchievementRange read live rather than
+ * risk serving a stale rep/DM attribution from the cache — slow-but-correct, never stale.
+ */
+const loadAchievementCacheToken = cache(async (): Promise<string | null> => {
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase.rpc("phx_sales_vs_target_cache_token");
+    if (error || typeof data !== "string" || data.length === 0) return null;
+    return data;
+  } catch {
+    return null;
+  }
+});
+
+/** The uncached RPC read + pure map. Body is byte-identical to the pre-cache loader. */
+async function loadAchievementRangeUncached(from: string, to: string): Promise<AchievementRow[]> {
   const supabase = getSupabaseAdmin();
   const rows = await rpcAll<Record<string, unknown>>(
     supabase,
@@ -213,6 +252,21 @@ export async function loadAchievementRange(from: string, to: string): Promise<Ac
     hasTarget: row.has_target === true,
     hasActual: row.has_actual === true,
   }));
+}
+
+export async function loadAchievementRange(from: string, to: string): Promise<AchievementRow[]> {
+  if (!isValidHistoryPeriod(from) || !isValidHistoryPeriod(to) || to < from) return [];
+  // Self-invalidating cross-request cache. The token changes the cache key whenever actuals,
+  // targets, or seat occupancy move — none of which share an invalidation chokepoint — so a
+  // cache hit can never serve a stale rep/DM attribution. No token ⇒ read live (never stale).
+  const token = await loadAchievementCacheToken();
+  if (!token) return loadAchievementRangeUncached(from, to);
+  const cached = unstable_cache(
+    () => loadAchievementRangeUncached(from, to),
+    achievementRangeCacheKeyParts(from, to, token),
+    { revalidate: ACHIEVEMENT_RANGE_CACHE_TTL_SECONDS },
+  );
+  return cached();
 }
 
 /**
