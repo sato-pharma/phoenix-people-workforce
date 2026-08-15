@@ -42,6 +42,7 @@ import { runPayslipEmailBlockTests } from "./payslip-email-block.test.ts";
 import { runActiveRosterOnlyTests } from "./active-roster-only.test.ts";
 import { runEarlyBirdsEmailBlockTests } from "./early-birds-email-block.test.ts";
 import { runMarketingSlaEmailBlockTests } from "./marketing-sla-email-block.test.ts";
+import { runRecruitmentCvNoEmailTests } from "./recruitment-cv-no-email.test.ts";
 import { runTelegramOperationsTests } from "./telegram-operations.test.ts";
 import { runTelegramAdminControlCenterTests } from "./telegram-admin-control-center.test.ts";
 import { runEmailAdminControlCenterTests } from "./email-admin-control-center.test.ts";
@@ -870,6 +871,7 @@ await runTest("notification step runner (per-step timeout budget + overlap guard
 await runTest("payslip email block (payslips never emailed)", runPayslipEmailBlockTests);
 await runTest("marketing SLA email block (SLA reminders never emailed)", runMarketingSlaEmailBlockTests);
 await runTest("Early Birds email block (in-app + Telegram only)", runEarlyBirdsEmailBlockTests);
+await runTest("recruitment CV-received notice never emails (in-app + Telegram only)", runRecruitmentCvNoEmailTests);
 await runTest("active roster only (resigned reps never reach a board)", runActiveRosterOnlyTests);
 await runTest("telegram operations", runTelegramOperationsTests);
 await runTest("telegram admin control center", runTelegramAdminControlCenterTests);
