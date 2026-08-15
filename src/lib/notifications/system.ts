@@ -26,6 +26,7 @@ import { enforcePayslipEmailBlock } from "@/lib/notifications/payslip-channel-gu
 import { enforceAttendanceAlertEmailBlock } from "@/lib/notifications/attendance-alert-channel-guard";
 import { enforceEarlyBirdsEmailBlock } from "@/lib/notifications/early-birds-channel-guard";
 import { enforceMarketingSlaEmailBlock } from "@/lib/notifications/marketing-sla-channel-guard";
+import { enforceRecruitmentCvEmailBlock } from "@/lib/notifications/recruitment-cv-channel-guard";
 import { resolveTelegramGovernance } from "@/lib/notifications/telegram-governance";
 import { GENERIC_NOTIFICATION_TITLE, GENERIC_PAYSLIP_MESSAGE, TelegramTemplateError } from "@/lib/notifications/telegram-template-types";
 import { currentCairoMinutesOfDay } from "@/lib/i18n/format";
@@ -343,7 +344,11 @@ function basePolicyChannels(input: CreateSystemNotificationInput, preferred: Sys
   // keys on module alone, this one on module + attendance_agent_ingestion_stalled — so chaining
   // them preserves both guarantees. Dropping either to keep "last" literally true would silently
   // restore email for that module.
-  return enforceAttendanceAlertEmailBlock(withoutEarlyBirdsEmail, input.module, input.eventType);
+  const withoutAttendanceAlertEmail = enforceAttendanceAlertEmailBlock(withoutEarlyBirdsEmail, input.module, input.eventType);
+  // Same hard guarantee for the "new CV received" notice (owner request 2026-08-15): in-app and
+  // Telegram only, never email — see recruitment-cv-channel-guard.ts. Scoped to the single
+  // recruitment_inbound_cv eventType; every other recruitment notification keeps its email.
+  return enforceRecruitmentCvEmailBlock(withoutAttendanceAlertEmail, input.module, input.eventType);
 }
 
 function resolveBasePolicyChannels(input: CreateSystemNotificationInput, preferred: SystemNotificationChannel) {

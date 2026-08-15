@@ -155,6 +155,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   "password_setup.*": { channels: ["email"], priority: "high", recipientStrategy: ["employee"] },
   "probation.reminder_due": { actionUrlRequired: true, channels: ["in_app", "email", "telegram", "push"], permissionResource: null, priority: "high", recipientStrategy: ["direct_manager", "workflow_step_approver"], telegramAllowed: true },
   "probation.*": { channels: ["in_app", "email", "telegram", "push"], permissionResource: "probation", priority: "high", recipientStrategy: ["direct_manager", "permission_based"], telegramAllowed: true },
+  // Owner request 2026-08-15: the "new CV received" notice must never be emailed — in-app and
+  // Telegram only. The hard guarantee is recruitment-cv-channel-guard.ts — this row is the
+  // intent, that filter is the enforcement (same two-layer pattern as early_birds.* above).
+  "recruitment.recruitment_inbound_cv": { channels: ["in_app", "telegram", "push"], telegramAllowed: true },
   "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   // Owner-set 2026-08-09: a resignation is told to Super Admin and Talent Acquisition ONLY —
   // deliberately not the CEO, and deliberately not the leaver's manager chain. The emitter
