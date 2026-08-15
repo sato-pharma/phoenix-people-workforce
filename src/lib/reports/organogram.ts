@@ -5,8 +5,7 @@ import {
   normalizeLineName,
 } from "@/lib/auth/permissions";
 import { resolveViewerAllowedLines } from "@/lib/auth/scope-visibility";
-import { getEmployeeDirectory, type EmployeeDirectoryRow } from "@/lib/employees/employee-directory";
-import { isWithinManagerHierarchy } from "@/lib/workforce/hierarchy-resolver";
+import { getEmployeeDirectory } from "@/lib/employees/employee-directory";
 import { applyOrganogramMirrorSafety, seatOccupancyKey } from "@/lib/reports/organogram-safety";
 import {
   getVacancyReport,
@@ -344,57 +343,79 @@ export async function getOrganogramReport(
   // WIDEST people view while contracts/attendance/directory were his narrowest. Narrowed here, after
   // the line bound, so the line remains a hard outer limit and this can only ever subtract.
   if (options.mode === "line" && access.role === "Regional Manager") {
-    scopedRows = await narrowOrganogramRowsToManagerSubtree(scopedRows, access);
+    scopedRows = narrowOrganogramRowsToManagerSubtree(scopedRows, access);
   }
 
   return { organogramRows: scopedRows, rows: [], summary: seatReport.summary };
 }
 
 /**
- * Keep only the rows inside a manager's own reporting subtree, plus the manager's own row.
+ * Keep only the rows inside a Regional Manager's own seat subtree, plus their own row.
  *
- * Seat-continuity aware via isWithinManagerHierarchy, so a district whose manager seat is mid
- * replacement is not dropped. Vacant-seat rows (which carry no occupant HR_ID) are kept when the seat
- * hangs off someone inside the subtree, so an RM still sees the open seats they are accountable for.
- * Fails CLOSED to the manager's own row if their HR_ID cannot be resolved — never to the whole line.
+ * Walks the SAME hierarchy the chart renders: the AU seat model, encoded directly in the rows as
+ * `managerHrId` (the parent seat's nodeKey) → `hrId` (this seat's nodeKey — the occupant HR_ID when
+ * filled, else the stable seat_id). This is deliberately NOT the employee-directory manager chain
+ * (`manager_hr_id`). The two can diverge, and when they do the directory version scopes the RM
+ * against a different tree than the one drawn on screen: it drops an active rep hanging off a VACANT
+ * manager seat (there is no occupant HR_ID for the directory chain to follow up through), and it can
+ * pull in people the seat model has re-homed elsewhere. Sourcing the subtree from the rows keeps
+ * scope and chart identical by construction, and the line bound above stays a hard outer limit — this
+ * can still only ever subtract.
+ *
+ * Vacant seats are carried exactly like filled ones: their nodeKey (the seat_id) is a node in the
+ * walk, so any open seat under the RM — including reps beneath a vacant district — is kept, and the
+ * RM still sees every seat they are accountable for.
+ *
+ * Fails CLOSED: an unresolvable viewer HR_ID yields nothing, and a viewer whose own seat is not
+ * among the (already line-scoped) rows collapses to just their own row — never the whole line.
  */
-async function narrowOrganogramRowsToManagerSubtree(
+function narrowOrganogramRowsToManagerSubtree(
   rows: OrganogramReportRow[],
   access: AccessContext,
-): Promise<OrganogramReportRow[]> {
+): OrganogramReportRow[] {
   const viewerKey = normalizeHrIdForAccess(access.hrId);
   if (!viewerKey) return [];
 
-  const directory = await getEmployeeDirectory();
-  const byCanonicalHrId = new Map<string, EmployeeDirectoryRow>();
-  for (const employee of directory.employees) {
-    const key = normalizeHrIdForAccess(employee.hrId);
-    if (key) byCanonicalHrId.set(key, employee);
+  // Adjacency is keyed on RAW nodeKeys: within these rows a child's managerHrId is the exact string
+  // of its parent's hrId (both come from the seat source's nodeKey map), so raw equality is precise.
+  // normalizeHrIdForAccess is used ONLY to locate the viewer's own node, whose hrId may be formatted
+  // differently from access.hrId.
+  const childrenByManager = new Map<string, string[]>();
+  let viewerNodeKey: string | null = null;
+  for (const row of rows) {
+    const nodeKey = row.hrId ?? null;
+    if (!nodeKey) continue;
+    if (viewerNodeKey === null && normalizeHrIdForAccess(nodeKey) === viewerKey) {
+      viewerNodeKey = nodeKey;
+    }
+    const managerKey = row.managerHrId ?? null;
+    if (!managerKey) continue;
+    const bucket = childrenByManager.get(managerKey);
+    if (bucket) bucket.push(nodeKey);
+    else childrenByManager.set(managerKey, [nodeKey]);
   }
 
-  const inSubtree = new Set<string>([viewerKey]);
-  for (const employee of directory.employees) {
-    const key = normalizeHrIdForAccess(employee.hrId);
-    if (!key) continue;
-    if (
-      isWithinManagerHierarchy({
-        employee,
-        byCanonicalHrId,
-        viewerCanonicalHrId: viewerKey,
-        canonicalize: normalizeHrIdForAccess,
-      })
-    ) {
-      inSubtree.add(key);
+  // Viewer not present among the line-scoped rows: never widen to the line — show only their own row
+  // if it somehow exists, otherwise nothing.
+  if (viewerNodeKey === null) {
+    return rows.filter((row) => normalizeHrIdForAccess(row.hrId ?? null) === viewerKey);
+  }
+
+  // BFS down the seat edges from the RM's node. The visited Set is also the cycle guard, so a
+  // malformed parent chain terminates instead of looping.
+  const inSubtree = new Set<string>([viewerNodeKey]);
+  const queue: string[] = [viewerNodeKey];
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    for (const child of childrenByManager.get(node) ?? []) {
+      if (!inSubtree.has(child)) {
+        inSubtree.add(child);
+        queue.push(child);
+      }
     }
   }
 
-  return rows.filter((row) => {
-    const occupant = normalizeHrIdForAccess(row.hrId ?? null);
-    if (occupant) return inSubtree.has(occupant);
-    // Vacant / structural row: keep it when the seat reports into the subtree.
-    const manager = normalizeHrIdForAccess(row.managerHrId ?? null);
-    return Boolean(manager && inSubtree.has(manager));
-  });
+  return rows.filter((row) => (row.hrId ? inSubtree.has(row.hrId) : false));
 }
 
 export function seatKeysOfActiveEmployees(rows: OrganogramReportRow[]): Set<string> {
