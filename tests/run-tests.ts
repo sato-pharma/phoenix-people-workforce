@@ -398,6 +398,7 @@ import { runResignationCrmIdentityReleaseTests } from "./resignation-crm-identit
 import { runProbationFeedbackRevivalTests } from "./probation-feedback-revival.test.ts";
 import { runAccessProfileHrIdCasingTests } from "./access-profile-hrid-casing.test.ts";
 import { runEmployeePortalNavigationTests } from "./employee-portal-navigation.test.ts";
+import { runPortalNavActingDmUsesAppRoleTests } from "./portal-nav-acting-dm-uses-app-role.test.ts";
 import { runEmployeePortalBottomNavTests } from "./employee-portal-bottom-nav.test.ts";
 import { runEmployeePortalNavCatalogSyncTests } from "./employee-portal-nav-catalog-sync.test.ts";
 import { runEmployeePortalModuleCurationTests } from "./employee-portal-module-curation.test.ts";
@@ -1247,6 +1248,7 @@ await runTest("outstation employee-lookup status (isActive cosmetic field)", run
 await runTest("medical rep expenses", runMedicalRepExpensesTests);
 await runTest("employee portal sales scope", runEmployeePortalSalesScopeTests);
 await runTest("employee portal navigation", runEmployeePortalNavigationTests);
+await runTest("portal nav acting DM follows app access role, not job title", runPortalNavActingDmUsesAppRoleTests);
 await runTest("employee portal bottom nav", runEmployeePortalBottomNavTests);
 await runTest("employee portal nav catalog sync (M12)", runEmployeePortalNavCatalogSyncTests);
 await runTest("employee portal module curation (Modules Control sidebar wiring)", runEmployeePortalModuleCurationTests);

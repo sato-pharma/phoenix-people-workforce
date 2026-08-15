@@ -136,16 +136,27 @@ export function runEmployeePortalNavigationTests() {
   assert.equal(medicalRep.showTeamCoachingTab, false, "Medical Rep should not see Team Coaching Reports");
   assert.equal(medicalRep.showTrainingManagerCreateCoachingTab, false, "Medical Rep should not see Create Coaching Report");
 
-  const medicalRepWithManagerAccess = resolveEmployeePortalNavVisibility("Medical Rep", "National Sales Manager");
+  // The APP ACCESS role is authoritative and now takes precedence over the job title in
+  // resolvePortalRole (fix 2026-08-15; see tests/portal-nav-acting-dm-uses-app-role.test.ts for the
+  // acting-DM case that motivated it). An account carrying the "Medical Rep" title but an elevated
+  // National Sales Manager ACCESS role therefore gets the NSM nav its access actually grants — not
+  // the rep sidebar. This block previously asserted the opposite (title-wins) precedence, which is
+  // exactly the behavior the fix reverses.
+  const medicalRepTitleWithNsmAccess = resolveEmployeePortalNavVisibility("Medical Rep", "National Sales Manager");
   assert.equal(
-    medicalRepWithManagerAccess.showExpenseActionTab,
+    medicalRepTitleWithNsmAccess.showMedicalRepExpensesTab,
     false,
-    "Medical Rep navigation should not inherit manual outstation expense actions from access role fallback",
+    "An elevated NSM access role must NOT keep the Medical-Rep-only expenses tab — the nav follows the authoritative access role, not the job title",
   );
   assert.equal(
-    medicalRepWithManagerAccess.showMedicalRepExpensesTab,
+    medicalRepTitleWithNsmAccess.showExpenseActionTab,
     true,
-    "Medical Rep navigation should keep the rep expenses tab even when access role fallback differs",
+    "The NSM access role drives the nav, so the manager expense action appears even though the job title says Medical Rep",
+  );
+  assert.equal(
+    medicalRepTitleWithNsmAccess.showMedRepsPerformanceTab,
+    true,
+    "The NSM access role surfaces the NSM MRs-Performance tab — nav matches the permissions the access role grants",
   );
 
   const plainEmployee = resolveEmployeePortalNavVisibility("Employee");

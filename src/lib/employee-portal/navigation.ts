@@ -145,14 +145,23 @@ function resolvePortalRole(
   roleLabel: string | null | undefined,
   accessRole?: string | null | undefined,
 ): PhoenixRole {
-  // Resolve an explicit Phoenix role where present; otherwise classify by job
-  // function (title-based). roleLabel keeps precedence over accessRole to
-  // preserve historical portal-nav behavior. This is UX only — every portal page
-  // keeps its own server-side access guard.
-  for (const candidate of [roleLabel, accessRole]) {
+  // The APP ACCESS role is authoritative — it is what every server-side permission check uses —
+  // so the portal nav follows it, not the job title. It is tried FIRST and wins whenever it
+  // resolves to a definite (non-"Employee") role. This is what lets a Medical Rep acting as a
+  // District Manager (app role elevated, HR job title deliberately left "Medical Representative")
+  // get the District Manager nav their access actually grants; previously the title took precedence
+  // and pinned them to the Medical Rep sidebar.
+  //
+  // The job title is the FALLBACK, kept for the historical case this function was written for: an
+  // account whose app role is still the default "Employee" (never upgraded) but whose real role
+  // lives in its title. In that case accessRole yields nothing here and the title-based
+  // classification supplies the role, exactly as before. UX only — every portal page keeps its own
+  // server-side access guard.
+  for (const candidate of [accessRole, roleLabel]) {
     if (!candidate) continue;
     try {
-      return parseRoleStrict(candidate);
+      const strict = parseRoleStrict(candidate);
+      if (strict !== "Employee") return strict;
     } catch {}
     const jobFunctionRole = resolveJobFunctionRole(candidate);
     if (jobFunctionRole !== "Employee") return jobFunctionRole;
