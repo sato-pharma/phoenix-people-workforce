@@ -1260,7 +1260,7 @@ export function MarketingValidationWorkspace() {
   }, []);
   const { enqueue, isOnline, queueLength } = useOfflineQueue(replaySubmission);
 
-  async function loadWorkspace() {
+  const loadWorkspace = useCallback(async () => {
     try {
       const response = await fetch("/api/marketing-requests/validation", {
         cache: "no-store",
@@ -1297,14 +1297,14 @@ export function MarketingValidationWorkspace() {
     } finally {
       setIsLoading(false);
     }
-  }
+  }, [setMessage]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       void loadWorkspace();
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, []);
+  }, [loadWorkspace]);
 
   const defaultDistributorId = String(workspace.distributors[0]?.id ?? "");
   // Desk mode is driven purely by whether an employee is selected. The server re-checks the role on

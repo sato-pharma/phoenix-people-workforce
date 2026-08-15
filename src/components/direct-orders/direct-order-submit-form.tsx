@@ -208,6 +208,9 @@ export function DirectOrderSubmitForm({ products, areas, bricks, distributors, c
       }
     }, 400);
     return () => clearTimeout(timer);
+    // distRowsKey is a content-derived proxy for distRows, kept out of the array on purpose so a
+    // re-render that doesn't actually change any row doesn't reset the debounce timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newName, newAreaCode, newBrickId, bricks, pharmacyMode, distRowsKey]);
 
   // "My pharmacies" is fetched once, the first time the tab is opened. It is a short, personal list
