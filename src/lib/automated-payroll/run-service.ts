@@ -649,7 +649,7 @@ export async function confirmPart2(
     });
   }
 
-  const { rows, carryForwardByCompact } = await assembleForRun(run);
+  const { rows } = await assembleForRun(run);
   const { preflightValidate } = await import("./validate.ts");
   const preflight = preflightValidate(rows);
   if (!preflight.ok) {

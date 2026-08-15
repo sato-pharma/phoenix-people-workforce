@@ -5,7 +5,6 @@ import {
   normalizeRole,
   resolveEmployeeIdentityId,
   resolveNavigationMode,
-  systemAccessContext,
   type AccessContext,
   type PhoenixRole,
 } from "@/lib/auth/permissions";

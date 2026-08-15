@@ -54,6 +54,9 @@ const eslintConfig = defineConfig([
     // viewer (see scripts/sync-pdfjs-assets.mjs). Minified third-party code — linting it produces
     // thousands of irrelevant findings, same rationale as build/** above.
     "public/pdfjs/**",
+    // Gitignored local snapshot/export directory (e.g. audit-tool code dumps). Not part of the
+    // project source — same rationale as the worktree ignores above.
+    "artifacts/**",
   ]),
 ]);
 

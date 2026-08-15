@@ -40,7 +40,7 @@ function promptHidden(question: string): Promise<string> {
     const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
     // Swallow the echo but keep the prompt itself visible.
     let shown = false;
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
+    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (_s: string) => {
       if (!shown) {
         process.stdout.write(question);
         shown = true;
