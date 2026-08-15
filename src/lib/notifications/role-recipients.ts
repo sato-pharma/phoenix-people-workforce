@@ -9,6 +9,7 @@
 
 import { canonicalPersonHrId } from "@/lib/auth/identity-aliases";
 import { phoenixRoles, type AccessContext, type PhoenixRole } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { writeRequiredAuditLog } from "@/lib/admin/audit";
 import { canonicalHrIdKey, hrIdLookupKeys } from "@/lib/hr-id";
 import { logError } from "@/lib/observability/log";
@@ -392,12 +393,34 @@ export async function resolveNotificationPersonRecipients(
 
     const rows = (data ?? []) as Array<{ hr_id?: string | null; login_id?: string | null }>;
     const hrIds = rows.map((row) => String(row.hr_id ?? "").trim().toUpperCase()).filter(Boolean);
-    const bindings = await loadDeliveryBindings(hrIds, warnings);
+
+    // app_auth_users.is_active can lag employees.employment_status — a CSV termination or a
+    // contract non-renewal flips the employee record without deactivating the login. A
+    // role-addressed system notification must not reach someone who has left, so drop any
+    // account whose linked employee is terminal. Accounts with no matching employee row
+    // (system/service logins) are KEPT, matching isTerminalEmploymentStatus's fail-open rule.
+    const terminalHrIds = new Set<string>();
+    if (hrIds.length > 0) {
+      const { data: employeeRows, error: employeeError } = await getSupabaseAdmin()
+        .from("employees")
+        .select("hr_id,employment_status")
+        .in("hr_id", hrIds);
+      if (employeeError) throw employeeError;
+      for (const employee of (employeeRows ?? []) as Array<{ hr_id?: string | null; employment_status?: string | null }>) {
+        if (isTerminalEmploymentStatus(employee.employment_status)) {
+          terminalHrIds.add(String(employee.hr_id ?? "").trim().toUpperCase());
+        }
+      }
+    }
+
+    const activeHrIds = hrIds.filter((hrId) => !terminalHrIds.has(hrId));
+    const bindings = await loadDeliveryBindings(activeHrIds, warnings);
 
     const accounts: NotificationRoleRecipientAccount[] = [];
     for (const row of rows) {
       const hrId = String(row.hr_id ?? "").trim().toUpperCase();
       if (!hrId) continue;
+      if (terminalHrIds.has(hrId)) continue;
       const bindingKey = canonicalHrIdKey(hrId);
       accounts.push({
         hasEmail: Boolean(bindingKey && bindings.email.has(bindingKey)),
