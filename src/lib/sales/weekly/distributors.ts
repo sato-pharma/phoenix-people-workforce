@@ -23,6 +23,11 @@ export type WeeklyDistributorDef = {
    *  RAW_DISTRIBUTOR_PROFILES path. These distributors are NOT weeklyOnly (they do have a monthly
    *  import) but also do not appear in RAW_DISTRIBUTOR_PROFILES. */
   monthlyCoded?: boolean;
+  /** false when the weekly sheets are NOT cumulative within the month — each sheet carries only that
+   *  week's own lines, so nothing may be subtracted from it. Defaults to true (every real distributor
+   *  export restates the month to date). Read it through weeklyDistributorIsCumulative(), never by
+   *  touching this field, so an unknown code keeps the cumulative default. */
+  cumulative?: boolean;
 };
 
 export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
@@ -39,7 +44,14 @@ export const WEEKLY_DISTRIBUTORS: readonly WeeklyDistributorDef[] = [
   // straight from the sheet's own Value column (never recomputed from factory price). Has no monthly
   // flat-file equivalent of its own raw-export kind, but DOES have a monthly Direct counterpart — kept
   // out of weeklyOnly since that flag means "no monthly import at all" (POS-only today).
-  { code: "Direct", name: "Direct (Company)", cadence: "weekly", headerNameMatched: true, monthlyCoded: true },
+  //
+  // NOT cumulative. Every other distributor exports a running month-to-date sheet; Direct is keyed by
+  // invoice, so each week's sheet holds only that week's own orders. Proven on prod 2026-08-15 from
+  // the stored rows themselves: across the 2026-05 cycle's weeks 2 and 3, of 26 distinct
+  // branch×product cells only 7 appear in both — 10 vanish and 9 are new. A running total cannot lose
+  // cells. Subtracting the prior sheet had been producing negative weeks (2026-05 W3 came out at
+  // -65,198.50 and 2026-07 W2 at -418,067.75).
+  { code: "Direct", name: "Direct (Company)", cadence: "weekly", headerNameMatched: true, monthlyCoded: true, cumulative: false },
 ];
 
 export function weeklyDistributorByCode(code: string | null | undefined): WeeklyDistributorDef | undefined {
@@ -56,6 +68,17 @@ export function canonicalWeeklyDistributorCode(code: string | null | undefined):
 
 export function isWeeklyDistributorCode(code: string | null | undefined): boolean {
   return Boolean(weeklyDistributorByCode(code));
+}
+
+/**
+ * Are this distributor's weekly sheets cumulative within the month-cycle (i.e. does each sheet
+ * restate the month to date, so the real week = sheet minus the previous sheet)?
+ *
+ * Defaults to TRUE, including for an unrecognised code — every distributor except Direct restates,
+ * so the safe default is the existing behaviour. Only an explicit `cumulative: false` opts out.
+ */
+export function weeklyDistributorIsCumulative(code: string | null | undefined): boolean {
+  return weeklyDistributorByCode(code)?.cumulative !== false;
 }
 
 export function weeklyDistributorOptions(): { code: string; name: string }[] {

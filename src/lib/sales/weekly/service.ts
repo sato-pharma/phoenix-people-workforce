@@ -13,6 +13,7 @@ import {
   WEEKLY_DISTRIBUTORS,
   canonicalWeeklyDistributorCode,
   weeklyDistributorByCode,
+  weeklyDistributorIsCumulative,
 } from "@/lib/sales/weekly/distributors";
 import { parseWeeklyWorkbookBuffer } from "@/lib/sales/weekly/parser";
 import { narrowBatchesToCycleMonths } from "@/lib/sales/weekly/batch-scope";
@@ -83,6 +84,9 @@ function cycleMonthFromDate(dateStr: string | null): string | null {
  * De-cumulate this sheet's totals against the previous cumulative sheet of the same month-cycle.
  * Returns the real "this week only" sales (value + net units); stock is a snapshot, returned as-is.
  * When no earlier sheet exists in the cycle, this IS the first week → real = the full current totals.
+ *
+ * A distributor whose sheets are NOT cumulative (Direct) is exempt: its sheet already holds only this
+ * week's orders, so there is nothing to subtract and the prior-batch lookup is skipped entirely.
  */
 async function computeThisWeekOnly(
   distributorCode: string,
@@ -91,6 +95,15 @@ async function computeThisWeekOnly(
   totals: WeeklyTotals,
 ): Promise<WeeklyThisWeekOnly | null> {
   if (!cycleMonth || !weekStart) return null;
+  if (!weeklyDistributorIsCumulative(distributorCode)) {
+    return {
+      priorWeekStart: null,
+      priorWeekNumber: null,
+      salesValue: round2(totals.salesValue),
+      netQty: round2(totals.netQty),
+      stockQty: round2(totals.stockQty),
+    };
+  }
   const supabase = getSupabaseAdmin();
   const prior = await supabase
     .from("weekly_sales_batches")

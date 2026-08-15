@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { decumulateRows, suppressGapSpannedValue, weekHasDecumulationGap, type DecumulableRow } from "../src/lib/sales/weekly/decumulate.ts";
+import { weeklyDistributorIsCumulative } from "../src/lib/sales/weekly/distributors.ts";
 
 // Build a cumulative row with sensible defaults.
 function row(p: Partial<DecumulableRow> & { weekStart: string; weekNumber: number | null }): DecumulableRow {
@@ -100,6 +101,46 @@ export function runWeeklyDecumulationTests() {
     assert.ok(w2.salesValue < 0, "boundary mis-tag yields a visible negative week");
   }
 
+  // 7) A NON-cumulative distributor (Direct) is never subtracted — its sheet already holds only that
+  //    week's own orders. These are the real 2026-05 prod figures: under the old blanket de-cumulation
+  //    W3 came out at 592,161.50 - 657,360.00 = -65,198.50, a negative week that cannot exist.
+  {
+    const direct = [
+      row({ distributorCode: "Direct", weekStart: "2026-05-09", weekNumber: 2, salesValue: 657360, netQty: 700, stockQty: 0 }),
+      row({ distributorCode: "Direct", weekStart: "2026-05-16", weekNumber: 3, salesValue: 592161.5, netQty: 640, stockQty: 0 }),
+    ];
+    const real = decumulateRows(direct);
+    const byWeek = new Map(real.map((r) => [r.weekNumber, r]));
+    assert.equal(real.length, 2, "Direct rows all survive");
+    assert.equal(byWeek.get(2)!.salesValue, 657360, "Direct W2 passes through untouched");
+    assert.equal(byWeek.get(3)!.salesValue, 592161.5, "Direct W3 is its own week, NOT 592161.5-657360");
+    assert.ok(byWeek.get(3)!.salesValue > 0, "a non-cumulative week can never go negative by subtraction");
+    assert.equal(byWeek.get(3)!.netQty, 640, "Direct units are not subtracted either");
+    // The month is the SUM of Direct's weeks, not its last sheet (the opposite of a cumulative feed).
+    assert.equal(sumBy(real, (r) => r.salesValue), 1249521.5, "Direct month = sum of its weeks");
+  }
+
+  // 8) The exemption is per-distributor, not a global switch: identical numbers under a cumulative
+  //    code still subtract. Guards against "fixing" Direct by disabling de-cumulation for everyone.
+  {
+    const cumulative = [
+      row({ distributorCode: "IS", weekStart: "2026-05-09", weekNumber: 2, salesValue: 657360 }),
+      row({ distributorCode: "IS", weekStart: "2026-05-16", weekNumber: 3, salesValue: 592161.5 }),
+    ];
+    const real = decumulateRows(cumulative);
+    const w3 = real.find((r) => r.weekNumber === 3)!;
+    assert.equal(w3.salesValue, -65198.5, "a cumulative distributor still subtracts (and still shows the negative)");
+  }
+
+  // 9) The registry flag itself: default true, explicit opt-out for Direct only, code-case agnostic,
+  //    and an UNKNOWN code must default to cumulative (the pre-existing behaviour).
+  assert.equal(weeklyDistributorIsCumulative("Direct"), false, "Direct is non-cumulative");
+  assert.equal(weeklyDistributorIsCumulative("direct"), false, "the flag is case-insensitive");
+  assert.equal(weeklyDistributorIsCumulative("IS"), true, "Ibn Sina is cumulative");
+  assert.equal(weeklyDistributorIsCumulative("PS"), true, "Overseas is cumulative");
+  assert.equal(weeklyDistributorIsCumulative("NOPE"), true, "an unknown code defaults to cumulative");
+  assert.equal(weeklyDistributorIsCumulative(null), true, "a null code defaults to cumulative");
+
   // ── M6: decumulation-gap detection ──
   // The first present week of a cycle never spans a gap (nothing before it).
   assert.equal(weekHasDecumulationGap(null, 1), false, "first present week is not a gap");
@@ -126,6 +167,11 @@ export function runWeeklyDecumulationTests() {
   // source so no downstream consumer (table, cross-month chart, exports) can render the inflated
   // number as a true single-week value.
   const serviceSource = readFileSync("src/lib/sales/weekly/service.ts", "utf8");
+
+  // The upload preview de-cumulates on a SECOND path (computeThisWeekOnly subtracts the prior batch's
+  // stored header), so the non-cumulative exemption has to be honoured there too — otherwise Direct's
+  // "this week only" stays negative on the validation screen even though the dashboard is correct.
+  assert.match(serviceSource, /if \(!weeklyDistributorIsCumulative\(distributorCode\)\) \{/, "computeThisWeekOnly exempts non-cumulative distributors");
   assert.match(serviceSource, /const spansGap = weekHasDecumulationGap\(prev\?\.weekNumber \?\? null, w\.weekNumber\)/, "weekComparison computes spansGap via the shared helper");
   assert.match(serviceSource, /salesValue: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesValue on a gap week");
   assert.match(serviceSource, /salesUnits: suppressGapSpannedValue\(spansGap, /, "weekComparison suppresses salesUnits on a gap week");
