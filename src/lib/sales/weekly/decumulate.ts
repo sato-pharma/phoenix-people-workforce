@@ -1,13 +1,22 @@
 // Pure de-cumulation of cumulative weekly-sales rows into real "this week only" rows.
 //
-// Distributor weekly sheets are CUMULATIVE within a month (week 2 already contains week 1, etc.). For
-// each (distributor, cycle_month) the real value/units of a week = its cumulative MINUS the previous
-// week's matching (product × branch) cumulative. The first week of a cycle is itself. STOCK is a
-// point-in-time snapshot — never subtracted. Untagged rows (no cycle_month / week_number) pass through
+// MOST distributor weekly sheets are CUMULATIVE within a month (week 2 already contains week 1, etc.).
+// For each (distributor, cycle_month) the real value/units of a week = its cumulative MINUS the
+// previous week's matching (product × branch) cumulative. The first week of a cycle is itself. STOCK is
+// a point-in-time snapshot — never subtracted. Untagged rows (no cycle_month / week_number) pass through
 // unchanged. Telescoping keeps the month total correct: the sum of the real weeks equals the last
 // cumulative sheet of the cycle.
 //
-// Pure + dependency-free so it can be unit-tested in isolation (see tests/weekly-decumulation.test.ts).
+// NOT every distributor restates. Direct is invoice-keyed, so each sheet carries only that week's own
+// orders and subtracting the prior sheet invents negative weeks. Rows from a distributor marked
+// `cumulative: false` in distributors.ts therefore pass straight through, exactly like untagged rows.
+// The flag lives in the registry (not here) so the parser, the dashboard and the upload preview all
+// read one source of truth.
+//
+// Pure apart from that registry lookup, so it stays unit-testable in isolation
+// (see tests/weekly-decumulation.test.ts).
+
+import { weeklyDistributorIsCumulative } from "@/lib/sales/weekly/distributors";
 
 export type DecumulableRow = {
   weekStart: string;
@@ -36,6 +45,10 @@ export function decumulateRows<T extends DecumulableRow>(rows: T[]): T[] {
   for (const row of rows) {
     if (!row.cycleMonth || row.weekNumber == null) {
       out.push(row); // untagged / legacy — leave exactly as-is
+      continue;
+    }
+    if (!weeklyDistributorIsCumulative(row.distributorCode)) {
+      out.push(row); // non-cumulative sheet (Direct) — this row IS the week, nothing to subtract
       continue;
     }
     const key = `${up(row.distributorCode)}||${row.cycleMonth}`;
