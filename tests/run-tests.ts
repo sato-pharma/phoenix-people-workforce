@@ -752,6 +752,7 @@ import { runOutstationArrivalPhotoCaptureReachableTests } from "./outstation-arr
 import { runOutstationAdminManualExpenseGateTests } from "./outstation-admin-manual-expense-gate.test.ts";
 import { runOutstationDeparturePhotoRetakeTests } from "./outstation-departure-photo-retake.test.ts";
 import { runOutstationAllowanceDuplicateDayGuardTests } from "./outstation-allowance-duplicate-day-guard.test.ts";
+import { runOutstationCairoNoAllowanceTests } from "./outstation-cairo-no-allowance.test.ts";
 import { runOutstationClaimValidationTests } from "./outstation-claim-validation.test.ts";
 import { runOutstationExpenseNoteAssistTests } from "./outstation-expense-note-assist.test.ts";
 import { runOutstationSubmissionWaitsForApprovalTests } from "./outstation-submission-waits-for-approval.test.ts";
@@ -1835,6 +1836,11 @@ await runTest(
 await runTest(
   "one employee earns at most one allowance per calendar day, across every write path",
   runOutstationAllowanceDuplicateDayGuardTests,
+);
+
+await runTest(
+  "a regional employee's trip to Cairo earns no per-diem allowance, across every write path",
+  runOutstationCairoNoAllowanceTests,
 );
 
 await runTest(

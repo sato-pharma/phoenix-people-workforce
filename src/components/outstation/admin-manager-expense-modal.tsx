@@ -391,6 +391,12 @@ export function AdminManagerExpenseModal({
       const response = await fetch("/api/admin/outstation/preview-expense-calculation", {
         body: JSON.stringify({
           claimedTotalAmount: claimedAmount ? Number(claimedAmount) : 0,
+          // Destination drives the Cairo no-allowance rule, so the live preview zeroes the
+          // allowance exactly as the save will — the admin never sees a phantom allowance line.
+          destinationArea: destination?.area ?? null,
+          destinationCity: destination?.city ?? null,
+          destinationCountry: destination?.country ?? null,
+          destinationLabel: destination?.label ?? null,
           distanceKm: distance,
           employeeHrId: hrId,
           meetingAmount: meetingAmount ? Number(meetingAmount) : 0,
@@ -436,6 +442,7 @@ export function AdminManagerExpenseModal({
     ticketCost,
     meetingAmount,
     otherAmount,
+    destination,
   ]);
 
   async function handleSubmit(event: React.FormEvent) {
