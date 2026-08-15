@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { isTerminalEmploymentStatus } from "@/lib/auth/session-lifecycle";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { buildManualDeductionDraft } from "@/lib/deductions/connectors/manual.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
     // can never fall back to displaying an HR code.
     const { data: employeeRow, error: employeeError } = await getSupabaseAdmin()
       .from("employees")
-      .select("hr_id, full_name, base_salary")
+      .select("hr_id, full_name, base_salary, employment_status")
       .eq("hr_id", body.employeeHrId.trim())
       .maybeSingle();
     if (employeeError) {
@@ -57,7 +58,20 @@ export async function POST(request: Request) {
     if (!employeeRow) {
       throw new Error("Not found: no employee matches that record.");
     }
-    const employee = employeeRow as { hr_id: string; full_name: string | null; base_salary: number | null };
+    const employee = employeeRow as {
+      hr_id: string;
+      full_name: string | null;
+      base_salary: number | null;
+      employment_status: string | null;
+    };
+    // A person who has LEFT the company cannot be given a new deduction. The picker
+    // now hides terminal staff, but the write must refuse them independently so a
+    // stale form, a cached name, or a hand-crafted request can't book one either.
+    if (isTerminalEmploymentStatus(employee.employment_status)) {
+      throw new Error(
+        `Validation: ${employee.full_name ?? employee.hr_id} is no longer an active employee (status: ${employee.employment_status}); a deduction cannot be recorded.`,
+      );
+    }
 
     const draft = buildManualDeductionDraft({
       category: body.category,

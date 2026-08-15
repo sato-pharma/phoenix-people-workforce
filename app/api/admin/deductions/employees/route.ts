@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { assertPermission } from "@/lib/auth/permissions";
+import { ACTIVE_EMPLOYMENT_STATUSES } from "@/lib/auth/session-lifecycle";
 import { calculateDeductionAmountFromBaseSalary } from "@/lib/deductions/calculations.ts";
 import { resolveAccessContext, jsonError } from "@/lib/deductions/http.ts";
 import { assertDeductionsDecisionActor } from "@/lib/deductions/permissions.ts";
@@ -84,6 +85,11 @@ export async function GET(request: Request) {
       .from("employees")
       .select("hr_id, full_name, job_title, employment_status")
       .ilike("full_name", `%${query}%`)
+      // Only CURRENT staff. A person is chosen here to be DEDUCTED FROM, so a
+      // resigned/terminated employee must never surface — this picker previously
+      // filtered on name alone and offered them as selectable. Mirrors the
+      // active-status constraint the other deduction rosters already apply.
+      .in("employment_status", Array.from(ACTIVE_EMPLOYMENT_STATUSES))
       .order("full_name")
       .limit(20);
     if (error) throw new Error(`Employee search failed: ${error.message}`);
