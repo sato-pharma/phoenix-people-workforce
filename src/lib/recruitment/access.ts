@@ -43,34 +43,16 @@ export function canSeeAllRecruitment(access: AccessContext): boolean {
   return access.scope === "system" || recruitmentGlobalReadRoles.includes(access.role);
 }
 
-// Read-only CV-extraction accuracy dashboard — same authority as the rest of the pipeline
-// (Super Admin / Talent Acquisition), not the broader recruitmentGlobalReadRoles (CEO doesn't
-// need per-field AI accuracy stats).
-export function canViewCvExtractionAnalytics(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
-}
-
-// The CV-extraction review queue (src/lib/recruitment/cv-review-queue.ts). Same role set as the
-// analytics dashboard today, but deliberately its OWN helper rather than reusing
-// canViewCvExtractionAnalytics: this capability WRITES (a saved review patches the candidate and
-// records applied_fields), so the two must be able to diverge without one silently widening the
-// other. The page gate is UX; PATCH /api/recruitment/candidates/[id] still enforces
-// candidates:update server-side on every save.
-export function canReviewCvExtractions(access: Pick<AccessContext, "role" | "scope">): boolean {
-  return access.scope === "system" || recruitmentManageRoles.includes(access.role);
-}
-
-// The per-field include/exclude switch (src/lib/recruitment/cv-field-settings.ts). Super Admin and
-// Talent Acquisition, per the owner's ruling 2026-08-14 — TA decides what is worth reading off a
-// CV, so this is her setting, not an administrative one.
+// Inbound Intake Health — the mailbox/queue monitor, and the only page that would say why CVs
+// stopped arriving. Same authority as the rest of the pipeline (Super Admin / Talent Acquisition),
+// not the broader recruitmentGlobalReadRoles: the CEO does not need plumbing diagnostics.
 //
-// Its own helper for the same reason canReviewCvExtractions is: this one is CONFIGURATION, not
-// data. Switching a field off means no CV is ever read for it again, and the resulting gap is
-// invisible after the fact — nothing marks a candidate as "we stopped asking". If that ever needs
-// to be narrower than reviewing, it must be able to narrow without dragging the queue with it.
-// The page gate is UX; PATCH /api/recruitment/cv-field-settings asserts recruitment:update
-// server-side before any write.
-export function canManageCvFieldSettings(access: Pick<AccessContext, "role" | "scope">): boolean {
+// This was canViewCvExtractionAnalytics until 2026-08-15, when the accuracy dashboard, the CV
+// review queue and the per-field settings page were all removed — the owner used the review queue
+// 5 times out of 194 CVs and never changed a single field setting, and the accuracy dashboard
+// derived its whole number from those 5 reviews. Intake Health was the one survivor sharing this
+// gate, so the helper is now named after it.
+export function canViewInboundIntakeHealth(access: Pick<AccessContext, "role" | "scope">): boolean {
   return access.scope === "system" || recruitmentManageRoles.includes(access.role);
 }
 

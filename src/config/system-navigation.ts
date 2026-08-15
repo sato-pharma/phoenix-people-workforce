@@ -1097,10 +1097,8 @@ const employeePortalNavigationSectionSeeds = [
   },
   // ── Recruitment & Hiring: Talent Acquisition's portal-side mirror of the
   // admin-shell hrAuthorityNavigationRoles tools (app/(admin)/recruitment,
-  // /recruitment/cv-review-queue, /cv-database, /hiring-documents,
-  // /recruitment/cv-extraction-analytics, /recruitment/intake-health,
-  // /recruitment/cv-field-settings, /leave-management/vacation-control,
-  // /admin/support-requests). Super Admin never
+  // /cv-database, /hiring-documents, /recruitment/intake-health,
+  // /leave-management/vacation-control, /admin/support-requests). Super Admin never
   // sees this — resolveNavigationMode keeps Super Admin on the admin shell, where the
   // originals still live.
   //
@@ -1112,12 +1110,9 @@ const employeePortalNavigationSectionSeeds = [
     id: "recruitment-hiring",
     items: [
       { href: "/employee-portals/recruitment", icon: BriefcaseBusiness, label: "Recruitment", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/cv-review-queue", icon: ClipboardList, label: "CV Review Queue", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/cv-database", icon: FileSpreadsheet, label: "CV Database", permissions: [{ resource: "vacancies", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/hiring-documents", icon: FileCheck2, label: "Hiring Documents", permissions: [{ resource: "employee_documents", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/cv-extraction-analytics", icon: ChartColumnBig, label: "CV Extraction Accuracy", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/intake-health", icon: HeartPulse, label: "Inbound Intake Health", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
-      { href: "/employee-portals/cv-field-settings", icon: SlidersHorizontal, label: "CV Field Settings", permissions: [{ resource: "recruitment", action: "read" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/vacation-control", icon: Settings2, label: "Vacation Control", permissions: [{ resource: "leave", action: "update" }], roles: ["Talent Acquisition"] },
       { href: "/employee-portals/support-requests", icon: LifeBuoy, label: "HR Support Requests", permissions: [{ resource: "support_requests", action: "read" }], roles: ["Talent Acquisition"] },
     ],
@@ -2329,52 +2324,25 @@ export const recruitmentHiringPageItems: readonly AdminToolsPageItem[] = [
     permissions: [{ resource: "employee_documents" }],
     roles: hrAuthorityNavigationRoles,
   },
-  {
-    href: "/recruitment/cv-review-queue",
-    icon: ClipboardList,
-    label: "CV Review Queue",
-    description: "CV fields the AI read but wasn't confident enough to apply — auto-intake never surfaced these.",
-    permissions: [{ resource: "recruitment" }],
-    roles: hrAuthorityNavigationRoles,
-  },
-  {
-    href: "/recruitment/cv-extraction-analytics",
-    icon: ChartColumnBig,
-    label: "CV Extraction Accuracy",
-    description: "How often Talent Acquisition corrects the AI's proposed CV fields, per position.",
-    permissions: [{ resource: "recruitment" }],
-    roles: hrAuthorityNavigationRoles,
-  },
-  {
-    href: "/recruitment/intake-health",
-    icon: HeartPulse,
-    label: "Inbound Intake Health",
-    description: "WhatsApp + email CV intake funnel, capture rate, and any dead-lettered CVs to retry.",
-    permissions: [{ resource: "recruitment" }],
-    roles: hrAuthorityNavigationRoles,
-  },
-  // Talent Acquisition as well as Super Admin — the owner's ruling, 2026-08-14. This tool does not
-  // read recruitment data; it configures what the CV extractor asks for on every future CV, and a
-  // field switched off produces no value on any CV read while it is off
-  // (src/lib/recruitment/cv-field-settings.ts). That is precisely the judgement Talent Acquisition
-  // makes daily, so gating it to Super Admin would have meant she had to ask him to change it.
+  // Removed 2026-08-15 on the owner's ruling: CV Review Queue, CV Extraction Accuracy and CV Field
+  // Settings. Measured against production before cutting — the review queue had been opened for 5
+  // of 194 extracted CVs, the accuracy dashboard computed its whole number from those same 5
+  // reviews, and no field setting had ever been changed. They made the module look complicated
+  // without ever changing an outcome. The flow is: receive the CV, let the AI read it, push the
+  // candidate to the hiring manager.
   //
-  // Like every other Talent-Acquisition-gated tool on this hub, it needs a portal twin:
-  // app/employee-portals/cv-field-settings/page.tsx, an entry in employeePortalNavigationSections,
-  // an entry in employee-portal-layout.tsx, and an entry in PORTAL_TWIN_BY_HUB_HREF in
+  // Like every other Talent-Acquisition-gated tool on this hub, each surviving card needs a portal
+  // twin: a page under app/employee-portals/, an entry in employeePortalNavigationSections, an
+  // entry in employee-portal-layout.tsx, and an entry in PORTAL_TWIN_BY_HUB_HREF in
   // tests/recruitment-hub-portal-coverage.test.ts. That is not ceremony — the (admin) group
   // redirects portal-shell roles away before any page in it renders, so without the twin she gets a
   // card that cannot open. The test holds a TOTAL map for exactly that reason and fails CI if the
   // pairing is ever broken.
   {
-    // SlidersHorizontal, not the house Settings2 icon: the portal twin of this card sits in the
-    // same sidebar section as Vacation Control, which already carries Settings2, and two identical
-    // icons in one list are unreadable. Both copies use this icon so the tool looks the same
-    // wherever it is reached from.
-    href: "/recruitment/cv-field-settings",
-    icon: SlidersHorizontal,
-    label: "CV Field Settings",
-    description: "Include or exclude each field the AI reads from a CV — an off field is never asked for.",
+    href: "/recruitment/intake-health",
+    icon: HeartPulse,
+    label: "Inbound Intake Health",
+    description: "WhatsApp + email CV intake funnel, capture rate, and any dead-lettered CVs to retry.",
     permissions: [{ resource: "recruitment" }],
     roles: hrAuthorityNavigationRoles,
   },

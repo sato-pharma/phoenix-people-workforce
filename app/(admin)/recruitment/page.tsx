@@ -7,8 +7,10 @@ import { canAccess, isHrAuthorityRole, type AccessContext } from "@/lib/auth/per
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { getEmployeeDirectoryRows } from "@/lib/employees/employee-directory";
 import { listCandidates } from "@/lib/recruitment/candidates";
+import { summarizeCandidatePool } from "@/lib/recruitment/candidate-stats";
 import { getRecruitmentDashboard, type RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import { isFileUploadEnabled } from "@/lib/recruitment/file-storage";
+import { listHiringManagerOptions, type HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import { listOpenVacanciesForRequisition } from "@/lib/recruitment/requisitions";
 import type { Candidate } from "@/lib/recruitment/types";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
@@ -53,17 +55,24 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
   let dashboard: RecruitmentDashboard | null = null;
   let openVacancies: VacancyReportRow[] = [];
   let managers: RecruitmentManagerOption[] = [];
+  // Only the ~30 people whose job title says manager -- the list a candidate is actually SENT to.
+  // `managers` above is the whole employee directory (it fills the requisition form), which is the
+  // wrong list to offer here: picking a District Sales Manager out of every employee is the kind of
+  // ceremony that left 214 of 221 candidates sitting in the pool.
+  let hiringManagers: HiringManagerOption[] = [];
   let candidates: Candidate[] = [];
   let initialError: string | null = null;
 
   try {
-    const [dashboardData, vacancies, employeeRows] = await Promise.all([
+    const [dashboardData, vacancies, managerOptions, employeeRows] = await Promise.all([
       getRecruitmentDashboard(access),
       listOpenVacanciesForRequisition(),
+      listHiringManagerOptions(),
       getEmployeeDirectoryRows(),
     ]);
     dashboard = dashboardData;
     openVacancies = vacancies;
+    hiringManagers = managerOptions;
     managers = employeeRows
       .map((row) => ({ hrId: row.hrId, fullName: row.displayName }))
       .sort((a, b) => a.fullName.localeCompare(b.fullName));
@@ -84,9 +93,11 @@ async function RecruitmentContent({ access }: { access: AccessContext }) {
       canManageCandidates={canManageCandidates}
       canViewCandidates={canViewCandidates}
       candidates={candidates}
+      candidateStats={summarizeCandidatePool(candidates)}
       dashboard={dashboard}
       filesEnabled={isFileUploadEnabled()}
       initialError={initialError}
+      hiringManagers={hiringManagers}
       managers={managers}
       openVacancies={openVacancies}
     />

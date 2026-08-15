@@ -159,6 +159,10 @@ const policyTable: Record<string, Partial<NotificationPolicy>> = {
   // Telegram only. The hard guarantee is recruitment-cv-channel-guard.ts — this row is the
   // intent, that filter is the enforcement (same two-layer pattern as early_birds.* above).
   "recruitment.recruitment_inbound_cv": { channels: ["in_app", "telegram", "push"], telegramAllowed: true },
+  // The once-a-Cairo-day summary that replaced the per-CV alert (628 deliveries to 3 reviewers in
+  // 30 days). Same rule, same two layers — it needs its own row because `recruitment.*` below
+  // carries email, so falling through would have emailed the very notice the owner said must not be.
+  "recruitment.recruitment_daily_cv_digest": { channels: ["in_app", "telegram", "push"], telegramAllowed: true },
   "recruitment.*": { channels: ["in_app", "email", "push"], permissionResource: "recruitment", recipientStrategy: ["assigned_approver", "permission_based"] },
   // Owner-set 2026-08-09: a resignation is told to Super Admin and Talent Acquisition ONLY —
   // deliberately not the CEO, and deliberately not the leaver's manager chain. The emitter

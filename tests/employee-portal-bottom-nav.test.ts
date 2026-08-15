@@ -67,22 +67,11 @@ export function runEmployeePortalBottomNavTests() {
   const desktopOnlyPortalRoutes = new Set([
     "/employee-portals/private-calendar",
     "/employee-portals/recruitment",
-    // CV Review Queue: same Talent-Acquisition-only class as its neighbours here, and its core
-    // interaction is the drag-and-drop extraction board (dnd-kit chips into per-field slots) —
-    // a pointer workflow, not something to hand someone on a phone.
-    "/employee-portals/cv-review-queue",
     "/employee-portals/cv-database",
     "/employee-portals/hiring-documents",
-    // CV Extraction Accuracy and Inbound Intake Health: same Talent-Acquisition-only class again,
-    // and both are wide read-only tables (per-position × per-field correction rates; a 30-day
-    // funnel plus the dead-letter list). Desk work, not a phone shortcut.
-    "/employee-portals/cv-extraction-analytics",
+    // Inbound Intake Health: same Talent-Acquisition-only class again, and it is a wide read-only
+    // table (a 30-day funnel plus the dead-letter list). Desk work, not a phone shortcut.
     "/employee-portals/intake-health",
-    // CV Field Settings: same Talent-Acquisition-only class, and it is a set-once configuration
-    // page — 36 switches across six sections, deciding what the extractor asks of every future CV.
-    // Nobody reaches for that from a phone between visits, and putting it in the quick-nav grid
-    // would spend one of a handful of pinnable slots on the portal's least-visited page.
-    "/employee-portals/cv-field-settings",
     "/employee-portals/employees",
     "/employee-portals/contracts",
     "/employee-portals/resignations",

@@ -121,10 +121,10 @@ export function countUnappliedCvFields(
 //     it made the intake NOTIFICATION disagree with the profile: the notification counts the
 //     fresh extraction (where the value is []), while the profile banner counts the STORED row,
 //     which normalizeStoredValue collapses to null. Up to 5 phantom fields per CV.
-//   • A proposal whose runtime type contradicts its DECLARED type is not a finding either. Both
-//     auto-apply and the review queue reject it, so counting it here promises a reviewer work the
-//     UI will never offer them. (A fresh extraction cannot produce one — readSchemaField
-//     dispatches per declared type — but a legacy or hand-edited jsonb row can.)
+//   • A proposal whose runtime type contradicts its DECLARED type is not a finding either.
+//     Auto-apply rejects it, so counting it here promises a reviewer work the UI will never offer
+//     them. (A fresh extraction cannot produce one — readSchemaField dispatches per declared type —
+//     but a legacy or hand-edited jsonb row can.)
 function isRealFinding(value: ExtractedCvValue, field: CvFieldDefinition): boolean {
   if (value === null || value === undefined || value === "") return false;
   if (field.type === "array") return Array.isArray(value) && value.length > 0;

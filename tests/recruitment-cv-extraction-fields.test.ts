@@ -12,12 +12,14 @@ import type { Candidate } from "../src/lib/recruitment/types.ts";
 // `medical_rep` is now an ALIAS onto the ONE universal schema rather than a template of its own
 // (cv-field-schemas.ts, 2026-08-14). This file deliberately keeps resolving it: 170 historical
 // ats_candidate_cv_extractions rows are stamped with that key and their review-queue entries break
-// the moment it stops resolving. Whatever it returns is the same 36-field list `universal` returns.
+// the moment it stops resolving. Whatever it returns is the same 38-field list `universal` returns.
 const medicalRep = getCvPositionSchema("medical_rep")!;
 
 function candidate(overrides: Partial<Candidate> = {}): Candidate {
   return {
     address: null,
+    appliedForEvidence: null,
+    appliedForJobTitle: null,
     createdAt: "2026-07-31T00:00:00Z",
     createdBy: null,
     currentEmployer: null,
@@ -39,6 +41,7 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     hasPriorWorkExperience: null,
     id: "candidate-1",
     linkedinUrl: null,
+    managerNotified: null,
     maritalStatus: null,
     medicalRepEmployer: null,
     medicalRepExperienceFrom: null,
@@ -54,6 +57,9 @@ function candidate(overrides: Partial<Candidate> = {}): Candidate {
     professionalSummary: null,
     source: "whatsapp",
     status: "Candidate Created",
+    statusChangedAt: null,
+    statusChangedByHrId: null,
+    statusNote: null,
     university: null,
     updatedAt: "2026-07-31T00:00:00Z",
     whatsapp: null,

@@ -574,11 +574,6 @@ export const accessRegistry = [
   // Config editor stays admin-only (probation:update).
   sessionApi({ methods: allMethods, pattern: "/api/probation/config", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/probation/**", permission: { resource: "probation", action: "update" }, csrfRequired: true }),
-  // Which CV fields the AI is asked to extract at all. Read is `recruitment:read`; the write is
-  // deliberately declared here as `recruitment:read` only because the registry records ONE
-  // permission per pattern — the route itself asserts `recruitment:update` on PATCH. Turning a
-  // field off means no CV is ever read for it again, and the gap is invisible after the fact.
-  sessionApi({ methods: ["GET", "PATCH"], pattern: "/api/recruitment/cv-field-settings", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/requisitions/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/intake/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/applications/**", permission: { resource: "recruitment", action: "read" }, csrfRequired: true }),
@@ -591,6 +586,12 @@ export const accessRegistry = [
   // role like District Manager can view/act on only their own assigned candidate's CV,
   // interview, and outcome, without a broader recruitment grant. See
   // src/lib/recruitment/hiring-manager-view.ts for the full rationale and per-record scoping.
+  // The manager's ANSWER — Interview / Not interested — is the only write on the candidates side of
+  // the hiring-manager surface, so it is listed ahead of the read-only pattern below rather than
+  // widening that one to allMethods: everything else a manager can reach here stays read-only.
+  // `update` on the same narrow resource, and per-record scoping still applies — the route refuses
+  // with 403 unless this candidate was deliberately sent to this caller.
+  sessionApi({ methods: ["PATCH"], pattern: "/api/recruitment/hiring-manager/candidates/*/decision", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),
   sessionApi({ audit: { classification: "export", required: true }, methods: readOnly, pattern: "/api/recruitment/hiring-manager/candidates/**", permission: { resource: "hiring_interviews", action: "read" } }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/applications/**", permission: { resource: "hiring_interviews", action: "read" }, csrfRequired: true }),
   sessionApi({ methods: allMethods, pattern: "/api/recruitment/hiring-manager/interviews/**", permission: { resource: "hiring_interviews", action: "update" }, csrfRequired: true }),

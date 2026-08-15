@@ -11,6 +11,7 @@ import {
   type ApplicationEvent,
   type ApplicationStage,
   type Candidate,
+  type CandidateStatusEvent,
   type HeadcountType,
   type Interview,
   type InterviewType,
@@ -83,6 +84,7 @@ export type ApplicationDbRow = Record<string, unknown>;
 export type InterviewDbRow = Record<string, unknown>;
 export type RecruitmentFileDbRow = Record<string, unknown>;
 export type ApplicationEventDbRow = Record<string, unknown>;
+export type CandidateStatusEventDbRow = Record<string, unknown>;
 
 export function mapRequisition(row: RequisitionDbRow): Requisition {
   return {
@@ -120,6 +122,12 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     id: String(row.id),
     fullName: String(row.full_name ?? ""),
     status: textOrNull(row.status) ?? DEFAULT_CANDIDATE_STATUS,
+    // Kept RAW, not normalized. A legacy free-text value still on a row is shown verbatim by
+    // candidateStatusLabel; normalizing here would silently rewrite what a human typed into one of
+    // five codes, and the whole point of the note is that the reason survives.
+    statusNote: textOrNull(row.status_note),
+    statusChangedAt: textOrNull(row.status_changed_at),
+    statusChangedByHrId: textOrNull(row.status_changed_by_hr_id),
     nationalId: textOrNull(row.national_id),
     email: textOrNull(row.email),
     phone: textOrNull(row.phone),
@@ -136,6 +144,8 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
     address: textOrNull(row.address),
     governorate: textOrNull(row.governorate),
     currentJobTitle: textOrNull(row.current_job_title),
+    appliedForJobTitle: textOrNull(row.applied_for_job_title),
+    appliedForEvidence: textOrNull(row.applied_for_evidence),
     professionalSummary: textOrNull(row.professional_summary),
     currentEmployer: textOrNull(row.current_employer),
     currentRoleResponsibilities: textOrNull(row.current_role_responsibilities),
@@ -160,6 +170,17 @@ export function mapCandidate(row: CandidateDbRow): Candidate {
       row.position_specific_fields && typeof row.position_specific_fields === "object"
         ? (row.position_specific_fields as Record<string, unknown>)
         : {},
+    // Present only when the identifying half of the stamp is there. The write path sets all three
+    // columns in ONE update, so a partial stamp cannot normally exist — but reading it defensively
+    // means the worst case is "never sent" rather than a send attributed to nobody at no time.
+    managerNotified:
+      textOrNull(row.manager_notified_hr_id) && textOrNull(row.manager_notified_at)
+        ? {
+            hrId: String(row.manager_notified_hr_id),
+            name: textOrNull(row.manager_notified_name) ?? String(row.manager_notified_hr_id),
+            sentAt: String(row.manager_notified_at),
+          }
+        : null,
     createdBy: textOrNull(row.created_by),
     createdAt: String(row.created_at ?? ""),
     updatedAt: String(row.updated_at ?? ""),
@@ -232,6 +253,18 @@ export function mapApplicationEvent(row: ApplicationEventDbRow): ApplicationEven
     actorHrId: textOrNull(row.actor_hr_id),
     reason: textOrNull(row.reason),
     details: asRecord(row.details),
+    createdAt: String(row.created_at ?? ""),
+  };
+}
+
+export function mapCandidateStatusEvent(row: CandidateStatusEventDbRow): CandidateStatusEvent {
+  return {
+    id: String(row.id),
+    candidateId: String(row.candidate_id),
+    fromStatus: textOrNull(row.from_status),
+    toStatus: String(row.to_status ?? ""),
+    note: textOrNull(row.note),
+    actorHrId: textOrNull(row.actor_hr_id),
     createdAt: String(row.created_at ?? ""),
   };
 }

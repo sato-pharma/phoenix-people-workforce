@@ -27,7 +27,6 @@ import {
   ShieldCheck,
   Database,
   Settings2,
-  SlidersHorizontal,
   Home,
   Send,
   FileText,
@@ -374,11 +373,10 @@ function buildEmployeePortalSections({
       ],
     },
     // Talent Acquisition's portal mirror of the admin-shell hrAuthorityNavigationRoles
-    // tools (see app/employee-portals/{recruitment,cv-review-queue,cv-database,
-    // hiring-documents,cv-extraction-analytics,intake-health,cv-field-settings,
-    // vacation-control,support-requests}/page.tsx). Empty — and dropped by the items.length filter
-    // below — for every other role. HR Support Requests lives in the "HR Support"
-    // section below, alongside Request Support.
+    // tools (see app/employee-portals/{recruitment,cv-database,hiring-documents,
+    // intake-health,vacation-control,support-requests}/page.tsx). Empty — and dropped by the
+    // items.length filter below — for every other role. HR Support Requests lives in the
+    // "HR Support" section below, alongside Request Support.
     //
     // This list must cover every tool on the admin hub (recruitmentHiringPageItems),
     // because the hub itself is unreachable for this role: app/(admin)/layout.tsx
@@ -389,15 +387,9 @@ function buildEmployeePortalSections({
       title: "Recruitment & Hiring",
       items: [
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/recruitment", label: "Recruitment", icon: BriefcaseBusiness }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-review-queue", label: "CV Review Queue", icon: ClipboardList }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-database", label: "CV Database", icon: FileSpreadsheet }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/hiring-documents", label: "Hiring Documents", icon: FileCheck2 }] : []),
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-extraction-analytics", label: "CV Extraction Accuracy", icon: ChartColumnBig }] : []),
         ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/intake-health", label: "Inbound Intake Health", icon: HeartPulse }] : []),
-        // SlidersHorizontal rather than the Settings2 used for Marketing Control above: Vacation
-        // Control in the "Time Off" section already carries Settings2, and this section is read at
-        // a glance. Same icon as the admin hub card, so the tool looks identical either way.
-        ...(showRecruitmentHiringTab ? [{ href: "/employee-portals/cv-field-settings", label: "CV Field Settings", icon: SlidersHorizontal }] : []),
       ],
     },
     // Talent Acquisition's company-wide HR tooling, separate from the recruiting-pipeline

@@ -38,10 +38,13 @@ import {
   type CvFieldExtraction,
 } from "@/lib/recruitment/cv-extraction";
 import { countUnappliedCvFields } from "@/lib/recruitment/cv-extraction-fields";
+import { scoreCvExtraction } from "@/lib/recruitment/cv-extraction-quality";
 import { defaultCvPositionKey, getCvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 import { recruitmentDb } from "@/lib/recruitment/db";
 import { uploadCandidateFile } from "@/lib/recruitment/files";
+import { inboxCvGate } from "@/lib/recruitment/inbound/email-mailboxes-config";
+import { heldBackReason, strictGateHoldsBack } from "@/lib/recruitment/inbound/inbox-cv-gate";
 import { notifyTalentAcquisitionOfInboundCv } from "@/lib/recruitment/inbound/recruitment-notify";
 import type { Candidate } from "@/lib/recruitment/types";
 
@@ -73,6 +76,11 @@ export type InboundCvIntakeInput = {
   senderIdentifier: string;
   senderDisplayName?: string | null;
   subject?: string | null;
+  // The sender's own words, already formatted by formatCoveringMessage — the email subject and
+  // body, or the WhatsApp caption plus the messages that arrived just before the CV. Handed to the
+  // extraction call so it can answer "which job is this person applying FOR", which a CV almost
+  // never states. Optional; absent for a recruiter-uploaded CV.
+  coverMessage?: string | null;
   candidate: { fullName: string; email?: string | null; phone?: string | null; notes?: string | null };
   // Defaults to "sender" — existing callers and every live applicant are unaffected.
   identitySource?: InboundCvIdentitySource;
@@ -250,6 +258,15 @@ function unappliedFieldCount(extraction: CvFieldExtraction, candidate: Candidate
   return schema ? countUnappliedCvFields(extraction.fields, candidate, schema) : 0;
 }
 
+// The extraction schema's own label for a field key, so the held-back reason on Inbound Intake
+// Health reads "missing name, work history" and not "missing fullName, workHistory". The schema is
+// the single source of those words; falling back to the key itself only happens for a key the
+// schema no longer defines, which is better than showing nothing.
+function cvFieldLabel(positionKey: string, fieldKey: string): string {
+  const schema = getCvPositionSchema(positionKey) ?? getCvPositionSchema(defaultCvPositionKey);
+  return schema?.fields.find((field) => field.key === fieldKey)?.label ?? fieldKey;
+}
+
 export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<InboundCvIntakeResult> {
   const claim = await claimIntakeEvent(input);
   if (!claim) return { outcome: "ignored_duplicate" };
@@ -294,14 +311,33 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     // EXTRACTED FIELD (currentJobTitle), not a precondition of extraction — so intake reads
     // whatever the CV contains, and supporting a new role costs no code change at all.
     let extraction: CvFieldExtraction | null = null;
+    let extractionError: string | null = null;
     try {
       extraction = await extractCvFieldsFromBytes({
         bytes: input.attachment.bytes,
+        // What they WROTE when they sent it. The same call that reads the CV also reads the
+        // covering note, so answering "which job did they apply for" costs no second AI call.
+        coverMessage: input.coverMessage ?? null,
         fileName: input.attachment.fileName,
         mimeType: input.attachment.mimeType,
       });
-    } catch {
-      /* best-effort — fail open (proceed without the gate or the fields) */
+    } catch (error) {
+      // Still fails OPEN — the candidate and their CV file are created either way, because a real
+      // applicant must never be lost to an AI hiccup. What changed on 2026-08-15 is that the
+      // failure is now RECORDED. This catch used to be an empty block: the CV was silently never
+      // read, the candidate landed with a name and nothing else, and there was no error row, no
+      // log line and no flag anywhere. Production carried 226 candidates against 177 extractions
+      // and 0 intake errors — 49 unread CVs that looked, from every surface, like successes.
+      extractionError = error instanceof Error ? error.message : "CV extraction failed.";
+      logError("Inbound CV extraction failed; the candidate was created without extracted fields", {
+        error,
+        labels: {
+          channel: input.channel,
+          event: "inbound_cv_extraction_failed",
+          file_name: input.attachment.fileName,
+          provider_message_id: input.providerMessageId,
+        },
+      });
     }
     if (extraction && extraction.isCv === false) {
       await finalizeIntakeEvent(eventId, {
@@ -311,13 +347,47 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       return { outcome: "ignored_unsupported_attachment" };
     }
 
+    // The per-inbox gate, on top of the shared is_cv check above — see inbox-cv-gate.ts for the
+    // measured reason it is per-inbox and not global. A general mailbox (hr@) additionally holds
+    // back a file the model read and which does not read like a CV; the address printed on our job
+    // ads (careers@) and WhatsApp do not, because there a thin read means the CV failed to read.
+    //
+    // Guarded on `extraction` deliberately: a read that never RAN fails open in every inbox. The
+    // one thing this must never become is a second way for an AI outage to lose an applicant.
+    //
+    // Nothing is deleted and nothing is silent — the reason lands on the intake event, which is
+    // exactly the row Inbound Intake Health renders, and the message stays in the mailbox.
+    // Bound to a const so the narrowing survives into the label callback below — `extraction` is a
+    // `let`, and TypeScript will not carry a narrowed `let` into a function expression.
+    const read = extraction;
+    if (read) {
+      const score = scoreCvExtraction(read.fields);
+      if (strictGateHoldsBack(inboxCvGate(input.mailboxLabel), score)) {
+        await finalizeIntakeEvent(eventId, {
+          errorMessage: heldBackReason(input.mailboxLabel, score, (key) => cvFieldLabel(read.positionKey, key)),
+          outcome: "ignored_unsupported_attachment",
+        });
+        return { outcome: "ignored_unsupported_attachment" };
+      }
+    }
+
     // A bulk forward-import reads identity from the CV itself (the sender is the forwarder, not the
     // applicant); a direct applicant's own email/phone is their real contact detail. A failed read
     // yields null match keys, so the worst case is a correctly-separate profile, never a merge.
+    //
+    // The NAME is the exception, and it splits away from email/phone deliberately (2026-08-15).
+    // Measured in production: of 172 candidates whose CV had been read, 105 carried a name that
+    // differed from the one on the document, and at least two were a DIFFERENT PERSON entirely —
+    // because an email header's display name is whoever holds the mailbox, not whoever the CV is
+    // about. "Ahmed Mohamed" forwarding his cousin's CV became a candidate called Ahmed Mohamed.
+    // The address and the number are still the sender's own and stay that way; only the name comes
+    // from the document, and only when the extraction actually produced one — a failed or blank
+    // read falls straight back to the sender, exactly as before.
+    const cvIdentity = candidateIdentityFromCvFields(extraction, input.candidate.fullName);
     const identity =
       input.identitySource === "cv"
-        ? candidateIdentityFromCvFields(extraction, input.candidate.fullName)
-        : { email: input.candidate.email ?? null, fullName: input.candidate.fullName, phone: input.candidate.phone ?? null };
+        ? cvIdentity
+        : { email: input.candidate.email ?? null, fullName: cvIdentity.fullName, phone: input.candidate.phone ?? null };
 
     // On a re-claim, a prior attempt may already have created or matched a candidate for this exact
     // event (e.g. it got past createCandidate but died at the upload below). Reuse that candidate
@@ -380,15 +450,14 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     }
 
     // Fill the candidate's still-empty columns from the high-confidence half of that same
-    // extraction. Without this the enrichment is invisible: the review UI is only reachable from
-    // the two manual upload paths, so an auto-intake candidate's proposal was never surfaced to
-    // anyone (see cv-auto-apply.ts). Gap-fill only — never an overwrite — so a human edit or an
-    // earlier extraction always wins, and anything low-confidence still waits for review.
+    // extraction. This is now the ONLY path by which an extracted field reaches a candidate
+    // unattended — the review queue that used to catch the rest was removed 2026-08-15, having been
+    // opened for 5 of 194 CVs. Gap-fill only — never an overwrite — so a human edit or an earlier
+    // extraction always wins, and anything low-confidence stays in extracted_fields, readable from
+    // the candidate profile, rather than blocking the candidate from moving.
     //
-    // applied_fields is deliberately NOT written here. cv-extraction-analytics.ts reads
-    // "applied_fields is not null" as "Talent Acquisition reviewed and saved this one" and measures
-    // the AI's correction rate from the diff; recording an unattended write there would fake a
-    // perfect score and destroy the only signal we have on extraction quality.
+    // applied_fields is deliberately NOT written here: it means "a human reviewed and saved this
+    // one", and an unattended write must not claim that.
     //
     // Best-effort, like the persist above: the candidate and file already exist and are the point
     // of this function, so a failure to enrich must never fail the intake.
@@ -399,11 +468,30 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
       if (extraction) {
         const autoApply = selectAutoApplyFields({
           candidate,
+          candidateWasCreatedByThisIntake: created,
           extractedFields: extraction.fields,
           positionKey: extraction.positionKey,
         });
         if (Object.keys(autoApply).length > 0) {
-          enrichedCandidate = await updateCandidate(candidate.id, autoApply);
+          // ats_candidates.phone_norm carries a partial UNIQUE index, so a phone the AI read off
+          // this CV can belong to somebody already in the pool (the same applicant under a second
+          // email, or a misread). That rejects the WHOLE update, which would take governorate,
+          // university and every other enriched column down with it. Retry once without the phone
+          // so the rest still lands, and leave the number in extracted_fields for a human.
+          try {
+            enrichedCandidate = await updateCandidate(candidate.id, autoApply);
+          } catch (writeError) {
+            if (autoApply.phone === undefined) throw writeError;
+            const { phone: _rejectedPhone, ...withoutPhone } = autoApply;
+            logError("CV auto-apply could not write the extracted phone; applying the rest", {
+              error: writeError,
+              labels: { candidateId: candidate.id, event: "cv_auto_apply_phone_rejected" },
+            });
+            enrichedCandidate =
+              Object.keys(withoutPhone).length > 0
+                ? await updateCandidate(candidate.id, withoutPhone)
+                : enrichedCandidate;
+          }
         }
       }
     } catch (autoApplyError) {
@@ -416,6 +504,11 @@ export async function ingestInboundCv(input: InboundCvIntakeInput): Promise<Inbo
     const outcome: InboundCvIntakeOutcome = created ? "candidate_created" : "candidate_matched";
     await finalizeIntakeEvent(eventId, {
       candidateId: candidate.id,
+      // A successful intake that could not READ the CV records why, on the very row Inbound Intake
+      // Health already renders. The outcome stays candidate_created/matched — the applicant IS on
+      // record — but "we never read this one" is now visible on screen instead of being knowable
+      // only by counting candidates against extractions in SQL.
+      errorMessage: extractionError,
       fileId,
       matchReason: matchReason ?? null,
       outcome,

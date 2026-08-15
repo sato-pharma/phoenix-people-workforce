@@ -3,28 +3,39 @@ import { redirect } from "next/navigation";
 import { IntakeHealthView } from "@/components/recruitment/intake-health-view";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
-import { canViewCvExtractionAnalytics } from "@/lib/recruitment/access";
-import { getInboundIntakeAnalytics } from "@/lib/recruitment/inbound/intake-analytics";
+import { canViewInboundIntakeHealth } from "@/lib/recruitment/access";
+import {
+  getInboundIntakeAnalytics,
+  listHeldBackIntakeAttachments,
+} from "@/lib/recruitment/inbound/intake-analytics";
 import { listDeadLetteredInbound } from "@/lib/recruitment/inbound/intake-queue";
 
 export const dynamic = "force-dynamic";
 
 // Read-mostly inbound-CV intake funnel: volume, per-channel/outcome breakdown, capture rate, and
-// the dead-lettered CVs (with a retry action). Same audience as the CV-extraction analytics page
-// (Talent Acquisition + Super Admin).
+// the dead-lettered CVs (with a retry action). Talent Acquisition + Super Admin.
+//
+// This is the alarm on the front door of the whole module: if CVs stop arriving, this page is the
+// only thing that says so. Kept deliberately on 2026-08-15 when the three CV tuning tools next to
+// it were removed.
 export default async function IntakeHealthPage() {
   const access = await resolveAccessContextFromPage();
   if (resolveNavigationMode(access) === "employee-portal") {
     redirect("/employee-portals");
   }
-  if (!canViewCvExtractionAnalytics(access)) {
+  if (!canViewInboundIntakeHealth(access)) {
     redirect("/employee-portals");
   }
 
   let analytics;
   let deadLetters;
+  let heldBack;
   try {
-    [analytics, deadLetters] = await Promise.all([getInboundIntakeAnalytics(30), listDeadLetteredInbound(50)]);
+    [analytics, deadLetters, heldBack] = await Promise.all([
+      getInboundIntakeAnalytics(30),
+      listDeadLetteredInbound(50),
+      listHeldBackIntakeAttachments(30),
+    ]);
   } catch (error) {
     const message = String((error as { message?: unknown })?.message ?? error);
     return (
@@ -44,7 +55,7 @@ export default async function IntakeHealthPage() {
           processed automatically (retry re-queues them for the worker).
         </p>
       </div>
-      <IntakeHealthView analytics={analytics} deadLetters={deadLetters} />
+      <IntakeHealthView analytics={analytics} deadLetters={deadLetters} heldBack={heldBack} />
     </div>
   );
 }

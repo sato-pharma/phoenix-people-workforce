@@ -11,6 +11,7 @@
 // attempt rather than dedupe it away.
 
 import { logError, logWarning } from "@/lib/observability/log";
+import { formatCoveringMessage } from "@/lib/recruitment/candidate-source-context";
 import { clearWhatsAppMessages, sweepOldWhatsAppMessages } from "@/lib/recruitment/inbound/whatsapp-message-buffer";
 import { downloadWhatsAppMedia, WhatsAppMediaTooLargeError } from "@/lib/recruitment/inbound/whatsapp-media";
 import { isWhatsAppAutoReplyEnabled, sendWhatsAppCvAcknowledgement } from "@/lib/recruitment/inbound/whatsapp-reply";
@@ -80,7 +81,17 @@ async function processWhatsAppRow(payload: WhatsAppQueuePayload): Promise<Inboun
     { bytes: downloaded.bytes, fileName: payload.filename ?? "cv", mimeType: downloaded.mimeType },
     { importSenders },
   );
-  if (payload.sourceContext) input.rawMetadata = { ...(input.rawMetadata ?? {}), sourceContext: payload.sourceContext };
+  if (payload.sourceContext) {
+    input.rawMetadata = { ...(input.rawMetadata ?? {}), sourceContext: payload.sourceContext };
+    // The same words, formatted for the extraction model rather than for the screen — this is how
+    // WhatsApp answers "which job are they applying for". The caption is already filename-filtered
+    // by assembleWhatsAppSourceContext, so a silent send contributes nothing instead of asking the
+    // model to read a career out of "Cv.pdf".
+    input.coverMessage = formatCoveringMessage({
+      body: payload.sourceContext.caption,
+      messages: payload.sourceContext.firstMessages,
+    });
+  }
 
   const result = await ingestInboundCv({ channel: "whatsapp", ...input, reclaim: true });
   if (result.outcome === "error") throw new IntakeErrorOutcome("WhatsApp");

@@ -8,6 +8,7 @@ import { RecruitmentCandidatesPortal } from "@/components/employee-portal/recrui
 import { canAccess, resolveNavigationMode } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { listApplications } from "@/lib/recruitment/applications";
+import { listCandidatesSentToManager } from "@/lib/recruitment/candidates";
 
 export const dynamic = "force-dynamic";
 
@@ -21,26 +22,35 @@ export default async function EmployeePortalRecruitmentCandidatesPage() {
   if (!(await canAccess(access, "hiring_interviews", "read"))) {
     return (
       <EmployeePortalEmptyState
-        message="Candidate review is available for roles that own a hiring seat (District Manager and other line/area managers) once a candidate is assigned to one of their open positions."
+        message="Candidate review is available for roles that own a hiring seat (District Manager and other line/area managers) once Talent Acquisition sends them a CV or assigns a candidate to one of their open positions."
         title="Candidates Unavailable"
       />
     );
   }
 
-  // Already scoped: listApplications() filters to only the requisitions this caller is
-  // the hiring manager (or recruitment owner) for — see canSeeApplication in
-  // src/lib/recruitment/access.ts. A candidate assigned to someone else's vacant seat
-  // never appears here.
-  const applications = await listApplications(access);
+  // Two lists, two routes into this screen, and the second one is the reason it now works.
+  //
+  //   • applications — already scoped: listApplications() filters to only the requisitions this
+  //     caller is the hiring manager (or recruitment owner) for, see canSeeApplication in
+  //     src/lib/recruitment/access.ts. Taken 7 times in the module's history.
+  //   • sentToMe — the CVs a recruiter pushed straight to this caller with no requisition in
+  //     between. Scoped by the caller's own HR_ID inside listCandidatesSentToManager. This is the
+  //     flow the owner actually asked for, and until now the notification for it deep-linked to the
+  //     CV database, which answers a District Manager with "available to Talent Acquisition and
+  //     Super Admin only".
+  const [applications, sentToMe] = await Promise.all([
+    listApplications(access),
+    listCandidatesSentToManager(access.hrId),
+  ]);
   const myCandidates = applications.filter((application) => application.candidate && application.requisition);
 
   return (
     <EmployeePortalPageShell
       badge="Hiring"
-      description="Candidates assigned to your open positions — review their details, schedule your interview, and record the outcome."
+      description="CVs sent to you by Talent Acquisition, and candidates assigned to your open positions — read the CV, answer, and record your interview outcome."
       title="My Candidates"
     >
-      <RecruitmentCandidatesPortal initialApplications={myCandidates} />
+      <RecruitmentCandidatesPortal initialApplications={myCandidates} initialSentToMe={sentToMe} />
     </EmployeePortalPageShell>
   );
 }

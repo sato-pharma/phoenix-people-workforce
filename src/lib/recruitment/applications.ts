@@ -10,8 +10,13 @@
 import type { AccessContext } from "@/lib/auth/permissions";
 import { fetchRowsInBatches } from "@/lib/recruitment/db-batch";
 import { hrIdsMatch } from "@/lib/hr-id";
-import { createSystemNotification } from "@/lib/notifications/system";
+import { logError } from "@/lib/observability/log";
 import { createInitialProbationRecord } from "@/lib/probation/provisioning";
+import {
+  MANAGER_NOTIFIED_ACTION,
+  notifyHiringManagerOfCandidate,
+  type HiringManagerNotifyResult,
+} from "@/lib/recruitment/hiring-manager-notify";
 import {
   assertRecruitmentTransition,
   mapApplication,
@@ -44,10 +49,69 @@ import {
   type Requisition,
 } from "@/lib/recruitment/types";
 
+/** When this candidate was last pushed to the hiring manager, and who was told. */
+export type ManagerNotifiedStamp = {
+  managerName: string;
+  sentAt: string;
+};
+
 export type ApplicationWithContext = Application & {
   candidate: Candidate | null;
   requisition: Requisition | null;
+  /**
+   * Read back from the manager_notified audit row rather than held in component state, so the
+   * confirmation survives a reload and a second recruiter can see the send already happened.
+   * Null means nobody has been told — which, before 2026-08-15, was true of 3 of the 5 candidates
+   * the module believed it had pushed.
+   */
+  managerNotified: ManagerNotifiedStamp | null;
 };
+
+type ManagerNotifiedEventRow = {
+  application_id: string;
+  created_at: string;
+  details: Record<string, unknown> | null;
+};
+
+/**
+ * The most recent manager_notified stamp per application.
+ *
+ * Newest-first and first-wins, so a re-send replaces the earlier stamp instead of showing a stale
+ * one. Batched for the same reason every other `.in()` here is (see db-batch.ts). Best-effort: a
+ * failure to read the audit trail must never stop the pipeline itself from rendering.
+ */
+async function loadManagerNotifiedStamps(
+  applicationIds: readonly string[],
+): Promise<Map<string, ManagerNotifiedStamp>> {
+  const stamps = new Map<string, ManagerNotifiedStamp>();
+  if (applicationIds.length === 0) return stamps;
+  try {
+    const supabase = recruitmentDb();
+    const rows = await fetchRowsInBatches<ManagerNotifiedEventRow>(applicationIds, (batch) =>
+      supabase
+        .from("ats_application_events")
+        .select("application_id,created_at,details")
+        .eq("action", MANAGER_NOTIFIED_ACTION)
+        .in("application_id", batch)
+        .order("created_at", { ascending: false }),
+    );
+    for (const row of rows) {
+      if (stamps.has(row.application_id)) continue;
+      const details = (row.details ?? {}) as { managerName?: unknown; sentAt?: unknown };
+      stamps.set(row.application_id, {
+        managerName: typeof details.managerName === "string" ? details.managerName : "the hiring manager",
+        // created_at is the fallback for a row written before details carried sentAt.
+        sentAt: typeof details.sentAt === "string" ? details.sentAt : row.created_at,
+      });
+    }
+  } catch (error) {
+    logError("Could not read the hiring-manager notification history", {
+      error,
+      labels: { event: "manager_notified_history_read_failed" },
+    });
+  }
+  return stamps;
+}
 
 // Plain stage moves that are a status change + history only (no side effects).
 const plainTransitionNextStatus: Partial<Record<RecruitmentActionKey, ApplicationStage>> = {
@@ -116,9 +180,12 @@ export async function listApplications(access: AccessContext): Promise<Applicati
     candidatesById.set(candidate.id, candidate);
   }
 
+  const notified = await loadManagerNotifiedStamps(visible.map((application) => application.id));
+
   return visible.map((application) => ({
     ...application,
     candidate: candidatesById.get(application.candidateId) ?? null,
+    managerNotified: notified.get(application.id) ?? null,
     requisition: requisitionsById.get(application.requisitionId) ?? null,
   }));
 }
@@ -132,7 +199,36 @@ export async function getApplication(
   // Scope check via the requisition (throws Forbidden if out of scope).
   const requisition = await getRequisition(access, application.requisitionId);
   const candidate = await getCandidate(application.candidateId);
-  return { ...application, candidate, requisition };
+  const notified = await loadManagerNotifiedStamps([application.id]);
+  return { ...application, candidate, managerNotified: notified.get(application.id) ?? null, requisition };
+}
+
+/**
+ * Send (or re-send) this candidate to the requisition's hiring manager, deliberately.
+ *
+ * Separate from createApplication so the push is something a recruiter DOES rather than a side
+ * effect they cannot see, repeat, or confirm. Scope is enforced by getApplication, which resolves
+ * the requisition through getRequisition and throws Forbidden when it is out of the caller's reach.
+ *
+ * Unlike the best-effort call inside createApplication, a failure here THROWS: the person pressed a
+ * button and is owed the truth about whether it worked.
+ */
+export async function sendCandidateToHiringManager(
+  access: AccessContext,
+  applicationId: string,
+): Promise<HiringManagerNotifyResult> {
+  const application = await getApplication(access, applicationId);
+  if (!application) throw new Error("Application not found.");
+  if (!application.requisition) throw new Error("This application has no position attached.");
+
+  return notifyHiringManagerOfCandidate({
+    actorHrId: access.hrId ?? null,
+    actorIsTheManager: hrIdsMatch(access.hrId, application.requisition.hiringManagerHrId),
+    applicationId: application.id,
+    candidateName: application.candidate?.fullName ?? "A candidate",
+    hiringManagerHrId: application.requisition.hiringManagerHrId,
+    jobTitle: application.requisition.jobTitle,
+  });
 }
 
 export type CreateApplicationInput = {
@@ -197,24 +293,30 @@ export async function createApplication(
   // Move straight into the searchable pool (Stage 5).
   await runApplicationTransition(application.id, "app_add", access);
 
-  // Best-effort: let the requisition's hiring manager (e.g. a District Manager) know a
-  // candidate has been assigned to their open seat — never blocks the assignment itself.
-  if (requisition.hiringManagerHrId && !hrIdsMatch(access.hrId, requisition.hiringManagerHrId)) {
-    try {
-      const candidate = await getCandidate(candidateId);
-      await createSystemNotification({
-        actionUrl: "/employee-portals/recruitment-candidates",
-        channels: ["in_app", "email", "push"],
-        eventType: "candidate_assigned",
-        message: `${candidate?.fullName ?? "A candidate"} has been assigned to your ${requisition.jobTitle} position.`,
-        module: "recruitment",
-        priority: "normal",
-        recipientHrId: requisition.hiringManagerHrId,
-        title: "New candidate assigned",
-      });
-    } catch {
-      // Notifications are best-effort; the assignment must still succeed.
-    }
+  // Tell the requisition's hiring manager (e.g. a District Manager) a candidate is waiting on
+  // their seat. Still best-effort — the assignment itself must survive a mail outage — but the
+  // failure is now LOGGED rather than discarded. This used to be `catch {}`, and that empty block
+  // is why 3 of the 5 assignments ever made in production sent nothing with no trace of why, both
+  // of the owner's own attempts among them. The recruiter can re-send from the UI either way.
+  try {
+    const candidate = await getCandidate(candidateId);
+    await notifyHiringManagerOfCandidate({
+      actorHrId: access.hrId ?? null,
+      actorIsTheManager: hrIdsMatch(access.hrId, requisition.hiringManagerHrId),
+      applicationId: application.id,
+      candidateName: candidate?.fullName ?? "A candidate",
+      hiringManagerHrId: requisition.hiringManagerHrId,
+      jobTitle: requisition.jobTitle,
+    });
+  } catch (notifyError) {
+    logError("Hiring-manager notification failed on application create", {
+      error: notifyError,
+      labels: {
+        applicationId: application.id,
+        event: "candidate_assigned_notify_failed",
+        hiringManagerHrId: requisition.hiringManagerHrId ?? "none",
+      },
+    });
   }
 
   const refreshed = await getApplication(access, application.id);

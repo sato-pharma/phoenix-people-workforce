@@ -29,9 +29,24 @@ import {
 import { Input } from "@/components/ui/input";
 import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
+import { cairoDayKey, type CandidatePoolStats } from "@/lib/recruitment/candidate-stats";
+import type { HiringManagerOption } from "@/lib/recruitment/hiring-manager-notify";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
 import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
+import {
+  CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  candidateStatuses,
+  candidateStatusLabel,
+  candidateStatusLabels,
+  normalizeCandidateStatus,
+  type CandidateStatus,
+} from "@/lib/recruitment/candidate-status";
+import {
+  NON_EGYPTIAN_FLAG_LABEL,
+  isStatedNonEgyptian,
+  nonEgyptianFlagTitle,
+} from "@/lib/recruitment/nationality";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -62,8 +77,14 @@ type Props = {
   canManageCandidates: boolean;
   canViewCandidates: boolean;
   candidates: Candidate[];
+  // Counted on the server, deliberately — "arrived today" depends on the clock, and a clock read
+  // during hydration can disagree with the one from the server render. See candidate-stats.ts.
+  candidateStats: CandidatePoolStats;
   dashboard: RecruitmentDashboard | null;
   filesEnabled: boolean;
+  // The ~30 real managers a candidate can be sent to, straight from their job title. Distinct from
+  // `managers` below, which is the whole employee directory and fills the requisition form.
+  hiringManagers: HiringManagerOption[];
   initialError: string | null;
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
@@ -76,6 +97,25 @@ const fieldClass =
 
 function titleCase(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Every moment this module shows a person is Cairo local time, never a raw UTC string.
+function cairoDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "—";
+  const date = value.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "Africa/Cairo",
+    year: "numeric",
+  });
+  const time = value.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Cairo",
+  });
+  return `${date} · ${time}`;
 }
 
 // Light-touch color coding for stage/status pills — shared by the mobile cards and
@@ -154,6 +194,21 @@ function requisitionStatusTone(status: string): BadgeTone {
   return requisitionStatusToneMap[status] ?? "slate";
 }
 
+// The same colour language the stage pills use. `new` stays grey deliberately: nearly every row in
+// the pool is new, and a screen where every pill is coloured tells the eye nothing.
+const candidateStatusToneMap: Record<CandidateStatus, BadgeTone> = {
+  hired: "emerald",
+  new: "slate",
+  rejected: "rose",
+  sent_to_manager: "orange",
+  shortlisted: "sky",
+};
+
+function candidateStatusTone(status: string | null | undefined): BadgeTone {
+  const normalized = normalizeCandidateStatus(status);
+  return normalized ? candidateStatusToneMap[normalized] : "slate";
+}
+
 // Shared shape for the per-status requisition workflow buttons — used by both the
 // desktop table cell and the mobile card's actions slot (RequisitionActionsControl).
 type RequisitionActionItem = {
@@ -217,6 +272,26 @@ async function postJson(url: string, body: unknown): Promise<Record<string, unkn
   return data;
 }
 
+/**
+ * PATCH, which this file did not have — and its absence was a silent, total defect.
+ *
+ * The candidate status route exports PATCH and only PATCH, but the one control that wrote a status
+ * called postJson against it. Next.js answers a POST to a PATCH-only route with 405, so every
+ * "Update status" click in the history of this module failed, and the error surfaced as a generic
+ * "Request failed." That is a large part of why 225 of the 226 candidates in production still carry
+ * the database default: the button was never capable of changing it.
+ */
+async function patchJson(url: string, body: unknown): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(typeof data.message === "string" ? data.message : "Request failed.");
+  return data;
+}
+
 async function deleteRequest(url: string): Promise<Record<string, unknown>> {
   const res = await fetch(url, { method: "DELETE" });
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -224,6 +299,68 @@ async function deleteRequest(url: string): Promise<Record<string, unknown>> {
   return data;
 }
 
+
+/**
+ * The one action the module exists for: put this candidate in front of the hiring manager.
+ *
+ * It sits at the TOP of the actions panel, above every stage control, because it is the thing a
+ * recruiter actually comes here to do. Before this it had no button at all — the send fired as a
+ * hidden side effect of choosing a requisition, inside a catch that swallowed failures, so 3 of
+ * production's 5 assignments told nobody and looked identical to the 2 that worked.
+ *
+ * The line above the button is the whole point: it reads back the recorded send, so "has the
+ * manager been told?" is answered on screen instead of guessed. It survives a reload because it
+ * comes from the audit row, not from component state.
+ */
+function SendToManagerCard({
+  application,
+  pending,
+  run,
+}: {
+  application: ApplicationWithContext;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const managerName =
+    application.requisition?.hiringManagerName ?? application.requisition?.hiringManagerHrId ?? null;
+  const notified = application.managerNotified;
+
+  return (
+    <div className="space-y-2 border border-orange-200 bg-orange-50 p-3">
+      <p className="text-xs font-semibold uppercase tracking-wide text-orange-700">Send to the hiring manager</p>
+      {managerName ? (
+        <p className="text-xs text-slate-600">
+          {notified
+            ? `Sent to ${notified.managerName} on ${cairoDateTime(notified.sentAt)}.`
+            : `${managerName} has not been told about this candidate yet.`}
+        </p>
+      ) : (
+        <p className="text-xs text-slate-600">
+          This position has no hiring manager on record, so there is nobody to send it to. Set one on the
+          requisition first.
+        </p>
+      )}
+      <Button
+        disabled={pending || !managerName}
+        onClick={() =>
+          run(async () => {
+            const data = await postJson(`/api/recruitment/applications/${application.id}/notify-manager`, {});
+            const result = (data.result ?? {}) as { managerName?: unknown; reason?: unknown; sent?: unknown };
+            if (result.sent !== true) {
+              return result.reason === "actor_is_the_manager"
+                ? "You are the hiring manager for this position — no message was sent."
+                : "This position has no hiring manager on record, so nothing was sent.";
+            }
+            const name = typeof result.managerName === "string" ? result.managerName : "the hiring manager";
+            return `Sent to ${name}.`;
+          })
+        }
+      >
+        {notified ? "Send again" : "Send to manager"}
+      </Button>
+    </div>
+  );
+}
 
 function ScreeningCard({
   application,
@@ -473,13 +610,16 @@ function FinalSelectionCard({
 }
 
 export function RecruitmentWorkspace(props: Props) {
-  const { dashboard, initialError } = props;
+  const { candidateStats, dashboard, initialError } = props;
   const router = useRouter();
   // The inbound-CV notification deep-links to ?candidate=<id> so a reviewer lands on the profile
   // holding the extracted fields, not on a module landing page they'd have to search from.
   const linkedCandidateId = useSearchParams().get("candidate");
   const [pending, startTransition] = useTransition();
-  const [tab, setTab] = useState<TabKey>(linkedCandidateId ? "candidates" : "pipeline");
+  // Candidates, not Pipeline. Production on 2026-08-15: the pipeline held 7 applications ever while
+  // 152 CVs arrived that week — so the module opened on its emptiest screen and put the work two
+  // clicks away, behind a tab labelled with someone else's vocabulary.
+  const [tab, setTab] = useState<TabKey>("candidates");
   const [error, setError] = useState<string | null>(initialError);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -497,7 +637,6 @@ export function RecruitmentWorkspace(props: Props) {
     });
   };
 
-  const summary = dashboard?.summary;
   const requisitions = dashboard?.requisitions ?? [];
   const applications = dashboard?.applications ?? [];
 
@@ -507,47 +646,51 @@ export function RecruitmentWorkspace(props: Props) {
         eyebrow="People Management"
         icon={<BriefcaseBusiness className="h-4 w-4" />}
         title="Recruitment"
-        description="Open requisitions against vacant seats, track candidates through the pipeline, and convert the selected hire into an employee."
+        description="Read every CV as it arrives, decide on it, and send the ones worth seeing straight to the hiring manager."
       />
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
       {notice ? <AdminCallout tone="success">{notice}</AdminCallout> : null}
 
-      {summary ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <AdminStatCard
-            description="Requisitions open or published for hiring."
-            icon={<BriefcaseBusiness className="h-5 w-5" />}
-            label="Open requisitions"
-            tone="orange"
-            value={summary.openRequisitions}
-          />
-          <AdminStatCard
-            description="Candidates currently moving through the pipeline."
-            icon={<Users className="h-5 w-5" />}
-            label="Active applications"
-            tone="blue"
-            value={summary.activeApplications}
-          />
-          <AdminStatCard
-            description="Applications converted into employees."
-            icon={<CheckCircle2 className="h-5 w-5" />}
-            label="Hires"
-            tone="emerald"
-            value={summary.hires}
-          />
-          <AdminStatCard
-            description="Total applications recorded."
-            icon={<FileSpreadsheet className="h-5 w-5" />}
-            label="Total applications"
-            tone="violet"
-            value={summary.totalApplications}
-          />
-        </div>
-      ) : null}
+      {/*
+        These four count CVs, not requisitions. The previous set — open requisitions, active
+        applications, hires, total applications — read 3 / 7 / 0 / 7 in production on 2026-08-15,
+        the same week 152 CVs arrived, so the headline of the module described the part nobody uses.
+      */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard
+          description="CVs received today, Cairo time."
+          icon={<FileSpreadsheet className="h-5 w-5" />}
+          label="Arrived today"
+          tone="orange"
+          value={candidateStats.arrivedToday}
+        />
+        <AdminStatCard
+          description="CVs received in the last 7 days."
+          icon={<Users className="h-5 w-5" />}
+          label="Arrived this week"
+          tone="blue"
+          value={candidateStats.arrivedLast7Days}
+        />
+        <AdminStatCard
+          description="Still on the status intake set — nobody has looked yet."
+          icon={<UserPlus className="h-5 w-5" />}
+          label="Not yet reviewed"
+          tone="violet"
+          value={candidateStats.notYetReviewed}
+        />
+        <AdminStatCard
+          description="Candidates a hiring manager has been told about."
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          label="Sent to a manager"
+          tone="emerald"
+          value={candidateStats.sentToManager}
+        />
+      </div>
 
+      {/* Candidates first, because it is where the work is and where the module now opens. */}
       <div className="flex flex-wrap gap-2">
-        {(["pipeline", "requisitions", "candidates"] as TabKey[]).map((key) => (
+        {(["candidates", "requisitions", "pipeline"] as TabKey[]).map((key) => (
           <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
             {titleCase(key)}
           </Button>
@@ -576,6 +719,7 @@ export function RecruitmentWorkspace(props: Props) {
           canCreate={props.canCreateRequisition}
           canDelete={props.canDelete}
           canManage={props.canManage}
+          hiringManagers={props.hiringManagers}
           managers={props.managers}
           openVacancies={props.openVacancies}
           pending={pending}
@@ -584,10 +728,12 @@ export function RecruitmentWorkspace(props: Props) {
         />
       ) : (
         <CandidatesTab
+          asOf={candidateStats.asOf}
           canDelete={props.canDelete}
           canImport={props.canImport}
           canManage={props.canManageCandidates}
           candidates={props.candidates}
+          hiringManagers={props.hiringManagers}
           linkedCandidateId={linkedCandidateId}
           openRequisitions={requisitions.filter((requisition) =>
             ["req_open", "req_published"].includes(requisition.status),
@@ -642,7 +788,15 @@ function PipelineApplicationCard({
         meta={application.requisition?.jobTitle ?? "—"}
         status={<StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>}
         title={application.candidate?.fullName ?? "Unknown candidate"}
-      />
+      >
+        {/* Kept to a two-word pill so it can never wrap on a phone. Who and when is on the desktop
+            table and in the actions panel, where there is room for it. */}
+        {application.managerNotified ? (
+          <StagePill tone="emerald">Manager told</StagePill>
+        ) : (
+          <StagePill tone="amber">Manager not told</StagePill>
+        )}
+      </PortalRecordCard>
     </div>
   );
 }
@@ -735,12 +889,13 @@ function PipelineTab({
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="640px">
+            <PortalDesktopTable minWidth="820px">
               <thead>
                 <tr>
                   <th>Candidate</th>
                   <th>Requisition</th>
                   <th>Stage</th>
+                  <th>Manager told</th>
                   <th className="w-px"></th>
                 </tr>
               </thead>
@@ -757,6 +912,11 @@ function PipelineTab({
                     <td className="px-3 py-2">{application.requisition?.jobTitle ?? "—"}</td>
                     <td className="px-3 py-2">
                       <StagePill tone={stageTone(application.stage)}>{titleCase(application.stage)}</StagePill>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {application.managerNotified
+                        ? `${application.managerNotified.managerName} · ${cairoDateTime(application.managerNotified.sentAt)}`
+                        : "Not sent"}
                     </td>
                     <td className="px-3 py-2 text-right">
                       {canDelete ? (
@@ -796,6 +956,8 @@ function PipelineTab({
                 {selected.requisition?.jobTitle} · {titleCase(selected.stage)}
               </p>
             </div>
+
+            {canManage ? <SendToManagerCard application={selected} pending={pending} run={run} /> : null}
 
             {canManage && next ? (
               <div className="space-y-2">
@@ -1098,6 +1260,7 @@ function RequisitionsTab({
   canCreate,
   canDelete,
   canManage,
+  hiringManagers,
   managers,
   openVacancies,
   pending,
@@ -1107,6 +1270,7 @@ function RequisitionsTab({
   canCreate: boolean;
   canDelete: boolean;
   canManage: boolean;
+  hiringManagers: HiringManagerOption[];
   managers: ManagerOption[];
   openVacancies: VacancyReportRow[];
   pending: boolean;
@@ -1114,6 +1278,8 @@ function RequisitionsTab({
   run: (work: () => Promise<string | void>) => void;
 }) {
   const [vacancyId, setVacancyId] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
+  const [hiringManagerHrId, setHiringManagerHrId] = useState("");
   const [posSel, setPosSel] = useState("");
   const [lineSel, setLineSel] = useState("");
   const [grade, setGrade] = useState("");
@@ -1136,6 +1302,11 @@ function RequisitionsTab({
     (v) => String(v.positionId ?? "") === posSel && String(v.lineId ?? "") === lineSel,
   );
   const selectedVacancy = openVacancies.find((v) => String(v.id) === vacancyId) ?? null;
+  const typedJobTitle = jobTitle.trim();
+  // Two ways in, and exactly two: an open seat, or a title with a manager attached to it. Until
+  // 2026-08-15 this read `!vacancyId`, which is why 18 of the 21 positions in the catalogue could
+  // never be recruited for — the service accepted them all along.
+  const canSubmit = vacancyId ? true : Boolean(typedJobTitle && hiringManagerHrId);
 
   const requisitionActions: RequisitionActionsMap = {
     req_draft: [
@@ -1160,7 +1331,10 @@ function RequisitionsTab({
   return (
     <div className="space-y-4">
       {canCreate ? (
-        <AdminTableShell title="Open a requisition" description="Wrap an open vacancy and add the recruitment details.">
+        <AdminTableShell
+          title="Open a requisition"
+          description="Wrap an open vacancy, or type any job title and name the manager who will hire for it."
+        >
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
             <SearchableSelect
               className={fieldClass}
@@ -1202,9 +1376,38 @@ function RequisitionsTab({
                 </option>
               ))}
             </SearchableSelect>
-            <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
-              Manager: {selectedVacancy ? selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—" : "—"}
-            </div>
+            {/*
+              The cascade above only reaches seats that exist on the organogram — Medical Rep and
+              District Manager, 3 of the 21 positions in the catalogue. Everything else is hired
+              against a typed title, which the service has always accepted; this input is what makes
+              it reachable. A vacancy still wins where both are given.
+            */}
+            <Input
+              placeholder="Job title (no vacancy needed)"
+              value={jobTitle}
+              onChange={(e) => setJobTitle(e.target.value)}
+            />
+            {selectedVacancy ? (
+              <div className={`${fieldClass} bg-slate-50 text-slate-600`}>
+                Manager: {selectedVacancy.managerName ?? selectedVacancy.managerHrId ?? "—"}
+              </div>
+            ) : (
+              // Required with no vacancy, and not for tidiness: canSeeRequisition scopes on the
+              // hiring manager and the recruitment owner, never on line or area — so a seatless
+              // requisition with nobody named here is invisible to the very person meant to hire.
+              <SearchableSelect
+                className={fieldClass}
+                value={hiringManagerHrId}
+                onChange={(e) => setHiringManagerHrId(e.target.value)}
+              >
+                <option value="">Hiring manager…</option>
+                {hiringManagers.map((manager) => (
+                  <option key={manager.hrId} value={manager.hrId}>
+                    {manager.name} · {manager.jobTitle}
+                  </option>
+                ))}
+              </SearchableSelect>
+            )}
             <SearchableSelect className={fieldClass} value={ownerHrId} onChange={(e) => setOwnerHrId(e.target.value)}>
               <option value="">Recruitment owner…</option>
               {managers.map((manager) => (
@@ -1226,11 +1429,13 @@ function RequisitionsTab({
             <Input placeholder="Deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             <div className="sm:col-span-2 lg:col-span-3">
               <Button
-                disabled={pending || !vacancyId}
+                disabled={pending || !canSubmit}
                 onClick={() =>
                   run(async () => {
                     await postJson("/api/recruitment/requisitions", {
-                      vacancyId: Number(vacancyId),
+                      vacancyId: vacancyId ? Number(vacancyId) : undefined,
+                      jobTitle: typedJobTitle || undefined,
+                      hiringManagerHrId: hiringManagerHrId || undefined,
                       recruitmentOwnerHrId: ownerHrId || undefined,
                       grade: grade || undefined,
                       salaryBandMin: bandMin ? Number(bandMin) : undefined,
@@ -1239,6 +1444,8 @@ function RequisitionsTab({
                       recruitmentDeadline: deadline || undefined,
                     });
                     setVacancyId("");
+                    setJobTitle("");
+                    setHiringManagerHrId("");
                     setPosSel("");
                     setLineSel("");
                     setGrade("");
@@ -1312,81 +1519,196 @@ function RequisitionsTab({
   );
 }
 
+/**
+ * Shortlist and Reject — a decision on a CV that needs no requisition, no seat and no application.
+ *
+ * These two plus "Send to manager" (the picker below) are the whole of what Talent Acquisition does
+ * with an arriving CV, and until now none of the three could be recorded without first inventing a
+ * requisition. Measured in production on 2026-08-15: 226 candidates, 6 human workflow moves ever.
+ *
+ * Reject asks for a reason and Shortlist does not, which is not an oversight — "why did we turn this
+ * person down" is asked months later and the answer has to be written while it is still known. The
+ * prompt is the same one the requisition workflow buttons use; cancelling it abandons the decision,
+ * and an empty answer is accepted, because forcing a sentence out of someone clearing a backlog is
+ * how you get "n/a" typed 200 times.
+ */
+function CandidateDecisionButtons({
+  candidate,
+  onDecided,
+  pending,
+  run,
+}: {
+  candidate: Candidate;
+  /** Lets the profile panel, which holds its own copy of the candidate, follow the change. */
+  onDecided?: (status: CandidateStatus, note: string | null) => void;
+  pending: boolean;
+  run: (work: () => Promise<string | void>) => void;
+}) {
+  const current = normalizeCandidateStatus(candidate.status);
+
+  const decide = (status: CandidateStatus, note: string | null) =>
+    run(async () => {
+      await patchJson(`/api/recruitment/candidates/${candidate.id}/status`, { status, note: note ?? undefined });
+      onDecided?.(status, note);
+      return `${candidate.fullName} marked ${candidateStatusLabels[status].toLowerCase()}.`;
+    });
+
+  return (
+    <>
+      <Button
+        variant="secondary"
+        disabled={pending || current === "shortlisted"}
+        onClick={() => decide("shortlisted", null)}
+      >
+        Shortlist
+      </Button>
+      <Button
+        variant="destructive"
+        disabled={pending || current === "rejected"}
+        onClick={() => {
+          const entered = window.prompt(`Why is ${candidate.fullName} not proceeding?`);
+          if (entered === null) return;
+          const note = entered.trim().slice(0, CANDIDATE_STATUS_NOTE_MAX_LENGTH);
+          decide("rejected", note || null);
+        }}
+      >
+        Reject
+      </Button>
+    </>
+  );
+}
+
+/**
+ * The row of actions on a candidate — and, since 2026-08-15, the shortest path in the module.
+ *
+ * The manager picker sits FIRST, ahead of the requisition controls, because sending a CV to a
+ * District Manager is what the module exists to do and starting an application is the rarer, heavier
+ * act. Measured in production the day this was built: 221 candidates, 214 of whom had never been
+ * shown to anybody, because reaching a manager meant first inventing a requisition with a job title,
+ * line, area, seat and owner. None of that is needed to ask someone to look at a CV.
+ *
+ * The line under the buttons is the same idea as SendToManagerCard's: it reads the send back off the
+ * candidate row, so "has anyone been told about this person?" is answered on screen rather than
+ * guessed, and it survives a reload because it is stored, not component state.
+ */
 function CandidateActionsControl({
   candidate,
   canDelete,
   canManage,
+  hiringManagers,
   openProfile,
   openRequisitions,
   pending,
   run,
+  sendTo,
+  setSendTo,
   setStartReq,
   startReq,
 }: {
   candidate: Candidate;
   canDelete: boolean;
   canManage: boolean;
+  hiringManagers: HiringManagerOption[];
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
+  sendTo: Record<string, string>;
+  setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
 }) {
+  const notified = candidate.managerNotified;
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
-        Profile
-      </Button>
-      {canManage ? (
-        <>
-          <SearchableSelect
-            className={fieldClass}
-            value={startReq[candidate.id] ?? ""}
-            onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
-          >
-            <option value="">Requisition…</option>
-            {openRequisitions.map((requisition) => (
-              <option key={requisition.id} value={requisition.id}>
-                {requisition.jobTitle}
-              </option>
-            ))}
-          </SearchableSelect>
-          <Button
-            disabled={pending || !startReq[candidate.id]}
-            onClick={() =>
-              run(async () => {
-                await postJson("/api/recruitment/applications", {
-                  requisitionId: startReq[candidate.id],
-                  candidateId: candidate.id,
-                });
-                return "Application started.";
-              })
-            }
-          >
-            Start
-          </Button>
-          {canDelete ? (
-            <Button
-              variant="destructive"
-              disabled={pending}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
-                  )
-                )
-                  return;
-                run(async () => {
-                  await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
-                  return "Candidate deleted.";
-                });
-              }}
+    <div className="space-y-1">
+      <div className="flex flex-wrap gap-1.5">
+        <Button variant="ghost" disabled={pending} onClick={() => void openProfile(candidate.id)}>
+          Profile
+        </Button>
+        {canManage ? (
+          <>
+            <CandidateDecisionButtons candidate={candidate} pending={pending} run={run} />
+            <SearchableSelect
+              className={fieldClass}
+              value={sendTo[candidate.id] ?? ""}
+              onChange={(e) => setSendTo((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
             >
-              Delete
+              <option value="">Send to manager…</option>
+              {hiringManagers.map((manager) => (
+                <option key={manager.hrId} value={manager.hrId}>
+                  {manager.name} · {manager.jobTitle}
+                </option>
+              ))}
+            </SearchableSelect>
+            <Button
+              disabled={pending || !sendTo[candidate.id]}
+              onClick={() =>
+                run(async () => {
+                  const data = await postJson(`/api/recruitment/candidates/${candidate.id}/notify-manager`, {
+                    managerHrId: sendTo[candidate.id],
+                  });
+                  const result = (data.result ?? {}) as { managerName?: unknown };
+                  const name = typeof result.managerName === "string" ? result.managerName : "the manager";
+                  return `${candidate.fullName} sent to ${name}.`;
+                })
+              }
+            >
+              {notified ? "Send again" : "Send"}
             </Button>
-          ) : null}
-        </>
+            <SearchableSelect
+              className={fieldClass}
+              value={startReq[candidate.id] ?? ""}
+              onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
+            >
+              <option value="">Requisition…</option>
+              {openRequisitions.map((requisition) => (
+                <option key={requisition.id} value={requisition.id}>
+                  {requisition.jobTitle}
+                </option>
+              ))}
+            </SearchableSelect>
+            <Button
+              disabled={pending || !startReq[candidate.id]}
+              onClick={() =>
+                run(async () => {
+                  await postJson("/api/recruitment/applications", {
+                    requisitionId: startReq[candidate.id],
+                    candidateId: candidate.id,
+                  });
+                  return "Application started.";
+                })
+              }
+            >
+              Start
+            </Button>
+            {canDelete ? (
+              <Button
+                variant="destructive"
+                disabled={pending}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      `Delete candidate ${candidate.fullName} and all of their applications? This cannot be undone.`,
+                    )
+                  )
+                    return;
+                  run(async () => {
+                    await deleteRequest(`/api/recruitment/candidates/${candidate.id}`);
+                    return "Candidate deleted.";
+                  });
+                }}
+              >
+                Delete
+              </Button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+      {notified ? (
+        <p className="whitespace-nowrap text-xs text-slate-600">
+          Sent to {notified.name} on {cairoDateTime(notified.sentAt)}
+        </p>
       ) : null}
     </div>
   );
@@ -1396,20 +1718,28 @@ function CandidatePoolCard({
   candidate,
   canDelete,
   canManage,
+  hiringManagers,
+  isNew,
   openProfile,
   openRequisitions,
   pending,
   run,
+  sendTo,
+  setSendTo,
   setStartReq,
   startReq,
 }: {
   candidate: Candidate;
   canDelete: boolean;
   canManage: boolean;
+  hiringManagers: HiringManagerOption[];
+  isNew: boolean;
   openProfile: (id: string) => void;
   openRequisitions: Requisition[];
   pending: boolean;
   run: (work: () => Promise<string | void>) => void;
+  sendTo: Record<string, string>;
+  setSendTo: Dispatch<SetStateAction<Record<string, string>>>;
   setStartReq: Dispatch<SetStateAction<Record<string, string>>>;
   startReq: Record<string, string>;
 }) {
@@ -1421,19 +1751,35 @@ function CandidatePoolCard({
           candidate={candidate}
           canDelete={canDelete}
           canManage={canManage}
+          hiringManagers={hiringManagers}
           openProfile={openProfile}
           openRequisitions={openRequisitions}
           pending={pending}
           run={run}
+          sendTo={sendTo}
+          setSendTo={setSendTo}
           setStartReq={setStartReq}
           startReq={startReq}
         />
       }
-      status={<StagePill tone="slate">{candidate.status}</StagePill>}
+      status={
+        <span className="inline-flex items-center gap-1.5">
+          {isNew ? <StagePill tone="orange">New</StagePill> : null}
+          {/* Same flag as the desktop table, on the pill row where a phone reader looks first. */}
+          {isStatedNonEgyptian(candidate.nationality) ? <StagePill tone="rose">{NON_EGYPTIAN_FLAG_LABEL}</StagePill> : null}
+          <StagePill tone={candidateStatusTone(candidate.status)}>{candidateStatusLabel(candidate.status)}</StagePill>
+        </span>
+      }
       title={candidate.fullName}
     >
       <PortalRecordFields
         fields={[
+          // Mobile leads with the routing fact, same as the desktop table's second column.
+          { label: "Applying for", value: candidate.appliedForJobTitle ?? "Not stated" },
+          ...(isStatedNonEgyptian(candidate.nationality)
+            ? [{ label: "Nationality", value: nonEgyptianFlagTitle(candidate.nationality) }]
+            : []),
+          { label: "Received", value: cairoDateTime(candidate.createdAt) },
           { label: "Email", value: candidate.email ?? "—" },
           { label: "Phone", value: candidate.phone ?? "—" },
           ...(candidate.sourceContext?.shortLabel
@@ -1453,11 +1799,44 @@ function CandidatePoolCard({
   );
 }
 
+/** How far back the pool is showing. "all" is the default — hiding rows by default reads as data loss. */
+type PoolDateFilter = "today" | "week" | "month" | "all";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const poolDateFilterLabels: Record<PoolDateFilter, string> = {
+  all: "All time",
+  month: "Last 30 days",
+  today: "Today",
+  week: "Last 7 days",
+};
+
+/**
+ * Has the applicant sold pharmaceuticals before? Three answers, because the CV genuinely gives
+ * three: yes, no, and it did not say. Measured in production 2026-08-15 — 81 / 80 / 66.
+ */
+type PoolExperienceFilter = "all" | "yes" | "no" | "unknown";
+
+const poolExperienceFilterLabels: Record<PoolExperienceFilter, string> = {
+  all: "Any experience",
+  no: "No pharma experience",
+  unknown: "Experience not stated",
+  yes: "Has pharma experience",
+};
+
+// Matches the filter panel on the CRM master table — same label case, same control border, same
+// focus ring. Sibling pages set the design identity here; this screen does not get its own look.
+const poolFilterLabelClass = "flex flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500";
+const poolFilterSelectClass =
+  "border border-slate-200 px-2 py-1.5 text-sm text-slate-800 focus:border-orange-400 focus:outline-none";
+
 function CandidatesTab({
+  asOf,
   canDelete,
   canImport,
   canManage,
   candidates,
+  hiringManagers,
   linkedCandidateId,
   openRequisitions,
   pending,
@@ -1465,10 +1844,13 @@ function CandidatesTab({
   setError,
   setNotice,
 }: {
+  /** The instant the server counted the stat cards from — see CandidatePoolStats. */
+  asOf: string;
   canDelete: boolean;
   canImport: boolean;
   canManage: boolean;
   candidates: Candidate[];
+  hiringManagers: HiringManagerOption[];
   linkedCandidateId: string | null;
   openRequisitions: Requisition[];
   pending: boolean;
@@ -1484,10 +1866,25 @@ function CandidatesTab({
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [startReq, setStartReq] = useState<Record<string, string>>({});
+  // Which manager is picked for each candidate, keyed by candidate id rather than held per row, so
+  // a pick survives the re-render that router.refresh() triggers after some other row is sent.
+  const [sendTo, setSendTo] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const [dateFilter, setDateFilter] = useState<PoolDateFilter>("all");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  // "Has this person sold pharma before?" — the first question asked of every Medical Rep CV, and
+  // the AI has already answered it on 161 of the 227 people in the pool (81 yes, 80 no, 66 it could
+  // not tell). Free to filter on, and it turns a scroll through 226 rows into a look at 81.
+  const [experienceFilter, setExperienceFilter] = useState<PoolExperienceFilter>("all");
+  // Bulk send: which candidates are ticked, and who they all go to. Held here rather than per row
+  // so the choice survives the re-render router.refresh() triggers after some other row is acted on.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkManagerHrId, setBulkManagerHrId] = useState("");
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
+  const [statusNoteDraft, setStatusNoteDraft] = useState("");
   const [retryExtraction, setRetryExtraction] = useState<{ fields: ExtractedCandidateFields; extractionId: string | null } | null>(
     null,
   );
@@ -1499,14 +1896,55 @@ function CandidatesTab({
   // before anyone opens the profile — reviewing them costs nothing, unlike "Extract from CV".
   const [storedExtraction, setStoredExtraction] = useState<StoredCvExtraction | null>(null);
 
+  // Every "how long ago" on this screen is measured from the SAME instant the stat cards were
+  // counted from, stamped once on the server. Two benefits: the cards and the list can never
+  // disagree about what "today" means, and nothing in this component reads the clock during render,
+  // which is what makes a server-rendered "arrived today" survive hydration.
+  const asOfMs = new Date(asOf).getTime();
+  const todayKey = cairoDayKey(asOf);
+  const isNewArrival = (candidate: Candidate) =>
+    new Date(candidate.createdAt).getTime() >= asOfMs - DAY_MS;
+
+  // Built from the data rather than a hardcoded list: the mailboxes and channels that feed this
+  // pool change without the UI being told, and an option for a source nobody uses is noise.
+  const sourceOptions = Array.from(
+    new Set(candidates.map((candidate) => (candidate.source ?? "").trim()).filter(Boolean)),
+  ).sort((left, right) => left.localeCompare(right));
+
   const q = query.trim().toLowerCase();
-  const visibleCandidates = q
-    ? candidates.filter((c) =>
-        [c.fullName, c.email, c.phone, c.status, c.source, c.nationalId]
+  const visibleCandidates = candidates
+    .filter((c) => {
+      if (
+        q &&
+        ![c.fullName, c.email, c.phone, candidateStatusLabel(c.status), c.source, c.nationalId, c.appliedForJobTitle]
           .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q)),
-      )
-    : candidates;
+          .some((value) => String(value).toLowerCase().includes(q))
+      ) {
+        return false;
+      }
+      if (statusFilter && normalizeCandidateStatus(c.status) !== statusFilter) return false;
+      if (sourceFilter && (c.source ?? "").trim() !== sourceFilter) return false;
+      // Three-way, not a checkbox: null is a real and common answer here (66 rows), and it means
+      // "the CV did not say", which is not the same as "no". Folding unknown into either bucket
+      // would quietly hide people.
+      if (experienceFilter === "yes" && c.hasMedicalRepExperience !== true) return false;
+      if (experienceFilter === "no" && c.hasMedicalRepExperience !== false) return false;
+      if (experienceFilter === "unknown" && typeof c.hasMedicalRepExperience === "boolean") return false;
+      if (dateFilter === "all") return true;
+      if (dateFilter === "today") return cairoDayKey(c.createdAt) === todayKey;
+      const created = new Date(c.createdAt).getTime();
+      if (Number.isNaN(created)) return false;
+      return created >= asOfMs - (dateFilter === "week" ? 7 : 30) * DAY_MS;
+    })
+    // Newest first, always. The pool grew by 152 rows in the last 7 days; anything else buries the
+    // CV that arrived an hour ago under one from March.
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+  const visibleIds = visibleCandidates.map((candidate) => candidate.id);
+  const selectedVisibleIds = selectedIds.filter((id) => visibleIds.includes(id));
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisibleIds.length === visibleIds.length;
+  const toggleSelected = (id: string) =>
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
 
   const openProfile = async (id: string) => {
     setProfile(null);
@@ -1525,7 +1963,11 @@ function CandidatesTab({
       };
       if (!res.ok || !data.profile) throw new Error(data.message ?? "Failed to load candidate profile.");
       setProfile(data.profile);
-      setStatusDraft(data.profile.candidate.status);
+      // Deliberately blank, not seeded with the current status. The control below is now "set
+      // ANOTHER status", so pre-filling it would arm the button with the value already stored — and
+      // for the 225 legacy rows that value is 'Candidate Created', which the route rejects.
+      setStatusDraft("");
+      setStatusNoteDraft("");
       setStoredExtraction(data.latestCvExtraction ?? null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Failed to load candidate profile.");
@@ -1711,14 +2153,141 @@ function CandidatesTab({
         </AdminTableShell>
       ) : null}
 
-      <AdminTableShell title="Candidate pool" description="Every applicant stays here and is searchable — even rejected ones.">
-        <div className="p-3">
+      <AdminTableShell
+        title="Candidate pool"
+        description={`${visibleCandidates.length} of ${candidates.length} shown, newest first. Every applicant stays here — even rejected ones.`}
+      >
+        <div className="space-y-3 p-3">
           <Input
-            placeholder="Search name, email, phone, status, source…"
+            placeholder="Search name, applying for, email, phone, status, source"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <div className="flex flex-wrap items-end gap-3">
+            <label className={poolFilterLabelClass}>
+              Received
+              <select
+                className={poolFilterSelectClass}
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value as PoolDateFilter)}
+              >
+                {(Object.keys(poolDateFilterLabels) as PoolDateFilter[]).map((key) => (
+                  <option key={key} value={key}>
+                    {poolDateFilterLabels[key]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={poolFilterLabelClass}>
+              Status
+              <select
+                className={poolFilterSelectClass}
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="">Any status</option>
+                {candidateStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {candidateStatusLabels[status]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={poolFilterLabelClass}>
+              Pharma experience
+              <select
+                className={poolFilterSelectClass}
+                value={experienceFilter}
+                onChange={(e) => setExperienceFilter(e.target.value as PoolExperienceFilter)}
+              >
+                {(Object.keys(poolExperienceFilterLabels) as PoolExperienceFilter[]).map((key) => (
+                  <option key={key} value={key}>
+                    {poolExperienceFilterLabels[key]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {sourceOptions.length > 1 ? (
+              <label className={poolFilterLabelClass}>
+                Source
+                <select
+                  className={poolFilterSelectClass}
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                >
+                  <option value="">Any source</option>
+                  {sourceOptions.map((source) => (
+                    <option key={source} value={source}>
+                      {titleCase(source)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {dateFilter !== "all" || experienceFilter !== "all" || statusFilter || sourceFilter || query ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setDateFilter("all");
+                  setExperienceFilter("all");
+                  setStatusFilter("");
+                  setSourceFilter("");
+                  setQuery("");
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
         </div>
+
+        {/*
+          Bulk send. One notification names everybody in it rather than one alert per candidate:
+          the pool takes 152 CVs a week and the District Sales Managers receive nearly all of them,
+          so per-person alerts are how a useful signal gets muted. Desktop only — the ticks live in
+          the table, and picking twelve people out of a stack of cards on a phone is not a workflow.
+        */}
+        {canManage && selectedVisibleIds.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2 border-y border-orange-200 bg-orange-50 px-3 py-2">
+            <span className="whitespace-nowrap text-xs font-semibold text-slate-700">
+              {selectedVisibleIds.length} selected
+            </span>
+            <SearchableSelect
+              className={`${fieldClass} sm:w-72`}
+              value={bulkManagerHrId}
+              onChange={(e) => setBulkManagerHrId(e.target.value)}
+            >
+              <option value="">Send all of them to…</option>
+              {hiringManagers.map((manager) => (
+                <option key={manager.hrId} value={manager.hrId}>
+                  {manager.name} · {manager.jobTitle}
+                </option>
+              ))}
+            </SearchableSelect>
+            <Button
+              disabled={pending || !bulkManagerHrId}
+              onClick={() =>
+                run(async () => {
+                  const data = await postJson("/api/recruitment/candidates/notify-manager", {
+                    candidateIds: selectedVisibleIds,
+                    managerHrId: bulkManagerHrId,
+                  });
+                  const result = (data.result ?? {}) as { count?: unknown; managerName?: unknown };
+                  const name = typeof result.managerName === "string" ? result.managerName : "the manager";
+                  const count = typeof result.count === "number" ? result.count : selectedVisibleIds.length;
+                  setSelectedIds([]);
+                  setBulkManagerHrId("");
+                  return `${count} ${count === 1 ? "candidate" : "candidates"} sent to ${name}.`;
+                })
+              }
+            >
+              Send
+            </Button>
+            <Button variant="ghost" onClick={() => setSelectedIds([])}>
+              Clear selection
+            </Button>
+          </div>
+        ) : null}
         <PortalResponsiveDataList
           empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
           getKey={(candidate) => candidate.id}
@@ -1728,20 +2297,37 @@ function CandidatesTab({
               candidate={candidate}
               canDelete={canDelete}
               canManage={canManage}
+              hiringManagers={hiringManagers}
+              isNew={isNewArrival(candidate)}
               openProfile={openProfile}
               openRequisitions={openRequisitions}
               pending={pending}
               run={run}
+              sendTo={sendTo}
+              setSendTo={setSendTo}
               setStartReq={setStartReq}
               startReq={startReq}
             />
           )}
           renderTable={() => (
-            <PortalDesktopTable minWidth="1000px">
+            <PortalDesktopTable minWidth="1400px">
               <thead>
                 <tr>
+                  {canManage ? (
+                    <th className="w-10">
+                      <input
+                        aria-label="Select every candidate shown"
+                        checked={allVisibleSelected}
+                        className="h-4 w-4 accent-orange-600"
+                        onChange={(e) => setSelectedIds(e.target.checked ? visibleIds : [])}
+                        type="checkbox"
+                      />
+                    </th>
+                  ) : null}
                   <th>Name</th>
+                  <th>Applying for</th>
                   <th>Status</th>
+                  <th>Received</th>
                   <th>Email</th>
                   <th>Phone</th>
                   <th>Source</th>
@@ -1751,9 +2337,56 @@ function CandidatesTab({
               <tbody>
                 {visibleCandidates.map((candidate) => (
                   <tr key={candidate.id}>
-                    <td className="px-3 py-2 font-medium text-slate-900">{candidate.fullName}</td>
-                    <td className="px-3 py-2">
-                      <StagePill tone="slate">{candidate.status}</StagePill>
+                    {canManage ? (
+                      <td className="px-3 py-2">
+                        <input
+                          aria-label={`Select ${candidate.fullName}`}
+                          checked={selectedIds.includes(candidate.id)}
+                          className="h-4 w-4 accent-orange-600"
+                          onChange={() => toggleSelected(candidate.id)}
+                          type="checkbox"
+                        />
+                      </td>
+                    ) : null}
+                    <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">
+                      <span className="inline-flex items-center gap-1.5">
+                        {candidate.fullName}
+                        {/* Phoenix recruits Egyptian nationals only. Flagged, never filtered — the
+                            row still lists and every action still works; a person decides. */}
+                        {isStatedNonEgyptian(candidate.nationality) ? (
+                          <StagePill tone="rose">
+                            <span title={nonEgyptianFlagTitle(candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
+                          </StagePill>
+                        ) : null}
+                      </span>
+                    </td>
+                    {/* Second column on purpose: after the name, "which job is this for" is the one
+                        fact that decides who the CV goes to. Never truncated — the whole title
+                        shows or the column widens. */}
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {candidate.appliedForJobTitle ? (
+                        <span className="text-slate-900" title={candidate.appliedForEvidence ?? undefined}>
+                          {candidate.appliedForJobTitle}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Not stated</span>
+                      )}
+                    </td>
+                    {/* The reason for the current status sits in the tooltip rather than a column
+                        of its own: it is read when someone asks "why", not on every scan of the
+                        pool. The durable copy is in ats_candidate_status_events either way. */}
+                    <td className="whitespace-nowrap px-3 py-2">
+                      <StagePill tone={candidateStatusTone(candidate.status)}>
+                        <span title={candidate.statusNote ?? undefined}>{candidateStatusLabel(candidate.status)}</span>
+                      </StagePill>
+                    </td>
+                    {/* When it landed, Cairo time — the column the pool had no answer for. The New
+                        pill marks the last 24 hours, measured from the server's stamp. */}
+                    <td className="whitespace-nowrap px-3 py-2 text-slate-600">
+                      <span className="inline-flex items-center gap-1.5">
+                        {cairoDateTime(candidate.createdAt)}
+                        {isNewArrival(candidate) ? <StagePill tone="orange">New</StagePill> : null}
+                      </span>
                     </td>
                     <td className="px-3 py-2">{candidate.email ?? "—"}</td>
                     <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
@@ -1771,10 +2404,13 @@ function CandidatesTab({
                         candidate={candidate}
                         canDelete={canDelete}
                         canManage={canManage}
+                        hiringManagers={hiringManagers}
                         openProfile={openProfile}
                         openRequisitions={openRequisitions}
                         pending={pending}
                         run={run}
+                        sendTo={sendTo}
+                        setSendTo={setSendTo}
                         setStartReq={setStartReq}
                         startReq={startReq}
                       />
@@ -1791,7 +2427,16 @@ function CandidatesTab({
         <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-900">{profile.candidate.fullName}</p>
+              <p className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                {profile.candidate.fullName}
+                {/* The profile is where Reject is pressed, so the eligibility flag has to be here
+                    too — not only in the pool a recruiter scrolled past to get here. */}
+                {isStatedNonEgyptian(profile.candidate.nationality) ? (
+                  <StagePill tone="rose">
+                    <span title={nonEgyptianFlagTitle(profile.candidate.nationality)}>{NON_EGYPTIAN_FLAG_LABEL}</span>
+                  </StagePill>
+                ) : null}
+              </p>
               <p className="text-xs text-slate-500">
                 {profile.candidate.email ?? "—"} · {profile.candidate.phone ?? "—"} · Source: {profile.candidate.source ?? "—"}
               </p>
@@ -1810,6 +2455,20 @@ function CandidatesTab({
               Close
             </Button>
           </div>
+
+          {/* The applied-for role, with the wording it was read from directly beneath it. The
+              evidence is shown rather than hidden in a tooltip because this value is INFERRED from
+              a covering message, not transcribed from the CV — a recruiter has to be able to see
+              the sentence and disagree with it. */}
+          {profile.candidate.appliedForJobTitle ? (
+            <div className="rounded-md border border-slate-200 bg-white p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Applying for</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">{profile.candidate.appliedForJobTitle}</p>
+              {profile.candidate.appliedForEvidence ? (
+                <p className="mt-1 text-xs text-slate-600">Read from: {profile.candidate.appliedForEvidence}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           {profile.candidate.sourceContext && profile.candidate.sourceContext.detailLines.length > 0 ? (
             <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
@@ -1893,24 +2552,84 @@ function CandidatesTab({
           ) : null}
 
           {canManage ? (
-            <div className="flex gap-2">
-              <Input placeholder="Status" value={statusDraft} onChange={(e) => setStatusDraft(e.target.value)} />
-              <Button
-                variant="secondary"
-                disabled={pending || !statusDraft.trim()}
-                onClick={() =>
-                  run(async () => {
-                    await postJson(`/api/recruitment/candidates/${profile.candidate.id}/status`, { status: statusDraft.trim() });
-                    setProfile((prev) => (prev ? { ...prev, candidate: { ...prev.candidate, status: statusDraft.trim() } } : prev));
-                    return "Status updated.";
-                  })
-                }
-              >
-                Update status
-              </Button>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <StagePill tone={candidateStatusTone(profile.candidate.status)}>
+                  {candidateStatusLabel(profile.candidate.status)}
+                </StagePill>
+                {profile.candidate.statusChangedAt ? (
+                  <span className="whitespace-nowrap text-xs text-slate-500">
+                    Changed {cairoDateTime(profile.candidate.statusChangedAt)}
+                  </span>
+                ) : null}
+                <CandidateDecisionButtons
+                  candidate={profile.candidate}
+                  onDecided={(status, note) =>
+                    setProfile((prev) =>
+                      prev ? { ...prev, candidate: { ...prev.candidate, status, statusNote: note } } : prev,
+                    )
+                  }
+                  pending={pending}
+                  run={run}
+                />
+              </div>
+              {profile.candidate.statusNote ? (
+                <p className="text-xs text-slate-600">Reason: {profile.candidate.statusNote}</p>
+              ) : null}
+              {/* The full list, for the moves the two buttons do not cover — Hired, and putting
+                  somebody back to New after a rejection was reconsidered. The note travels with it,
+                  which is the whole reason the free-text status box that used to sit here is gone:
+                  it recorded a sentence where a state belonged, and it could not save either. */}
+              <div className="flex flex-wrap gap-2">
+                <SearchableSelect
+                  className={`${fieldClass} sm:w-56`}
+                  value={statusDraft}
+                  onChange={(e) => setStatusDraft(e.target.value)}
+                >
+                  <option value="">Set another status…</option>
+                  {candidateStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {candidateStatusLabels[status]}
+                    </option>
+                  ))}
+                </SearchableSelect>
+                <Input
+                  maxLength={CANDIDATE_STATUS_NOTE_MAX_LENGTH}
+                  placeholder="Reason (optional)"
+                  value={statusNoteDraft}
+                  onChange={(e) => setStatusNoteDraft(e.target.value)}
+                />
+                <Button
+                  variant="secondary"
+                  disabled={pending || !statusDraft}
+                  onClick={() =>
+                    run(async () => {
+                      const note = statusNoteDraft.trim() || null;
+                      await patchJson(`/api/recruitment/candidates/${profile.candidate.id}/status`, {
+                        note: note ?? undefined,
+                        status: statusDraft,
+                      });
+                      setProfile((prev) =>
+                        prev
+                          ? { ...prev, candidate: { ...prev.candidate, status: statusDraft, statusNote: note } }
+                          : prev,
+                      );
+                      const label = candidateStatusLabel(statusDraft);
+                      setStatusDraft("");
+                      setStatusNoteDraft("");
+                      return `${profile.candidate.fullName} marked ${label.toLowerCase()}.`;
+                    })
+                  }
+                >
+                  Update status
+                </Button>
+              </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-500">Status: {profile.candidate.status}</p>
+            <p className="text-xs text-slate-500">
+              Status: {candidateStatusLabel(profile.candidate.status)}
+              {profile.candidate.statusNote ? ` · ${profile.candidate.statusNote}` : ""}
+            </p>
           )}
 
           <div className="grid gap-3 sm:grid-cols-2">

@@ -84,6 +84,28 @@ export function runRecruitmentInboundCvIntakeTests() {
     "a non-string value never becomes a name",
   );
 
+  // --- The candidate is named by the DOCUMENT, never by the mailbox that sent it ---------------
+  // Measured in production 2026-08-15: of 172 candidates whose CV had been read, 105 carried a name
+  // that differed from the one on the document, and at least two were a different person entirely.
+  // An email header's display name is whoever holds the mailbox, not whoever the CV is about — so
+  // "Ahmed Mohamed" forwarding his cousin's CV created a candidate called Ahmed Mohamed.
+  //
+  // The name splits away from email and phone on purpose: a direct applicant's own address and
+  // number ARE their real contact details and must stay the sender's, so only the name is taken
+  // from the CV. The three assertions above already prove the fallback half behaviourally — a
+  // failed, blank, or non-string extraction hands back the sender's name unchanged.
+  const intake = read("src/lib/recruitment/inbound/cv-intake-service.ts");
+  assert.match(
+    intake,
+    /const identity =\s*\n\s*input\.identitySource === "cv"\s*\n\s*\? cvIdentity\s*\n\s*: \{ email: input\.candidate\.email \?\? null, fullName: cvIdentity\.fullName, phone: input\.candidate\.phone \?\? null \}/,
+    "a directly-sent CV must still take its NAME from the document while keeping the sender's own email and phone",
+  );
+  assert.doesNotMatch(
+    intake,
+    /fullName: input\.candidate\.fullName\b/,
+    "the sender's display name must never be written as the candidate's name — that is the defect, and it named 105 of 172 candidates",
+  );
+
   // --- isStaleProcessingClaim -----------------------------------------------------------------
   // The idempotency claim writes 'processing' BEFORE any work. Without this recovery a run that
   // died mid-message (a timeout during a bulk-import burst) would make every later redelivery

@@ -9,6 +9,11 @@ import {
 import { assertCanDeleteRecruitment } from "@/lib/recruitment/access";
 import { describeCandidateSource, type SourceContextRow } from "@/lib/recruitment/candidate-source-context";
 import { chunkIds } from "@/lib/recruitment/db-batch";
+import { hrIdLookupKeys, hrIdsMatch } from "@/lib/hr-id";
+import {
+  listHiringManagerOptions,
+  pushCandidatesToManager,
+} from "@/lib/recruitment/hiring-manager-notify";
 import { cvPositionSchemas, defaultCvPositionKey, type CvPositionSchema } from "@/lib/recruitment/cv-field-schemas";
 import {
   candidateMatchKeys,
@@ -24,6 +29,7 @@ import {
   mapApplication,
   mapApplicationEvent,
   mapCandidate,
+  mapCandidateStatusEvent,
   mapInterview,
   mapRecruitmentFile,
   numberOrNull,
@@ -32,15 +38,23 @@ import {
   type ApplicationDbRow,
   type ApplicationEventDbRow,
   type CandidateDbRow,
+  type CandidateStatusEventDbRow,
   type InterviewDbRow,
   type RecruitmentFileDbRow,
 } from "@/lib/recruitment/db";
+import { logError } from "@/lib/observability/log";
+import {
+  CANDIDATE_STATUS_NOTE_MAX_LENGTH,
+  normalizeCandidateStatus,
+  type CandidateStatus,
+} from "@/lib/recruitment/candidate-status";
 import { summarizeScorecard, type ScorecardSummary } from "@/lib/recruitment/scorecards";
 import type {
   Application,
   ApplicationEvent,
   Candidate,
   CandidateSourceContext,
+  CandidateStatusEvent,
   CreateCandidateInput,
   Interview,
   RecruitmentFile,
@@ -74,6 +88,8 @@ function candidatePayload(input: CreateCandidateInput, access: AccessContext) {
     address: textOrNull(input.address),
     governorate: textOrNull(input.governorate),
     current_job_title: textOrNull(input.currentJobTitle),
+    applied_for_job_title: textOrNull(input.appliedForJobTitle),
+    applied_for_evidence: textOrNull(input.appliedForEvidence),
     professional_summary: textOrNull(input.professionalSummary),
     current_employer: textOrNull(input.currentEmployer),
     current_role_responsibilities: textOrNull(input.currentRoleResponsibilities),
@@ -201,6 +217,41 @@ export async function getCandidate(id: string): Promise<Candidate | null> {
   return data ? mapCandidate(data as CandidateDbRow) : null;
 }
 
+/**
+ * Everyone a recruiter pushed STRAIGHT to this manager, newest send first.
+ *
+ * This is the other half of "send to manager" and the reason it was worth building. The push writes
+ * manager_notified_hr_id on the candidate and creates NO application — so until this function
+ * existed, the manager's alert arrived and there was no screen anywhere that could answer "which
+ * CVs were sent to me?". Measured in production 2026-08-15: 7 applications ever, against 226
+ * candidates. The manager-facing page read applications only, so a directly-pushed candidate was
+ * invisible on it.
+ *
+ * The HR_ID goes through hrIdLookupKeys rather than a bare .eq, because the stored value is
+ * whatever the dropdown carried and the caller's is whatever their session carries — PostgREST eq
+ * is case-sensitive, and a filter matching nothing is indistinguishable from "nothing was sent to
+ * you". That exact mistake made the manager dropdown empty earlier today.
+ */
+export async function listCandidatesSentToManager(managerHrId: string | null | undefined): Promise<Candidate[]> {
+  const keys = hrIdLookupKeys(managerHrId);
+  if (keys.length === 0) return [];
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidates")
+    .select("*")
+    .in("manager_notified_hr_id", keys)
+    .order("manager_notified_at", { ascending: false });
+  if (error) {
+    // 42703 = the column does not exist, which is the pre-migration state and NOT a fault of this
+    // caller: 20260815180000_candidate_manager_push adds it. Everything else is a real failure and
+    // is thrown, because a manager silently shown an empty list is precisely the invisibility this
+    // module has been fixing all day.
+    if ((error as { code?: string }).code === "42703") return [];
+    throw error;
+  }
+  return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
+}
+
 async function fetchById(id: string): Promise<Candidate> {
   const candidate = await getCandidate(id);
   if (!candidate) throw new Error("Candidate not found after match.");
@@ -232,20 +283,111 @@ export async function searchCandidates(filters: CandidateSearchFilters = {}): Pr
   return ((data ?? []) as CandidateDbRow[]).map(mapCandidate);
 }
 
-export async function updateCandidateStatus(id: string, status: string): Promise<Candidate> {
-  const clean = String(status ?? "").trim();
-  if (!clean) throw new Error("Candidate status is required.");
+/**
+ * Records a candidate decision: the new status, optionally why, who decided, and when.
+ *
+ * The status is validated against the fixed vocabulary rather than accepted as typed. That is the
+ * entire fix: this used to take any string a browser sent, which is how 225 of 226 candidates ended
+ * up carrying the database default and the module lost the ability to say who had been looked at.
+ *
+ * The note is REFUSED when it is too long rather than trimmed — the owner's standing rule is that
+ * text is never truncated, and silently storing half a reason is worse than asking for a shorter one.
+ */
+export async function updateCandidateStatus(
+  access: AccessContext,
+  id: string,
+  status: string,
+  note?: string | null,
+): Promise<Candidate> {
+  const next = normalizeCandidateStatus(status);
+  if (!next) {
+    throw new Error(`"${String(status ?? "").trim()}" is not a candidate status.`);
+  }
+  const cleanNote = textOrNull(note);
+  if (cleanNote && cleanNote.length > CANDIDATE_STATUS_NOTE_MAX_LENGTH) {
+    throw new Error(`Keep the note under ${CANDIDATE_STATUS_NOTE_MAX_LENGTH} characters.`);
+  }
+
   const existing = await getCandidate(id);
   if (!existing) throw new Error("Candidate not found.");
+
+  const actorHrId = access.hrId ?? null;
+  const changedAt = new Date().toISOString();
   const supabase = recruitmentDb();
   const { data, error } = await supabase
     .from("ats_candidates")
-    .update({ status: clean, updated_at: new Date().toISOString() })
+    .update({
+      status: next,
+      status_changed_at: changedAt,
+      status_changed_by_hr_id: actorHrId,
+      // An omitted note CLEARS the previous one. The note describes the status it was written for,
+      // so carrying a July rejection reason forward onto an August shortlist would be a lie — and
+      // the reason itself is not lost, it is on the event row below.
+      status_note: cleanNote,
+      updated_at: changedAt,
+    })
     .eq("id", id)
     .select("*")
     .single();
   if (error) throw error;
+
+  await recordCandidateStatusEvent({
+    actorHrId,
+    candidateId: id,
+    fromStatus: existing.status,
+    note: cleanNote,
+    toStatus: next,
+  });
+
   return mapCandidate(data as CandidateDbRow);
+}
+
+/**
+ * Appends one line to the candidate's decision history.
+ *
+ * Best effort ON PURPOSE, and the ordering matters: the candidate row is updated first, and a
+ * failure here is logged rather than thrown. The decision has already happened by this point, so
+ * throwing would report a successful status change back to Talent Acquisition as an error and
+ * invite them to click it again. A missing history line is a gap; a status the screen says failed
+ * but which actually applied is a lie.
+ */
+async function recordCandidateStatusEvent(input: {
+  actorHrId: string | null;
+  candidateId: string;
+  fromStatus: string | null;
+  note: string | null;
+  toStatus: CandidateStatus;
+}): Promise<void> {
+  const supabase = recruitmentDb();
+  const { error } = await supabase.from("ats_candidate_status_events").insert({
+    actor_hr_id: input.actorHrId,
+    candidate_id: input.candidateId,
+    from_status: input.fromStatus,
+    note: input.note,
+    to_status: input.toStatus,
+  });
+  if (error) {
+    logError("Candidate status changed but the history line could not be written", {
+      error,
+      labels: {
+        candidate_id: input.candidateId,
+        event: "candidate_status_event_write_failed",
+        to_status: input.toStatus,
+      },
+    });
+  }
+}
+
+/** A candidate's decision history, newest first. Empty for anyone decided before 2026-08-15. */
+export async function listCandidateStatusEvents(candidateId: string): Promise<CandidateStatusEvent[]> {
+  const supabase = recruitmentDb();
+  const { data, error } = await supabase
+    .from("ats_candidate_status_events")
+    .select("*")
+    .eq("candidate_id", candidateId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as CandidateStatusEventDbRow[]).map(mapCandidateStatusEvent);
 }
 
 // Partial edit of a candidate's own fields (not status — see updateCandidateStatus).
@@ -281,6 +423,8 @@ function updateCandidatePayload(input: UpdateCandidateInput, existing: Candidate
   if (input.address !== undefined) payload.address = textOrNull(input.address);
   if (input.governorate !== undefined) payload.governorate = textOrNull(input.governorate);
   if (input.currentJobTitle !== undefined) payload.current_job_title = textOrNull(input.currentJobTitle);
+  if (input.appliedForJobTitle !== undefined) payload.applied_for_job_title = textOrNull(input.appliedForJobTitle);
+  if (input.appliedForEvidence !== undefined) payload.applied_for_evidence = textOrNull(input.appliedForEvidence);
   if (input.professionalSummary !== undefined) payload.professional_summary = textOrNull(input.professionalSummary);
   if (input.currentEmployer !== undefined) payload.current_employer = textOrNull(input.currentEmployer);
   if (input.currentRoleResponsibilities !== undefined) {
@@ -565,4 +709,82 @@ export async function importCandidatesWorkbook(
   }
 
   return summary;
+}
+
+/**
+ * Send a candidate to a manager directly — no requisition, no application, no job title.
+ *
+ * The manager is validated against listHiringManagerOptions rather than trusted from the request:
+ * the route accepts an HR_ID from the browser, and without this check any employee could be made a
+ * notification target by editing the posted value. Matching also means the caller gets a clear
+ * refusal ("not a manager") instead of a notification quietly addressed to nobody.
+ */
+export async function sendCandidateToManager(
+  access: AccessContext,
+  candidateId: string,
+  managerHrId: string,
+): Promise<{ candidateName: string; managerHrId: string; managerName: string; sentAt: string }> {
+  const sent = await sendCandidatesToManager(access, [candidateId], managerHrId);
+  return { ...sent, candidateName: sent.candidateNames[0] ?? "" };
+}
+
+/**
+ * Send SEVERAL candidates to one manager as a single message.
+ *
+ * The manager receives one notification naming everybody in it rather than one alert per person —
+ * see pushCandidatesToManager for why that matters at 152 CVs a week. Everything else is identical
+ * to the single-candidate path, which now delegates here so the two can never drift.
+ */
+export async function sendCandidatesToManager(
+  access: AccessContext,
+  candidateIds: string[],
+  managerHrId: string,
+): Promise<{ candidateNames: string[]; count: number; managerHrId: string; managerName: string; sentAt: string }> {
+  const ids = Array.from(new Set(candidateIds.map((id) => String(id ?? "").trim()).filter(Boolean)));
+  if (ids.length === 0) throw new Error("Choose at least one candidate to send.");
+
+  const candidates = await getCandidatesByIds(ids);
+  if (candidates.length === 0) throw new Error("Candidate not found.");
+  // A partially-resolvable selection is refused rather than quietly sent for whoever survived: the
+  // recruiter picked a set of people, and a manager receiving four of the five they were promised
+  // with no indication which is missing is worse than being told to try again.
+  if (candidates.length !== ids.length) {
+    throw new Error("Some of those candidates no longer exist. Reload the page and try again.");
+  }
+
+  const manager = (await listHiringManagerOptions()).find((option) => hrIdsMatch(option.hrId, managerHrId));
+  if (!manager) throw new Error("That person is not a manager who can be sent candidates.");
+
+  const sent = await pushCandidatesToManager({
+    actorHrId: access.hrId ?? null,
+    candidates: candidates.map((candidate) => ({ id: candidate.id, name: candidate.fullName })),
+    managerHrId: manager.hrId,
+  });
+
+  // Sending IS a decision, so it moves each candidate out of "nobody has looked at this yet" —
+  // which is what the landing screen counts. Deliberately AFTER the push, never before: a status
+  // claiming someone was sent to a manager who was never actually told is precisely the quiet lie
+  // this module used to produce when the notification failed silently.
+  //
+  // `hired` is the one status a send does not overwrite. Sending a hired candidate's CV on to
+  // another manager is a reference request, not a re-entry into the pipeline, and it must not take
+  // the person back out of the hired count.
+  for (const candidate of candidates) {
+    if (normalizeCandidateStatus(candidate.status) === "hired") continue;
+    await updateCandidateStatus(access, candidate.id, "sent_to_manager", `Sent to ${manager.name}.`);
+  }
+
+  return { ...sent, candidateNames: candidates.map((candidate) => candidate.fullName) };
+}
+
+/** Loads a specific set of candidates, batched because the id list comes from a multi-select. */
+async function getCandidatesByIds(ids: string[]): Promise<Candidate[]> {
+  const supabase = recruitmentDb();
+  const rows: CandidateDbRow[] = [];
+  for (const batch of chunkIds(ids)) {
+    const { data, error } = await supabase.from("ats_candidates").select("*").in("id", batch);
+    if (error) throw error;
+    rows.push(...((data ?? []) as CandidateDbRow[]));
+  }
+  return rows.map(mapCandidate);
 }
