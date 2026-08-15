@@ -214,13 +214,20 @@ export async function healUnresolvedWeeklyRows(input: {
 
   const { data, error } = await supabase
     .from("weekly_sales_rows")
-    .select("id, net_qty, validation_issues")
+    .select("id, batch_id, net_qty, sales_value, validation_issues")
     .eq("distributor_code", input.distributorCode)
     .eq("validation_state", "warning")
     .ilike(matchColumn, input.alias);
   if (error || !data?.length) return 0;
 
-  type RowShape = { id: number; net_qty: number; validation_issues: { field: string; severity: string }[] };
+  type RowShape = {
+    id: number;
+    batch_id: string;
+    net_qty: number;
+    sales_value: number | null;
+    validation_issues: { field: string; severity: string }[];
+  };
+  const deltas = new Map<string, WeeklyBatchHeaderDelta>();
   let healed = 0;
   for (const row of data as RowShape[]) {
     const remaining = (row.validation_issues ?? []).filter((i) => i.field !== "productCode");
@@ -238,9 +245,80 @@ export async function healUnresolvedWeeklyRows(input: {
         validation_issues: remaining,
       })
       .eq("id", row.id);
-    if (!updateError) healed += 1;
+    if (updateError) continue;
+    healed += 1;
+    accumulateBatchHeaderDelta(deltas, String(row.batch_id ?? ""), Number(row.sales_value ?? 0), salesValue, newState);
   }
+  await applyBatchHeaderDeltas(deltas);
   return healed;
+}
+
+/** How one healed row moves its batch's stored header aggregates. */
+export type WeeklyBatchHeaderDelta = { salesValue: number; warningRows: number; failedRows: number };
+
+/**
+ * Fold one healed row into its batch's header delta. A healed row always LEAVES the `warning` state
+ * it was selected on, so it always decrements `warning_rows`; it only lands in `failed` when a
+ * non-product failure survives the heal.
+ *
+ * Exported for the unit test — the arithmetic is the part that was missing entirely, so it is worth
+ * pinning without a database.
+ */
+export function accumulateBatchHeaderDelta(
+  deltas: Map<string, WeeklyBatchHeaderDelta>,
+  batchId: string,
+  oldSalesValue: number,
+  newSalesValue: number,
+  newState: "valid" | "warning" | "failed",
+): void {
+  if (!batchId) return;
+  const delta = deltas.get(batchId) ?? { salesValue: 0, warningRows: 0, failedRows: 0 };
+  delta.salesValue = Number((delta.salesValue + (newSalesValue - oldSalesValue)).toFixed(6));
+  if (newState !== "warning") delta.warningRows -= 1;
+  if (newState === "failed") delta.failedRows += 1;
+  deltas.set(batchId, delta);
+}
+
+/**
+ * Healing rewrites stored rows, so the batch header they were summarised into at upload goes stale —
+ * and that header is NOT cosmetic: `computeThisWeekOnly` de-cumulates every later week of the cycle
+ * against the prior batch's `total_sales_value`, and the batch list reports these counts as fact.
+ * Carry the same delta onto the header so the two can never diverge.
+ *
+ * Found 2026-08-15: four June Overseas batches understated sales by up to 4,738.50 (one Dopaminect
+ * row healed a month after upload) and still claimed up to 261 warning rows that healing had already
+ * cleared.
+ */
+async function applyBatchHeaderDeltas(deltas: Map<string, WeeklyBatchHeaderDelta>): Promise<void> {
+  if (deltas.size === 0) return;
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("weekly_sales_batches")
+    .select("id, total_sales_value, warning_rows, failed_rows, importable_rows")
+    .in("id", [...deltas.keys()]);
+  if (error || !data?.length) return;
+
+  type BatchShape = {
+    id: string;
+    total_sales_value: number | null;
+    warning_rows: number | null;
+    failed_rows: number | null;
+    importable_rows: number | null;
+  };
+  for (const batch of data as BatchShape[]) {
+    const delta = deltas.get(String(batch.id));
+    if (!delta) continue;
+    await supabase
+      .from("weekly_sales_batches")
+      .update({
+        total_sales_value: Number((Number(batch.total_sales_value ?? 0) + delta.salesValue).toFixed(6)),
+        warning_rows: Math.max(0, Number(batch.warning_rows ?? 0) + delta.warningRows),
+        failed_rows: Math.max(0, Number(batch.failed_rows ?? 0) + delta.failedRows),
+        // A row that heals into `failed` stops being importable; nothing else changes the count.
+        importable_rows: Math.max(0, Number(batch.importable_rows ?? 0) - delta.failedRows),
+      })
+      .eq("id", batch.id);
+  }
 }
 
 export async function buildProductAliasTemplate(distributorCode: string): Promise<ArrayBuffer> {
