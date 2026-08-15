@@ -87,7 +87,7 @@ if (result.status !== 0) {
 let payload;
 try {
   payload = JSON.parse(result.stdout || "{}")
-} catch (error) {
+} catch {
   console.error("[validate-railway-production-secrets] Failed to parse Railway CLI JSON output.");
   process.exit(1);
 }

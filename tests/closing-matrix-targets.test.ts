@@ -348,7 +348,6 @@ export function runClosingMatrixTargetsTests() {
       { preserveTargets: true },
     );
     const ca1 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA1")!;
-    const ca2 = rebuilt.regions.flatMap((r) => r.areas).find((a) => a.areaCode === "CA2")!;
 
     assert.equal(ca1.cells[0].salesValue, 300, "sales are still re-summed from the rows");
     assert.equal(ca1.cells[0].targetValue, 500, "the skeleton's target is KEPT, not nulled");

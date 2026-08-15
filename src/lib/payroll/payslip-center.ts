@@ -102,13 +102,6 @@ function normalizeKey(value: string) {
   return value.trim().toLowerCase();
 }
 
-function errorMessage(error: unknown) {
-  if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message?: unknown }).message ?? "");
-  }
-  return String(error ?? "");
-}
-
 function uniqueRows(rows: SalaryRecordLookupRow[]) {
   const byId = new Map<string, SalaryRecordLookupRow>();
   rows.forEach((row) => byId.set(String(row.id), row));
