@@ -180,6 +180,20 @@ export function isTeamScopedVacancyRole(access: AccessContext) {
   return access.role === "District Manager";
 }
 
+/**
+ * Legacy scoping + mirror-safety pass over a pre-built VacancyReportData.
+ *
+ * SUPERSEDED and NOT on any live route. The organogram chart is built by
+ * getOrganogramReport() (seat-model sourced, below) and the Vacancy Report by
+ * getScopedVacancyReport(); neither calls this. It survives only as a DB-free surface
+ * the organogram unit tests (ceo-organogram-visibility, organogram-empty-diagnostic,
+ * organogram-hardening) exercise for scoping / diagnostic / mirror-safety behaviour —
+ * so those tests guard THIS function, not the live chart. Do NOT re-wire it into a
+ * live path expecting it to "protect" the chart: the live chart is seat-sourced and
+ * intentionally skips mirror-safety (see the note in getOrganogramReport). Kept rather
+ * than deleted because removing it also means deleting or re-homing those tests — a
+ * separate, owner-approved change.
+ */
 export function scopeOrganogramReportData(
   report: VacancyReportData,
   options: OrganogramReportOptions,
@@ -330,6 +344,15 @@ export async function getOrganogramReport(
   // Area-unification rebuild: organogram rows now come from the seat model (au),
   // not the manager_hr_id + job-title heuristics. Access scoping + Head Office
   // stripping are preserved.
+  //
+  // This live chart path deliberately does NOT run applyOrganogramMirrorSafety
+  // (phantom/duplicate/stale-vacancy suppression + public vacancy-code sanitising).
+  // That hardening exists to clean the LEGACY position_vacancies-sourced data; the AU
+  // seat model is one authoritative row per seat with occupancy-driven filled/vacant,
+  // so it produces none of those artefacts and needs no suppression. Mirror-safety is
+  // still applied where it IS needed — the flat Vacancy Report in vacancies.ts. The
+  // scopeOrganogramReportData() helper below is the OLD (pre-seat-model) scoping path
+  // and no longer sits on any live route; see its note.
   const seatReport = await buildOrganogramSeatReport();
   let scopedRows = scopeAuOrganogramRows(seatReport.organogramRows, options);
 
