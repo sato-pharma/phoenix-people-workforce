@@ -643,6 +643,25 @@ export function buildOrganogramLanes(rows: OrganogramRow[]) {
       return true;
     }
 
+    // Reports STRAIGHT to the line leader (NSM) with no vacant-seat marker. The
+    // fallbackManagerGroups filter excludes exactly this case (reportsToLineLeader
+    // && !heldByVacantSeat) because a line-leader report has no DSM/vacancy lane
+    // to land in — the NSM spine card doesn't render its own non-manager direct
+    // reports either. Without catching it here the row lands in NO bucket and
+    // vanishes from the chart. Route it to Unassigned so it stays visible. (No
+    // live victim today — the only NSM-direct report is an acting DSM, pulled out
+    // of teamRows above — but a single manager repoint would otherwise drop a rep.)
+    const managerHrId = normalizeHrIdKey(row.managerHrId);
+    const managerNameKey = normalizeNameKey(row.managerName);
+    const heldByVacantSeat = Boolean(normalizeHrIdKey(row.managerReplacementForHrId));
+    const reportsToLineLeader =
+      Boolean(lineLeader) &&
+      (managerHrId === normalizeHrIdKey(lineLeader?.hrId) ||
+        managerNameKey === normalizeNameKey(lineLeader?.fullName));
+    if (reportsToLineLeader && !heldByVacantSeat) {
+      return true;
+    }
+
     return false;
   });
   const allGroups: TopManagerLane[] = [
