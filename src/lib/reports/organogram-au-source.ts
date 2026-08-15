@@ -106,33 +106,67 @@ export async function buildOrganogramSeatReport(): Promise<VacancyReportData> {
     occupantBySeat.set(s.seat_id, s.occupant_hr_id && s.occupant_hr_id.trim() ? s.occupant_hr_id.trim() : null);
   }
 
-  // Acting-DM occupants per line (their own REP seat is collapsed into the ACTING_DM node).
-  const actingByLine = new Map<string, Set<string>>();
+  // Acting-DM occupants (their own REP seat is collapsed into the ACTING_DM node).
+  // Keyed by occupant ALONE — never by line_code. Gating the collapse on a matching
+  // line_code would let the same person be emitted twice (once as the ACTING_DM node,
+  // once as an un-collapsed REP seat) whenever the ACTING_DM seat's line_code is null
+  // or differs from the REP seat's — two rows sharing one nodeKey (the HR_ID), i.e. a
+  // duplicate node and a self-referential manager lookup. An occupant who holds any
+  // ACTING_DM seat is always rendered from it, so their REP seat is always collapsed.
+  const actingOccupants = new Set<string>();
   for (const s of tree) {
-    if (s.seat_tier === "ACTING_DM" && s.occupant_hr_id && s.line_code) {
-      const set = actingByLine.get(s.line_code) ?? new Set<string>();
-      set.add(s.occupant_hr_id.trim().toLowerCase());
-      actingByLine.set(s.line_code, set);
+    if (s.seat_tier === "ACTING_DM" && s.occupant_hr_id && s.occupant_hr_id.trim()) {
+      actingOccupants.add(s.occupant_hr_id.trim().toLowerCase());
     }
   }
 
-  const rows: OrganogramReportRow[] = [];
-  for (const s of tree) {
-    if (s.is_other_pseudo_dm) continue; // "Others" holds no people
+  // A seat is DROPPED from the emitted tree when it is the per-line "Others" pseudo-DM
+  // (holds no people) or the acting DM's own REP seat (collapsed into the ACTING_DM
+  // node). Centralised so manager resolution can climb past a dropped seat.
+  const isDropped = (s: AuTreeRow): boolean => {
+    if (s.is_other_pseudo_dm) return true; // "Others" holds no people
     if (
       s.seat_tier === "REP" &&
       s.occupant_hr_id &&
-      s.line_code &&
-      actingByLine.get(s.line_code)?.has(s.occupant_hr_id.trim().toLowerCase())
+      actingOccupants.has(s.occupant_hr_id.trim().toLowerCase())
     ) {
-      continue; // acting DM's own area — represented by the ACTING_DM node
+      return true; // acting DM's own area — represented by the ACTING_DM node
     }
+    return false;
+  };
+
+  const seatById = new Map<string, AuTreeRow>();
+  for (const s of tree) seatById.set(s.seat_id, s);
+
+  // Nearest ANCESTOR seat that is actually emitted, climbing parent_seat_id and
+  // skipping any dropped seat. Without this, a child whose immediate parent seat was
+  // dropped (an "Others" pseudo-DM, or a collapsed acting-DM REP seat) would carry a
+  // managerHrId pointing at a node that was never emitted — orphaning it in the
+  // client's tree-climb. Re-homing to the closest real manager above keeps it placed.
+  // The `seen` guard makes a malformed cyclic parent chain terminate instead of hang.
+  const nearestEmittedParentSeat = (s: AuTreeRow): AuTreeRow | null => {
+    const seen = new Set<string>([s.seat_id]);
+    let parentId = s.parent_seat_id;
+    while (parentId && !seen.has(parentId)) {
+      const parent = seatById.get(parentId);
+      if (!parent) break;
+      if (!isDropped(parent)) return parent;
+      seen.add(parentId);
+      parentId = parent.parent_seat_id;
+    }
+    return null;
+  };
+
+  const rows: OrganogramReportRow[] = [];
+  for (const s of tree) {
+    if (isDropped(s)) continue;
 
     const nodeKey = nodeKeyBySeat.get(s.seat_id)!;
-    const managerHrId = s.parent_seat_id ? (nodeKeyBySeat.get(s.parent_seat_id) ?? null) : null;
+    const managerSeat = nearestEmittedParentSeat(s);
+    const managerHrId = managerSeat ? (nodeKeyBySeat.get(managerSeat.seat_id) ?? null) : null;
     // Manager display name = the parent seat's occupant name (never an HR_ID/seat code). Left null
     // when the manager seat is vacant, so the vacant-seat labeller (area/team/line name) takes over.
-    const managerOccupant = s.parent_seat_id ? (occupantBySeat.get(s.parent_seat_id) ?? null) : null;
+    const managerOccupant = managerSeat ? (occupantBySeat.get(managerSeat.seat_id) ?? null) : null;
     const managerName = managerOccupant ? displayNameFor(managerOccupant) : null;
     const occupied = Boolean(s.occupant_hr_id && s.occupant_hr_id.trim());
 
