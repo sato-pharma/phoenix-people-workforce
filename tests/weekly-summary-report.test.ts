@@ -23,6 +23,7 @@ import {
   spanPlan,
   splitLineIntoFamilyBlocks,
   ytdCoverageNote,
+  type VsTargetTabInput,
 } from "../src/lib/sales/weekly/summary-workbook.ts";
 import type { WeeklyDashboard, WeeklyFactExportRow } from "../src/lib/sales/weekly/types.ts";
 
@@ -432,7 +433,7 @@ export async function runWeeklySummaryReportTests() {
         zeroSalesBranches: [], weekComparison: [], sources: [], trend: [], factRows,
       }) as unknown as WeeklyDashboard;
 
-    const buffer = await buildWeeklySummaryWorkbook({
+    const base = {
       weekly: dash(rows), mtd: dash(rows), ytd: dash(rows), trend: dash(rows),
       managerIndex: { dmByLineRegion: new Map(), seatsById: new Map(), nameByHrId: new Map(), regionNameByCode: new Map(), ceoName: null },
       ytdMonths: [JUL], periodLabel: "test", generatedAt: "2026-08-12 00:00 UTC", lineFilter: [],
@@ -440,16 +441,19 @@ export async function runWeeklySummaryReportTests() {
         { areaCode: "CA1", areaName: "Heliopolis", regionCode: "CA" },
         { areaCode: "CA2", areaName: "Nasr City", regionCode: "CA" },
       ],
+      regionNames: [{ regionCode: "CA", regionName: "Cairo" }],
+    };
+    const julyTargets = [
+      { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
+      { lineLabel: "CNS", areaCode: "CA2", targetUnits: 60 },
+    ];
+
+    const buffer = await buildWeeklySummaryWorkbook({
+      ...base,
       vsTarget: {
-        period: "2026-07",
-        monthRows: rows,
-        targets: [
-          { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
-          { lineLabel: "CNS", areaCode: "CA2", targetUnits: 60 },
-        ],
-        targetedLines: ["CNS"],
-        regionNames: [{ regionCode: "CA", regionName: "Cairo" }],
-        filterCaveat: "",
+        kind: "shown",
+        months: [{ period: "2026-07", monthRows: rows, targets: julyTargets, targetedLines: ["CNS"] }],
+        dataNote: "",
       },
     });
 
@@ -505,6 +509,56 @@ export async function runWeeklySummaryReportTests() {
       sheetNames.indexOf("Month vs Target"),
       sheetNames.indexOf("MTD by Distributor") + 1,
       "Month vs Target must sit directly after MTD by Distributor — both measure the same month",
+    );
+
+    // ── The tab is a decision, not an array: hidden, blocked, or shown ─────────
+    const readSheets = async (vsTarget: VsTargetTabInput) => {
+      const built = await buildWeeklySummaryWorkbook({ ...base, vsTarget });
+      const zipped = await JSZip.loadAsync(built);
+      const bookXml = (await zipped.file("xl/workbook.xml")?.async("string")) ?? "";
+      return {
+        names: [...bookXml.matchAll(/<sheet\b[^>]*\sname="([^"]+)"/g)].map((match) => match[1]),
+        strings: (await zipped.file("xl/sharedStrings.xml")?.async("string")) ?? "",
+      };
+    };
+
+    // A Medical Rep gets NO Month vs Target sheet — and the other five are untouched, which is the
+    // half of the owner's decision that a "hide the rows" implementation would quietly break.
+    const hidden = await readSheets({ kind: "hidden" });
+    assert.ok(
+      !hidden.names.includes("Month vs Target"),
+      `a hidden vs-target tab must write no sheet at all — got ${hidden.names.join(", ")}`,
+    );
+    assert.equal(
+      hidden.names.length,
+      sheetNames.length - 1,
+      "hiding Tab 6 must remove exactly one sheet and leave the other five in place",
+    );
+
+    // Blocked writes ONE sheet carrying the reason. An absent tab would read as "no data this month".
+    const blocked = await readSheets({ kind: "blocked", reason: "Distributor filter is active." });
+    assert.ok(
+      blocked.names.includes("Month vs Target"),
+      "a blocked vs-target tab must still write its sheet, so its absence is never guessed at",
+    );
+    assert.ok(
+      blocked.strings.includes("Distributor filter is active."),
+      "the blocked sheet must print the reason it was withheld",
+    );
+
+    // Multi-month: one section per month, each anchor naming its own month so two "CNS" bands cannot
+    // be confused — and each measured against ITS OWN month's target.
+    const multi = await readSheets({
+      kind: "shown",
+      months: [
+        { period: "2026-06", monthRows: rows, targets: julyTargets, targetedLines: ["CNS"] },
+        { period: "2026-07", monthRows: rows, targets: julyTargets, targetedLines: ["CNS"] },
+      ],
+      dataNote: "",
+    });
+    assert.ok(
+      multi.strings.includes("CNS — 2026-06") && multi.strings.includes("CNS — 2026-07"),
+      "each month must get its own named section anchor when several months are exported together",
     );
   }
 

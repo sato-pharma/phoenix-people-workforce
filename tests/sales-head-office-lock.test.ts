@@ -159,6 +159,21 @@ export function runSalesHeadOfficeLockTests() {
     "weekly scope resolves canViewHeadOffice from the role",
   );
 
+  // The Month vs Target tab of the weekly Summarized Report reads TARGETS, not facts — a separate
+  // source that applyWeeklyAccessScope never saw, because phx_monthly_targets is SECURITY DEFINER
+  // and carries no viewer bound at all. It needs its own strip, and its own pin here, because the
+  // usual guard cannot catch it: isHeadOfficeLine only lowercases, so it recognises the line NAME
+  // "Head Office" but not the line CODE "head_office" that the targets engine actually speaks.
+  const monthTargets = readSource("../src/lib/sales/weekly/month-target-scope.ts");
+  assert.ok(
+    monthTargets.includes("applyWeeklyAccessScope("),
+    "weekly month-vs-target runs its targets through the same access bound as the sales they divide",
+  );
+  assert.ok(
+    monthTargets.includes("resolveTargetLineCode(row.lineCode)"),
+    "weekly month-vs-target drops any target whose line is not a field line — Head Office above all",
+  );
+
   const si = readSource("../src/lib/sales-marketing-intelligence/service.ts");
   assert.ok(
     si.includes("stripHeadOfficeFromMarketingSnapshot"),

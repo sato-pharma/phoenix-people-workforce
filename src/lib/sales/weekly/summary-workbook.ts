@@ -239,25 +239,54 @@ export type WeeklySummaryInput = {
    * Passed in rather than looked up here: the workbook builder stays pure and has no database of its
    * own, which is what keeps it unit-testable without a connection.
    */
-  masterAreas: Array<{ areaCode: string; areaName: string; regionCode?: string }>;
+  masterAreas: Array<{ areaCode: string; areaName: string; regionCode: string }>;
+  /** region_code -> region name, for every tab that prints one. Owner's rule: never show a code. */
+  regionNames: Array<{ regionCode: string; regionName: string }>;
   /**
    * The Month vs Target tab — everything it needs, resolved by the caller.
    *
-   * `monthRows` is the WHOLE cycle month being uploaded, not the selected week: the target it is
-   * measured against is a month's target, so a week's sales would report a false 20%.
+   * A DISCRIMINATED UNION rather than a nullable bag, for the same reason vs-target-scope.ts gives
+   * for its own bound: the dangerous bug in this area is an absent field being read as "unbounded".
+   * "Not for this viewer" and "cannot be answered under these filters" are different outcomes with
+   * different sheets, and neither is an empty array.
    */
-  vsTarget: {
-    /** The cycle month under measurement, YYYY-MM. */
-    period: string;
-    monthRows: WeeklyFactExportRow[];
-    targets: MonthTargetInput[];
-    /** Official line names carrying a target this month — tells "no target" from "target of 0". */
-    targetedLines: string[];
-    regionNames: Array<{ regionCode: string; regionName: string }>;
-    /** Non-empty when a distributor/product filter narrows the sales but cannot narrow the target. */
-    filterCaveat: string;
-  };
+  vsTarget: VsTargetTabInput;
 };
+
+/** What the caller decided about the Month vs Target tab. See vsTargetVisibility in month-target-scope.ts. */
+export type VsTargetTabInput =
+  /** The viewer's role does not get this tab — no sheet is written at all. */
+  | { kind: "hidden" }
+  /**
+   * The tab cannot be answered honestly under these filters, or its data could not be loaded. One
+   * sheet carries the reason, so its absence is never mistaken for a month with nothing in it.
+   */
+  | { kind: "blocked"; reason: string }
+  | {
+      kind: "shown";
+      /**
+       * One block per cycle month, each measured against its OWN month's target.
+       *
+       * `monthRows` is the WHOLE cycle month, not the selected week: the target it is measured
+       * against is a month's target, so a week's sales would report a false 20%.
+       */
+      months: Array<{
+        /** The cycle month under measurement, YYYY-MM. */
+        period: string;
+        monthRows: WeeklyFactExportRow[];
+        targets: MonthTargetInput[];
+        /** Official line names carrying a target this month — tells "no target" from "target of 0". */
+        targetedLines: string[];
+      }>;
+      /**
+       * Mapping faults found while scoping — unplaceable areas, region drift. Empty when clean.
+       *
+       * NOT a caveat about a wrong number: every figure on the sheet is correct. This says which
+       * rows could not be placed, because the owner's standing rule is that nothing is dropped
+       * silently — it is counted, flagged, and he decides.
+       */
+      dataNote: string;
+    };
 
 export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Promise<Buffer> {
   const { weekly, mtd, ytd, managerIndex, ytdMonths, periodLabel, generatedAt, lineFilter } = input;
@@ -278,14 +307,12 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
   const areaIndex = new Map(
     (input.masterAreas ?? []).map((area) => [
       area.areaCode.trim().toUpperCase(),
-      { areaName: area.areaName, regionCode: (area.regionCode ?? "").trim().toUpperCase() },
+      { areaName: area.areaName, regionCode: area.regionCode.trim().toUpperCase() },
     ]),
   );
   const regionNames = new Map(
-    (input.vsTarget.regionNames ?? []).map((region) => [region.regionCode.trim().toUpperCase(), region.regionName]),
+    (input.regionNames ?? []).map((region) => [region.regionCode.trim().toUpperCase(), region.regionName]),
   );
-  const monthRows = input.vsTarget.monthRows ?? [];
-  const monthTargets = input.vsTarget.targets ?? [];
 
   const lines = resolveLineTabs(lineFilter);
 
@@ -305,11 +332,7 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
       areaNames,
       areaIndex,
       regionNames,
-      vsTargetPeriod: input.vsTarget.period,
-      vsTargetFilterCaveat: input.vsTarget.filterCaveat,
-      monthRows,
-      monthTargets,
-      targetedLines: input.vsTarget.targetedLines ?? [],
+      vsTarget: input.vsTarget,
     });
   } else {
     for (const line of lines) {
@@ -323,19 +346,31 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
         areaNames,
         areaIndex,
         regionNames,
-        vsTargetPeriod: input.vsTarget.period,
-        vsTargetFilterCaveat: input.vsTarget.filterCaveat,
-        monthRows: forLine(monthRows),
-        // A per-line tab set must carry ONLY that line's target, or the sheet compares one line's
-        // sales against every line's number.
-        monthTargets: monthTargets.filter((target) => sameLine(target.lineLabel, line)),
-        targetedLines: (input.vsTarget.targetedLines ?? []).filter((label) => sameLine(label, line)),
+        vsTarget: narrowVsTargetToLine(input.vsTarget, line),
       });
     }
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
+}
+
+/**
+ * A per-line tab set must carry ONLY that line's month rows and target, or the sheet compares one
+ * line's sales against every line's number. `hidden` and `blocked` pass through untouched — the
+ * reason a tab is withheld does not become line-specific.
+ */
+function narrowVsTargetToLine(vsTarget: VsTargetTabInput, line: string): VsTargetTabInput {
+  if (vsTarget.kind !== "shown") return vsTarget;
+  return {
+    ...vsTarget,
+    months: vsTarget.months.map((month) => ({
+      ...month,
+      monthRows: month.monthRows.filter((row) => sameLine(row.line, line)),
+      targets: month.targets.filter((target) => sameLine(target.lineLabel, line)),
+      targetedLines: month.targetedLines.filter((label) => sameLine(label, line)),
+    })),
+  };
 }
 
 /** The five reports for one scope — either the whole selection, or one line of it. */
@@ -359,13 +394,8 @@ function buildTabSet(
     /** area_code -> name AND owning region — Tab 6 needs the region to make its subtotals add up. */
     areaIndex: Map<string, { areaName: string; regionCode: string }>;
     regionNames: Map<string, string>;
-    /** The cycle month Tab 6 measures, YYYY-MM. */
-    vsTargetPeriod: string;
-    vsTargetFilterCaveat: string;
-    /** The WHOLE month being uploaded — Tab 6 only. Tabs 1-2 stay on the selected sheet. */
-    monthRows: WeeklyFactExportRow[];
-    monthTargets: MonthTargetInput[];
-    targetedLines: string[];
+    /** Tab 6, already decided by the caller: shown for these months, withheld, or blocked. */
+    vsTarget: VsTargetTabInput;
   },
 ): void {
   const { managerIndex, ytdMonths, periodLabel, generatedAt } = ctx;
@@ -409,15 +439,30 @@ function buildTabSet(
   // Straight after the MTD tab: both measure the same month, and this one says whether that month is
   // on course. Ahead of YTD deliberately — the question a manager opens this workbook with is
   // "where am I against my number", not "what has the year done".
-  buildVsTargetSheet(
-    workbook,
-    name("Month vs Target"),
-    buildVsTargetModel(ctx.monthRows, ctx.monthTargets, ctx.areaIndex, ctx.targetedLines, ctx.regionNames),
-    label,
-    ctx.vsTargetPeriod,
-    generatedAt,
-    ctx.vsTargetFilterCaveat,
-  );
+  //
+  // `hidden` writes nothing at all: the viewer's role does not get this tab, and the other five are
+  // byte-identical to what he received before it existed.
+  if (ctx.vsTarget.kind === "blocked") {
+    buildVsTargetBlockedSheet(workbook, name("Month vs Target"), label, ctx.vsTarget.reason, generatedAt);
+  } else if (ctx.vsTarget.kind === "shown") {
+    buildVsTargetSheet(
+      workbook,
+      name("Month vs Target"),
+      ctx.vsTarget.months.map((month) => ({
+        period: month.period,
+        sections: buildVsTargetModel(
+          month.monthRows,
+          month.targets,
+          ctx.areaIndex,
+          month.targetedLines,
+          ctx.regionNames,
+        ),
+      })),
+      label,
+      generatedAt,
+      ctx.vsTarget.dataNote,
+    );
+  }
   buildDistributorSheet(workbook, name("YTD by Distributor"), ytdRows, managerIndex, {
     title: `${label} — Year to Date by Distributor`,
     subtitle: `${ytdMonths[0] ?? "—"} to ${currentCairoCycleMonth()} · Generated ${generatedAt}`,
@@ -2398,8 +2443,11 @@ export function buildVsTargetModel(
   }
 
   const targeted = new Set(targetedLines.map((line) => normalizeLine(line).toLowerCase()).filter(Boolean));
+  // Owner's standing rule: never print a bare code as if it were a name. A code that resolves to
+  // nothing is a MAPPING FAULT, so it is labelled as one — the code stays visible inside that frame
+  // because dropping it would leave him a broken row he cannot trace back to anything.
   const nameOfRegion = (code: string) =>
-    code ? regionNames.get(code) || rowRegionNames.get(code) || code : UNKNOWN_REGION_LABEL;
+    code ? regionNames.get(code) || rowRegionNames.get(code) || `Unknown region (${code})` : UNKNOWN_REGION_LABEL;
 
   const sections: VsTargetSection[] = [];
   for (const [lineKey, regions] of tree) {
@@ -2411,7 +2459,9 @@ export function buildVsTargetModel(
         // every line would print all 42 areas at zero.
         if (cell.salesUnits === 0 && cell.targetUnits === 0) continue;
         areaRows.push({
-          label: areaCode ? (areaIndex.get(areaCode)?.areaName || areaCode) : VS_TARGET_NO_AREA_LABEL,
+          label: areaCode
+            ? areaIndex.get(areaCode)?.areaName || `Unknown area (${areaCode})`
+            : VS_TARGET_NO_AREA_LABEL,
           salesUnits: cell.salesUnits,
           targetUnits: cell.targetUnits,
           achievement: achievementOf(cell.salesUnits, cell.targetUnits),
@@ -2467,34 +2517,89 @@ export function buildVsTargetModel(
 /** Region label | Month sales | Month target | Achievement | Gap — A..E. */
 const VS_TARGET_COLS = 5;
 
+/**
+ * The tab, withheld, with the reason in its place.
+ *
+ * An absent sheet is ambiguous — it reads as "no data this month". A sheet that says why cannot be
+ * misread, and it keeps the workbook's tab count stable so nobody hunts for a tab that moved.
+ */
+function buildVsTargetBlockedSheet(
+  workbook: ExcelJS.Workbook,
+  name: string,
+  lineLabel: string,
+  reason: string,
+  generatedAt: string,
+): void {
+  const sheet = workbook.addWorksheet(name);
+  premiumMasthead(
+    sheet,
+    VS_TARGET_COLS,
+    `${lineLabel} — Month vs Target`,
+    "Not shown",
+    "This tab cannot be answered under the current filters",
+    generatedAt,
+    "Line × Region × Area",
+  );
+  sheet.getColumn(1).width = 40;
+  for (let c = 2; c <= VS_TARGET_COLS; c += 1) sheet.getColumn(c).width = 18;
+
+  sheet.mergeCells(7, 1, 7, VS_TARGET_COLS);
+  const note = sheet.getCell(7, 1);
+  note.value = reason;
+  note.font = { color: { argb: CLAY }, name: "Calibri", size: 11 };
+  note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
+  note.fill = { fgColor: { argb: CREAM }, pattern: "solid", type: "pattern" };
+  sheet.getRow(7).height = noteRowHeight(reason);
+
+  dressPage(sheet, 7, VS_TARGET_COLS);
+  sheet.views = [{ showGridLines: false }];
+}
+
+/**
+ * Height for a merged full-width note, from its own length.
+ *
+ * The five columns are ~108 characters wide, which at 9pt Calibri fits roughly 130 characters to a
+ * line. A hard-coded height clips the moment the text grows — and the owner's standing rule is that
+ * nothing in this system is ever truncated or wrapped out of sight.
+ */
+function noteRowHeight(text: string): number {
+  return Math.max(30, Math.min(180, Math.ceil(text.length / 130) * 13 + 6));
+}
+
 function buildVsTargetSheet(
   workbook: ExcelJS.Workbook,
   name: string,
-  sections: VsTargetSection[],
+  /** One block per cycle month, in the order the caller resolved them. */
+  months: Array<{ period: string; sections: VsTargetSection[] }>,
   lineLabel: string,
-  /** The month being measured, as YYYY-MM. */
-  periodLabel: string,
   generatedAt: string,
-  /** Set when the viewer's distributor/product filters narrow the sales but cannot narrow targets. */
-  filterCaveat: string,
+  /** Mapping faults found while scoping. Empty when clean — never a caveat about a wrong number. */
+  dataNote: string,
 ): void {
   const sheet = workbook.addWorksheet(name);
 
-  const totalSales = sections.reduce((sum, section) => sum + section.salesUnits, 0);
-  const totalTarget = sections.reduce((sum, section) => sum + section.targetUnits, 0);
-  const measured = sections.filter((section) => section.hasTarget);
-  const unmeasured = sections.filter((section) => !section.hasTarget);
+  const allSections = months.flatMap((month) => month.sections);
+  const totalSales = allSections.reduce((sum, section) => sum + section.salesUnits, 0);
+  const totalTarget = allSections.reduce((sum, section) => sum + section.targetUnits, 0);
+  const measured = allSections.filter((section) => section.hasTarget);
+  const unmeasured = allSections.filter((section) => !section.hasTarget);
   const overall = achievementOf(
     measured.reduce((sum, section) => sum + section.salesUnits, 0),
     measured.reduce((sum, section) => sum + section.targetUnits, 0),
   );
+  const periodLabel = months.map((month) => month.period).join(", ") || "—";
+  // More than one month means the anchors must say WHICH month each block measures — two adjacent
+  // bands both reading "CNS" would be indistinguishable.
+  const multiMonth = months.length > 1;
 
   premiumMasthead(
     sheet,
     VS_TARGET_COLS,
     `${lineLabel} — Month vs Target`,
     overall == null ? "No target uploaded" : `${Math.round(overall * 100)}% of the month's target`,
-    `Uploaded sales for ${periodLabel} against the FULL month target · units only`,
+    multiMonth
+      ? `${periodLabel} · each month against its OWN full-month target · units only`
+      : `Uploaded sales for ${periodLabel} against the FULL month target · units only`,
     generatedAt,
     "Line × Region × Area",
   );
@@ -2503,19 +2608,39 @@ function buildVsTargetSheet(
   // offers to repair the file (see buildManagerSheet).
   sheet.properties.outlineLevelRow = 2;
 
-  if (sections.length === 0) {
-    sheet.getCell(7, 1).value = `No validated weekly sales and no uploaded target for ${periodLabel}.`;
-    sheet.views = [{ showGridLines: false }];
-    return;
-  }
+  // One flat list of blocks in month order. Flattened rather than nested so the section writer below
+  // keeps the exact shape it had when the tab measured a single month. A month that resolved to
+  // nothing still holds its place in the sequence — that is what the null sentinel is for.
+  // Annotated on the callback, not inferred: without it TypeScript reads the type off whichever
+  // branch it sees first and the null sentinel no longer fits its own array.
+  type VsTargetBlock = { section: VsTargetSection | null; period: string };
+  const blocks = months.flatMap((month): VsTargetBlock[] =>
+    month.sections.length > 0
+      ? month.sections.map((section) => ({ section, period: month.period }))
+      : [{ section: null, period: month.period }],
+  );
 
   let row = 6;
-  for (const section of sections) {
+  for (const { section, period } of blocks) {
+    // A month he explicitly asked for that holds nothing says so under its own name rather than
+    // being skipped — an absent month reads as one he never selected, not as one with no sales.
+    if (!section) {
+      sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
+      const empty = sheet.getCell(row, 1);
+      empty.value = `No validated weekly sales and no uploaded target for ${period}.`;
+      empty.font = { color: { argb: MUTED_WARM }, italic: true, name: "Calibri", size: 10 };
+      empty.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+      sheet.getRow(row).height = 20;
+      row += 2;
+      continue;
+    }
     // The section anchor, in the same grammar as the manager bands on Tabs 2-5: one ink line naming
     // the block, its caption quietly on cream beneath.
     sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
     const title = sheet.getCell(row, 1);
-    title.value = section.label;
+    // With several months on one sheet the anchor must say which month this block measures; two
+    // adjacent bands both reading "CNS" would be indistinguishable.
+    title.value = multiMonth ? `${section.label} — ${period}` : section.label;
     title.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri Light", size: 14 };
     title.fill = { fgColor: { argb: INK }, pattern: "solid", type: "pattern" };
     title.alignment = { horizontal: "center", vertical: "middle" };
@@ -2525,9 +2650,9 @@ function buildVsTargetSheet(
     sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
     const caption = sheet.getCell(row, 1);
     caption.value = section.hasTarget
-      ? `Target for ${periodLabel}: ${Math.round(section.targetUnits).toLocaleString()} units` +
+      ? `Target for ${period}: ${Math.round(section.targetUnits).toLocaleString("en-US")} units` +
         `   ·   ${section.regions.length} region${section.regions.length === 1 ? "" : "s"}`
-      : `No target uploaded for ${periodLabel} — sales are shown, achievement cannot be calculated`;
+      : `No target uploaded for ${period} — sales are shown, achievement cannot be calculated`;
     caption.font = {
       color: { argb: section.hasTarget ? MUTED_WARM : CLAY },
       italic: !section.hasTarget,
@@ -2684,32 +2809,38 @@ function buildVsTargetSheet(
     row += 2;
   }
 
+  // Every number is pinned to en-US. A bare toLocaleString resolves through the container's own ICU
+  // locale, and on a de-DE host "124,500 units" silently becomes "124.500" — a thousand-fold misread
+  // of a figure a manager acts on. The rest of this module's writers pin it for the same reason.
+  const units = (value: number) => Math.round(value).toLocaleString("en-US");
+  const unmeasuredNames = [...new Set(unmeasured.map((section) => section.label))];
+
   sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
   const note = sheet.getCell(row, 1);
   note.value =
     `Sales are the units uploaded so far for ${periodLabel}, de-cumulated so each week counts once. ` +
     "The target is the WHOLE month's, so mid-month this sheet is expected to read under 100% — it " +
     "answers \"how much of the month is already in\", not \"did we hit it\". " +
+    (multiMonth ? "Each month above is measured against its OWN month's target, never a shared one. " : "") +
     "A region row is the sum of the area rows beneath it, and an area is counted under the region " +
     "that carries its target, so the two always reconcile. " +
-    `Total across every line: ${Math.round(totalSales).toLocaleString()} units sold against ` +
-    `${Math.round(totalTarget).toLocaleString()} units of target. ` +
-    (unmeasured.length > 0
-      ? `${unmeasured.map((section) => section.label).join(", ")} ` +
-        `${unmeasured.length === 1 ? "has" : "have"} no uploaded target for ${periodLabel} — ` +
-        `their ${Math.round(unmeasured.reduce((sum, s) => sum + s.salesUnits, 0)).toLocaleString()} units are shown ` +
+    `Total across every line: ${units(totalSales)} units sold against ${units(totalTarget)} units of target. ` +
+    (unmeasuredNames.length > 0
+      ? `${unmeasuredNames.join(", ")} ` +
+        `${unmeasuredNames.length === 1 ? "has" : "have"} no uploaded target for ${periodLabel} — ` +
+        `their ${units(unmeasured.reduce((sum, s) => sum + s.salesUnits, 0))} units are shown ` +
         "in full but are excluded from the headline percentage, which would otherwise be diluted by sales " +
         "nobody set a number for. "
       : "") +
     "Sales that no single area owns — key accounts, chains, wholesale depots — sit in their region's " +
     "own named row and carry no target, so they are never hidden and never inflate an area's " +
     "achievement. " +
-    filterCaveat +
+    (dataNote ? `${dataNote} ` : "") +
     "Units only; this workbook carries no value column. " +
     ATTRIBUTION_CAVEAT;
   note.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 9 };
   note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
-  sheet.getRow(row).height = 58;
+  sheet.getRow(row).height = noteRowHeight(String(note.value));
 
   dressPage(sheet, row, VS_TARGET_COLS);
   sheet.views = [{ state: "frozen", xSplit: 1, showGridLines: false }];

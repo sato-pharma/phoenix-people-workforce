@@ -7,12 +7,17 @@ import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { latestUploadedPeriod } from "@/lib/sales/weekly/batch-scope";
 import { listMasterAreas } from "@/lib/sales/weekly/branch-region-map";
 import { loadWeeklyManagerIndex } from "@/lib/sales/weekly/manager-attribution";
-import { REGION_NAMES, lineName, loadMonthlyTargets } from "@/lib/sales/monthly-targets";
+import { REGION_NAMES, loadMonthlyTargets } from "@/lib/sales/monthly-targets";
+import {
+  scopeMonthSalesRows,
+  scopeMonthTargets,
+  vsTargetVisibility,
+} from "@/lib/sales/weekly/month-target-scope";
 import {
   buildWeeklySummaryWorkbook,
   currentCairoCycleMonth,
   cycleMonthsOfCurrentYear,
-  type MonthTargetInput,
+  type VsTargetTabInput,
 } from "@/lib/sales/weekly/summary-workbook";
 import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -20,6 +25,15 @@ import { clientSafeErrorMessage } from "@/lib/http/api-errors";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+/**
+ * Ceiling on how many cycle months the Month vs Target tab will build in one export.
+ *
+ * Each month costs its own `phx_monthly_targets` round trip, and a month outside the current year
+ * costs a dashboard load too. Without a cap a pathological month filter fans out unbounded reads
+ * against a 60-second route. Whatever is cut is NAMED on the sheet, never silently dropped.
+ */
+const VS_TARGET_MAX_MONTHS = 12;
 
 // Weekly Sales — "Summarized Report" (5-tab management workbook).
 //
@@ -149,20 +163,63 @@ export async function GET(request: Request) {
     const trendDistributors = [...new Set((weekly.factRows ?? []).map((row) => row.distributorCode).filter(Boolean))];
 
     // ── Month vs Target ───────────────────────────────────────────────────────
+    //
+    // Every rule this tab needs now lives in src/lib/sales/weekly/month-target-scope.ts: who may see
+    // it, when it cannot be answered honestly, and which of the month's targets are actually this
+    // viewer's. It moved out of this route because the rule that matters most was MISSING while it
+    // was written here — phx_monthly_targets is a SECURITY DEFINER RPC carrying no viewer bound, so
+    // narrowing only by the URL params divided a Regional Manager's three regions of sales by the
+    // NATIONAL target — and nothing inline in a route handler can be unit-tested.
+    const distributorFilterActive = parseList("distributor").length > 0;
+    const visibility = vsTargetVisibility(access.role, distributorFilterActive);
+
     // The month under measurement is THE MONTH HE IS UPLOADING — the cycle month the selected sheet
     // landed in — not simply "this Cairo month". Uploading July's last week on 2 August must be
     // measured against July's target; against August's it would read as a near-total miss.
-    const targetCycleMonth = [...trendMonths].sort().at(-1) ?? currentCairoCycleMonth();
-    const targetPeriod = targetCycleMonth.slice(0, 7);
+    //
+    // When the selection resolves to no rows at all, fall back to the months he actually ASKED for
+    // and show them against their real targets with zero sales. NEVER substitute a different month:
+    // this used to fall back to the current Cairo month, so a filter matching nothing produced a
+    // sheet headed with a month he never selected, showing that month's target over the empty
+    // selection's sales — a fabricated miss. An exclude-mode month filter cannot be used this way
+    // (those are the months he asked to leave OUT), so that case gets a blocked sheet instead.
+    const requestedMonths = mode("monthMode") === "include" ? effectiveMonths : [];
+    const monthsInScope = [...new Set(trendMonths.length > 0 ? trendMonths : requestedMonths)].sort();
+    const targetCycleMonths = monthsInScope.slice(0, VS_TARGET_MAX_MONTHS);
+    const skippedMonths = monthsInScope.slice(VS_TARGET_MAX_MONTHS);
 
-    // A month's target needs the month's SALES, not the selected week's — so the vs-target grid is
-    // fed the whole cycle month. Both loads already in flight cover it in every real case, so this
-    // costs no extra round trip: `mtd` IS the current cycle month, and `ytd` holds every month of
-    // this year. Only a sheet from a previous YEAR needs its own read.
-    const monthAlreadyLoaded =
-      targetCycleMonth === currentCairoCycleMonth() ? "mtd" : ytdMonths.includes(targetCycleMonth) ? "ytd" : "none";
+    // A month's target needs the month's SALES, not the selected week's — so each grid is fed its
+    // whole cycle month. The loads already in flight cover it in every real case, so this costs no
+    // extra round trip: `mtd` IS the current cycle month and `ytd` holds every month of this year.
+    // Only a month from a previous YEAR needs its own read.
+    const loadTargetMonths = () =>
+      Promise.all(
+        targetCycleMonths.map(async (cycleMonth) => {
+          const alreadyLoaded =
+            cycleMonth === currentCairoCycleMonth() ? "mtd" : ytdMonths.includes(cycleMonth) ? "ytd" : "none";
+          const [targets, extra] = await Promise.all([
+            loadMonthlyTargets(cycleMonth.slice(0, 7)),
+            alreadyLoaded === "none"
+              ? loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: [cycleMonth] })
+              : Promise.resolve(null),
+          ]);
+          const rows =
+            alreadyLoaded === "mtd"
+              ? (mtd.factRows ?? [])
+              : alreadyLoaded === "ytd"
+                ? (ytd.factRows ?? []).filter((row) => row.cycleMonth === cycleMonth)
+                : (extra?.factRows ?? []);
+          return { cycleMonth, targets, rows };
+        }),
+      );
 
-    const [trend, monthTargetRows, extraMonth] = await Promise.all([
+    const wantsVsTarget = visibility.kind === "shown" && targetCycleMonths.length > 0;
+
+    // The target load is GUARDED, and that is the whole point of the catch: it feeds exactly one of
+    // six tabs. Letting it reject inside this Promise.all returned a 500 and cost the manager five
+    // tabs that have no dependency on a target at all. A source that cannot be read must say so, not
+    // take the workbook down with it.
+    const [trend, targetMonths] = await Promise.all([
       trendMonths.length > 0
         ? loadWeeklyDashboard({
             ...sharedFilters,
@@ -172,58 +229,108 @@ export async function GET(request: Request) {
             distributorFilterMode: "include",
           })
         : Promise.resolve(weekly),
-      loadMonthlyTargets(targetPeriod),
-      monthAlreadyLoaded === "none"
-        ? loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: [targetCycleMonth] })
+      wantsVsTarget
+        ? loadTargetMonths().catch((error: unknown) => {
+            console.error("[weekly summary-export] monthly targets unavailable", error);
+            return null;
+          })
         : Promise.resolve(null),
     ]);
 
-    const monthRows =
-      monthAlreadyLoaded === "mtd"
-        ? (mtd.factRows ?? [])
-        : monthAlreadyLoaded === "ytd"
-          ? (ytd.factRows ?? []).filter((row) => row.cycleMonth === targetCycleMonth)
-          : (extraMonth?.factRows ?? []);
-
-    // A filter that narrows the SALES must narrow the TARGET the same way, or the tab reports a miss
-    // the field never made. Targets are held at (line, area, product), so line, region (via the
-    // area's own region) and product all map across exactly. Distributor is the one that cannot —
-    // a target belongs to an area, not to whoever delivered it — so that one is disclosed instead.
-    const areaRegion = new Map(masterAreas.map((area) => [area.areaCode.trim().toUpperCase(), area.regionCode]));
-    const wanted = (key: string) => new Set(parseList(key).map((value) => value.trim().toUpperCase()));
-    const lineWanted = wanted("line");
-    const regionWanted = wanted("region");
-    const productWanted = wanted("product");
-    const passes = (set: Set<string>, filterMode: "include" | "exclude", value: string) =>
-      set.size === 0 || set.has(value.trim().toUpperCase()) === (filterMode === "include");
-    const scopedTargetRows = monthTargetRows.filter(
-      (row) =>
-        passes(lineWanted, mode("lineMode"), lineName(row.lineCode)) &&
-        passes(regionWanted, mode("regionMode"), areaRegion.get(row.areaCode.trim().toUpperCase()) ?? "") &&
-        passes(productWanted, mode("productMode"), row.productCode),
+    // area_code -> name AND owning region. The region is what makes the tab's subtotals reconcile,
+    // and what the access bound needs to place a target row inside a viewer's territory.
+    const areaIndex = new Map(
+      masterAreas.map((area) => [
+        area.areaCode.trim().toUpperCase(),
+        { areaName: area.areaName, regionCode: area.regionCode.trim().toUpperCase() },
+      ]),
     );
+    // Prepared once, not per month and certainly not per row — they cannot change between months.
+    const regionFilter = { values: parseList("region"), mode: mode("regionMode") };
+    const lineFilterForTargets = { values: parseList("line"), mode: mode("lineMode") };
+    const productFilterForTargets = { values: parseList("product"), mode: mode("productMode") };
 
-    // The engine speaks line CODES; every row of this workbook speaks the official line NAME. Resolve
-    // once here so the workbook builder never has to reach into the targets domain — and therefore
-    // never drags a database client into a module the tests build workbooks from directly.
-    const monthTargets: MonthTargetInput[] = scopedTargetRows.map((row) => ({
-      lineLabel: lineName(row.lineCode),
-      areaCode: row.areaCode,
-      targetUnits: row.targetUnits ?? 0,
-    }));
-    // "Has a target" means a real number was uploaded for that line. A line present only with null or
-    // zero units is not being measured in units, and saying it achieved 0% would be a fabrication.
-    const targetedLines = [
-      ...new Set(monthTargets.filter((target) => target.targetUnits > 0).map((target) => target.lineLabel).filter(Boolean)),
-    ];
+    const vsTarget = ((): VsTargetTabInput => {
+      // "hidden" and "blocked" are already final answers — a role that gets no tab, or a distributor
+      // filter that makes every percentage wrong.
+      if (visibility.kind !== "shown") return visibility;
+      if (targetCycleMonths.length === 0) {
+        return {
+          kind: "blocked",
+          reason:
+            "Month vs Target needs to know WHICH month to measure, and the current filters do not " +
+            "name one. Pick a month, or a specific upload, and export again.",
+        };
+      }
+      if (targetMonths === null) {
+        return {
+          kind: "blocked",
+          reason:
+            "Month vs Target could not be built: this month's uploaded targets could not be read. " +
+            "Every other tab in this workbook is complete and unaffected. Try the export again, and " +
+            "report it if the tab is still missing.",
+        };
+      }
 
-    const distributorFilterActive = parseList("distributor").length > 0;
-    const vsTargetFilterCaveat = distributorFilterActive
-      ? "CAUTION: a distributor filter is active. A target belongs to an AREA, not to the distributor " +
-        "that delivered it, so it cannot be narrowed the same way — the sales here are one " +
-        "distributor's while the target is the area's whole month, and every percentage on this tab " +
-        "is understated. Clear the distributor filter to read achievement. "
-      : "";
+      const unresolvedAreas = new Set<string>();
+      const unrecognisedLines = new Set<string>();
+      const driftAreas = new Set<string>();
+      const months = targetMonths.map(({ cycleMonth, targets, rows }) => {
+        // Targets are bounded by the viewer's OWN weekly scope first — the same applyWeeklyAccessScope
+        // the sales side already ran — then by his URL filters. Numerator and denominator therefore
+        // move together by construction; neither can be narrowed without the other.
+        const scoped = scopeMonthTargets({
+          targets,
+          accessScope,
+          areaIndex,
+          line: lineFilterForTargets,
+          region: regionFilter,
+          product: productFilterForTargets,
+        });
+        // ...and the sales side is re-judged on each area's OWN region, so an area row always sits
+        // under the region that carries its target and the two reconcile. A no-op on today's data.
+        const sales = scopeMonthSalesRows(rows, areaIndex, regionFilter);
+        for (const area of scoped.unresolvedAreas) unresolvedAreas.add(area);
+        for (const line of scoped.unrecognisedLines) unrecognisedLines.add(line);
+        for (const area of sales.driftAreas) driftAreas.add(area);
+        return {
+          // A cycle month is stored as YYYY-MM-01; the sheet has always named it as YYYY-MM.
+          period: cycleMonth.slice(0, 7),
+          monthRows: sales.rows,
+          targets: scoped.targets,
+          targetedLines: scoped.targetedLines,
+        };
+      });
+
+      // Nothing is dropped silently — it is counted, named, and he decides. (Rows withheld by the
+      // ACCESS bound are deliberately not reported: that is intended redaction, not a fault, and
+      // stating its size would disclose how much territory the viewer is not allowed to see.)
+      const dataNote = [
+        skippedMonths.length > 0
+          ? `Only the first ${VS_TARGET_MAX_MONTHS} months are shown; ` +
+            `${skippedMonths.map((month) => month.slice(0, 7)).join(", ")} ` +
+            "were left out of this tab. Narrow the month filter to see them."
+          : "",
+        unrecognisedLines.size > 0
+          ? `Targets on ${[...unrecognisedLines].join(", ")} are not field-line targets and are not ` +
+            "measured here."
+          : "",
+        unresolvedAreas.size > 0
+          ? `${unresolvedAreas.size} area${unresolvedAreas.size === 1 ? "" : "s"} carrying a target ` +
+            `could not be placed in a region (${[...unresolvedAreas].join(", ")}) — their targets are ` +
+            "not counted here until the area master is corrected."
+          : "",
+        driftAreas.size > 0
+          ? `${[...driftAreas].join(", ")} sit in a region other than the one their distributor branch ` +
+            "is mapped to, so their sales are excluded from this region filter — the branch-to-area " +
+            "map needs revalidating."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return { kind: "shown", months, dataNote };
+    })();
 
     const monthLabel = cycleMonths.length > 0 ? cycleMonths.map((m) => m.slice(0, 7)).join(", ") : null;
     const weekLabel = weekNumbers.length > 0 ? weekNumbers.map((w) => `W${w}`).join(", ") : null;
@@ -247,14 +354,8 @@ export async function GET(request: Request) {
       lineFilter: parseList("line"),
       masterAreas,
       trend,
-      vsTarget: {
-        period: targetPeriod,
-        monthRows,
-        targets: monthTargets,
-        targetedLines,
-        regionNames: Object.entries(REGION_NAMES).map(([regionCode, regionName]) => ({ regionCode, regionName })),
-        filterCaveat: vsTargetFilterCaveat,
-      },
+      regionNames: Object.entries(REGION_NAMES).map(([regionCode, regionName]) => ({ regionCode, regionName })),
+      vsTarget,
     });
 
     // Name the file after what is actually in it. "all-months" was left over from the old scope and
