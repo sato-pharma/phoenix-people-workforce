@@ -272,6 +272,7 @@ import { runWeeklyColumnProfileStoreTests } from "./weekly-column-profile-store.
 import { runWeeklyDecumulationTests } from "./weekly-decumulation.test.ts";
 import { runWeeklyBatchScopeTests } from "./weekly-batch-scope.test.ts";
 import { runWeeklySummaryReportTests } from "./weekly-summary-report.test.ts";
+import { runWeeklyMonthTargetScopeTests } from "./weekly-month-target-scope.test.ts";
 import { runSalesRawTemplateTests } from "./sales-raw-template.test.ts";
 import { runSalesMappingDatabaseTests } from "./sales-mapping-database.test.ts";
 import { runSalesUploadReconcileTests } from "./sales-upload-reconcile.test.ts";
@@ -1175,6 +1176,7 @@ await runTest("weekly column profile store (editable merge + validation)", runWe
 await runTest("weekly de-cumulation (cumulative → real per-week)", runWeeklyDecumulationTests);
 await runTest("weekly batch scope (cycle-month fetch narrowing)", runWeeklyBatchScopeTests);
 await runTest("weekly summarized report (manager attribution, YTD stock, low-sales)", runWeeklySummaryReportTests);
+await runTest("weekly month vs target scoping (access bound, tab gate, region symmetry)", runWeeklyMonthTargetScopeTests);
 await runTest("sales raw template", runSalesRawTemplateTests);
 await runTest("sales mapping database paging", runSalesMappingDatabaseTests);
 await runTest("sales upload reconciliation", runSalesUploadReconcileTests);
