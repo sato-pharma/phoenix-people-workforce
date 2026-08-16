@@ -783,6 +783,37 @@ html:has(.admin-shell) {
   border: 1px solid rgba(249, 115, 22, 0.22) !important;
 }
 
+/* RULE 3 — NO FORM CONTROL UNDER 16px ON A PHONE.
+   This is the "the portal is very zoomed in" complaint, and it is not a layout bug —
+   it is iOS Safari doing exactly what it is documented to do. Focus a text field whose
+   computed font-size is below 16px and Safari zooms the whole page in to make it
+   legible, then LEAVES IT ZOOMED after the field blurs. The reader has to pinch back
+   out by hand, on every screen, after every tap. Android Chrome does not do this, which
+   is why it survived so long: it is invisible on the desk and on half the field force's
+   phones.
+
+   Direct Orders was the screen that surfaced it because it is the most form-heavy one a
+   rep touches — every control in the submit form and the workspace search box is
+   `text-sm` (14px), so a rep raising an order was zoomed from the first tap to the last.
+
+   Fixed HERE rather than in each component on purpose: the trigger is the computed
+   font-size, whatever class produced it, so a rule scoped to the shell also covers the
+   ~40 other portal pages, the components other sessions own, and every control added
+   after today. Chasing it class by class would fix it in the files somebody remembered.
+
+   `max(16px, 1em)` is a floor, not an override — `em` on font-size resolves against the
+   PARENT, so a control that is deliberately larger keeps its size and only the ones
+   below the zoom threshold move. Phones only (<=767px); desktop keeps its density,
+   which the owner's "desktop shows full tables, mobile gets cards" rule depends on.
+   Checkbox and radio are excluded: they render no text and iOS never zooms for them. */
+@media (max-width: 767px) {
+  .employee-portal-shell input:not([type="checkbox"]):not([type="radio"]),
+  .employee-portal-shell select,
+  .employee-portal-shell textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* ══════════════════════════════════════════════════════
    Finance Command Center — "Since Day One" banner
    ══════════════════════════════════════════════════════ */
