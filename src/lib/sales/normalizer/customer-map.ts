@@ -717,6 +717,15 @@ export async function applyHistoricalReconciliation(input: {
         500,
       );
     }
+    // The distributor×product rollup rides the same trio — after the fact rollup it reads.
+    const distProduct = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
+    if (distProduct.error) {
+      throw new SalesWorkflowError(
+        "reconcile_rollup_refresh_failed",
+        `${updatedRows} historical row(s) were corrected, but distributor-product rollup refresh failed for batch ${batchId}: ${distProduct.error.message}. Re-run the reconcile to retry the refresh.`,
+        500,
+      );
+    }
     // The sales-vs-target attribution rollup rides the same trio — after the fact rollup it reads.
     const attribution = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attribution.error) {

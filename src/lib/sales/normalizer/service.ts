@@ -482,6 +482,9 @@ export async function persistNormalizedBatch(input: {
     // gets this inside phx_finalize_sos_batch; this fallback refreshes each rollup individually.
     const channelRollupRefresh = await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
     if (channelRollupRefresh.error) throw channelRollupRefresh.error;
+    // Distributor×product rollup — after the fact rollup it reads, same fallback site.
+    const distProductRollupRefresh = await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
+    if (distProductRollupRefresh.error) throw distProductRollupRefresh.error;
     // Sales-vs-target attribution rollup — after the channel rollup, same fallback site.
     const attributionRollupRefresh = await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     if (attributionRollupRefresh.error) throw attributionRollupRefresh.error;

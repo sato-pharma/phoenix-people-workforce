@@ -187,6 +187,8 @@ export async function backfillCustomerRows(
       ]);
       // Channel totals rollup — reads the fact + directory rollups above, so after the trio.
       await supabase.rpc("phx_refresh_sos_channel_rollup", { p_batch_id: batchId });
+      // Distributor×product rollup — after the fact rollup it reads.
+      await supabase.rpc("phx_refresh_sos_distributor_product_rollup", { p_batch_id: batchId });
       // Sales-vs-target attribution rollup — same site, after the fact rollup it reads.
       await supabase.rpc("phx_refresh_monthly_attribution", { p_batch_id: batchId });
     } catch {

@@ -737,6 +737,7 @@ import { runClosingChannelTabsTests } from "./closing-channel-tabs.test.ts";
 import { runMonthlyClosingChannelsTests } from "./sales-monthly-closing-channels.test.ts";
 import { runClosingChannelNothingDroppedTests } from "./closing-channel-nothing-dropped.test.ts";
 import { runClosingChannelRollupEquivalenceTests } from "./closing-channel-rollup-equivalence.test.ts";
+import { runClosingDistributorProductRollupEquivalenceTests } from "./closing-distributor-product-rollup-equivalence.test.ts";
 import { runClosingChannelBreakdownRollupEquivalenceTests } from "./closing-channel-breakdown-rollup-equivalence.test.ts";
 import { runMonthlyAttributionRollupEquivalenceTests } from "./monthly-attribution-rollup-equivalence.test.ts";
 import { runClosingCorrectionsTests } from "./closing-corrections.test.ts";
@@ -1773,6 +1774,13 @@ await runTest(
   + "arithmetic; presence on row count; classifier order; exclude-set guard; per-batch refresh wired "
   + "everywhere after the trio)",
   runClosingChannelRollupEquivalenceTests,
+);
+
+await runTest(
+  "closing distributor-product rollup equivalence (reads the precomputed rollup not a live fact scan; "
+  + "factory_price stays LIVE so a price edit reprices history; units-only baked; same exclusions; "
+  + "per-batch refresh wired everywhere after the fact rollup)",
+  runClosingDistributorProductRollupEquivalenceTests,
 );
 
 await runTest(
