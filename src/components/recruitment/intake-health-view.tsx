@@ -103,26 +103,52 @@ export function IntakeHealthView({
           {analytics.byChannel.length === 0 ? (
             <p className="text-sm text-slate-500">No inbound messages in this window.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="pb-2 font-medium">Channel</th>
-                  <th className="pb-2 text-right font-medium">Total</th>
-                  <th className="pb-2 text-right font-medium">Candidates</th>
-                  <th className="pb-2 text-right font-medium">Errors</th>
-                </tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Phone: one block per channel, each number carrying its own label. Four
+                  columns fit a 375px screen only by dropping the headers off the top as
+                  you scroll the numbers — and an unlabelled column of counts is the one
+                  thing this panel must never show. Mirrors the "By outcome" list beside
+                  it, which is already the right shape for a phone. */}
+              <div className="divide-y divide-slate-100 md:hidden">
                 {analytics.byChannel.map((c) => (
-                  <tr key={c.channel} className="border-t border-slate-100">
-                    <td className="py-2 text-slate-700">{channelLabel(c.channel)}</td>
-                    <td className="py-2 text-right tabular-nums text-slate-700">{c.total}</td>
-                    <td className="py-2 text-right tabular-nums text-slate-700">{c.candidates}</td>
-                    <td className="py-2 text-right tabular-nums text-slate-700">{c.errors}</td>
-                  </tr>
+                  <div className="py-2.5 first:pt-0" key={c.channel}>
+                    <p className="text-sm font-semibold text-slate-800">{channelLabel(c.channel)}</p>
+                    <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                      {[
+                        ["Total", c.total, "text-slate-700"],
+                        ["Candidates", c.candidates, "text-slate-700"],
+                        ["Errors", c.errors, c.errors > 0 ? "text-rose-600" : "text-slate-700"],
+                      ].map(([label, value, tone]) => (
+                        <div className="flex items-baseline gap-1.5" key={String(label)}>
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</dt>
+                          <dd className={`font-bold tabular-nums ${tone}`}>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+              <table className="hidden w-full text-sm md:table" data-portal-desktop-table>
+                <thead>
+                  <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="pb-2 font-medium">Channel</th>
+                    <th className="pb-2 text-right font-medium">Total</th>
+                    <th className="pb-2 text-right font-medium">Candidates</th>
+                    <th className="pb-2 text-right font-medium">Errors</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analytics.byChannel.map((c) => (
+                    <tr key={c.channel} className="border-t border-slate-100">
+                      <td className="py-2 text-slate-700">{channelLabel(c.channel)}</td>
+                      <td className="py-2 text-right tabular-nums text-slate-700">{c.total}</td>
+                      <td className="py-2 text-right tabular-nums text-slate-700">{c.candidates}</td>
+                      <td className="py-2 text-right tabular-nums text-slate-700">{c.errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
 

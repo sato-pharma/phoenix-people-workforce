@@ -152,35 +152,62 @@ export function BulkCvExtractionPanel({ onCreated }: { onCreated: (candidateId: 
         </Button>
       </div>
 
+      {/* Desktop keeps the table; a phone gets cards. The wrapper here used to be
+          `overflow-hidden`, not `overflow-x-auto`, so a long CV filename on a phone was not
+          scrolled off — it was CLIPPED, and the Review button with it. A queue row whose
+          action is invisible reads as "this one cannot be reviewed". */}
       {queue.length > 0 ? (
-        <div className="overflow-hidden rounded border border-slate-200">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 font-semibold">File</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queue.map((item) => (
-                <tr className="border-t border-slate-100" key={item.id}>
-                  <td className="px-3 py-2">{item.fileName}</td>
-                  <td className={`px-3 py-2 ${item.status === "error" ? "text-rose-600" : "text-slate-600"}`}>
+        <>
+          <div className="divide-y divide-slate-100 rounded border border-slate-200 md:hidden">
+            {queue.map((item) => (
+              <div className="px-3 py-2.5" key={item.id}>
+                {/* break-all, not truncate: a CV filename is how the reader tells two
+                    candidates apart, and the owner's rule forbids an ellipsis. */}
+                <p className="break-all text-sm font-bold text-slate-900" dir="auto">
+                  {item.fileName}
+                </p>
+                <div className="mt-1.5 flex items-center justify-between gap-3">
+                  <span className={`text-xs ${item.status === "error" ? "text-rose-600" : "text-slate-600"}`}>
                     {statusLabel(item)}
-                  </td>
-                  <td className="px-3 py-2">
-                    {item.status === "done" && !item.saved ? (
-                      <Button onClick={() => setReviewingId(item.id)} size="sm" variant="secondary">
-                        Review
-                      </Button>
-                    ) : null}
-                  </td>
+                  </span>
+                  {item.status === "done" && !item.saved ? (
+                    <Button onClick={() => setReviewingId(item.id)} size="sm" variant="secondary">
+                      Review
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-hidden rounded border border-slate-200 md:block">
+            <table className="w-full text-sm" data-portal-desktop-table>
+              <thead>
+                <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 font-semibold">File</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {queue.map((item) => (
+                  <tr className="border-t border-slate-100" key={item.id}>
+                    <td className="px-3 py-2">{item.fileName}</td>
+                    <td className={`px-3 py-2 ${item.status === "error" ? "text-rose-600" : "text-slate-600"}`}>
+                      {statusLabel(item)}
+                    </td>
+                    <td className="px-3 py-2">
+                      {item.status === "done" && !item.saved ? (
+                        <Button onClick={() => setReviewingId(item.id)} size="sm" variant="secondary">
+                          Review
+                        </Button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
 
       {reviewingItem?.fields ? (

@@ -129,6 +129,73 @@ function groupSource(rows: BreakdownLine[]): BrickGroup[] {
   return result;
 }
 
+/**
+ * The drill-down body — brick → distributor → customer for one area × product.
+ *
+ * ONE implementation, rendered both by the desktop grid's `<td colSpan={9}>` and by the phone
+ * card below it. Two copies would let the same expander show two different numbers, which is the
+ * failure this module exists to prevent.
+ *
+ * The customer lines were a nested `<table>` until 2026-08-16. Inside a drill-down on a phone
+ * there is nothing to scroll it sideways, so the customer NAME — the whole point of the panel —
+ * was the column that ran off the screen. Rows are flex now, matching the brick and distributor
+ * headers directly above them; the fixed number widths keep the desktop columns aligned.
+ */
+function SourceBreakdown({ detail, selectedPeriod }: { detail: BreakdownState; selectedPeriod: string }) {
+  if (detail.loading) return <div className="text-xs text-muted-foreground">Loading source…</div>;
+  if (detail.error) return <div className="text-xs text-red-600 dark:text-red-400">{detail.error}</div>;
+  if (detail.rows.length === 0) return <div className="text-xs text-muted-foreground">No source rows.</div>;
+  return (
+    <div className="space-y-3">
+      {detail.trend.length > 1 ? (
+        <div className="rounded border p-2">
+          <div className="mb-1 text-xs font-medium text-muted-foreground">Month-over-month (this area &amp; product)</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
+            {detail.trend.map((point) => (
+              <span key={point.period} className={point.period === selectedPeriod ? "font-semibold" : "text-muted-foreground"}>
+                {point.period}: {fmtMoney(point.value)}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      <div>
+        <div className="mb-1 text-xs font-medium text-muted-foreground">
+          Source of {fmtMoney(detail.totalValue)} EGP · {money.format(Math.round(detail.totalUnits))} units — brick → distributor → customer
+        </div>
+        <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
+          {groupSource(detail.rows).map((brick) => (
+            <div key={brick.brickName} className="overflow-hidden rounded border">
+              <div className="flex items-baseline justify-between gap-x-2 bg-muted/60 px-2 py-1 text-xs font-semibold">
+                <span className="min-w-0">{brick.brickName}</span>
+                <span className="shrink-0 tabular-nums">{money.format(Math.round(brick.units))} units · {fmtMoney(brick.value)} EGP</span>
+              </div>
+              {brick.distributors.map((dist, di) => (
+                <div key={`${dist.distributorName}-${di}`} className="border-t">
+                  <div className="flex items-baseline justify-between gap-x-2 bg-muted/25 px-2 py-1 text-xs font-medium">
+                    <span className="min-w-0 pl-2">{dist.distributorName}</span>
+                    <span className="shrink-0 tabular-nums">{money.format(Math.round(dist.units))} · {fmtMoney(dist.value)}</span>
+                  </div>
+                  {dist.customers.map((cust, ci) => (
+                    <div
+                      key={`${cust.customerName}-${ci}`}
+                      className="flex items-baseline gap-x-3 border-t border-border/40 py-0.5 pl-6 pr-2 text-xs"
+                    >
+                      <span className="min-w-0 flex-1 text-muted-foreground">{cust.customerName}</span>
+                      <span className="w-16 shrink-0 text-right tabular-nums">{money.format(Math.round(cust.units))}</span>
+                      <span className="w-24 shrink-0 text-right tabular-nums">{fmtMoney(cust.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TargetsWorkspace(props: TargetsWorkspaceProps) {
   const router = useRouter();
   const canEdit = props.canEdit !== false;
@@ -269,6 +336,36 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
       setBusy(null);
     }
   }
+
+  // Every per-row number is derived HERE, once, and read by both the desktop grid and the phone
+  // cards. The two surfaces render the same target or they are a bug — the same reason the
+  // drill-down is a single <SourceBreakdown />.
+  const viewRow = (row: TargetGridRow) => {
+    const key = keyOf(row);
+    const editValue = edits[key] ?? (row.targetValue == null ? "" : String(row.targetValue));
+    const unitValue = unitEdits[key] ?? (row.targetUnits == null ? "" : String(row.targetUnits));
+    const liveTarget = editValue === "" ? null : Number(editValue);
+    return {
+      canDrill: row.actualValue !== 0,
+      detail: expanded[key],
+      editValue,
+      key,
+      liveAch: liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null,
+      unitValue,
+    };
+  };
+
+  /** Typing units auto-fills Target value = units × unit price. The value stays editable after. */
+  const onUnitsChange = (row: TargetGridRow, raw: string) => {
+    const key = keyOf(row);
+    setUnitEdits((current) => ({ ...current, [key]: raw }));
+    const units = Number(raw);
+    if (row.unitPrice != null && raw !== "" && Number.isFinite(units)) {
+      setEdits((current) => ({ ...current, [key]: String(Math.round(units * row.unitPrice!)) }));
+    }
+  };
+
+  const onValueChange = (key: string, raw: string) => setEdits((current) => ({ ...current, [key]: raw }));
 
   return (
     <div className="space-y-6 p-6">
@@ -425,8 +522,105 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               : "No targets or sales for your territory in this line and month."}
           </div>
         ) : (
-          <div className="max-h-[60vh] overflow-auto">
-            <table className="w-full border-collapse text-sm">
+          <>
+            {/* Phone: one card per area × product. A ten-column grid — four of them names, two of
+                them editable inputs — cannot be read on a 375px screen, and this workspace is
+                reachable from the portal by every DM, RM and NSM (read-only) as well as by the
+                admin surface. Desktop keeps the full table below, per the owner's rule. */}
+            <div className="max-h-[60vh] divide-y overflow-auto md:hidden">
+              {props.rows.map((row) => {
+                const view = viewRow(row);
+                return (
+                  <div className="p-3" key={view.key}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold">
+                          {row.areaName || "—"}
+                          {row.areaState === "vacant_will_hire" ? <Badge className="ml-1 align-middle">vacant</Badge> : null}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {row.productName || "—"} · {row.regionName ?? "—"}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Rep: {row.repName ?? "vacant"}
+                        </div>
+                      </div>
+                      <div className={`shrink-0 text-right text-sm font-semibold tabular-nums ${achievementTone(view.liveAch)}`}>
+                        {fmtPct(view.liveAch)}
+                        <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Ach%</div>
+                      </div>
+                    </div>
+
+                    <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                      <div className="flex items-baseline gap-1.5">
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Actual</dt>
+                        <dd className="font-semibold tabular-nums">{fmtMoney(row.actualValue)}</dd>
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Unit price</dt>
+                        <dd className="tabular-nums text-muted-foreground">{fmtPrice(row.unitPrice)}</dd>
+                      </div>
+                    </dl>
+
+                    {canEdit ? (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <label className="block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target units</span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            className="mt-0.5 h-9 w-full text-right tabular-nums"
+                            placeholder="units"
+                            value={view.unitValue}
+                            onChange={(event) => onUnitsChange(row, event.target.value)}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target value</span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            className="mt-0.5 h-9 w-full text-right tabular-nums"
+                            placeholder="value"
+                            value={view.editValue}
+                            onChange={(event) => onValueChange(view.key, event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <dl className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                        <div className="flex items-baseline gap-1.5">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target units</dt>
+                          <dd className="tabular-nums">{row.targetUnits == null ? "—" : row.targetUnits.toLocaleString("en-EG")}</dd>
+                        </div>
+                        <div className="flex items-baseline gap-1.5">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Target value</dt>
+                          <dd className="font-semibold tabular-nums">{row.targetValue == null ? "—" : fmtMoney(row.targetValue)}</dd>
+                        </div>
+                      </dl>
+                    )}
+
+                    {view.canDrill ? (
+                      <button
+                        type="button"
+                        className="mt-2 rounded border px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent"
+                        onClick={() => toggleBreakdown(row)}
+                      >
+                        {view.detail ? "▾ Hide source" : "▸ Show source"}
+                      </button>
+                    ) : null}
+                    {view.detail ? (
+                      <div className="mt-2 rounded bg-muted/30 p-2">
+                        <SourceBreakdown detail={view.detail} selectedPeriod={props.selectedPeriod} />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+          <div className="hidden max-h-[60vh] overflow-auto md:block">
+            <table className="w-full border-collapse text-sm" data-portal-desktop-table>
               <thead className="sticky top-0 bg-background">
                 <tr className="border-b text-left text-xs uppercase text-muted-foreground">
                   <th className="w-6 p-2"></th>
@@ -443,13 +637,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </thead>
               <tbody>
                 {props.rows.map((row) => {
-                  const key = keyOf(row);
-                  const editValue = edits[key] ?? (row.targetValue == null ? "" : String(row.targetValue));
-                  const unitValue = unitEdits[key] ?? (row.targetUnits == null ? "" : String(row.targetUnits));
-                  const liveTarget = editValue === "" ? null : Number(editValue);
-                  const liveAch = liveTarget && liveTarget !== 0 ? row.actualValue / liveTarget : null;
-                  const canDrill = row.actualValue !== 0;
-                  const detail = expanded[key];
+                  const { canDrill, detail, editValue, key, liveAch, unitValue } = viewRow(row);
                   return (
                     <Fragment key={key}>
                       <tr className="border-b hover:bg-muted/40">
@@ -481,15 +669,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                               className="h-8 w-24 text-right tabular-nums"
                               placeholder="units"
                               value={unitValue}
-                              onChange={(event) => {
-                                const raw = event.target.value;
-                                setUnitEdits((current) => ({ ...current, [key]: raw }));
-                                // Auto-fill Target value = units × unit price (still editable below).
-                                const units = Number(raw);
-                                if (row.unitPrice != null && raw !== "" && Number.isFinite(units)) {
-                                  setEdits((current) => ({ ...current, [key]: String(Math.round(units * row.unitPrice!)) }));
-                                }
-                              }}
+                              onChange={(event) => onUnitsChange(row, event.target.value)}
                             />
                           ) : (
                             <span className="tabular-nums">{row.targetUnits == null ? "—" : row.targetUnits.toLocaleString("en-EG")}</span>
@@ -504,7 +684,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                               className="h-8 w-28 text-right tabular-nums"
                               placeholder="value"
                               value={editValue}
-                              onChange={(event) => setEdits((current) => ({ ...current, [key]: event.target.value }))}
+                              onChange={(event) => onValueChange(key, event.target.value)}
                             />
                           ) : (
                             <span className="tabular-nums">{row.targetValue == null ? "—" : fmtMoney(row.targetValue)}</span>
@@ -516,62 +696,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                         <tr className="border-b bg-muted/30">
                           <td className="p-2" />
                           <td className="p-2" colSpan={9}>
-                            {detail.loading ? (
-                              <div className="text-xs text-muted-foreground">Loading source…</div>
-                            ) : detail.error ? (
-                              <div className="text-xs text-red-600 dark:text-red-400">{detail.error}</div>
-                            ) : detail.rows.length === 0 ? (
-                              <div className="text-xs text-muted-foreground">No source rows.</div>
-                            ) : (
-                              <div className="space-y-3">
-                                {detail.trend.length > 1 ? (
-                                  <div className="rounded border p-2">
-                                    <div className="mb-1 text-xs font-medium text-muted-foreground">Month-over-month (this area &amp; product)</div>
-                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
-                                      {detail.trend.map((point) => (
-                                        <span key={point.period} className={point.period === props.selectedPeriod ? "font-semibold" : "text-muted-foreground"}>
-                                          {point.period}: {fmtMoney(point.value)}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ) : null}
-                                <div>
-                                  <div className="mb-1 text-xs font-medium text-muted-foreground">
-                                    Source of {fmtMoney(detail.totalValue)} EGP · {money.format(Math.round(detail.totalUnits))} units — brick → distributor → customer
-                                  </div>
-                                  <div className="max-h-96 space-y-2 overflow-y-auto pr-1">
-                                    {groupSource(detail.rows).map((brick) => (
-                                      <div key={brick.brickName} className="overflow-hidden rounded border">
-                                        <div className="flex items-center justify-between bg-muted/60 px-2 py-1 text-xs font-semibold">
-                                          <span>{brick.brickName}</span>
-                                          <span className="tabular-nums">{money.format(Math.round(brick.units))} units · {fmtMoney(brick.value)} EGP</span>
-                                        </div>
-                                        {brick.distributors.map((dist, di) => (
-                                          <div key={`${dist.distributorName}-${di}`} className="border-t">
-                                            <div className="flex items-center justify-between bg-muted/25 px-2 py-1 text-xs font-medium">
-                                              <span className="pl-2">{dist.distributorName}</span>
-                                              <span className="tabular-nums">{money.format(Math.round(dist.units))} · {fmtMoney(dist.value)}</span>
-                                            </div>
-                                            <table className="w-full text-xs">
-                                              <tbody>
-                                                {dist.customers.map((cust, ci) => (
-                                                  <tr key={`${cust.customerName}-${ci}`} className="border-t border-border/40">
-                                                    <td className="py-0.5 pl-6 pr-3 text-muted-foreground">{cust.customerName}</td>
-                                                    <td className="py-0.5 pr-3 text-right tabular-nums">{money.format(Math.round(cust.units))}</td>
-                                                    <td className="py-0.5 pr-2 text-right tabular-nums">{fmtMoney(cust.value)}</td>
-                                                  </tr>
-                                                ))}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              </div>
-                            )}
+                            <SourceBreakdown detail={detail} selectedPeriod={props.selectedPeriod} />
                           </td>
                         </tr>
                       ) : null}
@@ -581,6 +706,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
@@ -602,8 +728,37 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
           props.sourceFiles.length === 0 ? (
             <div className="p-4 text-sm text-muted-foreground">No validated distributor files for {props.selectedPeriod}.</div>
           ) : (
-            <div className="max-h-80 overflow-auto">
-              <table className="w-full text-xs">
+            <>
+            {/* Phone: cards. Seven columns, three of them free text (distributor, file name,
+                uploader), is the widest table in this module — and a file name is exactly the
+                value nobody may see truncated. Authoring-only, but it is still opened on a phone. */}
+            <div className="max-h-80 divide-y overflow-auto md:hidden">
+              {props.sourceFiles.map((sourceFile, index) => (
+                <div className="p-3" key={`${sourceFile.fileName}-${index}`}>
+                  <p className="text-sm font-semibold">{sourceFile.distributorName}</p>
+                  <p className="break-all text-xs text-muted-foreground" dir="auto">{sourceFile.fileName}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {sourceFile.uploadedBy || "—"} · {sourceFile.uploadedAt ? sourceFile.uploadedAt.slice(0, 10) : "—"}
+                  </p>
+                  <dl className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+                    <div className="flex items-baseline gap-1.5">
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Rows</dt>
+                      <dd className="tabular-nums">{money.format(Math.round(sourceFile.importableRows))}</dd>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Units</dt>
+                      <dd className="tabular-nums">{money.format(Math.round(sourceFile.totalQty))}</dd>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <dt className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Value</dt>
+                      <dd className="font-semibold tabular-nums">{fmtMoney(sourceFile.totalValue)}</dd>
+                    </div>
+                  </dl>
+                </div>
+              ))}
+            </div>
+            <div className="hidden max-h-80 overflow-auto md:block">
+              <table className="w-full text-xs" data-portal-desktop-table>
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b text-left uppercase text-muted-foreground">
                     <th className="p-2">Distributor</th>
@@ -630,6 +785,7 @@ export function TargetsWorkspace(props: TargetsWorkspaceProps) {
                 </tbody>
               </table>
             </div>
+            </>
           )
         ) : null}
       </Card>
