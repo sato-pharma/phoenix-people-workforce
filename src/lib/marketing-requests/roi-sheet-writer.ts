@@ -436,6 +436,13 @@ export async function importRoiSheetRequests(opts: {
           supabase,
         });
 
+        // Store the code the sales data carries, exactly as the Customer Validation UI now does.
+        // POS exports its codes zero-padded ('0001503246') while sheets carry the short form, and
+        // ROI attribution joins this column with exact string equality — so keeping the sheet's
+        // spelling here is what makes a correctly-identified pharmacy report zero ROI. The sheet's
+        // own text stays in distributor_pharmacy_code.
+        const storedPharmacyCode = reference.canonicalCode ?? identity.normalizedCode;
+
         const { data: codeRow, error: codeError } = await supabase
           .from("marketing_pharmacy_distributor_codes")
           .upsert(
@@ -443,7 +450,7 @@ export async function importRoiSheetRequests(opts: {
               pharmacy_id: pharmacyId,
               distributor_id: distributorId,
               distributor_pharmacy_code: identity.pharmacyCode,
-              normalized_pharmacy_code: identity.normalizedCode,
+              normalized_pharmacy_code: storedPharmacyCode,
               reference_id: reference.referenceId,
               reference_match_count: reference.matchCount,
               reference_status: reference.status,
