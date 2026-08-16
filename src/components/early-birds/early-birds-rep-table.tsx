@@ -114,8 +114,11 @@ export function EarlyBirdsRepTable({
               );
             })}
           </div>
-          <PortalDesktopTable minWidth="1100px">
-            <table className="w-full border-collapse text-xs">
+          {/* PortalDesktopTable IS the <table>. A second one nested inside it produced
+              <table><table> in the server HTML, which the browser's parser foster-parents out
+              of the first table while React's client render keeps it nested — a hydration
+              mismatch on the one page a rep opens to see the ranking. Children are thead/tbody. */}
+          <PortalDesktopTable className="text-xs" minWidth="1100px">
               <thead>
                 <tr className="bg-slate-900">
                   <th className={TH}>#</th>
@@ -174,7 +177,6 @@ export function EarlyBirdsRepTable({
                   );
                 })}
               </tbody>
-            </table>
           </PortalDesktopTable>
         </>
       )}

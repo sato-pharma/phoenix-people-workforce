@@ -595,6 +595,7 @@ import { runFinanceManagerArchivedRoiHiddenTests } from "./finance-manager-archi
 import { runDirectOrderEvidenceCheckTests } from "./direct-orders-evidence-check.test.ts";
 import { runDirectOrdersApprovalWindowMobileTests } from "./direct-orders-approval-window-mobile.test.ts";
 import { runEmployeePortalMobileInputZoomTests } from "./employee-portal-mobile-input-zoom.test.ts";
+import { runEmployeePortalMobileTableCardTests } from "./employee-portal-mobile-table-cards.test.ts";
 import { runDirectOrdersInvoiceScanTests } from "./direct-orders-invoice-scan.test.ts";
 import { runDirectOrdersArabicSearchTests } from "./direct-orders-arabic-search.test.ts";
 import { runCrmBrickCentroidsCacheTests } from "./crm-brick-centroids-cache.test.ts";
@@ -1490,6 +1491,7 @@ await runTest("direct orders storefront evidence (unknown is never a pass, a fai
 await runTest("direct orders cancel held (requester-or-Super-Admin, held-only, real status to the gate, cancelled is not rejected, every status has a chip and a colour)", runDirectOrderCancelHeldTests);
 await runTest("direct orders approval window on mobile (every table desktop-only, every table has cards, no min-width reachable at 375px, totals and the not-final flag survive)", runDirectOrdersApprovalWindowMobileTests);
 await runTest("employee portal mobile input zoom (16px floor on every portal input/select/textarea under 768px, max() not a flat size, the shell class still exists, pinch-zoom never disabled)", runEmployeePortalMobileInputZoomTests);
+await runTest("employee portal mobile table cards (every converted table is desktop-gated with cards beside it, one shared SourceBreakdown, no <table> nested inside PortalDesktopTable)", runEmployeePortalMobileTableCardTests);
 await runTest("direct orders invoice scan (a dim page gains real contrast, a failed prepare returns the original, EXIF rotation is applied, no binarisation, the reader is sent the PREPARED image)", runDirectOrdersInvoiceScanTests);
 await runTest("direct orders Arabic search (every fold survives, the strip class never swallows a letter, an unnamed customer is ranked down not hidden, both birth paths are searched)", runDirectOrdersArabicSearchTests);
 await runTest("CRM brick-centroids cache (shared Data Cache not a per-segment module var, 300s TTL unchanged, sos-reference tag, DB read byte-identical, catch OUTSIDE the cache so a transient error is never cached as [])", runCrmBrickCentroidsCacheTests);
