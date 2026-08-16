@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { isBlankCandidateValue, selectAutoApplyFields } from "../src/lib/recruitment/cv-auto-apply.ts";
+import {
+  isBlankCandidateValue,
+  isSingleDiallablePhone,
+  selectAutoApplyFields,
+} from "../src/lib/recruitment/cv-auto-apply.ts";
 
 // Every value the universal schema can propose: scalars, a number (graduationYear,
 // yearsExperience) and a repeating block (workHistory and its four siblings).
@@ -159,6 +163,65 @@ export function runRecruitmentCvAutoApplyTests() {
     }),
     {},
     "a phone already on the record is never overwritten — this only ever fills a gap",
+  );
+
+  // --- Gate 5: a phone column takes ONE diallable number -----------------------------------------
+  // The confidence gate cannot catch this class. A CV whose contact line reads
+  // "01060464699 & 01112872565" yields a HIGH-confidence extraction — the AI is not wrong, it read
+  // the page correctly. What comes back is still a 22-digit string that nobody can ring, and
+  // phone_norm's partial UNIQUE index would then carry it, so a later genuine application from
+  // either real number fails to match. Every rejected string below is verbatim from production
+  // 2026-08-16, where 8 of 42 high-confidence phones were two or three numbers run together.
+  assert.equal(isSingleDiallablePhone("01097000634"), true, "an 11-digit Egyptian mobile");
+  assert.equal(isSingleDiallablePhone("+20 100 163 9245"), true, "12 digits with a country code");
+  assert.equal(isSingleDiallablePhone("0201095986162"), true, "13 digits");
+  assert.equal(isSingleDiallablePhone("00201023232472"), true, "14 digits is legitimate in 0020 form");
+  assert.equal(isSingleDiallablePhone("(002) 01149858428"), true, "punctuation and spaces are not digits");
+  assert.equal(isSingleDiallablePhone("01060464699 & 01112872565"), false, "two numbers run together");
+  assert.equal(isSingleDiallablePhone("01221983536 - 01553620677"), false, "a dash does not make it one number");
+  assert.equal(isSingleDiallablePhone("+201115551864 / +201211717808"), false, "two international numbers");
+  assert.equal(isSingleDiallablePhone("+91-7002466900/9085277771/7002031980"), false, "three numbers, 32 digits");
+  assert.equal(isSingleDiallablePhone("12345678901234"), false, "14 digits that are NOT the 0020 form");
+  assert.equal(isSingleDiallablePhone("0123456"), false, "too short to be a phone number");
+  assert.equal(isSingleDiallablePhone(""), false);
+  assert.equal(isSingleDiallablePhone(null), false);
+  assert.equal(isSingleDiallablePhone(1016585527), false, "a number is not a phone string");
+
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { phone: high("01060464699 & 01112872565") },
+      positionKey: "medical_rep",
+    }),
+    {},
+    "a high-confidence two-number string is REFUSED even on a candidate this intake created",
+  );
+  // The rest of the CV must still land. A junk phone is one bad field, not a reason to throw away
+  // the university and the governorate the AI read correctly off the same page.
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: {
+        governorate: high("Cairo"),
+        phone: high("+91-7002466900/9085277771/7002031980"),
+        university: high("Cairo University"),
+      },
+      positionKey: "medical_rep",
+    }),
+    { governorate: "Cairo", university: "Cairo University" },
+    "refusing the phone must not cost the other high-confidence fields on the same CV",
+  );
+  assert.deepEqual(
+    selectAutoApplyFields({
+      candidate: freshCandidate({ phone: null }),
+      candidateWasCreatedByThisIntake: true,
+      extractedFields: { phone: high("00201023232472") },
+      positionKey: "medical_rep",
+    }),
+    { phone: "00201023232472" },
+    "a single number in 0020 form is still written — the gate rejects junk, not foreign formats",
   );
 
   // --- Gate 4: fill gaps, never overwrite --------------------------------------------------------
