@@ -225,6 +225,20 @@ you.** (This replaced "validate once per task" on 2026-08-10: that wording still
 deciding where a task ended.) He iterates in long sessions and changes one file many times;
 re-validating work that is about to change again proves nothing and costs him minutes.
 
+**Ask first, in plain words: "Have you finished editing?"** Before starting ANY long run —
+`check:harden`, `ci`, `build`, `test`, `lint`, `typecheck` — stop and ask that question, then wait
+for the answer. **Yes → run it. No → do not run it**, and do not substitute a "quick subset"
+instead. Owner's rule, 2026-08-15. You do not get to infer the answer from how finished the work
+looks; only he knows whether he is about to change another file. One exception: if he has just named
+the command himself ("run check:harden"), that IS the answer — run it without asking again.
+
+This one is mechanically backed, not behavioral. `.claude/hooks/ask-before-validation.mjs` is a
+`PreToolUse` hook on `Bash|PowerShell` that turns any of those commands into a permission prompt
+carrying the question. It was added together with the **removal** of `Bash(pnpm run check:harden)`,
+`run test`, `run lint`, `run typecheck` and `check:edit` from `permissions.allow` — those entries
+were why the most expensive command in the repo ran with no prompt at all. The hook fails open on
+any error, so it is a backstop, not a substitute for asking.
+
 Verifying a UI change in the browser is NOT validation and needs no permission — reload and look.
 That is seconds, and it is how defects actually get found.
 

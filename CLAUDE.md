@@ -26,9 +26,11 @@ All commands run from the repo root.
 
 **Validate ONLY when the owner says so. Never on your own judgement.** No lint, no typecheck, no
 tests, no build until he says the work is done — not between edits, not "once per task", not because
-a change feels finished. When he says done: `check:harden` once, then push. Verifying a UI change in
-the browser is not validation and needs no permission — reload and look. Full rule, the reasoning,
-and the per-change validation matrix: [AGENTS.md §7](AGENTS.md).
+a change feels finished. **Before starting any long run, ask him in plain words: "Have you finished
+editing?" — yes → run it, no → don't.** When he says done: `check:harden` once, then push. Verifying
+a UI change in the browser is not validation and needs no permission — reload and look. The ask is
+enforced by `.claude/hooks/ask-before-validation.mjs`, which turns every long command into a prompt.
+Full rule, the reasoning, and the per-change validation matrix: [AGENTS.md §7](AGENTS.md).
 
 ## The two rules that apply to every change
 

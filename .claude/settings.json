@@ -10,6 +10,18 @@
             "shell": "bash"
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "DIR=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; node \"$DIR/.claude/hooks/ask-before-validation.mjs\" 2>/dev/null || true",
+            "shell": "bash",
+            "timeout": 10,
+            "statusMessage": "Confirming the work is finished"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -50,21 +62,8 @@
   },
   "permissions": {
     "allow": [
-      "Bash(pnpm run typecheck)",
-      "Bash(pnpm run typecheck *)",
-      "Bash(pnpm run lint)",
-      "Bash(pnpm run lint *)",
-      "Bash(pnpm run test)",
-      "Bash(pnpm run test *)",
-      "Bash(pnpm run check:edit)",
-      "Bash(pnpm run check:edit *)",
-      "Bash(pnpm run check:harden)",
       "Bash(pnpm install --frozen-lockfile)",
       "Bash(pnpm run worktree:sync-env)",
-      "Bash(npm run typecheck)",
-      "Bash(npm run lint)",
-      "Bash(npm run test)",
-      "Bash(npm run check:edit)",
       "Bash(git fetch *)",
       "Bash(git status*)",
       "Bash(git log *)",
