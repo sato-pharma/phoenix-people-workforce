@@ -195,6 +195,7 @@ export function PortalRecordCard({
   children,
   className,
   meta,
+  stackStatus = false,
   status,
   title,
 }: {
@@ -203,6 +204,20 @@ export function PortalRecordCard({
   children?: ReactNode;
   className?: string;
   meta?: ReactNode;
+  /**
+   * Put the status pill on its own line UNDER the title instead of beside it.
+   *
+   * Side by side, the pill is `shrink-0` and the title is `whitespace-nowrap`, so a title wider
+   * than the space left over does not wrap and does not ellipsise — it paints straight through
+   * the pill and is then sliced mid-letter by the card's `overflow-hidden`. On a 390px phone the
+   * recruitment pool showed "SONDOS MOHAMED EL-HOSSEII", with 28px of the surname simply gone.
+   * Stacking gives the title the full card width, which is the only layout here that satisfies
+   * the standing rule of no truncation and no wrapping.
+   *
+   * Opt-in, because every other caller of this card is laid out and shipped against the side-by-side
+   * version and none of them asked for a change.
+   */
+  stackStatus?: boolean;
   status?: ReactNode;
   title: ReactNode;
 }) {
@@ -217,12 +232,12 @@ export function PortalRecordCard({
 
   return (
     <article className={cn("border-l-[3px] bg-white px-4 py-3.5", accentClass, className)}>
-      <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className={cn("flex min-w-0 gap-3", stackStatus ? "flex-col" : "items-start justify-between")}>
         <div className="min-w-0">
           <h3 className="whitespace-nowrap text-sm font-black text-slate-950">{title}</h3>
           {meta ? <div className="mt-1 text-xs font-semibold text-slate-500">{meta}</div> : null}
         </div>
-        {status ? <div className="shrink-0">{status}</div> : null}
+        {status ? <div className={stackStatus ? "-mt-1 flex" : "shrink-0"}>{status}</div> : null}
       </div>
       {children ? <div className="mt-3">{children}</div> : null}
       {actions ? <div className="mt-3 flex flex-wrap gap-2">{actions}</div> : null}
@@ -233,12 +248,26 @@ export function PortalRecordCard({
 export function PortalRecordFields({
   fields,
 }: {
-  fields: Array<{ label: ReactNode; value: ReactNode }>;
+  /**
+   * `wide` gives one field the whole row instead of half of it.
+   *
+   * A half-width cell on a 390px phone is about 142px. An email address is not — the longest in
+   * the recruitment pool is 36 characters, roughly 223px — so in a half cell `break-words` splits
+   * it mid-address ("…@gm" above "ail.com"), which is unreadable and unselectable. Mark the long
+   * ones wide; leave short values like a phone number paired up two to a row.
+   */
+  fields: Array<{ label: ReactNode; value: ReactNode; wide?: boolean }>;
 }) {
   return (
     <dl className="grid grid-cols-2 gap-2">
       {fields.map((field, index) => (
-        <div className="rounded border border-slate-100 bg-slate-50 px-2.5 py-2" key={index}>
+        <div
+          className={cn(
+            "rounded border border-slate-100 bg-slate-50 px-2.5 py-2",
+            field.wide && "col-span-2",
+          )}
+          key={index}
+        >
           <dt className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-400">
             {field.label}
           </dt>

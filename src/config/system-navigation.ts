@@ -280,7 +280,11 @@ const adminNavigationSectionSeeds = [
   {
     id: "ceo-recruitment-candidates",
     items: [
-      { href: "/recruitment/candidates", icon: BriefcaseBusiness, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"] },
+      // excludedRoles, not just `roles`: the system-administrator workspace bypasses role gating
+      // (see the CEO Command Center note above), so `roles: ["CEO"]` alone still put this on Super
+      // Admin's sidebar — where it was a dead link, because the page itself redirects anyone who is
+      // not the CEO straight to /overview. This is the CEO's own interview list, not a module.
+      { href: "/recruitment/candidates", icon: BriefcaseBusiness, label: "My Candidates", permissions: [{ resource: "hiring_interviews", action: "read" }], roles: ["CEO"], excludedRoles: ["Super Admin"] },
     ],
     label: "Hiring",
   },

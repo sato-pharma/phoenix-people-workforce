@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { ClipboardCheck } from "lucide-react";
 
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { PageContainer } from "@/components/layout/page-container";
 import { CvReviewQueueView } from "@/components/recruitment/cv-review-queue-view";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
@@ -39,16 +42,16 @@ export default async function CvReviewQueuePage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">CV Review Queue</h1>
-        <p className="text-sm text-slate-500">
-          CV fields the AI read but was not confident enough to apply on its own. Automated WhatsApp and email
-          intake never put these in front of anyone — reviewing one here saves it onto the candidate and records
-          it as reviewed, which is also what feeds the extraction-accuracy stats.
-        </p>
+    <PageContainer>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <AdminPageHero
+          description="CV fields the AI read but was not confident enough to apply on its own. Automated WhatsApp and email intake never put these in front of anyone — reviewing one here saves it onto the candidate and records it as reviewed, which is also what feeds the extraction-accuracy stats."
+          eyebrow="Recruitment"
+          icon={<ClipboardCheck className="h-5 w-5" />}
+          title="CV Review Queue"
+        />
+        <CvReviewQueueView queue={queue} />
       </div>
-      <CvReviewQueueView queue={queue} />
-    </div>
+    </PageContainer>
   );
 }

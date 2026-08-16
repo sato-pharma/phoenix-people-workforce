@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <AppRouteLoadingState
       title="Loading Recruitment"
-      description="Preparing requisitions, candidates, and the hiring pipeline."
+      description="Getting the open positions, the people, and where each one stands."
     />
   );
 }

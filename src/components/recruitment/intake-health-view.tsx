@@ -133,7 +133,7 @@ export function IntakeHealthView({
               be sending CVs, check the WhatsApp and mailbox intake configuration.
             </p>
           ) : (
-            <p className="text-sm text-slate-500">None — every inbound CV was processed. 🎉</p>
+            <p className="text-sm text-slate-500">None. Every CV that arrived was processed.</p>
           )
         ) : (
           <ul className="divide-y divide-slate-100">

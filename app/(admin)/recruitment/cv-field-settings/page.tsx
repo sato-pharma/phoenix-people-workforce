@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { SlidersHorizontal } from "lucide-react";
 
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { PageContainer } from "@/components/layout/page-container";
 import { CvFieldSettingsView } from "@/components/recruitment/cv-field-settings-view";
 import { canAccess, isHrAuthorityRole } from "@/lib/auth/permissions";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
@@ -43,16 +46,16 @@ export default async function CvFieldSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">CV Field Settings</h1>
-        <p className="text-sm text-slate-500">
-          Every field the CV reader can extract, for any job title. Switch one off and it is dropped from the AI
-          request entirely — no tokens spent, no value returned. Identity fields stay on because candidate matching
-          is built on them.
-        </p>
+    <PageContainer>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <AdminPageHero
+          description="Every field the CV reader can extract, for any job title. Switch one off and it is dropped from the AI request entirely — no tokens spent, no value returned. Identity fields stay on because candidate matching is built on them."
+          eyebrow="Recruitment"
+          icon={<SlidersHorizontal className="h-5 w-5" />}
+          title="CV Field Settings"
+        />
+        <CvFieldSettingsView fields={fields} />
       </div>
-      <CvFieldSettingsView fields={fields} />
-    </div>
+    </PageContainer>
   );
 }

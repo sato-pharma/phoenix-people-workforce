@@ -41,14 +41,14 @@ export default async function EmployeePortalRecruitmentPage() {
   return (
     <EmployeePortalPageShell
       badge="Talent Acquisition"
-      description="Requisitions, candidates, and the hiring pipeline."
+      description="Open positions, the people applying, and where each one stands."
       errorBoundaryTitle="Recruitment unavailable"
       title="Recruitment"
     >
       <Suspense
         fallback={
           <AppRouteLoadingState
-            description="Preparing requisitions, candidates, and the hiring pipeline."
+            description="Getting the open positions, the people, and where each one stands."
             title="Loading Recruitment"
           />
         }

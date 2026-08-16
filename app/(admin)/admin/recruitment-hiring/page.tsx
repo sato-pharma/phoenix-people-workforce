@@ -12,10 +12,14 @@ export const dynamic = "force-dynamic";
 
 export default async function RecruitmentHiringPage() {
   const access = await resolveAccessContextFromPage();
+  // Talent Acquisition is a member of portalNavigationRoles, so resolveNavigationMode returns
+  // "employee-portal" for it and this line redirects TA before any later check runs. That is
+  // intended — TA works the module through its portal mirrors under /employee-portals, which is
+  // why every hub tool has a TA twin (pinned by tests/recruitment-hub-portal-coverage.test.ts).
+  // The role test below therefore only ever admits Super Admin; it used to name Talent Acquisition
+  // as well, which read as though TA could land here and could not.
   if (resolveNavigationMode(access) === "employee-portal") redirect("/employee-portals");
-  // Every card here is gated to hrAuthorityNavigationRoles (Super Admin / Talent
-  // Acquisition) — match the sidebar button's own gate directly.
-  if (access.role !== "Super Admin" && access.role !== "Talent Acquisition") {
+  if (access.role !== "Super Admin") {
     redirect("/employee-portals");
   }
 

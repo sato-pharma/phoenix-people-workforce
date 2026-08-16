@@ -842,7 +842,7 @@ export function AdminCommandCenter({
                 />
                 <ModuleCard
                   accentColor="violet"
-                  description="Requisitions, candidates, vacancies, and CV database."
+                  description="Open positions, people, empty seats, and the CV library."
                   health={o.hr.vacantPositions > 0 ? "attention" : "healthy"}
                   href="/recruitment"
                   icon={Briefcase}
@@ -995,7 +995,7 @@ export function AdminCommandCenter({
             ) : null}
             <ModuleCard
               accentColor="violet"
-              description="Requisitions, candidates, interviews, and pipeline overview."
+              description="Open positions, people, interviews, and where each one stands."
               health={o.hr.vacantPositions > 0 ? "attention" : "healthy"}
               href="/recruitment"
               icon={Briefcase}

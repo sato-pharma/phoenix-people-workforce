@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { Activity } from "lucide-react";
 
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { PageContainer } from "@/components/layout/page-container";
 import { IntakeHealthView } from "@/components/recruitment/intake-health-view";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -36,15 +39,16 @@ export default async function IntakeHealthPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">Inbound CV Intake Health</h1>
-        <p className="text-sm text-slate-500">
-          How WhatsApp + email CVs are flowing into the pipeline over the last 30 days, and any that could not be
-          processed automatically (retry re-queues them for the worker).
-        </p>
+    <PageContainer>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <AdminPageHero
+          description="How WhatsApp + email CVs are flowing into the pipeline over the last 30 days, and any that could not be processed automatically (retry re-queues them for the worker)."
+          eyebrow="Recruitment"
+          icon={<Activity className="h-5 w-5" />}
+          title="Inbound CV Intake Health"
+        />
+        <IntakeHealthView analytics={analytics} deadLetters={deadLetters} />
       </div>
-      <IntakeHealthView analytics={analytics} deadLetters={deadLetters} />
-    </div>
+    </PageContainer>
   );
 }

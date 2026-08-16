@@ -28,7 +28,7 @@ export default async function RecruitmentPage() {
       fallback={
         <AppRouteLoadingState
           title="Loading Recruitment"
-          description="Preparing requisitions, candidates, and the hiring pipeline."
+          description="Getting the open positions, the people, and where each one stands."
         />
       }
     >

@@ -6,7 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   BriefcaseBusiness,
   CheckCircle2,
+  ChevronDown,
   FileSpreadsheet,
+  Link2,
+  PhoneOff,
+  Sparkles,
   UserPlus,
   Users,
 } from "lucide-react";
@@ -31,7 +35,16 @@ import type { ApplicationWithContext } from "@/lib/recruitment/applications";
 import type { CandidateProfile } from "@/lib/recruitment/candidates";
 import type { SelectionBoardEntry } from "@/lib/recruitment/selection";
 import type { RecruitmentDashboard } from "@/lib/recruitment/dashboard";
-import type { Candidate, Interview, InterviewType, RecruitmentActionKey, RecruitmentFile, Requisition } from "@/lib/recruitment/types";
+import {
+  DEFAULT_CANDIDATE_STATUS,
+  suggestedCandidateStatuses,
+  type Candidate,
+  type Interview,
+  type InterviewType,
+  type RecruitmentActionKey,
+  type RecruitmentFile,
+  type Requisition,
+} from "@/lib/recruitment/types";
 import { interviewOutcomes, interviewScorecardCriteria, summarizeScorecard } from "@/lib/recruitment/scorecards";
 import type { VacancyReportRow } from "@/lib/reports/vacancies";
 import { cn } from "@/lib/utils";
@@ -52,6 +65,50 @@ import { detectCvFileKind } from "@/lib/recruitment/cv-file-kind";
 
 
 type ManagerOption = { hrId: string; fullName: string };
+
+// Every time in this system is reported in Africa/Cairo — a bare toLocaleString() rendered the
+// viewer's machine locale instead.
+const cairoFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "Africa/Cairo",
+});
+
+function formatCairo(iso: string): string {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? iso : cairoFormatter.format(date);
+}
+
+/** Sentinel for "no status filter" — a real status is never this. */
+const ALL_STATUSES = "__all__";
+
+/** Sentinel for "let me type my own status" — a real status is never this. */
+const CUSTOM_STATUS = "__custom__";
+
+/**
+ * Rows rendered per page of the candidate pool.
+ *
+ * The pool is append-only by design ("every applicant stays here and is searchable — even rejected
+ * ones") and automated email/WhatsApp intake adds to it continuously, so its size only ever grows.
+ * Rendering it whole is what produced a 27,000px page carrying ~1,400 controls.
+ */
+const CANDIDATE_PAGE_SIZE = 25;
+
+/**
+ * What each tab is CALLED on screen, kept apart from the `TabKey` the URL and the code use.
+ *
+ * The internal key stays `requisitions` — it is the table name, the API path and the `?tab=` value,
+ * and renaming those would break saved links. Only the label changed: "Requisition" is recruiting
+ * jargon nobody outside HR reads, and the owner asked for plain words. A requisition here is one
+ * approved request to hire for one empty seat, so on screen it is an open position.
+ */
+const tabLabels: Record<TabKey, string> = {
+  candidates: "Candidates",
+  pipeline: "Pipeline",
+  requisitions: "Open Positions",
+};
 
 type Props = {
   canApprove: boolean;
@@ -507,7 +564,7 @@ export function RecruitmentWorkspace(props: Props) {
         eyebrow="People Management"
         icon={<BriefcaseBusiness className="h-4 w-4" />}
         title="Recruitment"
-        description="Open requisitions against vacant seats, track candidates through the pipeline, and convert the selected hire into an employee."
+        description="Open a position for an empty seat, follow the people applying for it, and turn the one you pick into an employee."
       />
 
       {error ? <AdminCallout tone="danger">{error}</AdminCallout> : null}
@@ -516,30 +573,30 @@ export function RecruitmentWorkspace(props: Props) {
       {summary ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <AdminStatCard
-            description="Requisitions open or published for hiring."
+            description="Seats you are hiring for right now."
             icon={<BriefcaseBusiness className="h-5 w-5" />}
-            label="Open requisitions"
+            label="Open positions"
             tone="orange"
             value={summary.openRequisitions}
           />
           <AdminStatCard
-            description="Candidates currently moving through the pipeline."
+            description="People still being considered for a seat."
             icon={<Users className="h-5 w-5" />}
-            label="Active applications"
+            label="Being considered"
             tone="blue"
             value={summary.activeApplications}
           />
           <AdminStatCard
-            description="Applications converted into employees."
+            description="People who were hired and are now employees."
             icon={<CheckCircle2 className="h-5 w-5" />}
-            label="Hires"
+            label="Hired"
             tone="emerald"
             value={summary.hires}
           />
           <AdminStatCard
-            description="Total applications recorded."
+            description="Everyone ever put forward for a seat."
             icon={<FileSpreadsheet className="h-5 w-5" />}
-            label="Total applications"
+            label="Applications in total"
             tone="violet"
             value={summary.totalApplications}
           />
@@ -549,7 +606,7 @@ export function RecruitmentWorkspace(props: Props) {
       <div className="flex flex-wrap gap-2">
         {(["pipeline", "requisitions", "candidates"] as TabKey[]).map((key) => (
           <Button key={key} variant={tab === key ? "default" : "ghost"} onClick={() => setTab(key)}>
-            {titleCase(key)}
+            {tabLabels[key]}
           </Button>
         ))}
       </div>
@@ -584,6 +641,11 @@ export function RecruitmentWorkspace(props: Props) {
         />
       ) : (
         <CandidatesTab
+          // Which people are already attached to a position. Derived from the applications the
+          // dashboard already loaded, so the summary costs no extra query.
+          attachedCandidateIds={
+            new Set(applications.map((application) => application.candidateId).filter(Boolean))
+          }
           canDelete={props.canDelete}
           canImport={props.canImport}
           canManage={props.canManageCandidates}
@@ -739,7 +801,9 @@ function PipelineTab({
               <thead>
                 <tr>
                   <th>Candidate</th>
-                  <th>Requisition</th>
+                  {/* The cell under this holds the job title, so "Position" is both the plainer
+                      word and the more accurate one. */}
+                  <th>Position</th>
                   <th>Stage</th>
                   <th className="w-px"></th>
                 </tr>
@@ -1042,7 +1106,7 @@ function RequisitionActionsControl({
               return;
             run(async () => {
               await deleteRequest(`/api/recruitment/requisitions/${requisition.id}`);
-              return "Requisition deleted.";
+              return "Position removed.";
             });
           }}
         >
@@ -1160,7 +1224,7 @@ function RequisitionsTab({
   return (
     <div className="space-y-4">
       {canCreate ? (
-        <AdminTableShell title="Open a requisition" description="Wrap an open vacancy and add the recruitment details.">
+        <AdminTableShell title="Open a position" description="Pick an empty seat and add the hiring details for it.">
           <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
             <SearchableSelect
               className={fieldClass}
@@ -1245,7 +1309,7 @@ function RequisitionsTab({
                     setBandMin("");
                     setBandMax("");
                     setDeadline("");
-                    return "Requisition created.";
+                    return "Position opened.";
                   })
                 }
               >
@@ -1256,9 +1320,9 @@ function RequisitionsTab({
         </AdminTableShell>
       ) : null}
 
-      <AdminTableShell title="Requisitions" description="All recruitment openings and their status.">
+      <AdminTableShell title="Open positions" description="Every seat you are hiring for, and where each one stands.">
         <PortalResponsiveDataList
-          empty={<PortalEmptyState message="Requisitions will appear here once one is opened." title="No requisitions yet" />}
+          empty={<PortalEmptyState message="Open a position above and it will show up here." title="No positions yet" />}
           getKey={(requisition) => requisition.id}
           items={requisitions}
           renderCard={(requisition) => (
@@ -1345,7 +1409,7 @@ function CandidateActionsControl({
             value={startReq[candidate.id] ?? ""}
             onChange={(e) => setStartReq((prev) => ({ ...prev, [candidate.id]: e.target.value }))}
           >
-            <option value="">Requisition…</option>
+            <option value="">Pick a position…</option>
             {openRequisitions.map((requisition) => (
               <option key={requisition.id} value={requisition.id}>
                 {requisition.jobTitle}
@@ -1429,21 +1493,28 @@ function CandidatePoolCard({
           startReq={startReq}
         />
       }
+      stackStatus
       status={<StagePill tone="slate">{candidate.status}</StagePill>}
       title={candidate.fullName}
     >
       <PortalRecordFields
         fields={[
-          { label: "Email", value: candidate.email ?? "—" },
-          { label: "Phone", value: candidate.phone ?? "—" },
+          // Every field here takes the whole row. A half-width cell on a phone is about 142px and
+          // only the phone number fits in one — the longest email in the pool is 36 characters and
+          // the median subject line is 22 — so pairing them two-up split addresses mid-word. With
+          // the other three full width the phone would sit alone beside an empty half anyway, so
+          // it joins them and the card reads as one clean column.
+          { label: "Email", value: candidate.email ?? "—", wide: true },
+          { label: "Phone", value: candidate.phone ?? "—", wide: true },
           ...(candidate.sourceContext?.shortLabel
-            ? [{ label: "Source", value: candidate.sourceContext.shortLabel }]
+            ? [{ label: "What they wrote", value: candidate.sourceContext.shortLabel, wide: true }]
             : []),
           ...(candidate.possibleDuplicate
             ? [
                 {
-                  label: "⚠ Possible duplicate",
+                  label: "Possible duplicate",
                   value: candidate.possibleDuplicate.reason === "phone_tail" ? "shares a phone number" : "shares a name",
+                  wide: true,
                 },
               ]
             : []),
@@ -1454,6 +1525,7 @@ function CandidatePoolCard({
 }
 
 function CandidatesTab({
+  attachedCandidateIds,
   canDelete,
   canImport,
   canManage,
@@ -1465,6 +1537,7 @@ function CandidatesTab({
   setError,
   setNotice,
 }: {
+  attachedCandidateIds: Set<string>;
   canDelete: boolean;
   canImport: boolean;
   canManage: boolean;
@@ -1485,6 +1558,10 @@ function CandidatesTab({
   const [phone, setPhone] = useState("");
   const [startReq, setStartReq] = useState<Record<string, string>>({});
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUSES);
+  const [page, setPage] = useState(1);
+  // The three "add someone" panels start folded. They are tools, not the content of this tab.
+  const [addOpen, setAddOpen] = useState(false);
   const [profile, setProfile] = useState<CandidateProfile | null>(null);
   const [viewCvFile, setViewCvFile] = useState<RecruitmentFile | null>(null);
   const [statusDraft, setStatusDraft] = useState("");
@@ -1500,13 +1577,35 @@ function CandidatesTab({
   const [storedExtraction, setStoredExtraction] = useState<StoredCvExtraction | null>(null);
 
   const q = query.trim().toLowerCase();
-  const visibleCandidates = q
+  const matchedCandidates = q
     ? candidates.filter((c) =>
         [c.fullName, c.email, c.phone, c.status, c.source, c.nationalId]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(q)),
       )
     : candidates;
+  const filteredCandidates =
+    statusFilter === ALL_STATUSES ? matchedCandidates : matchedCandidates.filter((c) => c.status === statusFilter);
+
+  // Every status actually present in the pool, so the filter offers what exists rather than a list
+  // someone has to keep in sync with the data.
+  const statusesInUse = Array.from(new Set(candidates.map((c) => c.status).filter(Boolean))).sort();
+
+  // Summary counts, over the WHOLE pool — not the current page or the current filter. These answer
+  // "is anyone actually working this list", which is the question the tab could not previously
+  // answer: production had 203 people, 202 of them still on the status they were created with.
+  const untouchedCount = candidates.filter((c) => c.status === DEFAULT_CANDIDATE_STATUS).length;
+  const attachedCount = candidates.filter((c) => attachedCandidateIds.has(c.id)).length;
+  const missingPhoneCount = candidates.filter((c) => !c.phone?.trim()).length;
+
+  // The pool is unbounded — production holds 203 candidates and grows by ~130 a week from automated
+  // intake. Rendering all of them put ~1,400 controls on a 27,000px page and pushed the profile
+  // panel below every row. Page the table instead; the page is then a fixed height whatever the
+  // pool size. Clamp rather than reset in an effect: setState inside useEffect is a lint error here.
+  const pageCount = Math.max(1, Math.ceil(filteredCandidates.length / CANDIDATE_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * CANDIDATE_PAGE_SIZE;
+  const visibleCandidates = filteredCandidates.slice(pageStart, pageStart + CANDIDATE_PAGE_SIZE);
 
   const openProfile = async (id: string) => {
     setProfile(null);
@@ -1643,82 +1742,176 @@ function CandidatesTab({
   };
 
   return (
-    <div className="space-y-4">
-      {canManage ? (
-        <AdminTableShell title="Add a candidate" description="Create a candidate record (deduplicated by National ID, then email or phone).">
-          <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-4">
-            <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            <Input placeholder="National ID" value={nationalId} onChange={(e) => setNationalId(e.target.value)} />
-            <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input placeholder="Mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-2">
-              <Button
-                disabled={pending || !fullName.trim()}
-                onClick={() =>
-                  run(async () => {
-                    const data = await postJson("/api/recruitment/candidates", {
-                      fullName,
-                      nationalId: nationalId || undefined,
-                      email: email || undefined,
-                      phone: phone || undefined,
-                    });
-                    setFullName("");
-                    setNationalId("");
-                    setEmail("");
-                    setPhone("");
-                    return data.created ? "Candidate added." : "Matched an existing candidate.";
-                  })
-                }
-              >
-                <UserPlus className="mr-1.5 h-4 w-4" /> Add candidate
-              </Button>
-              <Button variant="secondary" onClick={() => { window.location.href = "/api/recruitment/candidates/template"; }}>
-                Download import template
-              </Button>
-              {canImport ? (
-                <>
-                  <input ref={fileRef} accept=".xlsx" className="text-sm" type="file" />
-                  <Button variant="secondary" disabled={pending} onClick={onImport}>
-                    Import spreadsheet
+    // flex + gap (not space-y) so the open profile can take `order-first` below: with space-y the
+    // margin follows DOM order, which would put the gap in the wrong place once reordered.
+    <div className="flex flex-col gap-4">
+      {/* The pool at a glance. Production holds 203 people of whom 202 never moved off the status
+          they were created with and 200 were never attached to a position — facts invisible when the
+          tab opened on a wall of forms. Leading with them makes the backlog the first thing seen. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <AdminStatCard
+          description="Everyone who ever applied, including past rejections."
+          icon={<Users className="h-4 w-4" />}
+          label="People"
+          size="compact"
+          tone="blue"
+          value={candidates.length}
+        />
+        <AdminStatCard
+          description="Added but not looked at yet."
+          icon={<Sparkles className="h-4 w-4" />}
+          label="Not reviewed"
+          size="compact"
+          tone={untouchedCount > 0 ? "orange" : "emerald"}
+          value={untouchedCount}
+        />
+        <AdminStatCard
+          description="Linked to a position you are hiring for."
+          icon={<Link2 className="h-4 w-4" />}
+          label="On a position"
+          size="compact"
+          tone="violet"
+          value={attachedCount}
+        />
+        <AdminStatCard
+          description="Cannot be called until someone adds one."
+          icon={<PhoneOff className="h-4 w-4" />}
+          label="No phone number"
+          size="compact"
+          tone={missingPhoneCount > 0 ? "rose" : "emerald"}
+          value={missingPhoneCount}
+        />
+      </div>
+
+      <AdminTableShell
+        title="People"
+        description="Everyone who applied. Search or filter to find someone, then open their profile."
+      >
+        <div className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
+          <Input
+            className="sm:flex-1"
+            placeholder="Search by name, email, phone, status or where they came from"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setPage(1);
+            }}
+          />
+          <select
+            aria-label="Filter by status"
+            className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700 sm:w-64"
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            value={statusFilter}
+          >
+            <option value={ALL_STATUSES}>Everyone ({candidates.length})</option>
+            {statusesInUse.map((status) => (
+              <option key={status} value={status}>
+                {status} ({candidates.filter((c) => c.status === status).length})
+              </option>
+            ))}
+          </select>
+          {canManage ? (
+            <Button
+              aria-expanded={addOpen}
+              className="whitespace-nowrap"
+              onClick={() => setAddOpen((open) => !open)}
+              type="button"
+              variant={addOpen ? "secondary" : "default"}
+            >
+              <UserPlus className="mr-1.5 h-4 w-4" />
+              Add people
+              <ChevronDown
+                aria-hidden="true"
+                className={cn("ml-1.5 h-4 w-4 transition-transform", addOpen && "rotate-180")}
+              />
+            </Button>
+          ) : null}
+        </div>
+
+        {/* The three ways to add someone used to sit permanently above the list, so the tab opened
+            on forms instead of people. They are the same panels, just folded away until asked for. */}
+        {canManage && addOpen ? (
+          <div className="border-t border-slate-100 bg-slate-50/60">
+            <div className="p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Type in one person
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Input placeholder="Full name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+                <Input placeholder="National ID" value={nationalId} onChange={(e) => setNationalId(e.target.value)} />
+                <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input placeholder="Mobile number" value={phone} onChange={(e) => setPhone(e.target.value)} />
+                <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-2">
+                  <Button
+                    disabled={pending || !fullName.trim()}
+                    onClick={() =>
+                      run(async () => {
+                        const data = await postJson("/api/recruitment/candidates", {
+                          fullName,
+                          nationalId: nationalId || undefined,
+                          email: email || undefined,
+                          phone: phone || undefined,
+                        });
+                        setFullName("");
+                        setNationalId("");
+                        setEmail("");
+                        setPhone("");
+                        return data.created ? "Person added." : "This person is already in the list.";
+                      })
+                    }
+                  >
+                    <UserPlus className="mr-1.5 h-4 w-4" /> Add this person
                   </Button>
-                </>
-              ) : null}
+                  <Button variant="secondary" onClick={() => { window.location.href = "/api/recruitment/candidates/template"; }}>
+                    Download the spreadsheet template
+                  </Button>
+                  {canImport ? (
+                    <>
+                      <input
+                        ref={fileRef}
+                        accept=".xlsx"
+                        className="h-9 rounded-md border border-slate-200 bg-white text-sm text-slate-600 file:mr-3 file:h-full file:cursor-pointer file:rounded-l-md file:border-0 file:bg-slate-100 file:px-3 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                        type="file"
+                      />
+                      <Button variant="secondary" disabled={pending} onClick={onImport}>
+                        Upload the spreadsheet
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+            <div className="border-t border-slate-100 p-5">
+              {/* The CV reader has handled any job title since 2026-08-14 (universal field schema);
+                  this label still said "Medical Rep" and was the last visible trace of the old
+                  two-template design. */}
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Read one CV and fill the details in
+              </p>
+              <CvExtractionPanel
+                onCreated={(id) => {
+                  setNotice("Saved from the CV.");
+                  router.refresh();
+                  void openProfile(id);
+                }}
+              />
+            </div>
+            <div className="border-t border-slate-100 p-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Read many CVs at once
+              </p>
+              <BulkCvExtractionPanel
+                onCreated={() => {
+                  setNotice("Saved from the CV.");
+                  router.refresh();
+                }}
+              />
             </div>
           </div>
-          <div className="border-t border-slate-100 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Or extract from a Medical Rep CV
-            </p>
-            <CvExtractionPanel
-              onCreated={(id) => {
-                setNotice("Candidate saved from CV.");
-                router.refresh();
-                void openProfile(id);
-              }}
-            />
-          </div>
-          <div className="border-t border-slate-100 p-5">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Or process a batch of CVs at once
-            </p>
-            <BulkCvExtractionPanel
-              onCreated={() => {
-                setNotice("Candidate saved from CV.");
-                router.refresh();
-              }}
-            />
-          </div>
-        </AdminTableShell>
-      ) : null}
-
-      <AdminTableShell title="Candidate pool" description="Every applicant stays here and is searchable — even rejected ones.">
-        <div className="p-3">
-          <Input
-            placeholder="Search name, email, phone, status, source…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
+        ) : null}
         <PortalResponsiveDataList
           empty={<PortalEmptyState message="Add a candidate above, or try a different search." title="No candidates found" />}
           getKey={(candidate) => candidate.id}
@@ -1744,7 +1937,10 @@ function CandidatesTab({
                   <th>Status</th>
                   <th>Email</th>
                   <th>Phone</th>
-                  <th>Source</th>
+                  {/* Not the channel — `describeCandidateSource` puts the email subject line here,
+                      or the WhatsApp caption / first message. It is what the applicant typed when
+                      they sent the CV, so the header says that instead of "Source". */}
+                  <th>What they wrote</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -1757,9 +1953,12 @@ function CandidatesTab({
                     </td>
                     <td className="px-3 py-2">{candidate.email ?? "—"}</td>
                     <td className="px-3 py-2">{candidate.phone ?? "—"}</td>
-                    <td className="max-w-[220px] px-3 py-2">
+                    {/* Owner rule: never truncate with an ellipsis and never wrap. `whitespace-nowrap`
+                        with no max-width lets the column size to its content; the table already
+                        scrolls horizontally inside PortalDesktopTable. */}
+                    <td className="whitespace-nowrap px-3 py-2">
                       {candidate.sourceContext?.shortLabel ? (
-                        <span className="block truncate text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
+                        <span className="text-slate-600" title={candidate.sourceContext.detailLines.join("\n")}>
                           {candidate.sourceContext.shortLabel}
                         </span>
                       ) : (
@@ -1785,10 +1984,52 @@ function CandidatesTab({
             </PortalDesktopTable>
           )}
         />
+        {filteredCandidates.length > 0 ? (
+          <div className="flex flex-col gap-2 border-t border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="whitespace-nowrap text-xs text-slate-500">
+              Showing {pageStart + 1}&ndash;{Math.min(pageStart + CANDIDATE_PAGE_SIZE, filteredCandidates.length)} of{" "}
+              {filteredCandidates.length}
+              {filteredCandidates.length === candidates.length ? "" : ` (filtered from ${candidates.length})`}
+            </p>
+            {pageCount > 1 ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  disabled={safePage <= 1}
+                  onClick={() => setPage(safePage - 1)}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Previous
+                </Button>
+                <span className="whitespace-nowrap text-xs text-slate-600">
+                  Page {safePage} of {pageCount}
+                </span>
+                <Button
+                  disabled={safePage >= pageCount}
+                  onClick={() => setPage(safePage + 1)}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </AdminTableShell>
 
       {profile ? (
-        <div ref={profilePanelRef} className="space-y-3 border border-slate-200 p-4">
+        // `order-first` puts the open candidate at the TOP of the tab. It used to render after the
+        // pool table, which meant opening a profile appended the panel below every row — at ~27,000px
+        // down the page with the pool unfiltered, so the panel a click was meant to open was
+        // effectively invisible. Card styling matches AdminTableShell, the shell every sibling
+        // section in this module already uses, instead of the one-off bare border it carried.
+        <div
+          ref={profilePanelRef}
+          className="order-first space-y-3 rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-[0_20px_48px_rgba(15,23,42,0.10)]"
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-slate-900">{profile.candidate.fullName}</p>
@@ -1893,21 +2134,53 @@ function CandidatesTab({
           ) : null}
 
           {canManage ? (
-            <div className="flex gap-2">
-              <Input placeholder="Status" value={statusDraft} onChange={(e) => setStatusDraft(e.target.value)} />
-              <Button
-                variant="secondary"
-                disabled={pending || !statusDraft.trim()}
-                onClick={() =>
-                  run(async () => {
-                    await postJson(`/api/recruitment/candidates/${profile.candidate.id}/status`, { status: statusDraft.trim() });
-                    setProfile((prev) => (prev ? { ...prev, candidate: { ...prev.candidate, status: statusDraft.trim() } } : prev));
-                    return "Status updated.";
-                  })
-                }
-              >
-                Update status
-              </Button>
+            // Status was a bare text box, which is why 202 of 203 candidates in production still sit
+            // at the untouched default. Offer the pipeline's own vocabulary as one click; the column
+            // is still free text, so "Custom" keeps every value the API already accepts reachable.
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  className="h-9 w-64 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-700"
+                  onChange={(e) => setStatusDraft(e.target.value)}
+                  value={
+                    (suggestedCandidateStatuses as readonly string[]).includes(statusDraft) || statusDraft === ""
+                      ? statusDraft
+                      : CUSTOM_STATUS
+                  }
+                >
+                  <option value="">Current: {profile.candidate.status}</option>
+                  {suggestedCandidateStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                  <option value={CUSTOM_STATUS}>Custom</option>
+                </select>
+                {statusDraft === CUSTOM_STATUS ||
+                (statusDraft !== "" && !(suggestedCandidateStatuses as readonly string[]).includes(statusDraft)) ? (
+                  <Input
+                    className="w-64"
+                    placeholder="Type a status"
+                    value={statusDraft === CUSTOM_STATUS ? "" : statusDraft}
+                    onChange={(e) => setStatusDraft(e.target.value)}
+                  />
+                ) : null}
+                <Button
+                  variant="secondary"
+                  disabled={pending || !statusDraft.trim() || statusDraft === CUSTOM_STATUS}
+                  onClick={() =>
+                    run(async () => {
+                      await postJson(`/api/recruitment/candidates/${profile.candidate.id}/status`, { status: statusDraft.trim() });
+                      setProfile((prev) => (prev ? { ...prev, candidate: { ...prev.candidate, status: statusDraft.trim() } } : prev));
+                      router.refresh();
+                      return "Status updated.";
+                    })
+                  }
+                >
+                  Update status
+                </Button>
+              </div>
             </div>
           ) : (
             <p className="text-xs text-slate-500">Status: {profile.candidate.status}</p>
@@ -2104,7 +2377,7 @@ function InterviewsSection({
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-slate-800">{titleCase(interview.interviewType)}</span>
                   <span className="text-slate-500">
-                    {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : "Unscheduled"}
+                    {interview.scheduledAt ? formatCairo(interview.scheduledAt) : "Unscheduled"}
                   </span>
                 </div>
                 <div className="text-slate-500">

@@ -134,6 +134,33 @@ export type PhoneScreeningOutcome = (typeof phoneScreeningOutcomes)[number];
 // Rule 4 — candidate-level status (free text; defaults to "Candidate Created").
 export const DEFAULT_CANDIDATE_STATUS = "Candidate Created";
 
+/**
+ * Statuses offered as one-click choices on the candidate profile.
+ *
+ * The column stays free text and the API still accepts any string — this is a picklist, NOT a
+ * constraint, so no migration and no existing value is invalidated. It exists because a bare text
+ * box produced exactly one status across the whole pool: as of 2026-08-15 production holds 203
+ * candidates, 202 of them still reading "Candidate Created", which is the default nobody ever
+ * changed. A typed status is a status nobody types.
+ *
+ * The wording mirrors the screening outcomes and application stages already defined above so the
+ * candidate-level status reads consistently with the pipeline it summarises. Confirm the exact list
+ * with the owner before treating any of these as canonical.
+ */
+export const suggestedCandidateStatuses = [
+  DEFAULT_CANDIDATE_STATUS,
+  "CV Under Review",
+  "Shortlisted",
+  "Phone Screening",
+  "Interview Scheduled",
+  "On Hold",
+  "Offer Stage",
+  "Hired",
+  "Rejected",
+  "Not Eligible",
+  "Withdrew",
+] as const;
+
 export function isTerminalApplicationStage(stage: string): boolean {
   return (terminalApplicationStages as readonly string[]).includes(stage);
 }

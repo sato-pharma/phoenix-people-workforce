@@ -41,10 +41,20 @@ function formatPendingValue(field: PendingReviewField): string {
   return String(field.value);
 }
 
+// Every time in this system is reported in Africa/Cairo — a bare toLocaleString() rendered the
+// viewer's machine locale instead, which showed as US "7/31/2026, 11:42:19 PM" on this page.
+const cairoFormatter = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  month: "short",
+  timeZone: "Africa/Cairo",
+});
+
 function formatExtractedAt(value: string): string {
   if (!value) return "—";
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  return Number.isNaN(parsed.getTime()) ? value : cairoFormatter.format(parsed);
 }
 
 function PendingChips({ fields }: { fields: readonly PendingReviewField[] }) {
@@ -161,9 +171,19 @@ function QueueRow({
   );
 }
 
+/**
+ * Candidates rendered per page.
+ *
+ * The queue rendered every unreviewed extraction at once — 94 candidates carrying 212 field chips
+ * and 311 buttons on an 11,990px desktop page (22,343px at mobile width). Reviewing is a
+ * one-candidate-at-a-time job, so a page of them is all anyone can act on.
+ */
+const REVIEW_PAGE_SIZE = 10;
+
 export function CvReviewQueueView({ queue }: { queue: CvReviewQueue }) {
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   if (queue.items.length === 0) {
     return (
@@ -175,6 +195,11 @@ export function CvReviewQueueView({ queue }: { queue: CvReviewQueue }) {
   }
 
   const totalFields = queue.items.reduce((sum, item) => sum + item.pendingFields.length, 0);
+  // Clamp rather than reset in an effect: setState inside useEffect is a lint error in this repo.
+  const pageCount = Math.max(1, Math.ceil(queue.items.length / REVIEW_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * REVIEW_PAGE_SIZE;
+  const visibleItems = queue.items.slice(pageStart, pageStart + REVIEW_PAGE_SIZE);
 
   return (
     <div className="space-y-3">
@@ -188,7 +213,7 @@ export function CvReviewQueueView({ queue }: { queue: CvReviewQueue }) {
         </p>
       ) : null}
       <ul className="space-y-3">
-        {queue.items.map((item) => (
+        {visibleItems.map((item) => (
           <QueueRow
             isOpen={openId === item.extractionId}
             item={item}
@@ -201,6 +226,42 @@ export function CvReviewQueueView({ queue }: { queue: CvReviewQueue }) {
           />
         ))}
       </ul>
+      {pageCount > 1 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <p className="whitespace-nowrap text-xs text-slate-500">
+            Showing {pageStart + 1}&ndash;{Math.min(pageStart + REVIEW_PAGE_SIZE, queue.items.length)} of {queue.items.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              disabled={safePage <= 1}
+              onClick={() => {
+                setOpenId(null);
+                setPage(safePage - 1);
+              }}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              Previous
+            </Button>
+            <span className="whitespace-nowrap text-xs text-slate-600">
+              Page {safePage} of {pageCount}
+            </span>
+            <Button
+              disabled={safePage >= pageCount}
+              onClick={() => {
+                setOpenId(null);
+                setPage(safePage + 1);
+              }}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,5 +1,8 @@
 import { redirect } from "next/navigation";
+import { Target } from "lucide-react";
 
+import { AdminPageHero } from "@/components/admin/admin-design-system";
+import { PageContainer } from "@/components/layout/page-container";
 import { CvExtractionAnalyticsView } from "@/components/recruitment/cv-extraction-analytics-view";
 import { resolveAccessContextFromPage } from "@/lib/auth/server";
 import { resolveNavigationMode } from "@/lib/auth/permissions";
@@ -34,15 +37,16 @@ export default async function CvExtractionAnalyticsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4">
-        <h1 className="text-lg font-semibold text-slate-900">CV Extraction Accuracy</h1>
-        <p className="text-sm text-slate-500">
-          Reviewed extractions only. Shows how often Talent Acquisition corrected each proposed field before
-          saving, by position — a high correction rate flags a field worth revisiting.
-        </p>
+    <PageContainer>
+      <div className="mx-auto max-w-5xl space-y-6">
+        <AdminPageHero
+          description="Reviewed extractions only. Shows how often Talent Acquisition corrected each proposed field before saving, by position — a high correction rate flags a field worth revisiting."
+          eyebrow="Recruitment"
+          icon={<Target className="h-5 w-5" />}
+          title="CV Extraction Accuracy"
+        />
+        <CvExtractionAnalyticsView data={data} />
       </div>
-      <CvExtractionAnalyticsView data={data} />
-    </div>
+    </PageContainer>
   );
 }
