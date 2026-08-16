@@ -7,10 +7,12 @@ import { resolveWeeklyAccessScope } from "@/lib/sales/weekly/access";
 import { latestUploadedPeriod } from "@/lib/sales/weekly/batch-scope";
 import { listMasterAreas } from "@/lib/sales/weekly/branch-region-map";
 import { loadWeeklyManagerIndex } from "@/lib/sales/weekly/manager-attribution";
+import { REGION_NAMES, lineName, loadMonthlyTargets } from "@/lib/sales/monthly-targets";
 import {
   buildWeeklySummaryWorkbook,
   currentCairoCycleMonth,
   cycleMonthsOfCurrentYear,
+  type MonthTargetInput,
 } from "@/lib/sales/weekly/summary-workbook";
 import { listWeeklyBatches, loadWeeklyDashboard } from "@/lib/sales/weekly/service";
 import { clientSafeErrorMessage } from "@/lib/http/api-errors";
@@ -145,16 +147,83 @@ export async function GET(request: Request) {
     // PS-only reality of 26 → 42 → 105 → 124, steadily rising).
     const trendMonths = [...new Set((weekly.factRows ?? []).map((row) => row.cycleMonth).filter(Boolean))];
     const trendDistributors = [...new Set((weekly.factRows ?? []).map((row) => row.distributorCode).filter(Boolean))];
-    const trend =
+
+    // ── Month vs Target ───────────────────────────────────────────────────────
+    // The month under measurement is THE MONTH HE IS UPLOADING — the cycle month the selected sheet
+    // landed in — not simply "this Cairo month". Uploading July's last week on 2 August must be
+    // measured against July's target; against August's it would read as a near-total miss.
+    const targetCycleMonth = [...trendMonths].sort().at(-1) ?? currentCairoCycleMonth();
+    const targetPeriod = targetCycleMonth.slice(0, 7);
+
+    // A month's target needs the month's SALES, not the selected week's — so the vs-target grid is
+    // fed the whole cycle month. Both loads already in flight cover it in every real case, so this
+    // costs no extra round trip: `mtd` IS the current cycle month, and `ytd` holds every month of
+    // this year. Only a sheet from a previous YEAR needs its own read.
+    const monthAlreadyLoaded =
+      targetCycleMonth === currentCairoCycleMonth() ? "mtd" : ytdMonths.includes(targetCycleMonth) ? "ytd" : "none";
+
+    const [trend, monthTargetRows, extraMonth] = await Promise.all([
       trendMonths.length > 0
-        ? await loadWeeklyDashboard({
+        ? loadWeeklyDashboard({
             ...sharedFilters,
             allWeeks: true,
             cycleMonths: trendMonths,
             distributorCodes: trendDistributors,
             distributorFilterMode: "include",
           })
-        : weekly;
+        : Promise.resolve(weekly),
+      loadMonthlyTargets(targetPeriod),
+      monthAlreadyLoaded === "none"
+        ? loadWeeklyDashboard({ ...sharedFilters, allWeeks: true, cycleMonths: [targetCycleMonth] })
+        : Promise.resolve(null),
+    ]);
+
+    const monthRows =
+      monthAlreadyLoaded === "mtd"
+        ? (mtd.factRows ?? [])
+        : monthAlreadyLoaded === "ytd"
+          ? (ytd.factRows ?? []).filter((row) => row.cycleMonth === targetCycleMonth)
+          : (extraMonth?.factRows ?? []);
+
+    // A filter that narrows the SALES must narrow the TARGET the same way, or the tab reports a miss
+    // the field never made. Targets are held at (line, area, product), so line, region (via the
+    // area's own region) and product all map across exactly. Distributor is the one that cannot —
+    // a target belongs to an area, not to whoever delivered it — so that one is disclosed instead.
+    const areaRegion = new Map(masterAreas.map((area) => [area.areaCode.trim().toUpperCase(), area.regionCode]));
+    const wanted = (key: string) => new Set(parseList(key).map((value) => value.trim().toUpperCase()));
+    const lineWanted = wanted("line");
+    const regionWanted = wanted("region");
+    const productWanted = wanted("product");
+    const passes = (set: Set<string>, filterMode: "include" | "exclude", value: string) =>
+      set.size === 0 || set.has(value.trim().toUpperCase()) === (filterMode === "include");
+    const scopedTargetRows = monthTargetRows.filter(
+      (row) =>
+        passes(lineWanted, mode("lineMode"), lineName(row.lineCode)) &&
+        passes(regionWanted, mode("regionMode"), areaRegion.get(row.areaCode.trim().toUpperCase()) ?? "") &&
+        passes(productWanted, mode("productMode"), row.productCode),
+    );
+
+    // The engine speaks line CODES; every row of this workbook speaks the official line NAME. Resolve
+    // once here so the workbook builder never has to reach into the targets domain — and therefore
+    // never drags a database client into a module the tests build workbooks from directly.
+    const monthTargets: MonthTargetInput[] = scopedTargetRows.map((row) => ({
+      lineLabel: lineName(row.lineCode),
+      areaCode: row.areaCode,
+      targetUnits: row.targetUnits ?? 0,
+    }));
+    // "Has a target" means a real number was uploaded for that line. A line present only with null or
+    // zero units is not being measured in units, and saying it achieved 0% would be a fabrication.
+    const targetedLines = [
+      ...new Set(monthTargets.filter((target) => target.targetUnits > 0).map((target) => target.lineLabel).filter(Boolean)),
+    ];
+
+    const distributorFilterActive = parseList("distributor").length > 0;
+    const vsTargetFilterCaveat = distributorFilterActive
+      ? "CAUTION: a distributor filter is active. A target belongs to an AREA, not to the distributor " +
+        "that delivered it, so it cannot be narrowed the same way — the sales here are one " +
+        "distributor's while the target is the area's whole month, and every percentage on this tab " +
+        "is understated. Clear the distributor filter to read achievement. "
+      : "";
 
     const monthLabel = cycleMonths.length > 0 ? cycleMonths.map((m) => m.slice(0, 7)).join(", ") : null;
     const weekLabel = weekNumbers.length > 0 ? weekNumbers.map((w) => `W${w}`).join(", ") : null;
@@ -178,6 +247,14 @@ export async function GET(request: Request) {
       lineFilter: parseList("line"),
       masterAreas,
       trend,
+      vsTarget: {
+        period: targetPeriod,
+        monthRows,
+        targets: monthTargets,
+        targetedLines,
+        regionNames: Object.entries(REGION_NAMES).map(([regionCode, regionName]) => ({ regionCode, regionName })),
+        filterCaveat: vsTargetFilterCaveat,
+      },
     });
 
     // Name the file after what is actually in it. "all-months" was left over from the old scope and

@@ -11,6 +11,7 @@ import {
 } from "../src/lib/sales/weekly/manager-attribution.ts";
 import { latestUploadedPeriod } from "../src/lib/sales/weekly/batch-scope.ts";
 import {
+  buildVsTargetModel,
   buildWeeklySummaryWorkbook,
   cycleMonthsOfCurrentYear,
   currentCairoCycleMonth,
@@ -435,7 +436,21 @@ export async function runWeeklySummaryReportTests() {
       weekly: dash(rows), mtd: dash(rows), ytd: dash(rows), trend: dash(rows),
       managerIndex: { dmByLineRegion: new Map(), seatsById: new Map(), nameByHrId: new Map(), regionNameByCode: new Map(), ceoName: null },
       ytdMonths: [JUL], periodLabel: "test", generatedAt: "2026-08-12 00:00 UTC", lineFilter: [],
-      masterAreas: [{ areaCode: "CA1", areaName: "Heliopolis" }, { areaCode: "CA2", areaName: "Nasr City" }],
+      masterAreas: [
+        { areaCode: "CA1", areaName: "Heliopolis", regionCode: "CA" },
+        { areaCode: "CA2", areaName: "Nasr City", regionCode: "CA" },
+      ],
+      vsTarget: {
+        period: "2026-07",
+        monthRows: rows,
+        targets: [
+          { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
+          { lineLabel: "CNS", areaCode: "CA2", targetUnits: 60 },
+        ],
+        targetedLines: ["CNS"],
+        regionNames: [{ regionCode: "CA", regionName: "Cairo" }],
+        filterCaveat: "",
+      },
     });
 
     assert.ok(buffer.length > 100 && buffer[0] === 0x50 && buffer[1] === 0x4b, "the workbook must be a valid .xlsx");
@@ -478,5 +493,170 @@ export async function runWeeklySummaryReportTests() {
     const shared = await zip.file("xl/sharedStrings.xml")?.async("string");
     assert.ok(shared?.includes("Heliopolis"), "areas must print as names");
     assert.ok(!/>CA1</.test(shared ?? ""), "an area CODE must never reach the sheet");
+
+    // The new tab must actually be in the book, named, and beside the MTD tab it extends.
+    const workbookXml = (await zip.file("xl/workbook.xml")?.async("string")) ?? "";
+    // Attribute-order agnostic on purpose: ExcelJS emits `sheetId` BEFORE `name`, so a regex anchored
+    // on `<sheet name=` matches nothing and the tab looks absent when it is in fact present.
+    const sheetNames = [...workbookXml.matchAll(/<sheet\b[^>]*\sname="([^"]+)"/g)].map((match) => match[1]);
+    assert.ok(sheetNames.length >= 6, `could not read the sheet list from workbook.xml — got ${sheetNames.length} names`);
+    assert.ok(sheetNames.includes("Month vs Target"), `Month vs Target tab missing — got ${sheetNames.join(", ")}`);
+    assert.equal(
+      sheetNames.indexOf("Month vs Target"),
+      sheetNames.indexOf("MTD by Distributor") + 1,
+      "Month vs Target must sit directly after MTD by Distributor — both measure the same month",
+    );
+  }
+
+  // ── Month vs Target ─────────────────────────────────────────────────────────
+
+  const AREA_INDEX = new Map([
+    ["CA1", { areaName: "Heliopolis", regionCode: "CA" }],
+    ["CA2", { areaName: "Nasr City", regionCode: "CA" }],
+    ["GZ1", { areaName: "Dokki", regionCode: "GZ" }],
+  ]);
+  const REGION_NAMES = new Map([
+    ["CA", "Cairo"],
+    ["GZ", "Giza"],
+  ]);
+
+  // The headline: sales for the month, target for the whole month, per region and per area, with the
+  // area rows summing exactly to the region row above them.
+  {
+    const sections = buildVsTargetModel(
+      [
+        factRow({ areaCode: "CA1", regionCode: "CA", salesUnits: 30 }),
+        factRow({ areaCode: "CA2", regionCode: "CA", salesUnits: 20 }),
+        factRow({ areaCode: "GZ1", regionCode: "GZ", salesUnits: 90 }),
+      ],
+      [
+        { lineLabel: "CNS", areaCode: "CA1", targetUnits: 60 },
+        { lineLabel: "CNS", areaCode: "CA2", targetUnits: 40 },
+        { lineLabel: "CNS", areaCode: "GZ1", targetUnits: 90 },
+      ],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+
+    assert.equal(sections.length, 1, "one line in, one section out");
+    const cns = sections[0];
+    assert.equal(cns.hasTarget, true);
+    assert.equal(cns.salesUnits, 140);
+    assert.equal(cns.targetUnits, 190);
+
+    const regions = cns.regions.map((region) => region.label);
+    assert.deepEqual(regions, ["Cairo", "Giza"], "regions follow the Monthly Closing order, by NAME");
+
+    const cairo = cns.regions[0];
+    assert.equal(cairo.salesUnits, 50);
+    assert.equal(cairo.targetUnits, 100);
+    assert.equal(cairo.achievement, 0.5);
+    assert.equal(
+      cairo.areas.reduce((sum, area) => sum + area.salesUnits, 0),
+      cairo.salesUnits,
+      "a region row must be exactly the sum of the area rows under it, or the sheet does not reconcile",
+    );
+    assert.equal(cns.regions[1].achievement, 1, "Giza sold its whole target");
+  }
+
+  // A region is the AREA's region, never the branch's. Where the two disagree the area row would
+  // otherwise land under one region while its target sat under another, and the column would stop
+  // adding up. Here the branch says Giza and the area map says Cairo — Cairo wins.
+  {
+    const sections = buildVsTargetModel(
+      [factRow({ areaCode: "CA1", regionCode: "GZ", regionName: "Giza", salesUnits: 25 })],
+      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 50 }],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+    assert.deepEqual(sections[0].regions.map((region) => region.label), ["Cairo"]);
+    assert.equal(sections[0].regions[0].achievement, 0.5, "sales and target must meet in ONE region");
+  }
+
+  // An area with a target and NO sales is the single most important row on the tab — it must appear.
+  // An area with sales and no target must appear too, reading as a dash, never as 0%.
+  {
+    const sections = buildVsTargetModel(
+      [factRow({ areaCode: "CA1", regionCode: "CA", salesUnits: 10 })],
+      [
+        { lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 },
+        { lineLabel: "CNS", areaCode: "CA2", targetUnits: 80 },
+      ],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+    const labels = sections[0].regions[0].areas.map((area) => area.label);
+    assert.deepEqual(labels.sort(), ["Heliopolis", "Nasr City"], "a targeted area with zero sales must still be listed");
+    const silent = sections[0].regions[0].areas.find((area) => area.label === "Nasr City");
+    assert.equal(silent?.salesUnits, 0);
+    assert.equal(silent?.achievement, 0, "zero sales against a real target IS 0% — that is the point");
+  }
+
+  // Sales that no area owns are ~29% of the rows in production. They must land in a named row inside
+  // their own region, carry no target, and never dilute a real area's achievement.
+  {
+    const sections = buildVsTargetModel(
+      [
+        factRow({ areaCode: "CA1", regionCode: "CA", salesUnits: 40 }),
+        factRow({ areaCode: null, regionCode: "CA", regionName: "Cairo", salesUnits: 500 }),
+      ],
+      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+    const cairo = sections[0].regions[0];
+    const bucket = cairo.areas.find((area) => area.unmapped);
+    assert.ok(bucket, "the not-area-mapped sales must have their own row");
+    assert.equal(bucket?.salesUnits, 500);
+    assert.equal(bucket?.targetUnits, 0);
+    assert.equal(bucket?.achievement, null, "no target means no percentage — never 0%, never omitted");
+    assert.equal(cairo.areas[cairo.areas.length - 1]?.unmapped, true, "the residue closes the region");
+    assert.equal(
+      cairo.areas.find((area) => area.label === "Heliopolis")?.achievement,
+      1,
+      "the real area still reads 100% — unowned volume must not be smeared across it",
+    );
+  }
+
+  // August 2026 in production: CNS and Pedia carry targets, Anti Infective does not. The untargeted
+  // line keeps its sales and is flagged; it is never reported as having achieved 0%.
+  {
+    const sections = buildVsTargetModel(
+      [
+        factRow({ line: "CNS", areaCode: "CA1", regionCode: "CA", salesUnits: 10 }),
+        factRow({ line: "Anti Infective", areaCode: "CA1", regionCode: "CA", salesUnits: 700 }),
+      ],
+      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+    assert.equal(sections.length, 2);
+    assert.equal(sections[0].label, "CNS", "a measured line outranks a bigger unmeasured one");
+    assert.equal(sections[0].hasTarget, true);
+    const anti = sections[1];
+    assert.equal(anti.label, "Anti Infective");
+    assert.equal(anti.hasTarget, false, "no uploaded target must be reported as such");
+    assert.equal(anti.salesUnits, 700, "its sales are still shown in full");
+    assert.equal(anti.achievement, null, "and never divided by a target that does not exist");
+  }
+
+  // Head Office resolves to no target line at all. It must not silently borrow another line's number.
+  {
+    const sections = buildVsTargetModel(
+      [factRow({ line: "Head Office", areaCode: null, regionCode: "CA", regionName: "Cairo", salesUnits: 12 })],
+      [{ lineLabel: "CNS", areaCode: "CA1", targetUnits: 40 }],
+      AREA_INDEX,
+      ["CNS"],
+      REGION_NAMES,
+    );
+    const headOffice = sections.find((section) => section.label === "Head Office");
+    assert.ok(headOffice, "Head Office sales must still be reported");
+    assert.equal(headOffice?.targetUnits, 0);
+    assert.equal(headOffice?.hasTarget, false);
   }
 }

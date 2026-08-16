@@ -239,7 +239,24 @@ export type WeeklySummaryInput = {
    * Passed in rather than looked up here: the workbook builder stays pure and has no database of its
    * own, which is what keeps it unit-testable without a connection.
    */
-  masterAreas: Array<{ areaCode: string; areaName: string }>;
+  masterAreas: Array<{ areaCode: string; areaName: string; regionCode?: string }>;
+  /**
+   * The Month vs Target tab — everything it needs, resolved by the caller.
+   *
+   * `monthRows` is the WHOLE cycle month being uploaded, not the selected week: the target it is
+   * measured against is a month's target, so a week's sales would report a false 20%.
+   */
+  vsTarget: {
+    /** The cycle month under measurement, YYYY-MM. */
+    period: string;
+    monthRows: WeeklyFactExportRow[];
+    targets: MonthTargetInput[];
+    /** Official line names carrying a target this month — tells "no target" from "target of 0". */
+    targetedLines: string[];
+    regionNames: Array<{ regionCode: string; regionName: string }>;
+    /** Non-empty when a distributor/product filter narrows the sales but cannot narrow the target. */
+    filterCaveat: string;
+  };
 };
 
 export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Promise<Buffer> {
@@ -256,6 +273,19 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
   const ytdRows = latestCycleMonthStockOnly(ytd.factRows ?? []);
   const trendRows = input.trend.factRows ?? [];
   const areaNames = new Map((input.masterAreas ?? []).map((a) => [a.areaCode.trim().toUpperCase(), a.areaName]));
+  // The same master areas, now carrying the region that owns each one — the Month vs Target tab
+  // rolls areas up by THEIR region so its subtotals reconcile (see Tab 6's header comment).
+  const areaIndex = new Map(
+    (input.masterAreas ?? []).map((area) => [
+      area.areaCode.trim().toUpperCase(),
+      { areaName: area.areaName, regionCode: (area.regionCode ?? "").trim().toUpperCase() },
+    ]),
+  );
+  const regionNames = new Map(
+    (input.vsTarget.regionNames ?? []).map((region) => [region.regionCode.trim().toUpperCase(), region.regionName]),
+  );
+  const monthRows = input.vsTarget.monthRows ?? [];
+  const monthTargets = input.vsTarget.targets ?? [];
 
   const lines = resolveLineTabs(lineFilter);
 
@@ -273,6 +303,13 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
       scopeLabel: soleLine.length === 1 ? soleLine[0] : "All lines",
       trendRows,
       areaNames,
+      areaIndex,
+      regionNames,
+      vsTargetPeriod: input.vsTarget.period,
+      vsTargetFilterCaveat: input.vsTarget.filterCaveat,
+      monthRows,
+      monthTargets,
+      targetedLines: input.vsTarget.targetedLines ?? [],
     });
   } else {
     for (const line of lines) {
@@ -284,6 +321,15 @@ export async function buildWeeklySummaryWorkbook(input: WeeklySummaryInput): Pro
         generatedAt,
         trendRows: forLine(trendRows),
         areaNames,
+        areaIndex,
+        regionNames,
+        vsTargetPeriod: input.vsTarget.period,
+        vsTargetFilterCaveat: input.vsTarget.filterCaveat,
+        monthRows: forLine(monthRows),
+        // A per-line tab set must carry ONLY that line's target, or the sheet compares one line's
+        // sales against every line's number.
+        monthTargets: monthTargets.filter((target) => sameLine(target.lineLabel, line)),
+        targetedLines: (input.vsTarget.targetedLines ?? []).filter((label) => sameLine(label, line)),
       });
     }
   }
@@ -310,6 +356,16 @@ function buildTabSet(
     trendRows: WeeklyFactExportRow[];
     /** area_code -> area name, so Tab 2 prints "Dakahlia 3" rather than "D23". */
     areaNames: Map<string, string>;
+    /** area_code -> name AND owning region — Tab 6 needs the region to make its subtotals add up. */
+    areaIndex: Map<string, { areaName: string; regionCode: string }>;
+    regionNames: Map<string, string>;
+    /** The cycle month Tab 6 measures, YYYY-MM. */
+    vsTargetPeriod: string;
+    vsTargetFilterCaveat: string;
+    /** The WHOLE month being uploaded — Tab 6 only. Tabs 1-2 stay on the selected sheet. */
+    monthRows: WeeklyFactExportRow[];
+    monthTargets: MonthTargetInput[];
+    targetedLines: string[];
   },
 ): void {
   const { managerIndex, ytdMonths, periodLabel, generatedAt } = ctx;
@@ -350,6 +406,18 @@ function buildTabSet(
     stockLabel: "Stock Units",
     note: ATTRIBUTION_CAVEAT,
   });
+  // Straight after the MTD tab: both measure the same month, and this one says whether that month is
+  // on course. Ahead of YTD deliberately — the question a manager opens this workbook with is
+  // "where am I against my number", not "what has the year done".
+  buildVsTargetSheet(
+    workbook,
+    name("Month vs Target"),
+    buildVsTargetModel(ctx.monthRows, ctx.monthTargets, ctx.areaIndex, ctx.targetedLines, ctx.regionNames),
+    label,
+    ctx.vsTargetPeriod,
+    generatedAt,
+    ctx.vsTargetFilterCaveat,
+  );
   buildDistributorSheet(workbook, name("YTD by Distributor"), ytdRows, managerIndex, {
     title: `${label} — Year to Date by Distributor`,
     subtitle: `${ytdMonths[0] ?? "—"} to ${currentCairoCycleMonth()} · Generated ${generatedAt}`,
@@ -621,6 +689,15 @@ const CLAY = "FF7C2D12"; // total rows: the single dark close to each block
 /** Data bars sit UNDER the numbers, so they are desaturated — full orange fought the type. */
 const BAR_UNITS = "FFE9A178";
 const BAR_STOCK = "FFDCC9B6";
+/**
+ * The one semantic colour in the workbook, and it exists only on the Month vs Target tab.
+ *
+ * Everywhere else a figure is just a quantity, so the warm family carries it. An achievement
+ * percentage is the single place a reader is asking a yes/no question — did this area make its
+ * number — and answering that in clay-versus-clay would make him do arithmetic the sheet is
+ * supposed to have done for him. CLAY already reads as "short"; this is its counterpart.
+ */
+const GOOD = "FF15803D";
 
 /** Zeros print as an en-dash. A grid of literal 0s is the loudest amateur tell in a report. */
 const UNITS_DASH_FMT = '#,##0;-#,##0;"–"';
@@ -2189,4 +2266,451 @@ function buildLowSalesSheet(
 
   dressPage(sheet, row, LOW_COLS);
   sheet.views = [{ state: "frozen", xSplit: 2, showGridLines: false }];
+}
+
+// ── Tab 6: Month vs Target ────────────────────────────────────────────────────
+//
+// "The sales in the month I am uploading, against that month's whole target — per area and per
+// region." Owner's request, 2026-08-16.
+//
+// Three things make this tab honest rather than merely plausible:
+//
+//   1. UNITS, never value. Targets carry both units and value, and the value side is tempting —
+//      achievement is a value ratio everywhere else in this system. But a weekly sales VALUE is the
+//      distributor's own money re-valued at current master price, while a target VALUE is built off
+//      factory price, so the ratio would be two different currencies over one another. The units are
+//      the same physical thing on both sides. It also keeps the workbook's standing rule intact:
+//      there is no value column anywhere in it.
+//
+//   2. The target is the WHOLE month's; the sales are whatever weeks have been uploaded so far. That
+//      is exactly what he asked for, and it means a mid-month sheet SHOULD read below 100%. The tab
+//      says so in its own subtitle rather than leaving the reader to infer it.
+//
+//   3. A region here is the region the AREA belongs to, not the region the distributor branch was
+//      mapped to. Those two vocabularies agree almost always, but where they disagree the area rows
+//      would not add up to the region row above them — and a vs-target sheet whose subtotals do not
+//      reconcile is worse than no sheet. Only rows with no area at all fall back to the branch's own
+//      weekly region.
+
+/**
+ * One (line, area) field target for the month, in units.
+ *
+ * The line arrives as its OFFICIAL NAME ("CNS", "Pedia", "Anti Infective"), already resolved from
+ * the engine's line_code by the caller. That keeps this module free of the targets domain — and of
+ * the database client it carries — so the whole tab stays unit-testable without a connection.
+ */
+export type MonthTargetInput = {
+  lineLabel: string;
+  areaCode: string;
+  targetUnits: number;
+};
+
+export type VsTargetRow = {
+  label: string;
+  salesUnits: number;
+  targetUnits: number;
+  /** null when there is no target to divide by. NEVER 0, which a reader takes for a collapse. */
+  achievement: number | null;
+  /** The not-area-mapped bucket: real sales that no single area owns, so no target can exist. */
+  unmapped: boolean;
+};
+
+export type VsTargetRegion = VsTargetRow & { regionCode: string; areas: VsTargetRow[] };
+
+export type VsTargetSection = VsTargetRow & {
+  regions: VsTargetRegion[];
+  /** false when NO target was uploaded for this line this month — reported as such, never as 0%. */
+  hasTarget: boolean;
+};
+
+/** Sales that carry neither an area nor a region. Rare, but it must still land somewhere named. */
+const UNKNOWN_REGION_LABEL = "Region not mapped";
+
+/**
+ * The short form of NO_AREA_LABEL, for the same reason Tab 5 uses one: this tab's label column is
+ * 40 characters and the full wording is 47, so it would be CLIPPED — and the owner's standing rule
+ * is that no text in this system is ever truncated or wrapped. The full explanation of what sits in
+ * this row is in the footnote, where it has room.
+ */
+const VS_TARGET_NO_AREA_LABEL = "Not area-mapped";
+
+const achievementOf = (salesUnits: number, targetUnits: number): number | null =>
+  targetUnits > 0 ? salesUnits / targetUnits : null;
+
+/**
+ * Fold the month's sales and the month's targets into line → region → area.
+ *
+ * Pure, and deliberately total: every unit on either side reaches a row.
+ *   - an area with a target and no sales still appears (that is the row worth acting on);
+ *   - an area with sales and no target still appears, with a dash rather than a 0% ;
+ *   - sales with no area collect in one named row inside their region, never dropped;
+ *   - a line with no uploaded target keeps its whole grid and is flagged, never silently zeroed.
+ */
+export function buildVsTargetModel(
+  monthRows: WeeklyFactExportRow[],
+  targets: MonthTargetInput[],
+  /** area_code (upper) -> its name and the region that carries its target. */
+  areaIndex: Map<string, { areaName: string; regionCode: string }>,
+  /** Official line names that HAVE a target this month — how "no target" is told from "target 0". */
+  targetedLines: string[],
+  /** region_code -> region name. Owner's rule: never print a code. */
+  regionNames: Map<string, string>,
+): VsTargetSection[] {
+  type Cell = { salesUnits: number; targetUnits: number };
+  // line -> region -> areaCode -> cell. An empty areaCode key is the not-area-mapped bucket.
+  const tree = new Map<string, Map<string, Map<string, Cell>>>();
+  // Preserve each label as written on the data rather than as normalised for lookup.
+  const lineLabels = new Map<string, string>();
+  const rowRegionNames = new Map<string, string>();
+
+  const cellOf = (lineKey: string, region: string, areaCode: string): Cell => {
+    let regions = tree.get(lineKey);
+    if (!regions) tree.set(lineKey, (regions = new Map()));
+    let areas = regions.get(region);
+    if (!areas) regions.set(region, (areas = new Map()));
+    let cell = areas.get(areaCode);
+    if (!cell) areas.set(areaCode, (cell = { salesUnits: 0, targetUnits: 0 }));
+    return cell;
+  };
+
+  for (const row of monthRows) {
+    const label = normalizeLine(row.line);
+    const lineKey = label.toLowerCase();
+    if (!lineLabels.has(lineKey)) lineLabels.set(lineKey, label || "Unassigned line");
+    const areaCode = (row.areaCode ?? "").trim().toUpperCase();
+    const mapped = areaCode ? areaIndex.get(areaCode) : undefined;
+    // The area's own region wins, so the area rows below a region row always sum to it. The
+    // branch's weekly region is the fallback only where the area map cannot answer.
+    const region = normalizeRegion(mapped?.regionCode) || normalizeRegion(row.regionCode) || "";
+    if (region && !rowRegionNames.has(region)) rowRegionNames.set(region, (row.regionName ?? "").trim());
+    cellOf(lineKey, region, areaCode).salesUnits += row.salesUnits;
+  }
+
+  for (const target of targets) {
+    const label = normalizeLine(target.lineLabel);
+    const lineKey = label.toLowerCase();
+    if (!lineKey) continue;
+    if (!lineLabels.has(lineKey)) lineLabels.set(lineKey, label);
+    const areaCode = target.areaCode.trim().toUpperCase();
+    if (!areaCode) continue;
+    const region = normalizeRegion(areaIndex.get(areaCode)?.regionCode) || "";
+    cellOf(lineKey, region, areaCode).targetUnits += target.targetUnits;
+  }
+
+  const targeted = new Set(targetedLines.map((line) => normalizeLine(line).toLowerCase()).filter(Boolean));
+  const nameOfRegion = (code: string) =>
+    code ? regionNames.get(code) || rowRegionNames.get(code) || code : UNKNOWN_REGION_LABEL;
+
+  const sections: VsTargetSection[] = [];
+  for (const [lineKey, regions] of tree) {
+    const regionRows: VsTargetRegion[] = [];
+    for (const [regionCode, areas] of regions) {
+      const areaRows: VsTargetRow[] = [];
+      for (const [areaCode, cell] of areas) {
+        // Nothing on either side means the key only exists because a filter emptied it — skip, or
+        // every line would print all 42 areas at zero.
+        if (cell.salesUnits === 0 && cell.targetUnits === 0) continue;
+        areaRows.push({
+          label: areaCode ? (areaIndex.get(areaCode)?.areaName || areaCode) : VS_TARGET_NO_AREA_LABEL,
+          salesUnits: cell.salesUnits,
+          targetUnits: cell.targetUnits,
+          achievement: achievementOf(cell.salesUnits, cell.targetUnits),
+          unmapped: areaCode === "",
+        });
+      }
+      if (areaRows.length === 0) continue;
+      // The not-area-mapped residue always closes the region: it is context for the rows above it,
+      // not a peer of them.
+      areaRows.sort(
+        (a, z) =>
+          Number(a.unmapped) - Number(z.unmapped) ||
+          z.salesUnits - a.salesUnits ||
+          z.targetUnits - a.targetUnits ||
+          a.label.localeCompare(z.label),
+      );
+      const salesUnits = areaRows.reduce((sum, area) => sum + area.salesUnits, 0);
+      const targetUnits = areaRows.reduce((sum, area) => sum + area.targetUnits, 0);
+      regionRows.push({
+        regionCode,
+        label: nameOfRegion(regionCode),
+        salesUnits,
+        targetUnits,
+        achievement: achievementOf(salesUnits, targetUnits),
+        unmapped: false,
+        areas: areaRows,
+      });
+    }
+    if (regionRows.length === 0) continue;
+    // Monthly Closing sequence, the order he reads every other report in.
+    regionRows.sort(
+      (a, z) => monthlyClosingRegionRank(a.regionCode) - monthlyClosingRegionRank(z.regionCode) || a.label.localeCompare(z.label),
+    );
+    const salesUnits = regionRows.reduce((sum, region) => sum + region.salesUnits, 0);
+    const targetUnits = regionRows.reduce((sum, region) => sum + region.targetUnits, 0);
+    sections.push({
+      label: lineLabels.get(lineKey) ?? lineKey,
+      hasTarget: targeted.has(lineKey),
+      salesUnits,
+      targetUnits,
+      achievement: achievementOf(salesUnits, targetUnits),
+      unmapped: false,
+      regions: regionRows,
+    });
+  }
+
+  // Lines that are actually being measured come first; an untargeted line is context, not the point.
+  return sections.sort(
+    (a, z) => Number(z.hasTarget) - Number(a.hasTarget) || z.salesUnits - a.salesUnits || a.label.localeCompare(z.label),
+  );
+}
+
+/** Region label | Month sales | Month target | Achievement | Gap — A..E. */
+const VS_TARGET_COLS = 5;
+
+function buildVsTargetSheet(
+  workbook: ExcelJS.Workbook,
+  name: string,
+  sections: VsTargetSection[],
+  lineLabel: string,
+  /** The month being measured, as YYYY-MM. */
+  periodLabel: string,
+  generatedAt: string,
+  /** Set when the viewer's distributor/product filters narrow the sales but cannot narrow targets. */
+  filterCaveat: string,
+): void {
+  const sheet = workbook.addWorksheet(name);
+
+  const totalSales = sections.reduce((sum, section) => sum + section.salesUnits, 0);
+  const totalTarget = sections.reduce((sum, section) => sum + section.targetUnits, 0);
+  const measured = sections.filter((section) => section.hasTarget);
+  const unmeasured = sections.filter((section) => !section.hasTarget);
+  const overall = achievementOf(
+    measured.reduce((sum, section) => sum + section.salesUnits, 0),
+    measured.reduce((sum, section) => sum + section.targetUnits, 0),
+  );
+
+  premiumMasthead(
+    sheet,
+    VS_TARGET_COLS,
+    `${lineLabel} — Month vs Target`,
+    overall == null ? "No target uploaded" : `${Math.round(overall * 100)}% of the month's target`,
+    `Uploaded sales for ${periodLabel} against the FULL month target · units only`,
+    generatedAt,
+    "Line × Region × Area",
+  );
+  // Areas group under their region, so he can collapse to a region-only view and back. Never set
+  // outlineProperties alongside it — ExcelJS emits sheetPr's children out of order and Excel then
+  // offers to repair the file (see buildManagerSheet).
+  sheet.properties.outlineLevelRow = 2;
+
+  if (sections.length === 0) {
+    sheet.getCell(7, 1).value = `No validated weekly sales and no uploaded target for ${periodLabel}.`;
+    sheet.views = [{ showGridLines: false }];
+    return;
+  }
+
+  let row = 6;
+  for (const section of sections) {
+    // The section anchor, in the same grammar as the manager bands on Tabs 2-5: one ink line naming
+    // the block, its caption quietly on cream beneath.
+    sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
+    const title = sheet.getCell(row, 1);
+    title.value = section.label;
+    title.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri Light", size: 14 };
+    title.fill = { fgColor: { argb: INK }, pattern: "solid", type: "pattern" };
+    title.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(row).height = 24;
+    row += 1;
+
+    sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
+    const caption = sheet.getCell(row, 1);
+    caption.value = section.hasTarget
+      ? `Target for ${periodLabel}: ${Math.round(section.targetUnits).toLocaleString()} units` +
+        `   ·   ${section.regions.length} region${section.regions.length === 1 ? "" : "s"}`
+      : `No target uploaded for ${periodLabel} — sales are shown, achievement cannot be calculated`;
+    caption.font = {
+      color: { argb: section.hasTarget ? MUTED_WARM : CLAY },
+      italic: !section.hasTarget,
+      name: "Calibri",
+      size: 8.5,
+    };
+    caption.fill = { fgColor: { argb: CREAM }, pattern: "solid", type: "pattern" };
+    caption.alignment = { horizontal: "center", vertical: "middle" };
+    sheet.getRow(row).height = 15;
+    row += 1;
+
+    const header = sheet.getRow(row);
+    (
+      [
+        ["REGION  /  AREA", 40],
+        ["MONTH SALES (UNITS)", 18],
+        ["MONTH TARGET (UNITS)", 19],
+        ["ACHIEVEMENT", 15],
+        ["GAP TO TARGET", 16],
+      ] as const
+    ).forEach(([label, width], i) => {
+      const cell = header.getCell(i + 1);
+      cell.value = label;
+      cell.font = { bold: true, color: { argb: INK }, name: "Calibri", size: 9 };
+      cell.fill = { fgColor: { argb: BONE }, pattern: "solid", type: "pattern" };
+      cell.alignment = { horizontal: i === 0 ? "left" : "center", indent: i === 0 ? 1 : 0, vertical: "middle", wrapText: true };
+      cell.border = { bottom: rule(INK_SOFT), ...(i >= 1 ? { left: rule(HAIRLINE) } : {}) };
+      sheet.getColumn(i + 1).width = width;
+    });
+    header.height = 24;
+    row += 1;
+
+    const achievementRows: number[] = [];
+    const writeRow = (entry: VsTargetRow, kind: "region" | "area") => {
+      const excelRow = sheet.getRow(row);
+      const isRegion = kind === "region";
+      const ground = isRegion ? BONE : CREAM;
+
+      const label = excelRow.getCell(1);
+      label.value = isRegion ? entry.label : `      ${entry.label}`;
+      label.font = {
+        bold: isRegion,
+        color: { argb: isRegion ? INK : entry.unmapped ? MUTED_WARM : INK_SOFT },
+        italic: entry.unmapped,
+        name: "Calibri",
+        size: isRegion ? 11 : entry.unmapped ? 9.5 : 10.5,
+      };
+      label.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+
+      const sales = excelRow.getCell(2);
+      sales.value = entry.salesUnits;
+      sales.numFmt = UNITS_DASH_FMT;
+      sales.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: "Calibri", size: 10.5 };
+
+      const target = excelRow.getCell(3);
+      target.value = entry.targetUnits;
+      target.numFmt = UNITS_DASH_FMT;
+      target.font = { bold: isRegion, color: { argb: isRegion ? INK : INK_SOFT }, name: "Calibri", size: 10.5 };
+
+      // Achievement and gap are FORMULAS, not cached arithmetic. Excel recalculates every workbook
+      // this repo writes on open, so a hand-computed value would be replaced anyway — and both guard
+      // the zero-target case in the sheet itself, so an area with no target reads as a dash instead
+      // of as 0% (a collapse) or as a surplus equal to its whole sales figure.
+      const achievement = excelRow.getCell(4);
+      achievement.value = { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: entry.achievement ?? "–" };
+      achievement.numFmt = '0.0%;-0.0%;"–"';
+      achievement.font = {
+        bold: true,
+        color: {
+          argb:
+            entry.achievement == null ? MUTED_WARM : entry.achievement >= 1 ? GOOD : entry.achievement < 0.8 ? CLAY : INK_SOFT,
+        },
+        name: "Calibri",
+        size: 10.5,
+      };
+
+      const gap = excelRow.getCell(5);
+      gap.value = {
+        formula: `IF(C${row}=0,"–",B${row}-C${row})`,
+        result: entry.targetUnits > 0 ? entry.salesUnits - entry.targetUnits : "–",
+      };
+      gap.numFmt = UNITS_DASH_FMT;
+      gap.font = {
+        color: { argb: entry.targetUnits === 0 ? MUTED_WARM : entry.salesUnits >= entry.targetUnits ? GOOD : CLAY },
+        name: "Calibri",
+        size: 10.5,
+      };
+
+      for (let c = 1; c <= VS_TARGET_COLS; c += 1) {
+        const cell = excelRow.getCell(c);
+        if (c >= 2) cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.fill = { fgColor: { argb: ground }, pattern: "solid", type: "pattern" };
+        cell.border = {
+          bottom: rule(HAIRLINE),
+          ...(c >= 2 ? { left: rule(HAIRLINE) } : {}),
+          ...(isRegion ? { top: rule(INK_SOFT) } : {}),
+        };
+      }
+      excelRow.height = isRegion ? 20 : 17;
+      if (!isRegion) excelRow.outlineLevel = 1;
+      achievementRows.push(row);
+      row += 1;
+    };
+
+    for (const region of section.regions) {
+      writeRow(region, "region");
+      for (const area of region.areas) writeRow(area, "area");
+    }
+
+    // One bar per section over its achievement column, capped at 100% so a 300% outlier does not
+    // flatten every other area to a sliver. Cosmetic only — never fail an export over it.
+    if (section.hasTarget && achievementRows.length >= 2) {
+      const first = achievementRows[0];
+      const last = achievementRows[achievementRows.length - 1];
+      // Built as a variable, not inlined: ExcelJS's DataBarRuleType omits `color`, which Excel and
+      // the library both honour, so an inline literal trips excess-property checking. Tab 5's bar is
+      // written the same way for the same reason.
+      const bar = {
+        cfvo: [{ type: "num" as const, value: 0 }, { type: "num" as const, value: 1 }],
+        color: { argb: BAR_UNITS },
+        gradient: true,
+        priority: nextCfPriority(sheet),
+        showValue: true,
+        type: "dataBar" as const,
+      };
+      try {
+        sheet.addConditionalFormatting({ ref: `D${first}:D${last}`, rules: [bar] });
+      } catch {
+        // Data bars are decoration; a workbook that fails to build is not.
+      }
+    }
+
+    const totalRow = sheet.getRow(row);
+    totalRow.height = 22;
+    const totalLabel = totalRow.getCell(1);
+    totalLabel.value = `${section.label} — TOTAL`;
+    totalLabel.alignment = { horizontal: "left", indent: 1, vertical: "middle" };
+    totalRow.getCell(2).value = section.salesUnits;
+    totalRow.getCell(3).value = section.targetUnits;
+    totalRow.getCell(4).value = { formula: `IF(C${row}=0,"–",B${row}/C${row})`, result: section.achievement ?? "–" };
+    totalRow.getCell(5).value = {
+      formula: `IF(C${row}=0,"–",B${row}-C${row})`,
+      result: section.targetUnits > 0 ? section.salesUnits - section.targetUnits : "–",
+    };
+    for (let c = 1; c <= VS_TARGET_COLS; c += 1) {
+      const cell = totalRow.getCell(c);
+      if (c === 4) cell.numFmt = '0.0%;-0.0%;"–"';
+      else if (c >= 2) cell.numFmt = UNITS_DASH_FMT;
+      if (c >= 2) cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, name: "Calibri", size: c === 1 ? 10 : 10.5 };
+      cell.fill = { fgColor: { argb: CLAY }, pattern: "solid", type: "pattern" };
+      cell.border = { top: rule(ACCENT, "medium"), ...(c >= 2 ? { left: rule(HAIRLINE) } : {}) };
+    }
+    row += 2;
+  }
+
+  sheet.mergeCells(row, 1, row, VS_TARGET_COLS);
+  const note = sheet.getCell(row, 1);
+  note.value =
+    `Sales are the units uploaded so far for ${periodLabel}, de-cumulated so each week counts once. ` +
+    "The target is the WHOLE month's, so mid-month this sheet is expected to read under 100% — it " +
+    "answers \"how much of the month is already in\", not \"did we hit it\". " +
+    "A region row is the sum of the area rows beneath it, and an area is counted under the region " +
+    "that carries its target, so the two always reconcile. " +
+    `Total across every line: ${Math.round(totalSales).toLocaleString()} units sold against ` +
+    `${Math.round(totalTarget).toLocaleString()} units of target. ` +
+    (unmeasured.length > 0
+      ? `${unmeasured.map((section) => section.label).join(", ")} ` +
+        `${unmeasured.length === 1 ? "has" : "have"} no uploaded target for ${periodLabel} — ` +
+        `their ${Math.round(unmeasured.reduce((sum, s) => sum + s.salesUnits, 0)).toLocaleString()} units are shown ` +
+        "in full but are excluded from the headline percentage, which would otherwise be diluted by sales " +
+        "nobody set a number for. "
+      : "") +
+    "Sales that no single area owns — key accounts, chains, wholesale depots — sit in their region's " +
+    "own named row and carry no target, so they are never hidden and never inflate an area's " +
+    "achievement. " +
+    filterCaveat +
+    "Units only; this workbook carries no value column. " +
+    ATTRIBUTION_CAVEAT;
+  note.font = { color: { argb: MUTED }, italic: true, name: "Calibri", size: 9 };
+  note.alignment = { horizontal: "left", indent: 1, vertical: "middle", wrapText: true };
+  sheet.getRow(row).height = 58;
+
+  dressPage(sheet, row, VS_TARGET_COLS);
+  sheet.views = [{ state: "frozen", xSplit: 1, showGridLines: false }];
 }
