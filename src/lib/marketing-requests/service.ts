@@ -391,6 +391,12 @@ type MarketingPharmacyCodeReferenceDbRow = {
   raw_pharmacy_code: string;
 };
 
+/** What a reference lookup needs back: the row, and the code the sales data actually carries. */
+type MarketingPharmacyCodeReferenceRowForMatch = {
+  id: number | string;
+  normalized_pharmacy_code?: string | null;
+};
+
 type MarketingRequestDbRow = {
   approved_at?: string | null;
   area_id: number | string | null;
@@ -3852,16 +3858,36 @@ function mapValidationReportRows(params: {
   return { rows, summary };
 }
 
-function buildPharmacyCodeReferenceResult(matches: Array<{ id: number | string }>) {
+function buildPharmacyCodeReferenceResult(
+  matches: Array<{ id: number | string; normalized_pharmacy_code?: string | null }>,
+) {
   const matchCount = matches.length;
   const status: MarketingPharmacyCodeReferenceStatus =
     matchCount === 1 ? "matched" : matchCount > 1 ? "ambiguous" : "not_found";
 
   return {
+    // The code AS THE SALES DATA CARRIES IT. On a single match this is what must be stored, not
+    // what the rep typed — see resolvePharmacyCodeReference. Null on 0 or >1 matches, because
+    // there is no one canonical row to point at.
+    canonicalCode: matchCount === 1 ? normalizeLookupKey(matches[0].normalized_pharmacy_code) || null : null,
     matchCount,
     referenceId: matchCount === 1 ? Number(matches[0].id) : null,
     status,
   };
+}
+
+/**
+ * Leading zeros stripped off a purely numeric code. POS — and only POS — exports its customer
+ * codes zero-padded to 10 digits, so its reference row for pharmacy 1503246 reads '0001503246'
+ * while the rep types what the pharmacy quotes. Mirrors `compact_pharmacy_code` in migration
+ * 20260816050358; the two must agree or the indexed lookup silently returns nothing.
+ *
+ * Returns "" for anything not purely numeric, which the caller reads as "no second pass" — an
+ * alphanumeric code that legitimately begins with '0' is never rewritten.
+ */
+function compactNumericCode(normalizedCode: string) {
+  if (!/^[0-9]+$/.test(normalizedCode)) return "";
+  return normalizedCode.replace(/^0+/, "") || "0";
 }
 
 /**
@@ -3878,33 +3904,75 @@ export async function resolvePharmacyCodeReference(params: {
   normalizedPharmacyCode: string;
   supabase: SupabaseClient;
 }) {
-  // Preferred path: exact match on the indexed normalized column. `limit(2)` is enough
+  // PASS 1 — exact match on the indexed normalized column. `limit(2)` is enough
   // to distinguish not_found (0) / matched (1) / ambiguous (>=2) without scanning the
   // whole distributor.
   const primary = await params.supabase
     .from("marketing_pharmacy_code_references")
-    .select("id")
+    .select("id, normalized_pharmacy_code")
     .eq("distributor_id", params.distributorId)
     .eq("normalized_pharmacy_code", params.normalizedPharmacyCode)
     .limit(2);
+
   if (!primary.error) {
-    return buildPharmacyCodeReferenceResult((primary.data ?? []) as Array<{ id: number | string }>);
+    const exact = buildPharmacyCodeReferenceResult(
+      (primary.data ?? []) as MarketingPharmacyCodeReferenceRowForMatch[],
+    );
+    if (exact.matchCount > 0) return exact;
+
+    // PASS 2 — zero-padding-tolerant, and ONLY where pass 1 found nothing, so a code that
+    // already matches can never change verdict. POS stores 61% of the reference database
+    // zero-padded to 10 digits ('0001503246'), while the rep types what the pharmacy quotes
+    // ('1503246'), so before this pass the check could effectively never say "tracked" for
+    // the largest distributor.
+    //
+    // Lossless: verified over all 45,414 production rows, no two distinct codes inside one
+    // distributor share a zero-stripped key. Should an import ever create one, this returns
+    // 'ambiguous' rather than guessing.
+    // Skipped only for a non-numeric code, which is never padding. It is NOT skipped just because
+    // the typed code is already compact — that is the whole reported case: the rep types the short
+    // form and the STORED row is the padded one, so pass 2 compares compact-to-compact.
+    const compactCode = compactNumericCode(params.normalizedPharmacyCode);
+    if (!compactCode) return exact;
+
+    const compact = await params.supabase
+      .from("marketing_pharmacy_code_references")
+      .select("id, normalized_pharmacy_code")
+      .eq("distributor_id", params.distributorId)
+      .eq("compact_pharmacy_code", compactCode)
+      .limit(2);
+    // A database without the compact column yet is not an error worth failing the save for —
+    // the exact verdict is still truthful, just stricter.
+    if (compact.error) return exact;
+    return buildPharmacyCodeReferenceResult(
+      (compact.data ?? []) as MarketingPharmacyCodeReferenceRowForMatch[],
+    );
   }
 
   // Fallback for databases where `normalized_pharmacy_code` has not been added yet
   // (e.g. before the accompanying migration is applied). Filters in memory but, unlike
   // the previous implementation, scans every reference for the distributor instead of an
-  // arbitrary first 20 rows.
+  // arbitrary first 20 rows. Applies the same two passes, in the same order.
   const fallback = await params.supabase
     .from("marketing_pharmacy_code_references")
     .select("id, raw_pharmacy_code")
     .eq("distributor_id", params.distributorId);
   if (fallback.error) throw fallback.error;
 
-  const matches = ((fallback.data ?? []) as MarketingPharmacyCodeReferenceDbRow[]).filter(
-    (row) => normalizeLookupKey(row.raw_pharmacy_code) === params.normalizedPharmacyCode,
+  const rows = ((fallback.data ?? []) as MarketingPharmacyCodeReferenceDbRow[]).map((row) => ({
+    id: row.id,
+    normalized_pharmacy_code: normalizeLookupKey(row.raw_pharmacy_code),
+  }));
+  const exactMatches = rows.filter(
+    (row) => row.normalized_pharmacy_code === params.normalizedPharmacyCode,
   );
-  return buildPharmacyCodeReferenceResult(matches);
+  if (exactMatches.length > 0) return buildPharmacyCodeReferenceResult(exactMatches);
+
+  const compactCode = compactNumericCode(params.normalizedPharmacyCode);
+  if (!compactCode) return buildPharmacyCodeReferenceResult(exactMatches);
+  return buildPharmacyCodeReferenceResult(
+    rows.filter((row) => compactNumericCode(row.normalized_pharmacy_code) === compactCode),
+  );
 }
 
 /**
@@ -4554,6 +4622,13 @@ export async function createMarketingValidationRecord(
         // Since the code stopped gating the status (2026-08-12) this warning is the ONLY thing
         // carrying that consequence, so it now rides on validated rows as well as pending ones.
         const untrackedCodeNote = buildUntrackedDistributorCodeNote(reference.status);
+        // Store the code THE SALES DATA CARRIES, not the one the rep typed. ROI attribution
+        // joins sales on this column with exact string equality (migration 20260808231742,
+        // line 159), so a POS pharmacy saved as '1503246' when the sales rows read '0001503246'
+        // would report zero ROI forever — the badge would say tracked and the money would not
+        // arrive. The rep's own entry is preserved untouched in distributor_pharmacy_code.
+        // Only set on a single unambiguous match; otherwise nothing has been proven.
+        const storedPharmacyCode = reference.canonicalCode ?? vendorCode.normalizedPharmacyCode;
         const linkValidationNotes = [
           isOnBehalf
             ? adminValidationNote
@@ -4568,7 +4643,7 @@ export async function createMarketingValidationRecord(
             created_by_hr_id: actorHrId,
             distributor_id: vendorCode.distributorId,
             distributor_pharmacy_code: vendorCode.distributorPharmacyCode,
-            normalized_pharmacy_code: vendorCode.normalizedPharmacyCode,
+            normalized_pharmacy_code: storedPharmacyCode,
             pharmacy_id: pharmacy.id,
             reference_id: reference.referenceId,
             reference_match_count: reference.matchCount,

@@ -811,6 +811,7 @@ import { runManagerCascadeFrozenTablesTests } from "./manager-cascade-frozen-tab
 import { runSalesBatchDeleteGuardTests } from "./sales-batch-delete-guard.test.ts";
 import { runReassignOwnershipFrozenWriteTests } from "./reassign-ownership-frozen-write.test.ts";
 import { runAccessProfileSyncTests } from "./access-profile-sync.test.ts";
+import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-compact.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2089,6 +2090,10 @@ await runTest(
 await runTest(
   "user_access_profiles always syncs with an account's role, and a missing auth_user_id now logs instead of silently skipping the profile write",
   runAccessProfileSyncTests,
+);
+await runTest(
+  "a zero-padded POS pharmacy code is found by the code the pharmacy quotes, and the canonical padded code is what gets stored so ROI still attributes",
+  runMarketingPharmacyCodeCompactTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);
