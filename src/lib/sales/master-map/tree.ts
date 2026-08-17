@@ -276,12 +276,26 @@ function customerRow(
   };
 }
 
+/**
+ * "1,234 shops" — the size of whatever the band is sitting above.
+ *
+ * On the band itself rather than in a column, because the bands are merged across the full width
+ * and a merged cell shows only its top-left value. This is also the one number the owner asks for
+ * first when he opens an area, and counting it by eye means scrolling to the next band.
+ */
+function shopCount(total: number): string {
+  if (total === 0) return "no shops";
+  return `${total.toLocaleString("en-US")} ${total === 1 ? "shop" : "shops"}`;
+}
+
 /** One region rendered as the grouped, banded rows the owner asked for. */
 export function renderRegionRows(
   region: MasterMapRegion,
   distributorName: (code: string) => string,
 ): MasterMapRow[] {
-  const rows: MasterMapRow[] = [{ kind: "region", label: region.regionName }];
+  const rows: MasterMapRow[] = [
+    { kind: "region", label: `${region.regionName}   ·   ${shopCount(region.customerCount)}` },
+  ];
 
   if (region.areas.length === 0) {
     rows.push({ kind: "empty-note", label: "This region has no areas." });
@@ -289,13 +303,16 @@ export function renderRegionRows(
   }
 
   for (const area of region.areas) {
-    rows.push({ kind: "area", label: area.areaName });
+    rows.push({ kind: "area", label: `${area.areaName}   ·   ${shopCount(area.customerCount)}` });
     if (area.bricks.length === 0) {
       rows.push({ kind: "empty-note", label: "This area has no bricks." });
       continue;
     }
     for (const brick of area.bricks) {
-      rows.push({ kind: "brick", label: `${brick.brickName}  —  ${brick.brickId}` });
+      rows.push({
+        kind: "brick",
+        label: `${brick.brickName}  —  ${brick.brickId}   ·   ${shopCount(brick.customers.length)}`,
+      });
       if (brick.customers.length === 0) {
         rows.push({ kind: "empty-note", label: "No customers recorded in this brick." });
         continue;
