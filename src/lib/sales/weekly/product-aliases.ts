@@ -478,6 +478,38 @@ export async function importProductAliasWorkbook(input: {
   return { inserted, updated, skipped, blockedRows };
 }
 
+/** One already-confirmed mapping, in the shape the AI few-shot prompt wants. */
+export type WeeklyAliasExample = { raw: string; code: string; distributorCode: string };
+
+/**
+ * Every product mapping already confirmed, as raw-text → product-code examples for the AI.
+ *
+ * The RAW alias is returned, not the normalized one: normalization uppercases and strips, which is
+ * right for exact lookups and wrong as a worked example — the model learns more from the spelling a
+ * distributor actually uses. IGNORE mappings are kept: "this raw text is something we don't sell" is
+ * one of the most useful patterns the dictionary holds.
+ */
+export async function listWeeklyProductAliasExamples(distributorCode?: string | null, limit = 600): Promise<WeeklyAliasExample[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("weekly_sales_product_aliases")
+    .select("distributor_code, alias, product_code")
+    .order("updated_at", { ascending: false })
+    .limit(Math.max(1, limit));
+  if (distributorCode) query = query.eq("distributor_code", canonicalWeeklyDistributorCode(distributorCode));
+  const { data, error } = await query;
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const examples: WeeklyAliasExample[] = [];
+  for (const row of data ?? []) {
+    const raw = String(row.alias ?? "").trim();
+    const code = String(row.product_code ?? "").trim();
+    if (!raw || !code) continue;
+    examples.push({ raw, code, distributorCode: String(row.distributor_code ?? "").trim().toUpperCase() });
+  }
+  return examples;
+}
+
 /** Build the per-distributor alias resolution index for the upload parser. */
 export async function loadProductAliasIndex(): Promise<WeeklyProductAliasIndex> {
   const supabase = getSupabaseAdmin();

@@ -24,6 +24,13 @@ import type { WeeklyMappingImportResult } from "@/lib/sales/weekly/product-alias
 
 export type WeeklyBranchFileType = "any" | "sales" | "stock";
 
+/**
+ * Value that means "this depot's rows never count" — weekly's counterpart of the product IGNORE.
+ * Lives here, with the map it applies to, so the normalizer and this module can both use it without
+ * an import cycle. Never a real region code: it sets the row's `excluded` flag instead.
+ */
+export const WEEKLY_BRANCH_EXCLUDE_CODE = "__EXCLUDE__";
+
 export type WeeklyMasterRegion = { regionCode: string; regionName: string };
 
 /** A selectable area target, carrying its region so the UI/import can enforce area-inside-region. */
@@ -523,6 +530,36 @@ export async function importBranchRegionWorkbook(input: {
     }
   }
   return { inserted, updated, skipped, blockedRows };
+}
+
+/** One already-confirmed branch placement, in the shape the AI few-shot prompt wants. */
+export type WeeklyBranchExample = { raw: string; code: string; distributorCode: string };
+
+/**
+ * Every branch already placed, as raw-branch → region-code examples for the AI.
+ *
+ * Excluded branches are returned pointing at the exclude sentinel rather than dropped — "this depot
+ * never counts" is a decision the model should be able to repeat for a depot that looks like it.
+ */
+export async function listWeeklyBranchRegionExamples(distributorCode?: string | null, limit = 600): Promise<WeeklyBranchExample[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("weekly_sales_branch_region_map")
+    .select("distributor_code, raw_branch, branch_header_raw, region_code, excluded")
+    .order("updated_at", { ascending: false })
+    .limit(Math.max(1, limit));
+  if (distributorCode) query = query.eq("distributor_code", canonicalWeeklyDistributorCode(distributorCode));
+  const { data, error } = await query;
+  if (error) throw new SalesWorkflowError("load_failed", error.message, 500);
+
+  const examples: WeeklyBranchExample[] = [];
+  for (const row of data ?? []) {
+    const raw = String(row.raw_branch ?? "").trim() || String(row.branch_header_raw ?? "").trim();
+    const code = row.excluded ? WEEKLY_BRANCH_EXCLUDE_CODE : String(row.region_code ?? "").trim();
+    if (!raw || !code) continue;
+    examples.push({ raw, code, distributorCode: String(row.distributor_code ?? "").trim().toUpperCase() });
+  }
+  return examples;
 }
 
 /** Build the branch->region resolution index for the upload parser. */
