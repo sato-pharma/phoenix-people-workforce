@@ -1,6 +1,6 @@
 # Master Map — the live sheet
 
-The Master Map is a Google Sheet that keeps itself up to date from Phoenix: eleven tabs, one row
+The Master Map is a Google Sheet that keeps itself up to date from Phoenix: fourteen tabs, one row
 per shop, refreshed every five minutes without anyone touching it.
 
 Sheet: <https://docs.google.com/spreadsheets/d/1za3G8C6HCi74qmq4PwP_T7d-rM16UU1XivqEV7A48Hg>
@@ -9,11 +9,33 @@ Sheet: <https://docs.google.com/spreadsheets/d/1za3G8C6HCi74qmq4PwP_T7d-rM16UU1X
 
 | Tab | What it is |
 | --- | --- |
-| **Find a pharmacy** | The one you work in. Four dropdowns — Region, Area, Brick, Channel — that narrow each other, plus a box that searches name, code and address at once. Leave a box empty to include all of it. |
+| **Find a pharmacy** | The one you work in. Four dropdowns — Region, Area, Brick, Channel — that narrow each other, plus a box that searches name, customer code, brick code and address at once. Leave a box empty to include all of it. |
 | **Master** | Every region, grouped and banded, one after another. |
 | **All customers** | One flat row per shop, frozen header, filterable. Everything else reads from this tab. |
-| *(region)* × 9 | The same grouping, one region at a time. |
+| **Gaps** | The working list: shops that arrived without a name (7,407 as of 2026-08-17, 14.6% of the master) and bricks holding no customers (90). Neither is a defect report — a brick can legitimately be empty — but both are already visible on the main tabs in a form nobody can act on, spread across 697 bricks. |
+| *(region)* × 7 | The same grouping, one region at a time. |
+| **Upper Egypt 1**, **Upper Egypt 2** | The Anti Infective line's two district territories. They own no geography of their own, so they borrow their areas from the People Organogram — Upper Egypt 1 is Minia 1, Minia 2 and Beni Suef; Upper Egypt 2 is Assuit 1, Assuit 2, Sohag1, Sohag2, Qena 1 and Qena 2. Their shops are the SAME shops as Upper Egypt's and Giza's, so each tab says so at the top and neither is counted anywhere else. |
 | **Lists** | Hidden. Holds the dropdown lists and the single live filter that both the count and the results read. Do not edit it. |
+
+Every region carries all three lines except Upper Egypt, where CNS and Pedia run one territory and
+Anti Infective runs two. That split lives only in `au_v_line_area_map` — the same view the Monthly
+Closing groups by — and is read live rather than listed anywhere, so moving an area between the two
+districts moves it on the sheet without a code change. It is watched by the five-minute probe, so
+the move shows up within five minutes rather than at the next hourly check.
+
+### Who manages each shop
+
+Every shop has **three district managers, one per sales line** — never one. **All customers** and
+**Gaps** carry them as the last three columns (Anti Infective, CNS, Pedia), and the grouped tabs
+say the same three names once under each area band rather than repeating them on all 951 rows of an
+area. They come from the same organogram view, so a manager who changes seat changes on the sheet
+within five minutes without anyone editing it.
+
+A cell always says something. Today that is 101 real people across 18 managers, 6 districts reading
+**Vacant**, 40 Others buckets reading **Sales only, no manager** — those carry sales but no target —
+and Main Store, the one Source of Sales area the organogram has no row for, reading **Not in the
+organogram**. A blank would read as "this failed to load", which is the one thing none of those
+three facts means.
 
 The finder shows at most 500 shops at a time and states the true total beside it. Spilling all
 50,000 into a tab that recalculates on every dropdown change makes the sheet unusable, and a
@@ -89,7 +111,7 @@ Once, by hand. Steps 1–4 are in the sheet; step 5 is in Railway.
 From the Apps Script editor, pick a function and click **Run**:
 
 - **`syncMasterMap`** — do a tick right now instead of waiting for the timer.
-- **`forceFullResync`** — forget every stored hash so the next tick repaints all eleven tabs.
+- **`forceFullResync`** — forget every stored hash so the next tick repaints all fourteen tabs.
   Use this after changing the layout in `sheet-render.ts`, since the text can be identical while
   the formatting is not.
 - **`removeTrigger`** — stop the sheet refreshing itself.
@@ -107,6 +129,6 @@ From the Apps Script editor, pick a function and click **Run**:
 | Layout and provenance wording | [`src/lib/sales/master-map/tree.ts`](../../src/lib/sales/master-map/tree.ts) |
 
 There is also a direct push that bypasses the sheet's own script entirely — `pnpm run
-master-map:sync`, which writes all eleven tabs from this machine. It needs a Google token in
+master-map:sync`, which writes all fourteen tabs from this machine. It needs a Google token in
 `MASTER_MAP_GOOGLE_ACCESS_TOKEN` and exists for development and for repainting after a layout
 change, not for production.

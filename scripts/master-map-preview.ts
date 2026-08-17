@@ -7,7 +7,7 @@
 // the single tab named after the region, so it can be run against the real sheet safely while
 // the layout is still being agreed.
 
-import { buildMasterMapTree, renderRegionRows } from "@/lib/sales/master-map/tree";
+import { buildMasterMapTree, renderRegionRows, shopOwningRegions } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
 import { renderSheet } from "@/lib/sales/master-map/sheet-render";
 import { syncMasterMap } from "@/lib/sales/master-map/sync";
@@ -31,12 +31,16 @@ async function main(): Promise<void> {
   const source = await loadMasterMapSource();
   const tree = buildMasterMapTree(source);
 
-  const totalCustomers = tree.regions.reduce((sum, region) => sum + region.customerCount, 0);
-  const totalBricks = tree.regions.reduce(
+  // Every total counts the regions that OWN their shops. The organogram views (Upper Egypt 1 and
+  // Upper Egypt 2) hold the same pharmacies as Upper Egypt and Giza, so including them here would
+  // report a master bigger than the one that exists.
+  const owning = shopOwningRegions(tree);
+  const totalCustomers = owning.reduce((sum, region) => sum + region.customerCount, 0);
+  const totalBricks = owning.reduce(
     (sum, region) => sum + region.areas.reduce((areaSum, area) => areaSum + area.bricks.length, 0),
     0,
   );
-  const emptyBricks = tree.regions.reduce(
+  const emptyBricks = owning.reduce(
     (sum, region) =>
       sum +
       region.areas.reduce(
@@ -45,7 +49,7 @@ async function main(): Promise<void> {
       ),
     0,
   );
-  const unnamed = tree.regions.reduce(
+  const unnamed = owning.reduce(
     (sum, region) =>
       sum +
       region.areas.reduce(
@@ -74,7 +78,10 @@ async function main(): Promise<void> {
     console.log(
       `  ${region.regionName.padEnd(16)} ${String(region.areas.length).padStart(3)} areas  ` +
         `${String(region.areas.reduce((s, a) => s + a.bricks.length, 0)).padStart(4)} bricks  ` +
-        `${String(region.customerCount).padStart(6)} customers`,
+        `${String(region.customerCount).padStart(6)} customers` +
+        (region.fromOrganogram
+          ? `   <- organogram view of ${region.sitsIn.join(" + ")}, not counted in the totals above`
+          : ""),
     );
   }
 

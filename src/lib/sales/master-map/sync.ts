@@ -14,6 +14,7 @@
 
 import {
   MASTER_MAP_FLAT_COLUMNS,
+  MASTER_MAP_GAP_COLUMNS,
   buildMasterMapTree,
   renderFlatRows,
   renderMasterRows,
@@ -21,7 +22,9 @@ import {
   type MasterMapTree,
 } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
+import { GAPS_TAB, renderGapsSheet } from "@/lib/sales/master-map/gaps-tab";
 import {
+  LISTS_COLUMN_COUNT,
   LISTS_TAB,
   LOOKUP_TAB,
   renderListsSheet,
@@ -156,7 +159,9 @@ export function summariseTree(tree: MasterMapTree): {
 } {
   let customers = 0;
   let unnamedCustomers = 0;
-  for (const region of tree.regions) {
+  // Organogram regions hold the SAME shops as the region they sit in, so counting them here would
+  // report thousands of pharmacies that do not exist.
+  for (const region of tree.regions.filter((candidate) => !candidate.fromOrganogram)) {
     for (const area of region.areas) {
       for (const brick of area.bricks) {
         customers += brick.customers.length;
@@ -214,6 +219,25 @@ export async function syncMasterMap(options: {
   written.push(FLAT_TAB);
   report(`${FLAT_TAB}: ${flatRows.length} rows`);
 
+  // 2b. The gaps: nameless shops and empty bricks, as a working list rather than scattered across
+  // the main tabs where nobody can act on them.
+  const gaps = renderGapsSheet(tree, distributorName, 0);
+  const gapsId = await ensureTab(
+    token,
+    options.spreadsheetId,
+    GAPS_TAB,
+    gaps.values.length,
+    MASTER_MAP_GAP_COLUMNS.length,
+  );
+  await paint(
+    token,
+    options.spreadsheetId,
+    GAPS_TAB,
+    renderGapsSheet(tree, distributorName, gapsId),
+  );
+  written.push(GAPS_TAB);
+  report(`${GAPS_TAB}: ${gaps.values.length} rows`);
+
   // 3. One tab per region — including the two empty ones, which say so rather than not existing.
   for (const region of tree.regions) {
     const rows = renderRegionRows(region, distributorName);
@@ -230,11 +254,19 @@ export async function syncMasterMap(options: {
 
   // 4. The two control tabs, in this order and last on purpose: both are formulas over
   // "All customers", so neither can resolve until that tab exists and is full.
-  const listsId = await ensureTab(token, options.spreadsheetId, LISTS_TAB, 1, 18);
+  const listsId = await ensureTab(token, options.spreadsheetId, LISTS_TAB, 1, LISTS_COLUMN_COUNT);
   await paint(token, options.spreadsheetId, LISTS_TAB, renderListsSheet(listsId));
   report(`${LISTS_TAB}: hidden helper`);
 
-  const lookupId = await ensureTab(token, options.spreadsheetId, LOOKUP_TAB, 600, 12);
+  // As wide as "All customers": this tab repeats that header, and a values write past the last
+  // column is rejected outright rather than clipped.
+  const lookupId = await ensureTab(
+    token,
+    options.spreadsheetId,
+    LOOKUP_TAB,
+    600,
+    MASTER_MAP_FLAT_COLUMNS.length,
+  );
   await paint(token, options.spreadsheetId, LOOKUP_TAB, renderLookupSheet(lookupId));
   report(`${LOOKUP_TAB}: ready`);
 

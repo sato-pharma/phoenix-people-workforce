@@ -220,7 +220,7 @@ function planWork(properties) {
       part: "clear",
       requestChunks: tab.requestChunks,
       rows: tab.rows,
-      sheetId: ensureTab(spreadsheet, tab.title, tab.rows),
+      sheetId: ensureTab(spreadsheet, tab.title, tab.rows, tab.columns),
       stamp: plan.stamp,
       title: tab.title,
       valueChunks: tab.valueChunks,
@@ -301,7 +301,7 @@ function fetchSlice(job) {
 }
 
 /** Create the tab if it is missing and grow it before anything is written into it. */
-function ensureTab(spreadsheet, title, rowsNeeded) {
+function ensureTab(spreadsheet, title, rowsNeeded, columnsNeeded) {
   let sheet = spreadsheet.getSheetByName(title);
   if (!sheet) sheet = spreadsheet.insertSheet(title);
 
@@ -309,7 +309,14 @@ function ensureTab(spreadsheet, title, rowsNeeded) {
   // clipped — which reads as "the formatting didn't work" rather than as a size problem.
   const wanted = Math.max(rowsNeeded + 20, 1000);
   if (sheet.getMaxRows() < wanted) sheet.insertRowsAfter(sheet.getMaxRows(), wanted - sheet.getMaxRows());
-  if (sheet.getMaxColumns() < 12) sheet.insertColumnsAfter(sheet.getMaxColumns(), 12 - sheet.getMaxColumns());
+
+  // The width comes from the plan, because the widest tab has grown twice now (eleven columns, then
+  // fourteen with the district managers) and a hardcoded number here fails as a REJECTED WRITE on
+  // whichever tab outgrew it — not as a narrow tab. The +2 is slack so one more column does not.
+  const columns = Math.max(Number(columnsNeeded) || 0, 12) + 2;
+  if (sheet.getMaxColumns() < columns) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), columns - sheet.getMaxColumns());
+  }
 
   return sheet.getSheetId();
 }

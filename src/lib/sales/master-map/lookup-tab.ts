@@ -27,6 +27,7 @@
 import { MASTER_MAP_FLAT_COLUMNS } from "@/lib/sales/master-map/tree";
 import {
   FONT,
+  MANAGER_COLUMN_WIDTH,
   STYLE,
   rgb,
   renderedTabColor,
@@ -39,12 +40,36 @@ export const LOOKUP_TAB = "Find a pharmacy";
 /** Hidden. Holds the dropdown lists and the one live filter both halves of the tab read. */
 export const LISTS_TAB = "Lists";
 
-const LAYOUT_VERSION = "v1";
+const LAYOUT_VERSION = "v3";
 
 /** How many matching shops the tab shows at once. The true total is always stated beside it. */
 const VISIBLE_LIMIT = 500;
 
 const COLUMN_COUNT = MASTER_MAP_FLAT_COLUMNS.length;
+
+/** 0 -> "A", 25 -> "Z", 26 -> "AA". */
+function columnLetter(index: number): string {
+  let letters = "";
+  for (let value = index; value >= 0; value = Math.floor(value / 26) - 1) {
+    letters = String.fromCharCode(65 + (value % 26)) + letters;
+  }
+  return letters;
+}
+
+/**
+ * The last column of "All customers", and where the filter result spills on the helper tab.
+ *
+ * DERIVED, never typed. Adding a column to the flat tab used to mean hand-editing four ranges here,
+ * and a missed one does not error — the formula simply returns fewer columns than the header claims,
+ * so the finder shows a row whose last cells are blank and looks like missing data.
+ */
+const FLAT_LAST = columnLetter(COLUMN_COUNT - 1);
+const RESULTS_FIRST_INDEX = 5;
+const RESULTS_FIRST = columnLetter(RESULTS_FIRST_INDEX);
+const RESULTS_LAST = columnLetter(RESULTS_FIRST_INDEX + COLUMN_COUNT - 1);
+
+/** Four dropdown lists in A-D, then the filter result spilling from F. */
+export const LISTS_COLUMN_COUNT = RESULTS_FIRST_INDEX + COLUMN_COUNT;
 
 /** Where the controls live, 0-based. Row 4 on screen. */
 const INPUT_ROW = 3;
@@ -61,6 +86,7 @@ const FLAT = {
   address: "J",
   area: "B",
   brick: "C",
+  brickCode: "D",
   channel: "I",
   code: "G",
   pharmacy: "E",
@@ -75,8 +101,15 @@ function optional(cell: string, column: string): string {
   return `(${LOOKUP}!${cell}="")+(${SOURCE}!${column}2:${column}=${LOOKUP}!${cell})`;
 }
 
+/**
+ * The search box looks in four columns at once.
+ *
+ * Brick code is in the list because the owner reads brick codes off the band labels ("الأزاريطه —
+ * B108-2") and will type one straight into the box. Without it, a perfectly valid code returns
+ * nothing, which reads as "that brick has no shops" rather than "this box does not search that".
+ */
 function searchClause(cell: string): string {
-  const anyOf = [FLAT.pharmacy, FLAT.code, FLAT.address]
+  const anyOf = [FLAT.pharmacy, FLAT.code, FLAT.brickCode, FLAT.address]
     .map((column) => `ISNUMBER(SEARCH(${LOOKUP}!${cell},${SOURCE}!${column}2:${column}))`)
     .join("+");
   return `(${LOOKUP}!${cell}="")+${anyOf}`;
@@ -97,7 +130,7 @@ const BRICK_CELL = "$C$4";
 const CHANNEL_CELL = "$D$4";
 const SEARCH_CELL = "$E$4";
 
-const RESULT_FORMULA = `=IFERROR(FILTER(${SOURCE}!A2:K,${[
+const RESULT_FORMULA = `=IFERROR(FILTER(${SOURCE}!A2:${FLAT_LAST},${[
   optional(REGION_CELL, FLAT.region),
   optional(AREA_CELL, FLAT.area),
   optional(BRICK_CELL, FLAT.brick),
@@ -167,7 +200,11 @@ export function renderListsSheet(sheetId: number): RenderedSheet {
     {
       updateSheetProperties: {
         fields: "gridProperties(rowCount,columnCount)",
-        properties: { gridProperties: { columnCount: 18, rowCount: 55_000 }, sheetId },
+        properties: {
+          // Derived, because a grid one column short of the spill fails the whole tab, not clips it.
+          gridProperties: { columnCount: LISTS_COLUMN_COUNT, rowCount: 55_000 },
+          sheetId,
+        },
       },
     },
     updateCellFormula(sheetId, 1, 0, listFormula(FLAT.region, [])),
@@ -187,7 +224,7 @@ export function renderListsSheet(sheetId: number): RenderedSheet {
       ]),
     ),
     updateCellFormula(sheetId, 1, 3, listFormula(FLAT.channel, [])),
-    updateCellFormula(sheetId, 1, 5, RESULT_FORMULA),
+    updateCellFormula(sheetId, 1, RESULTS_FIRST_INDEX, RESULT_FORMULA),
     {
       updateSheetProperties: { fields: "hidden", properties: { hidden: true, sheetId } },
     },
@@ -208,7 +245,7 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
   const values: string[][] = [
     row(["Find a pharmacy"]),
     blank(),
-    row(["Region", "Area", "Brick", "Channel", "Search a name, a code or an address"]),
+    row(["Region", "Area", "Brick", "Channel", "Search a name, a code, a brick code or an address"]),
     blank(),
     blank(),
     blank(),
@@ -331,15 +368,15 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
       sheetId,
       STATUS_ROW,
       0,
-      `=IF(COUNTA(${LISTS_TAB}!F2:F)=0,"Nothing matches those filters — clear one of the boxes above.",` +
-        `"Showing "&TEXT(MIN(${VISIBLE_LIMIT},COUNTA(${LISTS_TAB}!F2:F)),"#,##0")&" of "&` +
-        `TEXT(COUNTA(${LISTS_TAB}!F2:F),"#,##0")&" matching shops")`,
+      `=IF(COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST})=0,"Nothing matches those filters — clear one of the boxes above.",` +
+        `"Showing "&TEXT(MIN(${VISIBLE_LIMIT},COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST})),"#,##0")&" of "&` +
+        `TEXT(COUNTA(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_FIRST}),"#,##0")&" matching shops")`,
     ),
     updateCellFormula(
       sheetId,
       RESULTS_ROW,
       0,
-      `=IFERROR(ARRAY_CONSTRAIN(${LISTS_TAB}!F2:P,${VISIBLE_LIMIT},${COLUMN_COUNT}))`,
+      `=IFERROR(ARRAY_CONSTRAIN(${LISTS_TAB}!${RESULTS_FIRST}2:${RESULTS_LAST},${VISIBLE_LIMIT},${COLUMN_COUNT}))`,
     ),
     {
       updateDimensionProperties: {
@@ -364,7 +401,9 @@ export function renderLookupSheet(sheetId: number): RenderedSheet {
     },
   ];
 
-  [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320].forEach((width, column) => {
+  const widths = [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320];
+  while (widths.length < COLUMN_COUNT) widths.push(MANAGER_COLUMN_WIDTH);
+  widths.forEach((width, column) => {
     requests.push({
       updateDimensionProperties: {
         fields: "pixelSize",
