@@ -39,6 +39,7 @@ const PROP_STAMP = "MM_STAMP";
 const PROP_HASHES = "MM_HASHES";
 const PROP_QUEUE = "MM_QUEUE";
 const PROP_LAST_FULL = "MM_LAST_FULL_CHECK";
+const PROP_ORDER = "MM_ORDER";
 
 /** Stop this far into the six-minute limit and let the next tick continue. */
 const DEADLINE_MS = 4.5 * 60 * 1000;
@@ -149,10 +150,41 @@ function runSync(deadline) {
   properties.setProperty(PROP_QUEUE, JSON.stringify(queue));
 
   if (queue.length === 0) {
+    orderTabs(properties);
     Logger.log("Sheet is up to date.");
   } else {
     Logger.log(queue.length + " tab(s) still to paint; continuing on the next tick.");
   }
+}
+
+/**
+ * Put the tabs back in the order Phoenix lists them.
+ *
+ * A tab this script had to create lands at the END of the workbook, so without this the finder
+ * tab and any newly added region would sit after everything else — and the order would drift
+ * again every time a region appears. Only reached once the queue has emptied, so it costs one
+ * request per repaint rather than one per tick.
+ *
+ * Done through the REST API rather than moveActiveSheet(), which would yank whichever tab the
+ * owner happens to be reading out from under him.
+ */
+function orderTabs(properties) {
+  const order = readJson(properties, PROP_ORDER, []);
+  if (order.length === 0) return;
+
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const requests = [];
+  for (let index = 0; index < order.length; index += 1) {
+    const sheet = spreadsheet.getSheetByName(order[index]);
+    if (!sheet) continue;
+    requests.push({
+      updateSheetProperties: {
+        fields: "index",
+        properties: { index: index, sheetId: sheet.getSheetId() },
+      },
+    });
+  }
+  if (requests.length > 0) sheetsBatchUpdate(spreadsheet.getId(), requests);
 }
 
 /** Decide what actually needs repainting. Returns the queue of tab jobs. */
@@ -168,6 +200,12 @@ function planWork(properties) {
 
   const plan = fetchJson("/api/sales/master-map/sheet?plan=1");
   properties.setProperty(PROP_LAST_FULL, String(Date.now()));
+  // Remember the full reading order, not just the tabs that changed — the reorder happens after
+  // the queue drains, by which point the plan is long gone.
+  properties.setProperty(
+    PROP_ORDER,
+    JSON.stringify(plan.tabs.map(function (tab) { return tab.title; })),
+  );
 
   const hashes = readJson(properties, PROP_HASHES, {});
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -215,9 +253,7 @@ function paintTab(job, deadline) {
   if (job.part === "clear") {
     const slice = fetchSlice(job);
     if (slice.restart) return "restart";
-    if (slice.requests && slice.requests.length > 0) {
-      Sheets.Spreadsheets.batchUpdate({ requests: slice.requests }, spreadsheetId);
-    }
+    if (slice.requests && slice.requests.length > 0) sheetsBatchUpdate(spreadsheetId, slice.requests);
     job.part = "values";
     job.chunk = 0;
   }
@@ -228,9 +264,7 @@ function paintTab(job, deadline) {
     if (slice.restart) return "restart";
     if (slice.values && slice.values.length > 0) {
       const range = "'" + job.title.replace(/'/g, "''") + "'!A" + (slice.startRow + 1);
-      Sheets.Spreadsheets.Values.update({ values: slice.values }, spreadsheetId, range, {
-        valueInputOption: "RAW",
-      });
+      sheetsValuesUpdate(spreadsheetId, range, slice.values);
     }
     job.chunk += 1;
   }
@@ -244,9 +278,7 @@ function paintTab(job, deadline) {
     if (Date.now() >= deadline) return "paused";
     const slice = fetchSlice(job);
     if (slice.restart) return "restart";
-    if (slice.requests && slice.requests.length > 0) {
-      Sheets.Spreadsheets.batchUpdate({ requests: slice.requests }, spreadsheetId);
-    }
+    if (slice.requests && slice.requests.length > 0) sheetsBatchUpdate(spreadsheetId, slice.requests);
     job.chunk += 1;
   }
 
@@ -285,6 +317,51 @@ function ensureTab(spreadsheet, title, rowsNeeded) {
 // ---------------------------------------------------------------------------------------------
 // Plumbing
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Call the Google Sheets REST API directly, with this script's own OAuth token.
+ *
+ * NOT the "advanced Sheets service". That would be the obvious way to do this, but the advanced
+ * service is not offered in every Apps Script project's service picker — it was missing from this
+ * one — and a script that only works when a dropdown happens to list an entry is a script that
+ * breaks silently when someone recreates it. This route needs nothing enabled: the manifest already
+ * asks for the spreadsheets scope, and getOAuthToken hands over a token carrying it.
+ *
+ * Retries on 429 and 5xx. Google allows 60 writes a minute per user and a full repaint sits close
+ * to that line, so a retry is the difference between a sync that finishes and one that throws away
+ * everything it had already painted.
+ */
+function sheetsCall(method, path, payload) {
+  let lastError = "";
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = UrlFetchApp.fetch("https://sheets.googleapis.com/v4/spreadsheets" + path, {
+      contentType: "application/json",
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      method: method,
+      muteHttpExceptions: true,
+      payload: JSON.stringify(payload),
+    });
+    const code = response.getResponseCode();
+    if (code >= 200 && code < 300) return JSON.parse(response.getContentText() || "{}");
+
+    lastError = code + " " + response.getContentText().slice(0, 300);
+    if (code !== 429 && code < 500) break;
+    Utilities.sleep(2000 * Math.pow(2, attempt));
+  }
+  throw new Error("Google Sheets rejected " + method + " " + path + ": " + lastError);
+}
+
+function sheetsBatchUpdate(spreadsheetId, requests) {
+  return sheetsCall("post", "/" + spreadsheetId + ":batchUpdate", { requests: requests });
+}
+
+function sheetsValuesUpdate(spreadsheetId, range, values) {
+  return sheetsCall(
+    "put",
+    "/" + spreadsheetId + "/values/" + encodeURIComponent(range) + "?valueInputOption=RAW",
+    { values: values },
+  );
+}
 
 function readJson(properties, key, fallback) {
   const raw = properties.getProperty(key);

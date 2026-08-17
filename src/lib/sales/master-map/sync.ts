@@ -21,7 +21,18 @@ import {
   type MasterMapTree,
 } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
-import { renderFlatSheet, renderSheet } from "@/lib/sales/master-map/sheet-render";
+import {
+  LISTS_TAB,
+  LOOKUP_TAB,
+  renderListsSheet,
+  renderLookupSheet,
+} from "@/lib/sales/master-map/lookup-tab";
+import {
+  renderFlatSheet,
+  renderSheet,
+  rgb,
+  tabColorFor,
+} from "@/lib/sales/master-map/sheet-render";
 import {
   batchUpdate,
   environmentTokenProvider,
@@ -176,7 +187,12 @@ export async function syncMasterMap(options: {
   // 1. The master tab — every region in one place.
   const masterRows = renderMasterRows(tree, distributorName);
   const masterId = await ensureTab(token, options.spreadsheetId, MASTER_TAB, masterRows.length, 12);
-  await paint(token, options.spreadsheetId, MASTER_TAB, renderSheet(masterRows, masterId));
+  await paint(
+    token,
+    options.spreadsheetId,
+    MASTER_TAB,
+    renderSheet(masterRows, masterId, { tabColor: rgb(15, 23, 42) }),
+  );
   written.push(MASTER_TAB);
   report(`${MASTER_TAB}: ${masterRows.length} rows`);
 
@@ -193,7 +209,7 @@ export async function syncMasterMap(options: {
     token,
     options.spreadsheetId,
     FLAT_TAB,
-    renderFlatSheet(MASTER_MAP_FLAT_COLUMNS, flatRows, flatId),
+    renderFlatSheet(MASTER_MAP_FLAT_COLUMNS, flatRows, flatId, { tabColor: rgb(71, 85, 105) }),
   );
   written.push(FLAT_TAB);
   report(`${FLAT_TAB}: ${flatRows.length} rows`);
@@ -202,13 +218,35 @@ export async function syncMasterMap(options: {
   for (const region of tree.regions) {
     const rows = renderRegionRows(region, distributorName);
     const sheetId = await ensureTab(token, options.spreadsheetId, region.regionName, rows.length, 12);
-    await paint(token, options.spreadsheetId, region.regionName, renderSheet(rows, sheetId));
+    await paint(
+      token,
+      options.spreadsheetId,
+      region.regionName,
+      renderSheet(rows, sheetId, { tabColor: tabColorFor(region.regionName) }),
+    );
     written.push(region.regionName);
     report(`${region.regionName}: ${rows.length} rows`);
   }
 
-  // 4. Reading order: Master, the flat lookup, then the regions in the order they were written.
-  await orderTabs(token, options.spreadsheetId, written);
+  // 4. The two control tabs, in this order and last on purpose: both are formulas over
+  // "All customers", so neither can resolve until that tab exists and is full.
+  const listsId = await ensureTab(token, options.spreadsheetId, LISTS_TAB, 1, 18);
+  await paint(token, options.spreadsheetId, LISTS_TAB, renderListsSheet(listsId));
+  report(`${LISTS_TAB}: hidden helper`);
+
+  const lookupId = await ensureTab(token, options.spreadsheetId, LOOKUP_TAB, 600, 12);
+  await paint(token, options.spreadsheetId, LOOKUP_TAB, renderLookupSheet(lookupId));
+  report(`${LOOKUP_TAB}: ready`);
+
+  // 5. Reading order: the finder first, then Master, the flat lookup, the regions, and the hidden
+  // helper last. Written order and reading order differ, which is why this step exists.
+  await orderTabs(token, options.spreadsheetId, [
+    LOOKUP_TAB,
+    ...written,
+    LISTS_TAB,
+  ]);
+  written.unshift(LOOKUP_TAB);
+  written.push(LISTS_TAB);
 
   return {
     customers: summary.customers,

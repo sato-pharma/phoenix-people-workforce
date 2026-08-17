@@ -5,6 +5,20 @@ per shop, refreshed every five minutes without anyone touching it.
 
 Sheet: <https://docs.google.com/spreadsheets/d/1za3G8C6HCi74qmq4PwP_T7d-rM16UU1XivqEV7A48Hg>
 
+## The tabs
+
+| Tab | What it is |
+| --- | --- |
+| **Find a pharmacy** | The one you work in. Four dropdowns — Region, Area, Brick, Channel — that narrow each other, plus a box that searches name, code and address at once. Leave a box empty to include all of it. |
+| **Master** | Every region, grouped and banded, one after another. |
+| **All customers** | One flat row per shop, frozen header, filterable. Everything else reads from this tab. |
+| *(region)* × 9 | The same grouping, one region at a time. |
+| **Lists** | Hidden. Holds the dropdown lists and the single live filter that both the count and the results read. Do not edit it. |
+
+The finder shows at most 500 shops at a time and states the true total beside it. Spilling all
+50,000 into a tab that recalculates on every dropdown change makes the sheet unusable, and a
+silent cap would read as missing data.
+
 ## How it works, and why it works this way
 
 The script in [Code.gs](Code.gs) runs **inside the spreadsheet**, as its owner, on a five-minute
@@ -54,6 +68,11 @@ Once, by hand. Steps 1–4 are in the sheet; step 5 is in Railway.
 2. Replace the contents of `Code.gs` with [Code.gs](Code.gs) from this folder. Then click the gear
    (**Project Settings**) → tick **Show "appsscript.json" manifest file in editor**, open the new
    `appsscript.json` tab, and replace it with [appsscript.json](appsscript.json).
+
+   **Nothing needs enabling under Services.** The script talks to the Sheets REST API directly with
+   its own OAuth token rather than through the "advanced Sheets service" — that service is not
+   offered in every project's picker (it was missing from this one), and a script that only works
+   when a dropdown happens to list an entry breaks silently the next time someone recreates it.
 3. Still in **Project Settings**, under **Script Properties**, add two:
    - `PHOENIX_BASE_URL` → `https://phoenix-hr.satopharma.com` (no trailing slash)
    - `PHOENIX_TOKEN` → the same value as `MASTER_MAP_SYNC_TOKEN` in Railway

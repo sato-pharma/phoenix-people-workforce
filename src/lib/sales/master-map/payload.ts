@@ -28,8 +28,16 @@ import {
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
 import { readMasterMapStamp } from "@/lib/sales/master-map/fingerprint";
 import {
+  LISTS_TAB,
+  LOOKUP_TAB,
+  renderListsSheet,
+  renderLookupSheet,
+} from "@/lib/sales/master-map/lookup-tab";
+import {
   renderFlatSheet,
   renderSheet,
+  rgb,
+  tabColorFor,
   type RenderedSheet,
 } from "@/lib/sales/master-map/sheet-render";
 import { FLAT_TAB, MASTER_TAB } from "@/lib/sales/master-map/sync";
@@ -114,24 +122,47 @@ async function getWorkbook(expectedStamp: string | null): Promise<CachedWorkbook
 
 /** Every tab the sync owns, rendered on demand. */
 function renderTab(workbook: CachedWorkbook, title: string, sheetId: number): RenderedSheet | null {
+  // The two control tabs carry no data of their own — they are formulas over "All customers", so
+  // they never need the tree and never move when a pharmacy changes.
+  if (title === LOOKUP_TAB) return renderLookupSheet(sheetId);
+  if (title === LISTS_TAB) return renderListsSheet(sheetId);
+
   if (title === MASTER_TAB) {
-    return renderSheet(renderMasterRows(workbook.tree, workbook.distributorName), sheetId);
+    return renderSheet(renderMasterRows(workbook.tree, workbook.distributorName), sheetId, {
+      tabColor: rgb(15, 23, 42),
+    });
   }
   if (title === FLAT_TAB) {
     return renderFlatSheet(
       MASTER_MAP_FLAT_COLUMNS,
       renderFlatRows(workbook.tree, workbook.distributorName),
       sheetId,
+      { tabColor: rgb(71, 85, 105) },
     );
   }
   const region = workbook.tree.regions.find((candidate) => candidate.regionName === title);
   if (!region) return null;
-  return renderSheet(renderRegionRows(region, workbook.distributorName), sheetId);
+  return renderSheet(renderRegionRows(region, workbook.distributorName), sheetId, {
+    tabColor: tabColorFor(title),
+  });
 }
 
-/** Tab titles in reading order — the same order the sync writes them in. */
+/**
+ * Tab titles in reading order — the same order the sync writes them in.
+ *
+ * "Find a pharmacy" leads because it is the one tab that answers a question rather than storing
+ * an answer. "Lists" trails because it is hidden plumbing, and it must come AFTER the flat tab it
+ * reads: on a first run the tabs are created in this order, and its formulas resolve to #REF!
+ * until "All customers" exists.
+ */
 function tabTitles(workbook: CachedWorkbook): string[] {
-  return [MASTER_TAB, FLAT_TAB, ...workbook.tree.regions.map((region) => region.regionName)];
+  return [
+    LOOKUP_TAB,
+    MASTER_TAB,
+    FLAT_TAB,
+    ...workbook.tree.regions.map((region) => region.regionName),
+    LISTS_TAB,
+  ];
 }
 
 /**
