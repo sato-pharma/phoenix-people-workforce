@@ -27,6 +27,27 @@ overrides:
   # returns just the 1.1.18/2.1.4 exceljs paths above, never a 5.x. Kept because the dev
   # toolchain still resolves it and the floor costs nothing.
   "brace-expansion@5": ^5.0.9
+  # Added 2026-08-17 for GHSA-ggr8-5vv4-36mx (high): stack exhaustion merging recursive object
+  # graphs. Advisory covers `<8.0.0`; the graph had resolved 7.1.5. Reached via
+  # mailparser > html-to-text, and mailparser is a direct `dependencies` entry, so this is the
+  # production graph and `pnpm audit --prod` goes red on it — as it did on every PR opened after
+  # the advisory published. `main` itself was green at 13:45 Cairo and the next run at 16:25 was
+  # not, with no diff between them: the same registry-reads-live shape as the nanoid note below.
+  #
+  # NOT REALISTICALLY EXPLOITABLE HERE, but pinned rather than ignored because the fix is clean.
+  # html-to-text calls deepmergeCustom in exactly two places, both merging its OWN configuration —
+  # `deepMergeWithOptionsComposeRules(defaultOptions, userOptions)` and a selector-map merge.
+  # Neither ever sees email content, so nothing an applicant sends reaches the vulnerable path.
+  #
+  # This is a MAJOR bump against html-to-text's declared `^7.1.5`, and html-to-text@10.0.0 is the
+  # latest release — there is no upstream fix to wait for, so an override is the only route. It was
+  # verified rather than assumed: the full convert() output (defaults, wordwrap, and the selectors
+  # compose rule with its custom metaDataUpdater) plus simpleParser's derived `mail.text` are
+  # BYTE-IDENTICAL on 7.1.5 and 8.0.1. That derived text is the live recruitment CV-intake path.
+  #
+  # Unlike the `hono` note below, the cooling-off window is NOT a problem here: 8.0.1 published
+  # 2026-08-16 05:45 UTC and installs clean, writing no `minimumReleaseAgeExclude` entry.
+  deepmerge-ts: ^8.0.1
   body-parser: ^2.3.0
   # Bumped 2026-08-03 for GHSA-7p8r-x3mc-p8w7 (host confusion via a backslash authority
   # introducer). The advisory covers `>=3.0.0 <3.1.5`, so the previous ^3.1.3 floor ALLOWED the

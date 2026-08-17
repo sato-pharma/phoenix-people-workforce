@@ -8,18 +8,27 @@
 // increasingly expensive ones — the same lesson the Master Workbook export already learned.
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
+import { lineName } from "@/lib/sales/monthly-targets";
 import type { MasterMapCustomerInput } from "@/lib/sales/master-map/customer-merge";
-import type { AreaInput, BrickInput, RegionInput } from "@/lib/sales/master-map/tree";
+import type {
+  AreaInput,
+  AreaManagerInput,
+  BrickInput,
+  OrganogramAreaInput,
+  RegionInput,
+} from "@/lib/sales/master-map/tree";
 import { prettyDistributorName } from "@/lib/sales/master-map/tree";
 
 const PAGE_SIZE = 1000;
 
 export type MasterMapSource = {
+  areaManagers: AreaManagerInput[];
   areas: AreaInput[];
   bricks: BrickInput[];
   customers: MasterMapCustomerInput[];
   /** distributor code -> human-readable name, for the Code column. */
   distributorNames: Map<string, string>;
+  organogramAreas: OrganogramAreaInput[];
 };
 
 async function loadAllCustomers(): Promise<MasterMapCustomerInput[]> {
@@ -58,10 +67,133 @@ async function loadAllCustomers(): Promise<MasterMapCustomerInput[]> {
   return customers;
 }
 
+/** A pseudo-DM seat is a real seat carrying real sales, so it is answered, not left blank. */
+const PSEUDO_DM_MANAGER = "Sales only, no manager";
+
+/** A real district that currently has nobody in it. Six of them today, all Anti Infective. */
+const VACANT_MANAGER = "Vacant";
+
+type Organogram = { areaManagers: AreaManagerInput[]; organogramAreas: OrganogramAreaInput[] };
+
+const EMPTY_ORGANOGRAM: Organogram = { areaManagers: [], organogramAreas: [] };
+
+/**
+ * The organogram's line × area map, as of today: which district owns each area, and who runs it.
+ *
+ * "As of today" on purpose, matching the owner's standing rule that Source of Sales attributes to
+ * TODAY's structure and never as-was: a reorganisation re-cuts the whole sheet rather than leaving
+ * an old shape behind. Same view and same date filter the Monthly Closing uses, so the sheet and
+ * the closing can never disagree about which district an area belongs to, or about who manages it.
+ *
+ * THREE READS, NOT ONE, BECAUSE THE NAME IS THREE HOPS AWAY: the map holds a seat id, the org tree
+ * says who occupies that seat, and only `employees` knows the person's name. All three are tiny
+ * (147 map rows, 133 seats, 22 distinct managers today), so they cost three round trips and nothing
+ * else — no paging, unlike the 52,000-row customer crosswalk above.
+ *
+ * EVERY AREA GETS AN ANSWER. A seat with nobody in it says "Vacant" and an Others bucket says
+ * "Sales only, no manager"; neither is left blank, because a blank cell in a sheet reads as "this
+ * was not loaded" rather than "there is genuinely no manager here" — the same reason the owner's
+ * rule says to flag a row rather than drop it.
+ *
+ * FAILS SOFT. An empty result means "no region borrows any areas and no manager is known", which
+ * paints the sheet the way it looked before this existed rather than failing the whole workbook. A
+ * master of 50,000 pharmacies must not stop refreshing because the org chart is briefly unreadable.
+ */
+async function loadOrganogram(): Promise<Organogram> {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("au_v_line_area_map")
+      .select("area_code,line_code,operational_region_code,dm_seat_id,effective_from,effective_to");
+    if (error || !data) return EMPTY_ORGANOGRAM;
+
+    const current: Array<{ areaCode: string; line: string; regionCode: string; seatId: string }> = [];
+    for (const row of data as Array<Record<string, unknown>>) {
+      const areaCode = String(row.area_code ?? "").trim();
+      if (!areaCode) continue;
+
+      const from = String(row.effective_from ?? "");
+      const to = String(row.effective_to ?? "");
+      if (from && from > today) continue;
+      if (to && to < today) continue;
+
+      current.push({
+        areaCode,
+        line: String(row.line_code ?? "").trim(),
+        regionCode: String(row.operational_region_code ?? "").trim(),
+        seatId: String(row.dm_seat_id ?? "").trim(),
+      });
+    }
+
+    const seatIds = [...new Set(current.map((row) => row.seatId).filter(Boolean))];
+    const seats = new Map<string, { hrId: string; pseudo: boolean }>();
+    if (seatIds.length > 0) {
+      const { data: seatRows } = await supabase
+        .from("au_v_org_tree")
+        .select("seat_id,occupant_hr_id,is_other_pseudo_dm")
+        .in("seat_id", seatIds);
+      for (const row of (seatRows ?? []) as Array<Record<string, unknown>>) {
+        seats.set(String(row.seat_id ?? ""), {
+          hrId: String(row.occupant_hr_id ?? "").trim(),
+          // Checked BEFORE vacancy: an Others bucket is flagged vacant too, and reporting it as a
+          // vacant district would invent a job opening that does not exist.
+          pseudo: row.is_other_pseudo_dm === true,
+        });
+      }
+    }
+
+    const hrIds = [...new Set([...seats.values()].map((seat) => seat.hrId).filter(Boolean))];
+    const names = new Map<string, string>();
+    if (hrIds.length > 0) {
+      const { data: people } = await supabase
+        .from("employees")
+        .select("hr_id,full_name")
+        .in("hr_id", hrIds);
+      for (const row of (people ?? []) as Array<Record<string, unknown>>) {
+        const name = String(row.full_name ?? "").trim();
+        if (name) names.set(String(row.hr_id ?? ""), name);
+      }
+    }
+
+    const seenArea = new Set<string>();
+    const seenManager = new Set<string>();
+    const organogramAreas: OrganogramAreaInput[] = [];
+    const areaManagers: AreaManagerInput[] = [];
+
+    for (const row of current) {
+      const line = lineName(row.line);
+
+      // The map is one row per line, so the same area appears under a district once per line.
+      if (row.regionCode) {
+        const key = `${row.regionCode}|${row.areaCode}|${row.line}`;
+        if (!seenArea.has(key)) {
+          seenArea.add(key);
+          organogramAreas.push({ areaCode: row.areaCode, lineName: line, regionCode: row.regionCode });
+        }
+      }
+
+      const managerKey = `${row.areaCode}|${row.line}`;
+      if (seenManager.has(managerKey)) continue;
+      seenManager.add(managerKey);
+
+      const seat = seats.get(row.seatId);
+      const manager = seat?.pseudo
+        ? PSEUDO_DM_MANAGER
+        : (names.get(seat?.hrId ?? "") ?? VACANT_MANAGER);
+      areaManagers.push({ areaCode: row.areaCode, lineName: line, manager });
+    }
+
+    return { areaManagers, organogramAreas };
+  } catch {
+    return EMPTY_ORGANOGRAM; // see "FAILS SOFT" above
+  }
+}
+
 export async function loadMasterMapSource(): Promise<MasterMapSource & { regions: RegionInput[] }> {
   const supabase = getSupabaseAdmin();
 
-  const [regionsResult, areasResult, bricksResult, distributorsResult, customers] =
+  const [regionsResult, areasResult, bricksResult, distributorsResult, customers, organogram] =
     await Promise.all([
       supabase.from("source_of_sales_regions").select("region_code,region_name").eq("active", true),
       supabase
@@ -74,6 +206,7 @@ export async function loadMasterMapSource(): Promise<MasterMapSource & { regions
         .eq("active", true),
       supabase.from("source_of_sales_distributors").select("distributor_code,distributor_name"),
       loadAllCustomers(),
+      loadOrganogram(),
     ]);
 
   for (const result of [regionsResult, areasResult, bricksResult, distributorsResult]) {
@@ -87,6 +220,7 @@ export async function loadMasterMapSource(): Promise<MasterMapSource & { regions
   }
 
   return {
+    areaManagers: organogram.areaManagers,
     areas: (areasResult.data ?? []).map((row) => ({
       areaCode: String(row.area_code ?? ""),
       areaName: String(row.area_name ?? ""),
@@ -99,6 +233,7 @@ export async function loadMasterMapSource(): Promise<MasterMapSource & { regions
     })),
     customers,
     distributorNames,
+    organogramAreas: organogram.organogramAreas,
     regions: (regionsResult.data ?? []).map((row) => ({
       regionCode: String(row.region_code ?? ""),
       regionName: String(row.region_name ?? ""),

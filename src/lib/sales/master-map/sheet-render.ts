@@ -90,6 +90,16 @@ export const STYLE = {
 const ROW_HEIGHT = { area: 30, base: 21, region: 38 } as const;
 
 /**
+ * Width of one district-manager column, wide enough for the longest real name.
+ *
+ * Measured on production: 47 characters ("Mahmoud El Husseinin Elemam Moslam El Husseinin"), 56
+ * with the " (acting)" suffix. These columns sit next to each other and are all populated, so
+ * OVERFLOW_CELL cannot save a narrow one — a neighbour with text in it clips the overflow, and the
+ * owner's rule is that a name is never cut off.
+ */
+export const MANAGER_COLUMN_WIDTH = 330;
+
+/**
  * The provenance column: pale grey, small, italic. Deliberately the quietest thing on the row —
  * it is there to be consulted when a pharmacy looks wrong, not to compete with the pharmacy's own
  * name. Applied as a second pass over just that column, after the row's own style.
@@ -120,6 +130,7 @@ function rowValues(row: MasterMapRow): string[] {
     case "area":
     case "brick":
     case "empty-note":
+    case "managers":
     case "region":
       return pad([row.label]);
     case "blank":
@@ -133,7 +144,13 @@ function rowValues(row: MasterMapRow): string[] {
 
 /** Does this row kind occupy one merged band across all columns? */
 function isBand(kind: MasterMapRow["kind"]): boolean {
-  return kind === "region" || kind === "area" || kind === "brick" || kind === "empty-note";
+  return (
+    kind === "region" ||
+    kind === "area" ||
+    kind === "brick" ||
+    kind === "empty-note" ||
+    kind === "managers"
+  );
 }
 
 function styleFor(row: MasterMapRow): CellStyle | null {
@@ -146,6 +163,10 @@ function styleFor(row: MasterMapRow): CellStyle | null {
       return STYLE.emptyNote;
     case "header":
       return STYLE.columnHeader;
+    // Quiet on purpose: it sits between the area band and the first brick, and it is reference
+    // rather than structure. Loud enough to find, not loud enough to compete with the area.
+    case "managers":
+      return STYLE.label;
     case "region":
       return STYLE.region;
     case "customer":
@@ -473,9 +494,10 @@ export function renderFlatSheet(
 
   for (const column of FLAT_CENTRED_COLUMNS) requests.push(centreColumnRequest(sheetId, column));
 
-  requests.push(
-    ...columnWidthRequests(sheetId, [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320]),
-  );
+  // The eleven data columns, then one per manager column the header actually carries.
+  const widths = [140, 170, 200, 100, 400, 150, 130, 250, 90, 600, 320];
+  while (widths.length < header.length) widths.push(MANAGER_COLUMN_WIDTH);
+  requests.push(...columnWidthRequests(sheetId, widths));
 
   if (options.tabColor) requests.push(renderedTabColor(sheetId, options.tabColor));
 

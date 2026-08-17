@@ -11,8 +11,24 @@
 // all Source-of-Sales attributes to TODAY's geography, and the masters are today's geography.
 //
 // NOTHING IS EVER DROPPED. A brick with no customers, an area with no bricks and a region with no
-// areas all still render, labelled as empty — 90 active bricks and 2 whole regions are in that
-// state right now, and a master that hides them would read as though they did not exist.
+// areas all still render, labelled as empty — 90 active bricks are in that state right now, and a
+// master that hides them would read as though they did not exist.
+//
+// THE ORGANOGRAM OVERLAY. Two of the nine regions own no geography at all: Upper Egypt 1 and
+// Upper Egypt 2 have zero areas in the area master. They are not broken and they are not empty —
+// they are the Anti Infective line's two district territories inside Upper Egypt, and they exist
+// only in the People Organogram. Every other region carries all three lines; Upper Egypt is the
+// one place where Anti Infective is split in two while CNS and Pedia are not, which is exactly
+// what `closing-organogram-regions.ts` already documents for the Monthly Closing.
+//
+// So a region with no areas of its own BORROWS them from the organogram — from the same
+// au_v_line_area_map the closing reads, resolved live rather than listed here, so the day the
+// owner moves an area between districts the sheet follows on its own.
+//
+// Those regions are marked `fromOrganogram` and are then EXCLUDED from the master tab, the flat
+// tab and the gaps tab. Their shops already appear there under the region they physically sit in,
+// and counting them twice would put the flat tab above the 50,622 shops that actually exist. They
+// keep their own tabs, which say plainly that they are a second view of the same shops.
 
 import type { MasterMapCustomer, MasterMapCustomerInput } from "@/lib/sales/master-map/customer-merge";
 import { mergeMasterMapCustomers } from "@/lib/sales/master-map/customer-merge";
@@ -20,6 +36,38 @@ import { mergeMasterMapCustomers } from "@/lib/sales/master-map/customer-merge";
 export type RegionInput = { regionCode: string; regionName: string };
 export type AreaInput = { areaCode: string; areaName: string; regionCode: string };
 export type BrickInput = { areaCode: string; brickId: string; brickName: string };
+
+/**
+ * One row of the organogram's line × area → district map, already humanised.
+ *
+ * `lineName` arrives spelled out rather than as a code because this module stays free of database
+ * calls and the owner's rule is that a code never reaches a screen. load.ts resolves it through the
+ * one shared `lineName()` helper, so the sheet cannot disagree with the closing about what
+ * "anti_infective" is called.
+ */
+export type OrganogramAreaInput = { areaCode: string; lineName: string; regionCode: string };
+
+/**
+ * Who runs one area on one line, already resolved to a person's name or to a plain-words reason
+ * there is nobody: "Vacant", "Sales only, no manager" for the Others buckets. Never a blank.
+ */
+export type AreaManagerInput = { areaCode: string; lineName: string; manager: string };
+
+/**
+ * The sales lines, in the order their manager columns appear.
+ *
+ * A SHOP DOES NOT HAVE ONE DISTRICT MANAGER — it has one per line, and they are different people.
+ * The pharmacy in Minia 1 is Nosiba's on Anti Infective, Amgad's on CNS and Yehya's on Pedia. One
+ * "District manager" column would therefore have to pick a winner, and every reader would assume
+ * the wrong one. Hence three columns.
+ *
+ * Listed rather than derived so the columns never move when the organogram is briefly unreadable,
+ * and matching `au.lines` — the same three the closing and the target engine already hardcode.
+ */
+export const MASTER_MAP_MANAGER_LINES = ["Anti Infective", "CNS", "Pedia"] as const;
+
+/** An area the organogram has no row for at all. Only "Main Store" is in this state, with 0 bricks. */
+const UNKNOWN_MANAGER = "Not in the organogram";
 
 export type MasterMapBrick = {
   brickId: string;
@@ -32,13 +80,26 @@ export type MasterMapArea = {
   areaName: string;
   bricks: MasterMapBrick[];
   customerCount: number;
+  /** Line name -> the district manager who runs this area on that line. */
+  managers: ReadonlyMap<string, string>;
 };
 
 export type MasterMapRegion = {
   areas: MasterMapArea[];
   customerCount: number;
+  /**
+   * True when this region owns no areas in the area master and borrows them from the organogram.
+   * Its shops are the SAME shops as some other region's — see the overlay note in the header.
+   */
+  fromOrganogram: boolean;
+  /** Organogram areas this region claims that the area master does not have. Never hidden. */
+  missingAreaCodes: string[];
+  /** The lines whose structure puts those areas here, spelled out. */
+  organogramLines: string[];
   regionCode: string;
   regionName: string;
+  /** The regions those borrowed areas physically sit in, spelled out. */
+  sitsIn: string[];
 };
 
 export type MasterMapTree = {
@@ -58,9 +119,13 @@ function byName<T>(pick: (value: T) => string) {
 }
 
 export function buildMasterMapTree(input: {
+  /** Optional: absent means every area reports its managers as unknown rather than as blank. */
+  areaManagers?: readonly AreaManagerInput[];
   areas: readonly AreaInput[];
   bricks: readonly BrickInput[];
   customers: readonly MasterMapCustomerInput[];
+  /** Optional: absent or empty simply means no region borrows anything, which is a valid sheet. */
+  organogramAreas?: readonly OrganogramAreaInput[];
   regions: readonly RegionInput[];
 }): MasterMapTree {
   const merged = mergeMasterMapCustomers(input.customers);
@@ -88,7 +153,20 @@ export function buildMasterMapTree(input: {
   }
   for (const bricks of bricksByArea.values()) bricks.sort(byName((brick) => brick.brickName));
 
+  const managersByArea = new Map<string, Map<string, string>>();
+  for (const entry of input.areaManagers ?? []) {
+    if (!entry.areaCode || !entry.lineName) continue;
+    let byLine = managersByArea.get(entry.areaCode);
+    if (!byLine) {
+      byLine = new Map();
+      managersByArea.set(entry.areaCode, byLine);
+    }
+    byLine.set(entry.lineName, entry.manager);
+  }
+
   const areasByRegion = new Map<string, MasterMapArea[]>();
+  const areaByCode = new Map<string, MasterMapArea>();
+  const homeRegionByArea = new Map<string, string>();
   for (const area of input.areas) {
     const bricks = bricksByArea.get(area.areaCode) ?? [];
     const built: MasterMapArea = {
@@ -96,26 +174,98 @@ export function buildMasterMapTree(input: {
       areaName: displayName(area.areaName, area.areaCode),
       bricks,
       customerCount: bricks.reduce((total, brick) => total + brick.customers.length, 0),
+      managers: managersByArea.get(area.areaCode) ?? new Map(),
     };
+    areaByCode.set(area.areaCode, built);
+    homeRegionByArea.set(area.areaCode, area.regionCode);
     const bucket = areasByRegion.get(area.regionCode);
     if (bucket) bucket.push(built);
     else areasByRegion.set(area.regionCode, [built]);
   }
   for (const areas of areasByRegion.values()) areas.sort(byName((area) => area.areaName));
 
+  // The organogram's claim on each region, collected before any region is built so a region can
+  // be asked "does the org chart give you areas?" in one lookup.
+  const claimedByRegion = new Map<string, { areaCodes: Set<string>; lines: Set<string> }>();
+  for (const entry of input.organogramAreas ?? []) {
+    if (!entry.regionCode || !entry.areaCode) continue;
+    let claim = claimedByRegion.get(entry.regionCode);
+    if (!claim) {
+      claim = { areaCodes: new Set(), lines: new Set() };
+      claimedByRegion.set(entry.regionCode, claim);
+    }
+    claim.areaCodes.add(entry.areaCode);
+    if (entry.lineName) claim.lines.add(entry.lineName);
+  }
+
+  const regionNameByCode = new Map(
+    input.regions.map((region) => [region.regionCode, displayName(region.regionName, region.regionCode)]),
+  );
+
   const regions = input.regions
     .map((region): MasterMapRegion => {
-      const areas = areasByRegion.get(region.regionCode) ?? [];
+      const name = displayName(region.regionName, region.regionCode);
+      const own = areasByRegion.get(region.regionCode) ?? [];
+      const total = (areas: MasterMapArea[]) =>
+        areas.reduce((sum, area) => sum + area.customerCount, 0);
+
+      // A region with geography of its own is never overlaid. The overlay is the answer to "this
+      // region has no areas", not a second opinion about a region that already has them — and it
+      // retires itself the moment the area master gives this region real areas.
+      const claim = own.length === 0 ? claimedByRegion.get(region.regionCode) : undefined;
+      if (!claim) {
+        return {
+          areas: own,
+          customerCount: total(own),
+          fromOrganogram: false,
+          missingAreaCodes: [],
+          organogramLines: [],
+          regionCode: region.regionCode,
+          regionName: name,
+          sitsIn: [],
+        };
+      }
+
+      const claimed = [...claim.areaCodes].sort();
+      const areas = claimed
+        .map((code) => areaByCode.get(code))
+        .filter((area): area is MasterMapArea => area !== undefined)
+        .sort(byName((area) => area.areaName));
+      // An area the org chart names and the area master has never heard of is REPORTED, not
+      // quietly skipped — the tab prints the codes so a broken link reads as a broken link.
+      const missingAreaCodes = claimed.filter((code) => !areaByCode.has(code));
+
       return {
         areas,
-        customerCount: areas.reduce((total, area) => total + area.customerCount, 0),
+        customerCount: total(areas),
+        fromOrganogram: areas.length > 0,
+        missingAreaCodes,
+        organogramLines: [...claim.lines].sort(),
         regionCode: region.regionCode,
-        regionName: displayName(region.regionName, region.regionCode),
+        regionName: name,
+        sitsIn: [
+          ...new Set(
+            areas
+              .map((area) => regionNameByCode.get(homeRegionByArea.get(area.areaCode) ?? ""))
+              .filter((home): home is string => Boolean(home) && home !== name),
+          ),
+        ].sort(),
       };
     })
     .sort(byName((region) => region.regionName));
 
   return { orphanedCustomers, regions };
+}
+
+/**
+ * The regions that OWN their shops — every region except the organogram views.
+ *
+ * The master tab, the flat tab and the gaps tab all read through this. Upper Egypt 1 and Upper
+ * Egypt 2 hold the same shops as Upper Egypt and Giza, so counting them here would report ~4,300
+ * shops that do not exist and would put two copies of each of them in the finder.
+ */
+export function shopOwningRegions(tree: MasterMapTree): MasterMapRegion[] {
+  return tree.regions.filter((region) => !region.fromOrganogram);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -227,7 +377,26 @@ export type MasterMapRow =
   | { kind: "brick"; label: string }
   | { kind: "empty-note"; label: string }
   | { kind: "header" }
+  | { kind: "managers"; label: string }
   | { kind: "region"; label: string };
+
+/**
+ * One cell per line, in column order — the person who runs this area on that line.
+ *
+ * Never blank. A blank cell in a manager column reads as "nobody bothered to fill this in"; the
+ * words the organogram actually supports — "Vacant", "Sales only, no manager" — say which of the
+ * several different reasons applies.
+ */
+export function areaManagerCells(area: MasterMapArea): string[] {
+  return MASTER_MAP_MANAGER_LINES.map((line) => area.managers.get(line) ?? UNKNOWN_MANAGER);
+}
+
+/** The same three facts as one line of prose, for the band under an area on the grouped tabs. */
+function managerBandLabel(area: MasterMapArea): string {
+  return `District managers   ·   ${MASTER_MAP_MANAGER_LINES.map(
+    (line, index) => `${line}: ${areaManagerCells(area)[index]}`,
+  ).join("   ·   ")}`;
+}
 
 const CHANNEL_LABEL = {
   hospital: "Hospital",
@@ -288,6 +457,12 @@ function shopCount(total: number): string {
   return `${total.toLocaleString("en-US")} ${total === 1 ? "shop" : "shops"}`;
 }
 
+/** "Giza and Upper Egypt" — a list a person reads, never a comma-joined array. */
+function joinNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
 /** One region rendered as the grouped, banded rows the owner asked for. */
 export function renderRegionRows(
   region: MasterMapRegion,
@@ -297,6 +472,25 @@ export function renderRegionRows(
     { kind: "region", label: `${region.regionName}   ·   ${shopCount(region.customerCount)}` },
   ];
 
+  // Said at the top of the tab, not buried in a footnote: without it these totals look like shops
+  // the rest of the workbook is missing, and someone adds them to a national figure.
+  if (region.fromOrganogram) {
+    const lines = joinNames(region.organogramLines);
+    const homes = joinNames(region.sitsIn);
+    rows.push({
+      kind: "empty-note",
+      label:
+        `Organogram structure, not geography — ${lines ? `the ${lines} district` : "a district"} of the sales organisation. ` +
+        `Every shop below also appears under ${homes || "its own region"}, so this tab is a second view of the same shops and never extra ones.`,
+    });
+  }
+  if (region.missingAreaCodes.length > 0) {
+    rows.push({
+      kind: "empty-note",
+      label: `The organogram also puts ${joinNames(region.missingAreaCodes)} here, and the area master has no such area. Nothing for them is shown below.`,
+    });
+  }
+
   if (region.areas.length === 0) {
     rows.push({ kind: "empty-note", label: "This region has no areas." });
     return rows;
@@ -304,6 +498,9 @@ export function renderRegionRows(
 
   for (const area of region.areas) {
     rows.push({ kind: "area", label: `${area.areaName}   ·   ${shopCount(area.customerCount)}` });
+    // Directly under the area, not on every shop row: it is the same three names for all 951 of
+    // them, and three more columns would push the address off the grouped tabs entirely.
+    rows.push({ kind: "managers", label: managerBandLabel(area) });
     if (area.bricks.length === 0) {
       rows.push({ kind: "empty-note", label: "This area has no bricks." });
       continue;
@@ -325,19 +522,27 @@ export function renderRegionRows(
   return rows;
 }
 
-/** Every region, one after another — the master tab. */
+/** Every region that owns its shops, one after another — the master tab. */
 export function renderMasterRows(
   tree: MasterMapTree,
   distributorName: (code: string) => string,
 ): MasterMapRow[] {
-  return tree.regions.flatMap((region) => renderRegionRows(region, distributorName));
+  return shopOwningRegions(tree).flatMap((region) => renderRegionRows(region, distributorName));
 }
 
 /**
  * The flat lookup tab: one unmerged row per shop, with its geography repeated on every line so
  * VLOOKUP and filters work. No bands, no blanks, no merged cells.
+ *
+ * The manager columns sit at the END, after provenance, on purpose.
+ *
+ * "Find a pharmacy" addresses this tab by column LETTER — region is A, pharmacy is E, address is J.
+ * Inserting the three managers next to Area, where they read better, would shift every letter after
+ * it and quietly re-point the search box and all four dropdowns at the wrong columns. Appending
+ * costs nothing: the finder chooses what it displays, and this tab is a lookup surface with a
+ * filter row, not something anybody reads left to right.
  */
-export const MASTER_MAP_FLAT_COLUMNS = [
+export const MASTER_MAP_FLAT_COLUMNS: readonly string[] = [
   "Region",
   "Area",
   "Brick",
@@ -349,14 +554,103 @@ export const MASTER_MAP_FLAT_COLUMNS = [
   "Channel",
   "Address",
   "Where this came from",
-] as const;
+  ...MASTER_MAP_MANAGER_LINES.map((line) => `${line} manager`),
+];
+
+// ---------------------------------------------------------------------------------------------
+// Gaps
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The two things in this master that are missing rather than wrong.
+ *
+ * They are kept apart from the main tabs on purpose. A nameless shop still renders in its brick,
+ * amber, saying "(no name on file)" — that is honest but useless for fixing, because the 7,407 of
+ * them are spread across 697 bricks and nobody is going to find them by scrolling. Same for the
+ * bricks holding nothing: on their own tab they are one line each, and a run of them in the same
+ * area is the shape of a mapping that failed rather than of genuinely empty territory.
+ *
+ * NOTHING HERE IS A DEFECT REPORT. A brick can legitimately have no customers and a shop can
+ * legitimately reach us without a name. This tab says "here they are", not "these are broken".
+ */
+export const MASTER_MAP_GAP_COLUMNS: readonly string[] = [
+  "Region",
+  "Area",
+  "Brick",
+  "Brick code",
+  "Distributor",
+  "Code",
+  "Also supplied by",
+  "Channel",
+  "Address",
+  "Where this came from",
+  // Chasing a nameless shop means asking somebody who it is, and these are the somebodies.
+  ...MASTER_MAP_MANAGER_LINES.map((line) => `${line} manager`),
+];
+
+export const MASTER_MAP_EMPTY_BRICK_COLUMNS = ["Region", "Area", "Brick", "Brick code"] as const;
+
+/**
+ * Every shop with no name, led by its codes.
+ *
+ * There is no "Pharmacy" column, because it would read "(no name on file)" 7,407 times. The
+ * distributor and code ARE the identity of these rows — they are what you take to the distributor
+ * to ask who this actually is.
+ */
+export function renderUnnamedRows(
+  tree: MasterMapTree,
+  distributorName: (code: string) => string,
+): string[][] {
+  const rows: string[][] = [];
+  for (const region of shopOwningRegions(tree)) {
+    for (const area of region.areas) {
+      for (const brick of area.bricks) {
+        for (const customer of brick.customers) {
+          if (customer.hasName) continue;
+          const [, distributor, code, alsoSuppliedBy] = customerIdentityCells(
+            customer,
+            distributorName,
+          );
+          rows.push([
+            region.regionName,
+            area.areaName,
+            brick.brickName,
+            brick.brickId,
+            distributor,
+            code,
+            alsoSuppliedBy,
+            CHANNEL_LABEL[customer.channel],
+            customer.address,
+            describeSources(customer.sources),
+            ...areaManagerCells(area),
+          ]);
+        }
+      }
+    }
+  }
+  return rows;
+}
+
+/** Every brick the master knows about that holds no customers at all. */
+export function renderEmptyBrickRows(tree: MasterMapTree): string[][] {
+  const rows: string[][] = [];
+  for (const region of shopOwningRegions(tree)) {
+    for (const area of region.areas) {
+      for (const brick of area.bricks) {
+        if (brick.customers.length > 0) continue;
+        rows.push([region.regionName, area.areaName, brick.brickName, brick.brickId]);
+      }
+    }
+  }
+  return rows;
+}
 
 export function renderFlatRows(
   tree: MasterMapTree,
   distributorName: (code: string) => string,
 ): string[][] {
   const rows: string[][] = [];
-  for (const region of tree.regions) {
+  for (const region of shopOwningRegions(tree)) {
     for (const area of region.areas) {
       for (const brick of area.bricks) {
         for (const customer of brick.customers) {
@@ -369,6 +663,7 @@ export function renderFlatRows(
             CHANNEL_LABEL[customer.channel],
             customer.address,
             describeSources(customer.sources),
+            ...areaManagerCells(area),
           ]);
         }
       }

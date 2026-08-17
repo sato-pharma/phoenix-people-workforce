@@ -816,6 +816,8 @@ import { runReassignOwnershipFrozenWriteTests } from "./reassign-ownership-froze
 import { runAccessProfileSyncTests } from "./access-profile-sync.test.ts";
 import { runMarketingPharmacyCodeCompactTests } from "./marketing-pharmacy-code-compact.test.ts";
 import { runMasterMapMergeTests } from "./master-map-merge.test.ts";
+import { runMasterMapOrganogramRegionsTests } from "./master-map-organogram-regions.test.ts";
+import { runMasterMapDistrictManagersTests } from "./master-map-district-managers.test.ts";
 
 const testDurationsMs: { name: string; durationMs: number }[] = [];
 
@@ -2105,6 +2107,14 @@ await runTest(
 await runTest(
   "master map merge (blank names never merge, one distributor's two codes stay two shops)",
   runMasterMapMergeTests,
+);
+await runTest(
+  "master map organogram regions (Upper Egypt 1 and 2 borrow their areas, and no shop is counted twice)",
+  runMasterMapOrganogramRegionsTests,
+);
+await runTest(
+  "master map district managers (three per shop, never blank, and appended so the finder's column letters hold)",
+  runMasterMapDistrictManagersTests,
 );
 
 const totalMs = testDurationsMs.reduce((sum, t) => sum + t.durationMs, 0);

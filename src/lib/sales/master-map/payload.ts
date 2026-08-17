@@ -1,7 +1,7 @@
 ﻿// Master Map — the payload the Google Apps Script pulls.
 //
 // Apps Script cannot hold the whole workbook: it gets six minutes per execution and the full paint
-// is ~155,000 rows across eleven tabs. So the sheet asks for a PLAN first — one line per tab, with
+// is ~155,000 rows across fourteen tabs. So the sheet asks for a PLAN first — one line per tab, with
 // a content hash — repaints only the tabs whose hash actually moved, and pulls each of those in
 // slices small enough to finish.
 //
@@ -27,6 +27,7 @@ import {
 } from "@/lib/sales/master-map/tree";
 import { loadMasterMapSource } from "@/lib/sales/master-map/load";
 import { readMasterMapStamp } from "@/lib/sales/master-map/fingerprint";
+import { GAPS_TAB, renderGapsSheet } from "@/lib/sales/master-map/gaps-tab";
 import {
   LISTS_TAB,
   LOOKUP_TAB,
@@ -50,6 +51,8 @@ const REQUESTS_PER_CHUNK = 300;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
 export type MasterMapTabPlan = {
+  /** Widest row on this tab. The script grows the tab to fit before it writes into it. */
+  columns: number;
   /** Content hash of this tab's text. The sheet repaints only when this moves. */
   hash: string;
   requestChunks: number;
@@ -140,6 +143,9 @@ function renderTab(workbook: CachedWorkbook, title: string, sheetId: number): Re
       { tabColor: rgb(71, 85, 105) },
     );
   }
+  if (title === GAPS_TAB) {
+    return renderGapsSheet(workbook.tree, workbook.distributorName, sheetId);
+  }
   const region = workbook.tree.regions.find((candidate) => candidate.regionName === title);
   if (!region) return null;
   return renderSheet(renderRegionRows(region, workbook.distributorName), sheetId, {
@@ -160,6 +166,7 @@ function tabTitles(workbook: CachedWorkbook): string[] {
     LOOKUP_TAB,
     MASTER_TAB,
     FLAT_TAB,
+    GAPS_TAB,
     ...workbook.tree.regions.map((region) => region.regionName),
     LISTS_TAB,
   ];
@@ -190,6 +197,7 @@ export async function getMasterMapPlan(): Promise<MasterMapPlan> {
     const rendered = renderTab(workbook, title, 0);
     if (!rendered) continue;
     tabs.push({
+      columns: rendered.values.reduce((widest, row) => Math.max(widest, row.length), 1),
       hash: hashValues(rendered.values),
       requestChunks: Math.ceil(rendered.requests.length / REQUESTS_PER_CHUNK),
       rows: rendered.values.length,
